@@ -9,8 +9,11 @@ export class GraphRuntime {
   readonly outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
   readonly branchOrigins = new Map<string, Map<string, BranchOriginInfo>>();
   readonly requiredEdgeCounts = new Map<string, number>();
+  readonly entryNodeIds: readonly string[];
 
   constructor(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+    this.validate(nodes, edges);
+
     for (const node of nodes) {
       this.nodeById.set(node.id, node);
       if ((node as any)?.node_type === "sub") this.subNodeIds.add(node.id);
@@ -29,7 +32,33 @@ export class GraphRuntime {
       );
     }
 
+    this.entryNodeIds = nodes
+      .filter((n) =>
+        (n.node_type === "trigger" || n.node_type === "backtest") &&
+        this.getIncomingEdges(n.id).length === 0,
+      )
+      .map((n) => n.id);
+
     this.buildBranchOrigins(edges);
+  }
+
+  private validate(nodes: WorkflowNode[], edges: WorkflowEdge[]): void {
+    const ids = new Set<string>();
+    for (const node of nodes) {
+      if (ids.has(node.id)) {
+        throw new Error(`[GraphRuntime] Duplicate node ID: ${node.id}`);
+      }
+      ids.add(node.id);
+    }
+
+    for (const edge of edges) {
+      if (!ids.has(edge.source)) {
+        throw new Error(`[GraphRuntime] Edge references missing source node: ${edge.source}`);
+      }
+      if (!ids.has(edge.target)) {
+        throw new Error(`[GraphRuntime] Edge references missing target node: ${edge.target}`);
+      }
+    }
   }
 
   getIncomingEdges(targetId: string): WorkflowEdge[] {

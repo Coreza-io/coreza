@@ -67,7 +67,7 @@ export abstract class BaseExecutionRuntime {
     return this.executionOrder;
   }
 
-  getNodeExecutorMap(): Map<string, INodeExecutor> {
+  getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> {
     return this.nodeExecutorMap;
   }
 

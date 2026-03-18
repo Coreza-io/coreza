@@ -18,8 +18,8 @@ import type Redis from "ioredis";
 import { Job, Queue, Worker } from "bullmq";
 import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../config/supabase";
-import { executeWorkflow } from "../services/workflowEngine";
-import { EnginePool } from "../services/EnginePool";
+import { executeWorkflow } from "../engine";
+import { EnginePool } from "../engine";
 import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
@@ -178,6 +178,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass entry point to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
+            executionKind: (job.data as any).executionKind,
             },
           );
 
@@ -431,6 +432,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass start node to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
+            executionKind: (job.data as any).executionKind,
             },
           );
 
@@ -506,6 +508,7 @@ export function createWorkflowWorker({
           {
             mode: "best-effort",
             abortSignal: signal,
+            executionKind: (job.data as any).executionKind,
           },
         );
 
@@ -514,7 +517,7 @@ export function createWorkflowWorker({
 
         // Check if workflow actually succeeded - if not, throw to enter catch block
         if (result.success !== true) {
-          throw new Error(result.error || "Workflow execution failed");
+          throw new Error(result.error?.message || "Workflow execution failed");
         }
 
         // Save successful result (only if not already cancelled)

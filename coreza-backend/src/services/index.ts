@@ -15,15 +15,15 @@
  */
 
 // Export services
-export { WorkflowEngine, executeWorkflow } from './workflowEngine';
+export { WorkflowEngine, executeWorkflow } from '../engine';
 export { NodeStore } from './nodeStore';
-export { NodeScheduler } from './nodeScheduler';
-export { NodeQueueManager } from './nodeQueueManager';
+export { NodeScheduler } from '../engine';
+export { NodeQueueManager } from '../engine';
 export { BullMQJobQueue } from './jobQueueManager';
 export { bullMqJobQueue as jobQueue } from './jobQueueManager';
-export { NodeRouter } from './router';
+export { NodeRouter } from '../engine';
 
-export { NodeStoreV2 } from './nodeStoreV2';
+export { NodeStoreV2 } from '../engine';
 
 // Export Market Data services (Redis Pub/Sub architecture)
 export { MarketDataGateway } from './MarketDataGateway';

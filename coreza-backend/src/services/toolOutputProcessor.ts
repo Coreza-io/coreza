@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { DataContext } from './DataContext';
+import { DataContext } from '../engine';
 import { DataRef } from './InMemoryStore';
 
 /**

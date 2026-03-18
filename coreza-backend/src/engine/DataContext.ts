@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { InMemoryStore, DataRef } from './InMemoryStore';
+import { InMemoryStore, DataRef } from '../services/InMemoryStore';
 
 /**
  * DataContext - Shared context for all tools in a workflow run

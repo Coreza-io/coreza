@@ -387,7 +387,7 @@ export class AgentSystem {
         return { success: false, error: error?.message || 'Workflow not found' };
       }
 
-      const { executeWorkflow } = await import('./workflowEngine');
+      const { executeWorkflow } = await import('../engine');
       const runId = `agent_${Date.now()}`;
       const result = await executeWorkflow(
         runId,
@@ -401,7 +401,7 @@ export class AgentSystem {
       if (!result.success) {
         return {
           success: false,
-          error: result.error || 'Workflow execution failed'
+          error: result.error?.message || 'Workflow execution failed'
         };
       }
 

@@ -1,4 +1,3 @@
-export { default as workflowRouter } from "./routes";
 export { WorkflowLifecycleService } from "./WorkflowLifecycleService";
 export { WorkflowExecutionService } from "./WorkflowExecutionService";
 export { WorkflowQueryService } from "./WorkflowQueryService";

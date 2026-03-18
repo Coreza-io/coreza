@@ -2,20 +2,20 @@ import express, { Request } from "express";
 import { z } from "zod";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
-import { BacktestLifecycleAdapter } from "./BacktestLifecycleAdapter";
-import { WorkflowExecutionService } from "./WorkflowExecutionService";
-import { WorkflowLifecycleService } from "./WorkflowLifecycleService";
-import { WorkflowQueryService } from "./WorkflowQueryService";
-import { WorkflowRepository } from "./WorkflowRepository";
-import { WorkflowRunRepository } from "./WorkflowRunRepository";
-import { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
-import { StreamingLifecycleAdapter } from "./StreamingLifecycleAdapter";
+import { BacktestLifecycleAdapter } from "../workflow/BacktestLifecycleAdapter";
+import { WorkflowExecutionService } from "../workflow/WorkflowExecutionService";
+import { WorkflowLifecycleService } from "../workflow/WorkflowLifecycleService";
+import { WorkflowQueryService } from "../workflow/WorkflowQueryService";
+import { WorkflowRepository } from "../workflow/WorkflowRepository";
+import { WorkflowRunRepository } from "../workflow/WorkflowRunRepository";
+import { SchedulerLifecycleAdapter } from "../workflow/SchedulerLifecycleAdapter";
+import { StreamingLifecycleAdapter } from "../workflow/StreamingLifecycleAdapter";
 import {
   createWorkflowSchema,
   executeWorkflowSchema,
   scheduleWorkflowSchema,
   updateWorkflowSchema,
-} from "./schemas";
+} from "../workflow/schemas";
 
 const workflowRepo = new WorkflowRepository();
 const runRepo = new WorkflowRunRepository();

@@ -14,8 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { StandardNodeOutput } from "../types/nodeOutput";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import { StandardNodeOutput } from "../../types/nodeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
 
 export interface RiskInput {
   buying_power?: string;

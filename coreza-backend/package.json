@@ -21,7 +21,8 @@
     "performance:benchmark": "node tests/performance/benchmark.js",
     "performance:memory": "node tests/performance/memory-profiler.js",
     "performance:stress": "node tests/performance/stress-test.js",
-    "performance:all": "npm run performance:benchmark && npm run performance:memory"
+    "performance:all": "npm run performance:benchmark && npm run performance:memory",
+    "validate:module-boundaries": "tsx scripts/validate-module-boundaries.ts"
   },
   "dependencies": {
     "@alpacahq/alpaca-trade-api": "^3.0.6",

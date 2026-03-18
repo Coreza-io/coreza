@@ -15,7 +15,7 @@
  */
 
 import express from 'express';
-import { HttpService } from '../services/http';
+import { HttpService } from '../nodes/logic/http';
 import { requireAuth } from '../middleware/jwtAuth';
 
 const router = express.Router();

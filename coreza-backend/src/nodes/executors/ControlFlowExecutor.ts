@@ -15,9 +15,9 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { ComputeService } from "../../services/compute";
+import { ComputeService } from "../../nodes/logic/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
-import { ComparatorService } from "../../services/comparator";
+import { ComparatorService } from "../../nodes/logic/comparator";
 import {
   createSuccessOutput,
   createErrorOutput,

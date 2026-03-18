@@ -1,4 +1,4 @@
-import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
+import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
 

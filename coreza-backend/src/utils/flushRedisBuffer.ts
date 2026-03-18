@@ -15,7 +15,7 @@
  */
 
 import { getRedisCache } from '../config/redis';
-import { RedisBuffer } from '../services/RedisBuffer';
+import { RedisBuffer } from '../infra/RedisBuffer';
 import { redisPublishBreaker } from './redisCircuitBreaker';
 
 /**

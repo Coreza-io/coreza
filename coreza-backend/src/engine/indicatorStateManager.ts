@@ -9,7 +9,7 @@
 import { getRedisCache } from "../config/redis";
 import { buildIndicatorKey } from "../utils/executionKey";
 export { buildIndicatorKey } from "../utils/executionKey";
-import { IndicatorService, IncrementalUpdater } from "../services/indicators";
+import { IndicatorService, IncrementalUpdater } from "../nodes/logic/indicators";
 
 export interface IndicatorState {
   version: number;

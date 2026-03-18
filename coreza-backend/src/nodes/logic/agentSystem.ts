@@ -16,7 +16,7 @@
 
 import { ChatOpenAI } from '@langchain/openai';
 import { BaseMessage, HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
-import { supabase } from '../config/supabase';
+import { supabase } from '../../config/supabase';
 
 interface AgentSession {
   id: string;

@@ -15,8 +15,8 @@
  */
 
 import express from "express";
-import { ComparatorService, ComparatorInput } from "../services/comparator";
-import { ComputeService } from "../services/compute";
+import { ComparatorService, ComparatorInput } from "../nodes/logic/comparator";
+import { ComputeService } from "../nodes/logic/compute";
 import { requireAuth } from "../middleware/jwtAuth";
 
 const router = express.Router();

@@ -15,7 +15,7 @@
  */
 
 import axios, { AxiosRequestConfig } from 'axios';
-import { createError } from '../middleware/errorHandler';
+import { createError } from '../../middleware/errorHandler';
 
 export interface HttpInput {
   method?: string;

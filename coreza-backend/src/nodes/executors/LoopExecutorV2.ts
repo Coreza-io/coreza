@@ -22,7 +22,7 @@ import {
   NodeExecutionOutput,
   ControlFlags,
 } from "../types";
-import { bullMqJobQueue } from "../../services/jobQueueManager";
+import { bullMqJobQueue } from "../../infra/jobQueue/jobQueueManager";
 import { extractLoopBodySubgraph } from "../../engine";
 
 /**

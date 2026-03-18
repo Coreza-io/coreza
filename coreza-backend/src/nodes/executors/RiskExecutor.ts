@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { RiskEngineService } from "../../services/risk";
+import { RiskEngineService } from "../../nodes/logic/risk";
 import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
 
 export class RiskExecutor implements INodeExecutor {

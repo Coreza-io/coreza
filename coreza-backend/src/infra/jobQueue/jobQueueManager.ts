@@ -16,23 +16,23 @@
 
 import { Queue, Worker, Job, FlowProducer } from "bullmq";
 import { v4 as uuidv4 } from "uuid";
-import { supabase } from "../config/supabase";
-import { getRedisQueue } from "../config/redis";
+import { supabase } from "../../config/supabase";
+import { getRedisQueue } from "../../config/redis";
 import {
   IWorkflowJobQueue,
   WorkflowJobData,
   ParallelLoopOptions,
 } from "./queueInterface";
-import { createWorkflowWorker } from "../utils/workflowWorker";
-import { createScheduledWorkflowWorker } from "../utils/scheduledWorkflowWorker";
-import { createSuccessOutput, createErrorOutput } from "../utils/normalizeOutput";
+import { createWorkflowWorker } from "../../utils/workflowWorker";
+import { createScheduledWorkflowWorker } from "../../utils/scheduledWorkflowWorker";
+import { createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
 import {
   WorkflowJobResult,
   isWorkflowCancelled,
-} from "../types/workflowJobResult";
-import { WorkflowRunnerManager } from "./workflowRunnerManager";
-import { BacktestSessionManager } from "../engine";
-import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
+} from "../../types/workflowJobResult";
+import { WorkflowRunnerManager } from "../../services/workflowRunnerManager";
+import { BacktestSessionManager } from "../../engine";
+import { BacktestExecutor } from "../../nodes/executors/BacktestExecutor";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -583,7 +583,7 @@ scheduledWorker.on("completed", (job) => {
 export const bullMqJobQueue = new BullMQJobQueue();
 
 // Initialize graceful shutdown handler with workers
-import { GracefulShutdownHandler } from "./GracefulShutdownHandler";
+import { GracefulShutdownHandler } from "../../workers/GracefulShutdownHandler";
 
 const gracefulShutdown = new GracefulShutdownHandler(
   bullMqJobQueue.getWorkers()

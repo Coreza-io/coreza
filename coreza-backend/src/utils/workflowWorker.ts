@@ -23,7 +23,7 @@ import { EnginePool } from "../engine";
 import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
-import type { WorkflowJobData } from "../services/queueInterface";
+import type { WorkflowJobData } from "../infra/jobQueue/queueInterface";
 import type {
   WorkflowJobResult,
   LoopItemResult,

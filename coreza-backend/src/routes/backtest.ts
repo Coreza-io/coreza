@@ -10,7 +10,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { supabase } from "../config/supabase";
-import { SimBroker } from "../services/simBroker";
+import { SimBroker } from "../simulation/simBroker";
 import { BacktestSessionManager } from "../engine";
 
 const router = Router();

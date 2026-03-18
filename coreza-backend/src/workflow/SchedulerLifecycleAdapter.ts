@@ -1,5 +1,5 @@
 import { formatInTimeZone } from "date-fns-tz";
-import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
+import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 
 export class SchedulerLifecycleAdapter {
   async schedule(

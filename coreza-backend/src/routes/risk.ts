@@ -16,7 +16,7 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
-import { RiskEngineService } from "../services/risk";
+import { RiskEngineService } from "../nodes/logic/risk";
 
 const router = express.Router();
 

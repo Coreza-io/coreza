@@ -66,8 +66,8 @@ import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../utils/normalizeOutput";
-import type { StandardNodeOutput, NormalizeContext } from "../types/nodeOutput";
+} from "../../utils/normalizeOutput";
+import type { StandardNodeOutput, NormalizeContext } from "../../types/nodeOutput";
 
 export interface ComputeInput {
   value: any;

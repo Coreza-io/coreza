@@ -24,12 +24,12 @@ import { z, ZodTypeAny } from "zod";
 import {
   processToolOutput,
   resolveDataRef,
-} from "../../services/toolOutputProcessor";
+} from "../../nodes/logic/toolOutputProcessor";
 import { DataContext, DataContextManager } from "../../engine";
 import {
   TOOL_DEFINITIONS,
   ToolDefinition,
-} from "../../services/toolDefinitions";
+} from "../../nodes/logic/toolDefinitions";
 import { loadNodeDefinition } from "../nodeDefinitions";
 import {
   createSuccessOutput,

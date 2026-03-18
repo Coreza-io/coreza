@@ -15,7 +15,7 @@
  */
 
 import { supabase } from "../config/supabase";
-import { bullMqJobQueue } from "./jobQueueManager";
+import { bullMqJobQueue } from "../infra/jobQueue/jobQueueManager";
 import { createLogger } from "../utils/logger";
 import { validateWebhookAuth } from "../utils/webhookAuth";
 import {

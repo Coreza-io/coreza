@@ -27,7 +27,7 @@ import {
   Bar,
   Position,
   EquityPoint,
-} from "../../services/simBroker";
+} from "../../simulation/simBroker";
 import { OrderEvent, normalizeOrderType } from "../../types/order";
 import { BrokerExecutor } from "./BrokerExecutor";
 import { supabase } from "../../config/supabase";

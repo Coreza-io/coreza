@@ -22,7 +22,7 @@ import {
   buildIndicatorKey,
   IndicatorStateManager,
 } from "../engine";
-import { IndicatorResult, IndicatorService } from "../services/indicators";
+import { IndicatorResult, IndicatorService } from "../nodes/logic/indicators";
 
 const router = express.Router();
 const initializeIndicatorsExecutor = new InitializeIndicatorsExecutor();

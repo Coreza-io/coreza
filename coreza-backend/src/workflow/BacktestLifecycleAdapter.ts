@@ -1,5 +1,5 @@
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
-import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
+import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 
 export class BacktestLifecycleAdapter {
   async startBacktest(

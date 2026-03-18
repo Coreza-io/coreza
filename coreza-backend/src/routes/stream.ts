@@ -21,7 +21,7 @@ import { RegistrationService } from "../services/RegistrationService";
 import { StatusService } from "../services/StatusService";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { supabase } from "../config/supabase";
-import { bullMqJobQueue } from "../services/jobQueueManager";
+import { bullMqJobQueue } from "../infra/jobQueue/jobQueueManager";
 import {
   StreamExecutionRequest,
   StreamExecutionResponse,
@@ -332,7 +332,7 @@ router.post("/streaming-activity", async (req, res) => {
 router.post("/cleanup-streaming", async (req, res) => {
   try {
     const { default: streamingCleanupService } =
-      await import("../services/StreamingCleanupService");
+      await import("../workers/StreamingCleanupService");
     const result = await streamingCleanupService.runCleanup();
 
     res.json({

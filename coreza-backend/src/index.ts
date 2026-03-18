@@ -54,23 +54,23 @@ import backtestRoutes from "./routes/backtest";
 import datasourceRoutes from "./routes/datasource";
 import portfolioRoutes from "./routes/portfolio";
 
-import WebSocketManager from "./services/websocketManager";
+import WebSocketManager from "./infra/websocketManager";
 import { initializeNodeExecutors } from "./nodes";
 import { initializeScreenerServices } from "./services/screeners";
 import { initializeDataSourceServices } from "./services/datasources";
 import { initializeStorageServices } from "./services/storage";
 import { initializeCommunicationServices } from "./services/communication";
-import WorkflowCache from "./services/WorkflowCache";
+import WorkflowCache from "./infra/WorkflowCache";
 import {
   redisPublishBreaker,
   redisGetBreaker,
   redisSetBreaker,
 } from "./utils/redisCircuitBreaker";
-import { RedisBuffer } from "./services/RedisBuffer";
+import { RedisBuffer } from "./infra/RedisBuffer";
 import { setupBufferFlush } from "./utils/flushRedisBuffer";
-import RunSyncService from "./services/RunSyncService";
-import streamingCleanupService from "./services/StreamingCleanupService";
-import { workflowRecoveryService } from "./services/WorkflowRecoveryService";
+import RunSyncService from "./workers/RunSyncService";
+import streamingCleanupService from "./workers/StreamingCleanupService";
+import { workflowRecoveryService } from "./workers/WorkflowRecoveryService";
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -207,7 +207,7 @@ async function startServer() {
 
     // Initialize BullMQ job queue workers
     logger.info("Starting BullMQ workers...");
-    require("./services/jobQueueManager");
+    require("./infra/jobQueue/jobQueueManager");
 
     logger.info("Starting WorkflowCache periodic cleanup...");
     WorkflowCache.startCleanupTimer();

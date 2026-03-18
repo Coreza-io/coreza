@@ -14,22 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Export services
-export { WorkflowEngine, executeWorkflow } from '../engine';
-export { NodeStore } from './nodeStore';
-export { NodeScheduler } from '../engine';
-export { NodeQueueManager } from '../engine';
-export { BullMQJobQueue } from './jobQueueManager';
-export { bullMqJobQueue as jobQueue } from './jobQueueManager';
-export { NodeRouter } from '../engine';
-
-export { NodeStoreV2 } from '../engine';
-
-// Export Market Data services (Redis Pub/Sub architecture)
-export { MarketDataGateway } from './MarketDataGateway';
-export { MarketDataSubscriber } from './MarketDataSubscriber';
-export { MarketControlHandler } from './MarketControlHandler';
+// Export route/application-facing services only
+export { RegistrationService } from './RegistrationService';
+export { SubscriptionService } from './SubscriptionService';
 export { SubscriptionManager } from './SubscriptionManager';
-
-// Note: WebSocketClient is DEPRECATED and no longer exported
-// Use Redis Pub/Sub architecture via MarketControlHandler instead
+export { StatusService } from './StatusService';
+export { webhookService, WebhookService } from './WebhookService';
+export { default as OAuthService } from './oauthService';
+export { WorkflowRunner } from './WorkflowRunner';
+export { WorkflowRunnerManager } from './workflowRunnerManager';

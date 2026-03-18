@@ -25,7 +25,7 @@ import { getRedisCache } from "../config/redis";
 import { buildStoreKey, extractVariableNameFromKey } from "../utils/store";
 import logger from "../utils/logger";
 import { buildExecutionScopedKey } from "../utils/executionKey";
-import { RollingWindow } from "../services/RollingWindow";
+import { RollingWindow } from "../engine/RollingWindow";
 
 const router = Router();
 const rollingWindows = new Map<string, RollingWindow<any>>();

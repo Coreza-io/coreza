@@ -19,12 +19,12 @@
 import { RSI, EMA, SMA, MACD, BollingerBands } from "trading-signals";
 import { ADX, Stochastic, IchimokuCloud } from "technicalindicators";
 import Big from "big.js";
-import { createError } from "../middleware/errorHandler";
-import { StandardNodeOutput } from "../types/nodeOutput";
+import { createError } from "../../middleware/errorHandler";
+import { StandardNodeOutput } from "../../types/nodeOutput";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../utils/normalizeOutput";
+} from "../../utils/normalizeOutput";
 
 export interface IndicatorInput {
   prices?: any;

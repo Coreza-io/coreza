@@ -14,12 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { createError } from "../middleware/errorHandler";
-import { StandardNodeOutput } from "../types/nodeOutput";
+import { createError } from "../../middleware/errorHandler";
+import { StandardNodeOutput } from "../../types/nodeOutput";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../utils/normalizeOutput";
+} from "../../utils/normalizeOutput";
 
 export interface ComparatorInput {
   left: any;

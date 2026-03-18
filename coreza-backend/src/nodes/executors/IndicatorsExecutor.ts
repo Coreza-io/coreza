@@ -17,7 +17,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../services/indicators";
 import { extractPrices } from "../../services/toolOutputProcessor";
-import { DataContext } from "../../services/DataContext";
+import { DataContext } from "../../engine";
 import {
   normalizeOutput,
   createErrorOutput,
@@ -26,7 +26,7 @@ import {
 import {
   IndicatorStateManager,
   buildIndicatorKey,
-} from "../../services/indicatorStateManager";
+} from "../../engine";
 import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
 import { buildExecutionScopedKey } from "../../utils/executionKey";
 import { RollingWindow } from "../../services/RollingWindow";

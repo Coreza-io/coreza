@@ -2,7 +2,7 @@ import Redis from "ioredis";
 import { randomUUID } from "crypto";
 import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
-import { WorkflowEngine } from "./workflowEngine";
+import { WorkflowEngine } from "../engine";
 
 const STRATEGY_GROUP = "strategy-group";
 
@@ -34,8 +34,8 @@ export class WorkflowRunner {
       edges,
       "best-effort",
       this.abortController.signal,
+      "standard",
     );
-    this.engine.quiet = true;
   }
 
   async start(): Promise<void> {

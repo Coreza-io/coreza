@@ -31,7 +31,7 @@ import {
   isWorkflowCancelled,
 } from "../types/workflowJobResult";
 import { WorkflowRunnerManager } from "./workflowRunnerManager";
-import { BacktestSessionManager } from "./BacktestSessionManager";
+import { BacktestSessionManager } from "../engine";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 
 const redis = getRedisQueue();

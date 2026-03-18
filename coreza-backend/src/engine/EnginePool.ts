@@ -29,7 +29,7 @@ export class EnginePool {
     userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
-    opts?: Pick<ExecutionOptions, "mode" | "abortSignal">,
+    opts?: Pick<ExecutionOptions, "mode" | "abortSignal" | "executionKind">,
   ): WorkflowEngine {
     const cached = this.cache.get(workflowId);
 
@@ -47,6 +47,7 @@ export class EnginePool {
       edges,
       opts?.mode,
       opts?.abortSignal,
+      opts?.executionKind,
     );
 
     this.cache.set(workflowId, { engine, lastUsed: Date.now() });

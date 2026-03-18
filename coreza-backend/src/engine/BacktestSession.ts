@@ -4,8 +4,8 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { DataContextManager } from "./DataContext";
 import { WorkflowEngine } from "./workflowEngine";
-import { compilePlan, runBar, CompiledPlan } from "./compiledPlan";
-import { resolveCategory } from "./compiledPlan/adapters";
+import { compilePlan, runBar, CompiledPlan } from "./compiled";
+import { resolveCategory } from "./compiled/adapters";
 import { getNodeExecutor } from "../nodes/registry";
 
 export interface BarEvent {
@@ -51,6 +51,7 @@ export class BacktestSession {
       this.edges,
       "best-effort",
       this.abortController.signal,
+      "backtest",
     );
 
     if (stateManager) {
@@ -196,22 +197,10 @@ export class BacktestSession {
 
       try {
         if (this.compiledPlan) {
-          // ── Compiled plan path ──────────────────────────────────
           runBar(this.compiledPlan, { data: currentEvent });
-        } else if (this.currentIndex === 0) {
-          // ── First bar: async engine (may need await for init) ───
-          this.engine.resetForNextBar();
-          await this.engine.executeFromEntries(
-            { data: currentEvent },
-            this.entryNodeIds,
-          );
         } else {
-          // ── Subsequent bars: sync engine ────────────────────────
           this.engine.resetForNextBar();
-          await this.engine.executeFromEntries(
-            { data: currentEvent },
-            this.entryNodeIds,
-          );
+          await this.engine.executeFromEntries({ data: currentEvent }, this.entryNodeIds);
         }
       } catch (error) {
         console.error("[BacktestSession] Error processing bar:", error);

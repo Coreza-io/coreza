@@ -16,7 +16,7 @@ import {
 import {
   IndicatorStateManager,
   buildIndicatorKey,
-} from "../../services/indicatorStateManager";
+} from "../../engine";
 import {
   normalizeOutput,
   createErrorOutput,

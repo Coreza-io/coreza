@@ -15,7 +15,7 @@
  */
 
 import { WorkflowNode, WorkflowEdge, INodeExecutorV2, Item, NodeExecutionOutput } from "../nodes/types";
-import { NodeScheduler } from "./nodeScheduler";
+import { NodeScheduler } from "../engine";
 
 /**
  * Experimental workflow engine (v2).

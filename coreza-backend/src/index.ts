@@ -39,7 +39,7 @@ import streamRoutes from "./routes/stream";
 import oauthRoutes from "./routes/oauth";
 import webhookRoutes from "./routes/webhook";
 import communicationRoutes from "./routes/communication";
-import workflowRoutes from "./routes/workflow";
+import workflowRoutes from "./workflow/routes";
 import httpRoutes from "./routes/http";
 import schedulerRoutes from "./routes/scheduler";
 import comparatorRoutes from "./routes/comparator";

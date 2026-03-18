@@ -1,4 +1,3 @@
-import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { BacktestLifecycleAdapter } from "./BacktestLifecycleAdapter";
 import { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
@@ -103,15 +102,13 @@ export class WorkflowLifecycleService {
             trigger.node,
           );
           message = "Backtest workflow activated";
-        } catch (error: any) {
-          await supabase
-            .from("workflow_runs")
-            .update({
-              status: "failed",
-              completed_at: new Date().toISOString(),
-              error_message: error?.message || "Backtest initialization failed",
-            })
-            .eq("id", run.id);
+        } catch (error: unknown) {
+          await this.runRepo.markRunFailed(
+            run.id,
+            error instanceof Error
+              ? error.message
+              : "Backtest initialization failed",
+          );
           throw error;
         }
         break;
@@ -190,6 +187,7 @@ export class WorkflowLifecycleService {
       workflowId,
       workflow.nodes ?? [],
       Boolean(workflow.is_active),
+      { skipSubscriptionCleanup: Boolean(workflow.is_active) },
     );
     await this.scheduler.unschedule(workflowId);
     await this.workflowRepo.delete(userId, workflowId);

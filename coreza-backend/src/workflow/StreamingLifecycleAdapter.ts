@@ -1,20 +1,31 @@
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { createError } from "../middleware/errorHandler";
-import { WorkflowNode } from "../nodes/types";
+import { getSourceMapping, MarketSource } from "../brokers";
+import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { RegistrationService } from "../services/RegistrationService";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 import { SubscriptionService } from "../services/SubscriptionService";
 import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 
+function toMarketSource(
+  source: MarketSource | `${MarketSource}_${string}` | null,
+): MarketSource | null {
+  if (!source) {
+    return null;
+  }
+
+  return getSourceMapping(source).gatewaySource;
+}
+
 export class StreamingLifecycleAdapter {
   async activateStreaming(
     userId: string,
     workflowId: string,
     triggerNode: WorkflowNode,
-    allNodes: any[],
-    allEdges: any[],
+    allNodes: WorkflowNode[],
+    allEdges: WorkflowEdge[],
   ): Promise<string> {
     const redis = getRedisCache();
     const nodeValues = (triggerNode as WorkflowNode & {
@@ -66,14 +77,14 @@ export class StreamingLifecycleAdapter {
     for (const node of streamingNodes) {
       const nodeValues = node.values || node.data?.values || {};
       const symbolArray = parseSymbols(nodeValues.symbols);
-      const sourceId = resolveStreamSourceId(node);
+      const sourceId = toMarketSource(resolveStreamSourceId(node));
 
       if (!sourceId) {
         continue;
       }
 
       await SubscriptionService.unsubscribe({
-        source: sourceId as any,
+        source: sourceId,
         userId,
         workflowId,
         symbols: symbolArray,
@@ -108,11 +119,13 @@ export class StreamingLifecycleAdapter {
 
       for (const key of keys) {
         const symbols = await redis.smembers(key);
-        const source = key.split(":")[SOURCE_INDEX];
+        const source = toMarketSource(
+          key.split(":")[SOURCE_INDEX] as MarketSource | `${MarketSource}_${string}`,
+        );
 
         if (symbols.length > 0 && source) {
           await SubscriptionService.unsubscribe({
-            source: source as any,
+            source,
             userId,
             workflowId,
             symbols,
@@ -131,6 +144,9 @@ export class StreamingLifecycleAdapter {
     workflowId: string,
     nodes: WorkflowNode[],
     isActive: boolean,
+    options?: {
+      skipSubscriptionCleanup?: boolean;
+    },
   ): Promise<void> {
     const redis = getRedisCache();
 
@@ -148,6 +164,8 @@ export class StreamingLifecycleAdapter {
       }
     }
 
-    await this.cleanupWorkflowSubscriptions(userId, workflowId);
+    if (!options?.skipSubscriptionCleanup) {
+      await this.cleanupWorkflowSubscriptions(userId, workflowId);
+    }
   }
 }

@@ -1,8 +1,14 @@
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
+import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 
 export class WorkflowRunRepository {
-  async createRun(workflowId: string, userId: string, nodes: any[], edges: any[]) {
+  async createRun(
+    workflowId: string,
+    userId: string,
+    nodes: WorkflowNode[],
+    edges: WorkflowEdge[],
+  ) {
     const { data, error } = await supabase
       .from("workflow_runs")
       .insert({
@@ -22,6 +28,21 @@ export class WorkflowRunRepository {
     }
 
     return data;
+  }
+
+  async markRunFailed(runId: string, errorMessage: string): Promise<void> {
+    const { error } = await supabase
+      .from("workflow_runs")
+      .update({
+        status: "failed",
+        completed_at: new Date().toISOString(),
+        error_message: errorMessage,
+      })
+      .eq("id", runId);
+
+    if (error) {
+      throw createError("Failed to update workflow run status", 500);
+    }
   }
 
   async listByWorkflow(workflowId: string) {

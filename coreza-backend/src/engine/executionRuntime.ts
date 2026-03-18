@@ -15,6 +15,7 @@ import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeQueueManager } from "./nodeQueueManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ParameterResolver } from "./parameterResolver";
+import { NodeExecutionContext } from "./types";
 
 export type RuntimeOptions = {
   runId: string;
@@ -37,7 +38,7 @@ export abstract class BaseExecutionRuntime {
   protected readonly failed = new Set<string>();
   protected readonly failedNodeErrors = new Map<string, string>();
   protected readonly executionOrder: string[] = [];
-  protected execCtx: any = null;
+  protected execCtx: NodeExecutionContext | null = null;
 
   constructor(
     protected readonly graph: GraphRuntime,
@@ -105,13 +106,14 @@ export abstract class BaseExecutionRuntime {
     return result;
   }
 
-  protected getExecutionContext(nodeId: string): any {
+  protected getExecutionContext(nodeId: string): NodeExecutionContext {
     if (!this.execCtx) {
-      const ctx: any = {
+      const ctx: NodeExecutionContext = {
         user_id: this.options.userId,
         userId: this.options.userId,
         runId: this.options.runId,
         workflowId: this.options.workflowId,
+        nodeId,
         nodes: this.options.nodes,
         edges: this.options.edges,
         resolvedParams: {},
@@ -126,10 +128,9 @@ export abstract class BaseExecutionRuntime {
         abortSignal: this.options.abortSignal,
         checkCancellation: () => this.options.abortSignal?.aborted ?? false,
         isBacktest: this.options.isBacktest,
-        nodeId,
+        getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
+        setState: (key: string, value: any) => this.store.setNodeState(ctx.nodeId, key, value),
       };
-      ctx.getState = (key: string) => this.store.getNodeState(ctx.nodeId, key);
-      ctx.setState = (key: string, value: any) => this.store.setNodeState(ctx.nodeId, key, value);
       this.execCtx = ctx;
     }
 

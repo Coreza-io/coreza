@@ -27,6 +27,7 @@ import { Bar } from "../../simulation/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
 import { isOurOrder } from "../../utils/orderIdempotency";
+import { NodeExecutionContext } from "../../engine/types";
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
@@ -93,7 +94,7 @@ export class PortfolioExecutor implements INodeExecutor {
   execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any,
+    context?: NodeExecutionContext,
   ): NodeResult | Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -120,14 +121,14 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private executeBacktestMode(
     params: any,
-    context: any,
+    context?: NodeExecutionContext,
   ): NodeResult {
     return this.executeBacktestModeSync(params, context);
   }
 
   private executeBacktestModeSync(
     params: any,
-    _context: any,
+    _context?: NodeExecutionContext,
   ): NodeResult {
     const backtestId = params.backtest_id;
     if (!backtestId) {
@@ -186,7 +187,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private async executeBrokerMode(
     params: any,
-    context: any,
+    context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     const userId = context?.userId;
     if (!userId) {
@@ -195,7 +196,14 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
-    const runId = context?.runId || context?.workflow_id;
+    const runId = context?.runId;
+    if (!runId) {
+      return toNodeResult(
+        createErrorOutput(
+          "runId is required for broker mode — cannot use workflow_id as fallback",
+        ),
+      );
+    }
 
     // Get or create PortfolioManager
     const pm = PortfolioManager.getInstance(userId, runId);

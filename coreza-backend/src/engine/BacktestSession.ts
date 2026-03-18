@@ -3,9 +3,10 @@ import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { DataContextManager } from "./DataContext";
-import { WorkflowEngine } from "./workflowEngine";
-import { compilePlan, runBar, CompiledPlan } from "./compiledPlan";
-import { resolveCategory } from "./compiledPlan/adapters";
+import { WorkflowPlan } from "./workflowPlan";
+import { WorkflowRun } from "./workflowRun";
+import { compilePlan, runBar, CompiledPlan } from "./compiled";
+import { resolveCategory } from "./compiled/adapters";
 import { getNodeExecutor } from "../nodes/registry";
 
 export interface BarEvent {
@@ -21,7 +22,8 @@ export class BacktestSession {
   public currentIndex = 0;
   public status: BacktestSessionStatus = "ready";
 
-  private readonly engine: WorkflowEngine;
+  private readonly plan: WorkflowPlan;
+  private run: WorkflowRun;
   private readonly stateManager?: IndicatorStateManager;
   private readonly abortController: AbortController;
   private barsProcessed = 0;
@@ -43,25 +45,24 @@ export class BacktestSession {
   ) {
     this.abortController = new AbortController();
     this.stateManager = stateManager;
-    this.engine = new WorkflowEngine(
-      this.runId,
-      this.workflowId,
-      this.userId,
-      this.nodes,
-      this.edges,
-      "best-effort",
-      this.abortController.signal,
-    );
+    this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
+    this.run = this.plan.createRun({
+      runId: this.runId,
+      workflowId: this.workflowId,
+      userId: this.userId,
+      mode: "best-effort",
+      abortSignal: this.abortController.signal,
+    });
 
     if (stateManager) {
-      this.engine.setIndicatorStateManager(stateManager);
+      this.run.setIndicatorStateManager(stateManager);
     }
 
     // Ensure node timings are reset for each new backtest session.
-    this.engine.clearNodeTiming();
+    this.run.clearNodeTiming();
 
     // Pin init results once — they survive across bar resets
-    this.engine.pinResults(this.backtestInitResult);
+    this.run.pinResults(this.backtestInitResult);
 
     // ── Attempt compiled plan compilation ───────────────────────────
     this.tryCompilePlan();
@@ -81,7 +82,7 @@ export class BacktestSession {
     }
 
     try {
-      const compiledParams = this.engine.getCompiledParams();
+      const compiledParams = this.run.getCompiledParams();
       this.logCompileEligibilitySnapshot(compiledParams);
 
       const dataContext = DataContextManager.getInstance().getContext({
@@ -91,8 +92,8 @@ export class BacktestSession {
       });
 
       this.compiledPlan = compilePlan(
-        this.engine.getGraph(),
-        this.engine.getNodeExecutorMap(),
+        this.plan.graph,
+        this.plan.nodeExecutorMap,
         this.entryNodeIds,
         compiledParams,
         this.backtestInitResult,
@@ -103,11 +104,11 @@ export class BacktestSession {
           nodes: this.nodes,
           edges: this.edges,
           dataContext,
-          indicatorStateManager: this.stateManager ?? this.engine.getIndicatorStateManager(),
+          indicatorStateManager: this.stateManager ?? this.run.getIndicatorStateManager(),
           abortSignal: this.abortController.signal,
-          storeGetState: (nodeId: string, key: string) => this.engine.getNodeState(nodeId, key),
+          storeGetState: (nodeId: string, key: string) => this.run.getNodeState(nodeId, key),
           storeSetState: (nodeId: string, key: string, value: any) =>
-            this.engine.setNodeState(nodeId, key, value),
+            this.run.setNodeState(nodeId, key, value),
         },
       );
 
@@ -196,22 +197,10 @@ export class BacktestSession {
 
       try {
         if (this.compiledPlan) {
-          // ── Compiled plan path ──────────────────────────────────
           runBar(this.compiledPlan, { data: currentEvent });
-        } else if (this.currentIndex === 0) {
-          // ── First bar: async engine (may need await for init) ───
-          this.engine.resetForNextBar();
-          await this.engine.executeFromEntries(
-            { data: currentEvent },
-            this.entryNodeIds,
-          );
         } else {
-          // ── Subsequent bars: sync engine ────────────────────────
-          this.engine.resetForNextBar();
-          await this.engine.executeFromEntries(
-            { data: currentEvent },
-            this.entryNodeIds,
-          );
+          this.run.resetForNextBar();
+          await this.run.executeFromEntries({ data: currentEvent }, this.entryNodeIds);
         }
       } catch (error) {
         console.error("[BacktestSession] Error processing bar:", error);
@@ -289,8 +278,7 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         while (
           this.currentIndex < this.bars.length &&
-          !signal.aborted &&
-          this.status !== "finished"
+          !signal.aborted
         ) {
           this.status = "running";
           const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
@@ -321,8 +309,7 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         while (
           this.currentIndex < this.bars.length &&
-          !signal.aborted &&
-          this.status !== "finished"
+          !signal.aborted
         ) {
           this.status = "running";
           const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
@@ -330,20 +317,10 @@ export class BacktestSession {
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
 
-            this.engine.resetForNextBar();
+            this.run.resetForNextBar();
 
             try {
-              if (this.currentIndex === 0) {
-                await this.engine.executeFromEntries(
-                  { data: currentEvent },
-                  this.entryNodeIds,
-                );
-              } else {
-                await this.engine.executeFromEntries(
-                  { data: currentEvent },
-                  this.entryNodeIds,
-                );
-              }
+              await this.run.executeFromEntries({ data: currentEvent }, this.entryNodeIds);
             } catch (error) {
               console.error("[BacktestSession] Error processing bar:", error);
             }
@@ -368,7 +345,7 @@ export class BacktestSession {
 
     if (this.status === "finished") {
       await this.finalize();
-      const timing = this.engine.getNodeTiming();
+      const timing = this.run.getNodeTiming();
       if (this.compiledPlan && this.compiledPlan.timingSampleRate > 0) {
         const sampled: Record<string, { totalMs: number; count: number; avgMs: number }> = {};
         for (let i = 0; i < this.compiledPlan.instructions.length; i++) {
@@ -400,7 +377,19 @@ export class BacktestSession {
     this.status = "ready";
 
     BacktestExecutor.resetBacktestState(this.backtestId);
-    this.engine.reset(this.runId, this.abortController.signal);
+    this.run.destroy();
+    this.run = this.plan.createRun({
+      runId: this.runId,
+      workflowId: this.workflowId,
+      userId: this.userId,
+      mode: "best-effort",
+      abortSignal: this.abortController.signal,
+    });
+    if (this.stateManager) {
+      this.run.setIndicatorStateManager(this.stateManager);
+    }
+    this.run.clearNodeTiming();
+    this.run.pinResults(this.backtestInitResult);
     this.stateManager?.clearL1Cache();
 
     await this.reportProgress();
@@ -409,7 +398,7 @@ export class BacktestSession {
   cleanup(): void {
     this.abortController.abort();
     BacktestExecutor.cleanupBacktestResources(this.backtestId);
-    DataContextManager.getInstance().destroyContext(this.runId);
+    this.run.destroy();
   }
 
   private async reportProgress(): Promise<void> {
@@ -443,7 +432,7 @@ export class BacktestSession {
       );
     }
 
-    const timing = this.engine.getNodeTiming();
+    const timing = this.run.getNodeTiming();
     const redis = getRedisCache();
     await redis.set(
       `backtest:timing:${this.backtestId}`,

@@ -11,7 +11,7 @@ import { requireAuth } from "../middleware/jwtAuth";
 import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
 import { supabase } from "../config/supabase";
 import { SimBroker } from "../services/simBroker";
-import { BacktestSessionManager } from "../services/BacktestSessionManager";
+import { BacktestSessionManager } from "../engine";
 
 const router = Router();
 const backtestExecutor = new BacktestExecutor();

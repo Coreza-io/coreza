@@ -42,11 +42,11 @@ import { discoverIndicators } from "./InitializeIndicatorsExecutor";
 import {
   buildIndicatorKey,
   IndicatorStateManager,
-} from "../../services/indicatorStateManager";
+} from "../../engine";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
 
-import { BacktestSessionManager } from "../../services/BacktestSessionManager";
+import { BacktestSessionManager } from "../../engine";
 
 interface DiscoveredIndicator {
   nodeId: string;

@@ -23,7 +23,7 @@ import {
   ControlFlags,
 } from "../types";
 import { bullMqJobQueue } from "../../services/jobQueueManager";
-import { extractLoopBodySubgraph } from "../../services/loopSubgraphExtractor";
+import { extractLoopBodySubgraph } from "../../engine";
 
 /**
  * Production-grade Loop executor for EngineV2.

@@ -25,7 +25,7 @@ import {
   processToolOutput,
   resolveDataRef,
 } from "../../services/toolOutputProcessor";
-import { DataContext, DataContextManager } from "../../services/DataContext";
+import { DataContext, DataContextManager } from "../../engine";
 import {
   TOOL_DEFINITIONS,
   ToolDefinition,

@@ -19,7 +19,7 @@ import { supabase } from "../config/supabase";
 import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
 import { WorkflowRunnerManager } from "./workflowRunnerManager";
-import { BacktestSessionManager } from "./BacktestSessionManager";
+import { BacktestSessionManager } from "../engine";
 
 export interface ShutdownStats {
   activeJobsAtStart: number;

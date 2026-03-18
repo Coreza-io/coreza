@@ -21,7 +21,7 @@ import { WorkflowNode } from "../nodes/types";
 import {
   buildIndicatorKey,
   IndicatorStateManager,
-} from "../services/indicatorStateManager";
+} from "../engine";
 import { IndicatorResult, IndicatorService } from "../services/indicators";
 
 const router = express.Router();

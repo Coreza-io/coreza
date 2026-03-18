@@ -28,7 +28,7 @@ import { AIAgentExecutor } from "./executors/AIAgentExecutor";
 import { ToolExecutor } from "./executors/ToolExecutor";
 import { ScreenerExecutor } from "./executors/ScreenerExecutor";
 import { TriggerExecutor } from "./executors/TriggerExecutor";
-import { BacktestExecutor } from "./executors/BacktestExecutor";
+import { BacktestExecutor } from "../backtest";
 import { PortfolioExecutor } from "./executors/PortfolioExecutor";
 
 // Register all node executors

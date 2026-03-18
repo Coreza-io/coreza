@@ -1,5 +1,5 @@
 import { createError } from "../middleware/errorHandler";
-import { BacktestLifecycleAdapter } from "./BacktestLifecycleAdapter";
+import { BacktestLifecycleAdapter } from "../backtest";
 import { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
 import { StreamingLifecycleAdapter } from "./StreamingLifecycleAdapter";
 import { WorkflowRepository } from "./WorkflowRepository";

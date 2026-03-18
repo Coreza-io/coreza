@@ -6,7 +6,7 @@
  * (at your option) any later version.
  */
 
-import { Position } from "../simulation/simBroker";
+import { Position } from "../backtest/simBroker";
 import { toPercent } from "./barParser";
 
 export interface FormattedPosition extends Position {

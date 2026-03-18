@@ -25,6 +25,7 @@ export type RuntimeOptions = {
   isBacktest: boolean;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  nodeExecutorMap?: ReadonlyMap<string, INodeExecutor>;
   dataContext: DataContext;
   indicatorStateManager: IndicatorStateManager;
 };
@@ -44,6 +45,13 @@ export abstract class BaseExecutionRuntime {
     protected readonly resolver: ParameterResolver,
     protected readonly options: RuntimeOptions,
   ) {
+    if (options.nodeExecutorMap) {
+      for (const [id, exec] of options.nodeExecutorMap) {
+        this.nodeExecutorMap.set(id, exec);
+      }
+      return;
+    }
+
     for (const node of options.nodes) {
       const exec = getNodeExecutor(resolveCategory(node));
       if (exec) this.nodeExecutorMap.set(node.id, exec);

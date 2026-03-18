@@ -48,6 +48,7 @@ export class WorkflowRun {
       isBacktest: this.plan.isBacktest,
       nodes: [...this.plan.nodes],
       edges: [...this.plan.edges],
+      nodeExecutorMap: this.plan.nodeExecutorMap,
       dataContext: this.dataContext,
       indicatorStateManager: this.indicatorStateManager,
     };

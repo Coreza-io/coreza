@@ -843,14 +843,15 @@ const WorkflowEditorContent = () => {
     (nodeType: string, position: { x: number; y: number }) => {
       const nodeDefinition = nodeManifest[nodeType];
 
-      // Generate human-readable ID by counting existing nodes of same type
-      const existingNodesOfType = nodes.filter(
-        (node) => node.type === nodeType,
-      );
-      const nodeId =
-        existingNodesOfType.length === 0
-          ? nodeType
-          : `${nodeType}${existingNodesOfType.length}`;
+      // Generate collision-safe human-readable ID
+      const existingIds = new Set(nodes.map((node) => node.id));
+      let nodeId = nodeType;
+      let suffix = 1;
+
+      while (existingIds.has(nodeId)) {
+        nodeId = `${nodeType}${suffix}`;
+        suffix += 1;
+      }
 
       const newNode: Node = {
         id: nodeId,

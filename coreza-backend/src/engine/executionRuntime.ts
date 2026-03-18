@@ -108,11 +108,11 @@ export abstract class BaseExecutionRuntime {
         edges: this.options.edges,
         resolvedParams: {},
         resolveNodeParameters: (node: WorkflowNode, input: any) => {
-          const resolved = this.resolver.resolve(node, input, () => this.store.getAllResults());
+          const resolved = this.resolver.resolve(node, input, () => this.store.getAllResults() ?? {});
           ctx.resolvedParams = resolved;
           return resolved;
         },
-        getAllNodeResults: () => this.store.getAllResults(),
+        getAllNodeResults: () => this.store.getAllResults() ?? {},
         dataContext: this.options.dataContext,
         indicatorStateManager: this.options.indicatorStateManager,
         abortSignal: this.options.abortSignal,

@@ -499,7 +499,7 @@ export function createWorkflowWorker({
           };
         }
 
-        const engine = EnginePool.getInstance().getOrCreate(
+        const run = EnginePool.getInstance().getOrCreate(
           workflowId,
           runId,
           userId,
@@ -512,7 +512,13 @@ export function createWorkflowWorker({
           },
         );
 
-        const result = await engine.execute(renamed);
+        let result: Awaited<ReturnType<typeof run.execute>>;
+        try {
+          result = await run.execute(renamed);
+        } finally {
+          run.destroy();
+        }
+
         executionResult = result;
 
         // Check if workflow actually succeeded - if not, throw to enter catch block

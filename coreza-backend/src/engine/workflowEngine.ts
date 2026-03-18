@@ -42,7 +42,7 @@ export class WorkflowEngine {
   }
 
   getGraph() { return this.plan.graph as Readonly<typeof this.plan.graph>; }
-  getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> { return this.run.getNodeExecutorMap(); }
+  getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> { return this.plan.nodeExecutorMap; }
   getCompiledParams() { return this.run.getCompiledParams(); }
   getDataContext(): DataContext { return this.run.getDataContext(); }
   getIndicatorStateManager(): IndicatorStateManager { return this.run.getIndicatorStateManager(); }

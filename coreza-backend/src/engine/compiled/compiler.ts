@@ -32,7 +32,7 @@ const INELIGIBLE_NODE_NAMES = new Set(["Loop", "AIAgent", "LLM", "InitializeIndi
 
 export function compilePlan(
   graph: GraphRuntime,
-  nodeExecutorMap: Map<string, INodeExecutor>,
+  nodeExecutorMap: ReadonlyMap<string, INodeExecutor>,
   entryNodeIds: string[],
   compiledParams: Map<string, CompiledNodeParams>,
   pinnedResults: Record<string, any>,

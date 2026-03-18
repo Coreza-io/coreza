@@ -91,8 +91,24 @@ export class WorkflowRun {
   }
 
   resetForNextBar(full = false): void { this.runtime.resetForNextBar(full); }
-  pinResults(results: Record<string, any>): void { this.store.pinResults(results); }
-  preloadResults(results: Record<string, any>): void { for (const [nodeId, result] of Object.entries(results)) this.store.setNodeResult(nodeId, result); }
+
+  /**
+   * Pin results that survive clearResults()/resetForNextBar().
+   * Used for BacktestInit outputs that do not change across bars.
+   */
+  pinResults(results: Record<string, any>): void {
+    this.store.pinResults(results);
+  }
+
+  /**
+   * Pre-set node results in the store before execution.
+   * Useful for sub-workflow outputs or other precomputed values.
+   */
+  preloadResults(results: Record<string, any>): void {
+    for (const [nodeId, result] of Object.entries(results)) {
+      this.store.setNodeResult(nodeId, result);
+    }
+  }
   getNodeState(nodeId: string, key: string): any { return this.store.getNodeState(nodeId, key); }
   setNodeState(nodeId: string, key: string, value: any): void { this.store.setNodeState(nodeId, key, value); }
   setIndicatorStateManager(manager: IndicatorStateManager): void { this.indicatorStateManager = manager; this.runtime = this.buildRuntime(); }
@@ -128,14 +144,14 @@ export class WorkflowRun {
           message: this.runtime.getFailureMessage() ?? "Workflow completed with failures",
           phase: "execute",
         },
-        result: this.store.getAllResults(),
+        result: this.store.getAllResults() ?? {},
         executionOrder: this.runtime.getExecutionOrder(),
       };
     }
 
     return {
       success: true,
-      result: this.store.getAllResults(),
+      result: this.store.getAllResults() ?? {},
       executionOrder: this.runtime.getExecutionOrder(),
     };
   }
@@ -144,7 +160,7 @@ export class WorkflowRun {
     return {
       success: false,
       error: toExecutionError(error, "execute"),
-      result: this.store.getAllResults(),
+      result: this.store.getAllResults() ?? {},
       executionOrder: this.runtime.getExecutionOrder(),
     };
   }

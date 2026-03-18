@@ -1,4 +1,4 @@
-import { WorkflowNode } from "../nodes/types";
+import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { bullMqJobQueue as jobQueue } from "../services/jobQueueManager";
 
 export class BacktestLifecycleAdapter {
@@ -6,8 +6,8 @@ export class BacktestLifecycleAdapter {
     runId: string,
     workflowId: string,
     userId: string,
-    nodes: any[],
-    edges: any[],
+    nodes: WorkflowNode[],
+    edges: WorkflowEdge[],
     triggerNode: WorkflowNode,
   ): Promise<void> {
     await jobQueue.startBacktest(

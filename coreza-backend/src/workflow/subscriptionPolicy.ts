@@ -1,13 +1,16 @@
+import { MarketSource } from "../brokers";
 import { WorkflowNode } from "../nodes/types";
 
-export const nodeNameToSourceMap: Record<string, string> = {
+export const nodeNameToSourceMap: Record<string, MarketSource | `${MarketSource}_${string}`> = {
   BinanceStreamData: "binance_stream",
   AlpacaStreamData: "alpaca_stream",
   AlpacaNews: "alpaca_news",
   DhanStreamData: "dhan_stream",
 };
 
-export function resolveStreamSourceId(node: WorkflowNode): string | null {
+export function resolveStreamSourceId(
+  node: WorkflowNode,
+): MarketSource | `${MarketSource}_${string}` | null {
   const workflowNode = node as WorkflowNode & {
     subCategory?: string;
     values?: { data_type?: string };

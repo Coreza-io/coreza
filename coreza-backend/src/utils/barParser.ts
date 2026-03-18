@@ -6,7 +6,7 @@
  * (at your option) any later version.
  */
 
-import { Bar } from "../simulation/simBroker/interfaces";
+import { Bar } from "../backtest/simBroker/interfaces";
 
 /**
  * Parse a bar from various input formats (JSON string, object with .bar wrapper, OHLCV).

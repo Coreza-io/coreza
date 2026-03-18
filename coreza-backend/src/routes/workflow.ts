@@ -2,7 +2,7 @@ import express, { Request } from "express";
 import { z } from "zod";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
-import { BacktestLifecycleAdapter } from "../workflow/BacktestLifecycleAdapter";
+import { BacktestLifecycleAdapter } from "../backtest";
 import { WorkflowExecutionService } from "../workflow/WorkflowExecutionService";
 import { WorkflowLifecycleService } from "../workflow/WorkflowLifecycleService";
 import { WorkflowQueryService } from "../workflow/WorkflowQueryService";

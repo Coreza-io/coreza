@@ -1,6 +1,6 @@
-import { WorkflowEdge, WorkflowNode } from "../nodes/types";
+import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { BacktestSession, BarEvent } from "./BacktestSession";
-import { IndicatorStateManager } from "./indicatorStateManager";
+import { IndicatorStateManager } from "../../engine/indicatorStateManager";
 
 export class BacktestSessionManager {
   private static instance: BacktestSessionManager;

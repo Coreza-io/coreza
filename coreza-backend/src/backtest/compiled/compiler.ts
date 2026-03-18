@@ -17,7 +17,7 @@
 import { WorkflowNode, WorkflowEdge, INodeExecutor } from "../../nodes/types";
 import { CompiledNodeParams } from "../../utils/templateCompiler";
 import { compileParamsToSlots } from "../../utils/templateCompiler";
-import { GraphRuntime } from "../graphRuntime";
+import { GraphRuntime } from "../../engine/graphRuntime";
 import {
   OpCode,
   Instruction,

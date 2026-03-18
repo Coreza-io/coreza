@@ -8,10 +8,8 @@
 
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
-import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
+import { BacktestExecutor, SimBroker, BacktestSessionManager } from "../backtest";
 import { supabase } from "../config/supabase";
-import { SimBroker } from "../simulation/simBroker";
-import { BacktestSessionManager } from "../engine";
 
 const router = Router();
 const backtestExecutor = new BacktestExecutor();

@@ -20,33 +20,33 @@ import {
   NodeResult,
   WorkflowEdge,
   WorkflowNode,
-} from "../types";
+} from "../nodes/types";
 import {
   SimBroker,
   SimBrokerConfig,
   Bar,
   Position,
   EquityPoint,
-} from "../../simulation/simBroker";
-import { OrderEvent, normalizeOrderType } from "../../types/order";
-import { BrokerExecutor } from "./BrokerExecutor";
-import { supabase } from "../../config/supabase";
+} from "./simBroker";
+import { OrderEvent, normalizeOrderType } from "../types/order";
+import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
+import { supabase } from "../config/supabase";
 import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
   leanSuccess,
   leanError,
-} from "../../utils/normalizeOutput";
-import { discoverIndicators } from "./InitializeIndicatorsExecutor";
+} from "../utils/normalizeOutput";
+import { discoverIndicators } from "../nodes/executors/InitializeIndicatorsExecutor";
 import {
   buildIndicatorKey,
   IndicatorStateManager,
-} from "../../engine";
-import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
-import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
+} from "../engine";
+import { parseBar, parsePrices, toPercent } from "../utils/barParser";
+import { formatPositionWithPnlPercent } from "../utils/portfolioHelpers";
 
-import { BacktestSessionManager } from "../../engine";
+import { BacktestSessionManager } from "./session";
 
 interface DiscoveredIndicator {
   nodeId: string;

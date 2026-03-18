@@ -15,7 +15,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { SimBroker, Position } from "../../simulation/simBroker";
+import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
 import {
   createSuccessOutput,
@@ -23,7 +23,7 @@ import {
   toNodeResult,
   leanSuccess,
 } from "../../utils/normalizeOutput";
-import { Bar } from "../../simulation/simBroker/interfaces";
+import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
 import { isOurOrder } from "../../utils/orderIdempotency";

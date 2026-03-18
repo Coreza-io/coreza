@@ -1,13 +1,13 @@
-import { getRedisCache } from "../config/redis";
-import { BacktestExecutor } from "../nodes/executors/BacktestExecutor";
-import { WorkflowEdge, WorkflowNode } from "../nodes/types";
-import { IndicatorStateManager } from "./indicatorStateManager";
-import { DataContextManager } from "./DataContext";
-import { WorkflowPlan } from "./workflowPlan";
-import { WorkflowRun } from "./workflowRun";
-import { compilePlan, runBar, CompiledPlan } from "./compiled";
-import { resolveCategory } from "./compiled/adapters";
-import { getNodeExecutor } from "../nodes/registry";
+import { getRedisCache } from "../../config/redis";
+import { BacktestExecutor } from "../BacktestExecutor";
+import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
+import { IndicatorStateManager } from "../../engine/indicatorStateManager";
+import { DataContextManager } from "../../engine/DataContext";
+import { WorkflowPlan } from "../../engine/workflowPlan";
+import { WorkflowRun } from "../../engine/workflowRun";
+import { compilePlan, runBar, CompiledPlan } from "../compiled";
+import { resolveCategory } from "../compiled/adapters";
+import { getNodeExecutor } from "../../nodes/registry";
 
 export interface BarEvent {
   bar: any;

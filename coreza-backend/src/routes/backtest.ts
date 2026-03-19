@@ -8,7 +8,11 @@
 
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
-import { BacktestExecutor, SimBroker, BacktestSessionManager } from "../backtest";
+import {
+  BacktestExecutor,
+  SimBroker,
+  BacktestSessionManager,
+} from "../backtest";
 import { supabase } from "../config/supabase";
 
 const router = Router();
@@ -42,7 +46,6 @@ router.post("/init", async (req: Request, res: Response) => {
       commission_value,
       broker,
       credential_id,
-      symbol,
       symbols,
       interval,
       asset_type,
@@ -74,7 +77,6 @@ router.post("/init", async (req: Request, res: Response) => {
           commission_value,
           broker,
           credential_id,
-          symbol,
           symbols,
           interval,
           asset_type,
@@ -97,7 +99,6 @@ router.post("/init", async (req: Request, res: Response) => {
   }
 });
 
-
 // POST /backtest/onbar - Process one bar from an active backtest session
 router.post("/onbar", async (req: Request, res: Response) => {
   try {
@@ -111,9 +112,12 @@ router.post("/onbar", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "backtest_id is required" });
     }
 
-    const session = BacktestSessionManager.getInstance().getSession(backtest_id);
+    const session =
+      BacktestSessionManager.getInstance().getSession(backtest_id);
     if (!session) {
-      return res.status(404).json({ error: "No active session. Run BacktestInit first." });
+      return res
+        .status(404)
+        .json({ error: "No active session. Run BacktestInit first." });
     }
 
     if (session.status === "finished") {
@@ -123,7 +127,10 @@ router.post("/onbar", async (req: Request, res: Response) => {
     const result = await session.nextBar(true);
     return res.json({ success: true, data: result });
   } catch (error) {
-    if (error instanceof Error && error.message === "Step already in progress") {
+    if (
+      error instanceof Error &&
+      error.message === "Step already in progress"
+    ) {
       return res.status(409).json({ error: "Step already in progress" });
     }
 
@@ -145,14 +152,18 @@ router.post("/run", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "backtest_id is required" });
     }
 
-    const session = BacktestSessionManager.getInstance().getSession(backtest_id);
+    const session =
+      BacktestSessionManager.getInstance().getSession(backtest_id);
     if (!session) {
       return res.status(404).json({ error: "No active session" });
     }
 
-    session.runAll()
+    session
+      .runAll()
       .catch((err) => console.error("[Backtest] runAll failed:", err))
-      .finally(() => BacktestSessionManager.getInstance().deleteSession(backtest_id));
+      .finally(() =>
+        BacktestSessionManager.getInstance().deleteSession(backtest_id),
+      );
 
     return res.json({ success: true, status: "running" });
   } catch (error) {
@@ -174,7 +185,8 @@ router.post("/reset", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "backtest_id is required" });
     }
 
-    const session = BacktestSessionManager.getInstance().getSession(backtest_id);
+    const session =
+      BacktestSessionManager.getInstance().getSession(backtest_id);
     if (!session) {
       return res.status(404).json({ error: "No active session" });
     }

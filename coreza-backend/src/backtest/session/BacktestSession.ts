@@ -46,6 +46,7 @@ export class BacktestSession {
   private readonly stateManager?: IndicatorStateManager;
   private readonly abortController: AbortController;
   private barsProcessed = 0;
+  private currentSymbolIndex = 0;
   private stepping = false;
   private compiledPlan: CompiledPlan | null = null;
 
@@ -200,6 +201,33 @@ export class BacktestSession {
     };
   }
 
+  private normalizeManualBarPayload(
+    event: MultiBarEvent,
+    symbol: string,
+    symbolIndex: number,
+    isLast: boolean,
+  ) {
+    const bar = event.bars[symbol];
+
+    return {
+      BarSeries: bar
+        ? [{
+          symbol,
+          interval: event.interval,
+          bars: [bar],
+        }]
+        : [],
+      barIndex: event.barIndex,
+      isLast,
+      total_bars: this.totalBars,
+      currentSymbol: symbol,
+      symbolIndex,
+      totalSymbols: event.symbols.length,
+      symbols: event.symbols,
+      timestamp: event.timestamp,
+    };
+  }
+
   private buildSymbolExecutionContext(
     event: MultiBarEvent,
     currentSymbol: string,
@@ -311,21 +339,68 @@ export class BacktestSession {
 
       try {
         if (manual) {
-          for (const symbol of currentEvent.symbols) {
-            const bar = currentEvent.bars[symbol];
-            if (bar) {
-              BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(symbol, bar);
+          const availableSymbols = currentEvent.symbols.filter((symbol) => currentEvent.bars[symbol]);
+
+          if (availableSymbols.length === 0) {
+            this.currentIndex += 1;
+            this.currentSymbolIndex = 0;
+            this.barsProcessed = this.currentIndex;
+
+            const isLast = this.currentIndex >= this.bars.length;
+            if (isLast) {
+              this.status = "finished";
+              await this.reportProgress();
             }
+
+            return {
+              BarSeries: [],
+              barIndex: currentEvent.barIndex,
+              isLast,
+              total_bars: this.totalBars,
+              symbolIndex: 0,
+              totalSymbols: 0,
+              symbols: [],
+              timestamp: currentEvent.timestamp,
+            };
           }
 
-          const snapshotTimestamp = currentEvent.timestamp
-            || String(currentEvent.bars[currentEvent.symbols[0]]?.timestamp ?? new Date().toISOString());
-          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
-        } else {
-          await this.executeTimestampAsync(currentEvent);
+          const symbolIndex = Math.min(this.currentSymbolIndex, availableSymbols.length - 1);
+          const currentSymbol = availableSymbols[symbolIndex];
+          const currentBar = currentEvent.bars[currentSymbol];
+
+          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(currentSymbol, currentBar);
+
+          const nextSymbolIndex = symbolIndex + 1;
+          const consumedTimestamp = nextSymbolIndex >= availableSymbols.length;
+
+          if (consumedTimestamp) {
+            const snapshotTimestamp = currentEvent.timestamp
+              || String(currentEvent.bars[currentEvent.symbols[0]]?.timestamp ?? new Date().toISOString());
+            BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
+            this.currentIndex += 1;
+            this.currentSymbolIndex = 0;
+          } else {
+            this.currentSymbolIndex = nextSymbolIndex;
+          }
+
+          this.barsProcessed = this.currentIndex;
+          if (this.barsProcessed > 0 && this.barsProcessed % 1000 === 0) {
+            await this.reportProgress();
+          }
+
+          const isLast = this.currentIndex >= this.bars.length;
+          if (isLast) {
+            this.status = "finished";
+            await this.reportProgress();
+          }
+
+          return this.normalizeManualBarPayload(currentEvent, currentSymbol, symbolIndex, isLast);
         }
+
+        await this.executeTimestampAsync(currentEvent);
       } catch (error) {
         console.error("[BacktestSession] Error processing bar:", error);
+        throw error;
       }
 
       this.currentIndex += 1;
@@ -341,7 +416,6 @@ export class BacktestSession {
         await this.reportProgress();
       }
 
-      const currentEvent = this.bars[this.currentIndex - 1];
       return this.normalizeBarPayload(currentEvent, isLast);
     } finally {
       this.stepping = false;
@@ -463,6 +537,7 @@ export class BacktestSession {
 
   async reset(): Promise<void> {
     this.currentIndex = 0;
+    this.currentSymbolIndex = 0;
     this.barsProcessed = 0;
     this.status = "ready";
 

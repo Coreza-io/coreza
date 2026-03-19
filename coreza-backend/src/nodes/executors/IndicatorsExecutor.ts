@@ -41,6 +41,10 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
+  private getIndicatorCacheKey(nodeId: string, symbol: string, timeframe: string): string {
+    return `${nodeId}:${symbol}:${timeframe}`;
+  }
+
 
   execute(node: WorkflowNode, input: NodeInput, context?: any): NodeResult | Promise<NodeResult> {
     const runId = context?.runId;
@@ -99,10 +103,11 @@ export class IndicatorsExecutor implements INodeExecutor {
         timeframe &&
         barsData.length > 0
       ) {
-        let key = this.indicatorKeyCache.get(node.id);
+        const cacheKey = this.getIndicatorCacheKey(node.id, symbol, timeframe);
+        let key = this.indicatorKeyCache.get(cacheKey);
         if (!key) {
           key = buildIndicatorKey(userId, workflowId, runId, symbol, timeframe, node.id);
-          this.indicatorKeyCache.set(node.id, key);
+          this.indicatorKeyCache.set(cacheKey, key);
         }
 
         let state = stateManager.getStateSync(key);
@@ -222,8 +227,8 @@ export class IndicatorsExecutor implements INodeExecutor {
         const userId = context?.userId || context?.user_id;
         const workflowId = context?.workflowId;
         const runId = context?.runId || context?.user_id;
-        let symbol = String(processedParams.symbol || "");
-        let timeframe = String(processedParams.timeframe || "");
+        const symbol = String(processedParams.symbol || "");
+        const timeframe = String(processedParams.timeframe || "");
 
         // Fallback for legacy workflows where symbol/timeframe fields are not set explicitly.
         // if ((!symbol || !timeframe) && barsData) {
@@ -245,7 +250,8 @@ export class IndicatorsExecutor implements INodeExecutor {
         ) {
           // const indicatorParams =
           //   this.extractIndicatorParams(processedParams);
-          let key = this.indicatorKeyCache.get(node.id);
+          const cacheKey = this.getIndicatorCacheKey(node.id, symbol, timeframe);
+          let key = this.indicatorKeyCache.get(cacheKey);
           if (!key) {
             key = buildIndicatorKey(
               userId,
@@ -255,7 +261,7 @@ export class IndicatorsExecutor implements INodeExecutor {
               timeframe,
               node.id,
             );
-            this.indicatorKeyCache.set(node.id, key);
+            this.indicatorKeyCache.set(cacheKey, key);
           }
 
           const isBacktest = !!context?.isBacktest;
@@ -345,7 +351,8 @@ export class IndicatorsExecutor implements INodeExecutor {
     const workflowId = context?.workflowId || params.workflow_id || "manual";
     const runId = context?.runId || params.run_id || "manual";
 
-    let storeKey = this.rollingWindowKeyCache.get(node.id);
+    const rollingCacheKey = this.getIndicatorCacheKey(node.id, symbol, timeframe);
+    let storeKey = this.rollingWindowKeyCache.get(rollingCacheKey);
     if (!storeKey) {
       storeKey = buildExecutionScopedKey({
         userId,
@@ -355,7 +362,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         scope: "rolling_window",
         parts: [symbol, timeframe],
       });
-      this.rollingWindowKeyCache.set(node.id, storeKey);
+      this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
     }
 
     const dataContext = context?.dataContext as DataContext | undefined;

@@ -31,6 +31,10 @@ export type RuntimeOptions = {
   indicatorStateManager: IndicatorStateManager;
 };
 
+type ExecutionContextExtras = Partial<
+  Pick<NodeExecutionContext, "multiBarContext">
+>;
+
 export abstract class BaseExecutionRuntime {
   protected readonly queue = new NodeQueueManager();
   protected readonly nodeExecutorMap = new Map<string, INodeExecutor>();
@@ -39,6 +43,7 @@ export abstract class BaseExecutionRuntime {
   protected readonly failedNodeErrors = new Map<string, string>();
   protected readonly executionOrder: string[] = [];
   protected execCtx: NodeExecutionContext | null = null;
+  protected executionContextExtras: ExecutionContextExtras = {};
 
   constructor(
     protected readonly graph: GraphRuntime,
@@ -135,7 +140,15 @@ export abstract class BaseExecutionRuntime {
     }
 
     this.execCtx.nodeId = nodeId;
+    Object.assign(this.execCtx, this.executionContextExtras);
     return this.execCtx;
+  }
+
+  setExecutionContextExtras(extras: ExecutionContextExtras): void {
+    this.executionContextExtras = extras;
+    if (this.execCtx) {
+      Object.assign(this.execCtx, extras);
+    }
   }
 
   protected normalizeResult(raw: any, category: string): NodeResult {

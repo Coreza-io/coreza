@@ -1,5 +1,5 @@
 import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
-import { BacktestSession, BarEvent } from "./BacktestSession";
+import { BacktestSession, MultiBarEvent } from "./BacktestSession";
 import { IndicatorStateManager } from "../../engine/indicatorStateManager";
 
 export class BacktestSessionManager {
@@ -23,7 +23,7 @@ export class BacktestSessionManager {
     edges: WorkflowEdge[],
     entryNodeIds: string[],
     backtestInitResult: Record<string, any>,
-    bars: BarEvent[],
+    bars: MultiBarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
   ): BacktestSession {

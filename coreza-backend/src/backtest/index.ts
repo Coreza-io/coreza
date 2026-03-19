@@ -1,5 +1,5 @@
 export { BacktestSession } from "./session/BacktestSession";
-export type { BarEvent, BacktestSessionStatus } from "./session/BacktestSession";
+export type { BarEvent, MultiBarEvent, BacktestSessionStatus } from "./session/BacktestSession";
 export { BacktestSessionManager } from "./session/BacktestSessionManager";
 export { SimBroker } from "./simBroker";
 export type { SimBrokerConfig, Bar, Position, EquityPoint, BacktestMetrics } from "./simBroker";

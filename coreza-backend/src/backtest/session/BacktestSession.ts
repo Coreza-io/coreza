@@ -183,19 +183,20 @@ export class BacktestSession {
     return this.bars.length;
   }
 
-  private normalizeBarPayload(event: MultiBarEvent, symbol: string, isLast: boolean) {
-    const bar = event.bars[symbol];
+  private normalizeBarPayload(event: MultiBarEvent, isLast: boolean) {
     return {
-      BarSeries: [
-        {
+      BarSeries: event.symbols
+        .filter((symbol) => event.bars[symbol])
+        .map((symbol) => ({
           symbol,
           interval: event.interval,
-          bars: [bar],
-        },
-      ],
+          bars: [event.bars[symbol]],
+        })),
       barIndex: event.barIndex,
       isLast,
       total_bars: this.totalBars,
+      symbols: event.symbols,
+      timestamp: event.timestamp,
     };
   }
 
@@ -327,8 +328,7 @@ export class BacktestSession {
       }
 
       const currentEvent = this.bars[this.currentIndex - 1];
-      const primarySymbol = currentEvent.symbols[0];
-      return this.normalizeBarPayload(currentEvent, primarySymbol, isLast);
+      return this.normalizeBarPayload(currentEvent, isLast);
     } finally {
       this.stepping = false;
     }

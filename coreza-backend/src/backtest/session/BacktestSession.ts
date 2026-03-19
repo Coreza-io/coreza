@@ -183,19 +183,20 @@ export class BacktestSession {
     return this.bars.length;
   }
 
-  private normalizeBarPayload(event: MultiBarEvent, symbol: string, isLast: boolean) {
-    const bar = event.bars[symbol];
+  private normalizeBarPayload(event: MultiBarEvent, isLast: boolean) {
     return {
-      BarSeries: [
-        {
+      BarSeries: event.symbols
+        .filter((symbol) => event.bars[symbol])
+        .map((symbol) => ({
           symbol,
           interval: event.interval,
-          bars: [bar],
-        },
-      ],
+          bars: [event.bars[symbol]],
+        })),
       barIndex: event.barIndex,
       isLast,
       total_bars: this.totalBars,
+      symbols: event.symbols,
+      timestamp: event.timestamp,
     };
   }
 
@@ -293,7 +294,7 @@ export class BacktestSession {
     return this.nextBar();
   }
 
-  private async executeNextTimestamp(): Promise<Record<string, any>> {
+  private async executeNextTimestamp(manual = false): Promise<Record<string, any>> {
     if (this.stepping) {
       throw new Error("Step already in progress");
     }
@@ -306,9 +307,23 @@ export class BacktestSession {
       }
 
       this.status = "running";
+      const currentEvent = this.bars[this.currentIndex];
+
       try {
-        const currentEvent = this.bars[this.currentIndex];
-        await this.executeTimestampAsync(currentEvent);
+        if (manual) {
+          for (const symbol of currentEvent.symbols) {
+            const bar = currentEvent.bars[symbol];
+            if (bar) {
+              BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(symbol, bar);
+            }
+          }
+
+          const snapshotTimestamp = currentEvent.timestamp
+            || String(currentEvent.bars[currentEvent.symbols[0]]?.timestamp ?? new Date().toISOString());
+          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
+        } else {
+          await this.executeTimestampAsync(currentEvent);
+        }
       } catch (error) {
         console.error("[BacktestSession] Error processing bar:", error);
       }
@@ -327,15 +342,14 @@ export class BacktestSession {
       }
 
       const currentEvent = this.bars[this.currentIndex - 1];
-      const primarySymbol = currentEvent.symbols[0];
-      return this.normalizeBarPayload(currentEvent, primarySymbol, isLast);
+      return this.normalizeBarPayload(currentEvent, isLast);
     } finally {
       this.stepping = false;
     }
   }
 
-  async nextBar(): Promise<Record<string, any>> {
-    return this.executeNextTimestamp();
+  async nextBar(manual = false): Promise<Record<string, any>> {
+    return this.executeNextTimestamp(manual);
   }
 
   async runAll(): Promise<void> {

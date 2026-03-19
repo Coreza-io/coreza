@@ -1,5 +1,14 @@
 import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
 
+export interface MultiBarExecutionContext {
+  timestamp: string;
+  interval: string;
+  symbols: string[];
+  currentSymbol: string;
+  bars: Record<string, any>;
+  getBar: (symbol: string) => any | undefined;
+}
+
 export interface NodeExecutionContext {
   user_id: string;
   userId: string;
@@ -19,6 +28,7 @@ export interface NodeExecutionContext {
   abortSignal?: AbortSignal;
   checkCancellation: () => boolean;
   isBacktest?: boolean;
+  multiBarContext?: MultiBarExecutionContext;
   getState: (key: string) => any;
   setState: (key: string, value: any) => void;
 }

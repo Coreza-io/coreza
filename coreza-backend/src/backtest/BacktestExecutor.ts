@@ -111,6 +111,10 @@ export class BacktestExecutor implements INodeExecutor {
     return BacktestExecutor.simBrokerCache;
   }
 
+  static getSimBrokerForBacktest(backtestId: string): SimBroker | undefined {
+    return BacktestExecutor.simBrokerCache.get(`${SIM_BROKER_KEY_PREFIX}${backtestId}`);
+  }
+
   public static cleanupBacktestResources(backtestId: string): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
     BacktestExecutor.simBrokerCache.delete(key);
@@ -295,15 +299,16 @@ export class BacktestExecutor implements INodeExecutor {
       const broker = String(params.broker || "").toLowerCase();
       const credentialId = params.credential_id;
       const symbol = params.symbol;
+      const symbols = this.parseSymbols(params.symbols, params.symbol);
       const interval = params.interval;
       const startDate = params.start_date;
       const endDate = params.end_date;
       const assetType = params.asset_type;
       const feed = params.feed;
 
-      if (!broker || !symbol || !interval) {
+      if (!broker || symbols.length === 0 || !interval) {
         return toNodeResult(
-          createErrorOutput("broker, symbol, and interval are required"),
+          createErrorOutput("broker, symbol/symbols, and interval are required"),
         );
       }
 
@@ -313,57 +318,36 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const brokerExecutor = new BrokerExecutor();
-      const brokerInput: NodeInput = {
-        operation: "get_candle",
-        symbol,
-        interval,
-        start: startDate,
-        end: endDate,
-        asset_type: assetType,
-        feed,
-        credential_id: credentialId,
-        limit: "50000",
-      };
-
-      const brokerNode: WorkflowNode = {
-        id: `broker:${broker}:get_candle`,
-        name: broker,
-        node_type: "main",
-        category: "Broker",
-        subCategory: broker,
-        values: brokerInput,
-      };
-
-      const brokerResult = await brokerExecutor.execute(
-        brokerNode,
-        brokerInput,
+      const historicalDataBySymbol = await this.fetchHistoricalBarsForSymbols(
+        broker,
+        symbols,
         {
-          userId: context?.userId,
-          workflowId: context?.workflowId || "backtest-init",
-          runId: context?.runId || `backtest-${Date.now()}`,
+          interval,
+          startDate,
+          endDate,
+          assetType,
+          feed,
+          credentialId,
         },
+        context,
       );
 
-      if (!brokerResult.success) {
-        return toNodeResult(
-          createErrorOutput(
-            `Failed to fetch historical data: ${brokerResult.error}`,
-          ),
-        );
-      }
-
-      const barSeries = brokerResult.data?.BarSeries;
-      const bars = barSeries?.[0]?.bars || [];
-
-      if (!Array.isArray(bars) || bars.length === 0) {
+      if (historicalDataBySymbol.size === 0) {
         return toNodeResult(
           createErrorOutput("No historical bars returned for backtest"),
         );
       }
 
+      const primarySymbol = symbols[0];
+      const primaryBars = historicalDataBySymbol.get(primarySymbol) || [];
+      if (!Array.isArray(primaryBars) || primaryBars.length === 0) {
+        return toNodeResult(
+          createErrorOutput(`No historical bars returned for ${primarySymbol}`),
+        );
+      }
+
       const warmupPeriodRaw = parseInt(params.warmup_period, 10) || 200;
-      const warmupPeriod = Math.min(Math.max(warmupPeriodRaw, 0), bars.length);
+      const warmupPeriod = Math.min(Math.max(warmupPeriodRaw, 0), primaryBars.length);
       //const autoDetect = String(params.auto_detect ?? "true") === "true";
 
       const allNodes: WorkflowNode[] = context?.nodes || [];
@@ -378,38 +362,51 @@ export class BacktestExecutor implements INodeExecutor {
         ) as DiscoveredIndicator[];
       }
 
-      const warmupBars = bars.slice(0, warmupPeriod);
-      const remainingBars = bars.slice(warmupPeriod);
+      const warmupBarsBySymbol = new Map<string, any[]>();
+      const remainingBarsBySymbol = new Map<string, any[]>();
+
+      for (const currentSymbol of symbols) {
+        const symbolBars = historicalDataBySymbol.get(currentSymbol) || [];
+        warmupBarsBySymbol.set(currentSymbol, symbolBars.slice(0, warmupPeriod));
+        remainingBarsBySymbol.set(currentSymbol, symbolBars.slice(warmupPeriod));
+      }
 
       const stateManager = new IndicatorStateManager();
       if (
         stateManager &&
         discoveredIndicators.length > 0 &&
-        warmupBars.length > 0
+        Array.from(warmupBarsBySymbol.values()).some((bars) => bars.length > 0)
       ) {
-        for (const ind of discoveredIndicators) {
-          const { candle_data, ...restParams } = ind.params;
-          const indParams = {
-            ...restParams,
-            symbol,
-            timeframe: interval,
-          };
-          const key = buildIndicatorKey(
-            userId,
-            workflowId,
-            runId,
-            symbol,
-            interval,
-            ind.nodeId,
-          );
+        for (const currentSymbol of symbols) {
+          const symbolWarmupBars = warmupBarsBySymbol.get(currentSymbol) || [];
+          if (symbolWarmupBars.length === 0) {
+            continue;
+          }
 
-          await stateManager.warmUp(
-            key,
-            ind.type,
-            indParams,
-            warmupBars,
-            false,
-          );
+          for (const ind of discoveredIndicators) {
+            const { candle_data, ...restParams } = ind.params;
+            const indParams = {
+              ...restParams,
+              symbol: currentSymbol,
+              timeframe: interval,
+            };
+            const key = buildIndicatorKey(
+              userId,
+              workflowId,
+              runId,
+              currentSymbol,
+              interval,
+              ind.nodeId,
+            );
+
+            await stateManager.warmUp(
+              key,
+              ind.type,
+              indParams,
+              symbolWarmupBars,
+              false,
+            );
+          }
         }
       }
 
@@ -420,17 +417,13 @@ export class BacktestExecutor implements INodeExecutor {
       } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
       // Build bar events array for in-memory processing (no Redis Stream)
-      const barEvents = remainingBars.map((bar: any, i: number) => ({
-        bar,
-        symbol,
-        interval,
-        barIndex: i,
-      }));
+      const barEvents = this.alignMultiSymbolBars(symbols, interval, remainingBarsBySymbol);
 
       // Build the BacktestInit result that downstream nodes need via templates
       const backtestInitData = {
         backtest_id: backtestId,
-        symbol,
+        symbol: primarySymbol,
+        symbols,
         interval,
         initial_capital: config.initialCapital,
         start_date: startDate,
@@ -466,7 +459,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (
         !isManual &&
-        remainingBars.length > 0 &&
+        barEvents.length > 0 &&
         strategyNodes.length > 0 &&
         entryNodeIds.length > 0
       ) {
@@ -481,7 +474,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       if (
-        remainingBars.length === 0 ||
+        barEvents.length === 0 ||
         strategyNodes.length === 0 ||
         entryNodeIds.length === 0
       ) {
@@ -493,11 +486,12 @@ export class BacktestExecutor implements INodeExecutor {
         createSuccessOutput({
           backtest_id: backtestId,
           mode: isManual ? "manual" : "batch",
-          total_bars: remainingBars.length,
+          total_bars: barEvents.length,
           initial_capital: config.initialCapital,
           start_date: params.start_date,
           end_date: params.end_date,
-          symbol,
+          symbol: primarySymbol,
+          symbols,
           interval,
           config: {
             fill_model: config.fillModel,
@@ -507,18 +501,143 @@ export class BacktestExecutor implements INodeExecutor {
             commission_value: config.commissionValue,
           },
           data: {
-            bars_fetched: bars.length,
-            warmup_bars_used: warmupBars.length,
-            bars_emitted: remainingBars.length,
+            bars_fetched: Array.from(historicalDataBySymbol.values()).reduce((sum, bars) => sum + bars.length, 0),
+            warmup_bars_used: warmupPeriod,
+            bars_emitted: barEvents.length,
             indicators_initialized: discoveredIndicators.length,
           },
-          status: !isManual && remainingBars.length > 0 ? "running" : "ready",
+          status: !isManual && barEvents.length > 0 ? "running" : "ready",
         }),
       );
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
       return toNodeResult(createErrorOutput(error));
     }
+  }
+
+  private parseSymbols(symbolsRaw: unknown, fallbackSymbol: unknown): string[] {
+    const preferred = String(symbolsRaw || "").trim();
+    const base = preferred || String(fallbackSymbol || "").trim();
+    return [...new Set(
+      base
+        .split(",")
+        .map((symbol) => symbol.trim())
+        .filter(Boolean),
+    )];
+  }
+
+  private async fetchHistoricalBarsForSymbols(
+    broker: string,
+    symbols: string[],
+    params: {
+      interval: string;
+      startDate: string;
+      endDate: string;
+      assetType: string;
+      feed: string;
+      credentialId: string;
+    },
+    context: any,
+  ): Promise<Map<string, any[]>> {
+    const brokerExecutor = new BrokerExecutor();
+
+    const results = await Promise.all(symbols.map(async (symbol) => {
+      const brokerInput: NodeInput = {
+        operation: "get_candle",
+        symbol,
+        interval: params.interval,
+        start: params.startDate,
+        end: params.endDate,
+        asset_type: params.assetType,
+        feed: params.feed,
+        credential_id: params.credentialId,
+        limit: "50000",
+      };
+
+      const brokerNode: WorkflowNode = {
+        id: `broker:${broker}:get_candle:${symbol}`,
+        name: broker,
+        node_type: "main",
+        category: "Broker",
+        subCategory: broker,
+        values: brokerInput,
+      };
+
+      const brokerResult = await brokerExecutor.execute(brokerNode, brokerInput, {
+        userId: context?.userId,
+        workflowId: context?.workflowId || "backtest-init",
+        runId: context?.runId || `backtest-${Date.now()}`,
+      });
+
+      if (!brokerResult.success) {
+        throw new Error(`Failed to fetch historical data for ${symbol}: ${brokerResult.error}`);
+      }
+
+      const barSeries = brokerResult.data?.BarSeries;
+      const bars = barSeries?.[0]?.bars || [];
+      return [symbol, Array.isArray(bars) ? bars : []] as const;
+    }));
+
+    return new Map(results.filter(([, bars]) => bars.length > 0));
+  }
+
+  private alignMultiSymbolBars(
+    symbols: string[],
+    interval: string,
+    barsBySymbol: Map<string, any[]>,
+  ) {
+    const timestamps = new Set<string>();
+    for (const bars of barsBySymbol.values()) {
+      for (const bar of bars) {
+        timestamps.add(String(bar.timestamp ?? bar.time));
+      }
+    }
+
+    const orderedTimestamps = [...timestamps].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const indexes = new Map<string, number>();
+    const previousBars = new Map<string, any>();
+    const events: Array<{ timestamp: string; barIndex: number; interval: string; symbols: string[]; bars: Record<string, any> }> = [];
+
+    for (const symbol of symbols) {
+      indexes.set(symbol, 0);
+    }
+
+    for (const [barIndex, timestamp] of orderedTimestamps.entries()) {
+      const alignedBars: Record<string, any> = {};
+      const activeSymbols: string[] = [];
+
+      for (const symbol of symbols) {
+        const symbolBars = barsBySymbol.get(symbol) || [];
+        const currentIndex = indexes.get(symbol) || 0;
+        const currentBar = symbolBars[currentIndex];
+
+        if (currentBar && String(currentBar.timestamp ?? currentBar.time) === timestamp) {
+          alignedBars[symbol] = currentBar;
+          previousBars.set(symbol, currentBar);
+          indexes.set(symbol, currentIndex + 1);
+          activeSymbols.push(symbol);
+          continue;
+        }
+
+        const previousBar = previousBars.get(symbol);
+        if (previousBar) {
+          alignedBars[symbol] = { ...previousBar, timestamp };
+          activeSymbols.push(symbol);
+        }
+      }
+
+      if (activeSymbols.length > 0) {
+        events.push({
+          timestamp,
+          barIndex,
+          interval,
+          symbols: activeSymbols,
+          bars: alignedBars,
+        });
+      }
+    }
+
+    return events;
   }
 
   // ============== ON BAR ==============
@@ -599,9 +718,10 @@ export class BacktestExecutor implements INodeExecutor {
       //   throw new Error("Invalid current_bar JSON");
       // }
 
-      // If we have a current bar, process pending orders first - SYNCHRONOUS
+      // If we have a current bar, make it available for validation and
+      // immediate-fill pricing without re-processing pending orders.
       if (currentBar) {
-        simBroker.onBar(symbol, currentBar);
+        simBroker.setCurrentBar(currentBar);
       }
 
       // Place the new order - SYNCHRONOUS

@@ -586,17 +586,17 @@ export class BacktestExecutor implements INodeExecutor {
     interval: string,
     barsBySymbol: Map<string, any[]>,
   ) {
-    const timestamps = new Set<string>();
+    const timestamps = new Set<number>();
     for (const bars of barsBySymbol.values()) {
       for (const bar of bars) {
-        timestamps.add(String(bar.timestamp ?? bar.time));
+        timestamps.add(bar.time as number);
       }
     }
 
-    const orderedTimestamps = [...timestamps].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const orderedTimestamps = [...timestamps].sort((a, b) => a - b);
     const indexes = new Map<string, number>();
     const previousBars = new Map<string, any>();
-    const events: Array<{ timestamp: string; barIndex: number; interval: string; symbols: string[]; bars: Record<string, any> }> = [];
+    const events: Array<{ timestamp: number; barIndex: number; interval: string; symbols: string[]; bars: Record<string, any> }> = [];
 
     for (const symbol of symbols) {
       indexes.set(symbol, 0);
@@ -611,7 +611,7 @@ export class BacktestExecutor implements INodeExecutor {
         const currentIndex = indexes.get(symbol) || 0;
         const currentBar = symbolBars[currentIndex];
 
-        if (currentBar && String(currentBar.timestamp ?? currentBar.time) === timestamp) {
+        if (currentBar && (currentBar.time as number) === timestamp) {
           alignedBars[symbol] = currentBar;
           previousBars.set(symbol, currentBar);
           indexes.set(symbol, currentIndex + 1);
@@ -621,7 +621,7 @@ export class BacktestExecutor implements INodeExecutor {
 
         const previousBar = previousBars.get(symbol);
         if (previousBar) {
-          alignedBars[symbol] = { ...previousBar, timestamp };
+          alignedBars[symbol] = { ...previousBar, time: timestamp };
           activeSymbols.push(symbol);
         }
       }

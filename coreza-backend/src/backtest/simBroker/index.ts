@@ -291,6 +291,10 @@ export class SimBroker {
    * Iterates pending OrderTickets for the given symbol, attempts fills,
    * and appends OrderEvents on success.
    */
+  setCurrentBar(bar: Bar): void {
+    this.state.currentBar = bar;
+  }
+
   onBar(symbol: string, bar: Bar): OrderEvent[] {
     const events: OrderEvent[] = [];
     const symbolState = this.getSymbolState(symbol);

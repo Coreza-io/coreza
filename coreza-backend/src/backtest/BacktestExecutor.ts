@@ -718,9 +718,10 @@ export class BacktestExecutor implements INodeExecutor {
       //   throw new Error("Invalid current_bar JSON");
       // }
 
-      // If we have a current bar, process pending orders first - SYNCHRONOUS
+      // If we have a current bar, make it available for validation and
+      // immediate-fill pricing without re-processing pending orders.
       if (currentBar) {
-        simBroker.onBar(symbol, currentBar);
+        simBroker.setCurrentBar(currentBar);
       }
 
       // Place the new order - SYNCHRONOUS

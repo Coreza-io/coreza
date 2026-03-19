@@ -290,6 +290,10 @@ export class BacktestSession {
   }
 
   async step(): Promise<Record<string, any>> {
+    return this.nextBar();
+  }
+
+  private async executeNextTimestamp(): Promise<Record<string, any>> {
     if (this.stepping) {
       throw new Error("Step already in progress");
     }
@@ -331,38 +335,7 @@ export class BacktestSession {
   }
 
   async nextBar(): Promise<Record<string, any>> {
-    if (this.stepping) {
-      throw new Error("Step already in progress");
-    }
-
-    this.stepping = true;
-    try {
-      if (this.status === "finished" || this.currentIndex >= this.bars.length) {
-        this.status = "finished";
-        return { isLast: true, total_bars: this.totalBars };
-      }
-
-      this.status = "running";
-      const currentEvent = this.bars[this.currentIndex];
-
-      this.currentIndex += 1;
-      this.barsProcessed = this.currentIndex;
-
-      if (this.barsProcessed % 1000 === 0) {
-        await this.reportProgress();
-      }
-
-      const isLast = this.currentIndex >= this.bars.length;
-      if (isLast) {
-        this.status = "finished";
-        await this.reportProgress();
-      }
-
-      const primarySymbol = currentEvent.symbols[0];
-      return this.normalizeBarPayload(currentEvent, primarySymbol, isLast);
-    } finally {
-      this.stepping = false;
-    }
+    return this.executeNextTimestamp();
   }
 
   async runAll(): Promise<void> {

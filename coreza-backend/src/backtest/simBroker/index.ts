@@ -71,7 +71,10 @@ export class SimBroker {
   private fillModel: IFillModel;
   private slippageModel: ISlippageModel;
   private feeModel: IFeeModel;
-  private previousBar: Bar | null = null;
+  private symbolStates = new Map<string, {
+    previousBar: Bar | null;
+    lastFillPrice?: number;
+  }>();
   private orderIdCounter = 0;
   private tradeIdCounter = 0;
   private currentEntryMap = new Map<string, { orderId: string; filledAt: string; barIndex: number }>();
@@ -290,6 +293,7 @@ export class SimBroker {
    */
   onBar(symbol: string, bar: Bar): OrderEvent[] {
     const events: OrderEvent[] = [];
+    const symbolState = this.getSymbolState(symbol);
 
     // Store current bar in state
     this.state.currentBar = bar;
@@ -305,7 +309,7 @@ export class SimBroker {
       const fillResult = this.fillModel.fill(
         order,
         bar,
-        this.previousBar ?? undefined,
+        symbolState.previousBar ?? undefined,
       );
 
       if (fillResult.filled && fillResult.price && fillResult.quantity) {
@@ -352,6 +356,7 @@ export class SimBroker {
         ticket.quantityFilled += fillResult.quantity;
         ticket.averageFillPrice = adjustedPrice; // single fill per order in sim
         ticket.totalFees += commission;
+        symbolState.lastFillPrice = adjustedPrice;
 
         // Update order status (the only mutable field)
         order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
@@ -363,7 +368,13 @@ export class SimBroker {
     // Update position mark-to-market
     this.updatePositionMTM(symbol, bar.close);
 
-    // Auto-record equity snapshot on every bar
+    // Remember this bar for next iteration
+    symbolState.previousBar = bar;
+
+    return events;
+  }
+
+  recordEquitySnapshot(timestamp: string | number): void {
     const positionsValue = this.positionsValue;
     const totalEquity = this.state.cash + positionsValue;
 
@@ -376,17 +387,12 @@ export class SimBroker {
         : 0;
 
     this.recordEquityPoint(
-      bar.timestamp,
+      timestamp,
       this.state.cash,
       positionsValue,
       totalEquity,
       drawdownPct,
     );
-
-    // Remember this bar for next iteration
-    this.previousBar = bar;
-
-    return events;
   }
 
   /**
@@ -453,6 +459,7 @@ export class SimBroker {
     ticket.quantityFilled += fillResult.quantity;
     ticket.averageFillPrice = adjustedPrice;
     ticket.totalFees += commission;
+    this.getSymbolState(order.symbol).lastFillPrice = adjustedPrice;
 
     // Update order status
     order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
@@ -868,6 +875,15 @@ export class SimBroker {
 
   getBacktestId(): string {
     return this.backtestId;
+  }
+
+  private getSymbolState(symbol: string) {
+    let state = this.symbolStates.get(symbol);
+    if (!state) {
+      state = { previousBar: null };
+      this.symbolStates.set(symbol, state);
+    }
+    return state;
   }
 }
 

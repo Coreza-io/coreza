@@ -119,6 +119,9 @@ export class WorkflowRun {
   clearNodeTiming(): void { this.runtime.clearNodeTiming(); }
   getCompiledParams() { return this.plan.resolver.getCompiledParams(); }
   getNodeExecutorMap() { return this.runtime.getNodeExecutorMap(); }
+  setExecutionContextExtras(extras: Partial<{ multiBarContext: any }>): void {
+    this.runtime.setExecutionContextExtras(extras);
+  }
   checkCancellation(): boolean { return this.opts.abortSignal?.aborted ?? false; }
 
   destroy(): void {

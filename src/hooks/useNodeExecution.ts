@@ -330,17 +330,6 @@ export function useNodeExecution({
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;
 
-        if (payload.symbols) {
-          const parsedSymbols: string[] = Array.isArray(payload.symbols)
-            ? payload.symbols
-            : typeof payload.symbols === "string"
-              ? payload.symbols
-                  .split(",")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean)
-              : [];
-        }
-
         let outputData: any;
 
         // NOTE: Webhook triggers now use the generic action path below (definition.action.url)

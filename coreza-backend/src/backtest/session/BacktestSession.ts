@@ -96,7 +96,9 @@ export class BacktestSession {
     const mode = process.env.BACKTEST_EXECUTION_MODE ?? "auto";
 
     if (mode === "engine") {
-      console.log("[BacktestSession] Forced engine mode via BACKTEST_EXECUTION_MODE");
+      console.log(
+        "[BacktestSession] Forced engine mode via BACKTEST_EXECUTION_MODE",
+      );
       this.compiledPlan = null;
       return;
     }
@@ -124,9 +126,11 @@ export class BacktestSession {
           nodes: this.nodes,
           edges: this.edges,
           dataContext,
-          indicatorStateManager: this.stateManager ?? this.run.getIndicatorStateManager(),
+          indicatorStateManager:
+            this.stateManager ?? this.run.getIndicatorStateManager(),
           abortSignal: this.abortController.signal,
-          storeGetState: (nodeId: string, key: string) => this.run.getNodeState(nodeId, key),
+          storeGetState: (nodeId: string, key: string) =>
+            this.run.getNodeState(nodeId, key),
           storeSetState: (nodeId: string, key: string, value: any) =>
             this.run.setNodeState(nodeId, key, value),
         },
@@ -141,15 +145,22 @@ export class BacktestSession {
           "[BacktestSession] ❌ BACKTEST_EXECUTION_MODE=compiled but plan compilation failed — falling back to engine",
         );
       } else {
-        console.log("[BacktestSession] Compiled plan not eligible, using engine fallback");
+        console.log(
+          "[BacktestSession] Compiled plan not eligible, using engine fallback",
+        );
       }
     } catch (err) {
-      console.warn(`[BacktestSession] Compiled plan compilation failed, using engine fallback:`, err);
+      console.warn(
+        `[BacktestSession] Compiled plan compilation failed, using engine fallback:`,
+        err,
+      );
       this.compiledPlan = null;
     }
   }
 
-  private logCompileEligibilitySnapshot(compiledParams: Map<string, any>): void {
+  private logCompileEligibilitySnapshot(
+    compiledParams: Map<string, any>,
+  ): void {
     const categories = new Set<string>();
 
     for (const node of this.nodes) {
@@ -211,11 +222,13 @@ export class BacktestSession {
 
     return {
       BarSeries: bar
-        ? [{
-          symbol,
-          interval: event.interval,
-          bars: [bar],
-        }]
+        ? [
+            {
+              symbol,
+              interval: event.interval,
+              bars: [bar],
+            },
+          ]
         : [],
       barIndex: event.barIndex,
       isLast,
@@ -250,7 +263,10 @@ export class BacktestSession {
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
       if (bar) {
-        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(symbol, bar);
+        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+          symbol,
+          bar,
+        );
       }
     }
 
@@ -266,19 +282,29 @@ export class BacktestSession {
         interval: event.interval,
         barIndex: event.barIndex,
       };
-      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+      this.run.setExecutionContextExtras(
+        this.buildSymbolExecutionContext(event, symbol),
+      );
 
       if (this.compiledPlan) {
         runBar(this.compiledPlan, { data: symbolEvent });
       } else {
         this.run.resetForNextBar();
-        void this.run.executeFromEntries({ data: symbolEvent }, this.entryNodeIds);
+        void this.run.executeFromEntries(
+          { data: symbolEvent },
+          this.entryNodeIds,
+        );
       }
     }
 
-    const snapshotTimestamp = event.timestamp
-      || String(event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString());
-    BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
+    const snapshotTimestamp =
+      event.timestamp ||
+      String(
+        event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
+      );
+    BacktestExecutor.getSimBrokerForBacktest(
+      this.backtestId,
+    )?.recordEquitySnapshot(snapshotTimestamp);
   }
 
   private async executeTimestampAsync(event: MultiBarEvent): Promise<void> {
@@ -287,7 +313,10 @@ export class BacktestSession {
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
       if (bar) {
-        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(symbol, bar);
+        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+          symbol,
+          bar,
+        );
       }
     }
 
@@ -303,26 +332,38 @@ export class BacktestSession {
         interval: event.interval,
         barIndex: event.barIndex,
       };
-      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+      this.run.setExecutionContextExtras(
+        this.buildSymbolExecutionContext(event, symbol),
+      );
 
       if (this.compiledPlan) {
         runBar(this.compiledPlan, { data: symbolEvent });
       } else {
         this.run.resetForNextBar();
-        await this.run.executeFromEntries({ data: symbolEvent }, this.entryNodeIds);
+        await this.run.executeFromEntries(
+          { data: symbolEvent },
+          this.entryNodeIds,
+        );
       }
     }
 
-    const snapshotTimestamp = event.timestamp
-      || String(event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString());
-    BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
+    const snapshotTimestamp =
+      event.timestamp ||
+      String(
+        event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
+      );
+    BacktestExecutor.getSimBrokerForBacktest(
+      this.backtestId,
+    )?.recordEquitySnapshot(snapshotTimestamp);
   }
 
   async step(): Promise<Record<string, any>> {
     return this.nextBar();
   }
 
-  private async executeNextTimestamp(manual = false): Promise<Record<string, any>> {
+  private async executeNextTimestamp(
+    manual = false,
+  ): Promise<Record<string, any>> {
     if (this.stepping) {
       throw new Error("Step already in progress");
     }
@@ -339,7 +380,9 @@ export class BacktestSession {
 
       try {
         if (manual) {
-          const availableSymbols = currentEvent.symbols.filter((symbol) => currentEvent.bars[symbol]);
+          const availableSymbols = currentEvent.symbols.filter(
+            (symbol) => currentEvent.bars[symbol],
+          );
 
           if (availableSymbols.length === 0) {
             this.currentIndex += 1;
@@ -364,19 +407,31 @@ export class BacktestSession {
             };
           }
 
-          const symbolIndex = Math.min(this.currentSymbolIndex, availableSymbols.length - 1);
+          const symbolIndex = Math.min(
+            this.currentSymbolIndex,
+            availableSymbols.length - 1,
+          );
           const currentSymbol = availableSymbols[symbolIndex];
           const currentBar = currentEvent.bars[currentSymbol];
 
-          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(currentSymbol, currentBar);
+          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+            currentSymbol,
+            currentBar,
+          );
 
           const nextSymbolIndex = symbolIndex + 1;
           const consumedTimestamp = nextSymbolIndex >= availableSymbols.length;
 
           if (consumedTimestamp) {
-            const snapshotTimestamp = currentEvent.timestamp
-              || String(currentEvent.bars[currentEvent.symbols[0]]?.timestamp ?? new Date().toISOString());
-            BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
+            const snapshotTimestamp =
+              currentEvent.timestamp ||
+              String(
+                currentEvent.bars[currentEvent.symbols[0]]?.timestamp ??
+                  new Date().toISOString(),
+              );
+            BacktestExecutor.getSimBrokerForBacktest(
+              this.backtestId,
+            )?.recordEquitySnapshot(snapshotTimestamp);
             this.currentIndex += 1;
             this.currentSymbolIndex = 0;
           } else {
@@ -394,7 +449,12 @@ export class BacktestSession {
             await this.reportProgress();
           }
 
-          return this.normalizeManualBarPayload(currentEvent, currentSymbol, symbolIndex, isLast);
+          return this.normalizeManualBarPayload(
+            currentEvent,
+            currentSymbol,
+            symbolIndex,
+            isLast,
+          );
         }
 
         await this.executeTimestampAsync(currentEvent);
@@ -443,10 +503,7 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         // COMPILED PLAN PATH — no engine, no queue, no routing
         // ═══════════════════════════════════════════════════════════════
-        while (
-          this.currentIndex < this.bars.length &&
-          !signal.aborted
-        ) {
+        while (this.currentIndex < this.bars.length && !signal.aborted) {
           this.status = "running";
           const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
 
@@ -455,7 +512,10 @@ export class BacktestSession {
             try {
               this.executeTimestamp(currentEvent);
             } catch (error) {
-              console.error("[BacktestSession] Compiled plan error on bar:", error);
+              console.error(
+                "[BacktestSession] Compiled plan error on bar:",
+                error,
+              );
             }
             this.currentIndex += 1;
           }
@@ -474,10 +534,7 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         // DYNAMIC ENGINE PATH — existing queue/routing engine
         // ═══════════════════════════════════════════════════════════════
-        while (
-          this.currentIndex < this.bars.length &&
-          !signal.aborted
-        ) {
+        while (this.currentIndex < this.bars.length && !signal.aborted) {
           this.status = "running";
           const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
 
@@ -511,7 +568,10 @@ export class BacktestSession {
       await this.finalize();
       const timing = this.run.getNodeTiming();
       if (this.compiledPlan && this.compiledPlan.timingSampleRate > 0) {
-        const sampled: Record<string, { totalMs: number; count: number; avgMs: number }> = {};
+        const sampled: Record<
+          string,
+          { totalMs: number; count: number; avgMs: number }
+        > = {};
         for (let i = 0; i < this.compiledPlan.instructions.length; i++) {
           const instr = this.compiledPlan.instructions[i];
           const count = this.compiledPlan.instructionTimingCount[i];
@@ -567,9 +627,10 @@ export class BacktestSession {
   }
 
   private async reportProgress(): Promise<void> {
-    const percent = this.totalBars > 0
-      ? Math.round((this.barsProcessed / this.totalBars) * 100)
-      : 100;
+    const percent =
+      this.totalBars > 0
+        ? Math.round((this.barsProcessed / this.totalBars) * 100)
+        : 100;
 
     const redis = getRedisCache();
     await redis.set(
@@ -605,7 +666,10 @@ export class BacktestSession {
       "EX",
       3600,
     );
-    console.log(`[BacktestSession] Node timing for ${this.backtestId}:`, timing);
+    console.log(
+      `[BacktestSession] Node timing for ${this.backtestId}:`,
+      timing,
+    );
     await redis.del(`backtest:progress:${this.backtestId}`);
   }
 }

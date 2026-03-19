@@ -146,7 +146,14 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "AAPL",
-      "required": true
+      "required": false
+    },
+    {
+      "key": "symbols",
+      "label": "Symbols (comma-separated)",
+      "type": "text",
+      "placeholder": "AAPL,MSFT,GOOGL",
+      "required": false
     },
     {
       "key": "interval",

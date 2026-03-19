@@ -16,6 +16,25 @@ export interface BarEvent {
   barIndex: number;
 }
 
+export interface MultiBarEvent {
+  timestamp: string;
+  barIndex: number;
+  interval: string;
+  symbols: string[];
+  bars: Record<string, any>;
+}
+
+export interface SymbolExecutionContext {
+  multiBarContext: {
+    timestamp: string;
+    interval: string;
+    symbols: string[];
+    currentSymbol: string;
+    bars: Record<string, any>;
+    getBar: (symbol: string) => any;
+  };
+}
+
 export type BacktestSessionStatus = "ready" | "running" | "finished";
 
 export class BacktestSession {
@@ -39,7 +58,7 @@ export class BacktestSession {
     private readonly edges: WorkflowEdge[],
     private readonly entryNodeIds: string[],
     private readonly backtestInitResult: Record<string, any>,
-    private readonly bars: BarEvent[],
+    private readonly bars: MultiBarEvent[],
     private readonly runId: string,
     stateManager?: IndicatorStateManager,
   ) {
@@ -164,12 +183,12 @@ export class BacktestSession {
     return this.bars.length;
   }
 
-  private normalizeBarPayload(event: BarEvent, isLast: boolean) {
-    const bar = event.bar;
+  private normalizeBarPayload(event: MultiBarEvent, symbol: string, isLast: boolean) {
+    const bar = event.bars[symbol];
     return {
       BarSeries: [
         {
-          symbol: event.symbol,
+          symbol,
           interval: event.interval,
           bars: [bar],
         },
@@ -178,6 +197,96 @@ export class BacktestSession {
       isLast,
       total_bars: this.totalBars,
     };
+  }
+
+  private buildSymbolExecutionContext(
+    event: MultiBarEvent,
+    currentSymbol: string,
+  ): SymbolExecutionContext {
+    return {
+      multiBarContext: {
+        timestamp: event.timestamp,
+        interval: event.interval,
+        symbols: [...event.symbols],
+        currentSymbol,
+        bars: event.bars,
+        getBar: (symbol: string) => event.bars[symbol],
+      },
+    };
+  }
+
+  private executeTimestamp(event: MultiBarEvent): void {
+    const symbols = event.symbols;
+
+    for (const symbol of symbols) {
+      const bar = event.bars[symbol];
+      if (bar) {
+        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(symbol, bar);
+      }
+    }
+
+    for (const symbol of symbols) {
+      const bar = event.bars[symbol];
+      if (!bar) {
+        continue;
+      }
+
+      const symbolEvent: BarEvent = {
+        bar,
+        symbol,
+        interval: event.interval,
+        barIndex: event.barIndex,
+      };
+      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+
+      if (this.compiledPlan) {
+        runBar(this.compiledPlan, { data: symbolEvent });
+      } else {
+        this.run.resetForNextBar();
+        void this.run.executeFromEntries({ data: symbolEvent }, this.entryNodeIds);
+      }
+    }
+
+    const snapshotTimestamp = event.timestamp
+      || String(event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString());
+    BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
+  }
+
+  private async executeTimestampAsync(event: MultiBarEvent): Promise<void> {
+    const symbols = event.symbols;
+
+    for (const symbol of symbols) {
+      const bar = event.bars[symbol];
+      if (bar) {
+        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(symbol, bar);
+      }
+    }
+
+    for (const symbol of symbols) {
+      const bar = event.bars[symbol];
+      if (!bar) {
+        continue;
+      }
+
+      const symbolEvent: BarEvent = {
+        bar,
+        symbol,
+        interval: event.interval,
+        barIndex: event.barIndex,
+      };
+      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+
+      if (this.compiledPlan) {
+        runBar(this.compiledPlan, { data: symbolEvent });
+      } else {
+        this.run.resetForNextBar();
+        await this.run.executeFromEntries({ data: symbolEvent }, this.entryNodeIds);
+      }
+    }
+
+    const snapshotTimestamp = event.timestamp
+      || String(event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString());
+    BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.recordEquitySnapshot(snapshotTimestamp);
   }
 
   async step(): Promise<Record<string, any>> {
@@ -193,15 +302,9 @@ export class BacktestSession {
       }
 
       this.status = "running";
-      const currentEvent = this.bars[this.currentIndex];
-
       try {
-        if (this.compiledPlan) {
-          runBar(this.compiledPlan, { data: currentEvent });
-        } else {
-          this.run.resetForNextBar();
-          await this.run.executeFromEntries({ data: currentEvent }, this.entryNodeIds);
-        }
+        const currentEvent = this.bars[this.currentIndex];
+        await this.executeTimestampAsync(currentEvent);
       } catch (error) {
         console.error("[BacktestSession] Error processing bar:", error);
       }
@@ -219,7 +322,9 @@ export class BacktestSession {
         await this.reportProgress();
       }
 
-      return this.normalizeBarPayload(currentEvent, isLast);
+      const currentEvent = this.bars[this.currentIndex - 1];
+      const primarySymbol = currentEvent.symbols[0];
+      return this.normalizeBarPayload(currentEvent, primarySymbol, isLast);
     } finally {
       this.stepping = false;
     }
@@ -253,7 +358,8 @@ export class BacktestSession {
         await this.reportProgress();
       }
 
-      return this.normalizeBarPayload(currentEvent, isLast);
+      const primarySymbol = currentEvent.symbols[0];
+      return this.normalizeBarPayload(currentEvent, primarySymbol, isLast);
     } finally {
       this.stepping = false;
     }
@@ -286,7 +392,7 @@ export class BacktestSession {
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
             try {
-              runBar(this.compiledPlan, { data: currentEvent });
+              this.executeTimestamp(currentEvent);
             } catch (error) {
               console.error("[BacktestSession] Compiled plan error on bar:", error);
             }
@@ -316,11 +422,8 @@ export class BacktestSession {
 
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
-
-            this.run.resetForNextBar();
-
             try {
-              await this.run.executeFromEntries({ data: currentEvent }, this.entryNodeIds);
+              await this.executeTimestampAsync(currentEvent);
             } catch (error) {
               console.error("[BacktestSession] Error processing bar:", error);
             }

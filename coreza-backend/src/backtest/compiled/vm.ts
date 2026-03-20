@@ -87,6 +87,13 @@ export function runBar(plan: CompiledPlan, barInput: any): void {
 
     // Propagate activation to downstream nodes
     const activateStart = timingEnabled ? performance.now() : 0;
+    if (result?.success === false) {
+      if (timingEnabled) {
+        activateMs += performance.now() - activateStart;
+      }
+      continue;
+    }
+
     if (instr.op === OpCode.BRANCH) {
       // Conditional node: selectively activate based on result
       const resultData = result?.data;

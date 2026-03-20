@@ -33,15 +33,23 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
     const result = executor.execute(node, input, ctx);
 
     if (result && typeof (result as any).then === "function") {
-      throw new Error(
-        `Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})`,
-      );
+      return {
+        success: false,
+        data: null,
+        error: `Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})`,
+      };
     }
 
     const syncResult = result as NodeResult;
     if (syncResult && typeof syncResult === "object" && "success" in syncResult) {
       if (!syncResult.success) {
-        throw new Error(syncResult.error || `Node execution failed: ${executor.category}`);
+        return {
+          success: false,
+          data: null,
+          error: syncResult.error || `Node execution failed: ${executor.category}`,
+          meta: syncResult.meta,
+          control: syncResult.control,
+        };
       }
       return syncResult;
     }

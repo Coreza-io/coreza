@@ -27,6 +27,10 @@ import {
 } from "../../utils/normalizeOutput";
 
 export class ControlFlowExecutor implements INodeExecutor {
+  private isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+    return !!value && typeof (value as PromiseLike<unknown>).then === "function";
+  }
+
   readonly category = "ControlFlow";
   readonly syncCapable = true;
 
@@ -99,11 +103,11 @@ export class ControlFlowExecutor implements INodeExecutor {
     });
   }
 
-  private async executeSwitchNode(
+  private executeSwitchNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
@@ -129,7 +133,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         value: c.outputName || c.caseName || c.caseValue || `case${idx + 1}`,
       }));
 
-    const result = await ComparatorService.executeSwitch(
+    const result = ComparatorService.executeSwitch(
       switchCases,
       defaultCase,
     );
@@ -138,14 +142,19 @@ export class ControlFlowExecutor implements INodeExecutor {
       return leanError(result.error || "Switch evaluation failed");
     }
 
-    return leanSuccess(result.result);
+    const switchResult =
+      result.data && typeof result.data === "object" && "result" in result.data
+        ? result.data.result
+        : result.data;
+
+    return leanSuccess(switchResult);
   }
 
-  private async executeFieldNode(
+  private executeFieldNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): Promise<NodeResult> {
+  ): NodeResult {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
@@ -181,7 +190,10 @@ export class ControlFlowExecutor implements INodeExecutor {
 
             // Set the persistent value and save to DB
             if (currentPersistentValue !== finalValue) {
-              await context.setPersistentValue(fieldName, finalValue); // Save only if changed
+              const persistResult = context.setPersistentValue(fieldName, finalValue); // Save only if changed
+              if (this.isPromiseLike(persistResult)) {
+                return leanError("Edit Fields persistent operations require async execution");
+              }
             }
             // Also set in result for immediate use in current execution
             result[fieldName] = finalValue;
@@ -195,7 +207,10 @@ export class ControlFlowExecutor implements INodeExecutor {
           // Copy value from another field
           if (value && result[value] !== undefined) {
             if (persistent && context?.setPersistentValue) {
-              await context.setPersistentValue(fieldName, result[value]);
+              const persistResult = context.setPersistentValue(fieldName, result[value]);
+              if (this.isPromiseLike(persistResult)) {
+                return leanError("Edit Fields persistent operations require async execution");
+              }
             }
             result[fieldName] = result[value];
           }
@@ -204,7 +219,10 @@ export class ControlFlowExecutor implements INodeExecutor {
         case "remove":
           // Remove the field
           if (persistent && context?.setPersistentValue) {
-            await context.setPersistentValue(fieldName, undefined);
+            const persistResult = context.setPersistentValue(fieldName, undefined);
+            if (this.isPromiseLike(persistResult)) {
+              return leanError("Edit Fields persistent operations require async execution");
+            }
           }
           delete result[fieldName];
           break;

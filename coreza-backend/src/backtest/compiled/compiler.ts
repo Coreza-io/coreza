@@ -44,7 +44,7 @@ function branchHandleToEnum(handle: string): BranchEnum {
   }
 }
 
-const INELIGIBLE_NODE_NAMES = new Set(["Loop", "AIAgent", "LLM", "InitializeIndicators"]);
+const INELIGIBLE_NODE_NAMES = new Set(["Loop", "Switch", "AIAgent", "LLM", "InitializeIndicators"]);
 
 export function compilePlan(
   graph: GraphRuntime,

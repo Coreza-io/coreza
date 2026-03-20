@@ -41,6 +41,8 @@ export interface CompiledNodeParams {
     allNodeData: Record<string, any>,
     input: any,
   ) => Record<string, any>;
+  /** Optional reusable result object for hot-path compiled resolution */
+  reusableResult?: Record<string, any>;
   /** Node IDs referenced by template expressions for slot-based resolution */
   templateDeps?: string[];
   /** Keys that need runtime fallback resolution (unsupported patterns) */
@@ -535,24 +537,29 @@ export function compileNodeParams(
   const fallbackKeys = hasFallback
     ? compiledEntries.filter((e) => e.fallback).map((e) => e.key)
     : undefined;
+  const reusableResult: Record<string, any> = Object.create(null);
+
+  for (const entry of compiledEntries) {
+    reusableResult[entry.key] = entry.staticValue ?? null;
+  }
 
   return {
     hasTemplates: true,
     fallbackKeys,
+    reusableResult,
     templateDeps: Array.from(templateDeps),
     resolve: (allNodeData) => {
-      const resolved: Record<string, any> = {};
       for (const entry of compiledEntries) {
         if (entry.fallback) {
           // Will be handled by the engine's resolveDeep fallback
-          resolved[entry.key] = entry.staticValue;
+          reusableResult[entry.key] = entry.staticValue;
         } else if (entry.accessor) {
-          resolved[entry.key] = entry.accessor(allNodeData);
+          reusableResult[entry.key] = entry.accessor(allNodeData);
         } else {
-          resolved[entry.key] = entry.staticValue;
+          reusableResult[entry.key] = entry.staticValue;
         }
       }
-      return resolved;
+      return reusableResult;
     },
   };
 }

@@ -49,6 +49,18 @@ export class BacktestSession {
   private currentSymbolIndex = 0;
   private stepping = false;
   private compiledPlan: CompiledPlan | null = null;
+  private perf = {
+    totalStart: 0,
+    mode: "ENGINE" as "COMPILED" | "ENGINE",
+    simBrokerOnBarMs: 0,
+    resetMs: 0,
+    executeLoopMs: 0,
+    contextBuildMs: 0,
+    equitySnapshotMs: 0,
+    buildResultMs: 0,
+    storeClearMs: 0,
+    symbolExecutions: 0,
+  };
 
   constructor(
     public readonly backtestId: string,
@@ -258,6 +270,7 @@ export class BacktestSession {
 
   private executeTimestamp(event: MultiBarEvent): void {
     const symbols = event.symbols;
+    let t0 = performance.now();
 
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
@@ -268,6 +281,7 @@ export class BacktestSession {
         );
       }
     }
+    this.perf.simBrokerOnBarMs += performance.now() - t0;
 
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
@@ -281,19 +295,30 @@ export class BacktestSession {
         interval: event.interval,
         barIndex: event.barIndex,
       };
-      this.run.setExecutionContextExtras(
-        this.buildSymbolExecutionContext(event, symbol),
-      );
+      t0 = performance.now();
+      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+      this.perf.contextBuildMs += performance.now() - t0;
 
       if (this.compiledPlan) {
+        t0 = performance.now();
         runBar(this.compiledPlan, { data: symbolEvent });
+        this.perf.executeLoopMs += performance.now() - t0;
       } else {
+        t0 = performance.now();
         this.run.resetForNextBar();
+        this.perf.resetMs += performance.now() - t0;
+        this.perf.storeClearMs += this.run.lastStoreClearMs;
+        t0 = performance.now();
         void this.run.executeFromEntries(
           { data: symbolEvent },
           this.entryNodeIds,
-        );
+        ).then(() => {
+          this.perf.buildResultMs += this.run.lastBuildResultMs;
+        });
+        this.perf.executeLoopMs += performance.now() - t0;
       }
+
+      this.perf.symbolExecutions += 1;
     }
 
     const snapshotTimestamp =
@@ -301,13 +326,16 @@ export class BacktestSession {
       String(
         event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
       );
+    t0 = performance.now();
     BacktestExecutor.getSimBrokerForBacktest(
       this.backtestId,
     )?.recordEquitySnapshot(snapshotTimestamp);
+    this.perf.equitySnapshotMs += performance.now() - t0;
   }
 
   private async executeTimestampAsync(event: MultiBarEvent): Promise<void> {
     const symbols = event.symbols;
+    let t0 = performance.now();
 
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
@@ -318,6 +346,7 @@ export class BacktestSession {
         );
       }
     }
+    this.perf.simBrokerOnBarMs += performance.now() - t0;
 
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
@@ -331,19 +360,29 @@ export class BacktestSession {
         interval: event.interval,
         barIndex: event.barIndex,
       };
-      this.run.setExecutionContextExtras(
-        this.buildSymbolExecutionContext(event, symbol),
-      );
+      t0 = performance.now();
+      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+      this.perf.contextBuildMs += performance.now() - t0;
 
       if (this.compiledPlan) {
+        t0 = performance.now();
         runBar(this.compiledPlan, { data: symbolEvent });
+        this.perf.executeLoopMs += performance.now() - t0;
       } else {
+        t0 = performance.now();
         this.run.resetForNextBar();
+        this.perf.resetMs += performance.now() - t0;
+        this.perf.storeClearMs += this.run.lastStoreClearMs;
+        t0 = performance.now();
         await this.run.executeFromEntries(
           { data: symbolEvent },
           this.entryNodeIds,
         );
+        this.perf.executeLoopMs += performance.now() - t0;
+        this.perf.buildResultMs += this.run.lastBuildResultMs;
       }
+
+      this.perf.symbolExecutions += 1;
     }
 
     const snapshotTimestamp =
@@ -351,9 +390,11 @@ export class BacktestSession {
       String(
         event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
       );
+    t0 = performance.now();
     BacktestExecutor.getSimBrokerForBacktest(
       this.backtestId,
     )?.recordEquitySnapshot(snapshotTimestamp);
+    this.perf.equitySnapshotMs += performance.now() - t0;
   }
 
   async step(): Promise<Record<string, any>> {
@@ -497,6 +538,18 @@ export class BacktestSession {
     this.stepping = true;
     try {
       const signal = this.abortController.signal;
+      this.perf = {
+        totalStart: performance.now(),
+        mode: this.compiledPlan ? "COMPILED" : "ENGINE",
+        simBrokerOnBarMs: 0,
+        resetMs: 0,
+        executeLoopMs: 0,
+        contextBuildMs: 0,
+        equitySnapshotMs: 0,
+        buildResultMs: 0,
+        storeClearMs: 0,
+        symbolExecutions: 0,
+      };
 
       if (this.compiledPlan) {
         // ═══════════════════════════════════════════════════════════════
@@ -565,7 +618,41 @@ export class BacktestSession {
 
     if (this.status === "finished") {
       await this.finalize();
+      const elapsed = performance.now() - this.perf.totalStart;
+      const p = this.perf;
+      const tracked =
+        p.simBrokerOnBarMs +
+        p.resetMs +
+        p.executeLoopMs +
+        p.contextBuildMs +
+        p.equitySnapshotMs;
       const timing = this.run.getNodeTiming();
+      console.log(`[BacktestBenchmark] Mode: ${p.mode}`, {
+        totalRuntimeMs: +elapsed.toFixed(1),
+        totalBars: this.totalBars,
+        barsPerSec: +(this.totalBars / (elapsed / 1000)).toFixed(0),
+        symbolsPerSec: +(p.symbolExecutions / (elapsed / 1000)).toFixed(0),
+        avgPerBarMs: +(elapsed / this.totalBars).toFixed(4),
+        breakdown: {
+          simBrokerOnBarMs: +p.simBrokerOnBarMs.toFixed(1),
+          contextBuildMs: +p.contextBuildMs.toFixed(1),
+          executeLoopMs: +p.executeLoopMs.toFixed(1),
+          resetMs: +p.resetMs.toFixed(1),
+          buildResultMs: +p.buildResultMs.toFixed(1),
+          storeClearMs: +p.storeClearMs.toFixed(1),
+          equitySnapshotMs: +p.equitySnapshotMs.toFixed(1),
+          overheadMs: +(elapsed - tracked).toFixed(1),
+        },
+        pctBreakdown: {
+          simBrokerOnBar: `${((p.simBrokerOnBarMs / elapsed) * 100).toFixed(1)}%`,
+          contextBuild: `${((p.contextBuildMs / elapsed) * 100).toFixed(1)}%`,
+          executeLoop: `${((p.executeLoopMs / elapsed) * 100).toFixed(1)}%`,
+          reset: `${((p.resetMs / elapsed) * 100).toFixed(1)}%`,
+          equitySnapshot: `${((p.equitySnapshotMs / elapsed) * 100).toFixed(1)}%`,
+          overhead: `${(((elapsed - tracked) / elapsed) * 100).toFixed(1)}%`,
+        },
+        symbolExecutions: p.symbolExecutions,
+      });
       if (this.compiledPlan && this.compiledPlan.timingSampleRate > 0) {
         const sampled: Record<
           string,

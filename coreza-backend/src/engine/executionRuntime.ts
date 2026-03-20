@@ -331,6 +331,8 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
 }
 
 export class BacktestExecutionRuntime extends BaseExecutionRuntime {
+  public lastStoreClearMs = 0;
+
   private readonly satisfiedCounts = new Map<string, number>();
 
   protected override routeNodeResult(
@@ -376,7 +378,9 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   }
 
   resetForNextBar(full = false): void {
+    const t0 = performance.now();
     this.store.clearResults();
+    this.lastStoreClearMs = performance.now() - t0;
     this.queue.clear();
     this.satisfiedCounts.clear();
     this.executionOrder.length = 0;

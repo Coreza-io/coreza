@@ -7,6 +7,8 @@ import { WorkflowPlan } from "./workflowPlan";
 import { FlushPolicy, WorkflowExecutionResult, toExecutionError } from "./types";
 
 export class WorkflowRun {
+  public lastBuildResultMs = 0;
+
   private store: NodeStoreV2;
   private runtime: BaseExecutionRuntime;
   private dataContext: DataContext;
@@ -59,6 +61,7 @@ export class WorkflowRun {
   }
 
   async execute(initialInput?: unknown, startNodeId?: string): Promise<WorkflowExecutionResult> {
+    this.lastBuildResultMs = 0;
     try {
       if (startNodeId && this.plan.graph.nodeById.has(startNodeId)) {
         this.runtime.enqueue({ nodeId: startNodeId, input: initialInput });
@@ -68,7 +71,10 @@ export class WorkflowRun {
         }
       }
       await this.drainQueue();
-      return this.buildResult();
+      const t0 = performance.now();
+      const result = this.buildResult();
+      this.lastBuildResultMs = performance.now() - t0;
+      return result;
     } catch (error) {
       return this.buildExceptionResult(error);
     } finally {
@@ -77,13 +83,17 @@ export class WorkflowRun {
   }
 
   async executeFromEntries(input: unknown, entryNodeIds: string[]): Promise<WorkflowExecutionResult> {
+    this.lastBuildResultMs = 0;
     try {
       for (const entryNodeId of entryNodeIds) {
         this.runtime.primeEntry(entryNodeId, input);
         this.runtime.enqueue({ nodeId: entryNodeId, input });
       }
       await this.drainQueue();
-      return this.buildResult();
+      const t0 = performance.now();
+      const result = this.buildResult();
+      this.lastBuildResultMs = performance.now() - t0;
+      return result;
     } catch (error) {
       return this.buildExceptionResult(error);
     } finally {
@@ -119,6 +129,11 @@ export class WorkflowRun {
   clearNodeTiming(): void { this.runtime.clearNodeTiming(); }
   getCompiledParams() { return this.plan.resolver.getCompiledParams(); }
   getNodeExecutorMap() { return this.runtime.getNodeExecutorMap(); }
+  get lastStoreClearMs(): number {
+    return this.runtime instanceof BacktestExecutionRuntime
+      ? this.runtime.lastStoreClearMs
+      : 0;
+  }
   setExecutionContextExtras(extras: Partial<{ multiBarContext: any }>): void {
     this.runtime.setExecutionContextExtras(extras);
   }

@@ -87,12 +87,25 @@ export function runBar(plan: CompiledPlan, barInput: any): void {
 
     // Propagate activation to downstream nodes
     const activateStart = timingEnabled ? performance.now() : 0;
+    if (result?.success === false) {
+      if (timingEnabled) {
+        activateMs += performance.now() - activateStart;
+      }
+      continue;
+    }
+
     if (instr.op === OpCode.BRANCH) {
       // Conditional node: selectively activate based on result
       const resultData = result?.data;
       const branchTargets = instr.branchTargets!;
 
-      if (typeof resultData === "boolean") {
+      if (instr.branchStringMap && typeof resultData === "string") {
+        const targets = instr.branchStringMap.get(resultData)
+          ?? branchTargets[BranchEnum.DEFAULT];
+        for (let t = 0; t < targets.length; t++) {
+          active[targets[t]] = 1;
+        }
+      } else if (typeof resultData === "boolean") {
         const targets = branchTargets[resultData ? BranchEnum.TRUE : BranchEnum.FALSE];
         for (let t = 0; t < targets.length; t++) {
           active[targets[t]] = 1;

@@ -155,12 +155,24 @@ export function compilePlan(
 
     if (isConditional) {
       const branchTargets: number[][] = [[], [], [], []];
+      const branchStringMap = node.name === "Switch" ? new Map<string, number[]>() : undefined;
       for (const edge of graph.getOutgoingEdges(nodeId)) {
         const handle = edge.sourceHandle ?? "";
         const targetInstrIdx = nodeIdToInstrIndex.get(edge.target);
-        if (targetInstrIdx !== undefined) {
-          branchTargets[branchHandleToEnum(handle)].push(targetInstrIdx);
+        if (targetInstrIdx === undefined) continue;
+
+        if (branchStringMap) {
+          const targets = branchStringMap.get(handle);
+          if (targets) targets.push(targetInstrIdx);
+          else branchStringMap.set(handle, [targetInstrIdx]);
+
+          if (handle === "" || handle === "default" || handle === "fallback") {
+            branchTargets[BranchEnum.DEFAULT].push(targetInstrIdx);
+          }
+          continue;
         }
+
+        branchTargets[branchHandleToEnum(handle)].push(targetInstrIdx);
       }
 
       instructions.push({
@@ -172,6 +184,7 @@ export function compilePlan(
         resolveParams,
         downstreamSlots: [],
         branchTargets,
+        branchStringMap,
       });
       continue;
     }

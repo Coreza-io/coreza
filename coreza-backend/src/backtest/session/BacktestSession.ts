@@ -207,7 +207,6 @@ export class BacktestSession {
       barIndex: event.barIndex,
       isLast,
       total_bars: this.totalBars,
-      symbols: event.symbols,
       timestamp: event.timestamp,
     };
   }

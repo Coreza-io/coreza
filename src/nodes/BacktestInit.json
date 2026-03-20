@@ -98,9 +98,7 @@
       "required": false,
       "displayOptions": {
         "hide": {
-          "broker": [
-            "yahoo_finance"
-          ]
+          "broker": ["yahoo_finance"]
         }
       }
     },
@@ -111,10 +109,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "broker": [
-            "alpaca",
-            "binance"
-          ]
+          "broker": ["alpaca", "binance"]
         }
       },
       "dependsOn": "broker",
@@ -140,13 +135,6 @@
           }
         ]
       }
-    },
-    {
-      "key": "symbol",
-      "label": "Symbol",
-      "type": "text",
-      "placeholder": "AAPL",
-      "required": false
     },
     {
       "key": "symbols",
@@ -369,12 +357,8 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "broker": [
-            "alpaca"
-          ],
-          "asset_type": [
-            "stock"
-          ]
+          "broker": ["alpaca"],
+          "asset_type": ["stock"]
         }
       }
     },

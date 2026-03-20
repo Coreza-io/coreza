@@ -99,7 +99,13 @@ export function runBar(plan: CompiledPlan, barInput: any): void {
       const resultData = result?.data;
       const branchTargets = instr.branchTargets!;
 
-      if (typeof resultData === "boolean") {
+      if (instr.branchStringMap && typeof resultData === "string") {
+        const targets = instr.branchStringMap.get(resultData)
+          ?? branchTargets[BranchEnum.DEFAULT];
+        for (let t = 0; t < targets.length; t++) {
+          active[targets[t]] = 1;
+        }
+      } else if (typeof resultData === "boolean") {
         const targets = branchTargets[resultData ? BranchEnum.TRUE : BranchEnum.FALSE];
         for (let t = 0; t < targets.length; t++) {
           active[targets[t]] = 1;

@@ -82,6 +82,8 @@ export interface Instruction {
    * e.g. [falseTargets, trueTargets, defaultTargets, emptyTargets]
    */
   branchTargets?: number[][];
+  /** For Switch BRANCH nodes: maps result string → target instruction indices. */
+  branchStringMap?: Map<string, number[]>;
 }
 
 /**

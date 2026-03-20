@@ -49,6 +49,7 @@ export class BacktestSession {
   private currentSymbolIndex = 0;
   private stepping = false;
   private compiledPlan: CompiledPlan | null = null;
+  private readonly reusableBarInput: { data: any } = { data: null };
   private currentMultiBarBars: Record<string, any> = Object.create(null);
   private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
     multiBarContext: {

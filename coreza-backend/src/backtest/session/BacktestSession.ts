@@ -49,6 +49,7 @@ export class BacktestSession {
   private currentSymbolIndex = 0;
   private stepping = false;
   private compiledPlan: CompiledPlan | null = null;
+  private readonly reusableBarInput: { data: any } = { data: null };
   private currentMultiBarBars: Record<string, any> = Object.create(null);
   private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
     multiBarContext: {
@@ -315,7 +316,8 @@ export class BacktestSession {
 
       if (this.compiledPlan) {
         t0 = performance.now();
-        runBar(this.compiledPlan, { data: symbolEvent });
+        this.reusableBarInput.data = symbolEvent;
+        runBar(this.compiledPlan, this.reusableBarInput);
         this.perf.executeLoopMs += performance.now() - t0;
       } else {
         t0 = performance.now();
@@ -574,9 +576,10 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         // COMPILED PLAN PATH — no engine, no queue, no routing
         // ═══════════════════════════════════════════════════════════════
+        let lastProgressTime = performance.now();
         while (this.currentIndex < this.bars.length && !signal.aborted) {
           this.status = "running";
-          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
+          const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
 
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
@@ -592,7 +595,11 @@ export class BacktestSession {
           }
 
           this.barsProcessed = this.currentIndex;
-          await this.reportProgress();
+          const now = performance.now();
+          if (now - lastProgressTime >= 2000 || this.currentIndex >= this.bars.length) {
+            await this.reportProgress();
+            lastProgressTime = now;
+          }
 
           if (this.currentIndex >= this.bars.length) {
             this.status = "finished";
@@ -605,9 +612,10 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         // DYNAMIC ENGINE PATH — existing queue/routing engine
         // ═══════════════════════════════════════════════════════════════
+        let lastProgressTime = performance.now();
         while (this.currentIndex < this.bars.length && !signal.aborted) {
           this.status = "running";
-          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
+          const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
 
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
@@ -621,7 +629,11 @@ export class BacktestSession {
           }
 
           this.barsProcessed = this.currentIndex;
-          await this.reportProgress();
+          const now = performance.now();
+          if (now - lastProgressTime >= 2000 || this.currentIndex >= this.bars.length) {
+            await this.reportProgress();
+            lastProgressTime = now;
+          }
 
           if (this.currentIndex >= this.bars.length) {
             this.status = "finished";
@@ -644,7 +656,9 @@ export class BacktestSession {
         p.resetMs +
         p.executeLoopMs +
         p.contextBuildMs +
-        p.equitySnapshotMs;
+        p.equitySnapshotMs +
+        p.buildResultMs +
+        p.storeClearMs;
       const timing = this.run.getNodeTiming();
       console.log(`[BacktestBenchmark] Mode: ${p.mode}`, {
         totalRuntimeMs: +elapsed.toFixed(1),

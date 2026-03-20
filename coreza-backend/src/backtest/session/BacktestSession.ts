@@ -611,9 +611,10 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         // DYNAMIC ENGINE PATH — existing queue/routing engine
         // ═══════════════════════════════════════════════════════════════
+        let lastProgressTime = performance.now();
         while (this.currentIndex < this.bars.length && !signal.aborted) {
           this.status = "running";
-          const chunkEnd = Math.min(this.currentIndex + 500, this.bars.length);
+          const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
 
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
@@ -627,7 +628,11 @@ export class BacktestSession {
           }
 
           this.barsProcessed = this.currentIndex;
-          await this.reportProgress();
+          const now = performance.now();
+          if (now - lastProgressTime >= 2000 || this.currentIndex >= this.bars.length) {
+            await this.reportProgress();
+            lastProgressTime = now;
+          }
 
           if (this.currentIndex >= this.bars.length) {
             this.status = "finished";

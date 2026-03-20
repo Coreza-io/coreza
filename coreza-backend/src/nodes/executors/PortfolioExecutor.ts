@@ -25,7 +25,10 @@ import {
 } from "../../utils/normalizeOutput";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
-import { formatPositionWithPnlPercent } from "../../utils/portfolioHelpers";
+import {
+  FormattedPosition,
+  formatPositionWithPnlPercent,
+} from "../../utils/portfolioHelpers";
 import { isOurOrder } from "../../utils/orderIdempotency";
 import { NodeExecutionContext } from "../../engine/types";
 
@@ -38,8 +41,12 @@ const SIM_BROKER_KEY_PREFIX = "simBroker:";
  * Backtest mode: Delegates to the SimBroker instance cached by BacktestExecutor
  * Broker mode: Delegates to PortfolioManager for live broker data
  */
+type BrokerPortfolioState = ReturnType<PortfolioManager["getPortfolioState"]>;
+
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
+  // Backtest mode is fully sync. Broker mode is async, but compiled execution
+  // only calls this node in backtest mode and the adapter safely rejects Promise returns.
   readonly syncCapable = true;
 
   // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
@@ -146,7 +153,7 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     const operation = params.operation || "get_portfolio";
-    const symbol = params.symbol;
+    const symbol = params.symbol?.trim().toUpperCase();
     const currentBar = parseBar(params.current_bar);
     const prices = parsePrices(params.prices);
 
@@ -257,7 +264,8 @@ export class PortfolioExecutor implements INodeExecutor {
         const side = params.side?.trim().toUpperCase();
         const rawQuantity = parseFloat(params.quantity);
         const price = parseFloat(params.price);
-        const commission = parseFloat(params.commission || "0");
+        let commission = parseFloat(params.commission || "0");
+        if (isNaN(commission)) commission = 0;
         const fillId = params.fill_id?.trim() || undefined;
         const clientOrderId = params.client_order_id?.trim() || undefined;
         const orderStatus = params.status;
@@ -486,19 +494,19 @@ export class PortfolioExecutor implements INodeExecutor {
   private backtestGetAll(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
     const positions = Object.values(state.positions);
-    const formattedPositions = positions.map((p) =>
-      formatPositionWithPnlPercent(p),
-    );
-    const positionsValue = positions.reduce((sum, p) => sum + p.marketValue, 0);
+    const formattedPositions: FormattedPosition[] = [];
+    let positionsValue = 0;
+    let unrealizedPnlValue = 0;
+    let realizedPnlValue = 0;
+
+    for (const position of positions) {
+      formattedPositions.push(formatPositionWithPnlPercent(position));
+      positionsValue += position.marketValue;
+      unrealizedPnlValue += position.unrealizedPnl;
+      realizedPnlValue += position.realizedPnl;
+    }
+
     const initialCapital = simBroker.getConfig().initialCapital;
-    const unrealizedPnlValue = positions.reduce(
-      (sum, p) => sum + p.unrealizedPnl,
-      0,
-    );
-    const realizedPnlValue = positions.reduce(
-      (sum, p) => sum + p.realizedPnl,
-      0,
-    );
     const pendingOrders = simBroker.getPendingOrders();
 
     return leanSuccess({
@@ -611,13 +619,22 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private backtestGetTrades(simBroker: SimBroker): NodeResult {
     const trades = simBroker.getTrades();
-    const totalRealizedPnl = trades.reduce((sum, t) => sum + t.netPnl, 0);
+    let totalRealizedPnl = 0;
+    let winningTrades = 0;
+    let losingTrades = 0;
+
+    for (const trade of trades) {
+      totalRealizedPnl += trade.netPnl;
+      if (trade.netPnl > 0) winningTrades += 1;
+      else if (trade.netPnl < 0) losingTrades += 1;
+    }
+
     return leanSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: totalRealizedPnl,
-      winning_trades: trades.filter((t) => t.netPnl > 0).length,
-      losing_trades: trades.filter((t) => t.netPnl < 0).length,
+      winning_trades: winningTrades,
+      losing_trades: losingTrades,
     });
   }
 
@@ -626,7 +643,7 @@ export class PortfolioExecutor implements INodeExecutor {
   private brokerGetAll(pm: PortfolioManager, baseCurrency: string): NodeResult {
     const state = pm.getPortfolioState(baseCurrency);
     return leanSuccess({
-      ...this.getPortfolioSummary(pm, baseCurrency),
+      ...this.getPortfolioSummaryFromState(state),
       drawdown_pct:
         state.peakEquity > 0
           ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
@@ -639,17 +656,31 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): Record<string, any> {
-    const state = pm.getPortfolioState(baseCurrency);
-    const positions = state.positions;
-    const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
+    return this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency));
+  }
+
+  private getPortfolioSummaryFromState(
+    state: BrokerPortfolioState,
+  ): Record<string, any> {
+    const formattedPositions: FormattedPosition[] = [];
+    let positionsValue = 0;
+    let unrealizedPnl = 0;
+    let realizedPnl = 0;
+
+    for (const position of state.positions) {
+      formattedPositions.push(formatPositionWithPnlPercent(position));
+      positionsValue += position.marketValue;
+      unrealizedPnl += position.unrealizedPnl;
+      realizedPnl += position.realizedPnl;
+    }
 
     return {
       cash: state.cash,
-      positions: positions.map((p) => formatPositionWithPnlPercent(p)),
-      positions_count: positions.length,
+      positions: formattedPositions,
+      positions_count: state.positions.length,
       positions_value: positionsValue,
-      unrealized_pnl: positions.reduce((s, p) => s + p.unrealizedPnl, 0),
-      realized_pnl: positions.reduce((s, p) => s + p.realizedPnl, 0),
+      unrealized_pnl: unrealizedPnl,
+      realized_pnl: realizedPnl,
       total_equity: state.totalEquity,
       peak_equity: state.peakEquity,
       trades_count: state.trades.length,
@@ -727,9 +758,10 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): NodeResult {
+    const cash = pm.getCash();
     return leanSuccess({
-      cash: pm.getCash(),
-      buying_power: pm.getCash()[baseCurrency] || 0,
+      cash,
+      buying_power: cash[baseCurrency] || 0,
     });
   }
 
@@ -756,13 +788,22 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {
     const trades = pm.getTrades();
-    const totalRealizedPnl = trades.reduce((s, t) => s + t.netPnl, 0);
+    let totalRealizedPnl = 0;
+    let winningTrades = 0;
+    let losingTrades = 0;
+
+    for (const trade of trades) {
+      totalRealizedPnl += trade.netPnl;
+      if (trade.netPnl > 0) winningTrades += 1;
+      else if (trade.netPnl < 0) losingTrades += 1;
+    }
+
     return leanSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: totalRealizedPnl,
-      winning_trades: trades.filter((t) => t.netPnl > 0).length,
-      losing_trades: trades.filter((t) => t.netPnl < 0).length,
+      winning_trades: winningTrades,
+      losing_trades: losingTrades,
     });
   }
 }

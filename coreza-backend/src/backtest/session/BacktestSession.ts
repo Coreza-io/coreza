@@ -315,7 +315,8 @@ export class BacktestSession {
 
       if (this.compiledPlan) {
         t0 = performance.now();
-        runBar(this.compiledPlan, { data: symbolEvent });
+        this.reusableBarInput.data = symbolEvent;
+        runBar(this.compiledPlan, this.reusableBarInput);
         this.perf.executeLoopMs += performance.now() - t0;
       } else {
         t0 = performance.now();

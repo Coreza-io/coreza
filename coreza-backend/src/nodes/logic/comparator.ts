@@ -82,7 +82,7 @@ function parseValueByType(value: any, dataType: string): any {
       if (trimmed === "true") return true;
       if (trimmed === "false") return false;
       if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
-        const num = parseFloat(trimmed);
+        const num = Number(trimmed);
         if (!Number.isNaN(num) && Number.isFinite(num)) return num;
       }
       if (
@@ -97,6 +97,20 @@ function parseValueByType(value: any, dataType: string): any {
       }
       return value;
   }
+}
+
+function parseDateComparisonValues(
+  leftValue: any,
+  rightValue: any,
+): StandardNodeOutput<{ leftTime: number; rightTime: number }> {
+  const leftTime = new Date(leftValue).getTime();
+  const rightTime = new Date(rightValue).getTime();
+
+  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+    return createErrorOutput("Invalid date value in comparison");
+  }
+
+  return createSuccessOutput({ leftTime, rightTime });
 }
 
 export class ComparatorService {
@@ -258,30 +272,50 @@ export class ComparatorService {
         case "date_equals": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(
-            new Date(left).getTime() === new Date(right).getTime(),
-          );
+          const parsedDates = parseDateComparisonValues(left, right);
+
+          if (!parsedDates.success || !parsedDates.data) {
+            return parsedDates;
+          }
+
+          const { leftTime, rightTime } = parsedDates.data;
+          return createSuccessOutput(leftTime === rightTime);
         }
         case "date_not_equals": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(
-            new Date(left).getTime() !== new Date(right).getTime(),
-          );
+          const parsedDates = parseDateComparisonValues(left, right);
+
+          if (!parsedDates.success || !parsedDates.data) {
+            return parsedDates;
+          }
+
+          const { leftTime, rightTime } = parsedDates.data;
+          return createSuccessOutput(leftTime !== rightTime);
         }
         case "date_after": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(
-            new Date(left).getTime() > new Date(right).getTime(),
-          );
+          const parsedDates = parseDateComparisonValues(left, right);
+
+          if (!parsedDates.success || !parsedDates.data) {
+            return parsedDates;
+          }
+
+          const { leftTime, rightTime } = parsedDates.data;
+          return createSuccessOutput(leftTime > rightTime);
         }
         case "date_before": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(
-            new Date(left).getTime() < new Date(right).getTime(),
-          );
+          const parsedDates = parseDateComparisonValues(left, right);
+
+          if (!parsedDates.success || !parsedDates.data) {
+            return parsedDates;
+          }
+
+          const { leftTime, rightTime } = parsedDates.data;
+          return createSuccessOutput(leftTime < rightTime);
         }
         case "array_contains": {
           const left = parseValueByType(input.left, dataType);

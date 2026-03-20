@@ -71,6 +71,16 @@ export class BacktestSession {
     equitySnapshotMs: 0,
     buildResultMs: 0,
     storeClearMs: 0,
+    progressReportMs: 0,
+    progressReportCount: 0,
+    yieldMs: 0,
+    yieldCount: 0,
+    finalizeMs: 0,
+    timingPersistMs: 0,
+    progressCleanupMs: 0,
+    symbolEventBuildMs: 0,
+    snapshotTimestampMs: 0,
+    runnerBookkeepingMs: 0,
     symbolExecutions: 0,
   };
 
@@ -278,6 +288,145 @@ export class BacktestSession {
     return this.reusableSymbolExecutionContext;
   }
 
+  private buildSnapshotTimestamp(event: MultiBarEvent): string {
+    const t0 = performance.now();
+    const snapshotTimestamp =
+      event.timestamp ||
+      String(
+        event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
+      );
+    this.perf.snapshotTimestampMs += performance.now() - t0;
+    return snapshotTimestamp;
+  }
+
+  private async reportProgressTimed(): Promise<void> {
+    const t0 = performance.now();
+    await this.reportProgress();
+    this.perf.progressReportMs += performance.now() - t0;
+    this.perf.progressReportCount += 1;
+  }
+
+  private async yieldToEventLoop(): Promise<void> {
+    const t0 = performance.now();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    this.perf.yieldMs += performance.now() - t0;
+    this.perf.yieldCount += 1;
+  }
+
+  private logRunAllBenchmark(elapsed: number): void {
+    const p = this.perf;
+    const hotPathTrackedMs =
+      p.simBrokerOnBarMs +
+      p.resetMs +
+      p.executeLoopMs +
+      p.contextBuildMs +
+      p.equitySnapshotMs +
+      p.buildResultMs +
+      p.storeClearMs +
+      p.symbolEventBuildMs +
+      p.snapshotTimestampMs;
+    const runnerControlMs =
+      p.progressReportMs + p.yieldMs + p.runnerBookkeepingMs;
+    const finalizeMs =
+      p.finalizeMs + p.timingPersistMs + p.progressCleanupMs;
+    const unknownMs = Math.max(
+      0,
+      elapsed - hotPathTrackedMs - runnerControlMs - finalizeMs,
+    );
+    const timing = this.run.getNodeTiming();
+    console.log(`[BacktestBenchmark] Mode: ${p.mode}`, {
+      totalRuntimeMs: +elapsed.toFixed(1),
+      totalBars: this.totalBars,
+      barsPerSec: +(this.totalBars / (elapsed / 1000)).toFixed(0),
+      symbolsPerSec: +(p.symbolExecutions / (elapsed / 1000)).toFixed(0),
+      avgPerBarMs: +(elapsed / this.totalBars).toFixed(4),
+      breakdown: {
+        hotPathTrackedMs: +hotPathTrackedMs.toFixed(1),
+        runnerControlMs: +runnerControlMs.toFixed(1),
+        finalizeMs: +finalizeMs.toFixed(1),
+        unknownMs: +unknownMs.toFixed(1),
+        hotPath: {
+          simBrokerOnBarMs: +p.simBrokerOnBarMs.toFixed(1),
+          symbolEventBuildMs: +p.symbolEventBuildMs.toFixed(1),
+          contextBuildMs: +p.contextBuildMs.toFixed(1),
+          executeLoopMs: +p.executeLoopMs.toFixed(1),
+          resetMs: +p.resetMs.toFixed(1),
+          buildResultMs: +p.buildResultMs.toFixed(1),
+          storeClearMs: +p.storeClearMs.toFixed(1),
+          snapshotTimestampMs: +p.snapshotTimestampMs.toFixed(1),
+          equitySnapshotMs: +p.equitySnapshotMs.toFixed(1),
+        },
+        runnerControl: {
+          progressReportMs: +p.progressReportMs.toFixed(1),
+          progressReportCount: p.progressReportCount,
+          yieldMs: +p.yieldMs.toFixed(1),
+          yieldCount: p.yieldCount,
+          runnerBookkeepingMs: +p.runnerBookkeepingMs.toFixed(1),
+        },
+        finalize: {
+          finalizeBacktestMs: +p.finalizeMs.toFixed(1),
+          timingPersistMs: +p.timingPersistMs.toFixed(1),
+          progressCleanupMs: +p.progressCleanupMs.toFixed(1),
+        },
+      },
+      pctBreakdown: {
+        hotPathTracked: `${((hotPathTrackedMs / elapsed) * 100).toFixed(1)}%`,
+        runnerControl: `${((runnerControlMs / elapsed) * 100).toFixed(1)}%`,
+        finalize: `${((finalizeMs / elapsed) * 100).toFixed(1)}%`,
+        unknown: `${((unknownMs / elapsed) * 100).toFixed(1)}%`,
+      },
+      symbolExecutions: p.symbolExecutions,
+    });
+    if (this.compiledPlan && this.compiledPlan.timingSampleRate > 0) {
+      const sampled: Record<
+        string,
+        { totalMs: number; count: number; avgMs: number }
+      > = {};
+      for (let i = 0; i < this.compiledPlan.instructions.length; i++) {
+        const instr = this.compiledPlan.instructions[i];
+        const count = this.compiledPlan.instructionTimingCount[i];
+        if (!count) continue;
+        const totalMs = this.compiledPlan.instructionTimingMs[i];
+        sampled[instr.node.id] = {
+          totalMs: +totalMs.toFixed(3),
+          count,
+          avgMs: +(totalMs / count).toFixed(3),
+        };
+      }
+      console.log(
+        `[BacktestSession] Compiled sampled node timing (sampleRate=${this.compiledPlan.timingSampleRate}, sampledBars=${Math.floor(this.compiledPlan.barCount / this.compiledPlan.timingSampleRate)}):`,
+        sampled,
+      );
+      const vmTimingLabels = [
+        "paramResolutionMs",
+        "nodeExecutionMs",
+        "activationMs",
+      ] as const;
+      const vmTiming: Record<
+        string,
+        { totalMs: number; count: number; avgMs: number }
+      > = {};
+      for (let i = 0; i < vmTimingLabels.length; i++) {
+        const count = this.compiledPlan.vmTimingCount[i];
+        if (!count) continue;
+        const totalMs = this.compiledPlan.vmTimingMs[i];
+        vmTiming[vmTimingLabels[i]] = {
+          totalMs: +totalMs.toFixed(3),
+          count,
+          avgMs: +(totalMs / count).toFixed(3),
+        };
+      }
+      console.log(
+        `[BacktestSession] Compiled sampled VM timing (sampleRate=${this.compiledPlan.timingSampleRate}):`,
+        vmTiming,
+      );
+    }
+    console.log(
+      `[BacktestSession] runAll completed for ${this.backtestId}${this.compiledPlan ? " (compiled plan)" : " (dynamic engine)"}`,
+      timing,
+    );
+  }
+
   private executeTimestamp(event: MultiBarEvent): void {
     const symbols = event.symbols;
     let t0 = performance.now();
@@ -299,12 +448,14 @@ export class BacktestSession {
         continue;
       }
 
+      t0 = performance.now();
       const symbolEvent: BarEvent = {
         bar,
         symbol,
         interval: event.interval,
         barIndex: event.barIndex,
       };
+      this.perf.symbolEventBuildMs += performance.now() - t0;
       t0 = performance.now();
       const symbolExecutionContext = this.buildSymbolExecutionContext(event, symbol);
       if (this.compiledPlan) {
@@ -337,11 +488,7 @@ export class BacktestSession {
       this.perf.symbolExecutions += 1;
     }
 
-    const snapshotTimestamp =
-      event.timestamp ||
-      String(
-        event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
-      );
+    const snapshotTimestamp = this.buildSnapshotTimestamp(event);
     t0 = performance.now();
     BacktestExecutor.getSimBrokerForBacktest(
       this.backtestId,
@@ -370,12 +517,14 @@ export class BacktestSession {
         continue;
       }
 
+      t0 = performance.now();
       const symbolEvent: BarEvent = {
         bar,
         symbol,
         interval: event.interval,
         barIndex: event.barIndex,
       };
+      this.perf.symbolEventBuildMs += performance.now() - t0;
       t0 = performance.now();
       const symbolExecutionContext = this.buildSymbolExecutionContext(event, symbol);
       if (this.compiledPlan) {
@@ -406,11 +555,7 @@ export class BacktestSession {
       this.perf.symbolExecutions += 1;
     }
 
-    const snapshotTimestamp =
-      event.timestamp ||
-      String(
-        event.bars[event.symbols[0]]?.timestamp ?? new Date().toISOString(),
-      );
+    const snapshotTimestamp = this.buildSnapshotTimestamp(event);
     t0 = performance.now();
     BacktestExecutor.getSimBrokerForBacktest(
       this.backtestId,
@@ -569,6 +714,16 @@ export class BacktestSession {
         equitySnapshotMs: 0,
         buildResultMs: 0,
         storeClearMs: 0,
+        progressReportMs: 0,
+        progressReportCount: 0,
+        yieldMs: 0,
+        yieldCount: 0,
+        finalizeMs: 0,
+        timingPersistMs: 0,
+        progressCleanupMs: 0,
+        symbolEventBuildMs: 0,
+        snapshotTimestampMs: 0,
+        runnerBookkeepingMs: 0,
         symbolExecutions: 0,
       };
 
@@ -578,8 +733,10 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         let lastProgressTime = performance.now();
         while (this.currentIndex < this.bars.length && !signal.aborted) {
+          let t0 = performance.now();
           this.status = "running";
           const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
+          this.perf.runnerBookkeepingMs += performance.now() - t0;
 
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
@@ -591,22 +748,31 @@ export class BacktestSession {
                 error,
               );
             }
+            t0 = performance.now();
             this.currentIndex += 1;
+            this.perf.runnerBookkeepingMs += performance.now() - t0;
           }
 
+          t0 = performance.now();
           this.barsProcessed = this.currentIndex;
           const now = performance.now();
-          if (now - lastProgressTime >= 2000 || this.currentIndex >= this.bars.length) {
-            await this.reportProgress();
+          const shouldReportProgress =
+            now - lastProgressTime >= 2000 ||
+            this.currentIndex >= this.bars.length;
+          this.perf.runnerBookkeepingMs += performance.now() - t0;
+          if (shouldReportProgress) {
+            await this.reportProgressTimed();
             lastProgressTime = now;
           }
 
           if (this.currentIndex >= this.bars.length) {
+            t0 = performance.now();
             this.status = "finished";
+            this.perf.runnerBookkeepingMs += performance.now() - t0;
             break;
           }
 
-          await new Promise<void>((resolve) => setImmediate(resolve));
+          await this.yieldToEventLoop();
         }
       } else {
         // ═══════════════════════════════════════════════════════════════
@@ -614,8 +780,10 @@ export class BacktestSession {
         // ═══════════════════════════════════════════════════════════════
         let lastProgressTime = performance.now();
         while (this.currentIndex < this.bars.length && !signal.aborted) {
+          let t0 = performance.now();
           this.status = "running";
           const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
+          this.perf.runnerBookkeepingMs += performance.now() - t0;
 
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
@@ -625,22 +793,31 @@ export class BacktestSession {
               console.error("[BacktestSession] Error processing bar:", error);
             }
 
+            t0 = performance.now();
             this.currentIndex += 1;
+            this.perf.runnerBookkeepingMs += performance.now() - t0;
           }
 
+          t0 = performance.now();
           this.barsProcessed = this.currentIndex;
           const now = performance.now();
-          if (now - lastProgressTime >= 2000 || this.currentIndex >= this.bars.length) {
-            await this.reportProgress();
+          const shouldReportProgress =
+            now - lastProgressTime >= 2000 ||
+            this.currentIndex >= this.bars.length;
+          this.perf.runnerBookkeepingMs += performance.now() - t0;
+          if (shouldReportProgress) {
+            await this.reportProgressTimed();
             lastProgressTime = now;
           }
 
           if (this.currentIndex >= this.bars.length) {
+            t0 = performance.now();
             this.status = "finished";
+            this.perf.runnerBookkeepingMs += performance.now() - t0;
             break;
           }
 
-          await new Promise<void>((resolve) => setImmediate(resolve));
+          await this.yieldToEventLoop();
         }
       }
     } finally {
@@ -650,87 +827,7 @@ export class BacktestSession {
     if (this.status === "finished") {
       await this.finalize();
       const elapsed = performance.now() - this.perf.totalStart;
-      const p = this.perf;
-      const tracked =
-        p.simBrokerOnBarMs +
-        p.resetMs +
-        p.executeLoopMs +
-        p.contextBuildMs +
-        p.equitySnapshotMs +
-        p.buildResultMs +
-        p.storeClearMs;
-      const timing = this.run.getNodeTiming();
-      console.log(`[BacktestBenchmark] Mode: ${p.mode}`, {
-        totalRuntimeMs: +elapsed.toFixed(1),
-        totalBars: this.totalBars,
-        barsPerSec: +(this.totalBars / (elapsed / 1000)).toFixed(0),
-        symbolsPerSec: +(p.symbolExecutions / (elapsed / 1000)).toFixed(0),
-        avgPerBarMs: +(elapsed / this.totalBars).toFixed(4),
-        breakdown: {
-          simBrokerOnBarMs: +p.simBrokerOnBarMs.toFixed(1),
-          contextBuildMs: +p.contextBuildMs.toFixed(1),
-          executeLoopMs: +p.executeLoopMs.toFixed(1),
-          resetMs: +p.resetMs.toFixed(1),
-          buildResultMs: +p.buildResultMs.toFixed(1),
-          storeClearMs: +p.storeClearMs.toFixed(1),
-          equitySnapshotMs: +p.equitySnapshotMs.toFixed(1),
-          overheadMs: +(elapsed - tracked).toFixed(1),
-        },
-        pctBreakdown: {
-          simBrokerOnBar: `${((p.simBrokerOnBarMs / elapsed) * 100).toFixed(1)}%`,
-          contextBuild: `${((p.contextBuildMs / elapsed) * 100).toFixed(1)}%`,
-          executeLoop: `${((p.executeLoopMs / elapsed) * 100).toFixed(1)}%`,
-          reset: `${((p.resetMs / elapsed) * 100).toFixed(1)}%`,
-          equitySnapshot: `${((p.equitySnapshotMs / elapsed) * 100).toFixed(1)}%`,
-          overhead: `${(((elapsed - tracked) / elapsed) * 100).toFixed(1)}%`,
-        },
-        symbolExecutions: p.symbolExecutions,
-      });
-      if (this.compiledPlan && this.compiledPlan.timingSampleRate > 0) {
-        const sampled: Record<
-          string,
-          { totalMs: number; count: number; avgMs: number }
-        > = {};
-        for (let i = 0; i < this.compiledPlan.instructions.length; i++) {
-          const instr = this.compiledPlan.instructions[i];
-          const count = this.compiledPlan.instructionTimingCount[i];
-          if (!count) continue;
-          const totalMs = this.compiledPlan.instructionTimingMs[i];
-          sampled[instr.node.id] = {
-            totalMs: +totalMs.toFixed(3),
-            count,
-            avgMs: +(totalMs / count).toFixed(3),
-          };
-        }
-        console.log(
-          `[BacktestSession] Compiled sampled node timing (sampleRate=${this.compiledPlan.timingSampleRate}, sampledBars=${Math.floor(this.compiledPlan.barCount / this.compiledPlan.timingSampleRate)}):`,
-          sampled,
-        );
-        const vmTimingLabels = [
-          "paramResolutionMs",
-          "nodeExecutionMs",
-          "activationMs",
-        ] as const;
-        const vmTiming: Record<string, { totalMs: number; count: number; avgMs: number }> = {};
-        for (let i = 0; i < vmTimingLabels.length; i++) {
-          const count = this.compiledPlan.vmTimingCount[i];
-          if (!count) continue;
-          const totalMs = this.compiledPlan.vmTimingMs[i];
-          vmTiming[vmTimingLabels[i]] = {
-            totalMs: +totalMs.toFixed(3),
-            count,
-            avgMs: +(totalMs / count).toFixed(3),
-          };
-        }
-        console.log(
-          `[BacktestSession] Compiled sampled VM timing (sampleRate=${this.compiledPlan.timingSampleRate}):`,
-          vmTiming,
-        );
-      }
-      console.log(
-        `[BacktestSession] runAll completed for ${this.backtestId}${this.compiledPlan ? " (compiled plan)" : " (dynamic engine)"}`,
-        timing,
-      );
+      this.logRunAllBenchmark(elapsed);
     }
   }
 
@@ -787,6 +884,7 @@ export class BacktestSession {
   }
 
   private async finalize(): Promise<void> {
+    let t0 = performance.now();
     try {
       const backtestExecutor = new BacktestExecutor();
       await backtestExecutor.finalizeBacktestById(this.backtestId);
@@ -795,20 +893,26 @@ export class BacktestSession {
         `[BacktestSession] Finalization failed for ${this.backtestId}:`,
         error,
       );
+    } finally {
+      this.perf.finalizeMs += performance.now() - t0;
     }
 
     const timing = this.run.getNodeTiming();
     const redis = getRedisCache();
+    t0 = performance.now();
     await redis.set(
       `backtest:timing:${this.backtestId}`,
       JSON.stringify(timing),
       "EX",
       3600,
     );
+    this.perf.timingPersistMs += performance.now() - t0;
     console.log(
       `[BacktestSession] Node timing for ${this.backtestId}:`,
       timing,
     );
+    t0 = performance.now();
     await redis.del(`backtest:progress:${this.backtestId}`);
+    this.perf.progressCleanupMs += performance.now() - t0;
   }
 }

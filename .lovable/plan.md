@@ -1,38 +1,76 @@
 
 
-# Plan: Stop Timestamp Manipulation — Use Broker's Native Epoch
+# Analysis: Why Overhead is ~2s in Both Modes (10.8% Compiled vs 4.6% Engine)
 
-## Root Cause
+## The Key Insight: Same Absolute Cost, Different Denominator
 
-The broker `Bar` type already provides `time: number` (epoch ms). The bug is in `alignMultiSymbolBars()` which unnecessarily converts it to a string via `String(bar.timestamp ?? bar.time)`, producing `"1699228200000"`. Later, `BarBuffer.toEpochMs()` calls `Date.parse("1699228200000")` which returns `NaN`.
+| Metric | ENGINE | COMPILED |
+|---|---|---|
+| Overhead (absolute) | 2,267 ms | 2,090 ms |
+| Total runtime | 49,345 ms | 19,391 ms |
+| Overhead (%) | 4.6% | **10.8%** |
 
-The fix is simple: **stop converting to strings. Use the numeric epoch the broker already sends.**
+The absolute overhead is nearly identical (~2.1s). The percentage is 2.3x higher in compiled mode simply because the total runtime is 2.5x smaller — the same fixed costs become a larger fraction.
 
-## Changes
+## What's Inside the ~2s Overhead
 
-### 1. `alignMultiSymbolBars()` — use numeric timestamps throughout
+### 1. `reportProgress()` Redis writes — ~1,800-1,900 ms (dominant)
 
-**File: `BacktestExecutor.ts`** (lines 589-640)
+Every 500 bars, `runAll()` calls `await this.reportProgress()` which does:
+```
+redis.set(`backtest:progress:${id}`, JSON.stringify({...}), "EX", 3600)
+```
 
-- Change `timestamps` from `Set<string>` → `Set<number>`
-- Replace `String(bar.timestamp ?? bar.time)` → `bar.time` (already a number from broker)
-- `orderedTimestamps` sorted numerically: `.sort((a, b) => a - b)` — no `new Date()` needed
-- Forward-fill: `{ ...previousBar, time: timestamp }` instead of `{ ...previousBar, timestamp }`
-- Match comparison: `currentBar.time === timestamp` (number === number)
+189,033 bars ÷ 500 = **378 Redis round-trips**. At ~5ms per Redis call, that's **~1,890 ms** — nearly the entire overhead budget.
 
-### 2. `recordEquitySnapshot()` — already works
+This is identical in both modes (same chunk size, same bar count).
 
-It calls `BarBuffer.toEpochMs(timestamp)` which handles `number` type directly (`typeof timestamp === "number" ? timestamp : ...`). Once we pass numbers, no parsing needed.
+### 2. `setImmediate()` yields — ~50-100 ms
 
-### 3. `getMetrics()` line 718 — already works
+Each chunk boundary does `await new Promise(resolve => setImmediate(resolve))`. 378 yields × ~0.1-0.3ms each ≈ 50-100ms.
 
-`new Date(ecData.timestamps[0]).toISOString()` works fine when the Float64Array contains valid epoch ms numbers (not NaN).
+### 3. `{ data: symbolEvent }` object allocation — ~30-50 ms
 
-### 4. No change to `BarBuffer.toEpochMs()`
+In the compiled path (line 318): `runBar(this.compiledPlan, { data: symbolEvent })` creates a new wrapper object per symbol execution. 378,063 allocations.
 
-The existing implementation handles numbers correctly. The hardening for string-epoch is still good defensive coding but becomes unnecessary for the main path.
+### 4. Outer loop control — ~10-20 ms
+
+`while` checks, `signal.aborted` checks, index increments, try/catch per bar.
+
+### 5. Bug: `buildResultMs` not included in `tracked` sum
+
+Line 642-647 computes `tracked` as:
+```
+simBrokerOnBarMs + resetMs + executeLoopMs + contextBuildMs + equitySnapshotMs
+```
+
+`buildResultMs` (135.8ms in ENGINE) and `storeClearMs` (867.3ms, but subset of `resetMs`) are displayed but `buildResultMs` is **not subtracted from overhead**. So ENGINE's "true" unaccounted overhead is actually 2,267 - 136 = **2,131 ms** — even closer to compiled's 2,090 ms.
 
 ## Summary
 
-One file change (`BacktestExecutor.ts`, ~6 lines in `alignMultiSymbolBars`). No timestamp manipulation, no string conversion, no `Date.parse`. Just pass through what the broker sends.
+| Overhead Source | Est. ms | Both Modes? |
+|---|---|---|
+| Redis `reportProgress()` × 378 | ~1,890 | Yes — identical |
+| `setImmediate` yields × 378 | ~75 | Yes — identical |
+| Object allocation (`{ data: ... }`) | ~40 | Yes — identical |
+| Loop control / try-catch | ~15 | Yes — identical |
+| GC pauses from above allocations | ~70 | Yes — similar |
+| **Total** | **~2,090** | |
+
+## Proposed Fix: Reduce Overhead from ~2s to ~200ms
+
+### Fix 1: Reduce `reportProgress()` frequency
+Change chunk size from 500 to 5,000 bars. This cuts Redis calls from 378 to 38. Saves ~1,700ms.
+
+### Fix 2: Fix `tracked` sum to include `buildResultMs`
+Add `p.buildResultMs` to the `tracked` calculation so overhead reporting is accurate.
+
+### Fix 3: Reuse the `{ data: symbolEvent }` wrapper
+Pre-allocate one object, mutate its `data` field each iteration instead of creating 378K objects.
+
+### Fix 4: Batch or skip `reportProgress()` based on elapsed time
+Instead of every N bars, report every ~2 seconds of wall-clock time. This adapts to execution speed.
+
+### Expected Result
+Overhead drops from ~2,090ms to ~200ms. For compiled mode, that's from 10.8% to ~1%. Total compiled runtime drops from 19.4s to ~17.5s, pushing bars/sec from 9,748 to ~10,800.
 

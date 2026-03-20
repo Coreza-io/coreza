@@ -28,7 +28,9 @@ import {
 
 export class ControlFlowExecutor implements INodeExecutor {
   private isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-    return !!value && typeof (value as PromiseLike<unknown>).then === "function";
+    return (
+      !!value && typeof (value as PromiseLike<unknown>).then === "function"
+    );
   }
 
   readonly category = "ControlFlow";
@@ -64,26 +66,35 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
   }
 
-
   private executeIfNode(
     node: WorkflowNode,
     input: NodeInput,
     context: any,
   ): NodeResult {
-    // Resolve parameters (with deep reference resolution if provided)
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    // If a conditions array is provided, use it with logicalOp
     const conditions = Array.isArray(resolvedParams.conditions)
       ? resolvedParams.conditions
       : [];
-    const logicalOp: "AND" | "OR" =
-      (resolvedParams.logicalOp || "AND").toUpperCase() === "OR" ? "OR" : "AND";
 
-    let result: boolean;
-    const evals = conditions.map((cond: any) => {
+    const logicalOp: "AND" | "OR" =
+      String(resolvedParams.logicalOp || "AND").toUpperCase() === "OR"
+        ? "OR"
+        : "AND";
+
+    if (conditions.length === 0) {
+      return leanError("If node requires at least one condition");
+    }
+
+    const target = logicalOp === "OR";
+
+    for (const cond of conditions) {
+      if (!cond || !cond.operator) {
+        return leanError("Invalid If condition");
+      }
+
       const evalResult = ComparatorService.evaluate({
         left: cond.left,
         operator: cond.operator,
@@ -91,15 +102,25 @@ export class ControlFlowExecutor implements INodeExecutor {
         dataType: cond.dataType,
       });
 
-      return evalResult.success && evalResult.data;
-    });
+      if (!evalResult.success) {
+        return leanError(evalResult.error || "If condition evaluation failed");
+      }
 
-    // Aggregate based on logicalOp
-    result = logicalOp === "OR" ? evals.some(Boolean) : evals.every(Boolean);
+      const matched = Boolean(evalResult.data);
+
+      // OR: stop on true
+      // AND: stop on false
+      if (matched === target) {
+        return leanSuccess({
+          true: target,
+          false: !target,
+        });
+      }
+    }
 
     return leanSuccess({
-      true: result,
-      false: !result,
+      true: !target,
+      false: target,
     });
   }
 
@@ -133,10 +154,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         value: c.outputName || c.caseName || c.caseValue || `case${idx + 1}`,
       }));
 
-    const result = ComparatorService.executeSwitch(
-      switchCases,
-      defaultCase,
-    );
+    const result = ComparatorService.executeSwitch(switchCases, defaultCase);
 
     if (!result.success) {
       return leanError(result.error || "Switch evaluation failed");
@@ -190,9 +208,14 @@ export class ControlFlowExecutor implements INodeExecutor {
 
             // Set the persistent value and save to DB
             if (currentPersistentValue !== finalValue) {
-              const persistResult = context.setPersistentValue(fieldName, finalValue); // Save only if changed
+              const persistResult = context.setPersistentValue(
+                fieldName,
+                finalValue,
+              ); // Save only if changed
               if (this.isPromiseLike(persistResult)) {
-                return leanError("Edit Fields persistent operations require async execution");
+                return leanError(
+                  "Edit Fields persistent operations require async execution",
+                );
               }
             }
             // Also set in result for immediate use in current execution
@@ -207,9 +230,14 @@ export class ControlFlowExecutor implements INodeExecutor {
           // Copy value from another field
           if (value && result[value] !== undefined) {
             if (persistent && context?.setPersistentValue) {
-              const persistResult = context.setPersistentValue(fieldName, result[value]);
+              const persistResult = context.setPersistentValue(
+                fieldName,
+                result[value],
+              );
               if (this.isPromiseLike(persistResult)) {
-                return leanError("Edit Fields persistent operations require async execution");
+                return leanError(
+                  "Edit Fields persistent operations require async execution",
+                );
               }
             }
             result[fieldName] = result[value];
@@ -219,9 +247,14 @@ export class ControlFlowExecutor implements INodeExecutor {
         case "remove":
           // Remove the field
           if (persistent && context?.setPersistentValue) {
-            const persistResult = context.setPersistentValue(fieldName, undefined);
+            const persistResult = context.setPersistentValue(
+              fieldName,
+              undefined,
+            );
             if (this.isPromiseLike(persistResult)) {
-              return leanError("Edit Fields persistent operations require async execution");
+              return leanError(
+                "Edit Fields persistent operations require async execution",
+              );
             }
           }
           delete result[fieldName];
@@ -244,34 +277,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const {
-      value,
-      operator,
-      arg1,
-      arg2,
-      filterOperator,
-      unit,
-      date2,
-      timezone,
-      inputFormat,
-      targetDay,
-      mapSubOperation,
-      mapIndex,
-    } = resolvedParams;
-    const result = ComputeService.compute({
-      value,
-      operator,
-      arg1,
-      arg2,
-      filterOperator,
-      unit,
-      date2,
-      timezone,
-      inputFormat,
-      targetDay,
-      mapSubOperation,
-      mapIndex,
-    });
+    const result = ComputeService.compute(resolvedParams);
 
     return result.success
       ? leanSuccess(result.data)

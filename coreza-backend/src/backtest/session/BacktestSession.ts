@@ -49,6 +49,17 @@ export class BacktestSession {
   private currentSymbolIndex = 0;
   private stepping = false;
   private compiledPlan: CompiledPlan | null = null;
+  private currentMultiBarBars: Record<string, any> = Object.create(null);
+  private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
+    multiBarContext: {
+      timestamp: "",
+      interval: "",
+      symbols: [],
+      currentSymbol: "",
+      bars: this.currentMultiBarBars,
+      getBar: (symbol: string) => this.currentMultiBarBars[symbol],
+    },
+  };
   private perf = {
     totalStart: 0,
     mode: "ENGINE" as "COMPILED" | "ENGINE",
@@ -256,16 +267,14 @@ export class BacktestSession {
     event: MultiBarEvent,
     currentSymbol: string,
   ): SymbolExecutionContext {
-    return {
-      multiBarContext: {
-        timestamp: event.timestamp,
-        interval: event.interval,
-        symbols: [...event.symbols],
-        currentSymbol,
-        bars: event.bars,
-        getBar: (symbol: string) => event.bars[symbol],
-      },
-    };
+    const multiBarContext = this.reusableSymbolExecutionContext.multiBarContext;
+    this.currentMultiBarBars = event.bars;
+    multiBarContext.timestamp = event.timestamp;
+    multiBarContext.interval = event.interval;
+    multiBarContext.symbols = event.symbols;
+    multiBarContext.currentSymbol = currentSymbol;
+    multiBarContext.bars = event.bars;
+    return this.reusableSymbolExecutionContext;
   }
 
   private executeTimestamp(event: MultiBarEvent): void {
@@ -296,7 +305,12 @@ export class BacktestSession {
         barIndex: event.barIndex,
       };
       t0 = performance.now();
-      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+      const symbolExecutionContext = this.buildSymbolExecutionContext(event, symbol);
+      if (this.compiledPlan) {
+        this.compiledPlan.ctx.multiBarContext = symbolExecutionContext.multiBarContext;
+      } else {
+        this.run.setExecutionContextExtras(symbolExecutionContext);
+      }
       this.perf.contextBuildMs += performance.now() - t0;
 
       if (this.compiledPlan) {
@@ -361,7 +375,12 @@ export class BacktestSession {
         barIndex: event.barIndex,
       };
       t0 = performance.now();
-      this.run.setExecutionContextExtras(this.buildSymbolExecutionContext(event, symbol));
+      const symbolExecutionContext = this.buildSymbolExecutionContext(event, symbol);
+      if (this.compiledPlan) {
+        this.compiledPlan.ctx.multiBarContext = symbolExecutionContext.multiBarContext;
+      } else {
+        this.run.setExecutionContextExtras(symbolExecutionContext);
+      }
       this.perf.contextBuildMs += performance.now() - t0;
 
       if (this.compiledPlan) {
@@ -672,6 +691,26 @@ export class BacktestSession {
         console.log(
           `[BacktestSession] Compiled sampled node timing (sampleRate=${this.compiledPlan.timingSampleRate}, sampledBars=${Math.floor(this.compiledPlan.barCount / this.compiledPlan.timingSampleRate)}):`,
           sampled,
+        );
+        const vmTimingLabels = [
+          "paramResolutionMs",
+          "nodeExecutionMs",
+          "activationMs",
+        ] as const;
+        const vmTiming: Record<string, { totalMs: number; count: number; avgMs: number }> = {};
+        for (let i = 0; i < vmTimingLabels.length; i++) {
+          const count = this.compiledPlan.vmTimingCount[i];
+          if (!count) continue;
+          const totalMs = this.compiledPlan.vmTimingMs[i];
+          vmTiming[vmTimingLabels[i]] = {
+            totalMs: +totalMs.toFixed(3),
+            count,
+            avgMs: +(totalMs / count).toFixed(3),
+          };
+        }
+        console.log(
+          `[BacktestSession] Compiled sampled VM timing (sampleRate=${this.compiledPlan.timingSampleRate}):`,
+          vmTiming,
         );
       }
       console.log(

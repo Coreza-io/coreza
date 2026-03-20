@@ -31,6 +31,13 @@ export const enum OpCode {
   BRANCH = 1,
 }
 
+export const enum BranchEnum {
+  FALSE = 0,
+  TRUE = 1,
+  DEFAULT = 2,
+  EMPTY = 3,
+}
+
 /**
  * Function signature for wrapped node executors in the compiled plan.
  * The adapter pre-resolves parameters and injects them via context override.
@@ -71,10 +78,10 @@ export interface Instruction {
   downstreamSlots: number[];
   /**
    * For BRANCH (If/Switch) nodes only.
-   * Maps sourceHandle string → array of downstream instruction indices.
-   * e.g. { "true": [3, 4], "false": [5] }
+   * Integer-indexed branch target arrays.
+   * e.g. [falseTargets, trueTargets, defaultTargets, emptyTargets]
    */
-  branchMap?: Record<string, number[]>;
+  branchTargets?: number[][];
 }
 
 /**
@@ -115,6 +122,14 @@ export interface CompiledPlan {
   ctx: CompiledExecContext;
   /** Map from nodeId to instruction index (for timing/debugging) */
   nodeIdToInstrIndex: Map<string, number>;
+  /** Node result cache invalidation flag for getAllNodeResults() */
+  nodeResultsDirty: boolean;
+  /** Lazily rebuilt all-node-results cache */
+  allNodeResultsCache: Record<string, any>;
+  /** Optional sampled VM internals timing */
+  vmTimingMs: Float64Array;
+  /** Optional sampled VM internals counts */
+  vmTimingCount: Uint32Array;
 }
 
 /**
@@ -130,6 +145,14 @@ export interface CompiledExecContext {
   user_id: string;
   nodes: WorkflowNode[];
   edges: any[];
+  multiBarContext?: {
+    timestamp: string;
+    interval: string;
+    symbols: string[];
+    currentSymbol: string;
+    bars: Record<string, any>;
+    getBar: (symbol: string) => any;
+  };
   dataContext: any;
   indicatorStateManager: any;
   abortSignal?: AbortSignal;

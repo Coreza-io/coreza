@@ -78,6 +78,7 @@ export class SimBroker {
   private orderIdCounter = 0;
   private tradeIdCounter = 0;
   private currentEntryMap = new Map<string, { orderId: string; filledAt: string; barIndex: number }>();
+  private pendingTicketsBySymbol = new Map<string, Set<string>>();
   private equityCurveData: {
     timestamps: Float64Array;
     cash: Float64Array;
@@ -184,6 +185,7 @@ export class SimBroker {
     };
 
     this.state.tickets[orderId] = ticket;
+    this.trackPendingTicket(order.symbol, orderId);
 
     return { success: true, orderId, status: 'new' };
   }
@@ -303,69 +305,83 @@ export class SimBroker {
     this.state.currentBar = bar;
 
     // Process pending tickets for this symbol
-    for (const ticketId of Object.keys(this.state.tickets)) {
-      const ticket = this.state.tickets[ticketId];
-      if (ticket.order.symbol !== symbol || !isTicketPending(ticket)) {
-        continue;
-      }
+    const pendingTickets = this.pendingTicketsBySymbol.get(symbol);
+    if (pendingTickets) {
+      for (const ticketId of pendingTickets) {
+        const ticket = this.state.tickets[ticketId];
+        if (!ticket) {
+          pendingTickets.delete(ticketId);
+          continue;
+        }
+        if (!isTicketPending(ticket)) {
+          pendingTickets.delete(ticketId);
+          continue;
+        }
 
-      const order = ticket.order;
-      const fillResult = this.fillModel.fill(
-        order,
-        bar,
-        symbolState.previousBar ?? undefined,
-      );
-
-      if (fillResult.filled && fillResult.price && fillResult.quantity) {
-        // Calculate slippage
-        const slippage = this.slippageModel.getSlippage(
+        const order = ticket.order;
+        const fillResult = this.fillModel.fill(
           order,
-          fillResult.price,
           bar,
-        );
-        const adjustedPrice = fillResult.price + slippage;
-
-        // Calculate commission
-        const commission = this.feeModel.getCommission(
-          order,
-          adjustedPrice,
-          fillResult.quantity,
+          symbolState.previousBar ?? undefined,
         );
 
-        // Apply fill to portfolio
-        this.applyFill(
-          order,
-          adjustedPrice,
-          fillResult.quantity,
-          slippage,
-          commission,
-          bar.timestamp,
-        );
+        if (fillResult.filled && fillResult.price && fillResult.quantity) {
+          // Calculate slippage
+          const slippage = this.slippageModel.getSlippage(
+            order,
+            fillResult.price,
+            bar,
+          );
+          const adjustedPrice = fillResult.price + slippage;
 
-        // Create append-only OrderEvent
-        const event: OrderEvent = {
-          orderId: order.id,
-          symbol: order.symbol,
-          utcTime: asIsoTimestamp(bar.timestamp),
-          status: 'filled',
-          side: order.side,
-          fillPrice: adjustedPrice,
-          fillQuantity: fillResult.quantity,
-          orderFee: { value: commission, currency: 'USD' },
-          slippage,
-        };
+          // Calculate commission
+          const commission = this.feeModel.getCommission(
+            order,
+            adjustedPrice,
+            fillResult.quantity,
+          );
 
-        // Update ticket aggregate
-        ticket.orderEvents.push(event);
-        ticket.quantityFilled += fillResult.quantity;
-        ticket.averageFillPrice = adjustedPrice; // single fill per order in sim
-        ticket.totalFees += commission;
-        symbolState.lastFillPrice = adjustedPrice;
+          // Apply fill to portfolio
+          this.applyFill(
+            order,
+            adjustedPrice,
+            fillResult.quantity,
+            slippage,
+            commission,
+            bar.timestamp,
+          );
 
-        // Update order status (the only mutable field)
-        order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
+          // Create append-only OrderEvent
+          const event: OrderEvent = {
+            orderId: order.id,
+            symbol: order.symbol,
+            utcTime: asIsoTimestamp(bar.timestamp),
+            status: 'filled',
+            side: order.side,
+            fillPrice: adjustedPrice,
+            fillQuantity: fillResult.quantity,
+            orderFee: { value: commission, currency: 'USD' },
+            slippage,
+          };
 
-        events.push(event);
+          // Update ticket aggregate
+          ticket.orderEvents.push(event);
+          ticket.quantityFilled += fillResult.quantity;
+          ticket.averageFillPrice = adjustedPrice; // single fill per order in sim
+          ticket.totalFees += commission;
+          symbolState.lastFillPrice = adjustedPrice;
+
+          // Update order status (the only mutable field)
+          order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
+          if (!isTicketPending(ticket)) {
+            pendingTickets.delete(ticketId);
+          }
+
+          events.push(event);
+        }
+      }
+      if (pendingTickets.size === 0) {
+        this.pendingTicketsBySymbol.delete(symbol);
       }
     }
 
@@ -467,6 +483,9 @@ export class SimBroker {
 
     // Update order status
     order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
+    if (!isTicketPending(ticket)) {
+      this.untrackPendingTicket(order.symbol, order.id);
+    }
 
     this.updatePositionMTM(order.symbol, bar.close);
 
@@ -842,9 +861,16 @@ export class SimBroker {
    * Get pending orders (derived from tickets with non-terminal status).
    */
   getPendingOrders(): Order[] {
-    return Object.values(this.state.tickets)
-      .filter(isTicketPending)
-      .map(t => t.order);
+    const pendingOrders: Order[] = [];
+    for (const ticketIds of this.pendingTicketsBySymbol.values()) {
+      for (const ticketId of ticketIds) {
+        const ticket = this.state.tickets[ticketId];
+        if (ticket && isTicketPending(ticket)) {
+          pendingOrders.push(ticket.order);
+        }
+      }
+    }
+    return pendingOrders;
   }
 
   /**
@@ -888,6 +914,26 @@ export class SimBroker {
       this.symbolStates.set(symbol, state);
     }
     return state;
+  }
+
+  private trackPendingTicket(symbol: string, ticketId: string): void {
+    let pending = this.pendingTicketsBySymbol.get(symbol);
+    if (!pending) {
+      pending = new Set<string>();
+      this.pendingTicketsBySymbol.set(symbol, pending);
+    }
+    pending.add(ticketId);
+  }
+
+  private untrackPendingTicket(symbol: string, ticketId: string): void {
+    const pending = this.pendingTicketsBySymbol.get(symbol);
+    if (!pending) {
+      return;
+    }
+    pending.delete(ticketId);
+    if (pending.size === 0) {
+      this.pendingTicketsBySymbol.delete(symbol);
+    }
   }
 }
 

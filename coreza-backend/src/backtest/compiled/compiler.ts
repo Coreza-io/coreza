@@ -20,6 +20,7 @@ import { compileParamsToSlots } from "../../utils/templateCompiler";
 import { GraphRuntime } from "../../engine/graphRuntime";
 import {
   OpCode,
+  BranchEnum,
   Instruction,
   CompiledPlan,
   PinnedSlotEntry,
@@ -27,6 +28,21 @@ import {
   SlotParamResolver,
 } from "./types";
 import { buildExecAdapter, resolveCategory } from "./adapters";
+
+function branchHandleToEnum(handle: string): BranchEnum {
+  switch (handle) {
+    case "true":
+      return BranchEnum.TRUE;
+    case "false":
+      return BranchEnum.FALSE;
+    case "":
+      return BranchEnum.EMPTY;
+    case "default":
+    case "fallback":
+    default:
+      return BranchEnum.DEFAULT;
+  }
+}
 
 const INELIGIBLE_NODE_NAMES = new Set(["Loop", "AIAgent", "LLM", "InitializeIndicators"]);
 
@@ -138,11 +154,13 @@ export function compilePlan(
       : inputSlot;
 
     if (isConditional) {
-      const branchMap: Record<string, number[]> = {};
+      const branchTargets: number[][] = [[], [], [], []];
       for (const edge of graph.getOutgoingEdges(nodeId)) {
         const handle = edge.sourceHandle ?? "";
         const targetInstrIdx = nodeIdToInstrIndex.get(edge.target);
-        if (targetInstrIdx !== undefined) (branchMap[handle] ??= []).push(targetInstrIdx);
+        if (targetInstrIdx !== undefined) {
+          branchTargets[branchHandleToEnum(handle)].push(targetInstrIdx);
+        }
       }
 
       instructions.push({
@@ -153,7 +171,7 @@ export function compilePlan(
         exec: execFn,
         resolveParams,
         downstreamSlots: [],
-        branchMap,
+        branchTargets,
       });
       continue;
     }
@@ -201,9 +219,13 @@ export function compilePlan(
     isBacktest: true,
     resolveNodeParameters: () => ctx.resolvedParams ?? {},
     getAllNodeResults: () => {
-      const results: Record<string, any> = {};
-      for (const [nodeId, slotIdx] of slotMap.entries()) results[nodeId] = slots[slotIdx];
-      return results;
+      if (plan.nodeResultsDirty) {
+        for (const [nodeId, slotIdx] of slotMap.entries()) {
+          plan.allNodeResultsCache[nodeId] = slots[slotIdx];
+        }
+        plan.nodeResultsDirty = false;
+      }
+      return plan.allNodeResultsCache;
     },
     getState: (key: string) => ctxBase.storeGetState(ctx.nodeId, key),
     setState: (key: string, value: any) => ctxBase.storeSetState(ctx.nodeId, key, value),
@@ -226,6 +248,10 @@ export function compilePlan(
     inputSlot,
     ctx,
     nodeIdToInstrIndex,
+    nodeResultsDirty: true,
+    allNodeResultsCache: Object.create(null),
+    vmTimingMs: new Float64Array(3),
+    vmTimingCount: new Uint32Array(3),
   };
 
   console.log(

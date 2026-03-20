@@ -645,7 +645,9 @@ export class BacktestSession {
         p.resetMs +
         p.executeLoopMs +
         p.contextBuildMs +
-        p.equitySnapshotMs;
+        p.equitySnapshotMs +
+        p.buildResultMs +
+        p.storeClearMs;
       const timing = this.run.getNodeTiming();
       console.log(`[BacktestBenchmark] Mode: ${p.mode}`, {
         totalRuntimeMs: +elapsed.toFixed(1),

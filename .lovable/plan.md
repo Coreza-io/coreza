@@ -1,136 +1,91 @@
 
 
-# Analysis: Why Live/Streaming Workflow Executions Don't Appear in Execution History
+# WorkflowRunner Refactor — Updated Plan
 
-## Root Cause
+## Summary
 
-**`WorkflowRunner` never creates `workflow_runs` records.** That's it.
+Refactor `WorkflowRunner` for reliability and maintainability. Keep class name as `WorkflowRunner`. Fix frontend build errors.
 
-### How non-streaming executions persist
-
-For webhook/scheduled/manual workflows, the flow is:
-
-1. `jobQueueManager.ts` or `WebhookService.ts` or `scheduledWorkflowWorker.ts` **creates a `workflow_runs` row** in Supabase (or Redis via `createRunInRedis`)
-2. `workflowWorker.ts` **updates the row** with status/result when done
-3. `RunSyncService` periodically syncs Redis-stored runs to Supabase
-4. Frontend queries `workflow_runs` table in `useExecutionHistory.ts`
-
-### How streaming executions work
-
-1. `jobQueueManager.startWorkflowRunner()` (line 287-291) creates a `WorkflowRunner` and calls `manager.startStrategy()`
-2. `WorkflowRunner.start()` enters a `while(running)` loop reading from Redis stream `strategy:stream:{workflowId}`
-3. For each event: `engine.resetForNextBar()` → `engine.execute({ data: event })`
-4. **No run record is ever created** — not in Supabase, not in Redis
-5. Result is discarded — the `execute()` return value is not captured or stored
-
-So the `WorkflowRunner` is effectively a "fire and forget" event processor. It processes every stream event but never records that it did so.
-
-### Why frontend shows nothing
-
-`useExecutionHistory.ts` queries `supabase.from("workflow_runs").select("*").eq("workflow_id", workflowId)`. Since no rows exist for streaming executions, the list is empty. The realtime subscription on `workflow_runs` also gets no inserts.
-
-## What Needs to Change
-
-### Option A: Per-Event Run Records (shows every execution)
-
-For each stream event, create a lightweight run record:
-- Before `engine.execute()`: create run in Redis via `createRunInRedis(eventRunId, workflowId, userId)`
-- After `engine.execute()`: update status via `updateRunStatusInRedis(eventRunId, 'success', { result })`
-- `RunSyncService` (already running) handles the batch sync to Supabase every 10s
-
-This uses the existing Redis-first pattern built exactly for this high-frequency scenario.
-
-### Option B: Batched Summary Records (lighter weight)
-
-Instead of per-event records, periodically (every N events or every N seconds) write a summary record containing event count, last result, errors, etc.
-
-### Recommendation: Option A with throttling
-
-Use Option A (per-event records) but with a configurable throttle to avoid overwhelming Redis/Supabase for very high-frequency streams:
-
-- Default: record every event
-- High-frequency mode: record every Nth event or every N seconds
-
-## Implementation Plan
+## Changes
 
 ### File: `coreza-backend/src/services/WorkflowRunner.ts`
 
-**Change 1: Import Redis run storage utilities**
-```typescript
-import { createRunInRedis, updateRunStatusInRedis } from "../utils/redisRunStorage";
+**1. Rename fields (no class rename)**
+- `runnerId` → `runnerInstanceId`
+- `redisStream` → `streamRedisClient`
+- `workflowSnapshot` → `serializedSnapshot` (camelCase internals: `nodeCount`, `edgeCount`)
+
+**2. Split `start()` into focused methods**
+```text
+start()                    — guard + ensureConsumerGroup + reclaimPending + pollLoop
+ensureConsumerGroup()      — XGROUP CREATE, catch BUSYGROUP only
+reclaimPendingMessages()   — XAUTOCLAIM with 60s idle threshold on startup
+pollLoop()                 — while(running) XREADGROUP with try/catch + backoff
+processMessage(id, fields) — single message lifecycle with error boundaries
+extractPayload(fields)     — field extraction, returns string | undefined
+parseEnvelope(raw)         — JSON parse + normalize to StreamEventEnvelope type
+recordSuccess(runId, result, messageId) — updateRunStatusInRedis wrapper
+recordFailure(runId, error)             — updateRunStatusInRedis wrapper
 ```
 
-**Change 2: Create and update run records in the event loop**
+**3. Error boundaries in `processMessage()`**
+```text
+processMessage(messageId, fields):
+  ├─ extractPayload → null? → ack (permanent: bad message)
+  ├─ parseEnvelope  → throws? → ack (permanent: invalid JSON)
+  ├─ createRunInRedis → throws? → do NOT ack (transient: retry on next claim)
+  ├─ engine.resetForNextBar(true)
+  ├─ engine.execute → success → recordSuccess → ack
+  │                 → failure → recordFailure → ack (execution failed, not retryable)
+  └─ ack failure → log warning, continue
+```
 
-In the `start()` method, around lines 76-85, wrap each event execution with run persistence:
+**4. Add `XAUTOCLAIM` on startup**
+After consumer group creation, reclaim messages idle >60s from dead consumers.
 
+**5. Define `StreamEventEnvelope` type**
 ```typescript
-for (const [messageId, fields] of messages) {
-  // ... existing event parsing ...
+interface StreamEventEnvelope {
+  type?: string;
+  data: unknown;
+  timestamp?: string;
+  symbol?: string;
+}
+```
+Normalize once in `parseEnvelope()`. No more `event?.data ?? event` fallback.
 
-  const eventRunId = randomUUID();
-  await createRunInRedis(eventRunId, this.workflowId, this.userId);
+**6. Poll loop resilience**
+Wrap `xreadgroup` in try/catch. On transient Redis error, log warning and retry after 1s backoff instead of crashing the loop.
 
-  this.engine.resetForNextBar(true);
+### File: `coreza-backend/src/services/workflowRunnerManager.ts`
 
-  try {
-    const event = JSON.parse(rawEvent);
-    const result = await this.engine.execute({ data: event?.data ?? event });
+No changes — class name stays `WorkflowRunner`.
 
-    await updateRunStatusInRedis(eventRunId, 'success', {
-      result: {
-        success: true,
-        data: result,
-        meta: {
-          source: 'stream',
-          timestamp: new Date().toISOString(),
-          streamMessageId: messageId,
-        }
-      }
-    });
-  } catch (error) {
-    await updateRunStatusInRedis(eventRunId, 'failed', {
-      errorMessage: error instanceof Error ? error.message : String(error),
-    });
-    console.error("[WorkflowRunner] Error processing stream event:", error);
-  }
+### File: `src/hooks/useExecutionHistory.ts`
 
-  await this.redisStream.xack(this.streamKey, STRATEGY_GROUP, messageId);
+**7. Fix build errors — add `data` and `meta` to `ExecutionResultPayload`**
+```typescript
+export interface ExecutionResultPayload {
+  success?: boolean;
+  result?: Record<string, ExecutionNodeResult>;
+  nodeExecutions?: NodeExecutionLog[];
+  executionOrder?: string[];
+  error?: string | { code?: string; phase?: string; message?: string };
+  data?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
 }
 ```
 
-**Change 3: Add workflow snapshot data**
+## What We Skip
 
-The `workflow_runs` table expects `nodes`, `edges`, `node_count`, `edge_count` (per the memory about execution history snapshots). Either:
-- Store the snapshot once at `WorkflowRunner` construction and pass it to `createRunInRedis`
-- Or extend `createRunInRedis` to accept optional snapshot fields
+- Class rename to `LiveStrategyRunner` — keeping `WorkflowRunner`
+- `resetForNextBar(true)` rename — engine API, out of scope
+- PortfolioManager cleanup ownership — current approach is correct
 
-Since all events in one runner use the same workflow definition, store the snapshot once and reuse it.
+## Files Changed
 
-### File: `coreza-backend/src/utils/redisRunStorage.ts`
-
-**Change 4: Extend `createRunInRedis` to support optional snapshot fields**
-
-Add optional parameters for `nodes`, `edges`, `node_count`, `edge_count` so streaming runs include the workflow snapshot. Also add a `source` field to distinguish stream runs from other types.
-
-### File: `coreza-backend/src/workers/RunSyncService.ts`
-
-**Change 5: Include snapshot fields in sync**
-
-Update the `runsToInsert` mapping (line 136) to include `nodes`, `edges`, `node_count`, `edge_count` if they exist in the Redis hash, so the Supabase upsert carries the snapshot.
-
-## Performance Considerations
-
-- At 500+ symbols streaming, this could produce thousands of run records per minute
-- The existing Redis-first + `RunSyncService` batch pattern was designed for exactly this volume
-- Redis hash + lpush is ~0.1ms per event — negligible vs execution time
-- Supabase batch upsert every 10s handles the persistence
-- If volume is too high, add a configurable `recordEveryNthEvent` option to `WorkflowRunner`
-
-## What This Does NOT Change
-
-- Backtest execution history (already works)
-- Webhook/scheduled execution history (already works)
-- Frontend `useExecutionHistory.ts` (already queries `workflow_runs` — will automatically show new records)
-- Realtime subscription (already listens for inserts on `workflow_runs` — will fire for synced records)
+| File | Change |
+|---|---|
+| `coreza-backend/src/services/WorkflowRunner.ts` | Field renames, split start(), error boundaries, XAUTOCLAIM, envelope type |
+| `src/hooks/useExecutionHistory.ts` | Add `data`/`meta` to interface (fixes 3 TS2339 errors) |
 

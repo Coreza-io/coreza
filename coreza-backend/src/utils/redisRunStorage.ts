@@ -113,7 +113,7 @@ export async function updateRunStatusInRedis(
 /**
  * Check if run exists in Redis
  */
-export async function runExistsInRedis(runId: string): Promise<boolean> {
+export async function runExistsInRedis(userId: string, runId: string): Promise<boolean> {
   const redis = getRedisCache();
   return (await redis.exists(`user:${userId}:runs:data:${runId}`)) === 1;
 }

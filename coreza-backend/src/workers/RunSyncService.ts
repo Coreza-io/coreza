@@ -7,14 +7,13 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR  xxxPURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
  *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useId } from "react";
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
 import logger from "../utils/logger";
@@ -26,6 +25,9 @@ import logger from "../utils/logger";
  * 1. Storing workflow run metadata in Redis during high-frequency execution
  * 2. Batch syncing completed runs to Supabase every N seconds
  * 3. Cleaning up synced runs from Redis
+ *
+ * Pending list uses composite entries: `${userId}:${runId}`
+ * Data keys are user-scoped: `user:${userId}:runs:data:${runId}`
  */
 export class RunSyncService {
   private static instance: RunSyncService;
@@ -90,20 +92,40 @@ export class RunSyncService {
     const redis = getRedisCache();
 
     try {
-      // Get pending run IDs from Redis list
-      const pendingRunIds = await redis.lrange(
-        "runs:pending:all",
+      // Get pending composite entries (userId:runId) from global list
+      const pendingEntries = await redis.lrange(
+        `runs:pending:all`,
         0,
         this.BATCH_SIZE - 1,
       );
 
-      if (pendingRunIds.length === 0) {
+      if (pendingEntries.length === 0) {
         return;
       }
 
-      logger.debug({ count: pendingRunIds.length }, "Processing pending runs");
+      logger.debug({ count: pendingEntries.length }, "Processing pending runs");
 
-      // Fetch run data from Redis
+      // Parse composite entries and fetch run data from Redis
+      const parsedEntries: Array<{ userId: string; runId: string }> = [];
+      const fetchPipeline = redis.pipeline();
+
+      for (const entry of pendingEntries) {
+        const separatorIndex = entry.indexOf(":");
+        if (separatorIndex === -1) {
+          logger.warn({ entry }, "Invalid pending entry format, skipping");
+          continue;
+        }
+        const userId = entry.substring(0, separatorIndex);
+        const runId = entry.substring(separatorIndex + 1);
+        parsedEntries.push({ userId, runId });
+        fetchPipeline.hgetall(`user:${userId}:runs:data:${runId}`);
+      }
+
+      const results = await fetchPipeline.exec();
+      if (!results) {
+        return;
+      }
+
       const runs: Array<{
         id: string;
         workflow_id: string;
@@ -119,16 +141,7 @@ export class RunSyncService {
         edge_count?: string;
       }> = [];
 
-      const fetchPipeline = redis.pipeline();
-      for (const runId of pendingRunIds) {
-        fetchPipeline.hgetall(`user:${useId}:runs:data:${runId}`);
-      }
-      const results = await fetchPipeline.exec();
-      if (!results) {
-        return;
-      }
-
-      for (let i = 0; i < pendingRunIds.length; i++) {
+      for (let i = 0; i < parsedEntries.length; i++) {
         const [err, runData] = results[i];
         if (err || !runData || !(runData as Record<string, string>).id) {
           continue;
@@ -179,7 +192,7 @@ export class RunSyncService {
         ...(run.edge_count ? { edge_count: parseInt(run.edge_count, 10) } : {}),
       }));
 
-      // Batch upsert to Supabase (upsert in case some runs already exist)
+      // Batch upsert to Supabase
       const { error } = await supabase
         .from("workflow_runs")
         .upsert(runsToInsert, { onConflict: "id" });
@@ -197,13 +210,13 @@ export class RunSyncService {
         "Synced workflow runs to Supabase",
       );
 
-      // Remove synced runs from Redis
-      const pipeline = redis.pipeline();
+      // Remove synced runs from Redis using initiated_by for user-scoped keys
+      const cleanupPipeline = redis.pipeline();
       for (const run of completedRuns) {
-        pipeline.del(`user:${userId}:runs:data:${run.id}`);
-        pipeline.lrem(`user:${userId}:runs:pending:all`, 1, run.id);
+        cleanupPipeline.del(`user:${run.initiated_by}:runs:data:${run.id}`);
+        cleanupPipeline.lrem(`runs:pending:all`, 1, `${run.initiated_by}:${run.id}`);
       }
-      await pipeline.exec();
+      await cleanupPipeline.exec();
 
       logger.debug(
         { count: completedRuns.length },
@@ -222,11 +235,10 @@ export class RunSyncService {
   async flushAll(): Promise<void> {
     logger.info("Flushing all pending runs to Supabase...");
 
-    // Keep syncing until no more pending runs
     let hasMore = true;
     while (hasMore) {
       const redis = getRedisCache();
-      const count = await redis.llen(`user:${userId}:runs:pending:all`);
+      const count = await redis.llen(`runs:pending:all`);
       if (count === 0) {
         hasMore = false;
       } else {
@@ -242,7 +254,7 @@ export class RunSyncService {
    */
   async getStats(): Promise<{ pendingCount: number }> {
     const redis = getRedisCache();
-    const pendingCount = await redis.llen("user:${userId}:runs:pending:all");
+    const pendingCount = await redis.llen(`runs:pending:all`);
     return { pendingCount };
   }
 }

@@ -1,101 +1,63 @@
 
 
-# Fix User-Scoped Redis Key Inconsistencies
+# Fix: No Execution History — Root Cause Analysis & Plan
 
 ## Problem
-
-After changing `runs:data:${runId}` → `user:${userId}:runs:data:${runId}`, the pending list keys and several references were NOT updated consistently. There are also broken variable references (`useId` from React, `userId` undefined in class scope).
+Executions are not appearing in the history panel because runs created by `WorkflowRunner` (streaming) are stored with wrong Redis keys and missing result data.
 
 ## Bugs Found
 
-### File 1: `coreza-backend/src/utils/redisRunStorage.ts`
+### Bug 1 — Wrong argument order in `createRunInRedis` call (CRITICAL)
+**File**: `coreza-backend/src/services/WorkflowRunner.ts`, line 190
 
-| Line | Bug | Fix |
-|------|-----|-----|
-| 74 | `"user:${userId}:runs:pending:all"` — uses **double quotes**, so `${userId}` is a literal string, not interpolated | Change to backticks: `` `user:${userId}:runs:pending:all` `` |
-| 75 | Same literal string bug on `ltrim` | Change to backticks |
-| 116-118 | `runExistsInRedis` uses `userId` but function signature only takes `runId` — **compile error** | Add `userId: string` parameter |
-
-### File 2: `coreza-backend/src/workers/RunSyncService.ts`
-
-| Line | Bug | Fix |
-|------|-----|-----|
-| 17 | `import { useId } from "react"` — imports a **React hook** in a backend service. Used on line 124 as `useId` which returns a React client ID, not a user UUID | Remove this import entirely |
-| 95 | `"runs:pending:all"` — old global key, doesn't match the user-scoped pattern `user:${userId}:runs:pending:all` | See design decision below |
-| 124 | `` `user:${useId}:runs:data:${runId}` `` — `useId` is the React hook import, not a userId string | Use `initiated_by` from the run data, or redesign key lookup |
-| 203 | `user:${userId}:runs:data:${run.id}` — `userId` is undefined in class scope | Use `run.initiated_by` |
-| 204 | `user:${userId}:runs:pending:all` — `userId` undefined | Use `run.initiated_by` |
-| 229 | `user:${userId}:runs:pending:all` in `flushAll()` — `userId` undefined | Redesign approach |
-| 245 | `"user:${userId}:runs:pending:all"` — double quotes (literal) + `userId` undefined | Redesign approach |
-
-### Design Decision: Pending List Strategy
-
-The core problem: the pending list was global (`runs:pending:all`), but data keys are now user-scoped. RunSyncService doesn't know which userId to look up when fetching run data.
-
-**Solution**: Store `userId:runId` composite entries in a **global** pending list, then parse both parts during sync.
-
-- Pending list key: `runs:pending:all` (global — RunSyncService needs to iterate all)
-- Entry format: `${userId}:${runId}` instead of just `runId`
-- On sync, split entry to get both userId and runId for the scoped data key
-
-## Changes
-
-### `redisRunStorage.ts`
-
-1. **Line 74-75**: Fix pending list to use global key with backticks, push composite `${userId}:${runId}`
+Current:
 ```typescript
-pipeline.lpush(`runs:pending:all`, `${userId}:${runId}`);
-pipeline.ltrim(`runs:pending:all`, 0, 9999);
+await createRunInRedis(executionRunId, this.workflowId, this.userId, { ... });
 ```
+Signature expects: `createRunInRedis(userId, workflowId, runId, snapshot)`
 
-2. **Line 116**: Add `userId` parameter to `runExistsInRedis`
+Result: Redis key becomes `user:${executionRunId}:runs:data:${this.userId}` — completely wrong. Pending entry becomes `${executionRunId}:${this.userId}`. RunSyncService can never find or sync these runs to Supabase.
+
+**Fix**: Swap arguments to `createRunInRedis(this.userId, this.workflowId, executionRunId, { ... })`
+
+### Bug 2 — Field name mismatch in `updateRunStatusInRedis`
+**File**: `coreza-backend/src/utils/redisRunStorage.ts`, lines 100-106
+
+Current code stores `executionResult.nodeResults` under Redis hash key `nodeResults`. But `RunSyncService` reads `data.result` (line 159) to map to Supabase's `result` column. Field never matches → Supabase gets `result: null`.
+
+Meanwhile, `workflowWorker.ts` passes `{ result }` (line 531) — a different shape entirely.
+
+**Fix**: Normalize `updateRunStatusInRedis` to always store under the `result` key, and serialize the full execution result:
+
 ```typescript
-export async function runExistsInRedis(userId: string, runId: string): Promise<boolean> {
-```
+if (executionResult !== undefined) {
+  // Store full result — handles both { result: ... } from worker
+  // and WorkflowExecutionResult from WorkflowRunner
+  const resultToStore = executionResult.result ?? executionResult;
+  updates.result = JSON.stringify(resultToStore);
+}
 
-### `RunSyncService.ts`
-
-1. **Line 17**: Remove `import { useId } from "react"`
-
-2. **Lines 94-98**: Keep global pending list key `runs:pending:all`
-
-3. **Lines 122-125**: Parse composite entries to extract userId per run
-```typescript
-for (const entry of pendingRunIds) {
-  const [userId, runId] = entry.split(":", 2); // was: entry.split(":")
-  fetchPipeline.hgetall(`user:${userId}:runs:data:${runId}`);
+if (executionResult?.errorMessage) {
+  updates.error_message = executionResult.errorMessage;
 }
 ```
 
-4. **Lines 201-205**: Use `run.initiated_by` for cleanup keys
-```typescript
-pipeline.del(`user:${run.initiated_by}:runs:data:${run.id}`);
-pipeline.lrem(`runs:pending:all`, 1, `${run.initiated_by}:${run.id}`);
-```
+### Bug 3 — WorkflowRunner `recordSuccess` passes raw `WorkflowExecutionResult`
+**File**: `coreza-backend/src/services/WorkflowRunner.ts`, line 248
 
-5. **Lines 227-229** (`flushAll`): Use global list key
-```typescript
-const count = await redis.llen(`runs:pending:all`);
-```
-
-6. **Lines 244-245** (`getStats`): Use global list key with backticks
-```typescript
-const pendingCount = await redis.llen(`runs:pending:all`);
-```
-
-### `workflowWorker.ts`
-
-7. **Line 339**: Already correct — uses `` `user:${userId}:runs:data:${parentRunId}` `` with `userId` in scope.
-
-### Callers of `runExistsInRedis`
-
-8. Find and update all call sites to pass `userId` as first argument.
+Currently passes the entire `WorkflowExecutionResult` object. With Bug 2 fix, this will be handled by the `executionResult.result ?? executionResult` fallback — the full object gets serialized. No separate change needed once Bug 2 is fixed.
 
 ## Files Changed
 
-| File | Changes |
+| File | Change |
 |---|---|
-| `coreza-backend/src/utils/redisRunStorage.ts` | Fix string interpolation, add userId param to runExistsInRedis |
-| `coreza-backend/src/workers/RunSyncService.ts` | Remove React import, parse composite entries, fix all undefined userId refs |
-| Any callers of `runExistsInRedis` | Add userId argument |
+| `coreza-backend/src/services/WorkflowRunner.ts` | Fix argument order on line 190 |
+| `coreza-backend/src/utils/redisRunStorage.ts` | Fix `updateRunStatusInRedis` to store under `result` key consistently |
+
+## Impact
+After these fixes, streaming workflow executions will:
+1. Store under the correct user-scoped Redis key
+2. Appear in the pending list with correct `userId:runId` format
+3. Sync to Supabase with the full result payload
+4. Show up in the Executions panel with node results and output data
 

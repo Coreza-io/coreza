@@ -14,7 +14,7 @@ export interface ExecutionError {
 
 export interface WorkflowExecutionResult {
   success: boolean;
-  result?: Record<string, unknown>;
+  result?: Record<string, NodeResult>;
   executionOrder?: string[];
   error?: ExecutionError;
   timing?: Record<string, { avgMs: number; totalMs: number; count: number }>;

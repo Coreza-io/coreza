@@ -71,8 +71,8 @@ export async function createRunInRedis(
   const pipeline = redis.pipeline();
   pipeline.hset(`user:${userId}:runs:data:${runId}`, runData);
   pipeline.expire(`user:${userId}:runs:data:${runId}`, RUN_TTL_SECONDS);
-  pipeline.lpush("user:${userId}:runs:pending:all", runId);
-  pipeline.ltrim("user:${userId}:runs:pending:all", 0, 9999);
+  pipeline.lpush(`runs:pending:all`, `${userId}:${runId}`);
+  pipeline.ltrim(`runs:pending:all`, 0, 9999);
   await pipeline.exec();
 
   logger.debug({ runId, workflowId }, "Created run in Redis");
@@ -97,11 +97,11 @@ export async function updateRunStatusInRedis(
     updates.completed_at = new Date().toISOString();
   }
 
-  if (executionResult.nodeResults !== undefined) {
+  if (executionResult?.nodeResults !== undefined) {
     updates.nodeResults = JSON.stringify(executionResult.nodeResults);
   }
 
-  if (executionResult.errorMessage) {
+  if (executionResult?.errorMessage) {
     updates.error_message = executionResult.errorMessage;
   }
 
@@ -113,7 +113,7 @@ export async function updateRunStatusInRedis(
 /**
  * Check if run exists in Redis
  */
-export async function runExistsInRedis(runId: string): Promise<boolean> {
+export async function runExistsInRedis(userId: string, runId: string): Promise<boolean> {
   const redis = getRedisCache();
   return (await redis.exists(`user:${userId}:runs:data:${runId}`)) === 1;
 }

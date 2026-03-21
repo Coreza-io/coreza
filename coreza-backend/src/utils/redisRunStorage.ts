@@ -60,12 +60,13 @@ export async function createRunInRedis(
     runData.source = snapshot.source;
   }
 
-  // Store run data in Redis hash with TTL
-  await redis.hset(`runs:data:${runId}`, runData);
-  await redis.expire(`runs:data:${runId}`, RUN_TTL_SECONDS);
-
-  // Add to pending sync list
-  await redis.lpush('runs:pending:all', runId);
+  // Store run data in Redis hash with TTL and queue for sync in one round-trip
+  const pipeline = redis.pipeline();
+  pipeline.hset(`runs:data:${runId}`, runData);
+  pipeline.expire(`runs:data:${runId}`, RUN_TTL_SECONDS);
+  pipeline.lpush('runs:pending:all', runId);
+  pipeline.ltrim('runs:pending:all', 0, 9999);
+  await pipeline.exec();
 
   logger.debug({ runId, workflowId }, 'Created run in Redis');
 }

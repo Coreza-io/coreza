@@ -105,26 +105,42 @@ export class RunSyncService {
         completed_at?: string;
         result?: string;
         error_message?: string;
+        nodes?: string;
+        edges?: string;
+        node_count?: string;
+        edge_count?: string;
       }> = [];
 
+      const fetchPipeline = redis.pipeline();
       for (const runId of pendingRunIds) {
-        const runData = await redis.hgetall(`runs:data:${runId}`);
-        if (runData && runData.id) {
-          runs.push({
-            id: runData.id,
-            workflow_id: runData.workflow_id,
-            initiated_by: runData.initiated_by,
-            status: runData.status,
-            started_at: runData.started_at,
-            completed_at: runData.completed_at,
-            result: runData.result,
-            error_message: runData.error_message,
-            nodes: runData.nodes,
-            edges: runData.edges,
-            node_count: runData.node_count,
-            edge_count: runData.edge_count,
-          });
+        fetchPipeline.hgetall(`runs:data:${runId}`);
+      }
+      const results = await fetchPipeline.exec();
+      if (!results) {
+        return;
+      }
+
+      for (let i = 0; i < pendingRunIds.length; i++) {
+        const [err, runData] = results[i];
+        if (err || !runData || !(runData as Record<string, string>).id) {
+          continue;
         }
+
+        const data = runData as Record<string, string>;
+        runs.push({
+          id: data.id,
+          workflow_id: data.workflow_id,
+          initiated_by: data.initiated_by,
+          status: data.status,
+          started_at: data.started_at,
+          completed_at: data.completed_at,
+          result: data.result,
+          error_message: data.error_message,
+          nodes: data.nodes,
+          edges: data.edges,
+          node_count: data.node_count,
+          edge_count: data.edge_count,
+        });
       }
 
       // Filter to only completed runs (success, failed, or cancelled)

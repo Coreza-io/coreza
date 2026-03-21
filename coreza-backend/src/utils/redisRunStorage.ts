@@ -71,8 +71,8 @@ export async function createRunInRedis(
   const pipeline = redis.pipeline();
   pipeline.hset(`user:${userId}:runs:data:${runId}`, runData);
   pipeline.expire(`user:${userId}:runs:data:${runId}`, RUN_TTL_SECONDS);
-  pipeline.lpush("user:${userId}:runs:pending:all", runId);
-  pipeline.ltrim("user:${userId}:runs:pending:all", 0, 9999);
+  pipeline.lpush(`runs:pending:all`, `${userId}:${runId}`);
+  pipeline.ltrim(`runs:pending:all`, 0, 9999);
   await pipeline.exec();
 
   logger.debug({ runId, workflowId }, "Created run in Redis");

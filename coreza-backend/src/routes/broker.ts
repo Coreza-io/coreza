@@ -48,7 +48,7 @@ router.get("/:broker/credentials", async (req, res, next) => {
 
     const credentials = await CredentialManager.listCredentials(
       userId,
-      brokerKey
+      brokerKey,
     );
 
     const formattedCredentials =
@@ -93,7 +93,7 @@ router.post("/:broker/auth", async (req, res, next) => {
       brokerKey,
       credential_name,
       credentials,
-      "api"
+      "api",
     );
 
     res.json({
@@ -111,7 +111,14 @@ router.post("/:broker/:operation", async (req, res, next) => {
   try {
     const { broker, operation } = req.params;
     const brokerKey = normalizeBroker(broker);
-    const { credential_id } = req.body;
+    const {
+      workflowId,
+      credential_id,
+      node_id,
+      node_type,
+      nodeName,
+      category,
+    } = req.body;
     const userId = req.user?.id;
 
     if (!brokerKey) {
@@ -141,18 +148,18 @@ router.post("/:broker/:operation", async (req, res, next) => {
     }
 
     const node: WorkflowNode = {
-      id: `broker:${brokerKey}:${operation}`,
-      name: brokerKey,
-      node_type: "main",
-      category: "Broker",
+      id: node_id,
+      name: nodeName,
+      node_type,
+      category,
       subCategory: brokerKey,
       values: { ...req.body, operation },
     };
 
     const result = await brokerExecutor.execute(node, req.body, {
       userId,
-      workflowId: "manual-broker-route",
-      runId: `manual-${Date.now()}`,
+      workflowId,
+      runId: workflowId,
     });
 
     if (result.success) {

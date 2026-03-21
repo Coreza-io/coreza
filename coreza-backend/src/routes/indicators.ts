@@ -18,10 +18,7 @@ import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { InitializeIndicatorsExecutor } from "../nodes/executors/InitializeIndicatorsExecutor";
 import { WorkflowNode } from "../nodes/types";
-import {
-  buildIndicatorKey,
-  IndicatorStateManager,
-} from "../engine";
+import { buildIndicatorKey, IndicatorStateManager } from "../engine";
 import { IndicatorResult, IndicatorService } from "../nodes/logic/indicators";
 
 const router = express.Router();
@@ -51,8 +48,8 @@ async function executeIndicatorWithState(
   batchCalculate: (input: any) => Promise<IndicatorResult>,
 ): Promise<IndicatorResult> {
   const userId = req.user?.id;
-  const workflowId = req.body.workflow_id;
-  const runId = req.body.run_id;
+  const workflowId = req.body.workflowId;
+  const runId = req.body.run_id || workflowId;
   const symbol = req.body.symbol;
   const timeframe = req.body.timeframe;
   const node_id = req.body.node_id;
@@ -117,9 +114,9 @@ router.post("/initialize", async (req, res, next) => {
       data: { values: req.body },
     };
 
-    const userId = req.user?.id || req.body.user_id;
-    const workflowId = req.body.workflow_id || "manual";
-    const runId = req.body.run_id || `manual-${Date.now()}`;
+    const userId = req.user?.id;
+    const workflowId = req.body.workflowId;
+    const runId = req.body.run_id || workflowId;
 
     const result = await initializeIndicatorsExecutor.execute(node, req.body, {
       userId,

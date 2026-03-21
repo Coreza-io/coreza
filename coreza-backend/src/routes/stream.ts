@@ -81,7 +81,7 @@ router.post("/:source/subscribe", async (req, res) => {
       credential_id,
       symbols,
       node_id,
-      workflow_id,
+      workflowId,
       stream_types,
       data_type,
       feed,
@@ -113,14 +113,17 @@ router.post("/:source/subscribe", async (req, res) => {
 
     // If order_update is included, subscribe to the trading source separately
     const hasOrderUpdate = streamTypes.includes("order_update");
-    const marketStreamTypes = streamTypes.filter((t: string) => t !== "order_update");
+    const marketStreamTypes = streamTypes.filter(
+      (t: string) => t !== "order_update",
+    );
 
     if (hasOrderUpdate) {
-      const tradingSource = source === "binance" ? "binance_trading" : "alpaca_trading";
+      const tradingSource =
+        source === "binance" ? "binance_trading" : "alpaca_trading";
       await SubscriptionService.subscribe({
         source: tradingSource as any,
         userId,
-        workflowId: workflow_id,
+        workflowId: workflowId,
         nodeId: node_id,
         credentialId: credential_id,
         symbols: ["*"],
@@ -136,11 +139,12 @@ router.post("/:source/subscribe", async (req, res) => {
       result = await SubscriptionService.subscribe({
         source: sourceId,
         userId,
-        workflowId: workflow_id,
+        workflowId: workflowId,
         nodeId: node_id,
         credentialId: credential_id,
         symbols,
-        streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        streamTypes:
+          marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
         feed,
         environment,
         assetType: asset_type,
@@ -150,7 +154,14 @@ router.post("/:source/subscribe", async (req, res) => {
         targetWorkflowId,
       });
     } else {
-      result = { success: true, data: { message: "Subscribed to order updates", symbols: ["*"], streamTypes: ["order_update"] } };
+      result = {
+        success: true,
+        data: {
+          message: "Subscribed to order updates",
+          symbols: ["*"],
+          streamTypes: ["order_update"],
+        },
+      };
     }
 
     if (!result.success) {
@@ -164,7 +175,7 @@ router.post("/:source/subscribe", async (req, res) => {
       stream_types: result.data?.streamTypes,
       sourceId,
       node_id,
-      workflow_id: workflow_id || null,
+      workflowId: workflowId || null,
     });
   } catch (error) {
     console.error("Subscribe error:", error);
@@ -191,7 +202,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       credential_id,
       symbols,
       node_id,
-      workflow_id,
+      workflowId,
       stream_types,
       data_type,
       feed,
@@ -223,14 +234,17 @@ router.post("/:source/unsubscribe", async (req, res) => {
 
     // If order_update is included, also unsubscribe from trading source
     const hasOrderUpdate = streamTypes.includes("order_update");
-    const marketStreamTypes = streamTypes.filter((t: string) => t !== "order_update");
+    const marketStreamTypes = streamTypes.filter(
+      (t: string) => t !== "order_update",
+    );
 
     if (hasOrderUpdate) {
-      const tradingSource = source === "binance" ? "binance_trading" : "alpaca_trading";
+      const tradingSource =
+        source === "binance" ? "binance_trading" : "alpaca_trading";
       await SubscriptionService.unsubscribe({
         source: tradingSource as any,
         userId,
-        workflowId: workflow_id,
+        workflowId: workflowId,
         credentialId: credential_id,
         symbols: ["*"],
         streamTypes: ["order_update"],
@@ -242,7 +256,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const result = await SubscriptionService.unsubscribe({
       source: sourceId,
       userId,
-      workflowId: workflow_id,
+      workflowId: workflowId,
       nodeId: node_id,
       credentialId: credential_id,
       symbols,
@@ -291,17 +305,17 @@ router.post("/streaming-activity", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { workflow_id, node_id } = req.body;
+    const { workflowId, node_id } = req.body;
 
-    if (!workflow_id || !node_id) {
+    if (!workflowId || !node_id) {
       return res
         .status(400)
-        .json({ error: "workflow_id and node_id are required" });
+        .json({ error: "workflowId and node_id are required" });
     }
 
     const success = await RegistrationService.updateActivity(
       userId,
-      workflow_id,
+      workflowId,
     );
 
     if (!success) {
@@ -371,7 +385,7 @@ router.post("/:source/register", async (req, res) => {
     }
 
     const {
-      workflow_id,
+      workflowId,
       node_id,
       node_type,
       mode = "subscribe",
@@ -388,8 +402,8 @@ router.post("/:source/register", async (req, res) => {
       onlyClosedBars,
     } = req.body as StreamExecutionRequest;
 
-    if (!workflow_id) {
-      return res.status(400).json({ error: "workflow_id is required" });
+    if (!workflowId) {
+      return res.status(400).json({ error: "workflowId is required" });
     }
     if (!node_id) {
       return res.status(400).json({ error: "node_id is required" });
@@ -435,21 +449,24 @@ router.post("/:source/register", async (req, res) => {
 
       // Split order_update from market stream types (same pattern as /subscribe endpoint)
       const hasOrderUpdate = parsedStreamTypes.includes("order_update");
-      const marketStreamTypes = parsedStreamTypes.filter((t: string) => t !== "order_update");
+      const marketStreamTypes = parsedStreamTypes.filter(
+        (t: string) => t !== "order_update",
+      );
 
       // Subscribe to trading source for order updates
       if (hasOrderUpdate) {
-        const tradingSource = source === "binance" ? "binance_trading" : "alpaca_trading";
+        const tradingSource =
+          source === "binance" ? "binance_trading" : "alpaca_trading";
         const tradingResult = await SubscriptionService.subscribe({
           source: tradingSource as any,
           userId,
-          workflowId: workflow_id,
+          workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
           symbols: ["*"],
           streamTypes: ["order_update"],
           scope,
-          targetWorkflowId: workflow_id,
+          targetWorkflowId: workflowId,
         });
 
         if (!tradingResult.success) {
@@ -470,18 +487,19 @@ router.post("/:source/register", async (req, res) => {
         const subscribeResult = await SubscriptionService.subscribe({
           source: sourceId,
           userId,
-          workflowId: workflow_id,
+          workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
           symbols: parsedSymbols,
-          streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+          streamTypes:
+            marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
           feed,
           environment,
           assetType: asset_type,
           interval,
           depth_levels: depth_levels,
           scope,
-          targetWorkflowId: workflow_id,
+          targetWorkflowId: workflowId,
         });
 
         if (!subscribeResult.success) {
@@ -520,7 +538,7 @@ router.post("/:source/register", async (req, res) => {
     // Create listener
     const listenerKey = await RegistrationService.createListener({
       userId,
-      workflowId: workflow_id,
+      workflowId,
       nodeId: node_id,
       source: sourceId,
       mode,
@@ -530,7 +548,7 @@ router.post("/:source/register", async (req, res) => {
     // Publish registration control message to market-stream-service
     await RegistrationService.publishRegisterWorkflow({
       userId,
-      workflowId: workflow_id,
+      workflowId,
       nodeId: node_id,
       source: sourceId,
       scope,
@@ -544,18 +562,18 @@ router.post("/:source/register", async (req, res) => {
     const { data: workflow, error: workflowError } = await supabase
       .from("workflows")
       .select("nodes, edges")
-      .eq("id", workflow_id)
+      .eq("id", workflowId)
       .eq("user_id", userId)
       .single();
 
     if (workflowError || !workflow) {
       throw new Error(
-        `Failed to load workflow ${workflow_id} for live strategy start: ${workflowError?.message || "not found"}`,
+        `Failed to load workflow ${workflowId} for live strategy start: ${workflowError?.message || "not found"}`,
       );
     }
 
     await bullMqJobQueue.startWorkflowRunner(
-      workflow_id,
+      workflowId,
       userId,
       (workflow.nodes as any[]) || [],
       (workflow.edges as any[]) || [],
@@ -598,50 +616,56 @@ router.post("/unregister", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { workflow_id, node_id } = req.body;
+    const { workflowId, node_id } = req.body;
 
-    if (!workflow_id || !node_id) {
+    if (!workflowId || !node_id) {
       return res
         .status(400)
-        .json({ error: "workflow_id and node_id are required" });
+        .json({ error: "workflowId and node_id are required" });
     }
 
     const listeners = await RegistrationService.getActiveListeners(userId);
     const listener = listeners.find(
       (activeListener) =>
-        activeListener.workflowId === workflow_id &&
+        activeListener.workflowId === workflowId &&
         activeListener.nodeId === node_id,
     );
 
-    if (listener?.source === "alpaca_market" || listener?.source === "binance_market") {
-      const tradingSource = listener.source === "alpaca_market" ? "alpaca_trading" : "binance_trading";
+    if (
+      listener?.source === "alpaca_market" ||
+      listener?.source === "binance_market"
+    ) {
+      const tradingSource =
+        listener.source === "alpaca_market"
+          ? "alpaca_trading"
+          : "binance_trading";
 
       await SubscriptionService.unsubscribe({
         source: tradingSource as any,
         userId,
-        workflowId: workflow_id,
+        workflowId,
         nodeId: node_id,
         symbols: ["*"],
         scope:
           listener.scope === "global" || listener.scope === "workflow"
             ? listener.scope
             : "workflow",
-        targetWorkflowId: workflow_id,
+        targetWorkflowId: workflowId,
       });
     }
 
     // Delete listener through service
-    await RegistrationService.deleteListener(userId, workflow_id, node_id);
+    await RegistrationService.deleteListener(userId, workflowId, node_id);
 
     // Publish unregister control message to market-stream-service
     await RegistrationService.publishUnregisterWorkflow({
       userId,
-      workflowId: workflow_id,
+      workflowId: workflowId,
     });
 
-    await bullMqJobQueue.stopWorkflowRunner(workflow_id);
+    await bullMqJobQueue.stopWorkflowRunner(workflowId);
 
-    console.log(`🛑 Stopped listener: ${workflow_id}:${node_id}`);
+    console.log(`🛑 Stopped listener: ${workflowId}:${node_id}`);
 
     res.json({
       success: true,

@@ -14,7 +14,7 @@ import { getNodeExecutor } from "../nodes/registry";
 const router = Router();
 const portfolioRequestSchema = z.object({
   mode: z.enum(["backtest", "broker"]),
-  workflow_id: z.string().uuid(),
+  workflowId: z.string().uuid(),
   node_id: z.string(),
   nodeName: z.string().optional(),
   node_type: z.string().optional(),
@@ -69,7 +69,7 @@ router.post("/", async (req: Request, res: Response) => {
         values: { ...body, mode: body.mode },
       } as any,
       {},
-      { userId, workflow_id: body.workflow_id },
+      { userId, workflowId: body.workflowId },
     );
 
     if (!result.success) {

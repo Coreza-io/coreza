@@ -13,10 +13,7 @@ import {
   WorkflowNode,
   WorkflowEdge,
 } from "../types";
-import {
-  IndicatorStateManager,
-  buildIndicatorKey,
-} from "../../engine";
+import { IndicatorStateManager, buildIndicatorKey } from "../../engine";
 import {
   normalizeOutput,
   createErrorOutput,
@@ -146,9 +143,9 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       const stateManager = context?.indicatorStateManager as
         | IndicatorStateManager
         | undefined;
-      const userId = context?.userId || context?.user_id;
+      const userId = context?.userId;
       const workflowId = context?.workflowId;
-      const runId = context?.runId || context?.user_id;
+      const runId = context?.runId;
 
       if (!stateManager) {
         const normalized = createErrorOutput(

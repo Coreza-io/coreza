@@ -253,21 +253,6 @@ export function useNodeExecution({
         }));
       }
 
-      if (definition?.category === "Indicators") {
-        const nodeExecutionData = nodeId
-          ? (executionStore.getNodeData(nodeId) as Record<string, any>)
-          : null;
-        const currentWorkflowId = workflowId;
-        const currentRunId =
-          nodeExecutionData?.run_id ||
-          nodeExecutionData?.runId ||
-          currentWorkflowId ||
-          userId;
-
-        payload.workflow_id = currentWorkflowId;
-        payload.run_id = currentRunId;
-      }
-
       return {
         ...payload,
       };
@@ -280,8 +265,6 @@ export function useNodeExecution({
       getNodes,
       getEdges,
       nodeId,
-      workflowId,
-      userId,
     ],
   );
 
@@ -325,7 +308,7 @@ export function useNodeExecution({
         payload.node_id = nodeId;
         payload.nodeName = definition.name;
         payload.node_type = definition.node_type;
-        payload.workflow_id = workflowId;
+        payload.workflowId = workflowId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;

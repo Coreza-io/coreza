@@ -123,7 +123,6 @@ export class PortfolioExecutor implements INodeExecutor {
     }
   }
 
-
   // ============== BACKTEST MODE ==============
 
   private executeBacktestMode(
@@ -203,11 +202,11 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
-    const runId = context?.runId;
+    const runId = context.runId || context.workflowId;
     if (!runId) {
       return toNodeResult(
         createErrorOutput(
-          "runId is required for broker mode — cannot use workflow_id as fallback",
+          "runId is required for broker mode — cannot use workflowId as fallback",
         ),
       );
     }
@@ -656,7 +655,9 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): Record<string, any> {
-    return this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency));
+    return this.getPortfolioSummaryFromState(
+      pm.getPortfolioState(baseCurrency),
+    );
   }
 
   private getPortfolioSummaryFromState(

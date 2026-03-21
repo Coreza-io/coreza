@@ -146,6 +146,10 @@ export class RunSyncService {
         completed_at: run.completed_at || new Date().toISOString(),
         result: run.result ? JSON.parse(run.result) : null,
         error_message: run.error_message || null,
+        ...(run.nodes ? { nodes: JSON.parse(run.nodes) } : {}),
+        ...(run.edges ? { edges: JSON.parse(run.edges) } : {}),
+        ...(run.node_count ? { node_count: parseInt(run.node_count, 10) } : {}),
+        ...(run.edge_count ? { edge_count: parseInt(run.edge_count, 10) } : {}),
       }));
 
       // Batch upsert to Supabase (upsert in case some runs already exist)

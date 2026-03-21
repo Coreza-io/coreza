@@ -44,7 +44,9 @@ export interface ExecutionResultPayload {
   result?: Record<string, ExecutionNodeResult>;
   nodeExecutions?: NodeExecutionLog[];
   executionOrder?: string[];
-  error?: string;
+  error?: string | { code?: string; phase?: string; message?: string };
+  data?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
 }
 
 export interface ExecutionRun {

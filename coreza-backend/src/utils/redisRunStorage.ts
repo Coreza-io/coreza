@@ -101,7 +101,7 @@ export async function updateRunStatusInRedis(
     updates.nodeResults = JSON.stringify(executionResult.nodeResults);
   }
 
-  if (executionResult.errorMessage) {
+  if (executionResult?.errorMessage) {
     updates.error_message = executionResult.errorMessage;
   }
 

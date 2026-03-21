@@ -1,4 +1,4 @@
-import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
+import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 
 export type ExecutionKind = "standard" | "backtest";
 export type ExecutionPhase = "init" | "queue" | "execute" | "flush" | "destroy";

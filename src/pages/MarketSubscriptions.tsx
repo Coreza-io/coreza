@@ -229,7 +229,7 @@ const MarketSubscriptions = () => {
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
           {
-            workflow_id: workflowId, // Include workflowId for workflow-scoped removal
+            workflowId, // Include workflowId for workflow-scoped removal
             targetWorkflowId: workflowId,
             symbols: [symbol],
             stream_types: [eventType],
@@ -276,7 +276,7 @@ const MarketSubscriptions = () => {
           response = await apiClient.post(
             `/stream/${wf.source}/unsubscribe`,
             {
-              workflow_id: wf.workflowId,
+              workflowId: wf.workflowId,
               node_id: wf.nodeId,
               streams: wf.streams,
             },

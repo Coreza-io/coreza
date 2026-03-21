@@ -42,7 +42,7 @@ export function useNodeCredentials({
 }: UseNodeCredentialsProps): UseNodeCredentialsReturn {
   const { user, session, loading } = useAuth();
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>(
-    {}
+    {},
   );
   const [selectOptions, setSelectOptions] = useState<Record<string, any[]>>({});
 
@@ -64,7 +64,7 @@ export function useNodeCredentials({
         // Check if userId AND access_token exist
         if (!userId || !session?.access_token) {
           console.log(
-            "No authenticated user or access token, skipping credentials fetch"
+            "No authenticated user or access token, skipping credentials fetch",
           );
           setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
           return;
@@ -102,7 +102,7 @@ export function useNodeCredentials({
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [definition, userId, session?.access_token]
+    [definition, userId, session?.access_token],
   );
 
   const fetchStoreWorkflows = useCallback(
@@ -118,7 +118,7 @@ export function useNodeCredentials({
       try {
         const response = await apiClient.get(
           `/storage/store/workflows?user_id=${userId}`,
-          session?.access_token
+          session?.access_token,
         );
 
         if (!response.ok) {
@@ -138,7 +138,7 @@ export function useNodeCredentials({
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [userId, session?.access_token]
+    [userId, session?.access_token],
   );
 
   const fetchStoreVariables = useCallback(
@@ -154,8 +154,8 @@ export function useNodeCredentials({
 
       try {
         const response = await apiClient.get(
-          `/storage/store/variables?user_id=${userId}&workflow_id=${workflowId}`,
-          session?.access_token
+          `/storage/store/variables?user_id=${userId}&workflowId=${workflowId}`,
+          session?.access_token,
         );
 
         if (!response.ok) {
@@ -176,7 +176,7 @@ export function useNodeCredentials({
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [userId, session?.access_token]
+    [userId, session?.access_token],
   );
 
   // Fetch dependent options (cascading selects)
@@ -189,7 +189,7 @@ export function useNodeCredentials({
             fieldKey: field.key,
             hasApiUrl: !!field.optionsApiUrl,
             parentValue,
-          }
+          },
         );
         return;
       }
@@ -207,7 +207,7 @@ export function useNodeCredentials({
         const response = await apiClient.post(
           field.optionsApiUrl,
           { user_id: user?.id, credential_id: parentValue },
-          session?.access_token
+          session?.access_token,
         );
 
         console.log(`[DEPENDENT-API] Response status:`, response.status);
@@ -223,21 +223,21 @@ export function useNodeCredentials({
         } else {
           console.error(
             `[DEPENDENT-API] Failed to fetch dependent options:`,
-            result.error
+            result.error,
           );
           setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
         }
       } catch (error) {
         console.error(
           `[DEPENDENT-API] Error fetching options for ${fieldKey}:`,
-          error
+          error,
         );
         setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
       } finally {
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [user?.id, session?.access_token]
+    [user?.id, session?.access_token],
   );
 
   // Load credentials and static options on mount (wait for auth to be ready)

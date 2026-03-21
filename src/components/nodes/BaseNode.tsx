@@ -14,7 +14,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { useNodeId, useReactFlow, useStore } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
@@ -113,12 +119,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const { id: workflowId } = useParams();
   // Subscribe to edge count changes (not position changes)
   const edgeCount = useStore(edgeCountSelector);
-  
+
   // Track upstream nodes with stable reference
   const previousNodesRef = useRef<Node[]>([]);
 
   const definition = data.definition;
-  
+
   // Get display name - use stable access to avoid re-renders on drag
   const displayName = useMemo(() => {
     if (data.displayName && data.displayName.trim()) {
@@ -243,7 +249,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       const response = await apiClient.post(
         "/stream/unregister",
         {
-          workflow_id: workflowId,
+          workflowId,
           node_id: nodeId,
         },
         session?.access_token,
@@ -297,7 +303,9 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const handleTogglePause = useCallback(() => {
     if (!nodeId) return;
     const current = executionStore.getNodeData(nodeId);
-    executionStore.setNodeData(nodeId, { isStreamPaused: !current.isStreamPaused });
+    executionStore.setNodeData(nodeId, {
+      isStreamPaused: !current.isStreamPaused,
+    });
     notifyStoreUpdate();
   }, [nodeId, executionStore, notifyStoreUpdate]);
 

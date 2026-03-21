@@ -23,7 +23,7 @@ const renderRecoveryEndpoint = (
   nodeId: string,
 ): string =>
   template
-    .replace(/\{\{\s*workflow_id\s*\}\}/g, workflowId)
+    .replace(/\{\{\s*workflowId\s*\}\}/g, workflowId)
     .replace(/\{\{\s*node_id\s*\}\}/g, nodeId)
     .replace(/\{\{\s*workflowId\s*\}\}/g, workflowId)
     .replace(/\{\{\s*nodeId\s*\}\}/g, nodeId);
@@ -88,7 +88,7 @@ export const buildStreamingTriggerListeningConfig = ({
   const timeout = streamingConfig.timeout ?? DEFAULT_STREAMING_TIMEOUT;
   const recoveryTemplate =
     streamingConfig.recoveryPolling?.endpoint ??
-    "/market/stream-test-result/{{workflow_id}}/{{node_id}}";
+    "/market/stream-test-result/{{workflowId}}/{{node_id}}";
   const recoveryEndpoint = renderRecoveryEndpoint(
     recoveryTemplate,
     workflowId,
@@ -114,8 +114,7 @@ export const buildStreamingTriggerListeningConfig = ({
       testListenNodeId: nodeId,
     }),
     isDataReceived: () => false,
-    shouldStop: (nodeData) =>
-      nodeData?.isTestListening === false,
+    shouldStop: (nodeData) => nodeData?.isTestListening === false,
     buildSuccessOutput: (nodeData) => nodeData.output,
     buildTimeoutOutput: () => ({
       status: "timeout",
@@ -159,8 +158,7 @@ export const buildStreamingSubscribeListeningConfig = ({
   const timeout =
     definition?.streamingConfig?.timeout ?? DEFAULT_SUBSCRIBE_TIMEOUT;
   const listeningFlag =
-    definition?.streamingConfig?.subscribeListeningFlag ??
-    "isStreamingWaiting";
+    definition?.streamingConfig?.subscribeListeningFlag ?? "isStreamingWaiting";
 
   return {
     buildListeningOutput: (res) => ({
@@ -178,12 +176,12 @@ export const buildStreamingSubscribeListeningConfig = ({
       const output = nodeData?.output;
       return Boolean(
         output?.status === "streaming" &&
-          (output.news ||
-            output.data ||
-            output.trade ||
-            output.quote ||
-            output.bar ||
-            output.dailyBar),
+        (output.news ||
+          output.data ||
+          output.trade ||
+          output.quote ||
+          output.bar ||
+          output.dailyBar),
       );
     },
     buildSuccessOutput: (nodeData) => nodeData.output,

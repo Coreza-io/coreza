@@ -30,7 +30,7 @@ router.post("/init", async (req: Request, res: Response) => {
     }
 
     const {
-      workflow_id,
+      workflowId,
       node_id,
       nodeName,
       node_type,
@@ -55,8 +55,8 @@ router.post("/init", async (req: Request, res: Response) => {
       edges,
     } = req.body;
 
-    if (!workflow_id) {
-      return res.status(400).json({ error: "workflow_id is required" });
+    if (!workflowId) {
+      return res.status(400).json({ error: "workflowId is required" });
     }
 
     const result = await backtestExecutor.execute(
@@ -85,7 +85,7 @@ router.post("/init", async (req: Request, res: Response) => {
         },
       } as any,
       {},
-      { userId, workflowId: workflow_id, nodes, edges },
+      { userId, workflowId: workflowId, nodes, edges },
     );
 
     if (!result.success) {
@@ -208,6 +208,9 @@ router.post("/trade", async (req: Request, res: Response) => {
     }
 
     const {
+      node_id,
+      nodeName,
+      node_type,
       backtest_id,
       symbol,
       side,
@@ -226,9 +229,9 @@ router.post("/trade", async (req: Request, res: Response) => {
 
     const result = await backtestExecutor.execute(
       {
-        id: "api-trade",
-        name: "BacktestTrade",
-        node_type: "BacktestTrade",
+        id: node_id,
+        name: nodeName,
+        node_type,
         values: {
           backtest_id,
           symbol,

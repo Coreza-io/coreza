@@ -46,7 +46,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       candle_data,
       symbol,
       timeframe,
-      workflow_id,
+      workflowId,
       run_id,
       node_id,
     } = req.body;
@@ -54,8 +54,8 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
     const windowSize = Math.min(Math.max(parseInt(size) || 20, 1), 500);
     const storeKey = buildExecutionScopedKey({
       userId,
-      workflowId: workflow_id,
-      runId: run_id || workflow_id,
+      workflowId,
+      runId: run_id || workflowId,
       scope: node_id,
       parts: [symbol || "_", timeframe || "_"],
     });
@@ -314,13 +314,13 @@ router.get("/store/variables", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { workflow_id } = req.query;
-    if (!workflow_id) {
-      return res.status(400).json({ error: "workflow_id is required" });
+    const { workflowId } = req.query;
+    if (!workflowId) {
+      return res.status(400).json({ error: "workflowId is required" });
     }
 
     const redis = getRedisCache();
-    const pattern = buildStoreKey(userId, workflow_id as string, "*");
+    const pattern = buildStoreKey(userId, workflowId as string, "*");
     const keys = await redis.keys(pattern);
 
     res.json({
@@ -341,19 +341,19 @@ router.get("/store/value", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { workflow_id, variable_name } = req.query;
+    const { workflowId, variable_name } = req.query;
 
-    if (!workflow_id || !variable_name) {
+    if (!workflowId || !variable_name) {
       return res
         .status(400)
-        .json({ error: "workflow_id and variable_name required" });
+        .json({ error: "workflowId and variable_name required" });
     }
 
     const { getStoreValue } = await import("../utils/store");
     const redis = getRedisCache();
     const key = buildStoreKey(
       userId,
-      workflow_id as string,
+      workflowId as string,
       variable_name as string,
     );
     const storedValue = await getStoreValue(redis, key);

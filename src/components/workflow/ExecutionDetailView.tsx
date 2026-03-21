@@ -65,7 +65,10 @@ export function ExecutionDetailView({
   // This ensures historical executions display the workflow state at execution time
   // Deep clone nodes to prevent mutation of original editor nodes
   const sourceNodes = useMemo(() => {
-    const hasExecutionNodes = execution.nodes && Array.isArray(execution.nodes) && execution.nodes.length > 0;
+    const hasExecutionNodes =
+      execution.nodes &&
+      Array.isArray(execution.nodes) &&
+      execution.nodes.length > 0;
     if (hasExecutionNodes) {
       return JSON.parse(JSON.stringify(execution.nodes)) as Node[];
     }
@@ -74,7 +77,11 @@ export function ExecutionDetailView({
 
   // Deep clone edges to prevent mutation
   const sourceEdges = useMemo(() => {
-    if (execution.edges && Array.isArray(execution.edges) && execution.edges.length > 0) {
+    if (
+      execution.edges &&
+      Array.isArray(execution.edges) &&
+      execution.edges.length > 0
+    ) {
       return JSON.parse(JSON.stringify(execution.edges)) as Edge[];
     }
     return JSON.parse(JSON.stringify(edges)) as Edge[];
@@ -109,11 +116,7 @@ export function ExecutionDetailView({
           ...node.data,
           definition,
           values: (node as any).values || node.data?.values || {},
-          displayName:
-            node.data?.displayName ||
-            (node as any).displayName ||
-            (node.data as any)?.label ||
-            undefined,
+          displayName: node.id,
         },
       };
     });
@@ -155,27 +158,31 @@ export function ExecutionDetailView({
     return sourceEdges.map((edge) => {
       const sourceExec = nodeExecutionMap.get(edge.source);
       const itemCount = sourceExec?.itemCount || 0;
-      
+
       return {
         ...edge,
         type: edge.type || "default",
-        label: itemCount > 0 ? `${itemCount} item${itemCount !== 1 ? "s" : ""}` : undefined,
+        label:
+          itemCount > 0
+            ? `${itemCount} item${itemCount !== 1 ? "s" : ""}`
+            : undefined,
         labelStyle: {
           fill: "hsl(var(--muted-foreground))",
           fontSize: 10,
           fontWeight: 500,
         },
-        labelBgStyle: { 
+        labelBgStyle: {
           fill: "hsl(var(--card))",
           fillOpacity: 0.9,
         },
         style: {
           ...edge.style,
-          stroke: sourceExec?.status === "success" 
-            ? "hsl(var(--success))" 
-            : sourceExec?.status === "failed"
-            ? "hsl(var(--destructive))"
-            : "hsl(var(--border))",
+          stroke:
+            sourceExec?.status === "success"
+              ? "hsl(var(--success))"
+              : sourceExec?.status === "failed"
+                ? "hsl(var(--destructive))"
+                : "hsl(var(--border))",
           strokeWidth: 2,
         },
         animated: false,
@@ -214,16 +221,21 @@ export function ExecutionDetailView({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium text-sm">
-                {execution.status === "success" ? "Succeeded" : 
-                 execution.status === "failed" ? "Failed" : 
-                 execution.status}
+                {execution.status === "success"
+                  ? "Succeeded"
+                  : execution.status === "failed"
+                    ? "Failed"
+                    : execution.status}
               </span>
               <span className="text-muted-foreground text-sm">
                 in {getDurationDisplay()}
               </span>
             </div>
             <div className="text-xs text-muted-foreground">
-              {format(new Date(execution.started_at), "MMM d, yyyy 'at' HH:mm:ss")}
+              {format(
+                new Date(execution.started_at),
+                "MMM d, yyyy 'at' HH:mm:ss",
+              )}
             </div>
           </div>
         </div>
@@ -269,12 +281,12 @@ export function ExecutionDetailView({
               </div>
             </div>
           )}
-          
+
           {/* Isolated React Flow context + execution store for historical view */}
           {/* Key by execution.id to force remount when switching runs - ensures field state reinitializes */}
           <ReactFlowProvider key={execution.id}>
-            <StaticExecutionStoreProvider 
-              nodeExecutions={nodeExecutions.map(exec => ({
+            <StaticExecutionStoreProvider
+              nodeExecutions={nodeExecutions.map((exec) => ({
                 nodeId: exec.nodeId,
                 output: exec.output,
                 input: exec.input,
@@ -294,7 +306,7 @@ export function ExecutionDetailView({
                 className={cn(
                   "execution-canvas",
                   resolvedTheme === "dark" && "dark",
-                  loading && "opacity-50 pointer-events-none"
+                  loading && "opacity-50 pointer-events-none",
                 )}
                 style={{ backgroundColor: "hsl(var(--trading-grid))" }}
               >

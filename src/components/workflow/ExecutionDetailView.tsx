@@ -111,9 +111,9 @@ export function ExecutionDetailView({
           values: (node as any).values || node.data?.values || {},
           displayName:
             node.data?.displayName ||
+            (node as any).displayName ||
             (node.data as any)?.label ||
-            definition?.name ||
-            node.id,
+            undefined,
         },
       };
     });

@@ -280,11 +280,25 @@ export function useExecutionHistory(
     }
     
     // Enhanced fallback: extract from result object with better defaults
-    const resultData =
-      (execution.result.result ?? execution.result) as Record<string, ExecutionNodeResult>;
-    const executionOrder =
-      execution.result.executionOrder || Object.keys(resultData || {});
-    
+    let resultData = execution.result.result as
+      | Record<string, ExecutionNodeResult>
+      | undefined;
+    let executionOrder = execution.result.executionOrder;
+
+    if (
+      !resultData &&
+      execution.result.data &&
+      typeof execution.result.data === "object"
+    ) {
+      const innerData = execution.result.data as Record<string, unknown>;
+      resultData = innerData.result as Record<string, ExecutionNodeResult> | undefined;
+      executionOrder = executionOrder || (innerData.executionOrder as string[] | undefined);
+    }
+
+    resultData =
+      (resultData ?? execution.result) as Record<string, ExecutionNodeResult>;
+    executionOrder = executionOrder || Object.keys(resultData || {});
+
     if (typeof resultData !== "object" || resultData === null) {
       return [];
     }

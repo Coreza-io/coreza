@@ -100,8 +100,7 @@ export class WorkflowRunner {
 
             await updateRunStatusInRedis(eventRunId, 'success', {
               result: {
-                success: true,
-                data: result,
+                ...result,
                 meta: {
                   source: 'stream',
                   timestamp: new Date().toISOString(),

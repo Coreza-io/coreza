@@ -4,6 +4,7 @@ import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "../engine";
 import { PortfolioManager } from "../simulation/PortfolioManager";
+import { createRunInRedis, updateRunStatusInRedis } from "../utils/redisRunStorage";
 
 const STRATEGY_GROUP = "strategy-group";
 
@@ -15,6 +16,12 @@ export class WorkflowRunner {
   private running = false;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
+  private readonly workflowSnapshot: {
+    nodes: any;
+    edges: any;
+    node_count: number;
+    edge_count: number;
+  };
 
   constructor(
     private readonly workflowId: string,
@@ -27,6 +34,12 @@ export class WorkflowRunner {
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}-${this.runnerId}`;
+    this.workflowSnapshot = {
+      nodes,
+      edges,
+      node_count: nodes.length,
+      edge_count: edges.length,
+    };
     this.engine = new WorkflowEngine(
       this.runnerId,
       workflowId,
@@ -73,12 +86,33 @@ export class WorkflowRunner {
             continue;
           }
 
+          const eventRunId = randomUUID();
+          await createRunInRedis(eventRunId, this.workflowId, this.userId, {
+            ...this.workflowSnapshot,
+            source: 'stream',
+          });
+
           this.engine.resetForNextBar(true);
 
           try {
             const event = JSON.parse(rawEvent);
-            await this.engine.execute({ data: event?.data ?? event });
+            const result = await this.engine.execute({ data: event?.data ?? event });
+
+            await updateRunStatusInRedis(eventRunId, 'success', {
+              result: {
+                success: true,
+                data: result,
+                meta: {
+                  source: 'stream',
+                  timestamp: new Date().toISOString(),
+                  streamMessageId: messageId,
+                },
+              },
+            });
           } catch (error) {
+            await updateRunStatusInRedis(eventRunId, 'failed', {
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
             console.error("[WorkflowRunner] Error processing stream event:", error);
           }
 

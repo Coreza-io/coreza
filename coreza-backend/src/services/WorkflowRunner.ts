@@ -187,7 +187,7 @@ export class WorkflowRunner {
     // Phase 3: Create run record — transient failure, do NOT ack
     const executionRunId = randomUUID();
     try {
-      await createRunInRedis(executionRunId, this.workflowId, this.userId, {
+      await createRunInRedis(this.userId, this.workflowId, executionRunId, {
         nodes: this.serializedSnapshot.nodes,
         edges: this.serializedSnapshot.edges,
         node_count: this.serializedSnapshot.nodeCount,

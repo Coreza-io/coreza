@@ -97,8 +97,9 @@ export async function updateRunStatusInRedis(
     updates.completed_at = new Date().toISOString();
   }
 
-  if (executionResult?.nodeResults !== undefined) {
-    updates.nodeResults = JSON.stringify(executionResult.nodeResults);
+  if (executionResult !== undefined) {
+    const resultToStore = executionResult.result ?? executionResult;
+    updates.result = JSON.stringify(resultToStore);
   }
 
   if (executionResult?.errorMessage) {

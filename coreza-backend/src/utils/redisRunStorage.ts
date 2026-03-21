@@ -25,17 +25,40 @@ const RUN_TTL_SECONDS = 86400; // 24 hours - cleanup old runs if sync fails
 export async function createRunInRedis(
   runId: string,
   workflowId: string,
-  userId: string
+  userId: string,
+  snapshot?: {
+    nodes?: any;
+    edges?: any;
+    node_count?: number;
+    edge_count?: number;
+    source?: string;
+  }
 ): Promise<void> {
   const redis = getRedisCache();
   
-  const runData = {
+  const runData: Record<string, string> = {
     id: runId,
     workflow_id: workflowId,
     initiated_by: userId,
     status: 'queued',
     started_at: new Date().toISOString(),
   };
+
+  if (snapshot?.nodes !== undefined) {
+    runData.nodes = typeof snapshot.nodes === 'string' ? snapshot.nodes : JSON.stringify(snapshot.nodes);
+  }
+  if (snapshot?.edges !== undefined) {
+    runData.edges = typeof snapshot.edges === 'string' ? snapshot.edges : JSON.stringify(snapshot.edges);
+  }
+  if (snapshot?.node_count !== undefined) {
+    runData.node_count = String(snapshot.node_count);
+  }
+  if (snapshot?.edge_count !== undefined) {
+    runData.edge_count = String(snapshot.edge_count);
+  }
+  if (snapshot?.source) {
+    runData.source = snapshot.source;
+  }
 
   // Store run data in Redis hash with TTL
   await redis.hset(`runs:data:${runId}`, runData);

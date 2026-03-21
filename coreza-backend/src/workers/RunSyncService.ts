@@ -119,6 +119,10 @@ export class RunSyncService {
             completed_at: runData.completed_at,
             result: runData.result,
             error_message: runData.error_message,
+            nodes: runData.nodes,
+            edges: runData.edges,
+            node_count: runData.node_count,
+            edge_count: runData.edge_count,
           });
         }
       }

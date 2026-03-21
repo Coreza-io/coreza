@@ -7,20 +7,31 @@ import { PortfolioManager } from "../simulation/PortfolioManager";
 import { createRunInRedis, updateRunStatusInRedis } from "../utils/redisRunStorage";
 
 const STRATEGY_GROUP = "strategy-group";
+const AUTOCLAIM_IDLE_MS = 60_000; // 60s idle threshold for reclaiming
+const POLL_BLOCK_MS = 5_000;
+const POLL_BATCH_SIZE = 10;
+const TRANSIENT_BACKOFF_MS = 1_000;
+
+interface StreamEventEnvelope {
+  type?: string;
+  data: unknown;
+  timestamp?: string;
+  symbol?: string;
+}
 
 export class WorkflowRunner {
   private readonly engine: WorkflowEngine;
-  private readonly redisStream: Redis;
+  private readonly streamRedisClient: Redis;
   private readonly streamKey: string;
-  private readonly runnerId: string;
+  private readonly runnerInstanceId: string;
   private running = false;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
-  private readonly workflowSnapshot: {
+  private readonly serializedSnapshot: {
     nodes: string;
     edges: string;
-    node_count: number;
-    edge_count: number;
+    nodeCount: number;
+    edgeCount: number;
   };
 
   constructor(
@@ -29,19 +40,19 @@ export class WorkflowRunner {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
   ) {
-    this.runnerId = randomUUID();
-    this.redisStream = createDedicatedStreamConnection(`Strategy-${workflowId}`);
+    this.runnerInstanceId = randomUUID();
+    this.streamRedisClient = createDedicatedStreamConnection(`Strategy-${workflowId}`);
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
-    this.consumerName = `consumer-${workflowId}-${this.runnerId}`;
-    this.workflowSnapshot = {
+    this.consumerName = `consumer-${workflowId}-${this.runnerInstanceId}`;
+    this.serializedSnapshot = {
       nodes: JSON.stringify(nodes),
       edges: JSON.stringify(edges),
-      node_count: nodes.length,
-      edge_count: edges.length,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
     };
     this.engine = new WorkflowEngine(
-      this.runnerId,
+      this.runnerInstanceId,
       workflowId,
       userId,
       nodes,
@@ -56,86 +67,204 @@ export class WorkflowRunner {
     if (this.running) return;
     this.running = true;
 
-    await this.redisStream
-      .xgroup("CREATE", this.streamKey, STRATEGY_GROUP, "0", "MKSTREAM")
-      .catch(() => undefined);
+    await this.ensureConsumerGroup();
+    await this.reclaimPendingMessages();
+    await this.pollLoop();
+  }
 
-    while (this.running) {
-      const results = (await this.redisStream.xreadgroup(
-        "GROUP",
+  private async ensureConsumerGroup(): Promise<void> {
+    try {
+      await this.streamRedisClient.xgroup("CREATE", this.streamKey, STRATEGY_GROUP, "0", "MKSTREAM");
+    } catch (err: any) {
+      // BUSYGROUP = group already exists, safe to ignore
+      if (!err?.message?.includes("BUSYGROUP")) throw err;
+    }
+  }
+
+  private async reclaimPendingMessages(): Promise<void> {
+    try {
+      const claimed = await (this.streamRedisClient as any).xautoclaim(
+        this.streamKey,
         STRATEGY_GROUP,
         this.consumerName,
-        "BLOCK",
-        "5000",
+        AUTOCLAIM_IDLE_MS,
+        "0-0",
         "COUNT",
-        "10",
-        "STREAMS",
-        this.streamKey,
-        ">",
-      )) as [string, [string, string[]][]][] | null;
+        POLL_BATCH_SIZE,
+      );
+
+      // xautoclaim returns [nextStartId, [[id, fields], ...], deletedIds]
+      const messages = claimed?.[1];
+      if (!messages?.length) return;
+
+      for (const [messageId, fields] of messages) {
+        if (!this.running) break;
+        await this.processMessage(messageId, fields);
+      }
+    } catch (err) {
+      // XAUTOCLAIM may not be supported on older Redis; log and continue
+      console.warn("[WorkflowRunner] XAUTOCLAIM failed (non-fatal):", (err as Error).message);
+    }
+  }
+
+  private async pollLoop(): Promise<void> {
+    while (this.running) {
+      let results: [string, [string, string[]][]][] | null = null;
+
+      try {
+        results = (await this.streamRedisClient.xreadgroup(
+          "GROUP",
+          STRATEGY_GROUP,
+          this.consumerName,
+          "BLOCK",
+          String(POLL_BLOCK_MS),
+          "COUNT",
+          String(POLL_BATCH_SIZE),
+          "STREAMS",
+          this.streamKey,
+          ">",
+        )) as [string, [string, string[]][]][] | null;
+      } catch (err) {
+        if (!this.running) break;
+        console.warn("[WorkflowRunner] XREADGROUP error (retrying):", (err as Error).message);
+        await this.sleep(TRANSIENT_BACKOFF_MS);
+        continue;
+      }
 
       if (!results?.length) continue;
 
       for (const [, messages] of results) {
         for (const [messageId, fields] of messages) {
-          const payloadIndex = fields.findIndex((field) => field === "event");
-          const rawEvent = payloadIndex >= 0 ? fields[payloadIndex + 1] : undefined;
-
-          if (!rawEvent) {
-            await this.redisStream.xack(this.streamKey, STRATEGY_GROUP, messageId);
-            continue;
-          }
-
-          const eventRunId = randomUUID();
-          await createRunInRedis(eventRunId, this.workflowId, this.userId, {
-            ...this.workflowSnapshot,
-            source: 'stream',
-          });
-
-          this.engine.resetForNextBar(true);
-
-          try {
-            const event = JSON.parse(rawEvent);
-            const result = await this.engine.execute({ data: event?.data ?? event });
-
-            await updateRunStatusInRedis(eventRunId, 'success', {
-              result: {
-                ...result,
-                meta: {
-                  source: 'stream',
-                  timestamp: new Date().toISOString(),
-                  streamMessageId: messageId,
-                },
-              },
-            });
-          } catch (error) {
-            await updateRunStatusInRedis(eventRunId, 'failed', {
-              errorMessage: error instanceof Error ? error.message : String(error),
-            });
-            console.error("[WorkflowRunner] Error processing stream event:", error);
-          }
-
-          await this.redisStream.xack(this.streamKey, STRATEGY_GROUP, messageId);
+          if (!this.running) break;
+          await this.processMessage(messageId, fields);
         }
       }
     }
+  }
+
+  private async processMessage(messageId: string, fields: string[]): Promise<void> {
+    // Phase 1: Extract payload — permanent failure if missing
+    const rawPayload = this.extractPayload(fields);
+    if (!rawPayload) {
+      await this.ack(messageId);
+      return;
+    }
+
+    // Phase 2: Parse envelope — permanent failure if invalid JSON
+    let envelope: StreamEventEnvelope;
+    try {
+      envelope = this.parseEnvelope(rawPayload);
+    } catch {
+      console.warn("[WorkflowRunner] Invalid JSON, discarding message:", messageId);
+      await this.ack(messageId);
+      return;
+    }
+
+    // Phase 3: Create run record — transient failure, do NOT ack
+    const executionRunId = randomUUID();
+    try {
+      await createRunInRedis(executionRunId, this.workflowId, this.userId, {
+        nodes: this.serializedSnapshot.nodes,
+        edges: this.serializedSnapshot.edges,
+        node_count: this.serializedSnapshot.nodeCount,
+        edge_count: this.serializedSnapshot.edgeCount,
+        source: "stream",
+      });
+    } catch (err) {
+      console.warn("[WorkflowRunner] createRunInRedis failed (will retry):", (err as Error).message);
+      return; // No ack — message stays pending for reclaim
+    }
+
+    // Phase 4: Execute workflow
+    this.engine.resetForNextBar(true);
+
+    try {
+      const result = await this.engine.execute({ data: envelope.data });
+
+      // Phase 5a: Record success
+      await this.recordSuccess(executionRunId, result, messageId);
+    } catch (error) {
+      // Phase 5b: Record failure (execution failed — not retryable)
+      await this.recordFailure(executionRunId, error);
+    }
+
+    // Phase 6: Ack
+    await this.ack(messageId);
+  }
+
+  private extractPayload(fields: string[]): string | undefined {
+    const idx = fields.findIndex((f) => f === "event");
+    return idx >= 0 ? fields[idx + 1] : undefined;
+  }
+
+  private parseEnvelope(raw: string): StreamEventEnvelope {
+    const parsed = JSON.parse(raw);
+    // Normalize: if parsed has a data property, use it as-is; otherwise wrap
+    if (parsed && typeof parsed === "object" && "data" in parsed) {
+      return parsed as StreamEventEnvelope;
+    }
+    return { data: parsed };
+  }
+
+  private async recordSuccess(
+    executionRunId: string,
+    result: unknown,
+    messageId: string,
+  ): Promise<void> {
+    try {
+      await updateRunStatusInRedis(executionRunId, "success", {
+        result: {
+          ...(result as any),
+          meta: {
+            source: "stream",
+            timestamp: new Date().toISOString(),
+            streamMessageId: messageId,
+          },
+        },
+      });
+    } catch (err) {
+      console.warn("[WorkflowRunner] recordSuccess failed:", (err as Error).message);
+    }
+  }
+
+  private async recordFailure(executionRunId: string, error: unknown): Promise<void> {
+    try {
+      await updateRunStatusInRedis(executionRunId, "failed", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    } catch (err) {
+      console.warn("[WorkflowRunner] recordFailure failed:", (err as Error).message);
+    }
+    console.error("[WorkflowRunner] Execution error:", error);
+  }
+
+  private async ack(messageId: string): Promise<void> {
+    try {
+      await this.streamRedisClient.xack(this.streamKey, STRATEGY_GROUP, messageId);
+    } catch (err) {
+      console.warn("[WorkflowRunner] ACK failed for", messageId, ":", (err as Error).message);
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   async stop(): Promise<void> {
     this.running = false;
     this.abortController.abort();
     this.engine.destroy();
-    PortfolioManager.removeInstance(this.userId, this.runnerId);
+    PortfolioManager.removeInstance(this.userId, this.runnerInstanceId);
     await this.cleanupRunnerKeys();
-    await this.redisStream.quit();
+    await this.streamRedisClient.quit();
   }
 
   private async cleanupRunnerKeys(): Promise<void> {
-    const pattern = `user:${this.userId}:workflow:${this.workflowId}:runId:${this.runnerId}:*`;
+    const pattern = `user:${this.userId}:workflow:${this.workflowId}:runId:${this.runnerInstanceId}:*`;
     let cursor = "0";
 
     do {
-      const [nextCursor, keys] = await this.redisStream.scan(
+      const [nextCursor, keys] = await this.streamRedisClient.scan(
         cursor,
         "MATCH",
         pattern,
@@ -146,7 +275,7 @@ export class WorkflowRunner {
       cursor = nextCursor;
 
       if (keys.length > 0) {
-        await this.redisStream.del(...keys);
+        await this.streamRedisClient.del(...keys);
       }
     } while (cursor !== "0");
   }

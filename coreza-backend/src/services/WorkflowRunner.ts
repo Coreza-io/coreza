@@ -17,8 +17,8 @@ export class WorkflowRunner {
   private readonly abortController: AbortController;
   private readonly consumerName: string;
   private readonly workflowSnapshot: {
-    nodes: any;
-    edges: any;
+    nodes: string;
+    edges: string;
     node_count: number;
     edge_count: number;
   };
@@ -35,8 +35,8 @@ export class WorkflowRunner {
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}-${this.runnerId}`;
     this.workflowSnapshot = {
-      nodes,
-      edges,
+      nodes: JSON.stringify(nodes),
+      edges: JSON.stringify(edges),
       node_count: nodes.length,
       edge_count: edges.length,
     };

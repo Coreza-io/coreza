@@ -1,91 +1,51 @@
 
 
-# WorkflowRunner Refactor — Updated Plan
+## Analysis
 
-## Summary
+The suggestion proposes creating an `ExecutionResult` type in `engine/types.ts`. However, **this type already exists** as `WorkflowExecutionResult` in `coreza-backend/src/engine/types/executionError.ts` (line 15-21), and it's already in the correct layer.
 
-Refactor `WorkflowRunner` for reliability and maintainability. Keep class name as `WorkflowRunner`. Fix frontend build errors.
+### What's already correct
+- `WorkflowExecutionResult` lives in `engine/types/` — right ownership
+- `ExecutionError` lives in `engine/types/` — right ownership
+- `NodeResult` lives in `nodes/types.ts` — right ownership
+- `WorkflowRunner` imports from `engine/` — correct dependency direction
 
-## Changes
+### What could improve
 
-### File: `coreza-backend/src/services/WorkflowRunner.ts`
+**1. Rename `WorkflowExecutionResult` → `ExecutionResult`**
+The `Workflow` prefix is redundant since it's already in the `engine/` module. However, this touches 49 references across 3 files — high churn, low value. **Skip.**
 
-**1. Rename fields (no class rename)**
-- `runnerId` → `runnerInstanceId`
-- `redisStream` → `streamRedisClient`
-- `workflowSnapshot` → `serializedSnapshot` (camelCase internals: `nodeCount`, `edgeCount`)
+**2. Strengthen `result` typing from `Record<string, unknown>` to `Record<string, NodeResult>`**
+Current: `result?: Record<string, unknown>` — loses type info.
+Proposed: `result?: Record<string, NodeResult>` — typed node results.
+This is a genuine improvement. The `buildResult()` method in `workflowRun.ts` already populates this with `NodeResult` objects, so the runtime shape already matches. Making the type explicit catches bugs at compile time.
 
-**2. Split `start()` into focused methods**
-```text
-start()                    — guard + ensureConsumerGroup + reclaimPending + pollLoop
-ensureConsumerGroup()      — XGROUP CREATE, catch BUSYGROUP only
-reclaimPendingMessages()   — XAUTOCLAIM with 60s idle threshold on startup
-pollLoop()                 — while(running) XREADGROUP with try/catch + backoff
-processMessage(id, fields) — single message lifecycle with error boundaries
-extractPayload(fields)     — field extraction, returns string | undefined
-parseEnvelope(raw)         — JSON parse + normalize to StreamEventEnvelope type
-recordSuccess(runId, result, messageId) — updateRunStatusInRedis wrapper
-recordFailure(runId, error)             — updateRunStatusInRedis wrapper
-```
+**3. Add timing metadata (`startedAt`, `finishedAt`, `durationMs`)**
+Useful for future performance tracking and UI timelines, but `timing` field already exists on `WorkflowExecutionResult`. Adding wall-clock timestamps is a separate concern — **skip for now**.
 
-**3. Error boundaries in `processMessage()`**
-```text
-processMessage(messageId, fields):
-  ├─ extractPayload → null? → ack (permanent: bad message)
-  ├─ parseEnvelope  → throws? → ack (permanent: invalid JSON)
-  ├─ createRunInRedis → throws? → do NOT ack (transient: retry on next claim)
-  ├─ engine.resetForNextBar(true)
-  ├─ engine.execute → success → recordSuccess → ack
-  │                 → failure → recordFailure → ack (execution failed, not retryable)
-  └─ ack failure → log warning, continue
-```
+## Plan
 
-**4. Add `XAUTOCLAIM` on startup**
-After consumer group creation, reclaim messages idle >60s from dead consumers.
+### File: `coreza-backend/src/engine/types/executionError.ts`
 
-**5. Define `StreamEventEnvelope` type**
+**Change 1**: Import `NodeResult` from `nodes/types` and update `WorkflowExecutionResult.result` type:
+
 ```typescript
-interface StreamEventEnvelope {
-  type?: string;
-  data: unknown;
-  timestamp?: string;
-  symbol?: string;
-}
-```
-Normalize once in `parseEnvelope()`. No more `event?.data ?? event` fallback.
+import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 
-**6. Poll loop resilience**
-Wrap `xreadgroup` in try/catch. On transient Redis error, log warning and retry after 1s backoff instead of crashing the loop.
-
-### File: `coreza-backend/src/services/workflowRunnerManager.ts`
-
-No changes — class name stays `WorkflowRunner`.
-
-### File: `src/hooks/useExecutionHistory.ts`
-
-**7. Fix build errors — add `data` and `meta` to `ExecutionResultPayload`**
-```typescript
-export interface ExecutionResultPayload {
-  success?: boolean;
-  result?: Record<string, ExecutionNodeResult>;
-  nodeExecutions?: NodeExecutionLog[];
+export interface WorkflowExecutionResult {
+  success: boolean;
+  result?: Record<string, NodeResult>;  // was Record<string, unknown>
   executionOrder?: string[];
-  error?: string | { code?: string; phase?: string; message?: string };
-  data?: Record<string, unknown>;
-  meta?: Record<string, unknown>;
+  error?: ExecutionError;
+  timing?: Record<string, { avgMs: number; totalMs: number; count: number }>;
 }
 ```
 
-## What We Skip
+One line change, one import addition. No renames, no churn. The runtime already produces `NodeResult` objects — this just makes the compiler aware.
 
-- Class rename to `LiveStrategyRunner` — keeping `WorkflowRunner`
-- `resetForNextBar(true)` rename — engine API, out of scope
-- PortfolioManager cleanup ownership — current approach is correct
+### No other files change
 
-## Files Changed
-
-| File | Change |
-|---|---|
-| `coreza-backend/src/services/WorkflowRunner.ts` | Field renames, split start(), error boundaries, XAUTOCLAIM, envelope type |
-| `src/hooks/useExecutionHistory.ts` | Add `data`/`meta` to interface (fixes 3 TS2339 errors) |
+- `WorkflowRunner` already uses `WorkflowExecutionResult` via the engine's return type — no import changes needed
+- `workflowRun.ts` already returns `NodeResult` objects in the result map — no logic changes
+- `WorkflowEngine.execute()` signature stays the same
 

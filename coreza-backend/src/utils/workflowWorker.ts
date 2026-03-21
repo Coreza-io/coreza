@@ -178,7 +178,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass entry point to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-            executionKind: (job.data as any).executionKind,
+              executionKind: (job.data as any).executionKind,
             },
           );
 
@@ -336,7 +336,7 @@ export function createWorkflowWorker({
 
             if (useRedisStorage) {
               // Update Redis-stored run
-              await redis.hset(`runs:data:${parentRunId}`, {
+              await redis.hset(`user:${userId}:runs:data:${parentRunId}`, {
                 status: "success",
                 result: JSON.stringify(finalResult),
                 completed_at: new Date().toISOString(),
@@ -432,7 +432,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass start node to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-            executionKind: (job.data as any).executionKind,
+              executionKind: (job.data as any).executionKind,
             },
           );
 
@@ -474,7 +474,7 @@ export function createWorkflowWorker({
       try {
         // Update run status to running
         if (useRedisStorage) {
-          await updateRunStatusInRedis(runId, "running");
+          await updateRunStatusInRedis(userId, runId, "running");
         } else {
           await supabase
             .from("workflow_runs")
@@ -528,7 +528,7 @@ export function createWorkflowWorker({
 
         // Save successful result (only if not already cancelled)
         if (useRedisStorage) {
-          await updateRunStatusInRedis(runId, "success", { result });
+          await updateRunStatusInRedis(userId, runId, "success", { result });
         } else {
           // Guard: only update to success if status is still running/queued (not cancelled)
           await supabase
@@ -569,7 +569,7 @@ export function createWorkflowWorker({
 
         // Save error with appropriate status
         if (useRedisStorage) {
-          await updateRunStatusInRedis(runId, status, {
+          await updateRunStatusInRedis(userId, runId, status, {
             errorMessage,
             result: executionResult,
           });

@@ -1,52 +1,87 @@
 import { DataContext, DataContextManager } from "./DataContext";
-import { BacktestExecutionRuntime, BaseExecutionRuntime, StandardExecutionRuntime } from "./executionRuntime";
+import {
+  BacktestExecutionRuntime,
+  BaseExecutionRuntime,
+  StandardExecutionRuntime,
+} from "./executionRuntime";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
 import { WorkflowPlan } from "./workflowPlan";
-import { FlushPolicy, WorkflowExecutionResult, toExecutionError } from "./types";
+import {
+  FlushPolicy,
+  WorkflowExecutionResult,
+  toExecutionError,
+} from "./types";
+
+type NodeResults = NonNullable<WorkflowExecutionResult["nodeResults"]>;
+
+interface WorkflowRunOptions {
+  runId: string;
+  workflowId: string;
+  userId: string;
+  mode?: "best-effort" | "fail-fast";
+  abortSignal?: AbortSignal;
+  flushPolicy?: FlushPolicy;
+}
+
+interface ExecutionContextExtras {
+  multiBarContext?: unknown;
+}
 
 export class WorkflowRun {
-  public lastBuildResultMs = 0;
+  private _lastBuildResultMs = 0;
 
-  private store: NodeStoreV2;
+  private readonly store: NodeStoreV2;
   private runtime: BaseExecutionRuntime;
-  private dataContext: DataContext;
+  private readonly dataContext: DataContext;
   private indicatorStateManager: IndicatorStateManager;
   private readonly flushPolicy: FlushPolicy;
 
   constructor(
     private readonly plan: WorkflowPlan,
-    private readonly opts: {
-      runId: string;
-      workflowId: string;
-      userId: string;
-      mode?: "best-effort" | "fail-fast";
-      abortSignal?: AbortSignal;
-      flushPolicy?: FlushPolicy;
-    },
+    private readonly options: WorkflowRunOptions,
   ) {
-    this.flushPolicy = opts.flushPolicy ??
-      (plan.isBacktest ? ENGINE_CONFIG.BACKTEST_FLUSH_POLICY : ENGINE_CONFIG.DEFAULT_FLUSH_POLICY);
-    this.store = new NodeStoreV2(opts.runId, [...plan.nodes]);
+    this.flushPolicy =
+      options.flushPolicy ??
+      (plan.isBacktest
+        ? ENGINE_CONFIG.BACKTEST_FLUSH_POLICY
+        : ENGINE_CONFIG.DEFAULT_FLUSH_POLICY);
+
+    this.store = new NodeStoreV2(options.runId, [...plan.nodes]);
+
     this.dataContext = DataContextManager.getInstance().getContext({
-      runId: opts.runId,
-      workflowId: opts.workflowId,
-      userId: opts.userId,
+      runId: options.runId,
+      workflowId: options.workflowId,
+      userId: options.userId,
     });
+
     this.indicatorStateManager = new IndicatorStateManager(
-      plan.isBacktest ? ENGINE_CONFIG.BACKTEST_INDICATOR_RETENTION_SECONDS : undefined,
+      plan.isBacktest
+        ? ENGINE_CONFIG.BACKTEST_INDICATOR_RETENTION_SECONDS
+        : undefined,
     );
+
     this.runtime = this.buildRuntime();
   }
 
+  get lastBuildResultMs(): number {
+    return this._lastBuildResultMs;
+  }
+
+  get lastStoreClearMs(): number {
+    return this.runtime instanceof BacktestExecutionRuntime
+      ? this.runtime.lastStoreClearMs
+      : 0;
+  }
+
   private buildRuntime(): BaseExecutionRuntime {
-    const runtimeOpts = {
-      runId: this.opts.runId,
-      workflowId: this.opts.workflowId,
-      userId: this.opts.userId,
-      mode: this.opts.mode ?? "best-effort",
-      abortSignal: this.opts.abortSignal,
+    const runtimeOptions = {
+      runId: this.options.runId,
+      workflowId: this.options.workflowId,
+      userId: this.options.userId,
+      mode: this.options.mode ?? "best-effort",
+      abortSignal: this.options.abortSignal,
       isBacktest: this.plan.isBacktest,
       nodes: [...this.plan.nodes],
       edges: [...this.plan.edges],
@@ -56,58 +91,59 @@ export class WorkflowRun {
     };
 
     return this.plan.isBacktest
-      ? new BacktestExecutionRuntime(this.plan.graph, this.store, this.plan.resolver, runtimeOpts)
-      : new StandardExecutionRuntime(this.plan.graph, this.store, this.plan.resolver, runtimeOpts);
+      ? new BacktestExecutionRuntime(
+          this.plan.graph,
+          this.store,
+          this.plan.resolver,
+          runtimeOptions,
+        )
+      : new StandardExecutionRuntime(
+          this.plan.graph,
+          this.store,
+          this.plan.resolver,
+          runtimeOptions,
+        );
   }
 
-  async execute(initialInput?: unknown, startNodeId?: string): Promise<WorkflowExecutionResult> {
-    this.lastBuildResultMs = 0;
-    try {
-      if (startNodeId && this.plan.graph.nodeById.has(startNodeId)) {
+  async execute(
+    initialInput?: unknown,
+    startNodeId?: string,
+  ): Promise<WorkflowExecutionResult> {
+    return this.runExecution(() => {
+      if (startNodeId !== undefined) {
+        this.ensureNodeExists(startNodeId);
         this.runtime.enqueue({ nodeId: startNodeId, input: initialInput });
-      } else {
-        for (const entryId of this.plan.entryNodeIds) {
-          this.runtime.enqueue({ nodeId: entryId, input: initialInput });
-        }
+        return;
       }
-      await this.drainQueue();
-      const t0 = performance.now();
-      const result = this.buildResult();
-      this.lastBuildResultMs = performance.now() - t0;
-      return result;
-    } catch (error) {
-      return this.buildExceptionResult(error);
-    } finally {
-      await this.flushIfNeeded();
-    }
+
+      for (const entryNodeId of this.plan.entryNodeIds) {
+        this.runtime.enqueue({ nodeId: entryNodeId, input: initialInput });
+      }
+    });
   }
 
-  async executeFromEntries(input: unknown, entryNodeIds: string[]): Promise<WorkflowExecutionResult> {
-    this.lastBuildResultMs = 0;
-    try {
+  async executeFromEntries(
+    input: unknown,
+    entryNodeIds: string[],
+  ): Promise<WorkflowExecutionResult> {
+    return this.runExecution(() => {
       for (const entryNodeId of entryNodeIds) {
+        this.ensureNodeExists(entryNodeId);
         this.runtime.primeEntry(entryNodeId, input);
         this.runtime.enqueue({ nodeId: entryNodeId, input });
       }
-      await this.drainQueue();
-      const t0 = performance.now();
-      const result = this.buildResult();
-      this.lastBuildResultMs = performance.now() - t0;
-      return result;
-    } catch (error) {
-      return this.buildExceptionResult(error);
-    } finally {
-      await this.flushIfNeeded();
-    }
+    });
   }
 
-  resetForNextBar(full = false): void { this.runtime.resetForNextBar(full); }
+  resetForNextBar(full = false): void {
+    this.runtime.resetForNextBar(full);
+  }
 
   /**
    * Pin results that survive clearResults()/resetForNextBar().
    * Used for BacktestInit outputs that do not change across bars.
    */
-  pinResults(results: Record<string, any>): void {
+  pinResults(results: NodeResults): void {
     this.store.pinResults(results);
   }
 
@@ -115,72 +151,146 @@ export class WorkflowRun {
    * Pre-set node results in the store before execution.
    * Useful for sub-workflow outputs or other precomputed values.
    */
-  preloadResults(results: Record<string, any>): void {
+  preloadResults(results: NodeResults): void {
     for (const [nodeId, result] of Object.entries(results)) {
       this.store.setNodeResult(nodeId, result);
     }
   }
-  getNodeState(nodeId: string, key: string): any { return this.store.getNodeState(nodeId, key); }
-  setNodeState(nodeId: string, key: string, value: any): void { this.store.setNodeState(nodeId, key, value); }
-  setIndicatorStateManager(manager: IndicatorStateManager): void { this.indicatorStateManager = manager; this.runtime = this.buildRuntime(); }
-  getIndicatorStateManager(): IndicatorStateManager { return this.indicatorStateManager; }
-  getDataContext(): DataContext { return this.dataContext; }
-  getNodeTiming() { return this.runtime.getNodeTiming(); }
-  clearNodeTiming(): void { this.runtime.clearNodeTiming(); }
-  getCompiledParams() { return this.plan.resolver.getCompiledParams(); }
-  getNodeExecutorMap() { return this.runtime.getNodeExecutorMap(); }
-  get lastStoreClearMs(): number {
-    return this.runtime instanceof BacktestExecutionRuntime
-      ? this.runtime.lastStoreClearMs
-      : 0;
+
+  getNodeState(nodeId: string, key: string): unknown {
+    return this.store.getNodeState(nodeId, key);
   }
-  setExecutionContextExtras(extras: Partial<{ multiBarContext: any }>): void {
+
+  setNodeState(nodeId: string, key: string, value: unknown): void {
+    this.store.setNodeState(nodeId, key, value);
+  }
+
+  /**
+   * Rebuilds the runtime with a new indicator state manager.
+   * Prefer calling this before execution starts.
+   */
+  setIndicatorStateManager(manager: IndicatorStateManager): void {
+    this.indicatorStateManager = manager;
+    this.runtime = this.buildRuntime();
+  }
+
+  getIndicatorStateManager(): IndicatorStateManager {
+    return this.indicatorStateManager;
+  }
+
+  getDataContext(): DataContext {
+    return this.dataContext;
+  }
+
+  getNodeTiming(): ReturnType<BaseExecutionRuntime["getNodeTiming"]> {
+    return this.runtime.getNodeTiming();
+  }
+
+  clearNodeTiming(): void {
+    this.runtime.clearNodeTiming();
+  }
+
+  getCompiledParams(): ReturnType<
+    WorkflowPlan["resolver"]["getCompiledParams"]
+  > {
+    return this.plan.resolver.getCompiledParams();
+  }
+
+  getNodeExecutorMap(): ReturnType<BaseExecutionRuntime["getNodeExecutorMap"]> {
+    return this.runtime.getNodeExecutorMap();
+  }
+
+  setExecutionContextExtras(extras: ExecutionContextExtras): void {
     this.runtime.setExecutionContextExtras(extras);
   }
-  checkCancellation(): boolean { return this.opts.abortSignal?.aborted ?? false; }
+
+  checkCancellation(): boolean {
+    return this.options.abortSignal?.aborted ?? false;
+  }
 
   destroy(): void {
-    DataContextManager.getInstance().destroyContext(this.opts.runId);
+    DataContextManager.getInstance().destroyContext(this.options.runId);
     this.indicatorStateManager.clearL1Cache();
+  }
+
+  private async runExecution(
+    enqueueWork: () => void,
+  ): Promise<WorkflowExecutionResult> {
+    this._lastBuildResultMs = 0;
+
+    try {
+      enqueueWork();
+      await this.drainQueue();
+
+      const startedAtMs = performance.now();
+      const executionResult = this.buildExecutionResult();
+      this._lastBuildResultMs = performance.now() - startedAtMs;
+
+      return executionResult;
+    } catch (error) {
+      return this.buildFailureResult(error);
+    } finally {
+      await this.flushIfNeeded();
+    }
+  }
+
+  private ensureNodeExists(nodeId: string): void {
+    if (!this.plan.graph.nodeById.has(nodeId)) {
+      throw new Error(`Unknown start node: ${nodeId}`);
+    }
   }
 
   private async drainQueue(): Promise<void> {
     while (this.runtime.hasPending()) {
-      if (this.opts.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
-      const item = this.runtime.dequeue();
-      if (!item) break;
-      const maybePromise = this.runtime.executeOnce(item);
-      if (maybePromise) await maybePromise;
+      if (this.options.abortSignal?.aborted) {
+        throw new Error("Workflow cancelled by user");
+      }
+
+      const queueItem = this.runtime.dequeue();
+      if (!queueItem) break;
+
+      const maybePromise = this.runtime.executeOnce(queueItem);
+      if (maybePromise) {
+        await maybePromise;
+      }
     }
   }
 
-  private buildResult(): WorkflowExecutionResult {
+  private buildExecutionResult(): WorkflowExecutionResult {
+    const nodeResults = this.store.getAllResults() ?? {};
+    const executionOrder = this.runtime.getExecutionOrder();
+
     if (this.runtime.hasFailures()) {
       return {
         success: false,
         error: {
           code: "NODE_FAILED",
-          message: this.runtime.getFailureMessage() ?? "Workflow completed with failures",
+          message:
+            this.runtime.getFailureMessage() ??
+            "Workflow completed with failures",
           phase: "execute",
         },
-        result: this.store.getAllResults() ?? {},
-        executionOrder: this.runtime.getExecutionOrder(),
+        nodeResults,
+        executionOrder,
       };
     }
 
     return {
       success: true,
-      result: this.store.getAllResults() ?? {},
-      executionOrder: this.runtime.getExecutionOrder(),
+      nodeResults,
+      executionOrder,
     };
   }
 
-  private buildExceptionResult(error: unknown): WorkflowExecutionResult {
+  private buildFailureResult(error: unknown): WorkflowExecutionResult {
+    const nodeResults = this.store.getAllResults() ?? {};
+    const executionOrder = this.runtime.getExecutionOrder();
+
     return {
       success: false,
       error: toExecutionError(error, "execute"),
-      result: this.store.getAllResults() ?? {},
-      executionOrder: this.runtime.getExecutionOrder(),
+      nodeResults,
+      executionOrder,
     };
   }
 
@@ -188,8 +298,18 @@ export class WorkflowRun {
     const shouldFlush =
       this.flushPolicy === "always" ||
       (this.flushPolicy === "on-success" && !this.runtime.hasFailures());
-    if (shouldFlush) {
-      await this.indicatorStateManager.flushToRedis().catch(() => {});
+
+    if (!shouldFlush) {
+      return;
+    }
+
+    try {
+      await this.indicatorStateManager.flushToRedis();
+    } catch (error) {
+      console.warn(
+        "[WorkflowRun] flushToRedis failed:",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 }

@@ -67,19 +67,24 @@ export interface ExecutionRun {
 
 export function useExecutionHistory(
   workflowId: string | null,
-  filters: ExecutionFilters = {}
+  filters: ExecutionFilters = {},
 ) {
   const [executions, setExecutions] = useState<ExecutionRun[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [selectedExecution, setSelectedExecution] = useState<ExecutionRun | null>(null);
+  const [selectedExecution, setSelectedExecution] =
+    useState<ExecutionRun | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const matchesFilters = useCallback(
     (execution: ExecutionRun) => {
-      if (filters.status && filters.status !== "all" && execution.status !== filters.status) {
+      if (
+        filters.status &&
+        filters.status !== "all" &&
+        execution.status !== filters.status
+      ) {
         return false;
       }
 
@@ -97,7 +102,7 @@ export function useExecutionHistory(
 
       return true;
     },
-    [filters.dateFrom, filters.dateTo, filters.status]
+    [filters.dateFrom, filters.dateTo, filters.status],
   );
 
   const fetchExecutions = useCallback(async () => {
@@ -136,7 +141,9 @@ export function useExecutionHistory(
       setError(null);
     } catch (error) {
       console.error("Failed to fetch executions:", error);
-      setError(error instanceof Error ? error.message : "Failed to fetch executions");
+      setError(
+        error instanceof Error ? error.message : "Failed to fetch executions",
+      );
     } finally {
       setLoading(false);
     }
@@ -178,7 +185,11 @@ export function useExecutionHistory(
       setError(null);
     } catch (error) {
       console.error("Failed to load more executions:", error);
-      setError(error instanceof Error ? error.message : "Failed to load more executions");
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load more executions",
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -218,11 +229,13 @@ export function useExecutionHistory(
             if (!matchesFilters(execution)) return;
 
             setExecutions((prev) =>
-              [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS)
+              [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS),
             );
           } else if (payload.eventType === "UPDATE") {
             if (!matchesFilters(execution)) {
-              setExecutions((prev) => prev.filter((exec) => exec.id !== execution.id));
+              setExecutions((prev) =>
+                prev.filter((exec) => exec.id !== execution.id),
+              );
               if (selectedExecution?.id === execution.id) {
                 setSelectedExecution(null);
               }
@@ -233,7 +246,7 @@ export function useExecutionHistory(
               const exists = prev.some((exec) => exec.id === execution.id);
               if (exists) {
                 return prev.map((exec) =>
-                  exec.id === execution.id ? execution : exec
+                  exec.id === execution.id ? execution : exec,
                 );
               }
               return [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS);
@@ -243,18 +256,14 @@ export function useExecutionHistory(
               setSelectedExecution(payload.new as ExecutionRun);
             }
           }
-        }
+        },
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [
-    workflowId,
-    selectedExecution?.id,
-    matchesFilters,
-  ]);
+  }, [workflowId, selectedExecution?.id, matchesFilters]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -273,88 +282,126 @@ export function useExecutionHistory(
     return `${(ms / 1000).toFixed(1)}s`;
   }, []);
 
-  const getNodeExecutions = useCallback((execution: ExecutionRun): NodeExecutionLog[] => {
-    if (!execution.result) return [];
+  const getNodeExecutions = useCallback(
+    (execution: ExecutionRun): NodeExecutionLog[] => {
+      if (!execution.result) return [];
 
-    // Check if nodeExecutions exists in result
-    if (execution.result.nodeExecutions && Array.isArray(execution.result.nodeExecutions)) {
-      return execution.result.nodeExecutions;
-    }
-    
-    // Enhanced fallback: extract from result object with better defaults
-    let resultData = execution.result.result as
-      | Record<string, ExecutionNodeResult>
-      | undefined;
-    let executionOrder = execution.result.executionOrder;
+      // Check if nodeExecutions exists in result
+      if (
+        execution.result.nodeExecutions &&
+        Array.isArray(execution.result.nodeExecutions)
+      ) {
+        return execution.result.nodeExecutions;
+      }
 
-    if (
-      !resultData &&
-      execution.result.data &&
-      typeof execution.result.data === "object"
-    ) {
-      const innerData = execution.result.data as Record<string, unknown>;
-      resultData = innerData.result as Record<string, ExecutionNodeResult> | undefined;
-      executionOrder = executionOrder || (innerData.executionOrder as string[] | undefined);
-    }
+      // Enhanced fallback: extract from result object with better defaults
+      let resultData = execution.result.result as
+        | Record<string, ExecutionNodeResult>
+        | undefined;
+      let executionOrder = execution.result.executionOrder;
 
-    resultData =
-      (resultData ?? execution.result) as Record<string, ExecutionNodeResult>;
-    executionOrder = executionOrder || Object.keys(resultData || {});
+      if (
+        !resultData &&
+        execution.result.data &&
+        typeof execution.result.data === "object"
+      ) {
+        const innerData = execution.result.data as Record<string, unknown>;
+        resultData = innerData.result as
+          | Record<string, ExecutionNodeResult>
+          | undefined;
+        executionOrder =
+          executionOrder || (innerData.executionOrder as string[] | undefined);
+      }
 
-    if (typeof resultData !== "object" || resultData === null) {
-      return [];
-    }
-    
-    // Calculate total duration for distribution
-    const totalDuration = execution.completed_at && execution.started_at 
-      ? new Date(execution.completed_at).getTime() - new Date(execution.started_at).getTime()
-      : 0;
-    const nodeCount = executionOrder.length || 1;
-    const estimatedDurationPerNode = Math.round(totalDuration / nodeCount);
-    
-    return executionOrder
-      .filter((nodeId) => nodeId && typeof nodeId === "string")
-      .map((nodeId, index) => {
-        const output = resultData[nodeId];
-        const outputData =
-          output && typeof output === "object" && "data" in output
-            ? (output as { data?: unknown }).data
-            : output;
+      resultData = (resultData ?? execution.result) as Record<
+        string,
+        ExecutionNodeResult
+      >;
+      executionOrder = executionOrder || Object.keys(resultData || {});
 
-        // Derive input from previous node's output
-        const prevNodeId = index > 0 ? executionOrder[index - 1] : null;
-        const prevOutput = prevNodeId ? resultData[prevNodeId] : null;
-        const inputData =
-          prevOutput && typeof prevOutput === "object" && "data" in prevOutput
-            ? (prevOutput as { data?: unknown }).data
-            : prevOutput ?? {};
-        
-        // Determine status based on execution result
-        let status: "success" | "failed" | "skipped" = "success";
-        if (execution.status === "failed") {
-          // If execution failed, mark the last node as failed
-          status = index === executionOrder.length - 1 ? "failed" : "success";
-        }
+      if (typeof resultData !== "object" || resultData === null) {
+        return [];
+      }
 
-        // If output is already normalized, respect its shape
-        if (
-          output &&
-          typeof output === "object" &&
-          "success" in output &&
-          "status" in output
-        ) {
-          const normalizedOutput = output as {
-            success: boolean;
-            status?: string;
-            data?: unknown;
-            error?: string;
+      // Calculate total duration for distribution
+      const totalDuration =
+        execution.completed_at && execution.started_at
+          ? new Date(execution.completed_at).getTime() -
+            new Date(execution.started_at).getTime()
+          : 0;
+      const nodeCount = executionOrder.length || 1;
+      const estimatedDurationPerNode = Math.round(totalDuration / nodeCount);
+
+      return executionOrder
+        .filter((nodeId) => nodeId && typeof nodeId === "string")
+        .map((nodeId, index) => {
+          const output = resultData[nodeId];
+          const outputData =
+            output && typeof output === "object" && "data" in output
+              ? (output as { data?: unknown }).data
+              : output;
+
+          // Derive input from previous node's output
+          const prevNodeId = index > 0 ? executionOrder[index - 1] : null;
+          const prevOutput = prevNodeId ? resultData[prevNodeId] : null;
+          const inputData =
+            prevOutput && typeof prevOutput === "object" && "data" in prevOutput
+              ? (prevOutput as { data?: unknown }).data
+              : (prevOutput ?? {});
+
+          // Determine status based on execution result
+          let status: "success" | "failed" | "skipped" = "success";
+          if (execution.status === "failed") {
+            // If execution failed, mark the last node as failed
+            status = index === executionOrder.length - 1 ? "failed" : "success";
+          }
+
+          // If output is already normalized, respect its shape
+          if (
+            output &&
+            typeof output === "object" &&
+            "success" in output &&
+            "status" in output
+          ) {
+            const normalizedOutput = output as {
+              success: boolean;
+              status?: string;
+              data?: unknown;
+              error?: string;
+            };
+
+            const normalizedItemCount = Array.isArray(normalizedOutput.data)
+              ? normalizedOutput.data.length
+              : normalizedOutput.data !== null &&
+                  normalizedOutput.data !== undefined
+                ? 1
+                : 0;
+
+            return {
+              nodeId,
+              nodeName: nodeId,
+              startedAt: execution.started_at,
+              completedAt: execution.completed_at || execution.started_at,
+              durationMs: estimatedDurationPerNode,
+              status: normalizedOutput.success ? "success" : "failed",
+              input: inputData,
+              output: normalizedOutput,
+              itemCount: normalizedItemCount,
+              error: normalizedOutput.error,
+            };
+          }
+
+          const normalizedOutput = {
+            success: status === "success",
+            status: status === "success" ? "success" : "error",
+            data: outputData,
+            error: status === "failed" ? "Execution failed" : undefined,
+            meta: {
+              timestamp: execution.started_at,
+              nodeId,
+              nodeName: nodeId,
+            },
           };
-
-          const normalizedItemCount = Array.isArray(normalizedOutput.data)
-            ? normalizedOutput.data.length
-            : normalizedOutput.data !== null && normalizedOutput.data !== undefined
-            ? 1
-            : 0;
 
           return {
             nodeId,
@@ -362,44 +409,21 @@ export function useExecutionHistory(
             startedAt: execution.started_at,
             completedAt: execution.completed_at || execution.started_at,
             durationMs: estimatedDurationPerNode,
-            status: normalizedOutput.success ? "success" : "failed",
+            status,
             input: inputData,
             output: normalizedOutput,
-            itemCount: normalizedItemCount,
+            itemCount: Array.isArray(normalizedOutput.data)
+              ? normalizedOutput.data.length
+              : normalizedOutput.data !== null &&
+                  normalizedOutput.data !== undefined
+                ? 1
+                : 0,
             error: normalizedOutput.error,
           };
-        }
-
-        const normalizedOutput = {
-          success: status === "success",
-          status: status === "success" ? "success" : "error",
-          data: outputData,
-          error: status === "failed" ? "Execution failed" : undefined,
-          meta: {
-            timestamp: execution.started_at,
-            nodeId,
-            nodeName: nodeId,
-          },
-        };
-
-        return {
-          nodeId,
-          nodeName: nodeId,
-          startedAt: execution.started_at,
-          completedAt: execution.completed_at || execution.started_at,
-          durationMs: estimatedDurationPerNode,
-          status,
-          input: inputData,
-          output: normalizedOutput,
-          itemCount: Array.isArray(normalizedOutput.data)
-            ? normalizedOutput.data.length
-            : normalizedOutput.data !== null && normalizedOutput.data !== undefined
-            ? 1
-            : 0,
-          error: normalizedOutput.error,
-        };
-      });
-  }, []);
+        });
+    },
+    [],
+  );
 
   // Clear selection when filters change and current selection no longer matches
   useEffect(() => {

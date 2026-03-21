@@ -4,7 +4,11 @@ import { createDedicatedStreamConnection } from "../config/redis";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowEngine } from "../engine";
 import { PortfolioManager } from "../simulation/PortfolioManager";
-import { createRunInRedis, updateRunStatusInRedis } from "../utils/redisRunStorage";
+import {
+  createRunInRedis,
+  updateRunStatusInRedis,
+} from "../utils/redisRunStorage";
+import { WorkflowExecutionResult } from "../engine/types";
 
 const STRATEGY_GROUP = "strategy-group";
 const AUTOCLAIM_IDLE_MS = 60_000; // 60s idle threshold for reclaiming
@@ -41,7 +45,9 @@ export class WorkflowRunner {
     edges: WorkflowEdge[],
   ) {
     this.runnerInstanceId = randomUUID();
-    this.streamRedisClient = createDedicatedStreamConnection(`Strategy-${workflowId}`);
+    this.streamRedisClient = createDedicatedStreamConnection(
+      `Strategy-${workflowId}`,
+    );
     this.streamKey = `strategy:stream:${workflowId}`;
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}-${this.runnerInstanceId}`;
@@ -74,7 +80,13 @@ export class WorkflowRunner {
 
   private async ensureConsumerGroup(): Promise<void> {
     try {
-      await this.streamRedisClient.xgroup("CREATE", this.streamKey, STRATEGY_GROUP, "0", "MKSTREAM");
+      await this.streamRedisClient.xgroup(
+        "CREATE",
+        this.streamKey,
+        STRATEGY_GROUP,
+        "0",
+        "MKSTREAM",
+      );
     } catch (err: any) {
       // BUSYGROUP = group already exists, safe to ignore
       if (!err?.message?.includes("BUSYGROUP")) throw err;
@@ -103,7 +115,10 @@ export class WorkflowRunner {
       }
     } catch (err) {
       // XAUTOCLAIM may not be supported on older Redis; log and continue
-      console.warn("[WorkflowRunner] XAUTOCLAIM failed (non-fatal):", (err as Error).message);
+      console.warn(
+        "[WorkflowRunner] XAUTOCLAIM failed (non-fatal):",
+        (err as Error).message,
+      );
     }
   }
 
@@ -126,7 +141,10 @@ export class WorkflowRunner {
         )) as [string, [string, string[]][]][] | null;
       } catch (err) {
         if (!this.running) break;
-        console.warn("[WorkflowRunner] XREADGROUP error (retrying):", (err as Error).message);
+        console.warn(
+          "[WorkflowRunner] XREADGROUP error (retrying):",
+          (err as Error).message,
+        );
         await this.sleep(TRANSIENT_BACKOFF_MS);
         continue;
       }
@@ -142,7 +160,10 @@ export class WorkflowRunner {
     }
   }
 
-  private async processMessage(messageId: string, fields: string[]): Promise<void> {
+  private async processMessage(
+    messageId: string,
+    fields: string[],
+  ): Promise<void> {
     // Phase 1: Extract payload — permanent failure if missing
     const rawPayload = this.extractPayload(fields);
     if (!rawPayload) {
@@ -155,7 +176,10 @@ export class WorkflowRunner {
     try {
       envelope = this.parseEnvelope(rawPayload);
     } catch {
-      console.warn("[WorkflowRunner] Invalid JSON, discarding message:", messageId);
+      console.warn(
+        "[WorkflowRunner] Invalid JSON, discarding message:",
+        messageId,
+      );
       await this.ack(messageId);
       return;
     }
@@ -171,7 +195,10 @@ export class WorkflowRunner {
         source: "stream",
       });
     } catch (err) {
-      console.warn("[WorkflowRunner] createRunInRedis failed (will retry):", (err as Error).message);
+      console.warn(
+        "[WorkflowRunner] createRunInRedis failed (will retry):",
+        (err as Error).message,
+      );
       return; // No ack — message stays pending for reclaim
     }
 
@@ -179,10 +206,12 @@ export class WorkflowRunner {
     this.engine.resetForNextBar(true);
 
     try {
-      const result = await this.engine.execute({ data: envelope.data });
+      const executionResult = await this.engine.execute({
+        data: envelope.data,
+      });
 
       // Phase 5a: Record success
-      await this.recordSuccess(executionRunId, result, messageId);
+      await this.recordSuccess(executionRunId, executionResult, messageId);
     } catch (error) {
       // Phase 5b: Record failure (execution failed — not retryable)
       await this.recordFailure(executionRunId, error);
@@ -208,41 +237,55 @@ export class WorkflowRunner {
 
   private async recordSuccess(
     executionRunId: string,
-    result: unknown,
+    executionResult: WorkflowExecutionResult,
     messageId: string,
   ): Promise<void> {
     try {
-      await updateRunStatusInRedis(executionRunId, "success", {
-        result: {
-          ...(result as any),
-          meta: {
-            source: "stream",
-            timestamp: new Date().toISOString(),
-            streamMessageId: messageId,
-          },
-        },
-      });
+      await updateRunStatusInRedis(
+        this.userId,
+        executionRunId,
+        "success",
+        executionResult,
+      );
     } catch (err) {
-      console.warn("[WorkflowRunner] recordSuccess failed:", (err as Error).message);
+      console.warn(
+        "[WorkflowRunner] recordSuccess failed:",
+        (err as Error).message,
+      );
     }
   }
 
-  private async recordFailure(executionRunId: string, error: unknown): Promise<void> {
+  private async recordFailure(
+    executionRunId: string,
+    error: unknown,
+  ): Promise<void> {
     try {
-      await updateRunStatusInRedis(executionRunId, "failed", {
+      await updateRunStatusInRedis(this.userId, executionRunId, "failed", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
     } catch (err) {
-      console.warn("[WorkflowRunner] recordFailure failed:", (err as Error).message);
+      console.warn(
+        "[WorkflowRunner] recordFailure failed:",
+        (err as Error).message,
+      );
     }
     console.error("[WorkflowRunner] Execution error:", error);
   }
 
   private async ack(messageId: string): Promise<void> {
     try {
-      await this.streamRedisClient.xack(this.streamKey, STRATEGY_GROUP, messageId);
+      await this.streamRedisClient.xack(
+        this.streamKey,
+        STRATEGY_GROUP,
+        messageId,
+      );
     } catch (err) {
-      console.warn("[WorkflowRunner] ACK failed for", messageId, ":", (err as Error).message);
+      console.warn(
+        "[WorkflowRunner] ACK failed for",
+        messageId,
+        ":",
+        (err as Error).message,
+      );
     }
   }
 

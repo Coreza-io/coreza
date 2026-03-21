@@ -14,8 +14,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedisCache } from '../config/redis';
-import logger from '../utils/logger';
+import { getRedisCache } from "../config/redis";
+import logger from "../utils/logger";
+import { WorkflowExecutionResult } from "../engine/types";
 
 const RUN_TTL_SECONDS = 86400; // 24 hours - cleanup old runs if sync fails
 
@@ -23,32 +24,38 @@ const RUN_TTL_SECONDS = 86400; // 24 hours - cleanup old runs if sync fails
  * Create a workflow run in Redis (instead of direct Supabase insert)
  */
 export async function createRunInRedis(
-  runId: string,
-  workflowId: string,
   userId: string,
+  workflowId: string,
+  runId: string,
   snapshot?: {
     nodes?: any;
     edges?: any;
     node_count?: number;
     edge_count?: number;
     source?: string;
-  }
+  },
 ): Promise<void> {
   const redis = getRedisCache();
-  
+
   const runData: Record<string, string> = {
     id: runId,
     workflow_id: workflowId,
     initiated_by: userId,
-    status: 'queued',
+    status: "queued",
     started_at: new Date().toISOString(),
   };
 
   if (snapshot?.nodes !== undefined) {
-    runData.nodes = typeof snapshot.nodes === 'string' ? snapshot.nodes : JSON.stringify(snapshot.nodes);
+    runData.nodes =
+      typeof snapshot.nodes === "string"
+        ? snapshot.nodes
+        : JSON.stringify(snapshot.nodes);
   }
   if (snapshot?.edges !== undefined) {
-    runData.edges = typeof snapshot.edges === 'string' ? snapshot.edges : JSON.stringify(snapshot.edges);
+    runData.edges =
+      typeof snapshot.edges === "string"
+        ? snapshot.edges
+        : JSON.stringify(snapshot.edges);
   }
   if (snapshot?.node_count !== undefined) {
     runData.node_count = String(snapshot.node_count);
@@ -62,47 +69,45 @@ export async function createRunInRedis(
 
   // Store run data in Redis hash with TTL and queue for sync in one round-trip
   const pipeline = redis.pipeline();
-  pipeline.hset(`runs:data:${runId}`, runData);
-  pipeline.expire(`runs:data:${runId}`, RUN_TTL_SECONDS);
-  pipeline.lpush('runs:pending:all', runId);
-  pipeline.ltrim('runs:pending:all', 0, 9999);
+  pipeline.hset(`user:${userId}:runs:data:${runId}`, runData);
+  pipeline.expire(`user:${userId}:runs:data:${runId}`, RUN_TTL_SECONDS);
+  pipeline.lpush("user:${userId}:runs:pending:all", runId);
+  pipeline.ltrim("user:${userId}:runs:pending:all", 0, 9999);
   await pipeline.exec();
 
-  logger.debug({ runId, workflowId }, 'Created run in Redis');
+  logger.debug({ runId, workflowId }, "Created run in Redis");
 }
 
 /**
  * Update run status in Redis
  */
 export async function updateRunStatusInRedis(
+  userId: string,
   runId: string,
-  status: 'running' | 'success' | 'failed' | 'cancelled',
-  options?: {
-    result?: any;
-    errorMessage?: string;
-  }
+  status: "running" | "success" | "failed" | "cancelled",
+  executionResult?: any,
 ): Promise<void> {
   const redis = getRedisCache();
-  
+
   const updates: Record<string, string> = {
     status,
   };
 
-  if (status === 'success' || status === 'failed' || status === 'cancelled') {
+  if (status === "success" || status === "failed" || status === "cancelled") {
     updates.completed_at = new Date().toISOString();
   }
 
-  if (options?.result !== undefined) {
-    updates.result = JSON.stringify(options.result);
+  if (executionResult.nodeResults !== undefined) {
+    updates.nodeResults = JSON.stringify(executionResult.nodeResults);
   }
 
-  if (options?.errorMessage) {
-    updates.error_message = options.errorMessage;
+  if (executionResult.errorMessage) {
+    updates.error_message = executionResult.errorMessage;
   }
 
-  await redis.hset(`runs:data:${runId}`, updates);
-  
-  logger.debug({ runId, status }, 'Updated run status in Redis');
+  await redis.hset(`user:${userId}:runs:data:${runId}`, updates);
+
+  logger.debug({ runId, status }, "Updated run status in Redis");
 }
 
 /**
@@ -110,5 +115,5 @@ export async function updateRunStatusInRedis(
  */
 export async function runExistsInRedis(runId: string): Promise<boolean> {
   const redis = getRedisCache();
-  return await redis.exists(`runs:data:${runId}`) === 1;
+  return (await redis.exists(`user:${userId}:runs:data:${runId}`)) === 1;
 }

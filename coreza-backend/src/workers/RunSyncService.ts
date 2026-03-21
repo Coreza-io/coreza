@@ -7,20 +7,21 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR  xxxPURPOSE.  See the
  * GNU Affero General Public License for more details.
  *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedisCache } from '../config/redis';
-import { supabase } from '../config/supabase';
-import logger from '../utils/logger';
+import { useId } from "react";
+import { getRedisCache } from "../config/redis";
+import { supabase } from "../config/supabase";
+import logger from "../utils/logger";
 
 /**
  * RunSyncService - Periodically syncs workflow runs from Redis to Supabase
- * 
+ *
  * This service reduces database write load by:
  * 1. Storing workflow run metadata in Redis during high-frequency execution
  * 2. Batch syncing completed runs to Supabase every N seconds
@@ -47,15 +48,18 @@ export class RunSyncService {
    */
   start(): void {
     if (this.syncInterval) {
-      logger.warn('RunSyncService already running');
+      logger.warn("RunSyncService already running");
       return;
     }
 
-    logger.info({ intervalMs: this.SYNC_INTERVAL_MS }, 'Starting RunSyncService');
-    
+    logger.info(
+      { intervalMs: this.SYNC_INTERVAL_MS },
+      "Starting RunSyncService",
+    );
+
     // Run immediately on start
     this.syncPendingRuns();
-    
+
     // Then run periodically
     this.syncInterval = setInterval(() => {
       this.syncPendingRuns();
@@ -69,7 +73,7 @@ export class RunSyncService {
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
-      logger.info('RunSyncService stopped');
+      logger.info("RunSyncService stopped");
     }
   }
 
@@ -78,7 +82,7 @@ export class RunSyncService {
    */
   async syncPendingRuns(): Promise<void> {
     if (this.isRunning) {
-      logger.debug('Sync already in progress, skipping');
+      logger.debug("Sync already in progress, skipping");
       return;
     }
 
@@ -87,13 +91,17 @@ export class RunSyncService {
 
     try {
       // Get pending run IDs from Redis list
-      const pendingRunIds = await redis.lrange('runs:pending:all', 0, this.BATCH_SIZE - 1);
-      
+      const pendingRunIds = await redis.lrange(
+        "runs:pending:all",
+        0,
+        this.BATCH_SIZE - 1,
+      );
+
       if (pendingRunIds.length === 0) {
         return;
       }
 
-      logger.debug({ count: pendingRunIds.length }, 'Processing pending runs');
+      logger.debug({ count: pendingRunIds.length }, "Processing pending runs");
 
       // Fetch run data from Redis
       const runs: Array<{
@@ -113,7 +121,7 @@ export class RunSyncService {
 
       const fetchPipeline = redis.pipeline();
       for (const runId of pendingRunIds) {
-        fetchPipeline.hgetall(`runs:data:${runId}`);
+        fetchPipeline.hgetall(`user:${useId}:runs:data:${runId}`);
       }
       const results = await fetchPipeline.exec();
       if (!results) {
@@ -145,7 +153,10 @@ export class RunSyncService {
 
       // Filter to only completed runs (success, failed, or cancelled)
       const completedRuns = runs.filter(
-        r => r.status === 'success' || r.status === 'failed' || r.status === 'cancelled'
+        (r) =>
+          r.status === "success" ||
+          r.status === "failed" ||
+          r.status === "cancelled",
       );
 
       if (completedRuns.length === 0) {
@@ -153,7 +164,7 @@ export class RunSyncService {
       }
 
       // Parse result JSON strings and prepare for insert
-      const runsToInsert = completedRuns.map(run => ({
+      const runsToInsert = completedRuns.map((run) => ({
         id: run.id,
         workflow_id: run.workflow_id,
         initiated_by: run.initiated_by,
@@ -170,28 +181,36 @@ export class RunSyncService {
 
       // Batch upsert to Supabase (upsert in case some runs already exist)
       const { error } = await supabase
-        .from('workflow_runs')
-        .upsert(runsToInsert, { onConflict: 'id' });
+        .from("workflow_runs")
+        .upsert(runsToInsert, { onConflict: "id" });
 
       if (error) {
-        logger.error({ err: error, count: runsToInsert.length }, 'Failed to sync runs to Supabase');
+        logger.error(
+          { err: error, count: runsToInsert.length },
+          "Failed to sync runs to Supabase",
+        );
         return;
       }
 
-      logger.info({ count: completedRuns.length }, 'Synced workflow runs to Supabase');
+      logger.info(
+        { count: completedRuns.length },
+        "Synced workflow runs to Supabase",
+      );
 
       // Remove synced runs from Redis
       const pipeline = redis.pipeline();
       for (const run of completedRuns) {
-        pipeline.del(`runs:data:${run.id}`);
-        pipeline.lrem('runs:pending:all', 1, run.id);
+        pipeline.del(`user:${userId}:runs:data:${run.id}`);
+        pipeline.lrem(`user:${userId}:runs:pending:all`, 1, run.id);
       }
       await pipeline.exec();
 
-      logger.debug({ count: completedRuns.length }, 'Cleaned up synced runs from Redis');
-
+      logger.debug(
+        { count: completedRuns.length },
+        "Cleaned up synced runs from Redis",
+      );
     } catch (error) {
-      logger.error({ err: error }, 'RunSyncService error during sync');
+      logger.error({ err: error }, "RunSyncService error during sync");
     } finally {
       this.isRunning = false;
     }
@@ -201,21 +220,21 @@ export class RunSyncService {
    * Force sync all pending runs (useful for shutdown)
    */
   async flushAll(): Promise<void> {
-    logger.info('Flushing all pending runs to Supabase...');
-    
+    logger.info("Flushing all pending runs to Supabase...");
+
     // Keep syncing until no more pending runs
     let hasMore = true;
     while (hasMore) {
       const redis = getRedisCache();
-      const count = await redis.llen('runs:pending:all');
+      const count = await redis.llen(`user:${userId}:runs:pending:all`);
       if (count === 0) {
         hasMore = false;
       } else {
         await this.syncPendingRuns();
       }
     }
-    
-    logger.info('All pending runs flushed');
+
+    logger.info("All pending runs flushed");
   }
 
   /**
@@ -223,7 +242,7 @@ export class RunSyncService {
    */
   async getStats(): Promise<{ pendingCount: number }> {
     const redis = getRedisCache();
-    const pendingCount = await redis.llen('runs:pending:all');
+    const pendingCount = await redis.llen("user:${userId}:runs:pending:all");
     return { pendingCount };
   }
 }

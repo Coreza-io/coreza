@@ -1,63 +1,79 @@
 
 
-# Fix: No Execution History — Root Cause Analysis & Plan
+# Fix: Skip Trigger Node Re-Execution in WorkflowRunner
 
 ## Problem
-Executions are not appearing in the history panel because runs created by `WorkflowRunner` (streaming) are stored with wrong Redis keys and missing result data.
 
-## Bugs Found
+`WorkflowRunner.processMessage()` calls `engine.execute({ data: envelope.data })` which enqueues all entry/trigger nodes (like `OnBar`) for full execution. But the trigger already fired — the stream data IS the trigger's output. Re-executing it causes the executor to run registration logic again, producing "Waiting for market data" instead of passing through the actual bar data.
 
-### Bug 1 — Wrong argument order in `createRunInRedis` call (CRITICAL)
-**File**: `coreza-backend/src/services/WorkflowRunner.ts`, line 190
+## Solution
 
-Current:
-```typescript
-await createRunInRedis(executionRunId, this.workflowId, this.userId, { ... });
-```
-Signature expects: `createRunInRedis(userId, workflowId, runId, snapshot)`
+Instead of `engine.execute()`, use the engine's existing `preloadResults` + `executeFromEntries` pattern:
 
-Result: Redis key becomes `user:${executionRunId}:runs:data:${this.userId}` — completely wrong. Pending entry becomes `${executionRunId}:${this.userId}`. RunSyncService can never find or sync these runs to Supabase.
+1. **Preload** the trigger node's result with the stream data (so downstream nodes can reference it via `$('OnBar').json`)
+2. **Start execution from downstream nodes** of the trigger, skipping the trigger executor entirely
 
-**Fix**: Swap arguments to `createRunInRedis(this.userId, this.workflowId, executionRunId, { ... })`
+The engine already supports this — `WorkflowRun.preloadResults()` sets node results without executing, and `executeFromEntries()` starts from specific nodes with primed edge payloads.
 
-### Bug 2 — Field name mismatch in `updateRunStatusInRedis`
-**File**: `coreza-backend/src/utils/redisRunStorage.ts`, lines 100-106
+## Changes
 
-Current code stores `executionResult.nodeResults` under Redis hash key `nodeResults`. But `RunSyncService` reads `data.result` (line 159) to map to Supabase's `result` column. Field never matches → Supabase gets `result: null`.
+### File: `coreza-backend/src/services/WorkflowRunner.ts`
 
-Meanwhile, `workflowWorker.ts` passes `{ result }` (line 531) — a different shape entirely.
-
-**Fix**: Normalize `updateRunStatusInRedis` to always store under the `result` key, and serialize the full execution result:
+**Constructor** — cache entry node IDs and their downstream targets at build time:
 
 ```typescript
-if (executionResult !== undefined) {
-  // Store full result — handles both { result: ... } from worker
-  // and WorkflowExecutionResult from WorkflowRunner
-  const resultToStore = executionResult.result ?? executionResult;
-  updates.result = JSON.stringify(resultToStore);
-}
+private readonly triggerNodeIds: string[];
+private readonly downstreamEntryIds: string[];
 
-if (executionResult?.errorMessage) {
-  updates.error_message = executionResult.errorMessage;
-}
+// In constructor, after engine creation:
+const plan = this.engine.plan; // or access via graph
+this.triggerNodeIds = plan.entryNodeIds as string[];
+this.downstreamEntryIds = this.triggerNodeIds
+  .flatMap(id => plan.graph.getOutgoingEdges(id).map(e => e.target));
 ```
 
-### Bug 3 — WorkflowRunner `recordSuccess` passes raw `WorkflowExecutionResult`
-**File**: `coreza-backend/src/services/WorkflowRunner.ts`, line 248
+**`processMessage()`** — replace `engine.execute()` with preload + downstream execution:
 
-Currently passes the entire `WorkflowExecutionResult` object. With Bug 2 fix, this will be handled by the `executionResult.result ?? executionResult` fallback — the full object gets serialized. No separate change needed once Bug 2 is fixed.
+```typescript
+// Phase 4: Execute workflow — skip trigger, start from downstream
+this.engine.resetForNextBar(true);
+
+// Build trigger output from the stream envelope
+const triggerOutput = { success: true, data: envelope.data };
+
+// Preload trigger results so downstream nodes can reference them
+const preload: Record<string, any> = {};
+for (const triggerId of this.triggerNodeIds) {
+  preload[triggerId] = triggerOutput;
+}
+this.engine.run.preloadResults(preload);
+
+// Execute from downstream nodes only (skip trigger executors)
+const executionResult = await this.engine.executeFromEntries(
+  { data: envelope.data },
+  this.downstreamEntryIds,
+);
+```
+
+**Expose `plan` and `run`** — `WorkflowEngine` already exposes `run` but `plan` may need a getter. Check and add if needed:
+
+```typescript
+// In WorkflowEngine class, if not already present:
+get plan(): WorkflowPlan { return this._plan; }
+```
+
+## Why This Is Correct
+
+- `preloadResults` stores the trigger output in `NodeStoreV2` — any downstream node referencing `$('OnBar').json.data` gets the real bar data
+- `executeFromEntries` calls `primeEntry()` on each downstream node (marks incoming edges as satisfied) then enqueues them
+- The trigger node never runs its executor, so no "waiting for market data" message
+- `executionOrder` will contain only the actually-executed nodes (no trigger re-entry)
+- This matches the backtest pattern where `BacktestInit` outputs are pinned and bars execute from `OnBar` downstream
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `coreza-backend/src/services/WorkflowRunner.ts` | Fix argument order on line 190 |
-| `coreza-backend/src/utils/redisRunStorage.ts` | Fix `updateRunStatusInRedis` to store under `result` key consistently |
-
-## Impact
-After these fixes, streaming workflow executions will:
-1. Store under the correct user-scoped Redis key
-2. Appear in the pending list with correct `userId:runId` format
-3. Sync to Supabase with the full result payload
-4. Show up in the Executions panel with node results and output data
+| `coreza-backend/src/services/WorkflowRunner.ts` | Cache trigger/downstream IDs in constructor; replace `engine.execute()` with `preloadResults` + `executeFromEntries` |
+| `coreza-backend/src/engine/workflowEngine.ts` | Add `plan` getter if not already exposed |
 

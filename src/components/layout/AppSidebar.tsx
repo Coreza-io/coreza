@@ -43,6 +43,7 @@ import {
   Settings,
   BarChart2,
   Radio,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import {

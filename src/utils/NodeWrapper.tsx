@@ -376,8 +376,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 <FemalePlugIcon size={20} style={iconStyle} />
               );
             } else {
-              // For output handles: hide icon if connected, otherwise show MalePlugIcon
-              handleIcon = isConnected ? null : (
+              // For output handles: hide icon if connected or currently dragging from this handle
+              const isDraggingFromThis =
+                dragSource.handleType === "source" &&
+                dragSource.nodeId === nodeId &&
+                dragSource.handleId === h.id;
+              handleIcon = (isConnected || isDraggingFromThis) ? null : (
                 <MalePlugIcon size={20} style={iconStyle} />
               );
             }

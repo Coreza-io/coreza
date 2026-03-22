@@ -318,6 +318,21 @@ const WorkflowEditorContent = () => {
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
+
+  // Connection drag tracking for hiding source handle icon
+  const [dragSource, setDragSource] = useState<DragSource>({
+    nodeId: null, handleId: null, handleType: null,
+  });
+  const onConnectStart = useCallback((_: any, params: any) => {
+    setDragSource({
+      nodeId: params.nodeId ?? null,
+      handleId: params.handleId ?? null,
+      handleType: params.handleType ?? null,
+    });
+  }, []);
+  const onConnectEnd = useCallback(() => {
+    setDragSource({ nodeId: null, handleId: null, handleType: null });
+  }, []);
   const historyRef = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
 
   const cloneNodes = useCallback((sourceNodes: Node[]) => {

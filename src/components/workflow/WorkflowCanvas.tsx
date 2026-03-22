@@ -14,7 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ConnectionDragContext, DragSource } from "@/contexts/ConnectionDragContext";
 import {
   ReactFlow,
   ReactFlowProvider,

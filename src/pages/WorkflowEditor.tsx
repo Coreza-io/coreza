@@ -1515,12 +1515,15 @@ const WorkflowEditorContent = () => {
         <div className="flex flex-1 overflow-hidden">
           {/* ReactFlow Canvas */}
           <div className="flex-1 bg-trading-grid">
+            <ConnectionDragContext.Provider value={dragSource}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onConnectStart={onConnectStart}
+              onConnectEnd={onConnectEnd}
               onDrop={onDrop}
               onDragOver={onDragOver}
               onMouseMove={onMouseMove}
@@ -1549,6 +1552,7 @@ const WorkflowEditorContent = () => {
               />
               <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
             </ReactFlow>
+            </ConnectionDragContext.Provider>
           </div>
 
           {/* Right Sidebar - Node Palette */}

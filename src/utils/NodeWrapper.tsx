@@ -156,6 +156,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const prevStreamDataReceived = useRef(streamDataReceived);
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
+  const dragSource = useContext(ConnectionDragContext);
 
   // Detect when stream data is received and trigger flash animation
   useEffect(() => {

@@ -28,7 +28,6 @@ export interface BacktestResultMetrics {
   avg_holding_period?: number;
 }
 
-// Matches backtest_trades table schema
 export interface BacktestTrade {
   id: string;
   backtest_id: string;
@@ -49,7 +48,6 @@ export interface BacktestTrade {
   holding_period_bars?: number | null;
 }
 
-// Equity curve data — written by BacktestExecutor after run completes (daily-resampled from SimBroker.state.equityCurve)
 export interface PortfolioSnapshot {
   id: string;
   backtest_id: string;
@@ -60,7 +58,6 @@ export interface PortfolioSnapshot {
   daily_return?: number;
 }
 
-// Matches backtests table schema
 export interface BacktestWithRelations {
   id: string;
   name: string;
@@ -78,7 +75,7 @@ export interface BacktestWithRelations {
   error_message?: string;
 }
 
-export const useBacktestResults = (id?: string) => {
+export const useBacktestResults = (id?: string, enabled = true) => {
   const { user } = useAuth();
   const [backtest, setBacktest] = useState<BacktestWithRelations | null>(null);
   const [metrics, setMetrics] = useState<BacktestResultMetrics | null>(null);
@@ -88,7 +85,15 @@ export const useBacktestResults = (id?: string) => {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-    if (!user || !id) return;
+    if (!enabled || !user || !id) {
+      setBacktest(null);
+      setMetrics(null);
+      setTrades([]);
+      setSnapshots([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -143,11 +148,21 @@ export const useBacktestResults = (id?: string) => {
     } finally {
       setLoading(false);
     }
-  }, [id, user]);
+  }, [enabled, id, user]);
 
   useEffect(() => {
+    if (!enabled) {
+      setBacktest(null);
+      setMetrics(null);
+      setTrades([]);
+      setSnapshots([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     loadData();
-  }, [loadData]);
+  }, [enabled, loadData]);
 
   return {
     backtest,

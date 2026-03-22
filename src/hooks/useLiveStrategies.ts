@@ -3,22 +3,45 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Backtest, BacktestStatus } from "./useBacktests";
 
+const getNodeMode = (node: any) =>
+  node?.values?.mode ??
+  node?.data?.values?.mode ??
+  node?.data?.config?.mode ??
+  node?.data?.mode;
+
+const isPortfolioNode = (node: any) => {
+  const nodeName =
+    `${node?.type ?? node?.name ?? node?.def ?? node?.node_type ?? ""}`.toLowerCase();
+  return nodeName === "portfolio";
+};
+
+const isBrokerPortfolioWorkflow = (workflow: any) => {
+  const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
+  return nodes.some(
+    (node: any) => isPortfolioNode(node) && getNodeMode(node) === "broker",
+  );
+};
+
 /**
  * Returns live (active) workflows with portfolio broker nodes,
  * shaped identically to useBacktests for UI reuse.
  */
-export const useLiveStrategies = () => {
+export const useLiveStrategies = (enabled = true) => {
   const { user } = useAuth();
   const [backtests, setBacktests] = useState<Backtest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadStrategies = useCallback(async () => {
-    if (!user) return;
+    if (!enabled || !user) {
+      setBacktests([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      // Fetch active workflows
       const { data: workflows, error: wfError } = await supabase
         .from("workflows")
         .select("id, name, is_active, created_at, nodes")
@@ -28,54 +51,41 @@ export const useLiveStrategies = () => {
 
       if (wfError) throw wfError;
 
-      // Filter: only workflows containing a Portfolio node with mode "broker"
-      const liveWorkflows = (workflows || []).filter((wf: any) => {
-        const nodes = Array.isArray(wf.nodes) ? wf.nodes : [];
-        return nodes.some(
-          (n: any) =>
-            n.type === "portfolio" &&
-            n.data?.config?.mode === "broker"
-        );
-      });
+      const liveWorkflows = (workflows || []).filter(isBrokerPortfolioWorkflow);
 
       if (liveWorkflows.length === 0) {
         setBacktests([]);
         return;
       }
 
-      // Fetch latest workflow_runs for each workflow to get metrics
-      const workflowIds = liveWorkflows.map((w: any) => w.id);
-      const { data: runs } = await supabase
-        .from("workflow_runs")
-        .select("workflow_id, result, status, started_at")
-        .in("workflow_id", workflowIds)
-        .order("started_at", { ascending: false });
+      const latestRuns = await Promise.allSettled(
+        liveWorkflows.map(async (workflow: any) => {
+          const { data, error: runError } = await supabase
+            .from("workflow_runs")
+            .select("workflow_id, result, status, started_at")
+            .eq("workflow_id", workflow.id)
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-      // Group: latest run per workflow
+          if (runError) throw runError;
+          return data;
+        }),
+      );
+
       const latestRunByWorkflow: Record<string, any> = {};
-      for (const run of runs || []) {
-        if (!latestRunByWorkflow[run.workflow_id]) {
-          latestRunByWorkflow[run.workflow_id] = run;
+      for (const runResult of latestRuns) {
+        if (runResult.status === "fulfilled" && runResult.value?.workflow_id) {
+          latestRunByWorkflow[runResult.value.workflow_id] = runResult.value;
         }
       }
-
-      // Fetch trade counts from live_fills
-      const { data: fillCounts } = await supabase
-        .from("live_fills")
-        .select("id, credential_id")
-        .eq("user_id", user.id);
-
-      // Count fills per user (simple total for now)
-      const totalFills = fillCounts?.length ?? 0;
 
       const mapped: Backtest[] = liveWorkflows.map((wf: any) => {
         const run = latestRunByWorkflow[wf.id];
         const result = run?.result as any;
-
-        // Extract metrics from the latest run result if available
         const portfolioResult = result?.nodeResults
           ? Object.values(result.nodeResults).find(
-              (nr: any) => nr?.data?.equity !== undefined
+              (nr: any) => nr?.data?.equity !== undefined,
             )
           : null;
 
@@ -104,15 +114,22 @@ export const useLiveStrategies = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [enabled, user]);
 
   useEffect(() => {
+    if (!enabled) {
+      setBacktests([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     loadStrategies();
-  }, [loadStrategies]);
+  }, [enabled, loadStrategies]);
 
-  // Realtime subscription on workflows changes
   useEffect(() => {
-    if (!user) return;
+    if (!enabled || !user) return;
+
     const channel = supabase
       .channel("live-strategies")
       .on(
@@ -123,14 +140,14 @@ export const useLiveStrategies = () => {
           table: "workflows",
           filter: `user_id=eq.${user.id}`,
         },
-        () => loadStrategies()
+        () => loadStrategies(),
       )
       .subscribe();
 
     return () => {
       channel.unsubscribe();
     };
-  }, [loadStrategies, user]);
+  }, [enabled, loadStrategies, user]);
 
   const stats = useMemo(() => {
     return backtests.reduce(
@@ -139,7 +156,7 @@ export const useLiveStrategies = () => {
         acc[b.status] += 1;
         return acc;
       },
-      { total: 0, pending: 0, running: 0, completed: 0, failed: 0 }
+      { total: 0, pending: 0, running: 0, completed: 0, failed: 0 },
     );
   }, [backtests]);
 

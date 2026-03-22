@@ -4,10 +4,17 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export type BacktestStatus = "pending" | "running" | "completed" | "failed";
 
-const BACKTEST_STATUSES: BacktestStatus[] = ["pending", "running", "completed", "failed"];
+const BACKTEST_STATUSES: BacktestStatus[] = [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+];
 
 const toBacktestStatus = (value: unknown): BacktestStatus => {
-  return BACKTEST_STATUSES.includes(value as BacktestStatus) ? (value as BacktestStatus) : "pending";
+  return BACKTEST_STATUSES.includes(value as BacktestStatus)
+    ? (value as BacktestStatus)
+    : "pending";
 };
 
 export interface Backtest {
@@ -22,20 +29,26 @@ export interface Backtest {
   created_at?: string;
 }
 
-export const useBacktests = () => {
+export const useBacktests = (enabled = true) => {
   const { user } = useAuth();
   const [backtests, setBacktests] = useState<Backtest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadBacktests = useCallback(async () => {
-    if (!user) return;
+    if (!enabled || !user) {
+      setBacktests([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const { data, error: supabaseError } = await supabase
-        .from('backtests')
-        .select(`
+        .from("backtests")
+        .select(
+          `
           id,
           name,
           workflow_id,
@@ -43,9 +56,10 @@ export const useBacktests = () => {
           created_at,
           workflows(name),
           backtest_results(total_return, sharpe_ratio, total_trades)
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        `,
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
       if (supabaseError) throw supabaseError;
 
@@ -63,35 +77,47 @@ export const useBacktests = () => {
 
       setBacktests(parsed);
     } catch (err: any) {
-      console.error('Error loading backtests', err);
-      setError(err.message || 'Failed to load backtests');
+      console.error("Error loading backtests", err);
+      setError(err.message || "Failed to load backtests");
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [enabled, user]);
 
   useEffect(() => {
+    if (!enabled) {
+      setBacktests([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     loadBacktests();
-  }, [loadBacktests, user]);
+  }, [enabled, loadBacktests, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!enabled || !user) return;
 
     const channel = supabase
-      .channel('backtests-status')
+      .channel("backtests-status")
       .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'backtests', filter: `user_id=eq.${user.id}` },
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "backtests",
+          filter: `user_id=eq.${user.id}`,
+        },
         () => {
           loadBacktests();
-        }
+        },
       )
       .subscribe();
 
     return () => {
       channel.unsubscribe();
     };
-  }, [loadBacktests, user]);
+  }, [enabled, loadBacktests, user]);
 
   const stats = useMemo(() => {
     return backtests.reduce(
@@ -101,7 +127,7 @@ export const useBacktests = () => {
         acc[status] += 1;
         return acc;
       },
-      { total: 0, pending: 0, running: 0, completed: 0, failed: 0 }
+      { total: 0, pending: 0, running: 0, completed: 0, failed: 0 },
     );
   }, [backtests]);
 

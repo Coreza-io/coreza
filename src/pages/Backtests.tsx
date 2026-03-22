@@ -1,35 +1,102 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useBacktests, BacktestStatus } from "@/hooks/useBacktests";
 import { useLiveStrategies } from "@/hooks/useLiveStrategies";
 import { NewBacktestDialog } from "@/components/backtest/NewBacktestDialog";
-import { MoreHorizontal, Plus, Search, Trash2, BarChart2, CheckCircle2, PlayCircle, AlertTriangle, ExternalLink } from "lucide-react";
+import {
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
+  BarChart2,
+  CheckCircle2,
+  PlayCircle,
+  AlertTriangle,
+  ExternalLink,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiClient } from "@/lib/apiClient";
 
 export type BacktestsMode = "backtest" | "live";
 
-const statusConfig: Record<BacktestStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
-  pending:   { label: 'Pending',   variant: 'outline',     className: 'text-muted-foreground' },
-  running:   { label: 'Running',   variant: 'secondary',   className: 'text-amber-500' },
-  completed: { label: 'Completed', variant: 'default',     className: 'text-green-500' },
-  failed:    { label: 'Failed',    variant: 'destructive', className: 'text-destructive' },
+const statusConfig: Record<
+  BacktestStatus,
+  {
+    label: string;
+    variant: "default" | "secondary" | "destructive" | "outline";
+    className: string;
+  }
+> = {
+  pending: {
+    label: "Pending",
+    variant: "outline",
+    className: "text-muted-foreground",
+  },
+  running: {
+    label: "Running",
+    variant: "secondary",
+    className: "text-amber-500",
+  },
+  completed: {
+    label: "Completed",
+    variant: "default",
+    className: "text-green-500",
+  },
+  failed: {
+    label: "Failed",
+    variant: "destructive",
+    className: "text-destructive",
+  },
 };
 
-const fmt = (val: number | undefined, suffix = '', decimals = 2) =>
-  val !== undefined && val !== null ? `${val.toFixed(decimals)}${suffix}` : '—';
+const fmt = (val: number | undefined, suffix = "", decimals = 2) =>
+  val !== undefined && val !== null ? `${val.toFixed(decimals)}${suffix}` : "—";
 
 const fmtReturn = (val: number | undefined) => {
-  if (val === undefined || val === null) return <span className="text-muted-foreground">—</span>;
-  const cls = val >= 0 ? 'text-green-500' : 'text-destructive';
-  return <span className={cls}>{val >= 0 ? '+' : ''}{val.toFixed(2)}%</span>;
+  if (val === undefined || val === null)
+    return <span className="text-muted-foreground">—</span>;
+  const cls = val >= 0 ? "text-green-500" : "text-destructive";
+  return (
+    <span className={cls}>
+      {val >= 0 ? "+" : ""}
+      {val.toFixed(2)}%
+    </span>
+  );
 };
 
 interface BacktestsProps {
@@ -38,27 +105,36 @@ interface BacktestsProps {
 
 const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
   const isLive = mode === "live";
-  const backtestData = useBacktests();
-  const liveData = useLiveStrategies();
-  const { backtests, loading, stats, refetch } = isLive ? liveData : backtestData;
+  const navigate = useNavigate();
+  const { session } = useAuth();
+  const backtestData = useBacktests(!isLive);
+  const liveData = useLiveStrategies(isLive);
+  const { backtests, loading, stats, refetch } = isLive
+    ? liveData
+    : backtestData;
 
   const { toast } = useToast();
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<BacktestStatus | 'all'>('all');
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<BacktestStatus | "all">(
+    "all",
+  );
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const basePath = isLive ? '/dashboard/live' : '/dashboard/backtests';
-  const pageTitle = isLive ? 'Live Strategies' : 'Backtests';
+  const basePath = isLive ? "/dashboard/live" : "/dashboard/backtests";
+  const pageTitle = isLive ? "Live Strategies" : "Backtests";
   const pageDescription = isLive
-    ? 'Monitor your active live trading strategies.'
-    : 'Manage and review your strategy backtests.';
+    ? "Monitor your active live trading strategies."
+    : "Manage and review your strategy backtests.";
 
   const filtered = useMemo(() => {
     return backtests.filter((backtest) => {
-      const matchesSearch = backtest.name.toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || backtest.status === statusFilter;
+      const matchesSearch = backtest.name
+        .toLowerCase()
+        .includes(search.toLowerCase());
+      const matchesStatus =
+        statusFilter === "all" || backtest.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
   }, [backtests, search, statusFilter]);
@@ -67,13 +143,40 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      const table = isLive ? 'workflows' : 'backtests';
-      const { error } = await supabase.from(table).delete().eq('id', deleteId);
-      if (error) throw error;
-      toast({ title: `${isLive ? 'Strategy' : 'Backtest'} deleted` });
+      if (isLive) {
+        const token = session?.access_token;
+        if (!token) {
+          throw new Error("You must be signed in to delete a live strategy.");
+        }
+
+        const response = await apiClient.delete(
+          `/api/workflow/${deleteId}`,
+          token,
+        );
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(
+            payload?.error ||
+              payload?.message ||
+              "Failed to delete live strategy",
+          );
+        }
+      } else {
+        const { error } = await supabase
+          .from("backtests")
+          .delete()
+          .eq("id", deleteId);
+        if (error) throw error;
+      }
+
+      toast({ title: `${isLive ? "Strategy" : "Backtest"} deleted` });
       refetch();
     } catch (err: any) {
-      toast({ title: `Failed to delete`, description: err.message, variant: 'destructive' });
+      toast({
+        title: `Failed to delete`,
+        description: err.message,
+        variant: "destructive",
+      });
     } finally {
       setDeleting(false);
       setDeleteId(null);
@@ -88,25 +191,31 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
           <p className="text-muted-foreground">{pageDescription}</p>
         </div>
         {!isLive && (
-          <Button variant="secondary" className="gap-2 self-start" onClick={() => setShowNewDialog(true)}>
+          <Button
+            variant="secondary"
+            className="gap-2 self-start"
+            onClick={() => setShowNewDialog(true)}
+          >
             <Plus className="h-4 w-4" /> New Backtest
           </Button>
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total {isLive ? 'Strategies' : 'Backtests'}</CardDescription>
+            <CardDescription>
+              Total {isLive ? "Strategies" : "Backtests"}
+            </CardDescription>
             <CardTitle className="text-2xl">{stats.total}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>{isLive ? 'Active' : 'Completed'}</CardDescription>
+            <CardDescription>{isLive ? "Active" : "Completed"}</CardDescription>
             <CardTitle className="text-2xl flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-500" /> {isLive ? stats.running : stats.completed}
+              <CheckCircle2 className="h-5 w-5 text-green-500" />{" "}
+              {isLive ? stats.running : stats.completed}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -128,7 +237,6 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
         </Card>
       </div>
 
-      {/* Table */}
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -137,7 +245,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder={`Search ${isLive ? 'strategies' : 'backtests'}`}
+                  placeholder={`Search ${isLive ? "strategies" : "backtests"}`}
                   className="pl-9"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -148,29 +256,38 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
           </div>
           <CardDescription>
             {isLive
-              ? 'View all active live strategies and their real-time performance.'
-              : 'View all of your strategy backtests and access detailed performance results.'}
+              ? "View all active live strategies and their real-time performance."
+              : "View all of your strategy backtests and access detailed performance results."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, idx) => (
-                <div key={idx} className="h-12 rounded-lg bg-muted animate-pulse" />
+                <div
+                  key={idx}
+                  className="h-12 rounded-lg bg-muted animate-pulse"
+                />
               ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
               <BarChart2 className="h-10 w-10 text-muted-foreground" />
               <div>
-                <p className="font-semibold">No {isLive ? 'live strategies' : 'backtests'} found</p>
+                <p className="font-semibold">
+                  No {isLive ? "live strategies" : "backtests"} found
+                </p>
                 <p className="text-muted-foreground text-sm">
                   {isLive
-                    ? 'Activate a workflow with a Portfolio (broker) node to see it here.'
-                    : 'Create your first backtest to get started.'}
+                    ? "Activate a workflow with a Portfolio (broker) node to see it here."
+                    : "Create your first backtest to get started."}
                 </p>
               </div>
-              {!isLive && <Button onClick={() => setShowNewDialog(true)}>New Backtest</Button>}
+              {!isLive && (
+                <Button onClick={() => setShowNewDialog(true)}>
+                  New Backtest
+                </Button>
+              )}
             </div>
           ) : (
             <div className="rounded-md border">
@@ -192,7 +309,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                     <TableRow
                       key={backtest.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => window.location.href = `${basePath}/${backtest.id}`}
+                      onClick={() => navigate(`${basePath}/${backtest.id}`)}
                     >
                       <TableCell className="font-medium">
                         <Link
@@ -205,7 +322,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                         </Link>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {backtest.workflow_name ?? '—'}
+                        {backtest.workflow_name ?? "—"}
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusConfig[backtest.status].variant}>
@@ -216,16 +333,30 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                         {fmtReturn(backtest.total_return)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {backtest.sharpe_ratio !== undefined && backtest.sharpe_ratio !== null
-                          ? <span className={backtest.sharpe_ratio >= 1 ? 'text-green-500' : 'text-muted-foreground'}>{fmt(backtest.sharpe_ratio)}</span>
-                          : <span className="text-muted-foreground">—</span>
-                        }
+                        {backtest.sharpe_ratio !== undefined &&
+                        backtest.sharpe_ratio !== null ? (
+                          <span
+                            className={
+                              backtest.sharpe_ratio >= 1
+                                ? "text-green-500"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {fmt(backtest.sharpe_ratio)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {backtest.total_trades ?? <span className="text-muted-foreground">—</span>}
+                        {backtest.total_trades ?? (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {backtest.created_at ? new Date(backtest.created_at).toLocaleString() : '—'}
+                        {backtest.created_at
+                          ? new Date(backtest.created_at).toLocaleString()
+                          : "—"}
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
@@ -236,9 +367,14 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem asChild>
-                              <Link to={`${basePath}/${backtest.id}`}>View {isLive ? 'Details' : 'Results'}</Link>
+                              <Link to={`${basePath}/${backtest.id}`}>
+                                View {isLive ? "Details" : "Results"}
+                              </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive" onSelect={() => setDeleteId(backtest.id)}>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onSelect={() => setDeleteId(backtest.id)}
+                            >
                               <Trash2 className="h-4 w-4 mr-2" /> Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -254,19 +390,32 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
       </Card>
 
       {!isLive && (
-        <NewBacktestDialog open={showNewDialog} onOpenChange={setShowNewDialog} onCreated={refetch} />
+        <NewBacktestDialog
+          open={showNewDialog}
+          onOpenChange={setShowNewDialog}
+          onCreated={refetch}
+        />
       )}
 
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+      <AlertDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {isLive ? 'strategy' : 'backtest'}?</AlertDialogTitle>
-            <CardDescription>This action cannot be undone.</CardDescription>
+            <AlertDialogTitle>
+              Delete {isLive ? "strategy" : "backtest"}?
+            </AlertDialogTitle>
+            <CardDescription>
+              {isLive
+                ? "Deleting an active strategy will also stop its scheduler and live streams."
+                : "This action cannot be undone."}
+            </CardDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -275,20 +424,28 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
   );
 };
 
-const SelectStatus = ({ value, onChange }: { value: BacktestStatus | 'all'; onChange: (value: BacktestStatus | 'all') => void }) => {
+const SelectStatus = ({
+  value,
+  onChange,
+}: {
+  value: BacktestStatus | "all";
+  onChange: (value: BacktestStatus | "all") => void;
+}) => {
   return (
     <div className="flex gap-2 flex-wrap">
-      {(['all', 'pending', 'running', 'completed', 'failed'] as const).map((status) => (
-        <Button
-          key={status}
-          variant={value === status ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => onChange(status as BacktestStatus | 'all')}
-          className="capitalize"
-        >
-          {status}
-        </Button>
-      ))}
+      {(["all", "pending", "running", "completed", "failed"] as const).map(
+        (status) => (
+          <Button
+            key={status}
+            variant={value === status ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange(status as BacktestStatus | "all")}
+            className="capitalize"
+          >
+            {status}
+          </Button>
+        ),
+      )}
     </div>
   );
 };

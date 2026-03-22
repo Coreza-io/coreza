@@ -14,7 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ConnectionDragContext, DragSource } from "@/contexts/ConnectionDragContext";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -87,6 +88,21 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
 }) => {
   const removeEdgeCallbackRef = useRef<(edgeId: string) => void>();
   const resolvedTheme = useResolvedTheme();
+
+  // Connection drag tracking
+  const [dragSource, setDragSource] = useState<DragSource>({
+    nodeId: null, handleId: null, handleType: null,
+  });
+  const onConnectStart = useCallback((_: any, params: any) => {
+    setDragSource({
+      nodeId: params.nodeId ?? null,
+      handleId: params.handleId ?? null,
+      handleType: params.handleType ?? null,
+    });
+  }, []);
+  const onConnectEnd = useCallback(() => {
+    setDragSource({ nodeId: null, handleId: null, handleType: null });
+  }, []);
 
   // Initialize remove edge callback
   const removeEdge = useCallback((edgeId: string) => {
@@ -166,6 +182,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
     <div className={`flex flex-1 overflow-hidden ${className || ''}`}>
       {/* ReactFlow Canvas */}
       <div className="flex-1 bg-trading-grid relative">
+        <ConnectionDragContext.Provider value={dragSource}>
         <ReactFlow
             nodes={nodes}
           edges={edges}
@@ -217,6 +234,8 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             onEdgesChange(updatedEdges);
           }}
           onConnect={handleConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onDrop={onDrop}
           onDragOver={onDragOver}
           onMouseMove={onMouseMove}
@@ -253,6 +272,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-black"
           />
         </ReactFlow>
+        </ConnectionDragContext.Provider>
 
         {/* Execution Status Overlay */}
         <AnimatePresence>

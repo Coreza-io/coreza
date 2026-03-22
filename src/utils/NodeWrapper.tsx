@@ -14,7 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useContext } from "react";
+import { ConnectionDragContext } from "@/contexts/ConnectionDragContext";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
 import { Handle, Position, useReactFlow } from "@xyflow/react";
@@ -155,6 +156,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const prevStreamDataReceived = useRef(streamDataReceived);
   const resolvedTheme = useResolvedTheme();
   const isDarkMode = resolvedTheme === "dark";
+  const dragSource = useContext(ConnectionDragContext);
 
   // Detect when stream data is received and trigger flash animation
   useEffect(() => {
@@ -375,8 +377,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 <FemalePlugIcon size={20} style={iconStyle} />
               );
             } else {
-              // For output handles: hide icon if connected, otherwise show MalePlugIcon
-              handleIcon = isConnected ? null : (
+              // For output handles: hide icon if connected or currently dragging from this handle
+              const isDraggingFromThis =
+                dragSource.handleType === "source" &&
+                dragSource.nodeId === nodeId &&
+                dragSource.handleId === h.id;
+              handleIcon = (isConnected || isDraggingFromThis) ? null : (
                 <MalePlugIcon size={20} style={iconStyle} />
               );
             }

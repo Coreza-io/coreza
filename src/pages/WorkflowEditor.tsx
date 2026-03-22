@@ -15,6 +15,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { ConnectionDragContext, DragSource } from "@/contexts/ConnectionDragContext";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,
@@ -317,6 +318,21 @@ const WorkflowEditorContent = () => {
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
+
+  // Connection drag tracking for hiding source handle icon
+  const [dragSource, setDragSource] = useState<DragSource>({
+    nodeId: null, handleId: null, handleType: null,
+  });
+  const onConnectStart = useCallback((_: any, params: any) => {
+    setDragSource({
+      nodeId: params.nodeId ?? null,
+      handleId: params.handleId ?? null,
+      handleType: params.handleType ?? null,
+    });
+  }, []);
+  const onConnectEnd = useCallback(() => {
+    setDragSource({ nodeId: null, handleId: null, handleType: null });
+  }, []);
   const historyRef = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
 
   const cloneNodes = useCallback((sourceNodes: Node[]) => {
@@ -1499,12 +1515,15 @@ const WorkflowEditorContent = () => {
         <div className="flex flex-1 overflow-hidden">
           {/* ReactFlow Canvas */}
           <div className="flex-1 bg-trading-grid">
+            <ConnectionDragContext.Provider value={dragSource}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onConnectStart={onConnectStart}
+              onConnectEnd={onConnectEnd}
               onDrop={onDrop}
               onDragOver={onDragOver}
               onMouseMove={onMouseMove}
@@ -1533,6 +1552,7 @@ const WorkflowEditorContent = () => {
               />
               <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
             </ReactFlow>
+            </ConnectionDragContext.Provider>
           </div>
 
           {/* Right Sidebar - Node Palette */}

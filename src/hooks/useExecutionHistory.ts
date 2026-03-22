@@ -125,10 +125,7 @@ function matchesExecutionFilters(
   return true;
 }
 
-function applyFiltersToQuery(
-  workflowId: string,
-  filters: ExecutionFilters,
-) {
+function applyFiltersToQuery(workflowId: string, filters: ExecutionFilters) {
   let query = supabase
     .from("workflow_runs")
     .select("*")
@@ -235,72 +232,6 @@ function getItemCount(data: unknown): number {
   return 1;
 }
 
-function getFallbackNodeExecutions(
-  execution: ExecutionRun,
-): NodeExecutionLog[] {
-  const payload = execution.result;
-  if (!payload) {
-    return [];
-  }
-
-  const executionOrder = Array.isArray(payload.executionOrder)
-    ? payload.executionOrder.filter(
-        (nodeId): nodeId is string =>
-          typeof nodeId === "string" && nodeId.length > 0,
-      )
-    : [];
-
-  const nodeResults = isRecord(payload.result)
-    ? (payload.result as Record<string, ExecutionNodeResult>)
-    : {};
-
-  if (executionOrder.length === 0 || Object.keys(nodeResults).length === 0) {
-    return [];
-  }
-
-  const totalDurationMs =
-    execution.completed_at && execution.started_at
-      ? Math.max(
-          0,
-          new Date(execution.completed_at).getTime() -
-            new Date(execution.started_at).getTime(),
-        )
-      : 0;
-
-  const estimatedDurationMs =
-    executionOrder.length > 0
-      ? Math.round(totalDurationMs / executionOrder.length)
-      : 0;
-
-  const nodeExecutions: NodeExecutionLog[] = [];
-
-  for (const nodeId of executionOrder) {
-    const rawOutput = nodeResults[nodeId];
-    if (rawOutput === undefined) {
-      continue;
-    }
-
-    const output = normalizeNodeResult(rawOutput);
-
-    nodeExecutions.push({
-      nodeId,
-      nodeName: nodeId,
-      startedAt: execution.started_at,
-      completedAt: execution.completed_at ?? execution.started_at,
-      durationMs: estimatedDurationMs,
-      status: output.status,
-      // We intentionally do NOT reconstruct input from "previous node output".
-      // Coreza workflows are DAGs, so that assumption is incorrect.
-      input: null,
-      output,
-      itemCount: getItemCount(output.data),
-      error: output.error,
-    });
-  }
-
-  return nodeExecutions;
-}
-
 export function useExecutionHistory(
   workflowId: string | null,
   filters: ExecutionFilters = {},
@@ -314,7 +245,7 @@ export function useExecutionHistory(
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isMountedRef = useRef(true);
+  const isMountedRef = useRef(false);
   const fetchRequestIdRef = useRef(0);
   const loadMoreRequestIdRef = useRef(0);
   const selectedExecutionIdRef = useRef<string | null>(null);
@@ -324,21 +255,24 @@ export function useExecutionHistory(
   const dateToFilter = filters.dateTo;
 
   useEffect(() => {
-    selectedExecutionIdRef.current = selectedExecution?.id ?? null;
-  }, [selectedExecution]);
+    isMountedRef.current = true;
 
-  useEffect(() => {
     return () => {
       isMountedRef.current = false;
     };
   }, []);
 
+  useEffect(() => {
+    selectedExecutionIdRef.current = selectedExecution?.id ?? null;
+  }, [selectedExecution]);
+
   const matchesFilters = useCallback(
-    (execution: ExecutionRun) => matchesExecutionFilters(execution, {
-      status: statusFilter,
-      dateFrom: dateFromFilter,
-      dateTo: dateToFilter,
-    }),
+    (execution: ExecutionRun) =>
+      matchesExecutionFilters(execution, {
+        status: statusFilter,
+        dateFrom: dateFromFilter,
+        dateTo: dateToFilter,
+      }),
     [statusFilter, dateFromFilter, dateToFilter],
   );
 
@@ -355,8 +289,10 @@ export function useExecutionHistory(
 
     const requestId = ++fetchRequestIdRef.current;
 
-    setLoading(true);
-    setError(null);
+    if (isMountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const query = applyFiltersToQuery(workflowId, {
@@ -364,6 +300,7 @@ export function useExecutionHistory(
         dateFrom: dateFromFilter,
         dateTo: dateToFilter,
       });
+
       const { data, error: queryError } = await query
         .order("started_at", { ascending: false })
         .order("id", { ascending: false })
@@ -383,9 +320,21 @@ export function useExecutionHistory(
 
       setSelectedExecution((prev) => {
         if (!prev) {
-          return prev;
+          return null;
         }
-        return results.find((item) => item.id === prev.id) ?? null;
+
+        const updatedSelected = results.find((item) => item.id === prev.id);
+        if (updatedSelected) {
+          return updatedSelected;
+        }
+
+        return matchesExecutionFilters(prev, {
+          status: statusFilter,
+          dateFrom: dateFromFilter,
+          dateTo: dateToFilter,
+        })
+          ? prev
+          : null;
       });
 
       setError(null);
@@ -411,8 +360,11 @@ export function useExecutionHistory(
     }
 
     const requestId = ++loadMoreRequestIdRef.current;
-    setLoadingMore(true);
-    setError(null);
+
+    if (isMountedRef.current) {
+      setLoadingMore(true);
+      setError(null);
+    }
 
     try {
       const query = applyFiltersToQuery(workflowId, {
@@ -420,6 +372,7 @@ export function useExecutionHistory(
         dateFrom: dateFromFilter,
         dateTo: dateToFilter,
       });
+
       const { data, error: queryError } = await query
         .order("started_at", { ascending: false })
         .order("id", { ascending: false })
@@ -435,11 +388,7 @@ export function useExecutionHistory(
 
       const nextPage = (data as ExecutionRun[]) ?? [];
 
-      setExecutions((prev) => {
-        const merged = dedupeById([...prev, ...nextPage]);
-        return merged;
-      });
-
+      setExecutions((prev) => dedupeById([...prev, ...nextPage]));
       setHasMore(nextPage.length === PAGE_SIZE);
     } catch (err) {
       if (!isMountedRef.current || requestId !== loadMoreRequestIdRef.current) {
@@ -455,7 +404,15 @@ export function useExecutionHistory(
         setLoadingMore(false);
       }
     }
-  }, [workflowId, hasMore, loadingMore, executions.length, statusFilter, dateFromFilter, dateToFilter]);
+  }, [
+    workflowId,
+    hasMore,
+    loadingMore,
+    executions.length,
+    statusFilter,
+    dateFromFilter,
+    dateToFilter,
+  ]);
 
   useEffect(() => {
     void fetchExecutions();
@@ -477,10 +434,15 @@ export function useExecutionHistory(
           filter: `workflow_id=eq.${workflowId}`,
         },
         (payload) => {
+          if (!isMountedRef.current) {
+            return;
+          }
+
           if (payload.eventType === "DELETE") {
             const deletedId = String(
               (payload.old as { id?: string } | null)?.id ?? "",
             );
+
             if (!deletedId) {
               return;
             }
@@ -490,6 +452,7 @@ export function useExecutionHistory(
             if (selectedExecutionIdRef.current === deletedId) {
               setSelectedExecution(null);
             }
+
             return;
           }
 
@@ -504,6 +467,7 @@ export function useExecutionHistory(
             if (selectedExecutionIdRef.current === execution.id) {
               setSelectedExecution(null);
             }
+
             return;
           }
 
@@ -559,12 +523,68 @@ export function useExecutionHistory(
 
   const getNodeExecutions = useCallback(
     (execution: ExecutionRun): NodeExecutionLog[] => {
-      const nodeExecutions = execution.result?.nodeExecutions;
-      if (Array.isArray(nodeExecutions) && nodeExecutions.length > 0) {
-        return nodeExecutions;
+      const payload = execution.result;
+      if (!payload) {
+        return [];
       }
 
-      return getFallbackNodeExecutions(execution);
+      const executionOrder = Array.isArray(payload.executionOrder)
+        ? payload.executionOrder.filter(
+            (nodeId): nodeId is string =>
+              typeof nodeId === "string" && nodeId.length > 0,
+          )
+        : [];
+
+      const nodeResults = isRecord(payload.nodeResults)
+        ? (payload.nodeResults as Record<string, ExecutionNodeResult>)
+        : {};
+
+      if (
+        executionOrder.length === 0 ||
+        Object.keys(nodeResults).length === 0
+      ) {
+        return [];
+      }
+
+      const totalDurationMs =
+        execution.completed_at && execution.started_at
+          ? Math.max(
+              0,
+              new Date(execution.completed_at).getTime() -
+                new Date(execution.started_at).getTime(),
+            )
+          : 0;
+
+      const estimatedDurationMs =
+        executionOrder.length > 0
+          ? Math.round(totalDurationMs / executionOrder.length)
+          : 0;
+
+      const nodeExecutions: NodeExecutionLog[] = [];
+
+      for (const nodeId of executionOrder) {
+        const rawOutput = nodeResults[nodeId];
+        if (rawOutput === undefined) {
+          continue;
+        }
+
+        const output = normalizeNodeResult(rawOutput);
+
+        nodeExecutions.push({
+          nodeId,
+          nodeName: nodeId,
+          startedAt: execution.started_at,
+          completedAt: execution.completed_at ?? execution.started_at,
+          durationMs: estimatedDurationMs,
+          status: output.status,
+          input: null,
+          output,
+          itemCount: getItemCount(output.data),
+          error: output.error,
+        });
+      }
+
+      return nodeExecutions;
     },
     [],
   );

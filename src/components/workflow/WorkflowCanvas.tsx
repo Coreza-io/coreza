@@ -182,6 +182,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
     <div className={`flex flex-1 overflow-hidden ${className || ''}`}>
       {/* ReactFlow Canvas */}
       <div className="flex-1 bg-trading-grid relative">
+        <ConnectionDragContext.Provider value={dragSource}>
         <ReactFlow
             nodes={nodes}
           edges={edges}

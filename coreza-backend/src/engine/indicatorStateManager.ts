@@ -9,7 +9,10 @@
 import { getRedisCache } from "../config/redis";
 import { buildIndicatorKey } from "../utils/executionKey";
 export { buildIndicatorKey } from "../utils/executionKey";
-import { IndicatorService, IncrementalUpdater } from "../nodes/logic/indicators";
+import {
+  IndicatorService,
+  IncrementalUpdater,
+} from "../nodes/logic/indicators";
 
 export interface IndicatorState {
   version: number;
@@ -149,7 +152,9 @@ export class IndicatorStateManager {
       warmupCompleted: true,
       internalState: warmup.internalState,
       lastWarmupTs:
-        bars.length > 0 ? ((bars[bars.length - 1]?.t as number | undefined) ?? null) : null,
+        bars.length > 0
+          ? ((bars[bars.length - 1]?.time as number | undefined) ?? null)
+          : null,
     };
 
     if (sync) {
@@ -166,7 +171,7 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const barTs = bar?.t;
+    const barTs = bar?.time;
     if (typeof barTs === "number" && existing.lastWarmupTs != null) {
       if (barTs <= existing.lastWarmupTs) {
         return existing;
@@ -211,7 +216,10 @@ export class IndicatorStateManager {
     }
 
     const updater = this.getUpdater(existing.indicator, existing.params);
-    const { value, internalState } = updater.update(existing.internalState, bar);
+    const { value, internalState } = updater.update(
+      existing.internalState,
+      bar,
+    );
 
     existing.previousValue = existing.currentValue;
     existing.currentValue = value;

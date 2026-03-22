@@ -89,6 +89,21 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
   const removeEdgeCallbackRef = useRef<(edgeId: string) => void>();
   const resolvedTheme = useResolvedTheme();
 
+  // Connection drag tracking
+  const [dragSource, setDragSource] = useState<DragSource>({
+    nodeId: null, handleId: null, handleType: null,
+  });
+  const onConnectStart = useCallback((_: any, params: any) => {
+    setDragSource({
+      nodeId: params.nodeId ?? null,
+      handleId: params.handleId ?? null,
+      handleType: params.handleType ?? null,
+    });
+  }, []);
+  const onConnectEnd = useCallback(() => {
+    setDragSource({ nodeId: null, handleId: null, handleType: null });
+  }, []);
+
   // Initialize remove edge callback
   const removeEdge = useCallback((edgeId: string) => {
     onEdgesChange(edges.filter(e => e.id !== edgeId));

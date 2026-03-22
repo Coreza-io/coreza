@@ -30,6 +30,8 @@ import Settings from "./Settings";
 import MarketSubscriptions from "./MarketSubscriptions";
 import Backtests from "./Backtests";
 import BacktestResults from "./BacktestResults";
+import LiveStrategies from "./LiveStrategies";
+import LiveStrategyDetail from "./LiveStrategyDetail";
 
 const Interface = () => {
   const { user, loading } = useAuth();

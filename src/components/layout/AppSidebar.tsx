@@ -43,6 +43,7 @@ import {
   Settings,
   BarChart2,
   Radio,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -96,6 +97,12 @@ const menuItems: MenuItem[] = [
     url: `${DASHBOARD_BASE_PATH}/backtests`,
     icon: BarChart2,
     matchPaths: [`${DASHBOARD_BASE_PATH}/backtests`],
+  },
+  {
+    title: "Live",
+    url: `${DASHBOARD_BASE_PATH}/live`,
+    icon: Zap,
+    matchPaths: [`${DASHBOARD_BASE_PATH}/live`],
   },
   { title: "Market Data", url: `${DASHBOARD_BASE_PATH}/market-subscriptions`, icon: Radio },
 ];

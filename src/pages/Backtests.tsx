@@ -8,10 +8,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useBacktests, BacktestStatus } from "@/hooks/useBacktests";
+import { useLiveStrategies } from "@/hooks/useLiveStrategies";
 import { NewBacktestDialog } from "@/components/backtest/NewBacktestDialog";
 import { MoreHorizontal, Plus, Search, Trash2, BarChart2, CheckCircle2, PlayCircle, AlertTriangle, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+
+export type BacktestsMode = "backtest" | "live";
 
 const statusConfig: Record<BacktestStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
   pending:   { label: 'Pending',   variant: 'outline',     className: 'text-muted-foreground' },
@@ -29,14 +32,28 @@ const fmtReturn = (val: number | undefined) => {
   return <span className={cls}>{val >= 0 ? '+' : ''}{val.toFixed(2)}%</span>;
 };
 
-const Backtests = () => {
-  const { backtests, loading, stats, refetch } = useBacktests();
+interface BacktestsProps {
+  mode?: BacktestsMode;
+}
+
+const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
+  const isLive = mode === "live";
+  const backtestData = useBacktests();
+  const liveData = useLiveStrategies();
+  const { backtests, loading, stats, refetch } = isLive ? liveData : backtestData;
+
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<BacktestStatus | 'all'>('all');
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const basePath = isLive ? '/dashboard/live' : '/dashboard/backtests';
+  const pageTitle = isLive ? 'Live Strategies' : 'Backtests';
+  const pageDescription = isLive
+    ? 'Monitor your active live trading strategies.'
+    : 'Manage and review your strategy backtests.';
 
   const filtered = useMemo(() => {
     return backtests.filter((backtest) => {
@@ -50,12 +67,13 @@ const Backtests = () => {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      const { error } = await supabase.from('backtests').delete().eq('id', deleteId);
+      const table = isLive ? 'workflows' : 'backtests';
+      const { error } = await supabase.from(table).delete().eq('id', deleteId);
       if (error) throw error;
-      toast({ title: 'Backtest deleted' });
+      toast({ title: `${isLive ? 'Strategy' : 'Backtest'} deleted` });
       refetch();
     } catch (err: any) {
-      toast({ title: 'Failed to delete backtest', description: err.message, variant: 'destructive' });
+      toast({ title: `Failed to delete`, description: err.message, variant: 'destructive' });
     } finally {
       setDeleting(false);
       setDeleteId(null);
@@ -66,27 +84,29 @@ const Backtests = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Backtests</h1>
-          <p className="text-muted-foreground">Manage and review your strategy backtests.</p>
+          <h1 className="text-3xl font-bold">{pageTitle}</h1>
+          <p className="text-muted-foreground">{pageDescription}</p>
         </div>
-        <Button variant="secondary" className="gap-2 self-start" onClick={() => setShowNewDialog(true)}>
-          <Plus className="h-4 w-4" /> New Backtest
-        </Button>
+        {!isLive && (
+          <Button variant="secondary" className="gap-2 self-start" onClick={() => setShowNewDialog(true)}>
+            <Plus className="h-4 w-4" /> New Backtest
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Backtests</CardDescription>
+            <CardDescription>Total {isLive ? 'Strategies' : 'Backtests'}</CardDescription>
             <CardTitle className="text-2xl">{stats.total}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Completed</CardDescription>
+            <CardDescription>{isLive ? 'Active' : 'Completed'}</CardDescription>
             <CardTitle className="text-2xl flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-500" /> {stats.completed}
+              <CheckCircle2 className="h-5 w-5 text-green-500" /> {isLive ? stats.running : stats.completed}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -112,12 +132,12 @@ const Backtests = () => {
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <CardTitle>Backtests</CardTitle>
+            <CardTitle>{pageTitle}</CardTitle>
             <div className="flex flex-wrap gap-2">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search backtests"
+                  placeholder={`Search ${isLive ? 'strategies' : 'backtests'}`}
                   className="pl-9"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -127,7 +147,9 @@ const Backtests = () => {
             </div>
           </div>
           <CardDescription>
-            View all of your strategy backtests and access detailed performance results.
+            {isLive
+              ? 'View all active live strategies and their real-time performance.'
+              : 'View all of your strategy backtests and access detailed performance results.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -141,10 +163,14 @@ const Backtests = () => {
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
               <BarChart2 className="h-10 w-10 text-muted-foreground" />
               <div>
-                <p className="font-semibold">No backtests found</p>
-                <p className="text-muted-foreground text-sm">Create your first backtest to get started.</p>
+                <p className="font-semibold">No {isLive ? 'live strategies' : 'backtests'} found</p>
+                <p className="text-muted-foreground text-sm">
+                  {isLive
+                    ? 'Activate a workflow with a Portfolio (broker) node to see it here.'
+                    : 'Create your first backtest to get started.'}
+                </p>
               </div>
-              <Button onClick={() => setShowNewDialog(true)}>New Backtest</Button>
+              {!isLive && <Button onClick={() => setShowNewDialog(true)}>New Backtest</Button>}
             </div>
           ) : (
             <div className="rounded-md border">
@@ -166,11 +192,11 @@ const Backtests = () => {
                     <TableRow
                       key={backtest.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => window.location.href = `/dashboard/backtests/${backtest.id}`}
+                      onClick={() => window.location.href = `${basePath}/${backtest.id}`}
                     >
                       <TableCell className="font-medium">
                         <Link
-                          to={`/dashboard/backtests/${backtest.id}`}
+                          to={`${basePath}/${backtest.id}`}
                           className="hover:underline flex items-center gap-1"
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -210,7 +236,7 @@ const Backtests = () => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem asChild>
-                              <Link to={`/dashboard/backtests/${backtest.id}`}>View Results</Link>
+                              <Link to={`${basePath}/${backtest.id}`}>View {isLive ? 'Details' : 'Results'}</Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onSelect={() => setDeleteId(backtest.id)}>
                               <Trash2 className="h-4 w-4 mr-2" /> Delete
@@ -227,12 +253,14 @@ const Backtests = () => {
         </CardContent>
       </Card>
 
-      <NewBacktestDialog open={showNewDialog} onOpenChange={setShowNewDialog} onCreated={refetch} />
+      {!isLive && (
+        <NewBacktestDialog open={showNewDialog} onOpenChange={setShowNewDialog} onCreated={refetch} />
+      )}
 
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete backtest?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {isLive ? 'strategy' : 'backtest'}?</AlertDialogTitle>
             <CardDescription>This action cannot be undone.</CardDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

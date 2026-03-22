@@ -7,8 +7,11 @@ import { EquityCurveChart } from "@/components/backtest/EquityCurveChart";
 import { PerformanceMetricsCard } from "@/components/backtest/PerformanceMetricsCard";
 import { TradesTable } from "@/components/backtest/TradesTable";
 import { useBacktestResults } from "@/hooks/useBacktestResults";
+import { useLiveStrategyDetail } from "@/hooks/useLiveStrategyDetail";
 import { ArrowLeft, Download, Workflow, Clock3, Calendar, DollarSign } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+
+export type BacktestResultsMode = "backtest" | "live";
 
 const statusVariants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   pending: 'outline',
@@ -17,9 +20,20 @@ const statusVariants: Record<string, "default" | "secondary" | "destructive" | "
   failed: 'destructive',
 };
 
-const BacktestResults = () => {
+interface BacktestResultsProps {
+  mode?: BacktestResultsMode;
+}
+
+const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   const { id } = useParams();
-  const { backtest, metrics, trades, snapshots, loading } = useBacktestResults(id);
+  const isLive = mode === "live";
+
+  const backtestData = useBacktestResults(isLive ? undefined : id);
+  const liveData = useLiveStrategyDetail(isLive ? id : undefined);
+  const { backtest, metrics, trades, snapshots, loading } = isLive ? liveData : backtestData;
+
+  const backPath = isLive ? '/dashboard/live' : '/dashboard/backtests';
+  const pageLabel = isLive ? 'Live Strategy' : 'Backtest';
 
   const renderHeader = () => {
     if (loading || !backtest) {
@@ -73,7 +87,7 @@ const BacktestResults = () => {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button variant="outline" asChild>
-            <Link to="/dashboard/backtests" className="flex items-center gap-2">
+            <Link to={backPath} className="flex items-center gap-2">
               <ArrowLeft className="h-4 w-4" /> Back
             </Link>
           </Button>
@@ -110,8 +124,8 @@ const BacktestResults = () => {
       <Tabs defaultValue="performance" className="space-y-4">
         <TabsList>
           <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="trades">Trades</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="trades">{isLive ? 'Fills' : 'Trades'}</TabsTrigger>
+          {!isLive && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="performance" className="space-y-4">
@@ -122,49 +136,50 @@ const BacktestResults = () => {
           <TradesTable trades={trades} />
         </TabsContent>
 
-
-        <TabsContent value="settings">
-          <Card>
-            <CardHeader>
-              <CardTitle>Backtest Configuration</CardTitle>
-              <CardDescription>Settings used during this backtest run.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {backtest ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="p-3 rounded-lg border bg-muted/40">
-                    <p className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" /> Date Range</p>
-                    <p className="text-sm font-medium">{backtest.start_date} to {backtest.end_date}</p>
-                  </div>
-                  <div className="p-3 rounded-lg border bg-muted/40">
-                    <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Initial Capital</p>
-                    <p className="text-sm font-medium">${backtest.initial_capital?.toLocaleString() || '10,000'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg border bg-muted/40">
-                    <p className="text-xs text-muted-foreground">Data Frequency</p>
-                    <p className="text-sm font-medium">{backtest.data_frequency || '1d'}</p>
-                  </div>
-                  <div className="p-3 rounded-lg border bg-muted/40">
-                    <p className="text-xs text-muted-foreground">Commission Rate</p>
-                    <p className="text-sm font-medium">{((backtest.commission_rate || 0) * 100).toFixed(2)}%</p>
-                  </div>
-                  <div className="p-3 rounded-lg border bg-muted/40">
-                    <p className="text-xs text-muted-foreground">Slippage Rate</p>
-                    <p className="text-sm font-medium">{((backtest.slippage_rate || 0) * 100).toFixed(2)}%</p>
-                  </div>
-                  {backtest.description && (
-                    <div className="p-3 rounded-lg border bg-muted/40 col-span-full">
-                      <p className="text-xs text-muted-foreground">Description</p>
-                      <p className="text-sm font-medium">{backtest.description}</p>
+        {!isLive && (
+          <TabsContent value="settings">
+            <Card>
+              <CardHeader>
+                <CardTitle>{pageLabel} Configuration</CardTitle>
+                <CardDescription>Settings used during this {pageLabel.toLowerCase()} run.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {backtest ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="p-3 rounded-lg border bg-muted/40">
+                      <p className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" /> Date Range</p>
+                      <p className="text-sm font-medium">{backtest.start_date} to {backtest.end_date}</p>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No configuration available.</p>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                    <div className="p-3 rounded-lg border bg-muted/40">
+                      <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Initial Capital</p>
+                      <p className="text-sm font-medium">${backtest.initial_capital?.toLocaleString() || '10,000'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-muted/40">
+                      <p className="text-xs text-muted-foreground">Data Frequency</p>
+                      <p className="text-sm font-medium">{backtest.data_frequency || '1d'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-muted/40">
+                      <p className="text-xs text-muted-foreground">Commission Rate</p>
+                      <p className="text-sm font-medium">{((backtest.commission_rate || 0) * 100).toFixed(2)}%</p>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-muted/40">
+                      <p className="text-xs text-muted-foreground">Slippage Rate</p>
+                      <p className="text-sm font-medium">{((backtest.slippage_rate || 0) * 100).toFixed(2)}%</p>
+                    </div>
+                    {backtest.description && (
+                      <div className="p-3 rounded-lg border bg-muted/40 col-span-full">
+                        <p className="text-xs text-muted-foreground">Description</p>
+                        <p className="text-sm font-medium">{backtest.description}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No configuration available.</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

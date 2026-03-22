@@ -272,6 +272,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-black"
           />
         </ReactFlow>
+        </ConnectionDragContext.Provider>
 
         {/* Execution Status Overlay */}
         <AnimatePresence>

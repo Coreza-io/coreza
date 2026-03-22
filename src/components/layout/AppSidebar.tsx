@@ -101,7 +101,7 @@ const menuItems: MenuItem[] = [
   {
     title: "Live",
     url: `${DASHBOARD_BASE_PATH}/live`,
-    icon: Radio,
+    icon: Zap,
     matchPaths: [`${DASHBOARD_BASE_PATH}/live`],
   },
   { title: "Market Data", url: `${DASHBOARD_BASE_PATH}/market-subscriptions`, icon: Radio },

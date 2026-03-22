@@ -217,13 +217,24 @@ export class WorkflowRunner {
       return; // No ack — message stays pending for reclaim
     }
 
-    // Phase 4: Execute workflow
+    // Phase 4: Execute workflow — skip trigger, start from downstream
     this.engine.resetForNextBar(true);
 
+    // Preload trigger node results with actual stream data so downstream
+    // nodes can reference them (e.g. $('OnBar').json.data)
+    const triggerOutput = { success: true, data: envelope.data };
+    const preload: Record<string, any> = {};
+    for (const triggerId of this.triggerNodeIds) {
+      preload[triggerId] = triggerOutput;
+    }
+    this.engine.preloadResults(preload);
+
     try {
-      const executionResult = await this.engine.execute({
-        data: envelope.data,
-      });
+      // Execute from downstream nodes only — trigger executors are skipped
+      const executionResult = await this.engine.executeFromEntries(
+        { data: envelope.data },
+        this.downstreamEntryIds,
+      );
 
       // Phase 5a: Record success
       await this.recordSuccess(executionRunId, executionResult, messageId);

@@ -80,6 +80,8 @@ const Interface = () => {
               <Route path="workflow/:id" element={<WorkflowEditor />} />
               <Route path="backtests" element={<Backtests />} />
               <Route path="backtests/:id" element={<BacktestResults />} />
+              <Route path="live" element={<LiveStrategies />} />
+              <Route path="live/:id" element={<LiveStrategyDetail />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
               <Route path="market-subscriptions" element={<MarketSubscriptions />} />

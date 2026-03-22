@@ -97,6 +97,12 @@ const menuItems: MenuItem[] = [
     icon: BarChart2,
     matchPaths: [`${DASHBOARD_BASE_PATH}/backtests`],
   },
+  {
+    title: "Live",
+    url: `${DASHBOARD_BASE_PATH}/live`,
+    icon: Radio,
+    matchPaths: [`${DASHBOARD_BASE_PATH}/live`],
+  },
   { title: "Market Data", url: `${DASHBOARD_BASE_PATH}/market-subscriptions`, icon: Radio },
 ];
 

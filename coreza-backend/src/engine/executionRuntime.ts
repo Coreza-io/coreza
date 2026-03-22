@@ -227,6 +227,11 @@ export abstract class BaseExecutionRuntime {
     this.failed.add(nodeId);
     this.failedNodeErrors.set(nodeId, errorMessage);
     this.store.setNodeError(nodeId, error);
+    this.store.setNodeResult(nodeId, {
+      success: false,
+      data: null,
+      error: errorMessage,
+    });
     if (this.options.mode === "fail-fast") throw error;
   }
 

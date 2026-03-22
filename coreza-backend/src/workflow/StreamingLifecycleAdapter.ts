@@ -28,20 +28,22 @@ export class StreamingLifecycleAdapter {
     allEdges: WorkflowEdge[],
   ): Promise<string> {
     const redis = getRedisCache();
-    const nodeValues = ((triggerNode as WorkflowNode & {
-      values?: {
-        scope?: string;
-        onlyClosedBars?: boolean;
-        symbols?: unknown;
-        stream_types?: string[] | string;
-        credential_id?: string;
-        feed?: string;
-        environment?: string;
-        asset_type?: string;
-        interval?: string;
-        depth_levels?: number;
-      };
-    }).values || {}) as {
+    const nodeValues = ((
+      triggerNode as WorkflowNode & {
+        values?: {
+          scope?: string;
+          onlyClosedBars?: boolean;
+          symbols?: unknown;
+          stream_types?: string[] | string;
+          credential_id?: string;
+          feed?: string;
+          environment?: string;
+          asset_type?: string;
+          interval?: string;
+          depth_levels?: number;
+        };
+      }
+    ).values || {}) as {
       scope?: string;
       onlyClosedBars?: boolean;
       symbols?: unknown;
@@ -54,7 +56,10 @@ export class StreamingLifecycleAdapter {
       depth_levels?: number;
     };
 
-    await redis.sadd(REDIS_CHANNELS.activeStreamingWorkflows(userId), workflowId);
+    await redis.sadd(
+      REDIS_CHANNELS.activeStreamingWorkflows(userId),
+      workflowId,
+    );
 
     const sourceId = resolveStreamSourceId(triggerNode);
     if (!sourceId) {
@@ -74,7 +79,9 @@ export class StreamingLifecycleAdapter {
     const streamTypes = Array.isArray(nodeValues.stream_types)
       ? nodeValues.stream_types
       : typeof nodeValues.stream_types === "string"
-        ? nodeValues.stream_types.split(",").map((streamType) => streamType.trim())
+        ? nodeValues.stream_types
+            .split(",")
+            .map((streamType) => streamType.trim())
         : [];
     const hasOrderUpdate = streamTypes.includes("order_update");
     const marketStreamTypes = streamTypes.filter(
@@ -82,15 +89,17 @@ export class StreamingLifecycleAdapter {
     );
 
     if (hasOrderUpdate) {
-      const tradingSource =
-        triggerNode.name?.includes("Binance") ? "binance_trading" : "alpaca_trading";
-
+      const baseName = triggerNode.name;
+      const tradingSource = baseName?.includes("Binance")
+        ? "binance_trading"
+        : "alpaca_trading";
       await SubscriptionService.subscribe({
         source: tradingSource,
         userId,
         workflowId,
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
+        //symbols,
         symbols: ["*"],
         streamTypes: ["order_update"],
         scope: nodeValues.scope || "workflow",
@@ -98,7 +107,10 @@ export class StreamingLifecycleAdapter {
       });
     }
 
-    if (symbols.length > 0 && (marketStreamTypes.length > 0 || !hasOrderUpdate)) {
+    if (
+      symbols.length > 0 &&
+      (marketStreamTypes.length > 0 || !hasOrderUpdate)
+    ) {
       await SubscriptionService.subscribe({
         source: sourceId,
         userId,
@@ -106,7 +118,8 @@ export class StreamingLifecycleAdapter {
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
         symbols,
-        streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        streamTypes:
+          marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
         feed: nodeValues.feed,
         environment: nodeValues.environment,
         assetType: nodeValues.asset_type,
@@ -124,7 +137,10 @@ export class StreamingLifecycleAdapter {
   async deactivateStreaming(userId: string, workflowId: string): Promise<void> {
     const redis = getRedisCache();
 
-    await redis.srem(REDIS_CHANNELS.activeStreamingWorkflows(userId), workflowId);
+    await redis.srem(
+      REDIS_CHANNELS.activeStreamingWorkflows(userId),
+      workflowId,
+    );
     await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
     await RegistrationService.publishUnregisterWorkflow({
       userId,
@@ -158,12 +174,18 @@ export class StreamingLifecycleAdapter {
     }
   }
 
-  async unregisterStreamingTriggers(userId: string, workflowId: string): Promise<void> {
+  async unregisterStreamingTriggers(
+    userId: string,
+    workflowId: string,
+  ): Promise<void> {
     await RegistrationService.publishUnregisterWorkflow({ userId, workflowId });
     await jobQueue.stopWorkflowRunner(workflowId);
   }
 
-  async cleanupWorkflowSubscriptions(userId: string, workflowId: string): Promise<void> {
+  async cleanupWorkflowSubscriptions(
+    userId: string,
+    workflowId: string,
+  ): Promise<void> {
     const redis = getRedisCache();
     const pattern = `md:user:${userId}:subscription:scope:workflow:${workflowId}:*:symbols`;
 
@@ -186,7 +208,9 @@ export class StreamingLifecycleAdapter {
       for (const key of keys) {
         const symbols = await redis.smembers(key);
         const source = toMarketSource(
-          key.split(":")[SOURCE_INDEX] as MarketSource | `${MarketSource}_${string}`,
+          key.split(":")[SOURCE_INDEX] as
+            | MarketSource
+            | `${MarketSource}_${string}`,
         );
 
         if (symbols.length > 0 && source) {
@@ -216,7 +240,10 @@ export class StreamingLifecycleAdapter {
   ): Promise<void> {
     const redis = getRedisCache();
 
-    await redis.srem(REDIS_CHANNELS.activeStreamingWorkflows(userId), workflowId);
+    await redis.srem(
+      REDIS_CHANNELS.activeStreamingWorkflows(userId),
+      workflowId,
+    );
     await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
 
     if (isActive) {

@@ -37,6 +37,10 @@ export class WorkflowRunner {
     nodeCount: number;
     edgeCount: number;
   };
+  /** Entry/trigger node IDs (nodes with no incoming edges and type trigger/backtest) */
+  private readonly triggerNodeIds: readonly string[];
+  /** Immediate downstream targets of trigger nodes — execution starts here */
+  private readonly downstreamEntryIds: string[];
 
   constructor(
     private readonly workflowId: string,
@@ -67,6 +71,17 @@ export class WorkflowRunner {
       this.abortController.signal,
       "standard",
     );
+
+    // Cache trigger node IDs and their downstream targets at build time
+    const graph = this.engine.getGraph();
+    this.triggerNodeIds = graph.entryNodeIds;
+    const downstreamSet = new Set<string>();
+    for (const triggerId of this.triggerNodeIds) {
+      for (const edge of graph.getOutgoingEdges(triggerId)) {
+        downstreamSet.add(edge.target);
+      }
+    }
+    this.downstreamEntryIds = [...downstreamSet];
   }
 
   async start(): Promise<void> {

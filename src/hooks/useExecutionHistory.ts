@@ -128,7 +128,7 @@ function matchesExecutionFilters(
 function applyFiltersToQuery(
   workflowId: string,
   filters: ExecutionFilters,
-): ReturnType<typeof supabase.from> {
+) {
   let query = supabase
     .from("workflow_runs")
     .select("*")
@@ -199,7 +199,9 @@ function normalizeNodeResult(
     nodeResult.status === "failed" ||
     nodeResult.status === "skipped"
       ? nodeResult.status
-      : undefined;
+      : nodeResult.status === "error"
+        ? "failed"
+        : undefined;
 
   const explicitSuccess =
     typeof nodeResult.success === "boolean" ? nodeResult.success : undefined;
@@ -317,6 +319,10 @@ export function useExecutionHistory(
   const loadMoreRequestIdRef = useRef(0);
   const selectedExecutionIdRef = useRef<string | null>(null);
 
+  const statusFilter = filters.status;
+  const dateFromFilter = filters.dateFrom;
+  const dateToFilter = filters.dateTo;
+
   useEffect(() => {
     selectedExecutionIdRef.current = selectedExecution?.id ?? null;
   }, [selectedExecution]);
@@ -328,8 +334,12 @@ export function useExecutionHistory(
   }, []);
 
   const matchesFilters = useCallback(
-    (execution: ExecutionRun) => matchesExecutionFilters(execution, filters),
-    [filters],
+    (execution: ExecutionRun) => matchesExecutionFilters(execution, {
+      status: statusFilter,
+      dateFrom: dateFromFilter,
+      dateTo: dateToFilter,
+    }),
+    [statusFilter, dateFromFilter, dateToFilter],
   );
 
   const fetchExecutions = useCallback(async () => {
@@ -349,7 +359,11 @@ export function useExecutionHistory(
     setError(null);
 
     try {
-      const query = applyFiltersToQuery(workflowId, filters);
+      const query = applyFiltersToQuery(workflowId, {
+        status: statusFilter,
+        dateFrom: dateFromFilter,
+        dateTo: dateToFilter,
+      });
       const { data, error: queryError } = await query
         .order("started_at", { ascending: false })
         .order("id", { ascending: false })
@@ -389,7 +403,7 @@ export function useExecutionHistory(
         setLoading(false);
       }
     }
-  }, [workflowId, filters]);
+  }, [workflowId, statusFilter, dateFromFilter, dateToFilter]);
 
   const loadMore = useCallback(async () => {
     if (!workflowId || !hasMore || loadingMore) {
@@ -401,7 +415,11 @@ export function useExecutionHistory(
     setError(null);
 
     try {
-      const query = applyFiltersToQuery(workflowId, filters);
+      const query = applyFiltersToQuery(workflowId, {
+        status: statusFilter,
+        dateFrom: dateFromFilter,
+        dateTo: dateToFilter,
+      });
       const { data, error: queryError } = await query
         .order("started_at", { ascending: false })
         .order("id", { ascending: false })
@@ -437,7 +455,7 @@ export function useExecutionHistory(
         setLoadingMore(false);
       }
     }
-  }, [workflowId, hasMore, loadingMore, executions.length, filters]);
+  }, [workflowId, hasMore, loadingMore, executions.length, statusFilter, dateFromFilter, dateToFilter]);
 
   useEffect(() => {
     void fetchExecutions();

@@ -286,38 +286,12 @@ export function useExecutionHistory(
     (execution: ExecutionRun): NodeExecutionLog[] => {
       if (!execution.result) return [];
 
-      // Check if nodeExecutions exists in result
-      if (
-        execution.result.nodeExecutions &&
-        Array.isArray(execution.result.nodeExecutions)
-      ) {
-        return execution.result.nodeExecutions;
-      }
+      const executionOrder = execution.result.executionOrder;
 
-      // Enhanced fallback: extract from result object with better defaults
-      let resultData = execution.result.result as
-        | Record<string, ExecutionNodeResult>
-        | undefined;
-      let executionOrder = execution.result.executionOrder;
-
-      if (
-        !resultData &&
-        execution.result.data &&
-        typeof execution.result.data === "object"
-      ) {
-        const innerData = execution.result.data as Record<string, unknown>;
-        resultData = innerData.result as
-          | Record<string, ExecutionNodeResult>
-          | undefined;
-        executionOrder =
-          executionOrder || (innerData.executionOrder as string[] | undefined);
-      }
-
-      resultData = (resultData ?? execution.result) as Record<
+      const resultData = execution.result as Record<
         string,
         ExecutionNodeResult
       >;
-      executionOrder = executionOrder || Object.keys(resultData || {});
 
       if (typeof resultData !== "object" || resultData === null) {
         return [];
@@ -333,9 +307,9 @@ export function useExecutionHistory(
       const estimatedDurationPerNode = Math.round(totalDuration / nodeCount);
 
       return executionOrder
-        .filter((nodeId) => nodeId && typeof nodeId === "string")
+        .filter((nodeId) => resultData[nodeId])
         .map((nodeId, index) => {
-          const output = resultData[nodeId];
+          const output = resultData.nodeResults[nodeId];
           const outputData =
             output && typeof output === "object" && "data" in output
               ? (output as { data?: unknown }).data
@@ -351,57 +325,24 @@ export function useExecutionHistory(
 
           // Determine status based on execution result
           let status: "success" | "failed" | "skipped" = "success";
-          if (execution.status === "failed") {
+          if (outputData.status === "failed") {
             // If execution failed, mark the last node as failed
             status = index === executionOrder.length - 1 ? "failed" : "success";
           }
 
-          // If output is already normalized, respect its shape
-          if (
-            output &&
-            typeof output === "object" &&
-            "success" in output &&
-            "status" in output
-          ) {
-            const normalizedOutput = output as {
-              success: boolean;
-              status?: string;
-              data?: unknown;
-              error?: string;
-            };
-
-            const normalizedItemCount = Array.isArray(normalizedOutput.data)
-              ? normalizedOutput.data.length
-              : normalizedOutput.data !== null &&
-                  normalizedOutput.data !== undefined
-                ? 1
-                : 0;
-
-            return {
-              nodeId,
-              nodeName: nodeId,
-              startedAt: execution.started_at,
-              completedAt: execution.completed_at || execution.started_at,
-              durationMs: estimatedDurationPerNode,
-              status: normalizedOutput.success ? "success" : "failed",
-              input: inputData,
-              output: normalizedOutput,
-              itemCount: normalizedItemCount,
-              error: normalizedOutput.error,
-            };
-          }
-
-          const normalizedOutput = {
-            success: status === "success",
-            status: status === "success" ? "success" : "error",
-            data: outputData,
-            error: status === "failed" ? "Execution failed" : undefined,
-            meta: {
-              timestamp: execution.started_at,
-              nodeId,
-              nodeName: nodeId,
-            },
+          const normalizedOutput = output as {
+            success: boolean;
+            status?: string;
+            data?: unknown;
+            error?: string;
           };
+
+          const normalizedItemCount = Array.isArray(normalizedOutput.data)
+            ? normalizedOutput.data.length
+            : normalizedOutput.data !== null &&
+                normalizedOutput.data !== undefined
+              ? 1
+              : 0;
 
           return {
             nodeId,
@@ -409,15 +350,10 @@ export function useExecutionHistory(
             startedAt: execution.started_at,
             completedAt: execution.completed_at || execution.started_at,
             durationMs: estimatedDurationPerNode,
-            status,
+            status: normalizedOutput.success ? "success" : "failed",
             input: inputData,
             output: normalizedOutput,
-            itemCount: Array.isArray(normalizedOutput.data)
-              ? normalizedOutput.data.length
-              : normalizedOutput.data !== null &&
-                  normalizedOutput.data !== undefined
-                ? 1
-                : 0,
+            itemCount: normalizedItemCount,
             error: normalizedOutput.error,
           };
         });

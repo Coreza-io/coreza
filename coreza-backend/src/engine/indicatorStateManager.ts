@@ -20,6 +20,7 @@ export interface IndicatorState {
   lastBarTime: string;
   warmupCompleted: boolean;
   internalState: Record<string, any>;
+  lastWarmupTs?: number | null;
 }
 
 export function serializeParams(params: Record<string, any>): string {
@@ -147,6 +148,8 @@ export class IndicatorStateManager {
       lastBarTime: warmup.lastBarTime,
       warmupCompleted: true,
       internalState: warmup.internalState,
+      lastWarmupTs:
+        bars.length > 0 ? ((bars[bars.length - 1]?.t as number | undefined) ?? null) : null,
     };
 
     if (sync) {
@@ -161,6 +164,15 @@ export class IndicatorStateManager {
     const existing = await this.getState(key);
     if (!existing) {
       throw new Error(`Indicator state not found for key ${key}`);
+    }
+
+    const barTs = bar?.t;
+    if (typeof barTs === "number" && existing.lastWarmupTs != null) {
+      if (barTs <= existing.lastWarmupTs) {
+        return existing;
+      }
+
+      existing.lastWarmupTs = undefined;
     }
 
     const updater = this.getUpdater(existing.indicator, existing.params);
@@ -187,6 +199,15 @@ export class IndicatorStateManager {
     const existing = this.l1Cache.get(key);
     if (!existing) {
       throw new Error(`Indicator state not found for key ${key}`);
+    }
+
+    const barTs = bar?.t;
+    if (typeof barTs === "number" && existing.lastWarmupTs != null) {
+      if (barTs <= existing.lastWarmupTs) {
+        return existing;
+      }
+
+      existing.lastWarmupTs = undefined;
     }
 
     const updater = this.getUpdater(existing.indicator, existing.params);

@@ -6,14 +6,22 @@
  * (at your option) any later version.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const PAGE_SIZE = 20;
 const MAX_CACHED_EXECUTIONS = PAGE_SIZE * 2;
 
+export type ExecutionStatus =
+  | "all"
+  | "success"
+  | "failed"
+  | "running"
+  | "pending"
+  | "cancelled";
+
 export interface ExecutionFilters {
-  status?: "all" | "success" | "failed" | "running" | "pending" | "cancelled";
+  status?: ExecutionStatus;
   dateFrom?: Date | null;
   dateTo?: Date | null;
 }
@@ -33,6 +41,8 @@ export interface NodeExecutionLog {
 
 type ExecutionNodeResult =
   | {
+      success?: boolean;
+      status?: string;
       data?: unknown;
       error?: string;
       [key: string]: unknown;
@@ -59,10 +69,234 @@ export interface ExecutionRun {
   result: ExecutionResultPayload | null;
   initiated_by: string | null;
   // Workflow snapshot at execution time
-  nodes: any[] | null;
-  edges: any[] | null;
+  nodes: unknown[] | null;
+  edges: unknown[] | null;
   node_count: number | null;
   edge_count: number | null;
+}
+
+type NormalizedNodeResult = {
+  success: boolean;
+  status: "success" | "failed" | "skipped";
+  data?: unknown;
+  error?: string;
+  [key: string]: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toExclusiveDateTo(date: Date): Date {
+  const end = new Date(date);
+  end.setHours(0, 0, 0, 0);
+  end.setDate(end.getDate() + 1);
+  return end;
+}
+
+function matchesExecutionFilters(
+  execution: ExecutionRun,
+  filters: ExecutionFilters,
+): boolean {
+  if (
+    filters.status &&
+    filters.status !== "all" &&
+    execution.status !== filters.status
+  ) {
+    return false;
+  }
+
+  const startedAtMs = new Date(execution.started_at).getTime();
+
+  if (filters.dateFrom) {
+    const fromMs = filters.dateFrom.getTime();
+    if (startedAtMs < fromMs) {
+      return false;
+    }
+  }
+
+  if (filters.dateTo) {
+    const exclusiveEndMs = toExclusiveDateTo(filters.dateTo).getTime();
+    if (startedAtMs >= exclusiveEndMs) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function applyFiltersToQuery(
+  workflowId: string,
+  filters: ExecutionFilters,
+): ReturnType<typeof supabase.from> {
+  let query = supabase
+    .from("workflow_runs")
+    .select("*")
+    .eq("workflow_id", workflowId);
+
+  if (filters.status && filters.status !== "all") {
+    query = query.eq("status", filters.status);
+  }
+
+  if (filters.dateFrom) {
+    query = query.gte("started_at", filters.dateFrom.toISOString());
+  }
+
+  if (filters.dateTo) {
+    query = query.lt(
+      "started_at",
+      toExclusiveDateTo(filters.dateTo).toISOString(),
+    );
+  }
+
+  return query;
+}
+
+function dedupeById(executions: ExecutionRun[]): ExecutionRun[] {
+  const seen = new Set<string>();
+  const result: ExecutionRun[] = [];
+
+  for (const execution of executions) {
+    if (seen.has(execution.id)) {
+      continue;
+    }
+    seen.add(execution.id);
+    result.push(execution);
+  }
+
+  return result;
+}
+
+function upsertExecution(
+  current: ExecutionRun[],
+  next: ExecutionRun,
+  maxItems = MAX_CACHED_EXECUTIONS,
+): ExecutionRun[] {
+  const filtered = current.filter((item) => item.id !== next.id);
+  return [next, ...filtered].slice(0, maxItems);
+}
+
+function removeExecutionById(
+  current: ExecutionRun[],
+  executionId: string,
+): ExecutionRun[] {
+  return current.filter((item) => item.id !== executionId);
+}
+
+function normalizeNodeResult(
+  nodeResult: ExecutionNodeResult,
+): NormalizedNodeResult {
+  if (!isRecord(nodeResult)) {
+    return {
+      success: true,
+      status: "success",
+      data: nodeResult,
+    };
+  }
+
+  const explicitStatus =
+    nodeResult.status === "success" ||
+    nodeResult.status === "failed" ||
+    nodeResult.status === "skipped"
+      ? nodeResult.status
+      : undefined;
+
+  const explicitSuccess =
+    typeof nodeResult.success === "boolean" ? nodeResult.success : undefined;
+
+  const error =
+    typeof nodeResult.error === "string" ? nodeResult.error : undefined;
+
+  const success =
+    explicitSuccess ??
+    (explicitStatus
+      ? explicitStatus === "success" || explicitStatus === "skipped"
+      : !error);
+
+  return {
+    ...nodeResult,
+    success,
+    status: explicitStatus ?? (success ? "success" : "failed"),
+    error,
+  };
+}
+
+function getItemCount(data: unknown): number {
+  if (Array.isArray(data)) {
+    return data.length;
+  }
+
+  if (data === null || data === undefined) {
+    return 0;
+  }
+
+  return 1;
+}
+
+function getFallbackNodeExecutions(
+  execution: ExecutionRun,
+): NodeExecutionLog[] {
+  const payload = execution.result;
+  if (!payload) {
+    return [];
+  }
+
+  const executionOrder = Array.isArray(payload.executionOrder)
+    ? payload.executionOrder.filter(
+        (nodeId): nodeId is string =>
+          typeof nodeId === "string" && nodeId.length > 0,
+      )
+    : [];
+
+  const nodeResults = isRecord(payload.result)
+    ? (payload.result as Record<string, ExecutionNodeResult>)
+    : {};
+
+  if (executionOrder.length === 0 || Object.keys(nodeResults).length === 0) {
+    return [];
+  }
+
+  const totalDurationMs =
+    execution.completed_at && execution.started_at
+      ? Math.max(
+          0,
+          new Date(execution.completed_at).getTime() -
+            new Date(execution.started_at).getTime(),
+        )
+      : 0;
+
+  const estimatedDurationMs =
+    executionOrder.length > 0
+      ? Math.round(totalDurationMs / executionOrder.length)
+      : 0;
+
+  const nodeExecutions: NodeExecutionLog[] = [];
+
+  for (const nodeId of executionOrder) {
+    const rawOutput = nodeResults[nodeId];
+    if (rawOutput === undefined) {
+      continue;
+    }
+
+    const output = normalizeNodeResult(rawOutput);
+
+    nodeExecutions.push({
+      nodeId,
+      nodeName: nodeId,
+      startedAt: execution.started_at,
+      completedAt: execution.completed_at ?? execution.started_at,
+      durationMs: estimatedDurationMs,
+      status: output.status,
+      // We intentionally do NOT reconstruct input from "previous node output".
+      // Coreza workflows are DAGs, so that assumption is incorrect.
+      input: null,
+      output,
+      itemCount: getItemCount(output.data),
+      error: output.error,
+    });
+  }
+
+  return nodeExecutions;
 }
 
 export function useExecutionHistory(
@@ -78,139 +312,141 @@ export function useExecutionHistory(
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isMountedRef = useRef(true);
+  const fetchRequestIdRef = useRef(0);
+  const loadMoreRequestIdRef = useRef(0);
+  const selectedExecutionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedExecutionIdRef.current = selectedExecution?.id ?? null;
+  }, [selectedExecution]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const matchesFilters = useCallback(
-    (execution: ExecutionRun) => {
-      if (
-        filters.status &&
-        filters.status !== "all" &&
-        execution.status !== filters.status
-      ) {
-        return false;
-      }
-
-      if (filters.dateFrom) {
-        const startDate = new Date(execution.started_at);
-        if (startDate < filters.dateFrom) return false;
-      }
-
-      if (filters.dateTo) {
-        const endDate = new Date(filters.dateTo);
-        endDate.setDate(endDate.getDate() + 1);
-        const startDate = new Date(execution.started_at);
-        if (startDate >= endDate) return false;
-      }
-
-      return true;
-    },
-    [filters.dateFrom, filters.dateTo, filters.status],
+    (execution: ExecutionRun) => matchesExecutionFilters(execution, filters),
+    [filters],
   );
 
   const fetchExecutions = useCallback(async () => {
-    if (!workflowId) return;
+    if (!workflowId) {
+      if (isMountedRef.current) {
+        setExecutions([]);
+        setHasMore(false);
+        setSelectedExecution(null);
+        setError(null);
+      }
+      return;
+    }
+
+    const requestId = ++fetchRequestIdRef.current;
 
     setLoading(true);
     setError(null);
+
     try {
-      let query = supabase
-        .from("workflow_runs")
-        .select("*")
-        .eq("workflow_id", workflowId);
-
-      if (filters.status && filters.status !== "all") {
-        query = query.eq("status", filters.status);
-      }
-
-      if (filters.dateFrom) {
-        query = query.gte("started_at", filters.dateFrom.toISOString());
-      }
-
-      if (filters.dateTo) {
-        const endDate = new Date(filters.dateTo);
-        endDate.setDate(endDate.getDate() + 1);
-        query = query.lt("started_at", endDate.toISOString());
-      }
-
-      const { data, error } = await query
+      const query = applyFiltersToQuery(workflowId, filters);
+      const { data, error: queryError } = await query
         .order("started_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(PAGE_SIZE);
 
-      if (error) throw error;
-      const results = (data as ExecutionRun[]) || [];
+      if (queryError) {
+        throw queryError;
+      }
+
+      if (!isMountedRef.current || requestId !== fetchRequestIdRef.current) {
+        return;
+      }
+
+      const results = dedupeById((data as ExecutionRun[]) ?? []);
       setExecutions(results);
       setHasMore(results.length === PAGE_SIZE);
+
+      setSelectedExecution((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return results.find((item) => item.id === prev.id) ?? null;
+      });
+
       setError(null);
-    } catch (error) {
-      console.error("Failed to fetch executions:", error);
+    } catch (err) {
+      if (!isMountedRef.current || requestId !== fetchRequestIdRef.current) {
+        return;
+      }
+
+      console.error("Failed to fetch executions:", err);
       setError(
-        error instanceof Error ? error.message : "Failed to fetch executions",
+        err instanceof Error ? err.message : "Failed to fetch executions",
       );
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && requestId === fetchRequestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [workflowId, filters.status, filters.dateFrom, filters.dateTo]);
+  }, [workflowId, filters]);
 
   const loadMore = useCallback(async () => {
-    if (!workflowId || !hasMore || loadingMore) return;
+    if (!workflowId || !hasMore || loadingMore) {
+      return;
+    }
 
+    const requestId = ++loadMoreRequestIdRef.current;
     setLoadingMore(true);
+    setError(null);
+
     try {
-      let query = supabase
-        .from("workflow_runs")
-        .select("*")
-        .eq("workflow_id", workflowId);
-
-      if (filters.status && filters.status !== "all") {
-        query = query.eq("status", filters.status);
-      }
-
-      if (filters.dateFrom) {
-        query = query.gte("started_at", filters.dateFrom.toISOString());
-      }
-
-      if (filters.dateTo) {
-        const endDate = new Date(filters.dateTo);
-        endDate.setDate(endDate.getDate() + 1);
-        query = query.lt("started_at", endDate.toISOString());
-      }
-
-      const { data, error } = await query
+      const query = applyFiltersToQuery(workflowId, filters);
+      const { data, error: queryError } = await query
         .order("started_at", { ascending: false })
+        .order("id", { ascending: false })
         .range(executions.length, executions.length + PAGE_SIZE - 1);
 
-      if (error) throw error;
+      if (queryError) {
+        throw queryError;
+      }
 
-      const newData = (data as ExecutionRun[]) || [];
-      setExecutions((prev) => [...prev, ...newData]);
-      setHasMore(newData.length === PAGE_SIZE);
-      setError(null);
-    } catch (error) {
-      console.error("Failed to load more executions:", error);
+      if (!isMountedRef.current || requestId !== loadMoreRequestIdRef.current) {
+        return;
+      }
+
+      const nextPage = (data as ExecutionRun[]) ?? [];
+
+      setExecutions((prev) => {
+        const merged = dedupeById([...prev, ...nextPage]);
+        return merged;
+      });
+
+      setHasMore(nextPage.length === PAGE_SIZE);
+    } catch (err) {
+      if (!isMountedRef.current || requestId !== loadMoreRequestIdRef.current) {
+        return;
+      }
+
+      console.error("Failed to load more executions:", err);
       setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to load more executions",
+        err instanceof Error ? err.message : "Failed to load more executions",
       );
     } finally {
-      setLoadingMore(false);
+      if (isMountedRef.current && requestId === loadMoreRequestIdRef.current) {
+        setLoadingMore(false);
+      }
     }
-  }, [
-    workflowId,
-    hasMore,
-    loadingMore,
-    executions.length,
-    filters.status,
-    filters.dateFrom,
-    filters.dateTo,
-  ]);
+  }, [workflowId, hasMore, loadingMore, executions.length, filters]);
 
-  // Initial fetch
   useEffect(() => {
-    fetchExecutions();
+    void fetchExecutions();
   }, [fetchExecutions]);
 
-  // Real-time subscription
   useEffect(() => {
-    if (!workflowId) return;
+    if (!workflowId) {
+      return;
+    }
 
     const channel = supabase
       .channel(`workflow-runs-${workflowId}`)
@@ -223,150 +459,97 @@ export function useExecutionHistory(
           filter: `workflow_id=eq.${workflowId}`,
         },
         (payload) => {
-          const execution = payload.new as ExecutionRun;
-
-          if (payload.eventType === "INSERT") {
-            if (!matchesFilters(execution)) return;
-
-            setExecutions((prev) =>
-              [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS),
+          if (payload.eventType === "DELETE") {
+            const deletedId = String(
+              (payload.old as { id?: string } | null)?.id ?? "",
             );
-          } else if (payload.eventType === "UPDATE") {
-            if (!matchesFilters(execution)) {
-              setExecutions((prev) =>
-                prev.filter((exec) => exec.id !== execution.id),
-              );
-              if (selectedExecution?.id === execution.id) {
-                setSelectedExecution(null);
-              }
+            if (!deletedId) {
               return;
             }
 
-            setExecutions((prev) => {
-              const exists = prev.some((exec) => exec.id === execution.id);
-              if (exists) {
-                return prev.map((exec) =>
-                  exec.id === execution.id ? execution : exec,
-                );
-              }
-              return [execution, ...prev].slice(0, MAX_CACHED_EXECUTIONS);
-            });
-            // Update selected execution if it's the one being updated
-            if (selectedExecution?.id === payload.new.id) {
-              setSelectedExecution(payload.new as ExecutionRun);
+            setExecutions((prev) => removeExecutionById(prev, deletedId));
+
+            if (selectedExecutionIdRef.current === deletedId) {
+              setSelectedExecution(null);
             }
+            return;
+          }
+
+          const execution = payload.new as ExecutionRun | null;
+          if (!execution) {
+            return;
+          }
+
+          if (!matchesFilters(execution)) {
+            setExecutions((prev) => removeExecutionById(prev, execution.id));
+
+            if (selectedExecutionIdRef.current === execution.id) {
+              setSelectedExecution(null);
+            }
+            return;
+          }
+
+          setExecutions((prev) => upsertExecution(prev, execution));
+
+          if (selectedExecutionIdRef.current === execution.id) {
+            setSelectedExecution(execution);
           }
         },
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [workflowId, selectedExecution?.id, matchesFilters]);
+  }, [workflowId, matchesFilters]);
 
-  // Auto-refresh interval
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !workflowId) {
+      return;
+    }
 
-    const interval = setInterval(fetchExecutions, 5000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchExecutions]);
+    const interval = window.setInterval(() => {
+      void fetchExecutions();
+    }, 5000);
 
-  const getDuration = useCallback((execution: ExecutionRun): string => {
-    if (!execution.completed_at || !execution.started_at) return "—";
-    const start = new Date(execution.started_at).getTime();
-    const end = new Date(execution.completed_at).getTime();
-    const ms = end - start;
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  }, []);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [autoRefresh, workflowId, fetchExecutions]);
 
-  const getNodeExecutions = useCallback(
-    (execution: ExecutionRun): NodeExecutionLog[] => {
-      if (!execution.result) return [];
-
-      const executionOrder = execution.result.executionOrder;
-
-      const resultData = execution.result as Record<
-        string,
-        ExecutionNodeResult
-      >;
-
-      if (typeof resultData !== "object" || resultData === null) {
-        return [];
-      }
-
-      // Calculate total duration for distribution
-      const totalDuration =
-        execution.completed_at && execution.started_at
-          ? new Date(execution.completed_at).getTime() -
-            new Date(execution.started_at).getTime()
-          : 0;
-      const nodeCount = executionOrder.length || 1;
-      const estimatedDurationPerNode = Math.round(totalDuration / nodeCount);
-
-      return executionOrder
-        .filter((nodeId) => resultData[nodeId])
-        .map((nodeId, index) => {
-          const output = resultData.nodeResults[nodeId];
-          const outputData =
-            output && typeof output === "object" && "data" in output
-              ? (output as { data?: unknown }).data
-              : output;
-
-          // Derive input from previous node's output
-          const prevNodeId = index > 0 ? executionOrder[index - 1] : null;
-          const prevOutput = prevNodeId ? resultData[prevNodeId] : null;
-          const inputData =
-            prevOutput && typeof prevOutput === "object" && "data" in prevOutput
-              ? (prevOutput as { data?: unknown }).data
-              : (prevOutput ?? {});
-
-          // Determine status based on execution result
-          let status: "success" | "failed" | "skipped" = "success";
-          if (outputData.status === "failed") {
-            // If execution failed, mark the last node as failed
-            status = index === executionOrder.length - 1 ? "failed" : "success";
-          }
-
-          const normalizedOutput = output as {
-            success: boolean;
-            status?: string;
-            data?: unknown;
-            error?: string;
-          };
-
-          const normalizedItemCount = Array.isArray(normalizedOutput.data)
-            ? normalizedOutput.data.length
-            : normalizedOutput.data !== null &&
-                normalizedOutput.data !== undefined
-              ? 1
-              : 0;
-
-          return {
-            nodeId,
-            nodeName: nodeId,
-            startedAt: execution.started_at,
-            completedAt: execution.completed_at || execution.started_at,
-            durationMs: estimatedDurationPerNode,
-            status: normalizedOutput.success ? "success" : "failed",
-            input: inputData,
-            output: normalizedOutput,
-            itemCount: normalizedItemCount,
-            error: normalizedOutput.error,
-          };
-        });
-    },
-    [],
-  );
-
-  // Clear selection when filters change and current selection no longer matches
   useEffect(() => {
     if (selectedExecution && !matchesFilters(selectedExecution)) {
       setSelectedExecution(null);
     }
-  }, [matchesFilters, selectedExecution]);
+  }, [selectedExecution, matchesFilters]);
+
+  const getDuration = useCallback((execution: ExecutionRun): string => {
+    if (!execution.completed_at || !execution.started_at) {
+      return "—";
+    }
+
+    const start = new Date(execution.started_at).getTime();
+    const end = new Date(execution.completed_at).getTime();
+    const durationMs = Math.max(0, end - start);
+
+    if (durationMs < 1000) {
+      return `${durationMs}ms`;
+    }
+
+    return `${(durationMs / 1000).toFixed(1)}s`;
+  }, []);
+
+  const getNodeExecutions = useCallback(
+    (execution: ExecutionRun): NodeExecutionLog[] => {
+      const nodeExecutions = execution.result?.nodeExecutions;
+      if (Array.isArray(nodeExecutions) && nodeExecutions.length > 0) {
+        return nodeExecutions;
+      }
+
+      return getFallbackNodeExecutions(execution);
+    },
+    [],
+  );
 
   return {
     executions,

@@ -234,6 +234,8 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             onEdgesChange(updatedEdges);
           }}
           onConnect={handleConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
           onDrop={onDrop}
           onDragOver={onDragOver}
           onMouseMove={onMouseMove}

@@ -1,73 +1,89 @@
 
 
-# Fix: Hide Source Handle's Male Plug Icon During Connection Drag
+# Updated Plan: Live Strategies — Reuse Backtest Components
 
-## Problem
+## Approach
 
-When dragging a connection from a source handle, two male plug icons are visible:
-1. The original male icon rendered on the source handle (in `NodeWrapper`)
-2. The temporary dragging male icon rendered by `PlugConnectionLine`
+Instead of creating separate pages/components for Live, reuse the existing `Backtests.tsx`, `BacktestResults.tsx`, and all backtest components (`EquityCurveChart`, `TradesTable`, `PerformanceMetricsCard`). The only difference is the data source — live strategies pull from `workflows`, `live_fills`, `cash_snapshots`, and `position_snapshots` instead of `backtests` tables.
 
-This creates a visual duplicate.
+The key insight: create hooks that return data in the **same shape** as `useBacktests` and `useBacktestResults`, then pass a `mode` prop (or use route context) to switch data sources.
 
-## Solution
+## Architecture
 
-Use React Flow's `onConnectStart` / `onConnectEnd` callbacks to track which handle is currently being dragged from. Pass this state to `NodeWrapper` via a React context, and hide the male plug icon on that specific handle during the drag.
+```text
+Existing (keep as-is):
+  src/pages/Backtests.tsx           → rename to StrategiesList (or add mode prop)
+  src/pages/BacktestResults.tsx     → add mode prop
+  src/components/backtest/*         → reused directly (no changes)
+
+New:
+  src/hooks/useLiveStrategies.ts    → returns same shape as useBacktests
+  src/hooks/useLiveStrategyDetail.ts → returns same shape as useBacktestResults
+```
 
 ## Changes
 
-### 1. Create a connection-drag context
+### 1. New Hook: `src/hooks/useLiveStrategies.ts`
 
-**New file: `src/contexts/ConnectionDragContext.tsx`**
+Returns the same `Backtest[]` interface shape from `useBacktests`:
+- Query `workflows` where `is_active = true` and nodes contain a Portfolio node with `mode: "broker"`
+- Map to: `{ id, name, workflow_id, workflow_name, status, total_return, sharpe_ratio, total_trades, created_at }`
+- Status mapping: `is_active=true` → "running", otherwise "completed"
+- For metrics: fetch latest `workflow_runs` result to extract portfolio data
+- Subscribe to realtime changes on `workflows`
+- Returns: `{ backtests, loading, stats, refetch }` — same return shape
 
-A small context that holds `{ nodeId, handleId, handleType }` for the currently dragging connection, or `null` when idle.
+### 2. New Hook: `src/hooks/useLiveStrategyDetail.ts`
+
+Returns the same shape as `useBacktestResults`:
+- `backtest` → workflow metadata mapped to `BacktestWithRelations` shape
+- `metrics` → computed from latest `workflow_runs` result's portfolio data, mapped to `BacktestResultMetrics`
+- `trades` → `live_fills` mapped to `BacktestTrade[]` shape (symbol, action=side, quantity=qty, exitPrice=price, exitTime=event_time, etc.)
+- `snapshots` → `cash_snapshots` mapped to `PortfolioSnapshot[]` shape (date=snapshot_at, total_value=total_value_usdt, cash_balance from balances)
+- Subscribe to realtime on `live_fills` and `cash_snapshots` for live updates
+- Returns: `{ backtest, metrics, trades, snapshots, loading, error, refetch }` — identical return shape
+
+### 3. Update `src/pages/Backtests.tsx`
+
+Add a `mode` prop: `"backtest" | "live"` (default `"backtest"`):
+- When `mode="live"`, use `useLiveStrategies()` instead of `useBacktests()`
+- Change page title to "Live Strategies"
+- Hide "New Backtest" button in live mode
+- Row click navigates to `/dashboard/live/:id` instead of `/dashboard/backtests/:id`
+- Everything else (table columns, filtering, stats cards) stays identical
+
+### 4. Update `src/pages/BacktestResults.tsx`
+
+Add a `mode` prop: `"backtest" | "live"` (default `"backtest"`):
+- When `mode="live"`, use `useLiveStrategyDetail(id)` instead of `useBacktestResults(id)`
+- Back button links to `/dashboard/live` instead of `/dashboard/backtests`
+- All existing components (`EquityCurveChart`, `PerformanceMetricsCard`, `TradesTable`) receive the same data shapes — no changes needed
+
+### 5. Add Routes: `src/pages/Interface.tsx`
 
 ```typescript
-export interface DragSource {
-  nodeId: string | null;
-  handleId: string | null;
-  handleType: string | null;
-}
-
-export const ConnectionDragContext = createContext<DragSource>({
-  nodeId: null, handleId: null, handleType: null,
-});
+<Route path="live" element={<Backtests mode="live" />} />
+<Route path="live/:id" element={<BacktestResults mode="live" />} />
 ```
 
-### 2. Add `onConnectStart` / `onConnectEnd` to ReactFlow instances
+### 6. Add Sidebar Nav: `src/components/layout/AppSidebar.tsx`
 
-**Files: `src/pages/WorkflowEditor.tsx` and `src/components/workflow/WorkflowCanvas.tsx`**
+Add "Live" menu item with `Activity` icon, pointing to `/dashboard/live`.
 
-- Add `useState` for `dragSource`
-- Pass `onConnectStart` callback that sets `{ nodeId, handleId, handleType }` from the params
-- Pass `onConnectEnd` callback that resets to `null`
-- Wrap the `<ReactFlow>` with `<ConnectionDragContext.Provider value={dragSource}>`
+## No Changes Needed
 
-### 3. Consume context in NodeWrapper to hide the male icon
-
-**File: `src/utils/NodeWrapper.tsx`**
-
-- Import and `useContext(ConnectionDragContext)`
-- In the handle rendering loop (around line 377-381), add a check:
-
-```typescript
-const isDraggingFromThis =
-  dragSource.handleType === "source" &&
-  dragSource.nodeId === nodeId &&
-  dragSource.handleId === h.id;
-
-// For output handles: hide if connected OR if currently dragging from this handle
-handleIcon = (isConnected || isDraggingFromThis) ? null : (
-  <MalePlugIcon size={20} style={iconStyle} />
-);
-```
+- `EquityCurveChart.tsx` — accepts `PortfolioSnapshot[]`, reused as-is
+- `TradesTable.tsx` — accepts `BacktestTrade[]`, reused as-is
+- `PerformanceMetricsCard.tsx` — accepts `BacktestResultMetrics`, reused as-is
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `src/contexts/ConnectionDragContext.tsx` | New context for tracking active connection drag source |
-| `src/pages/WorkflowEditor.tsx` | Add `onConnectStart`/`onConnectEnd`, wrap ReactFlow with provider |
-| `src/components/workflow/WorkflowCanvas.tsx` | Same — add drag state and provider |
-| `src/utils/NodeWrapper.tsx` | Consume context, hide male icon on the dragging handle |
+| `src/hooks/useLiveStrategies.ts` | New — returns `useBacktests`-compatible shape from live workflow data |
+| `src/hooks/useLiveStrategyDetail.ts` | New — returns `useBacktestResults`-compatible shape from live fills/snapshots |
+| `src/pages/Backtests.tsx` | Add `mode` prop to switch between backtest/live data source |
+| `src/pages/BacktestResults.tsx` | Add `mode` prop to switch between backtest/live data source |
+| `src/pages/Interface.tsx` | Add `/live` and `/live/:id` routes |
+| `src/components/layout/AppSidebar.tsx` | Add "Live" nav item |
 

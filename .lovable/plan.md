@@ -1,79 +1,73 @@
 
 
-# Fix: Skip Trigger Node Re-Execution in WorkflowRunner
+# Fix: Hide Source Handle's Male Plug Icon During Connection Drag
 
 ## Problem
 
-`WorkflowRunner.processMessage()` calls `engine.execute({ data: envelope.data })` which enqueues all entry/trigger nodes (like `OnBar`) for full execution. But the trigger already fired — the stream data IS the trigger's output. Re-executing it causes the executor to run registration logic again, producing "Waiting for market data" instead of passing through the actual bar data.
+When dragging a connection from a source handle, two male plug icons are visible:
+1. The original male icon rendered on the source handle (in `NodeWrapper`)
+2. The temporary dragging male icon rendered by `PlugConnectionLine`
+
+This creates a visual duplicate.
 
 ## Solution
 
-Instead of `engine.execute()`, use the engine's existing `preloadResults` + `executeFromEntries` pattern:
-
-1. **Preload** the trigger node's result with the stream data (so downstream nodes can reference it via `$('OnBar').json`)
-2. **Start execution from downstream nodes** of the trigger, skipping the trigger executor entirely
-
-The engine already supports this — `WorkflowRun.preloadResults()` sets node results without executing, and `executeFromEntries()` starts from specific nodes with primed edge payloads.
+Use React Flow's `onConnectStart` / `onConnectEnd` callbacks to track which handle is currently being dragged from. Pass this state to `NodeWrapper` via a React context, and hide the male plug icon on that specific handle during the drag.
 
 ## Changes
 
-### File: `coreza-backend/src/services/WorkflowRunner.ts`
+### 1. Create a connection-drag context
 
-**Constructor** — cache entry node IDs and their downstream targets at build time:
+**New file: `src/contexts/ConnectionDragContext.tsx`**
+
+A small context that holds `{ nodeId, handleId, handleType }` for the currently dragging connection, or `null` when idle.
 
 ```typescript
-private readonly triggerNodeIds: string[];
-private readonly downstreamEntryIds: string[];
+export interface DragSource {
+  nodeId: string | null;
+  handleId: string | null;
+  handleType: string | null;
+}
 
-// In constructor, after engine creation:
-const plan = this.engine.plan; // or access via graph
-this.triggerNodeIds = plan.entryNodeIds as string[];
-this.downstreamEntryIds = this.triggerNodeIds
-  .flatMap(id => plan.graph.getOutgoingEdges(id).map(e => e.target));
+export const ConnectionDragContext = createContext<DragSource>({
+  nodeId: null, handleId: null, handleType: null,
+});
 ```
 
-**`processMessage()`** — replace `engine.execute()` with preload + downstream execution:
+### 2. Add `onConnectStart` / `onConnectEnd` to ReactFlow instances
+
+**Files: `src/pages/WorkflowEditor.tsx` and `src/components/workflow/WorkflowCanvas.tsx`**
+
+- Add `useState` for `dragSource`
+- Pass `onConnectStart` callback that sets `{ nodeId, handleId, handleType }` from the params
+- Pass `onConnectEnd` callback that resets to `null`
+- Wrap the `<ReactFlow>` with `<ConnectionDragContext.Provider value={dragSource}>`
+
+### 3. Consume context in NodeWrapper to hide the male icon
+
+**File: `src/utils/NodeWrapper.tsx`**
+
+- Import and `useContext(ConnectionDragContext)`
+- In the handle rendering loop (around line 377-381), add a check:
 
 ```typescript
-// Phase 4: Execute workflow — skip trigger, start from downstream
-this.engine.resetForNextBar(true);
+const isDraggingFromThis =
+  dragSource.handleType === "source" &&
+  dragSource.nodeId === nodeId &&
+  dragSource.handleId === h.id;
 
-// Build trigger output from the stream envelope
-const triggerOutput = { success: true, data: envelope.data };
-
-// Preload trigger results so downstream nodes can reference them
-const preload: Record<string, any> = {};
-for (const triggerId of this.triggerNodeIds) {
-  preload[triggerId] = triggerOutput;
-}
-this.engine.run.preloadResults(preload);
-
-// Execute from downstream nodes only (skip trigger executors)
-const executionResult = await this.engine.executeFromEntries(
-  { data: envelope.data },
-  this.downstreamEntryIds,
+// For output handles: hide if connected OR if currently dragging from this handle
+handleIcon = (isConnected || isDraggingFromThis) ? null : (
+  <MalePlugIcon size={20} style={iconStyle} />
 );
 ```
-
-**Expose `plan` and `run`** — `WorkflowEngine` already exposes `run` but `plan` may need a getter. Check and add if needed:
-
-```typescript
-// In WorkflowEngine class, if not already present:
-get plan(): WorkflowPlan { return this._plan; }
-```
-
-## Why This Is Correct
-
-- `preloadResults` stores the trigger output in `NodeStoreV2` — any downstream node referencing `$('OnBar').json.data` gets the real bar data
-- `executeFromEntries` calls `primeEntry()` on each downstream node (marks incoming edges as satisfied) then enqueues them
-- The trigger node never runs its executor, so no "waiting for market data" message
-- `executionOrder` will contain only the actually-executed nodes (no trigger re-entry)
-- This matches the backtest pattern where `BacktestInit` outputs are pinned and bars execute from `OnBar` downstream
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `coreza-backend/src/services/WorkflowRunner.ts` | Cache trigger/downstream IDs in constructor; replace `engine.execute()` with `preloadResults` + `executeFromEntries` |
-| `coreza-backend/src/engine/workflowEngine.ts` | Add `plan` getter if not already exposed |
+| `src/contexts/ConnectionDragContext.tsx` | New context for tracking active connection drag source |
+| `src/pages/WorkflowEditor.tsx` | Add `onConnectStart`/`onConnectEnd`, wrap ReactFlow with provider |
+| `src/components/workflow/WorkflowCanvas.tsx` | Same — add drag state and provider |
+| `src/utils/NodeWrapper.tsx` | Consume context, hide male icon on the dragging handle |
 

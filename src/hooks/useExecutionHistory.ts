@@ -51,8 +51,7 @@ type ExecutionNodeResult =
 
 export interface ExecutionResultPayload {
   success?: boolean;
-  result?: Record<string, ExecutionNodeResult>;
-  nodeExecutions?: NodeExecutionLog[];
+  nodeResults?: Record<string, ExecutionNodeResult>;
   executionOrder?: string[];
   error?: string | { code?: string; phase?: string; message?: string };
   data?: Record<string, unknown>;

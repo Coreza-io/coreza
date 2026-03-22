@@ -38,7 +38,10 @@ type ExecutionContextExtras = Partial<
 export abstract class BaseExecutionRuntime {
   protected readonly queue = new NodeQueueManager();
   protected readonly nodeExecutorMap = new Map<string, INodeExecutor>();
-  protected readonly nodeTiming = new Map<string, { totalMs: number; count: number }>();
+  protected readonly nodeTiming = new Map<
+    string,
+    { totalMs: number; count: number }
+  >();
   protected readonly failed = new Set<string>();
   protected readonly failedNodeErrors = new Map<string, string>();
   protected readonly executionOrder: string[] = [];
@@ -92,15 +95,24 @@ export abstract class BaseExecutionRuntime {
   getFailureMessage(): string | undefined {
     const firstFailedNodeId = Array.from(this.failed)[0];
     if (!firstFailedNodeId) return undefined;
-    return this.failedNodeErrors.get(firstFailedNodeId) || "Workflow completed with failures";
+    return (
+      this.failedNodeErrors.get(firstFailedNodeId) ||
+      "Workflow completed with failures"
+    );
   }
 
   clearNodeTiming(): void {
     this.nodeTiming.clear();
   }
 
-  getNodeTiming(): Record<string, { avgMs: number; totalMs: number; count: number }> {
-    const result: Record<string, { avgMs: number; totalMs: number; count: number }> = {};
+  getNodeTiming(): Record<
+    string,
+    { avgMs: number; totalMs: number; count: number }
+  > {
+    const result: Record<
+      string,
+      { avgMs: number; totalMs: number; count: number }
+    > = {};
     for (const [id, timing] of this.nodeTiming) {
       result[id] = {
         avgMs: +(timing.totalMs / timing.count).toFixed(3),
@@ -123,7 +135,11 @@ export abstract class BaseExecutionRuntime {
         edges: this.options.edges,
         resolvedParams: {},
         resolveNodeParameters: (node: WorkflowNode, input: any) => {
-          const resolved = this.resolver.resolve(node, input, () => this.store.getAllResults() ?? {});
+          const resolved = this.resolver.resolve(
+            node,
+            input,
+            () => this.store.getAllResults() ?? {},
+          );
           ctx.resolvedParams = resolved;
           return resolved;
         },
@@ -134,7 +150,8 @@ export abstract class BaseExecutionRuntime {
         checkCancellation: () => this.options.abortSignal?.aborted ?? false,
         isBacktest: this.options.isBacktest,
         getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
-        setState: (key: string, value: any) => this.store.setNodeState(ctx.nodeId, key, value),
+        setState: (key: string, value: any) =>
+          this.store.setNodeState(ctx.nodeId, key, value),
       };
       this.execCtx = ctx;
     }
@@ -161,12 +178,17 @@ export abstract class BaseExecutionRuntime {
     return { data: raw?.data ?? raw };
   }
 
-  protected routeLoop(nodeId: string, result: NodeResult, meta?: IterMeta): void {
+  protected routeLoop(
+    nodeId: string,
+    result: NodeResult,
+    meta?: IterMeta,
+  ): void {
     if (!result || typeof result !== "object") return;
     if (result.control?.parallelDistributed) return;
 
     if (result.control?.loopCompleted) {
-      for (const edge of this.graph.doneEdges(nodeId)) this.routeEdge(edge, result, meta);
+      for (const edge of this.graph.doneEdges(nodeId))
+        this.routeEdge(edge, result, meta);
       return;
     }
 
@@ -181,12 +203,22 @@ export abstract class BaseExecutionRuntime {
     }
   }
 
-  protected routeConditional(node: WorkflowNode, result: NodeResult, meta?: IterMeta): void {
-    for (const edge of this.graph.selectEdges(node, result)) this.routeEdge(edge, result, meta);
+  protected routeConditional(
+    node: WorkflowNode,
+    result: NodeResult,
+    meta?: IterMeta,
+  ): void {
+    for (const edge of this.graph.selectEdges(node, result))
+      this.routeEdge(edge, result, meta);
   }
 
-  protected routeStandard(node: WorkflowNode, result: NodeResult, meta?: IterMeta): void {
-    for (const edge of this.graph.getOutgoingEdges(node.id)) this.routeEdge(edge, result, meta);
+  protected routeStandard(
+    node: WorkflowNode,
+    result: NodeResult,
+    meta?: IterMeta,
+  ): void {
+    for (const edge of this.graph.getOutgoingEdges(node.id))
+      this.routeEdge(edge, result, meta);
   }
 
   protected handleError(nodeId: string, error: unknown): void {
@@ -203,12 +235,16 @@ export abstract class BaseExecutionRuntime {
     if (!node) return;
 
     try {
-      if (this.options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
+      if (this.options.abortSignal?.aborted)
+        throw new Error("Workflow cancelled by user");
 
       const category = resolveCategory(node);
-      const executor = this.nodeExecutorMap.get(node.id) ?? getNodeExecutor(category);
+      const executor =
+        this.nodeExecutorMap.get(node.id) ?? getNodeExecutor(category);
       if (!executor) {
-        throw new Error(`Unsupported node category: ${category} for node type: ${node.name}`);
+        throw new Error(
+          `Unsupported node category: ${category} for node type: ${node.name}`,
+        );
       }
 
       const context = this.getExecutionContext(node.id);
@@ -217,11 +253,23 @@ export abstract class BaseExecutionRuntime {
 
       if (raw instanceof Promise) {
         return raw
-          .then((result) => this.routeNodeResult(node, this.normalizeResult(result, category), t0, item.meta))
+          .then((result) =>
+            this.routeNodeResult(
+              node,
+              this.normalizeResult(result, category),
+              t0,
+              item.meta,
+            ),
+          )
           .catch((error) => this.handleError(node.id, error));
       }
 
-      this.routeNodeResult(node, this.normalizeResult(raw, category), t0, item.meta);
+      this.routeNodeResult(
+        node,
+        this.normalizeResult(raw, category),
+        t0,
+        item.meta,
+      );
     } catch (error) {
       this.handleError(node.id, error);
     }
@@ -298,15 +346,22 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
     this.edgePayload.set(edge.id, payload);
 
     const targetNode = this.graph.nodeById.get(edge.target);
-    const skipDependencyCheck = Boolean((targetNode as any)?.values?.checkDependency);
-    if (!skipDependencyCheck && !this.areDependenciesSatisfied(edge.target)) return;
+    const skipDependencyCheck = Boolean(
+      (targetNode as any)?.values?.checkDependency,
+    );
+    if (!skipDependencyCheck && !this.areDependenciesSatisfied(edge.target))
+      return;
 
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
   areDependenciesSatisfied(nodeId: string): boolean {
-    const required = this.graph.getIncomingEdges(nodeId).filter((e) => !this.graph.isSubNode(e.source));
-    return required.length > 0 && required.every((e) => this.edgePayload.has(e.id));
+    const required = this.graph
+      .getIncomingEdges(nodeId)
+      .filter((e) => !this.graph.isSubNode(e.source));
+    return (
+      required.length > 0 && required.every((e) => this.edgePayload.has(e.id))
+    );
   }
 
   override executeOnce(item: QueueItem): void | Promise<void> {
@@ -315,17 +370,20 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
       // Cleanup runs after async executor completion. Queue processing is sequential,
       // so downstream dependency checks cannot observe stale payloads mid-execution.
       return out.finally(() => {
-        for (const e of this.graph.getIncomingEdges(item.nodeId)) this.edgePayload.delete(e.id);
+        for (const e of this.graph.getIncomingEdges(item.nodeId))
+          this.edgePayload.delete(e.id);
       });
     }
 
-    for (const e of this.graph.getIncomingEdges(item.nodeId)) this.edgePayload.delete(e.id);
+    for (const e of this.graph.getIncomingEdges(item.nodeId))
+      this.edgePayload.delete(e.id);
   }
 
   resetForNextBar(full = false): void {
     this.store.clearResults();
     this.queue.clear();
     this.enqueuedKeys.clear();
+    this.executionOrder.length = 0;
     if (full) this.edgePayload.clear();
   }
 }
@@ -363,11 +421,17 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
 
   routeEdge(edge: WorkflowEdge, payload: any, meta?: IterMeta): void {
     if (this.graph.isSubNode(edge.source)) return;
-    this.satisfiedCounts.set(edge.target, (this.satisfiedCounts.get(edge.target) ?? 0) + 1);
+    this.satisfiedCounts.set(
+      edge.target,
+      (this.satisfiedCounts.get(edge.target) ?? 0) + 1,
+    );
 
     const targetNode = this.graph.nodeById.get(edge.target);
-    const skipDependencyCheck = Boolean((targetNode as any)?.values?.checkDependency);
-    if (!skipDependencyCheck && !this.areDependenciesSatisfied(edge.target)) return;
+    const skipDependencyCheck = Boolean(
+      (targetNode as any)?.values?.checkDependency,
+    );
+    if (!skipDependencyCheck && !this.areDependenciesSatisfied(edge.target))
+      return;
 
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }

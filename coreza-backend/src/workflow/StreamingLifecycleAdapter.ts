@@ -28,12 +28,31 @@ export class StreamingLifecycleAdapter {
     allEdges: WorkflowEdge[],
   ): Promise<string> {
     const redis = getRedisCache();
-    const nodeValues = (triggerNode as WorkflowNode & {
+    const nodeValues = ((triggerNode as WorkflowNode & {
       values?: {
         scope?: string;
         onlyClosedBars?: boolean;
+        symbols?: unknown;
+        stream_types?: string[] | string;
+        credential_id?: string;
+        feed?: string;
+        environment?: string;
+        asset_type?: string;
+        interval?: string;
+        depth_levels?: number;
       };
-    }).values;
+    }).values || {}) as {
+      scope?: string;
+      onlyClosedBars?: boolean;
+      symbols?: unknown;
+      stream_types?: string[] | string;
+      credential_id?: string;
+      feed?: string;
+      environment?: string;
+      asset_type?: string;
+      interval?: string;
+      depth_levels?: number;
+    };
 
     await redis.sadd(REDIS_CHANNELS.activeStreamingWorkflows(userId), workflowId);
 
@@ -47,9 +66,56 @@ export class StreamingLifecycleAdapter {
       workflowId,
       nodeId: triggerNode.id,
       source: sourceId,
-      scope: (nodeValues?.scope as string) || "workflow",
-      onlyClosedBars: nodeValues?.onlyClosedBars ?? true,
+      scope: nodeValues.scope || "workflow",
+      onlyClosedBars: nodeValues.onlyClosedBars ?? true,
     });
+
+    const symbols = parseSymbols(nodeValues.symbols);
+    const streamTypes = Array.isArray(nodeValues.stream_types)
+      ? nodeValues.stream_types
+      : typeof nodeValues.stream_types === "string"
+        ? nodeValues.stream_types.split(",").map((streamType) => streamType.trim())
+        : [];
+    const hasOrderUpdate = streamTypes.includes("order_update");
+    const marketStreamTypes = streamTypes.filter(
+      (streamType) => streamType !== "order_update",
+    );
+
+    if (hasOrderUpdate) {
+      const tradingSource =
+        triggerNode.name?.includes("Binance") ? "binance_trading" : "alpaca_trading";
+
+      await SubscriptionService.subscribe({
+        source: tradingSource,
+        userId,
+        workflowId,
+        nodeId: triggerNode.id,
+        credentialId: nodeValues.credential_id || "",
+        symbols: ["*"],
+        streamTypes: ["order_update"],
+        scope: nodeValues.scope || "workflow",
+        targetWorkflowId: workflowId,
+      });
+    }
+
+    if (symbols.length > 0 && (marketStreamTypes.length > 0 || !hasOrderUpdate)) {
+      await SubscriptionService.subscribe({
+        source: sourceId,
+        userId,
+        workflowId,
+        nodeId: triggerNode.id,
+        credentialId: nodeValues.credential_id || "",
+        symbols,
+        streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        feed: nodeValues.feed,
+        environment: nodeValues.environment,
+        assetType: nodeValues.asset_type,
+        interval: nodeValues.interval,
+        depth_levels: nodeValues.depth_levels,
+        scope: nodeValues.scope || "workflow",
+        targetWorkflowId: workflowId,
+      });
+    }
 
     await jobQueue.startWorkflowRunner(workflowId, userId, allNodes, allEdges);
     return sourceId;

@@ -152,8 +152,10 @@ export class WorkflowRun {
    * Useful for sub-workflow outputs or other precomputed values.
    */
   preloadResults(results: NodeResults): void {
+    const order = this.runtime.getExecutionOrder();
     for (const [nodeId, result] of Object.entries(results)) {
       this.store.setNodeResult(nodeId, result);
+      order.push(nodeId);
     }
   }
 

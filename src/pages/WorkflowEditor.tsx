@@ -15,6 +15,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { ConnectionDragContext, DragSource } from "@/contexts/ConnectionDragContext";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,

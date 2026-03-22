@@ -14,7 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useContext } from "react";
+import { ConnectionDragContext } from "@/contexts/ConnectionDragContext";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
 import { Handle, Position, useReactFlow } from "@xyflow/react";

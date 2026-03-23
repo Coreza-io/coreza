@@ -1,89 +1,78 @@
 
 
-# Updated Plan: Live Strategies — Reuse Backtest Components
+# Simpler Fix: Add `executionId` to NodeExecutionContext
 
-## Approach
+## Problem Recap
 
-Instead of creating separate pages/components for Live, reuse the existing `Backtests.tsx`, `BacktestResults.tsx`, and all backtest components (`EquityCurveChart`, `TradesTable`, `PerformanceMetricsCard`). The only difference is the data source — live strategies pull from `workflows`, `live_fills`, `cash_snapshots`, and `position_snapshots` instead of `backtests` tables.
+In live streaming, `context.runId` is the static `runnerInstanceId` (set once in the constructor). The idempotency key uses `runId`, so all bars for the same symbol/side/quantity produce identical keys → duplicate orders are incorrectly skipped.
 
-The key insight: create hooks that return data in the **same shape** as `useBacktests` and `useBacktestResults`, then pass a `mode` prop (or use route context) to switch data sources.
+## Better Approach: Add `executionId` Instead of Rotating `runId`
 
-## Architecture
+Instead of calling `resetForNewRun()` (which destroys indicator state and requires re-carrying it), simply add an `executionId` field to the context. This is cleaner because:
 
-```text
-Existing (keep as-is):
-  src/pages/Backtests.tsx           → rename to StrategiesList (or add mode prop)
-  src/pages/BacktestResults.tsx     → add mode prop
-  src/components/backtest/*         → reused directly (no changes)
-
-New:
-  src/hooks/useLiveStrategies.ts    → returns same shape as useBacktests
-  src/hooks/useLiveStrategyDetail.ts → returns same shape as useBacktestResults
-```
+- `runId` keeps its current meaning: the persistent runner/session ID
+- `executionId` is unique per event/bar — used only for idempotency
+- No need to destroy and recreate `WorkflowRun` each event
+- Indicator state, node state, data context all preserved naturally
+- Minimal change surface
 
 ## Changes
 
-### 1. New Hook: `src/hooks/useLiveStrategies.ts`
+### 1. Add `executionId` to `NodeExecutionContext`
 
-Returns the same `Backtest[]` interface shape from `useBacktests`:
-- Query `workflows` where `is_active = true` and nodes contain a Portfolio node with `mode: "broker"`
-- Map to: `{ id, name, workflow_id, workflow_name, status, total_return, sharpe_ratio, total_trades, created_at }`
-- Status mapping: `is_active=true` → "running", otherwise "completed"
-- For metrics: fetch latest `workflow_runs` result to extract portfolio data
-- Subscribe to realtime changes on `workflows`
-- Returns: `{ backtests, loading, stats, refetch }` — same return shape
-
-### 2. New Hook: `src/hooks/useLiveStrategyDetail.ts`
-
-Returns the same shape as `useBacktestResults`:
-- `backtest` → workflow metadata mapped to `BacktestWithRelations` shape
-- `metrics` → computed from latest `workflow_runs` result's portfolio data, mapped to `BacktestResultMetrics`
-- `trades` → `live_fills` mapped to `BacktestTrade[]` shape (symbol, action=side, quantity=qty, exitPrice=price, exitTime=event_time, etc.)
-- `snapshots` → `cash_snapshots` mapped to `PortfolioSnapshot[]` shape (date=snapshot_at, total_value=total_value_usdt, cash_balance from balances)
-- Subscribe to realtime on `live_fills` and `cash_snapshots` for live updates
-- Returns: `{ backtest, metrics, trades, snapshots, loading, error, refetch }` — identical return shape
-
-### 3. Update `src/pages/Backtests.tsx`
-
-Add a `mode` prop: `"backtest" | "live"` (default `"backtest"`):
-- When `mode="live"`, use `useLiveStrategies()` instead of `useBacktests()`
-- Change page title to "Live Strategies"
-- Hide "New Backtest" button in live mode
-- Row click navigates to `/dashboard/live/:id` instead of `/dashboard/backtests/:id`
-- Everything else (table columns, filtering, stats cards) stays identical
-
-### 4. Update `src/pages/BacktestResults.tsx`
-
-Add a `mode` prop: `"backtest" | "live"` (default `"backtest"`):
-- When `mode="live"`, use `useLiveStrategyDetail(id)` instead of `useBacktestResults(id)`
-- Back button links to `/dashboard/live` instead of `/dashboard/backtests`
-- All existing components (`EquityCurveChart`, `PerformanceMetricsCard`, `TradesTable`) receive the same data shapes — no changes needed
-
-### 5. Add Routes: `src/pages/Interface.tsx`
+**File: `coreza-backend/src/engine/types/executionContext.ts`**
 
 ```typescript
-<Route path="live" element={<Backtests mode="live" />} />
-<Route path="live/:id" element={<BacktestResults mode="live" />} />
+export interface NodeExecutionContext {
+  userId: string;
+  runId: string;
+  executionId: string;  // ← new: unique per event/bar execution
+  workflowId: string;
+  // ... rest unchanged
+}
 ```
 
-### 6. Add Sidebar Nav: `src/components/layout/AppSidebar.tsx`
+### 2. Thread `executionId` through WorkflowRun
 
-Add "Live" menu item with `Activity` icon, pointing to `/dashboard/live`.
+Wherever the context is built (in `WorkflowRun` or the execution runtime), add `executionId`. Default it to `runId` so non-streaming paths work without changes.
 
-## No Changes Needed
+Need to check how the context is constructed — likely in `WorkflowRun` or `ExecutionRuntime`. Add an `executionId` field that can be set per-event via a setter method like `setExecutionId(id: string)`.
 
-- `EquityCurveChart.tsx` — accepts `PortfolioSnapshot[]`, reused as-is
-- `TradesTable.tsx` — accepts `BacktestTrade[]`, reused as-is
-- `PerformanceMetricsCard.tsx` — accepts `BacktestResultMetrics`, reused as-is
+### 3. Set `executionId` per event in WorkflowRunner
+
+**File: `coreza-backend/src/services/WorkflowRunner.ts`**
+
+In `processMessage()`, after `resetForNextBar(true)` and before execution:
+
+```typescript
+const executionRunId = randomUUID();
+this.engine.setExecutionId(executionRunId);  // ← new method
+```
+
+This keeps `resetForNextBar()` (preserving indicator state) while making each event uniquely identifiable.
+
+### 4. Use `executionId` in BrokerExecutor
+
+**File: `coreza-backend/src/nodes/executors/BrokerExecutor.ts`**
+
+```typescript
+idempotencyKey = generateIdempotencyKey({
+  workflowId: context?.workflowId ?? "manual",
+  nodeId: node.id,
+  runId: context?.executionId ?? context?.runId ?? `manual-${Date.now()}`,
+  // ... rest unchanged
+});
+```
+
+Uses `executionId` (unique per bar) for idempotency. Falls back to `runId` for non-streaming executions where `executionId` equals `runId`.
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `src/hooks/useLiveStrategies.ts` | New — returns `useBacktests`-compatible shape from live workflow data |
-| `src/hooks/useLiveStrategyDetail.ts` | New — returns `useBacktestResults`-compatible shape from live fills/snapshots |
-| `src/pages/Backtests.tsx` | Add `mode` prop to switch between backtest/live data source |
-| `src/pages/BacktestResults.tsx` | Add `mode` prop to switch between backtest/live data source |
-| `src/pages/Interface.tsx` | Add `/live` and `/live/:id` routes |
-| `src/components/layout/AppSidebar.tsx` | Add "Live" nav item |
+| `coreza-backend/src/engine/types/executionContext.ts` | Add `executionId: string` field |
+| `coreza-backend/src/engine/workflowRun.ts` (or equivalent) | Store and expose `executionId`, default to `runId` |
+| `coreza-backend/src/engine/workflowEngine.ts` | Add `setExecutionId()` passthrough method |
+| `coreza-backend/src/services/WorkflowRunner.ts` | Call `engine.setExecutionId(executionRunId)` per event |
+| `coreza-backend/src/nodes/executors/BrokerExecutor.ts` | Use `context.executionId` in idempotency key generation |
 

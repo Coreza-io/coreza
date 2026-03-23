@@ -54,6 +54,7 @@ export class WorkflowEngine {
   pinResults(results: Record<string, any>): void { this.run.pinResults(results); }
   preloadResults(results: Record<string, any>): void { this.run.preloadResults(results); }
   resetForNextBar(full = false): void { this.run.resetForNextBar(full); }
+  setExecutionId(executionId: string): void { this.run.setExecutionId(executionId); }
   checkCancellation(): boolean { return this.run.checkCancellation(); }
 
   reset(newRunId: string, abortSignal?: AbortSignal): void { this.resetForNewRun(newRunId, abortSignal); }

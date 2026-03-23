@@ -206,6 +206,10 @@ export class WorkflowRun {
     this.runtime.setExecutionContextExtras(extras);
   }
 
+  setExecutionId(executionId: string): void {
+    this.runtime.setExecutionContextExtras({ executionId });
+  }
+
   checkCancellation(): boolean {
     return this.options.abortSignal?.aborted ?? false;
   }

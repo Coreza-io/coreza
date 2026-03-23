@@ -129,6 +129,7 @@ export abstract class BaseExecutionRuntime {
         user_id: this.options.userId,
         userId: this.options.userId,
         runId: this.options.runId,
+        executionId: this.options.runId,
         workflowId: this.options.workflowId,
         nodeId,
         nodes: this.options.nodes,

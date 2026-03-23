@@ -12,6 +12,7 @@ export interface MultiBarExecutionContext {
 export interface NodeExecutionContext {
   userId: string;
   runId: string;
+  executionId?: string;
   workflowId: string;
   nodeId: string;
   nodes: WorkflowNode[];

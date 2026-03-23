@@ -219,6 +219,7 @@ export class WorkflowRunner {
 
     // Phase 4: Execute workflow — skip trigger, start from downstream
     this.engine.resetForNextBar(true);
+    this.engine.setExecutionId(executionRunId);
 
     // Preload trigger node results with actual stream data so downstream
     // nodes can reference them (e.g. $('OnBar').json.data)

@@ -238,23 +238,28 @@ export function normalizeAlpacaMessage(
   if (source === "alpaca_trading") {
     if (msg.stream !== "trade_updates") return null;
 
-    const order = msg.data?.order || {};
-    const event = msg.data?.event; // fill, partial_fill, canceled, rejected, etc.
+    const data = msg.data || {};
+    const order = data.order || {};
 
     return {
       source: "alpaca" as any,
       symbol: order.symbol?.toUpperCase() || "*",
       type: "order_update" as const,
-      t: msg.data?.timestamp
-        ? new Date(msg.data.timestamp).getTime()
-        : Date.now(),
-      orderEvent: event,
+      t: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
+      orderEvent: data.event,
       orderId: order.id,
+      clientOrderId: order.client_order_id,
       side: order.side,
       filledQty: parseFloat(order.filled_qty) || 0,
       filledAvgPrice: parseFloat(order.filled_avg_price) || 0,
       orderStatus: order.status,
       orderSymbol: order.symbol,
+      requestedQty: parseFloat(order.qty) || 0,
+      positionQty: parseFloat(data.position_qty) || 0,
+      executionId: data.execution_id,
+      orderType: order.type || order.order_type,
+      assetClass: order.asset_class,
+      rawOrderData: data,
     };
   }
 

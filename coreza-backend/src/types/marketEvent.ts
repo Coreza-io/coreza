@@ -77,11 +77,18 @@ export interface MarketEvent {
   // Order update data (from trading WebSocket)
   orderEvent?: string;
   orderId?: string;
+  clientOrderId?: string;
   side?: string;
   filledQty?: number;
   filledAvgPrice?: number;
   orderStatus?: string;
   orderSymbol?: string;
+  requestedQty?: number;
+  positionQty?: number;
+  executionId?: string;
+  orderType?: string;
+  assetClass?: string;
+  rawOrderData?: Record<string, any>;
 
   // Metadata
   timeframe?: string;

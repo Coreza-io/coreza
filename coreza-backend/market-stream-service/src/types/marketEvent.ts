@@ -65,11 +65,18 @@ export interface CorezaMarketEvent {
   // Order update data (from trading WebSocket)
   orderEvent?: string; // fill, partial_fill, canceled, rejected, etc.
   orderId?: string;
+  clientOrderId?: string; // Broker client order ID for idempotency/ownership checks
   side?: string; // buy, sell
   filledQty?: number;
   filledAvgPrice?: number;
   orderStatus?: string; // filled, partially_filled, canceled, etc.
   orderSymbol?: string; // Original symbol from order
+  requestedQty?: number; // Original requested order quantity
+  positionQty?: number; // Broker-reported position quantity after the update
+  executionId?: string; // Unique broker execution/fill identifier
+  orderType?: string; // market, limit, stop, etc.
+  assetClass?: string; // us_equity, crypto, etc.
+  rawOrderData?: Record<string, any>; // Full broker payload for downstream consumers
 
   // News data
   headline?: string;

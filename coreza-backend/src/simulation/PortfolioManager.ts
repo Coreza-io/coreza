@@ -673,6 +673,7 @@ export class PortfolioManager {
     quoteAsset: string,
     side: "buy" | "sell",
     notional: number,
+    now: string,
   ): void {
     const balance = this.balances.get(quoteAsset);
     const current = balance?.total ?? this.cashBook.get(quoteAsset) ?? 0;
@@ -680,12 +681,12 @@ export class PortfolioManager {
 
     if (balance) {
       balance.total = newTotal;
-      balance.updatedAt = new Date().toISOString();
+      balance.updatedAt = now;
     } else {
       this.balances.set(quoteAsset, {
         asset: quoteAsset,
         total: newTotal,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       });
     }
 
@@ -693,19 +694,19 @@ export class PortfolioManager {
     this.cashBook.set(quoteAsset, newTotal);
   }
 
-  private adjustFeeBalance(feeAsset: string, feeAmount: number): void {
+  private adjustFeeBalance(feeAsset: string, feeAmount: number, now: string): void {
     const balance = this.balances.get(feeAsset);
     const current = balance?.total ?? this.cashBook.get(feeAsset) ?? 0;
     const newTotal = current - feeAmount;
 
     if (balance) {
       balance.total = newTotal;
-      balance.updatedAt = new Date().toISOString();
+      balance.updatedAt = now;
     } else {
       this.balances.set(feeAsset, {
         asset: feeAsset,
         total: newTotal,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       });
     }
 

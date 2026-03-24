@@ -457,10 +457,12 @@ export class PortfolioManager {
 
     // Dedup check
     if (this.executionKeysSeen.has(execKey)) {
-      console.log(
-        `[PortfolioManager] Duplicate execution skipped: ${execKey}`,
-      );
-      return { applied: false, reason: "duplicate_execution", executionId: execKey };
+      console.log(`[PortfolioManager] Duplicate execution skipped: ${execKey}`);
+      return {
+        applied: false,
+        reason: "duplicate_execution",
+        executionId: execKey,
+      };
     }
     this.executionKeysSeen.add(execKey);
     // Cap executionKeysSeen to prevent unbounded growth
@@ -477,9 +479,11 @@ export class PortfolioManager {
     const now = new Date().toISOString();
     const feeAmount = input.feeAmount ?? 0;
     const feeAsset = input.feeAsset;
-    const notional =
-      input.quoteNotional ?? input.execQty * input.execPrice;
-    const { quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
+    const notional = input.quoteNotional ?? input.execQty * input.execPrice;
+    const { quoteAsset } = this.parseInstrument(
+      input.symbol,
+      input.baseCurrency,
+    );
     const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency;
 
     // Record execution
@@ -571,8 +575,9 @@ export class PortfolioManager {
       existing.lastBrokerQuantity = input.positionQty;
       if (input.avgEntryPrice !== undefined) {
         existing.avgEntryPrice = input.avgEntryPrice;
-        existing.openCostBasis =
-          Math.abs(input.avgEntryPrice * input.positionQty);
+        existing.openCostBasis = Math.abs(
+          input.avgEntryPrice * input.positionQty,
+        );
       } else {
         // Preserve cost basis, recompute avgEntryPrice from cost basis
         if (existing.openCostBasis > 0) {
@@ -683,6 +688,7 @@ export class PortfolioManager {
     return order?.cumFilledQty ?? 0;
   }
 
+  private adjustQuoteBalance(
     quoteAsset: string,
     side: "buy" | "sell",
     notional: number,
@@ -707,7 +713,11 @@ export class PortfolioManager {
     this.cashBook.set(quoteAsset, newTotal);
   }
 
-  private adjustFeeBalance(feeAsset: string, feeAmount: number, now: string): void {
+  private adjustFeeBalance(
+    feeAsset: string,
+    feeAmount: number,
+    now: string,
+  ): void {
     const balance = this.balances.get(feeAsset);
     const current = balance?.total ?? this.cashBook.get(feeAsset) ?? 0;
     const newTotal = current - feeAmount;
@@ -739,8 +749,7 @@ export class PortfolioManager {
     now: string,
   ): void {
     const existing = this.positions.get(input.symbol);
-    const signedQty =
-      input.side === "buy" ? input.execQty : -input.execQty;
+    const signedQty = input.side === "buy" ? input.execQty : -input.execQty;
 
     if (!existing) {
       // New position
@@ -765,8 +774,7 @@ export class PortfolioManager {
 
     const prevQty = existing.quantity;
     const sameDirection =
-      (prevQty >= 0 && signedQty >= 0) ||
-      (prevQty <= 0 && signedQty <= 0);
+      (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
 
     if (sameDirection) {
       // Adding to position — weighted average cost
@@ -827,10 +835,7 @@ export class PortfolioManager {
       // Position flipped or reduced
       existing.quantity = newQty;
       existing.currentPrice = input.execPrice;
-      if (
-        (prevQty > 0 && newQty < 0) ||
-        (prevQty < 0 && newQty > 0)
-      ) {
+      if ((prevQty > 0 && newQty < 0) || (prevQty < 0 && newQty > 0)) {
         // Flipped — reset cost basis
         const remainingQty = Math.abs(newQty);
         existing.avgEntryPrice = input.execPrice;
@@ -842,8 +847,7 @@ export class PortfolioManager {
       } else {
         // Reduced — proportional cost basis
         const remainingQty = Math.abs(newQty);
-        existing.openCostBasis =
-          existing.avgEntryPrice * remainingQty;
+        existing.openCostBasis = existing.avgEntryPrice * remainingQty;
       }
       existing.updatedAt = now;
     }

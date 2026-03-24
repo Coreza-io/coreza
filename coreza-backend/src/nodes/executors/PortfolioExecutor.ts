@@ -630,19 +630,10 @@ export class PortfolioExecutor implements INodeExecutor {
         side,
         executionId,
         origQty,
-        cumFilledQty,
-        remainingQty,
+        filledQty,
         avgFillPrice,
-        execQty,
-        execPrice,
-        quoteNotional,
         feeAmount,
         feeAsset,
-        positionQty,
-        avgEntryPrice,
-        realizedPnl,
-        marketPrice,
-        applyPositionDelta,
       } = parsed;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
@@ -663,10 +654,9 @@ export class PortfolioExecutor implements INodeExecutor {
       let order: any | undefined;
       let executionApplied = false;
       let executionResult: { reason?: string; executionId?: string } = {};
-      let position: any | undefined;
       let orderUpdated = false;
-      let positionReconciled = false;
 
+      // 1. Order update (if status provided)
       if (status) {
         const resolvedBrokerOrderId =
           brokerOrderId
@@ -683,8 +673,7 @@ export class PortfolioExecutor implements INodeExecutor {
             symbol,
             status,
             origQty,
-            cumFilledQty,
-            remainingQty,
+            cumFilledQty: filledQty,
             avgFillPrice,
           });
           orderUpdated = orderResult.updated;
@@ -692,51 +681,48 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
-      if (execQty !== undefined && execPrice !== undefined && side) {
-        const execResult = pm.applyExecution({
-          brokerOrderId,
-          executionId,
-          clientOrderId,
-          symbol,
-          side: normalizeSide(side),
-          execQty,
-          execPrice,
-          quoteNotional,
-          feeAmount,
-          feeAsset,
-          cumFilledQty,
-          baseCurrency,
-          applyPositionDelta,
-        });
-        executionApplied = execResult.applied;
-        executionResult = {
-          reason: execResult.reason,
-          executionId: execResult.executionId,
-        };
-      }
+      // 2. Execution (if filled_qty and avg_fill_price and side provided)
+      if (filledQty !== undefined && avgFillPrice !== undefined && side) {
+        const resolvedBrokerOrderId = brokerOrderId
+          ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+        const previousCumQty = resolvedBrokerOrderId
+          ? pm.getOrderCumFilledQty(resolvedBrokerOrderId)
+          : 0;
+        const derivedExecQty = Math.max(0, filledQty - previousCumQty);
 
-      if (positionQty !== undefined) {
-        const positionResult = pm.reconcilePosition({
-          symbol,
-          positionQty,
-          avgEntryPrice,
-          realizedPnl,
-          currentPrice: marketPrice,
-        });
-        positionReconciled = positionResult.reconciled;
-        position = positionResult.position;
+        if (derivedExecQty > 0) {
+          const execResult = pm.applyExecution({
+            brokerOrderId,
+            executionId,
+            clientOrderId,
+            symbol,
+            side: normalizeSide(side),
+            execQty: derivedExecQty,
+            execPrice: avgFillPrice,
+            feeAmount,
+            feeAsset,
+            cumFilledQty: filledQty,
+            baseCurrency,
+            applyPositionDelta: true,
+          });
+          executionApplied = execResult.applied;
+          executionResult = {
+            reason: execResult.reason,
+            executionId: execResult.executionId,
+          };
+        } else {
+          executionResult = { reason: "no_new_fill_qty" };
+        }
       }
 
       return toNodeResult(
         createSuccessOutput({
           order_updated: orderUpdated,
           execution_applied: executionApplied,
-          position_reconciled: positionReconciled,
           skipped: false,
           order,
           execution_id: executionResult.executionId ?? executionId,
           execution_reason: executionResult.reason,
-          position,
           ...this.getPortfolioSummary(pm, baseCurrency),
         }),
       );

@@ -421,9 +421,10 @@ export class PortfolioManager {
    * - Cash/quote balance adjustment
    * - Fee accounting (supports fee in any asset)
    * - Trade generation on position close/flip
-   * - Optionally applies position delta (for brokers that don't send reconcile_position)
+   * - Optionally applies position delta (controlled by applyPositionDelta flag)
    *
-   * Does NOT set absolute position qty — use reconcilePosition() for that.
+   * When applyPositionDelta is false (e.g. Alpaca), use reconcilePosition() for position truth.
+   * When applyPositionDelta is true (default, e.g. Binance spot), execution-derived delta is used.
    */
   applyExecution(input: {
     brokerOrderId?: string;
@@ -438,6 +439,7 @@ export class PortfolioManager {
     feeAsset?: string;
     cumFilledQty?: number;
     baseCurrency: string;
+    applyPositionDelta?: boolean;
   }): { applied: boolean; reason?: string; executionId?: string } {
     const execKey = this.buildExecutionKey(input);
 

@@ -649,21 +649,28 @@ export class PortfolioExecutor implements INodeExecutor {
       let positionReconciled = false;
 
       if (status) {
-        const orderResult = pm.applyOrderUpdate({
-          brokerOrderId: parseRequiredString(
-            brokerOrderId,
-            "broker_order_id",
-          ),
-          clientOrderId,
-          symbol,
-          status,
-          origQty,
-          cumFilledQty,
-          remainingQty,
-          avgFillPrice,
-        });
-        orderUpdated = orderResult.updated;
-        order = orderResult.order;
+        const resolvedBrokerOrderId =
+          brokerOrderId
+          ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+
+        if (!resolvedBrokerOrderId) {
+          console.warn(
+            `[PortfolioExecutor] sync_order_event: order update skipped due to missing broker_order_id and unresolved client_order_id=${clientOrderId}`,
+          );
+        } else {
+          const orderResult = pm.applyOrderUpdate({
+            brokerOrderId: resolvedBrokerOrderId,
+            clientOrderId,
+            symbol,
+            status,
+            origQty,
+            cumFilledQty,
+            remainingQty,
+            avgFillPrice,
+          });
+          orderUpdated = orderResult.updated;
+          order = orderResult.order;
+        }
       }
 
       if (execQty !== undefined && execPrice !== undefined && side) {

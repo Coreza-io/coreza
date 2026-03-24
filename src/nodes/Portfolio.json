@@ -201,6 +201,7 @@
         "show": {
           "operation": [
             "create_portfolio",
+            "apply_execution",
             "get_portfolio",
             "get_cash",
             "get_equity",

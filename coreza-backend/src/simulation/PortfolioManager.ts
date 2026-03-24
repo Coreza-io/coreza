@@ -512,12 +512,12 @@ export class PortfolioManager {
     }
 
     // Cash/balance adjustment
-    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional);
+    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional, now);
 
     // Fee adjustment (supports fee in any asset)
     if (feeAmount > 0) {
       const feeBalanceAsset = feeAsset ?? effectiveQuoteAsset;
-      this.adjustFeeBalance(feeBalanceAsset, feeAmount);
+      this.adjustFeeBalance(feeBalanceAsset, feeAmount, now);
     }
 
     // Apply execution-derived position delta (opt-in, default true)

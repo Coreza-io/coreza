@@ -495,9 +495,7 @@ export class PortfolioExecutor implements INodeExecutor {
     baseCurrency: string,
   ): Promise<NodeResult> {
     try {
-      const symbol = normalizeSymbol(params.symbol);
-      const side = normalizeSide(params.side);
-      const execQty = parseRequiredNumber(params.exec_qty, "exec_qty");
+      // Method signature replaced — now handled above
       const execPrice = parseRequiredNumber(params.exec_price, "exec_price");
 
   private async brokerApplyExecution(

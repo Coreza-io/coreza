@@ -472,8 +472,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         status: status.toLowerCase(),
         origQty: parseOptionalNumber(params.orig_qty),
-        cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
-        remainingQty: parseOptionalNumber(params.remaining_qty),
+        cumFilledQty: parseOptionalNumber(params.filled_qty ?? params.cum_filled_qty),
         avgFillPrice: parseOptionalNumber(params.avg_fill_price),
       });
 

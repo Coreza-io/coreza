@@ -35,6 +35,44 @@ import { NodeExecutionContext } from "../../engine/types";
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
 
+// ============== PARAMETER NORMALIZER HELPERS ==============
+
+function parseRequiredString(value: any, field: string): string {
+  const str = typeof value === "string" ? value.trim() : String(value ?? "");
+  if (!str) throw new Error(`${field} is required`);
+  return str;
+}
+
+function parseOptionalString(value: any): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return String(value).trim();
+}
+
+function parseOptionalNumber(value: any): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const n = parseFloat(value);
+  return isNaN(n) ? undefined : n;
+}
+
+function parseRequiredNumber(value: any, field: string): number {
+  const n = parseFloat(value);
+  if (isNaN(n)) throw new Error(`${field} must be a valid number`);
+  return n;
+}
+
+function normalizeSide(value: any): "buy" | "sell" {
+  const s = String(value ?? "").trim().toLowerCase();
+  if (s === "buy") return "buy";
+  if (s === "sell") return "sell";
+  throw new Error(`side must be BUY or SELL, got: ${value}`);
+}
+
+function normalizeSymbol(value: any): string {
+  const s = String(value ?? "").trim().toUpperCase();
+  if (!s) throw new Error("symbol is required");
+  return s;
+}
+
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -248,116 +286,31 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
-    // if (!pm.isBootstrapped()) {
-    //   return toNodeResult(createSuccessOutput({
-    //         ...this.getPortfolioSummary(pm, baseCurrency),
-    //       }),);
-    // }
-
     switch (operation) {
+      // ============== NEW v2 OPERATIONS ==============
+      case "register_order_intent":
+        return this.brokerRegisterOrderIntent(pm, params);
+      case "apply_order_update":
+        return this.brokerApplyOrderUpdate(pm, params);
+      case "apply_execution":
+        return this.brokerApplyExecution(pm, params, baseCurrency);
+      case "reconcile_position":
+        return this.brokerReconcilePosition(pm, params);
+      case "reconcile_balances":
+        return this.brokerReconcileBalances(pm, params);
+
+      // ============== EXISTING OPERATIONS ==============
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
-      case "update_portfolio": {
-        // Explicit fill fields: symbol, side, quantity, price, commission, fill_id
-        const fillSymbol = params.symbol?.trim().toUpperCase();
-        const side = params.side?.trim().toUpperCase();
-        const rawQuantity = parseFloat(params.quantity);
-        const price = parseFloat(params.price);
-        let commission = parseFloat(params.commission || "0");
-        if (isNaN(commission)) commission = 0;
-        const fillId = params.fill_id?.trim() || undefined;
-        const clientOrderId = params.client_order_id?.trim() || undefined;
-        const orderStatus = params.status;
-
-        if (!fillSymbol) {
-          return toNodeResult(
-            createErrorOutput("symbol is required for update_portfolio"),
-          );
-        }
-        if (!side || (side !== "BUY" && side !== "SELL")) {
-          return toNodeResult(createErrorOutput("side must be BUY or SELL"));
-        }
-        if (isNaN(rawQuantity) || rawQuantity === 0) {
-          return toNodeResult(
-            createErrorOutput("quantity must be a non-zero number"),
-          );
-        }
-        if (isNaN(price) || price <= 0) {
-          return toNodeResult(
-            createErrorOutput("price must be a positive number"),
-          );
-        }
-
-        // Order ownership verification: check fillId first, then clientOrderId as fallback
-        if (fillId || clientOrderId) {
-          const isOurs =
-            (fillId && (await this.checkOwnership(fillId))) ||
-            (clientOrderId && (await this.checkOwnership(clientOrderId)));
-          if (!isOurs) {
-            console.log(
-              `[PortfolioExecutor] Skipping fill for unknown order: fillId=${fillId}, clientOrderId=${clientOrderId}`,
-            );
-            return toNodeResult(
-              createSuccessOutput({
-                updated: false,
-                skipped: true,
-                reason: "unknown_order",
-                fill_id: fillId,
-                client_order_id: clientOrderId,
-                message: "Order was not placed by this system — fill skipped",
-                ...this.getPortfolioSummary(pm, baseCurrency),
-              }),
-            );
-          }
-        }
-
-        const normalizedQuantity = Math.abs(rawQuantity);
-        const quantity =
-          side === "SELL" ? -normalizedQuantity : normalizedQuantity;
-
-        const fillResult = pm.applyFill(
-          { symbol: fillSymbol, quantity, price, orderStatus, commission },
-          baseCurrency,
-          fillId,
-        );
-
-        if (!fillResult.applied) {
-          return toNodeResult(
-            createSuccessOutput({
-              updated: false,
-              skipped: true,
-              reason: fillResult.reason,
-              fill_id: fillId,
-              message: `Fill skipped: ${fillResult.reason}`,
-              ...this.getPortfolioSummary(pm, baseCurrency),
-            }),
-          );
-        }
-
-        return toNodeResult(
-          createSuccessOutput({
-            updated: true,
-            fill_applied: {
-              symbol: fillSymbol,
-              side,
-              quantity: normalizedQuantity,
-              signedQuantity: quantity,
-              price,
-              commission,
-              fill_id: fillId,
-              client_order_id: clientOrderId,
-              delta_qty: fillResult.deltaQty,
-            },
-            ...this.getPortfolioSummary(pm, baseCurrency),
-          }),
-        );
-      }
+      case "update_portfolio":
+        // Legacy operation — route through new methods internally
+        return this.brokerLegacyUpdatePortfolio(pm, params, baseCurrency);
       case "update_mtm": {
-        // Valuation loop: update current prices without changing cash/holdings
-        const mtmPrice = parseFloat(params.price);
+        // Accept market_price (new) or price (legacy) for MTM
+        const mtmPrice = parseFloat(params.market_price ?? params.price);
         if (symbols.length === 0 || isNaN(mtmPrice) || mtmPrice <= 0) {
           return toNodeResult(
-            createErrorOutput("Provide symbol and price for update_mtm"),
+            createErrorOutput("Provide symbol and market_price for update_mtm"),
           );
         }
 
@@ -384,75 +337,17 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_trades":
         return this.brokerGetTrades(pm);
       case "register_order": {
-        const orderId = params.fill_id?.trim() || params.order_id?.trim();
-        const clientOrderId = params.client_order_id?.trim() || undefined;
-        const orderSymbol = params.symbol?.trim().toUpperCase();
-        const orderSide = params.side?.trim().toUpperCase();
-        const orderType = params.orderType;
-        const orderQty = parseFloat(params.quantity);
-        const limitPrice =
-          parseFloat(params.limitPrice ?? params.limit_price ?? params.price) ||
-          undefined;
-        const stopPrice =
-          parseFloat(params.stopPrice ?? params.stop_price) || undefined;
-        const tif =
-          params.tif?.trim() || params.timeInForce?.trim() || undefined;
-        const trailPercent =
-          parseFloat(params.trail_percent ?? params.trailPercent) || undefined;
-        const trailPrice =
-          parseFloat(params.trail_price ?? params.trailPrice) || undefined;
-        const orderStatus = params.status;
-
-        if (!orderId) {
-          return toNodeResult(
-            createErrorOutput(
-              "order_id (or fill_id) is required for register_order",
-            ),
-          );
-        }
-        if (!orderSymbol) {
-          return toNodeResult(
-            createErrorOutput("symbol is required for register_order"),
-          );
-        }
-        if (!orderSide || (orderSide !== "BUY" && orderSide !== "SELL")) {
-          return toNodeResult(createErrorOutput("side must be BUY or SELL"));
-        }
-        if (isNaN(orderQty) || orderQty <= 0) {
-          return toNodeResult(
-            createErrorOutput("quantity must be a positive number"),
-          );
-        }
-
-        const result = pm.registerOrder({
-          orderId,
-          clientOrderId,
-          symbol: orderSymbol,
-          side: orderSide.toLowerCase() as "buy" | "sell",
-          quantity: orderQty,
-          orderType: orderType,
-          limitPrice,
-          stopPrice,
-          timeInForce: tif,
-          trailPercent,
-          trailPrice,
-          status: orderStatus,
-        });
-
-        return toNodeResult(
-          createSuccessOutput({
-            registered: result.registered,
-            pending_order: result.pending_order,
-            pending_orders_count: pm.getPendingOrders().length,
-          }),
-        );
+        // Legacy operation — route through registerOrderIntent
+        return this.brokerLegacyRegisterOrder(pm, params);
       }
       case "cancel_order": {
-        const cancelOrderId = params.fill_id?.trim() || params.order_id?.trim();
+        const cancelOrderId = parseOptionalString(params.broker_order_id)
+          ?? parseOptionalString(params.fill_id)
+          ?? parseOptionalString(params.order_id);
         if (!cancelOrderId) {
           return toNodeResult(
             createErrorOutput(
-              "order_id (or fill_id) is required for cancel_order",
+              "broker_order_id (or fill_id) is required for cancel_order",
             ),
           );
         }
@@ -468,16 +363,22 @@ export class PortfolioExecutor implements INodeExecutor {
       }
       case "get_pending_orders": {
         const pendingOrders = pm.getPendingOrders();
+        const v2PendingOrders = pm.getV2PendingOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
         const filtered = filterSymbol
           ? pendingOrders.filter((o) => o.order.symbol === filterSymbol)
           : pendingOrders;
+        const v2Filtered = filterSymbol
+          ? v2PendingOrders.filter((o) => o.symbol === filterSymbol)
+          : v2PendingOrders;
 
         return toNodeResult(
           createSuccessOutput({
             pending_orders: filtered,
             pending_orders_count: filtered.length,
             total_pending_orders: pendingOrders.length,
+            v2_pending_orders: v2Filtered,
+            v2_pending_orders_count: v2Filtered.length,
           }),
         );
       }
@@ -486,6 +387,411 @@ export class PortfolioExecutor implements INodeExecutor {
           createErrorOutput(`Unknown portfolio operation: ${operation}`),
         );
     }
+  }
+
+  // ============== NEW v2 BROKER OPERATION HANDLERS ==============
+
+  private brokerRegisterOrderIntent(
+    pm: PortfolioManager,
+    params: any,
+  ): NodeResult {
+    try {
+      const brokerOrderId = parseRequiredString(
+        params.broker_order_id,
+        "broker_order_id",
+      );
+      const symbol = normalizeSymbol(params.symbol);
+      const side = normalizeSide(params.side);
+      const origQty = parseRequiredNumber(params.orig_qty, "orig_qty");
+
+      const result = pm.registerOrderIntent({
+        brokerOrderId,
+        clientOrderId: parseOptionalString(params.client_order_id),
+        symbol,
+        side,
+        origQty,
+        orderType: parseOptionalString(params.order_type),
+        timeInForce: parseOptionalString(params.time_in_force),
+        limitPrice: parseOptionalNumber(params.limit_price),
+        stopPrice: parseOptionalNumber(params.stop_price),
+        trailPercent: parseOptionalNumber(params.trail_percent),
+        trailPrice: parseOptionalNumber(params.trail_price),
+        status: parseOptionalString(params.status),
+      });
+
+      return toNodeResult(
+        createSuccessOutput({
+          registered: result.registered,
+          order: result.order,
+          pending_orders_count: pm.getV2PendingOrders().length,
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(createErrorOutput(error.message));
+    }
+  }
+
+  private async brokerApplyOrderUpdate(
+    pm: PortfolioManager,
+    params: any,
+  ): Promise<NodeResult> {
+    try {
+      const brokerOrderId = parseRequiredString(
+        params.broker_order_id,
+        "broker_order_id",
+      );
+      const symbol = normalizeSymbol(params.symbol);
+      const status = parseRequiredString(params.status, "status");
+
+      // Ownership check
+      const clientOrderId = parseOptionalString(params.client_order_id);
+      const isOurs =
+        (await this.checkOwnership(brokerOrderId)) ||
+        (clientOrderId ? await this.checkOwnership(clientOrderId) : false);
+      if (!isOurs) {
+        console.log(
+          `[PortfolioExecutor] Skipping order update for unknown order: ${brokerOrderId}`,
+        );
+        return toNodeResult(
+          createSuccessOutput({
+            updated: false,
+            skipped: true,
+            reason: "unknown_order",
+            broker_order_id: brokerOrderId,
+            message: "Order not placed by this system — update skipped",
+          }),
+        );
+      }
+
+      const result = pm.applyOrderUpdate({
+        brokerOrderId,
+        clientOrderId,
+        symbol,
+        status: status.toLowerCase(),
+        origQty: parseOptionalNumber(params.orig_qty),
+        cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
+        remainingQty: parseOptionalNumber(params.remaining_qty),
+        avgFillPrice: parseOptionalNumber(params.avg_fill_price),
+      });
+
+      return toNodeResult(
+        createSuccessOutput({
+          updated: result.updated,
+          order: result.order,
+          pending_orders_count: pm.getV2PendingOrders().length,
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(createErrorOutput(error.message));
+    }
+  }
+
+  private async brokerApplyExecution(
+    pm: PortfolioManager,
+    params: any,
+    baseCurrency: string,
+  ): Promise<NodeResult> {
+    try {
+      const symbol = normalizeSymbol(params.symbol);
+      const side = normalizeSide(params.side);
+      const execQty = parseRequiredNumber(params.exec_qty, "exec_qty");
+      const execPrice = parseRequiredNumber(params.exec_price, "exec_price");
+
+      const brokerOrderId = parseOptionalString(params.broker_order_id);
+      const clientOrderId = parseOptionalString(params.client_order_id);
+
+      // Ownership check
+      if (brokerOrderId || clientOrderId) {
+        const isOurs =
+          (brokerOrderId && (await this.checkOwnership(brokerOrderId))) ||
+          (clientOrderId && (await this.checkOwnership(clientOrderId)));
+        if (!isOurs) {
+          console.log(
+            `[PortfolioExecutor] Skipping execution for unknown order: brokerOrderId=${brokerOrderId}, clientOrderId=${clientOrderId}`,
+          );
+          return toNodeResult(
+            createSuccessOutput({
+              applied: false,
+              skipped: true,
+              reason: "unknown_order",
+              broker_order_id: brokerOrderId,
+              client_order_id: clientOrderId,
+              message:
+                "Order was not placed by this system — execution skipped",
+            }),
+          );
+        }
+      }
+
+      const result = pm.applyExecution({
+        brokerOrderId,
+        executionId: parseOptionalString(params.execution_id),
+        clientOrderId,
+        symbol,
+        side,
+        execQty,
+        execPrice,
+        quoteNotional: parseOptionalNumber(params.quote_notional),
+        feeAmount: parseOptionalNumber(params.fee_amount),
+        feeAsset: parseOptionalString(params.fee_asset),
+        cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
+        baseCurrency,
+      });
+
+      return toNodeResult(
+        createSuccessOutput({
+          applied: result.applied,
+          reason: result.reason,
+          execution_id: result.executionId,
+          ...this.getPortfolioSummary(pm, baseCurrency),
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(createErrorOutput(error.message));
+    }
+  }
+
+  private brokerReconcilePosition(
+    pm: PortfolioManager,
+    params: any,
+  ): NodeResult {
+    try {
+      const symbol = normalizeSymbol(params.symbol);
+      const positionQty = parseRequiredNumber(
+        params.position_qty,
+        "position_qty",
+      );
+
+      const result = pm.reconcilePosition({
+        symbol,
+        positionQty,
+        avgEntryPrice: parseOptionalNumber(params.avg_entry_price),
+        realizedPnl: parseOptionalNumber(params.realized_pnl),
+        currentPrice: parseOptionalNumber(params.market_price ?? params.price),
+      });
+
+      return toNodeResult(
+        createSuccessOutput({
+          reconciled: result.reconciled,
+          position: result.position,
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(createErrorOutput(error.message));
+    }
+  }
+
+  private brokerReconcileBalances(
+    pm: PortfolioManager,
+    params: any,
+  ): NodeResult {
+    try {
+      const asset = parseRequiredString(params.asset, "asset");
+      const total = parseRequiredNumber(params.total, "total");
+
+      const result = pm.reconcileBalance({
+        asset,
+        total,
+        available: parseOptionalNumber(params.available),
+        locked: parseOptionalNumber(params.locked),
+      });
+
+      return toNodeResult(
+        createSuccessOutput({
+          reconciled: result.reconciled,
+          balance: result.balance,
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(createErrorOutput(error.message));
+    }
+  }
+
+  // ============== LEGACY COMPATIBILITY WRAPPERS ==============
+
+  /**
+   * Legacy register_order → routes to registerOrderIntent with field aliasing.
+   */
+  private brokerLegacyRegisterOrder(
+    pm: PortfolioManager,
+    params: any,
+  ): NodeResult {
+    console.log(
+      "[PortfolioExecutor] legacy_operation_used: register_order → register_order_intent",
+    );
+
+    const orderId = params.fill_id?.trim() || params.order_id?.trim();
+    const clientOrderId = params.client_order_id?.trim() || undefined;
+    const orderSymbol = params.symbol?.trim().toUpperCase();
+    const orderSide = params.side?.trim().toUpperCase();
+    const orderType = params.orderType;
+    const orderQty = parseFloat(params.quantity);
+    const limitPrice =
+      parseFloat(params.limitPrice ?? params.limit_price ?? params.price) ||
+      undefined;
+    const stopPrice =
+      parseFloat(params.stopPrice ?? params.stop_price) || undefined;
+    const tif =
+      params.tif?.trim() || params.timeInForce?.trim() || undefined;
+    const trailPercent =
+      parseFloat(params.trail_percent ?? params.trailPercent) || undefined;
+    const trailPrice =
+      parseFloat(params.trail_price ?? params.trailPrice) || undefined;
+    const orderStatus = params.status;
+
+    if (!orderId) {
+      return toNodeResult(
+        createErrorOutput(
+          "order_id (or fill_id) is required for register_order",
+        ),
+      );
+    }
+    if (!orderSymbol) {
+      return toNodeResult(
+        createErrorOutput("symbol is required for register_order"),
+      );
+    }
+    if (!orderSide || (orderSide !== "BUY" && orderSide !== "SELL")) {
+      return toNodeResult(createErrorOutput("side must be BUY or SELL"));
+    }
+    if (isNaN(orderQty) || orderQty <= 0) {
+      return toNodeResult(
+        createErrorOutput("quantity must be a positive number"),
+      );
+    }
+
+    const result = pm.registerOrder({
+      orderId,
+      clientOrderId,
+      symbol: orderSymbol,
+      side: orderSide.toLowerCase() as "buy" | "sell",
+      quantity: orderQty,
+      orderType: orderType,
+      limitPrice,
+      stopPrice,
+      timeInForce: tif,
+      trailPercent,
+      trailPrice,
+      status: orderStatus,
+    });
+
+    return toNodeResult(
+      createSuccessOutput({
+        registered: result.registered,
+        pending_order: result.pending_order,
+        pending_orders_count: pm.getPendingOrders().length,
+        legacy_operation_used: true,
+      }),
+    );
+  }
+
+  /**
+   * Legacy update_portfolio → routes through applyFill (unchanged behavior).
+   */
+  private async brokerLegacyUpdatePortfolio(
+    pm: PortfolioManager,
+    params: any,
+    baseCurrency: string,
+  ): Promise<NodeResult> {
+    console.log(
+      "[PortfolioExecutor] legacy_operation_used: update_portfolio",
+    );
+
+    const fillSymbol = params.symbol?.trim().toUpperCase();
+    const side = params.side?.trim().toUpperCase();
+    const rawQuantity = parseFloat(params.quantity);
+    const price = parseFloat(params.price);
+    let commission = parseFloat(params.commission || "0");
+    if (isNaN(commission)) commission = 0;
+    const fillId = params.fill_id?.trim() || undefined;
+    const clientOrderId = params.client_order_id?.trim() || undefined;
+    const orderStatus = params.status;
+
+    if (!fillSymbol) {
+      return toNodeResult(
+        createErrorOutput("symbol is required for update_portfolio"),
+      );
+    }
+    if (!side || (side !== "BUY" && side !== "SELL")) {
+      return toNodeResult(createErrorOutput("side must be BUY or SELL"));
+    }
+    if (isNaN(rawQuantity) || rawQuantity === 0) {
+      return toNodeResult(
+        createErrorOutput("quantity must be a non-zero number"),
+      );
+    }
+    if (isNaN(price) || price <= 0) {
+      return toNodeResult(
+        createErrorOutput("price must be a positive number"),
+      );
+    }
+
+    // Order ownership verification
+    if (fillId || clientOrderId) {
+      const isOurs =
+        (fillId && (await this.checkOwnership(fillId))) ||
+        (clientOrderId && (await this.checkOwnership(clientOrderId)));
+      if (!isOurs) {
+        console.log(
+          `[PortfolioExecutor] Skipping fill for unknown order: fillId=${fillId}, clientOrderId=${clientOrderId}`,
+        );
+        return toNodeResult(
+          createSuccessOutput({
+            updated: false,
+            skipped: true,
+            reason: "unknown_order",
+            fill_id: fillId,
+            client_order_id: clientOrderId,
+            message: "Order was not placed by this system — fill skipped",
+            legacy_operation_used: true,
+            ...this.getPortfolioSummary(pm, baseCurrency),
+          }),
+        );
+      }
+    }
+
+    const normalizedQuantity = Math.abs(rawQuantity);
+    const quantity =
+      side === "SELL" ? -normalizedQuantity : normalizedQuantity;
+
+    const fillResult = pm.applyFill(
+      { symbol: fillSymbol, quantity, price, orderStatus, commission },
+      baseCurrency,
+      fillId,
+    );
+
+    if (!fillResult.applied) {
+      return toNodeResult(
+        createSuccessOutput({
+          updated: false,
+          skipped: true,
+          reason: fillResult.reason,
+          fill_id: fillId,
+          message: `Fill skipped: ${fillResult.reason}`,
+          legacy_operation_used: true,
+          ...this.getPortfolioSummary(pm, baseCurrency),
+        }),
+      );
+    }
+
+    return toNodeResult(
+      createSuccessOutput({
+        updated: true,
+        fill_applied: {
+          symbol: fillSymbol,
+          side,
+          quantity: normalizedQuantity,
+          signedQuantity: quantity,
+          price,
+          commission,
+          fill_id: fillId,
+          client_order_id: clientOrderId,
+          delta_qty: fillResult.deltaQty,
+        },
+        legacy_operation_used: true,
+        ...this.getPortfolioSummary(pm, baseCurrency),
+      }),
+    );
   }
 
   // ============== BACKTEST HELPERS ==============

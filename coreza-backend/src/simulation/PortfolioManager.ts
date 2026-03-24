@@ -463,6 +463,16 @@ export class PortfolioManager {
       return { applied: false, reason: "duplicate_execution", executionId: execKey };
     }
     this.executionKeysSeen.add(execKey);
+    // Cap executionKeysSeen to prevent unbounded growth
+    if (this.executionKeysSeen.size > PortfolioManager.MAX_EXECUTION_KEYS) {
+      const iter = this.executionKeysSeen.values();
+      // Remove oldest 10% entries
+      const toRemove = Math.floor(PortfolioManager.MAX_EXECUTION_KEYS * 0.1);
+      for (let i = 0; i < toRemove; i++) {
+        const val = iter.next().value;
+        if (val) this.executionKeysSeen.delete(val);
+      }
+    }
 
     const now = new Date().toISOString();
     const feeAmount = input.feeAmount ?? 0;

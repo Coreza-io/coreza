@@ -294,6 +294,8 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerApplyOrderUpdate(pm, params);
       case "apply_execution":
         return this.brokerApplyExecution(pm, params, baseCurrency);
+      case "sync_order_event":
+        return this.brokerSyncOrderEvent(pm, params, baseCurrency);
       case "reconcile_position":
         return this.brokerReconcilePosition(pm, params);
       case "reconcile_balances":
@@ -445,10 +447,11 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // Ownership check
       const clientOrderId = parseOptionalString(params.client_order_id);
-      const isOurs =
-        (await this.checkOwnership(brokerOrderId)) ||
-        (clientOrderId ? await this.checkOwnership(clientOrderId) : false);
-      if (!isOurs) {
+      const { ours } = await this.brokerEnsureOwnedOrder(
+        brokerOrderId,
+        clientOrderId,
+      );
+      if (!ours) {
         console.log(
           `[PortfolioExecutor] Skipping order update for unknown order: ${brokerOrderId}`,
         );
@@ -501,26 +504,25 @@ export class PortfolioExecutor implements INodeExecutor {
       const clientOrderId = parseOptionalString(params.client_order_id);
 
       // Ownership check
-      if (brokerOrderId || clientOrderId) {
-        const isOurs =
-          (brokerOrderId && (await this.checkOwnership(brokerOrderId))) ||
-          (clientOrderId && (await this.checkOwnership(clientOrderId)));
-        if (!isOurs) {
-          console.log(
-            `[PortfolioExecutor] Skipping execution for unknown order: brokerOrderId=${brokerOrderId}, clientOrderId=${clientOrderId}`,
-          );
-          return toNodeResult(
-            createSuccessOutput({
-              applied: false,
-              skipped: true,
-              reason: "unknown_order",
-              broker_order_id: brokerOrderId,
-              client_order_id: clientOrderId,
-              message:
-                "Order was not placed by this system — execution skipped",
-            }),
-          );
-        }
+      const { ours } = await this.brokerEnsureOwnedOrder(
+        brokerOrderId,
+        clientOrderId,
+      );
+      if (!ours) {
+        console.log(
+          `[PortfolioExecutor] Skipping execution for unknown order: brokerOrderId=${brokerOrderId}, clientOrderId=${clientOrderId}`,
+        );
+        return toNodeResult(
+          createSuccessOutput({
+            applied: false,
+            skipped: true,
+            reason: "unknown_order",
+            broker_order_id: brokerOrderId,
+            client_order_id: clientOrderId,
+            message:
+              "Order was not placed by this system — execution skipped",
+          }),
+        );
       }
 
       const result = pm.applyExecution({
@@ -544,6 +546,171 @@ export class PortfolioExecutor implements INodeExecutor {
           applied: result.applied,
           reason: result.reason,
           execution_id: result.executionId,
+          ...this.getPortfolioSummary(pm, baseCurrency),
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(createErrorOutput(error.message));
+    }
+  }
+
+  private async brokerEnsureOwnedOrder(
+    brokerOrderId?: string,
+    clientOrderId?: string,
+  ): Promise<{ ours: boolean }> {
+    if (!brokerOrderId && !clientOrderId) {
+      return { ours: true };
+    }
+
+    const isOurs =
+      (brokerOrderId && (await this.checkOwnership(brokerOrderId))) ||
+      (clientOrderId && (await this.checkOwnership(clientOrderId)));
+
+    return { ours: !!isOurs };
+  }
+
+  private parseSyncOrderEventParams(params: any) {
+    return {
+      symbol: normalizeSymbol(params.symbol),
+      brokerOrderId: parseOptionalString(params.broker_order_id),
+      clientOrderId: parseOptionalString(params.client_order_id),
+      status: parseOptionalString(params.status)?.toLowerCase(),
+      side: parseOptionalString(params.side),
+      executionId: parseOptionalString(params.execution_id),
+      origQty: parseOptionalNumber(params.orig_qty),
+      cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
+      remainingQty: parseOptionalNumber(params.remaining_qty),
+      avgFillPrice: parseOptionalNumber(params.avg_fill_price),
+      execQty: parseOptionalNumber(params.exec_qty),
+      execPrice: parseOptionalNumber(params.exec_price),
+      quoteNotional: parseOptionalNumber(params.quote_notional),
+      feeAmount: parseOptionalNumber(params.fee_amount),
+      feeAsset: parseOptionalString(params.fee_asset),
+      positionQty: parseOptionalNumber(params.position_qty),
+      avgEntryPrice: parseOptionalNumber(params.avg_entry_price),
+      realizedPnl: parseOptionalNumber(params.realized_pnl),
+      marketPrice: parseOptionalNumber(params.market_price ?? params.price),
+      applyPositionDelta:
+        params.apply_position_delta !== false &&
+        params.apply_position_delta !== "false",
+    };
+  }
+
+  private async brokerSyncOrderEvent(
+    pm: PortfolioManager,
+    params: any,
+    baseCurrency: string,
+  ): Promise<NodeResult> {
+    try {
+      const parsed = this.parseSyncOrderEventParams(params);
+      const {
+        symbol,
+        brokerOrderId,
+        clientOrderId,
+        status,
+        side,
+        executionId,
+        origQty,
+        cumFilledQty,
+        remainingQty,
+        avgFillPrice,
+        execQty,
+        execPrice,
+        quoteNotional,
+        feeAmount,
+        feeAsset,
+        positionQty,
+        avgEntryPrice,
+        realizedPnl,
+        marketPrice,
+        applyPositionDelta,
+      } = parsed;
+
+      const { ours } = await this.brokerEnsureOwnedOrder(
+        brokerOrderId,
+        clientOrderId,
+      );
+      if (!ours) {
+        return toNodeResult(
+          createSuccessOutput({
+            skipped: true,
+            reason: "unknown_order",
+            broker_order_id: brokerOrderId,
+            client_order_id: clientOrderId,
+          }),
+        );
+      }
+
+      let order: any | undefined;
+      let executionApplied = false;
+      let executionResult: { reason?: string; executionId?: string } = {};
+      let position: any | undefined;
+      let orderUpdated = false;
+      let positionReconciled = false;
+
+      if (status) {
+        const orderResult = pm.applyOrderUpdate({
+          brokerOrderId: parseRequiredString(
+            brokerOrderId,
+            "broker_order_id",
+          ),
+          clientOrderId,
+          symbol,
+          status,
+          origQty,
+          cumFilledQty,
+          remainingQty,
+          avgFillPrice,
+        });
+        orderUpdated = orderResult.updated;
+        order = orderResult.order;
+      }
+
+      if (execQty !== undefined && execPrice !== undefined && side) {
+        const execResult = pm.applyExecution({
+          brokerOrderId,
+          executionId,
+          clientOrderId,
+          symbol,
+          side: normalizeSide(side),
+          execQty,
+          execPrice,
+          quoteNotional,
+          feeAmount,
+          feeAsset,
+          cumFilledQty,
+          baseCurrency,
+          applyPositionDelta,
+        });
+        executionApplied = execResult.applied;
+        executionResult = {
+          reason: execResult.reason,
+          executionId: execResult.executionId,
+        };
+      }
+
+      if (positionQty !== undefined) {
+        const positionResult = pm.reconcilePosition({
+          symbol,
+          positionQty,
+          avgEntryPrice,
+          realizedPnl,
+          currentPrice: marketPrice,
+        });
+        positionReconciled = positionResult.reconciled;
+        position = positionResult.position;
+      }
+
+      return toNodeResult(
+        createSuccessOutput({
+          order_updated: orderUpdated,
+          execution_applied: executionApplied,
+          position_reconciled: positionReconciled,
+          skipped: false,
+          order,
+          execution_id: executionResult.executionId ?? executionId,
+          execution_reason: executionResult.reason,
+          position,
           ...this.getPortfolioSummary(pm, baseCurrency),
         }),
       );

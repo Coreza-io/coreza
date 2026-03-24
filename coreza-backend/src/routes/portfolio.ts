@@ -12,13 +12,33 @@ import { requireAuth } from "../middleware/jwtAuth";
 import { getNodeExecutor } from "../nodes/registry";
 
 const router = Router();
+const portfolioOperationSchema = z.enum([
+  "create_portfolio",
+  "register_order_intent",
+  "apply_order_update",
+  "apply_execution",
+  "sync_order_event",
+  "reconcile_position",
+  "reconcile_balances",
+  "cancel_order",
+  "get_pending_orders",
+  "get_portfolio",
+  "get_position",
+  "update_mtm",
+  "get_cash",
+  "get_equity",
+  "get_trades",
+  "update_portfolio",
+  "register_order",
+]);
+
 const portfolioRequestSchema = z.object({
   mode: z.enum(["backtest", "broker"]),
   workflowId: z.string().uuid(),
   node_id: z.string(),
   nodeName: z.string().optional(),
   node_type: z.string().optional(),
-  operation: z.string().optional(),
+  operation: portfolioOperationSchema.optional(),
   symbol: z.string().optional(),
   cash_balance: z.union([z.string(), z.number()]).optional(),
   base_currency: z.string().optional(),
@@ -50,6 +70,7 @@ const portfolioRequestSchema = z.object({
   quote_notional: z.union([z.string(), z.number()]).optional(),
   fee_amount: z.union([z.string(), z.number()]).optional(),
   fee_asset: z.string().optional(),
+  apply_position_delta: z.union([z.boolean(), z.string()]).optional(),
   asset: z.string().optional(),
   total: z.union([z.string(), z.number()]).optional(),
   available: z.union([z.string(), z.number()]).optional(),

@@ -600,6 +600,7 @@ export class PortfolioExecutor implements INodeExecutor {
       avgFillPrice: parseOptionalNumber(params.avg_fill_price),
       feeAmount: parseOptionalNumber(params.fee_amount),
       feeAsset: parseOptionalString(params.fee_asset),
+      positionQty: parseOptionalNumber(params.position_qty),
     };
   }
 
@@ -622,6 +623,7 @@ export class PortfolioExecutor implements INodeExecutor {
         avgFillPrice,
         feeAmount,
         feeAsset,
+        positionQty,
       } = parsed;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
@@ -691,7 +693,7 @@ export class PortfolioExecutor implements INodeExecutor {
             feeAsset,
             cumFilledQty: filledQty,
             baseCurrency,
-            applyPositionDelta: true,
+            applyPositionDelta: positionQty === undefined,
           });
           executionApplied = execResult.applied;
           executionResult = {
@@ -703,10 +705,21 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
+      // 3. Position reconcile (if position_qty provided — Alpaca fee-in-kind adjustment)
+      let positionReconciled = false;
+      if (positionQty !== undefined && symbol) {
+        const posResult = pm.reconcilePosition({
+          symbol,
+          positionQty,
+        });
+        positionReconciled = posResult.reconciled;
+      }
+
       return toNodeResult(
         createSuccessOutput({
           order_updated: orderUpdated,
           execution_applied: executionApplied,
+          position_reconciled: positionReconciled,
           skipped: false,
           order,
           execution_id: executionResult.executionId ?? executionId,

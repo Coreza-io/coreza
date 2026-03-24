@@ -477,6 +477,22 @@
       }
     },
     {
+      "key": "position_qty",
+      "label": "Position Quantity",
+      "type": "text",
+      "placeholder": "e.g. 0.9982",
+      "required": false,
+      "description": "Final broker-reported position quantity (after fees). Used by Alpaca where position differs from filled quantity.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "reconcile_position",
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
       "key": "limit_price",
       "label": "Limit Price",
       "type": "text",
@@ -528,20 +544,6 @@
         "show": {
           "operation": [
             "register_order_intent"
-          ]
-        }
-      }
-    },
-    {
-      "key": "position_qty",
-      "label": "Position Quantity",
-      "type": "text",
-      "placeholder": "e.g. 0.9982",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "reconcile_position"
           ]
         }
       }

@@ -151,5 +151,10 @@ export function normalizeOrderType(type: string): OrderType {
  */
 export function isTicketPending(ticket: OrderTicket): boolean {
   const s = ticket.order.status;
-  return s === "new" || s === "submitted" || s === "partially_filled";
+  return (
+    s === "pending_new" ||
+    s === "new" ||
+    s === "submitted" ||
+    s === "partially_filled"
+  );
 }

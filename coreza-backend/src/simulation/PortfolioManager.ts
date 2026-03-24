@@ -402,6 +402,7 @@ export class PortfolioManager {
       }
       if (input.clientOrderId) {
         order.clientOrderId = input.clientOrderId;
+        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
       }
       order.updatedAt = now;
     }

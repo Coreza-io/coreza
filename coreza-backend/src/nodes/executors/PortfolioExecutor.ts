@@ -536,6 +536,7 @@ export class PortfolioExecutor implements INodeExecutor {
         feeAsset: parseOptionalString(params.fee_asset),
         cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
         baseCurrency,
+        applyPositionDelta: params.apply_position_delta !== false && params.apply_position_delta !== "false",
       });
 
       return toNodeResult(

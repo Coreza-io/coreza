@@ -152,6 +152,8 @@ export class PortfolioManager {
   private balances = new Map<string, BalanceState>();
   private positions = new Map<string, PositionState>();
   private executionKeysSeen = new Set<string>();
+  private static readonly MAX_EXECUTION_KEYS = 50_000;
+  private clientOrderIdIndex = new Map<string, string>(); // clientOrderId → brokerOrderId
 
   // ============== LEGACY STATE (kept for migration) ==============
   private cashBook = new Map<string, number>(); // asset -> total balance
@@ -208,6 +210,7 @@ export class PortfolioManager {
     this.balances.clear();
     this.positions.clear();
     this.executionKeysSeen.clear();
+    this.clientOrderIdIndex.clear();
 
     // Legacy state
     this.cashBook.clear();
@@ -304,8 +307,10 @@ export class PortfolioManager {
       existing.timeInForce = input.timeInForce ?? existing.timeInForce;
       existing.status = input.status ?? existing.status;
       existing.origQty = input.origQty || existing.origQty;
-      if (input.clientOrderId)
+      if (input.clientOrderId) {
         existing.clientOrderId = input.clientOrderId;
+        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
+      }
       existing.updatedAt = now;
       console.log(
         `[PortfolioManager] Updated existing order intent: ${input.brokerOrderId}`,
@@ -331,6 +336,9 @@ export class PortfolioManager {
     };
 
     this.orders.set(input.brokerOrderId, order);
+    if (input.clientOrderId) {
+      this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
+    }
     console.log(
       `[PortfolioManager] Registered order intent: ${input.side} ${input.origQty} ${input.symbol} (${input.brokerOrderId})`,
     );
@@ -371,6 +379,9 @@ export class PortfolioManager {
         updatedAt: now,
       };
       this.orders.set(input.brokerOrderId, order);
+      if (input.clientOrderId) {
+        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
+      }
       console.log(
         `[PortfolioManager] Auto-created order on update: ${input.brokerOrderId}`,
       );
@@ -391,6 +402,7 @@ export class PortfolioManager {
       }
       if (input.clientOrderId) {
         order.clientOrderId = input.clientOrderId;
+        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
       }
       order.updatedAt = now;
     }
@@ -421,9 +433,10 @@ export class PortfolioManager {
    * - Cash/quote balance adjustment
    * - Fee accounting (supports fee in any asset)
    * - Trade generation on position close/flip
-   * - Optionally applies position delta (for brokers that don't send reconcile_position)
+   * - Optionally applies position delta (controlled by applyPositionDelta flag)
    *
-   * Does NOT set absolute position qty — use reconcilePosition() for that.
+   * When applyPositionDelta is false (e.g. Alpaca), use reconcilePosition() for position truth.
+   * When applyPositionDelta is true (default, e.g. Binance spot), execution-derived delta is used.
    */
   applyExecution(input: {
     brokerOrderId?: string;
@@ -438,6 +451,7 @@ export class PortfolioManager {
     feeAsset?: string;
     cumFilledQty?: number;
     baseCurrency: string;
+    applyPositionDelta?: boolean;
   }): { applied: boolean; reason?: string; executionId?: string } {
     const execKey = this.buildExecutionKey(input);
 
@@ -449,6 +463,16 @@ export class PortfolioManager {
       return { applied: false, reason: "duplicate_execution", executionId: execKey };
     }
     this.executionKeysSeen.add(execKey);
+    // Cap executionKeysSeen to prevent unbounded growth
+    if (this.executionKeysSeen.size > PortfolioManager.MAX_EXECUTION_KEYS) {
+      const iter = this.executionKeysSeen.values();
+      // Remove oldest 10% entries
+      const toRemove = Math.floor(PortfolioManager.MAX_EXECUTION_KEYS * 0.1);
+      for (let i = 0; i < toRemove; i++) {
+        const val = iter.next().value;
+        if (val) this.executionKeysSeen.delete(val);
+      }
+    }
 
     const now = new Date().toISOString();
     const feeAmount = input.feeAmount ?? 0;
@@ -488,17 +512,20 @@ export class PortfolioManager {
     }
 
     // Cash/balance adjustment
-    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional);
+    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional, now);
 
     // Fee adjustment (supports fee in any asset)
     if (feeAmount > 0) {
       const feeBalanceAsset = feeAsset ?? effectiveQuoteAsset;
-      this.adjustFeeBalance(feeBalanceAsset, feeAmount);
+      this.adjustFeeBalance(feeBalanceAsset, feeAmount, now);
     }
 
-    // Apply execution-derived position delta
-    // This creates/updates position state based on the execution
-    this.applyExecutionDerivedPositionDelta(input, now);
+    // Apply execution-derived position delta (opt-in, default true)
+    // For Alpaca: pass false since reconcilePosition() is the source of truth
+    // For Binance spot: pass true (default) since no reconcilePosition call follows
+    if (input.applyPositionDelta !== false) {
+      this.applyExecutionDerivedPositionDelta(input, feeAmount, now);
+    }
 
     // Update peak equity
     this.updatePeakEquity(input.baseCurrency);
@@ -637,9 +664,8 @@ export class PortfolioManager {
   }
 
   private findOrderByClientId(clientOrderId: string): OrderState | undefined {
-    for (const order of this.orders.values()) {
-      if (order.clientOrderId === clientOrderId) return order;
-    }
+    const brokerOrderId = this.clientOrderIdIndex.get(clientOrderId);
+    if (brokerOrderId) return this.orders.get(brokerOrderId);
     return undefined;
   }
 
@@ -647,6 +673,7 @@ export class PortfolioManager {
     quoteAsset: string,
     side: "buy" | "sell",
     notional: number,
+    now: string,
   ): void {
     const balance = this.balances.get(quoteAsset);
     const current = balance?.total ?? this.cashBook.get(quoteAsset) ?? 0;
@@ -654,12 +681,12 @@ export class PortfolioManager {
 
     if (balance) {
       balance.total = newTotal;
-      balance.updatedAt = new Date().toISOString();
+      balance.updatedAt = now;
     } else {
       this.balances.set(quoteAsset, {
         asset: quoteAsset,
         total: newTotal,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       });
     }
 
@@ -667,19 +694,19 @@ export class PortfolioManager {
     this.cashBook.set(quoteAsset, newTotal);
   }
 
-  private adjustFeeBalance(feeAsset: string, feeAmount: number): void {
+  private adjustFeeBalance(feeAsset: string, feeAmount: number, now: string): void {
     const balance = this.balances.get(feeAsset);
     const current = balance?.total ?? this.cashBook.get(feeAsset) ?? 0;
     const newTotal = current - feeAmount;
 
     if (balance) {
       balance.total = newTotal;
-      balance.updatedAt = new Date().toISOString();
+      balance.updatedAt = now;
     } else {
       this.balances.set(feeAsset, {
         asset: feeAsset,
         total: newTotal,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       });
     }
 
@@ -695,6 +722,7 @@ export class PortfolioManager {
       execPrice: number;
       baseCurrency: string;
     },
+    feeAmount: number,
     now: string,
   ): void {
     const existing = this.positions.get(input.symbol);
@@ -766,9 +794,9 @@ export class PortfolioManager {
         exitPrice: input.execPrice,
         quantity: closingQty,
         grossPnl,
-        commission: 0,
+        commission: feeAmount,
         slippage: 0,
-        netPnl: grossPnl,
+        netPnl: grossPnl - feeAmount,
         entryTime: entry?.entryTime ?? "",
         exitTime: now,
         holdingPeriodBars: 0,
@@ -946,7 +974,7 @@ export class PortfolioManager {
     if (v2Order) {
       v2Order.status = "canceled";
       v2Order.updatedAt = new Date().toISOString();
-      this.orders.delete(orderId);
+      // Keep in orders map for audit — getV2PendingOrders() already filters by OPEN_ORDER_STATUSES
     }
 
     const ticket = this.tickets.get(orderId);

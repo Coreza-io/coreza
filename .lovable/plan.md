@@ -1,95 +1,56 @@
 
+# Portfolio Module Refactor — Implemented
 
-# Portfolio Module Refactor — End-to-End Review
+## Summary
 
-## Verdict: Implementation is solid. 7 issues found (3 bugs, 4 improvements).
+Refactored the broker-mode portfolio from a fill-centric model (register_order + update_portfolio) to a canonical order/execution/position/balance projector model.
 
----
+## Core Principle
 
-## BUGS
+Each concern has its own method — no single field controls order progress, execution accounting, position quantity, AND balance changes:
 
-### 1. `applyExecution` applies position delta unconditionally — breaks Alpaca flow
+- **applyOrderUpdate** → order lifecycle state only
+- **applyExecution** → cash/fees/execution ledger + execution-derived position delta
+- **reconcilePosition** → absolute broker position quantity (fixes Alpaca 1 vs 0.9982)
+- **reconcileBalance** → asset balance snapshot (supports BNB fee asset)
+- **registerOrderIntent** → order intent registration (no cash/position mutation)
 
-**File**: `PortfolioManager.ts` line 501
+## Files Changed
 
-`applyExecutionDerivedPositionDelta()` is always called in `applyExecution()`. But the whole point of the refactor is that for Alpaca, position qty comes from `reconcilePosition(0.9982)` — not from execution. The current code will set position to `1.0` from execution, then `reconcilePosition` corrects it to `0.9982`, but the cost basis/avgEntry is already computed from the wrong quantity.
+| File | Change |
+|---|---|
+| `coreza-backend/src/simulation/PortfolioManager.ts` | Added OrderState, ExecutionRecord, PositionState, BalanceState interfaces. Added v2 state maps. Added 5 new public methods + instrument parser. Legacy methods kept as deprecated wrappers that also populate v2 state. |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Added 5 new broker-mode switch cases (register_order_intent, apply_order_update, apply_execution, reconcile_position, reconcile_balances). Legacy operations (register_order, update_portfolio) route through existing code with `legacy_operation_used: true` flag. Added parameter normalizer helpers. |
+| `coreza-backend/src/routes/portfolio.ts` | Expanded Zod schema with all v2 fields (broker_order_id, execution_id, exec_qty, exec_price, position_qty, fee_amount, fee_asset, asset, total, available, locked, etc.) plus legacy aliases. |
+| `src/nodes/Portfolio.json` | Replaced with new node definition supporting all v2 operations with proper displayOptions per operation. |
 
-**Fix**: Add a flag or make position delta opt-in. For Alpaca, `reconcilePosition` is the source of truth. For Binance (no `reconcilePosition` call for spot fills), execution-derived delta is needed.
+## Broker Event Mapping
 
-Suggested approach: Add `applyPositionDelta?: boolean` param to `applyExecution()`, default `true`. Alpaca workflow passes `false` since it uses `reconcilePosition` separately.
+```
+Alpaca fill event → 3 calls:
+  1. apply_order_update (order.status, order.filled_qty)
+  2. apply_execution   (price, qty, execution_id)
+  3. reconcile_position (position_qty = 0.9982)
 
-### 2. `findOrderByClientId` is O(n) linear scan
+Binance executionReport → 2 calls:
+  1. apply_order_update (msg.X status, msg.z cumQty)
+  2. apply_execution   (msg.l lastQty, msg.L lastPrice, msg.n fee, msg.N feeAsset)
 
-**File**: `PortfolioManager.ts` lines 639-644
+Binance ACCOUNT_UPDATE → 2 calls:
+  1. reconcile_position (position qty)
+  2. reconcile_balances (asset balances)
+```
 
-Every execution that arrives with a `clientOrderId` but no matching `brokerOrderId` triggers a full map scan. With many orders, this is slow.
+## Migration Path
 
-**Fix**: Add a `clientOrderIdIndex: Map<string, string>` (clientOrderId → brokerOrderId) maintained in `registerOrderIntent` and `applyOrderUpdate`.
-
-### 3. `cancelOrder` deletes from `orders` map — loses history
-
-**File**: `PortfolioManager.ts` line 949
-
-`this.orders.delete(orderId)` removes the order entirely. But canceled orders should stay in the map with `status: "canceled"` so `getOrder()` can still return them for audit/debugging. Only `getV2PendingOrders()` should filter them out (which it already does via `OPEN_ORDER_STATUSES`).
-
-**Fix**: Remove the `this.orders.delete(orderId)` line. The status is already set to `"canceled"`.
-
----
-
-## IMPROVEMENTS
-
-### 4. Excessive `new Date().toISOString()` calls
-
-Multiple calls to `new Date().toISOString()` within the same method (e.g., `adjustQuoteBalance`, `adjustFeeBalance` each create their own). Pass `now` as a parameter from the parent method.
-
-### 5. `getPortfolioState` still reads from legacy `cashBook` and `holdings`
-
-**File**: `PortfolioManager.ts` lines 1212-1233
-
-The main read path (`getPortfolioState`, `getPositions`, `getCash`, `getTotalEquity`) all read from legacy maps. This works because v2 methods sync to legacy maps, but it means every write has dual bookkeeping overhead. Not a bug, but a migration tax.
-
-**Recommendation**: No change now — this is correct for the migration phase. Note for Phase 5: switch read paths to v2 maps and remove legacy sync.
-
-### 6. `executionKeysSeen` grows unbounded
-
-**File**: `PortfolioManager.ts` line 154
-
-Unlike `fillLedger` (capped at 10,000), `executionKeysSeen` has no cap. For long-running workflows with thousands of fills, this set grows indefinitely.
-
-**Fix**: Either cap it (e.g., use an LRU set with 50,000 max entries) or periodically trim entries older than N hours.
-
-### 7. Trade records from `applyExecutionDerivedPositionDelta` have `commission: 0`
-
-**File**: `PortfolioManager.ts` line 769
-
-When a position close/flip generates a `Trade` record, commission is hardcoded to `0`. The fee was already deducted from the balance, but the trade record doesn't reflect it — making trade-level analytics (net PnL per trade) inaccurate.
-
-**Fix**: Pass `feeAmount` into `applyExecutionDerivedPositionDelta` and proportionally assign it to the closing trade.
-
----
-
-## What's Well Done
-
-- Clean separation of concerns across 5 methods
-- Execution deduplication via composite key fallback is robust
-- Legacy wrappers correctly cross-populate v2 state (dual-write)
-- `syncPositionToHoldings` keeps legacy consumers working during migration
-- Parameter normalizer helpers in executor are clean and reusable
-- Ownership check with LRU cache + periodic sweep is efficient
-- Portfolio JSON `displayOptions` are well-structured per operation
-
----
-
-## Recommended Fix Priority
-
-| # | Issue | Severity | Effort |
-|---|---|---|---|
-| 1 | Position delta in applyExecution breaks Alpaca | **High** | Small — add boolean flag |
-| 3 | cancelOrder deletes order history | **Medium** | 1-line delete |
-| 2 | findOrderByClientId O(n) scan | **Medium** | Small — add index map |
-| 6 | executionKeysSeen unbounded growth | **Low** | Small — add cap |
-| 7 | Trade commission always 0 | **Low** | Small — pass fee through |
-| 4 | Redundant Date calls | **Low** | Trivial |
-
-Shall I proceed with fixing issues 1-3 (the bugs) first?
-
+1. ✅ Phase 1-3: New methods + executor operations + route schema + JSON (DONE)
+2. ✅ Review fixes: All 7 issues resolved (3 bugs + 4 improvements)
+   - Bug 1: `applyExecution` now has `applyPositionDelta` flag (default true, Alpaca passes false)
+   - Bug 2: `findOrderByClientId` uses O(1) `clientOrderIdIndex` map
+   - Bug 3: `cancelOrder` no longer deletes from orders map
+   - Improvement 4: `adjustQuoteBalance`/`adjustFeeBalance` accept `now` param (no redundant Date calls)
+   - Improvement 5: Noted for Phase 5 (read paths still use legacy maps — correct for migration)
+   - Improvement 6: `executionKeysSeen` capped at 50,000 with 10% eviction
+   - Improvement 7: Trade records now carry `feeAmount` as commission, `netPnl = grossPnl - fee`
+3. Phase 4: Update workflow graphs to use new operations
+4. Phase 5: Remove legacy applyFill(), registerOrder(), update_portfolio after migration

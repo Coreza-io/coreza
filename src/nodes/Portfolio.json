@@ -4,11 +4,11 @@
   "node_type": "main",
   "icon": "/assets/icons/backtest.svg",
   "category": "Portfolio",
-  "description": "Query and update portfolio state -- positions, cash, equity, orders, trades. Works in both backtest and live broker modes.",
+  "description": "Generic portfolio state node for backtest and live broker modes. Supports order intent, order updates, executions, position reconciliation, balance reconciliation, MTM, and portfolio queries.",
   "color": "text-orange-500",
   "size": {
-    "width": 340,
-    "height": 360
+    "width": 360,
+    "height": 420
   },
   "handles": [
     {
@@ -32,7 +32,7 @@
       "label": "Mode",
       "type": "select",
       "required": true,
-      "default": "backtest",
+      "default": "broker",
       "options": [
         {
           "id": "backtest",
@@ -57,6 +57,48 @@
       }
     },
     {
+      "key": "broker",
+      "label": "Broker",
+      "type": "select",
+      "required": false,
+      "default": "generic",
+      "options": [
+        {
+          "id": "generic",
+          "name": "Generic"
+        },
+        {
+          "id": "alpaca",
+          "name": "Alpaca"
+        },
+        {
+          "id": "binance_spot",
+          "name": "Binance Spot"
+        },
+        {
+          "id": "binance_futures",
+          "name": "Binance Futures"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": ["broker"]
+        }
+      }
+    },
+    {
+      "key": "account_id",
+      "label": "Account ID",
+      "type": "text",
+      "placeholder": "e.g. primary",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "mode": ["broker"]
+        }
+      }
+    },
+    {
       "key": "operation",
       "label": "Operation",
       "type": "select",
@@ -65,19 +107,31 @@
       "options": [
         {
           "id": "create_portfolio",
-          "name": "Create Portfolio (Bootstrap)"
+          "name": "Create Portfolio"
         },
         {
-          "id": "update_portfolio",
-          "name": "Sync Fills"
+          "id": "register_order_intent",
+          "name": "Register Order Intent"
         },
         {
-          "id": "register_order",
-          "name": "Register Pending Order"
+          "id": "apply_order_update",
+          "name": "Apply Order Update"
+        },
+        {
+          "id": "apply_execution",
+          "name": "Apply Execution"
+        },
+        {
+          "id": "reconcile_position",
+          "name": "Reconcile Position"
+        },
+        {
+          "id": "reconcile_balances",
+          "name": "Reconcile Balances"
         },
         {
           "id": "cancel_order",
-          "name": "Cancel Pending Order"
+          "name": "Cancel Order"
         },
         {
           "id": "get_pending_orders",
@@ -93,7 +147,7 @@
         },
         {
           "id": "update_mtm",
-          "name": "Update Portfolio (MTM)"
+          "name": "Update MTM"
         },
         {
           "id": "get_cash",
@@ -113,9 +167,13 @@
       "key": "base_currency",
       "label": "Base Currency",
       "type": "select",
-      "required": true,
-      "default": "USDT",
+      "required": false,
+      "default": "USD",
       "options": [
+        {
+          "id": "USD",
+          "name": "USD"
+        },
         {
           "id": "USDT",
           "name": "USDT"
@@ -123,10 +181,6 @@
         {
           "id": "USDC",
           "name": "USDC"
-        },
-        {
-          "id": "USD",
-          "name": "USD"
         },
         {
           "id": "EUR",
@@ -137,8 +191,6 @@
         "show": {
           "operation": [
             "create_portfolio",
-            "update_portfolio",
-            "update_mtm",
             "get_portfolio",
             "get_cash",
             "get_equity"
@@ -150,7 +202,7 @@
       "key": "cash_balance",
       "label": "Cash Balance",
       "type": "text",
-      "placeholder": "e.g. 64786.0",
+      "placeholder": "e.g. 100000",
       "required": true,
       "description": "Starting cash balance in the base currency.",
       "displayOptions": {
@@ -161,19 +213,34 @@
     },
     {
       "key": "symbol",
-      "label": "Symbol(s)",
+      "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. BTCUSDT or BTCUSDT,ETHUSDT",
+      "placeholder": "e.g. ETH/USD",
       "required": false,
-      "description": "One or more symbols (comma-separated).",
       "displayOptions": {
         "show": {
           "operation": [
-            "update_portfolio",
+            "register_order_intent",
+            "apply_order_update",
+            "apply_execution",
+            "reconcile_position",
             "get_position",
             "update_mtm",
-            "register_order",
             "get_pending_orders"
+          ]
+        }
+      }
+    },
+    {
+      "key": "asset",
+      "label": "Asset",
+      "type": "text",
+      "placeholder": "e.g. USD or BNB",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "reconcile_balances"
           ]
         }
       }
@@ -181,91 +248,302 @@
     {
       "key": "side",
       "label": "Side",
-      "type": "text",
-      "placeholder": "e.g. BUY/SELL",
-      "required": true,
-      "description": "Trade side. Determines whether quantity adds or reduces the position.",
+      "type": "select",
+      "required": false,
+      "options": [
+        {
+          "id": "BUY",
+          "name": "BUY"
+        },
+        {
+          "id": "SELL",
+          "name": "SELL"
+        }
+      ],
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "register_order"]
+          "operation": [
+            "register_order_intent",
+            "apply_execution"
+          ]
         }
       }
     },
     {
-      "key": "quantity",
-      "label": "Quantity",
+      "key": "order_type",
+      "label": "Order Type",
+      "type": "text",
+      "placeholder": "e.g. market, limit, stop",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "register_order_intent"
+          ]
+        }
+      }
+    },
+    {
+      "key": "time_in_force",
+      "label": "Time In Force",
+      "type": "text",
+      "placeholder": "e.g. gtc, day, ioc",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "register_order_intent"
+          ]
+        }
+      }
+    },
+    {
+      "key": "status",
+      "label": "Status",
+      "type": "text",
+      "placeholder": "e.g. new, partially_filled, filled, canceled",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "register_order_intent",
+            "apply_order_update",
+            "apply_execution",
+            "cancel_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "broker_order_id",
+      "label": "Broker Order ID",
+      "type": "text",
+      "placeholder": "e.g. broker order id",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "register_order_intent",
+            "apply_order_update",
+            "apply_execution",
+            "cancel_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "client_order_id",
+      "label": "Client Order ID",
+      "type": "text",
+      "placeholder": "e.g. client order id",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "register_order_intent",
+            "apply_order_update",
+            "apply_execution",
+            "cancel_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "execution_id",
+      "label": "Execution ID",
+      "type": "text",
+      "placeholder": "e.g. execution or trade id",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution"
+          ]
+        }
+      }
+    },
+    {
+      "key": "orig_qty",
+      "label": "Original Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
-      "required": true,
-      "description": "Cumulative filled quantity when using Fill ID (delta computed automatically). Absolute value — side controls direction.",
+      "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "register_order"]
+          "operation": [
+            "register_order_intent",
+            "apply_order_update"
+          ]
         }
       }
     },
     {
-      "key": "orderType",
-      "label": "Order type",
+      "key": "cum_filled_qty",
+      "label": "Cumulative Filled Quantity",
       "type": "text",
-      "placeholder": "e.g. market/limit/stop",
-      "required": true,
-      "description": "Order type. Determines whether the trade is a market, limit, or stop order.",
+      "placeholder": "e.g. 1",
+      "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
+          "operation": [
+            "apply_order_update",
+            "apply_execution"
+          ]
         }
       }
     },
     {
-      "key": "price",
-      "label": "Price",
+      "key": "exec_qty",
+      "label": "Execution Quantity",
       "type": "text",
-      "placeholder": "e.g. 64786.0",
-      "required": true,
-      "description": "Average fill price.",
+      "placeholder": "e.g. 0.4",
+      "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "update_mtm"]
+          "operation": [
+            "apply_execution"
+          ]
         }
       }
     },
     {
-      "key": "limitPrice",
+      "key": "position_qty",
+      "label": "Position Quantity",
+      "type": "text",
+      "placeholder": "e.g. 0.9982",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "reconcile_position"
+          ]
+        }
+      }
+    },
+    {
+      "key": "remaining_qty",
+      "label": "Remaining Quantity",
+      "type": "text",
+      "placeholder": "e.g. 0.6",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_order_update"
+          ]
+        }
+      }
+    },
+    {
+      "key": "exec_price",
+      "label": "Execution Price",
+      "type": "text",
+      "placeholder": "e.g. 2122.79",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution"
+          ]
+        }
+      }
+    },
+    {
+      "key": "avg_fill_price",
+      "label": "Average Fill Price",
+      "type": "text",
+      "placeholder": "e.g. 2122.79",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_order_update"
+          ]
+        }
+      }
+    },
+    {
+      "key": "market_price",
+      "label": "Market Price",
+      "type": "text",
+      "placeholder": "e.g. 2125.10",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "update_mtm"
+          ]
+        }
+      }
+    },
+    {
+      "key": "quote_notional",
+      "label": "Quote Notional",
+      "type": "text",
+      "placeholder": "e.g. 2122.79",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution"
+          ]
+        }
+      }
+    },
+    {
+      "key": "fee_amount",
+      "label": "Fee Amount",
+      "type": "text",
+      "placeholder": "0",
+      "required": false,
+      "default": "0",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution"
+          ]
+        }
+      }
+    },
+    {
+      "key": "fee_asset",
+      "label": "Fee Asset",
+      "type": "text",
+      "placeholder": "e.g. USD, ETH, BNB",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution"
+          ]
+        }
+      }
+    },
+    {
+      "key": "limit_price",
       "label": "Limit Price",
       "type": "text",
-      "placeholder": "e.g. 64786.0",
+      "placeholder": "e.g. 2120.00",
       "required": false,
-      "description": "Optional limit price for the pending order.",
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
+          "operation": [
+            "register_order_intent"
+          ]
         }
       }
     },
     {
-      "key": "stopPrice",
+      "key": "stop_price",
       "label": "Stop Price",
       "type": "text",
-      "placeholder": "e.g. 64000.0",
+      "placeholder": "e.g. 2100.00",
       "required": false,
-      "description": "Optional stop trigger price for the pending order.",
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
-        }
-      }
-    },
-    {
-      "key": "tif",
-      "label": "Time In Force (TIF)",
-      "type": "text",
-      "placeholder": "e.g. day/gtc/ioc",
-      "required": false,
-      "description": "Optional time-in-force value to store with the order.",
-      "displayOptions": {
-        "show": {
-          "operation": ["register_order"]
+          "operation": [
+            "register_order_intent"
+          ]
         }
       }
     },
@@ -275,10 +553,11 @@
       "type": "text",
       "placeholder": "e.g. 1.5",
       "required": false,
-      "description": "Optional trailing stop percentage.",
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
+          "operation": [
+            "register_order_intent"
+          ]
         }
       }
     },
@@ -288,50 +567,81 @@
       "type": "text",
       "placeholder": "e.g. 2.0",
       "required": false,
-      "description": "Optional trailing stop absolute price.",
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
+          "operation": [
+            "register_order_intent"
+          ]
         }
       }
     },
     {
-      "key": "commission",
-      "label": "Commission",
+      "key": "avg_entry_price",
+      "label": "Average Entry Price",
       "type": "text",
-      "placeholder": "0",
+      "placeholder": "e.g. 2126.62",
       "required": false,
-      "default": "0",
-      "description": "Trade commission (deducted from cash).",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio"]
+          "operation": [
+            "reconcile_position"
+          ]
         }
       }
     },
     {
-      "key": "fill_id",
-      "label": "Order ID / Fill ID",
+      "key": "realized_pnl",
+      "label": "Realized PnL",
       "type": "text",
-      "placeholder": "{{ $(AlpacaStreamData).json.data.order.orderId }}",
+      "placeholder": "e.g. 15.42",
       "required": false,
-      "description": "Unique order identifier. Used for deduplication in Sync Fills, and as the key for Register/Cancel Pending Order operations.",
       "displayOptions": {
         "show": {
-          "operation": ["update_portfolio", "register_order", "cancel_order"]
+          "operation": [
+            "reconcile_position"
+          ]
         }
       }
     },
     {
-      "key": "client_order_id",
-      "label": "Client Order ID (Fallback)",
+      "key": "total",
+      "label": "Total Balance",
       "type": "text",
-      "placeholder": "{{ $(AlpacaStreamData).json.data.order.client_order_id }}",
+      "placeholder": "e.g. 1000",
       "required": false,
-      "description": "Fallback dedup key if orderId not yet indexed. Maps to the client_order_id sent with the original order.",
       "displayOptions": {
         "show": {
-          "operation": ["register_order"]
+          "operation": [
+            "reconcile_balances"
+          ]
+        }
+      }
+    },
+    {
+      "key": "available",
+      "label": "Available Balance",
+      "type": "text",
+      "placeholder": "e.g. 950",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "reconcile_balances"
+          ]
+        }
+      }
+    },
+    {
+      "key": "locked",
+      "label": "Locked Balance",
+      "type": "text",
+      "placeholder": "e.g. 50",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "reconcile_balances"
+          ]
         }
       }
     },
@@ -341,34 +651,37 @@
       "type": "textarea",
       "placeholder": "{{ $('OnBar').json.bar }}",
       "required": false,
-      "description": "Current OHLCV bar for mark-to-market pricing",
+      "description": "Current OHLCV bar for mark-to-market pricing in backtest mode.",
       "displayOptions": {
         "show": {
           "operation": ["update_mtm"],
           "mode": ["backtest"]
         }
       }
-    },
-    {
-      "key": "status",
-      "label": "Order Status",
-      "type": "text",
-      "required": false,
-      "description": "Order status",
-      "displayOptions": {
-        "show": {
-          "operation": ["update_portfolio", "register_order"]
-        }
-      }
     }
   ],
   "operationDisplayOptions": {
-    "update_mtm": {
+    "register_order_intent": {
       "show": {
-        "mode": ["backtest", "broker"]
+        "mode": ["broker"]
       }
     },
-    "register_order": {
+    "apply_order_update": {
+      "show": {
+        "mode": ["broker"]
+      }
+    },
+    "apply_execution": {
+      "show": {
+        "mode": ["broker"]
+      }
+    },
+    "reconcile_position": {
+      "show": {
+        "mode": ["broker"]
+      }
+    },
+    "reconcile_balances": {
       "show": {
         "mode": ["broker"]
       }
@@ -381,6 +694,11 @@
     "get_pending_orders": {
       "show": {
         "mode": ["broker"]
+      }
+    },
+    "update_mtm": {
+      "show": {
+        "mode": ["backtest", "broker"]
       }
     }
   }

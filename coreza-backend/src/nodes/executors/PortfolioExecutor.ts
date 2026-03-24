@@ -608,21 +608,10 @@ export class PortfolioExecutor implements INodeExecutor {
       side: parseOptionalString(params.side),
       executionId: parseOptionalString(params.execution_id),
       origQty: parseOptionalNumber(params.orig_qty),
-      cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
-      remainingQty: parseOptionalNumber(params.remaining_qty),
+      filledQty: parseOptionalNumber(params.filled_qty ?? params.cum_filled_qty),
       avgFillPrice: parseOptionalNumber(params.avg_fill_price),
-      execQty: parseOptionalNumber(params.exec_qty),
-      execPrice: parseOptionalNumber(params.exec_price),
-      quoteNotional: parseOptionalNumber(params.quote_notional),
       feeAmount: parseOptionalNumber(params.fee_amount),
       feeAsset: parseOptionalString(params.fee_asset),
-      positionQty: parseOptionalNumber(params.position_qty),
-      avgEntryPrice: parseOptionalNumber(params.avg_entry_price),
-      realizedPnl: parseOptionalNumber(params.realized_pnl),
-      marketPrice: parseOptionalNumber(params.market_price ?? params.price),
-      applyPositionDelta:
-        params.apply_position_delta !== false &&
-        params.apply_position_delta !== "false",
     };
   }
 

@@ -722,6 +722,7 @@ export class PortfolioManager {
       execPrice: number;
       baseCurrency: string;
     },
+    feeAmount: number,
     now: string,
   ): void {
     const existing = this.positions.get(input.symbol);

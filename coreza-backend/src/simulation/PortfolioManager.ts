@@ -210,6 +210,7 @@ export class PortfolioManager {
     this.balances.clear();
     this.positions.clear();
     this.executionKeysSeen.clear();
+    this.clientOrderIdIndex.clear();
 
     // Legacy state
     this.cashBook.clear();

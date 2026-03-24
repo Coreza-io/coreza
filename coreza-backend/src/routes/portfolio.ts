@@ -60,6 +60,7 @@ const portfolioRequestSchema = z.object({
   broker_order_id: z.string().optional(),
   execution_id: z.string().optional(),
   orig_qty: z.union([z.string(), z.number()]).optional(),
+  filled_qty: z.union([z.string(), z.number()]).optional(),
   cum_filled_qty: z.union([z.string(), z.number()]).optional(),
   exec_qty: z.union([z.string(), z.number()]).optional(),
   exec_price: z.union([z.string(), z.number()]).optional(),

@@ -44,5 +44,13 @@ Binance ACCOUNT_UPDATE → 2 calls:
 ## Migration Path
 
 1. ✅ Phase 1-3: New methods + executor operations + route schema + JSON (DONE)
-2. Phase 4: Update workflow graphs to use new operations
-3. Phase 5: Remove legacy applyFill(), registerOrder(), update_portfolio after migration
+2. ✅ Review fixes: All 7 issues resolved (3 bugs + 4 improvements)
+   - Bug 1: `applyExecution` now has `applyPositionDelta` flag (default true, Alpaca passes false)
+   - Bug 2: `findOrderByClientId` uses O(1) `clientOrderIdIndex` map
+   - Bug 3: `cancelOrder` no longer deletes from orders map
+   - Improvement 4: `adjustQuoteBalance`/`adjustFeeBalance` accept `now` param (no redundant Date calls)
+   - Improvement 5: Noted for Phase 5 (read paths still use legacy maps — correct for migration)
+   - Improvement 6: `executionKeysSeen` capped at 50,000 with 10% eviction
+   - Improvement 7: Trade records now carry `feeAmount` as commission, `netPnl = grossPnl - fee`
+3. Phase 4: Update workflow graphs to use new operations
+4. Phase 5: Remove legacy applyFill(), registerOrder(), update_portfolio after migration

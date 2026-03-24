@@ -307,8 +307,10 @@ export class PortfolioManager {
       existing.timeInForce = input.timeInForce ?? existing.timeInForce;
       existing.status = input.status ?? existing.status;
       existing.origQty = input.origQty || existing.origQty;
-      if (input.clientOrderId)
+      if (input.clientOrderId) {
         existing.clientOrderId = input.clientOrderId;
+        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
+      }
       existing.updatedAt = now;
       console.log(
         `[PortfolioManager] Updated existing order intent: ${input.brokerOrderId}`,

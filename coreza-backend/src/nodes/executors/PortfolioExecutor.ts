@@ -472,8 +472,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         status: status.toLowerCase(),
         origQty: parseOptionalNumber(params.orig_qty),
-        cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
-        remainingQty: parseOptionalNumber(params.remaining_qty),
+        cumFilledQty: parseOptionalNumber(params.filled_qty ?? params.cum_filled_qty),
         avgFillPrice: parseOptionalNumber(params.avg_fill_price),
       });
 
@@ -497,8 +496,8 @@ export class PortfolioExecutor implements INodeExecutor {
     try {
       const symbol = normalizeSymbol(params.symbol);
       const side = normalizeSide(params.side);
-      const execQty = parseRequiredNumber(params.exec_qty, "exec_qty");
-      const execPrice = parseRequiredNumber(params.exec_price, "exec_price");
+      const filledQty = parseRequiredNumber(params.filled_qty ?? params.cum_filled_qty, "filled_qty");
+      const avgFillPrice = parseRequiredNumber(params.avg_fill_price, "avg_fill_price");
 
       const brokerOrderId = parseOptionalString(params.broker_order_id);
       const clientOrderId = parseOptionalString(params.client_order_id);
@@ -525,6 +524,26 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
+      // Derive execution delta from cumulative filled qty
+      const resolvedBrokerOrderId = brokerOrderId
+        ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+      const previousCumQty = resolvedBrokerOrderId
+        ? pm.getOrderCumFilledQty(resolvedBrokerOrderId)
+        : 0;
+      const execQty = Math.max(0, filledQty - previousCumQty);
+
+      if (execQty <= 0) {
+        return toNodeResult(
+          createSuccessOutput({
+            applied: false,
+            reason: "no_new_fill_qty",
+            filled_qty: filledQty,
+            previous_cum_qty: previousCumQty,
+            broker_order_id: brokerOrderId,
+          }),
+        );
+      }
+
       const result = pm.applyExecution({
         brokerOrderId,
         executionId: parseOptionalString(params.execution_id),
@@ -532,13 +551,12 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         side,
         execQty,
-        execPrice,
-        quoteNotional: parseOptionalNumber(params.quote_notional),
+        execPrice: avgFillPrice,
         feeAmount: parseOptionalNumber(params.fee_amount),
         feeAsset: parseOptionalString(params.fee_asset),
-        cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
+        cumFilledQty: filledQty,
         baseCurrency,
-        applyPositionDelta: params.apply_position_delta !== false && params.apply_position_delta !== "false",
+        applyPositionDelta: true,
       });
 
       return toNodeResult(
@@ -578,21 +596,10 @@ export class PortfolioExecutor implements INodeExecutor {
       side: parseOptionalString(params.side),
       executionId: parseOptionalString(params.execution_id),
       origQty: parseOptionalNumber(params.orig_qty),
-      cumFilledQty: parseOptionalNumber(params.cum_filled_qty),
-      remainingQty: parseOptionalNumber(params.remaining_qty),
+      filledQty: parseOptionalNumber(params.filled_qty ?? params.cum_filled_qty),
       avgFillPrice: parseOptionalNumber(params.avg_fill_price),
-      execQty: parseOptionalNumber(params.exec_qty),
-      execPrice: parseOptionalNumber(params.exec_price),
-      quoteNotional: parseOptionalNumber(params.quote_notional),
       feeAmount: parseOptionalNumber(params.fee_amount),
       feeAsset: parseOptionalString(params.fee_asset),
-      positionQty: parseOptionalNumber(params.position_qty),
-      avgEntryPrice: parseOptionalNumber(params.avg_entry_price),
-      realizedPnl: parseOptionalNumber(params.realized_pnl),
-      marketPrice: parseOptionalNumber(params.market_price ?? params.price),
-      applyPositionDelta:
-        params.apply_position_delta !== false &&
-        params.apply_position_delta !== "false",
     };
   }
 
@@ -611,19 +618,10 @@ export class PortfolioExecutor implements INodeExecutor {
         side,
         executionId,
         origQty,
-        cumFilledQty,
-        remainingQty,
+        filledQty,
         avgFillPrice,
-        execQty,
-        execPrice,
-        quoteNotional,
         feeAmount,
         feeAsset,
-        positionQty,
-        avgEntryPrice,
-        realizedPnl,
-        marketPrice,
-        applyPositionDelta,
       } = parsed;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
@@ -644,10 +642,9 @@ export class PortfolioExecutor implements INodeExecutor {
       let order: any | undefined;
       let executionApplied = false;
       let executionResult: { reason?: string; executionId?: string } = {};
-      let position: any | undefined;
       let orderUpdated = false;
-      let positionReconciled = false;
 
+      // 1. Order update (if status provided)
       if (status) {
         const resolvedBrokerOrderId =
           brokerOrderId
@@ -664,8 +661,7 @@ export class PortfolioExecutor implements INodeExecutor {
             symbol,
             status,
             origQty,
-            cumFilledQty,
-            remainingQty,
+            cumFilledQty: filledQty,
             avgFillPrice,
           });
           orderUpdated = orderResult.updated;
@@ -673,51 +669,48 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
-      if (execQty !== undefined && execPrice !== undefined && side) {
-        const execResult = pm.applyExecution({
-          brokerOrderId,
-          executionId,
-          clientOrderId,
-          symbol,
-          side: normalizeSide(side),
-          execQty,
-          execPrice,
-          quoteNotional,
-          feeAmount,
-          feeAsset,
-          cumFilledQty,
-          baseCurrency,
-          applyPositionDelta,
-        });
-        executionApplied = execResult.applied;
-        executionResult = {
-          reason: execResult.reason,
-          executionId: execResult.executionId,
-        };
-      }
+      // 2. Execution (if filled_qty and avg_fill_price and side provided)
+      if (filledQty !== undefined && avgFillPrice !== undefined && side) {
+        const resolvedBrokerOrderId = brokerOrderId
+          ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+        const previousCumQty = resolvedBrokerOrderId
+          ? pm.getOrderCumFilledQty(resolvedBrokerOrderId)
+          : 0;
+        const derivedExecQty = Math.max(0, filledQty - previousCumQty);
 
-      if (positionQty !== undefined) {
-        const positionResult = pm.reconcilePosition({
-          symbol,
-          positionQty,
-          avgEntryPrice,
-          realizedPnl,
-          currentPrice: marketPrice,
-        });
-        positionReconciled = positionResult.reconciled;
-        position = positionResult.position;
+        if (derivedExecQty > 0) {
+          const execResult = pm.applyExecution({
+            brokerOrderId,
+            executionId,
+            clientOrderId,
+            symbol,
+            side: normalizeSide(side),
+            execQty: derivedExecQty,
+            execPrice: avgFillPrice,
+            feeAmount,
+            feeAsset,
+            cumFilledQty: filledQty,
+            baseCurrency,
+            applyPositionDelta: true,
+          });
+          executionApplied = execResult.applied;
+          executionResult = {
+            reason: execResult.reason,
+            executionId: execResult.executionId,
+          };
+        } else {
+          executionResult = { reason: "no_new_fill_qty" };
+        }
       }
 
       return toNodeResult(
         createSuccessOutput({
           order_updated: orderUpdated,
           execution_applied: executionApplied,
-          position_reconciled: positionReconciled,
           skipped: false,
           order,
           execution_id: executionResult.executionId ?? executionId,
           execution_reason: executionResult.reason,
-          position,
           ...this.getPortfolioSummary(pm, baseCurrency),
         }),
       );

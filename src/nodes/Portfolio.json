@@ -399,76 +399,17 @@
       }
     },
     {
-      "key": "cum_filled_qty",
-      "label": "Cumulative Filled Quantity",
+      "key": "filled_qty",
+      "label": "Filled Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
       "required": false,
+      "description": "Cumulative filled quantity from the broker. The executor derives the execution delta internally.",
       "displayOptions": {
         "show": {
           "operation": [
+            "apply_execution",
             "apply_order_update",
-            "apply_execution",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "exec_qty",
-      "label": "Execution Quantity",
-      "type": "text",
-      "placeholder": "e.g. 0.4",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "apply_execution",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "position_qty",
-      "label": "Position Quantity",
-      "type": "text",
-      "placeholder": "e.g. 0.9982",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "reconcile_position",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "remaining_qty",
-      "label": "Remaining Quantity",
-      "type": "text",
-      "placeholder": "e.g. 0.6",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "apply_order_update",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "exec_price",
-      "label": "Execution Price",
-      "type": "text",
-      "placeholder": "e.g. 2122.79",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "apply_execution",
             "sync_order_event"
           ]
         }
@@ -476,7 +417,7 @@
     },
     {
       "key": "avg_fill_price",
-      "label": "Average Fill Price",
+      "label": "Average Price",
       "type": "text",
       "placeholder": "e.g. 2122.79",
       "required": false,
@@ -484,6 +425,7 @@
         "show": {
           "operation": [
             "apply_order_update",
+            "apply_execution",
             "sync_order_event"
           ]
         }
@@ -498,23 +440,7 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "update_mtm",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "quote_notional",
-      "label": "Quote Notional",
-      "type": "text",
-      "placeholder": "e.g. 2122.79",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "apply_execution",
-            "sync_order_event"
+            "update_mtm"
           ]
         }
       }
@@ -541,31 +467,6 @@
       "type": "text",
       "placeholder": "e.g. USD, ETH, BNB",
       "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "apply_execution",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "apply_position_delta",
-      "label": "Apply Position Delta",
-      "type": "select",
-      "required": false,
-      "default": "true",
-      "options": [
-        {
-          "id": "true",
-          "name": "true"
-        },
-        {
-          "id": "false",
-          "name": "false"
-        }
-      ],
       "displayOptions": {
         "show": {
           "operation": [
@@ -632,6 +533,20 @@
       }
     },
     {
+      "key": "position_qty",
+      "label": "Position Quantity",
+      "type": "text",
+      "placeholder": "e.g. 0.9982",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "reconcile_position"
+          ]
+        }
+      }
+    },
+    {
       "key": "avg_entry_price",
       "label": "Average Entry Price",
       "type": "text",
@@ -640,23 +555,7 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "reconcile_position",
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "realized_pnl",
-      "label": "Realized PnL",
-      "type": "text",
-      "placeholder": "e.g. 15.42",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "reconcile_position",
-            "sync_order_event"
+            "reconcile_position"
           ]
         }
       }

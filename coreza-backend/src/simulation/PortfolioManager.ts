@@ -674,7 +674,15 @@ export class PortfolioManager {
     return this.clientOrderIdIndex.get(clientOrderId);
   }
 
-  private adjustQuoteBalance(
+  /**
+   * Get the current cumulative filled quantity for an order.
+   * Returns 0 if the order is not found.
+   */
+  getOrderCumFilledQty(brokerOrderId: string): number {
+    const order = this.orders.get(brokerOrderId);
+    return order?.cumFilledQty ?? 0;
+  }
+
     quoteAsset: string,
     side: "buy" | "sell",
     notional: number,

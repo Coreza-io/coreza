@@ -644,9 +644,8 @@ export class PortfolioManager {
   }
 
   private findOrderByClientId(clientOrderId: string): OrderState | undefined {
-    for (const order of this.orders.values()) {
-      if (order.clientOrderId === clientOrderId) return order;
-    }
+    const brokerOrderId = this.clientOrderIdIndex.get(clientOrderId);
+    if (brokerOrderId) return this.orders.get(brokerOrderId);
     return undefined;
   }
 

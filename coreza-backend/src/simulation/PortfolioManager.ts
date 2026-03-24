@@ -152,6 +152,8 @@ export class PortfolioManager {
   private balances = new Map<string, BalanceState>();
   private positions = new Map<string, PositionState>();
   private executionKeysSeen = new Set<string>();
+  private static readonly MAX_EXECUTION_KEYS = 50_000;
+  private clientOrderIdIndex = new Map<string, string>(); // clientOrderId → brokerOrderId
 
   // ============== LEGACY STATE (kept for migration) ==============
   private cashBook = new Map<string, number>(); // asset -> total balance

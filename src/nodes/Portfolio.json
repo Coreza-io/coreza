@@ -52,7 +52,9 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "mode": ["backtest"]
+          "mode": [
+            "backtest"
+          ]
         }
       }
     },
@@ -82,7 +84,9 @@
       ],
       "displayOptions": {
         "show": {
-          "mode": ["broker"]
+          "mode": [
+            "broker"
+          ]
         }
       }
     },
@@ -94,7 +98,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "mode": ["broker"]
+          "mode": [
+            "broker"
+          ]
         }
       }
     },
@@ -120,6 +126,10 @@
         {
           "id": "apply_execution",
           "name": "Apply Execution"
+        },
+        {
+          "id": "sync_order_event",
+          "name": "Sync Order Event"
         },
         {
           "id": "reconcile_position",
@@ -191,9 +201,11 @@
         "show": {
           "operation": [
             "create_portfolio",
+            "apply_execution",
             "get_portfolio",
             "get_cash",
-            "get_equity"
+            "get_equity",
+            "sync_order_event"
           ]
         }
       }
@@ -207,7 +219,9 @@
       "description": "Starting cash balance in the base currency.",
       "displayOptions": {
         "show": {
-          "operation": ["create_portfolio"]
+          "operation": [
+            "create_portfolio"
+          ]
         }
       }
     },
@@ -226,7 +240,8 @@
             "reconcile_position",
             "get_position",
             "update_mtm",
-            "get_pending_orders"
+            "get_pending_orders",
+            "sync_order_event"
           ]
         }
       }
@@ -264,7 +279,8 @@
         "show": {
           "operation": [
             "register_order_intent",
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -309,7 +325,8 @@
             "register_order_intent",
             "apply_order_update",
             "apply_execution",
-            "cancel_order"
+            "cancel_order",
+            "sync_order_event"
           ]
         }
       }
@@ -326,7 +343,8 @@
             "register_order_intent",
             "apply_order_update",
             "apply_execution",
-            "cancel_order"
+            "cancel_order",
+            "sync_order_event"
           ]
         }
       }
@@ -343,7 +361,8 @@
             "register_order_intent",
             "apply_order_update",
             "apply_execution",
-            "cancel_order"
+            "cancel_order",
+            "sync_order_event"
           ]
         }
       }
@@ -357,7 +376,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -372,7 +392,8 @@
         "show": {
           "operation": [
             "register_order_intent",
-            "apply_order_update"
+            "apply_order_update",
+            "sync_order_event"
           ]
         }
       }
@@ -387,7 +408,8 @@
         "show": {
           "operation": [
             "apply_order_update",
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -401,7 +423,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -415,7 +438,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "reconcile_position"
+            "reconcile_position",
+            "sync_order_event"
           ]
         }
       }
@@ -429,7 +453,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_order_update"
+            "apply_order_update",
+            "sync_order_event"
           ]
         }
       }
@@ -443,7 +468,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -457,7 +483,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_order_update"
+            "apply_order_update",
+            "sync_order_event"
           ]
         }
       }
@@ -471,7 +498,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "update_mtm"
+            "update_mtm",
+            "sync_order_event"
           ]
         }
       }
@@ -485,7 +513,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -500,7 +529,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -514,7 +544,33 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "apply_execution"
+            "apply_execution",
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "apply_position_delta",
+      "label": "Apply Position Delta",
+      "type": "select",
+      "required": false,
+      "default": "true",
+      "options": [
+        {
+          "id": "true",
+          "name": "true"
+        },
+        {
+          "id": "false",
+          "name": "false"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution",
+            "sync_order_event"
           ]
         }
       }
@@ -584,7 +640,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "reconcile_position"
+            "reconcile_position",
+            "sync_order_event"
           ]
         }
       }
@@ -598,7 +655,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "reconcile_position"
+            "reconcile_position",
+            "sync_order_event"
           ]
         }
       }
@@ -654,8 +712,12 @@
       "description": "Current OHLCV bar for mark-to-market pricing in backtest mode.",
       "displayOptions": {
         "show": {
-          "operation": ["update_mtm"],
-          "mode": ["backtest"]
+          "operation": [
+            "update_mtm"
+          ],
+          "mode": [
+            "backtest"
+          ]
         }
       }
     }
@@ -663,42 +725,66 @@
   "operationDisplayOptions": {
     "register_order_intent": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "apply_order_update": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "apply_execution": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "reconcile_position": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "reconcile_balances": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "cancel_order": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "get_pending_orders": {
       "show": {
-        "mode": ["broker"]
+        "mode": [
+          "broker"
+        ]
       }
     },
     "update_mtm": {
       "show": {
-        "mode": ["backtest", "broker"]
+        "mode": [
+          "backtest",
+          "broker"
+        ]
+      }
+    },
+    "sync_order_event": {
+      "show": {
+        "mode": [
+          "broker"
+        ]
       }
     }
   }

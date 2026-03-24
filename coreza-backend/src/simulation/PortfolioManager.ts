@@ -669,6 +669,11 @@ export class PortfolioManager {
     return undefined;
   }
 
+  resolveOrderIdByClientId(clientOrderId: string): string | undefined {
+    if (!clientOrderId) return undefined;
+    return this.clientOrderIdIndex.get(clientOrderId);
+  }
+
   private adjustQuoteBalance(
     quoteAsset: string,
     side: "buy" | "sell",

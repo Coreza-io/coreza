@@ -952,7 +952,7 @@ export class PortfolioManager {
     if (v2Order) {
       v2Order.status = "canceled";
       v2Order.updatedAt = new Date().toISOString();
-      this.orders.delete(orderId);
+      // Keep in orders map for audit — getV2PendingOrders() already filters by OPEN_ORDER_STATUSES
     }
 
     const ticket = this.tickets.get(orderId);

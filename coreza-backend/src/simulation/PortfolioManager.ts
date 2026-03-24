@@ -498,9 +498,12 @@ export class PortfolioManager {
       this.adjustFeeBalance(feeBalanceAsset, feeAmount);
     }
 
-    // Apply execution-derived position delta
-    // This creates/updates position state based on the execution
-    this.applyExecutionDerivedPositionDelta(input, now);
+    // Apply execution-derived position delta (opt-in, default true)
+    // For Alpaca: pass false since reconcilePosition() is the source of truth
+    // For Binance spot: pass true (default) since no reconcilePosition call follows
+    if (input.applyPositionDelta !== false) {
+      this.applyExecutionDerivedPositionDelta(input, feeAmount, now);
+    }
 
     // Update peak equity
     this.updatePeakEquity(input.baseCurrency);

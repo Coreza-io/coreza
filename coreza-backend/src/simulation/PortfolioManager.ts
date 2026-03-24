@@ -336,6 +336,9 @@ export class PortfolioManager {
     };
 
     this.orders.set(input.brokerOrderId, order);
+    if (input.clientOrderId) {
+      this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
+    }
     console.log(
       `[PortfolioManager] Registered order intent: ${input.side} ${input.origQty} ${input.symbol} (${input.brokerOrderId})`,
     );

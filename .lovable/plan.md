@@ -1,78 +1,48 @@
 
+# Portfolio Module Refactor — Implemented
 
-# Simpler Fix: Add `executionId` to NodeExecutionContext
+## Summary
 
-## Problem Recap
+Refactored the broker-mode portfolio from a fill-centric model (register_order + update_portfolio) to a canonical order/execution/position/balance projector model.
 
-In live streaming, `context.runId` is the static `runnerInstanceId` (set once in the constructor). The idempotency key uses `runId`, so all bars for the same symbol/side/quantity produce identical keys → duplicate orders are incorrectly skipped.
+## Core Principle
 
-## Better Approach: Add `executionId` Instead of Rotating `runId`
+Each concern has its own method — no single field controls order progress, execution accounting, position quantity, AND balance changes:
 
-Instead of calling `resetForNewRun()` (which destroys indicator state and requires re-carrying it), simply add an `executionId` field to the context. This is cleaner because:
-
-- `runId` keeps its current meaning: the persistent runner/session ID
-- `executionId` is unique per event/bar — used only for idempotency
-- No need to destroy and recreate `WorkflowRun` each event
-- Indicator state, node state, data context all preserved naturally
-- Minimal change surface
-
-## Changes
-
-### 1. Add `executionId` to `NodeExecutionContext`
-
-**File: `coreza-backend/src/engine/types/executionContext.ts`**
-
-```typescript
-export interface NodeExecutionContext {
-  userId: string;
-  runId: string;
-  executionId: string;  // ← new: unique per event/bar execution
-  workflowId: string;
-  // ... rest unchanged
-}
-```
-
-### 2. Thread `executionId` through WorkflowRun
-
-Wherever the context is built (in `WorkflowRun` or the execution runtime), add `executionId`. Default it to `runId` so non-streaming paths work without changes.
-
-Need to check how the context is constructed — likely in `WorkflowRun` or `ExecutionRuntime`. Add an `executionId` field that can be set per-event via a setter method like `setExecutionId(id: string)`.
-
-### 3. Set `executionId` per event in WorkflowRunner
-
-**File: `coreza-backend/src/services/WorkflowRunner.ts`**
-
-In `processMessage()`, after `resetForNextBar(true)` and before execution:
-
-```typescript
-const executionRunId = randomUUID();
-this.engine.setExecutionId(executionRunId);  // ← new method
-```
-
-This keeps `resetForNextBar()` (preserving indicator state) while making each event uniquely identifiable.
-
-### 4. Use `executionId` in BrokerExecutor
-
-**File: `coreza-backend/src/nodes/executors/BrokerExecutor.ts`**
-
-```typescript
-idempotencyKey = generateIdempotencyKey({
-  workflowId: context?.workflowId ?? "manual",
-  nodeId: node.id,
-  runId: context?.executionId ?? context?.runId ?? `manual-${Date.now()}`,
-  // ... rest unchanged
-});
-```
-
-Uses `executionId` (unique per bar) for idempotency. Falls back to `runId` for non-streaming executions where `executionId` equals `runId`.
+- **applyOrderUpdate** → order lifecycle state only
+- **applyExecution** → cash/fees/execution ledger + execution-derived position delta
+- **reconcilePosition** → absolute broker position quantity (fixes Alpaca 1 vs 0.9982)
+- **reconcileBalance** → asset balance snapshot (supports BNB fee asset)
+- **registerOrderIntent** → order intent registration (no cash/position mutation)
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `coreza-backend/src/engine/types/executionContext.ts` | Add `executionId: string` field |
-| `coreza-backend/src/engine/workflowRun.ts` (or equivalent) | Store and expose `executionId`, default to `runId` |
-| `coreza-backend/src/engine/workflowEngine.ts` | Add `setExecutionId()` passthrough method |
-| `coreza-backend/src/services/WorkflowRunner.ts` | Call `engine.setExecutionId(executionRunId)` per event |
-| `coreza-backend/src/nodes/executors/BrokerExecutor.ts` | Use `context.executionId` in idempotency key generation |
+| `coreza-backend/src/simulation/PortfolioManager.ts` | Added OrderState, ExecutionRecord, PositionState, BalanceState interfaces. Added v2 state maps. Added 5 new public methods + instrument parser. Legacy methods kept as deprecated wrappers that also populate v2 state. |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Added 5 new broker-mode switch cases (register_order_intent, apply_order_update, apply_execution, reconcile_position, reconcile_balances). Legacy operations (register_order, update_portfolio) route through existing code with `legacy_operation_used: true` flag. Added parameter normalizer helpers. |
+| `coreza-backend/src/routes/portfolio.ts` | Expanded Zod schema with all v2 fields (broker_order_id, execution_id, exec_qty, exec_price, position_qty, fee_amount, fee_asset, asset, total, available, locked, etc.) plus legacy aliases. |
+| `src/nodes/Portfolio.json` | Replaced with new node definition supporting all v2 operations with proper displayOptions per operation. |
 
+## Broker Event Mapping
+
+```
+Alpaca fill event → 3 calls:
+  1. apply_order_update (order.status, order.filled_qty)
+  2. apply_execution   (price, qty, execution_id)
+  3. reconcile_position (position_qty = 0.9982)
+
+Binance executionReport → 2 calls:
+  1. apply_order_update (msg.X status, msg.z cumQty)
+  2. apply_execution   (msg.l lastQty, msg.L lastPrice, msg.n fee, msg.N feeAsset)
+
+Binance ACCOUNT_UPDATE → 2 calls:
+  1. reconcile_position (position qty)
+  2. reconcile_balances (asset balances)
+```
+
+## Migration Path
+
+1. ✅ Phase 1-3: New methods + executor operations + route schema + JSON (DONE)
+2. Phase 4: Update workflow graphs to use new operations
+3. Phase 5: Remove legacy applyFill(), registerOrder(), update_portfolio after migration

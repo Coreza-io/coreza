@@ -248,7 +248,10 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
   },
   close_position: {
     method: "delete",
-    path: (input: any) => `/v2/positions/${encodeURIComponent(input.symbol)}`,
+    path: (input: any) => {
+      const normalized = input.symbol.replace("/", ""); // ETH/USD → ETHUSD
+      return `/v2/positions/${normalized}`;
+    },
     makeParams: (input: any) => {
       const params: any = {};
       if (input.qty) params.qty = String(input.qty);

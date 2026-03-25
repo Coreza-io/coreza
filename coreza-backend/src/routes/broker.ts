@@ -109,7 +109,7 @@ router.post("/:broker/auth", async (req, res, next) => {
 // Dynamic broker operation endpoint
 router.post("/:broker/:operation", async (req, res, next) => {
   try {
-    const { broker, operation } = req.params;
+    const { broker } = req.params;
     const brokerKey = normalizeBroker(broker);
     const {
       workflowId,
@@ -118,6 +118,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       node_type,
       nodeName,
       category,
+      operation,
     } = req.body;
     const userId = req.user?.id;
 
@@ -153,7 +154,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       node_type,
       category,
       subCategory: brokerKey,
-      values: { ...req.body, operation },
+      values: { ...req.body },
     };
 
     const result = await brokerExecutor.execute(node, req.body, {

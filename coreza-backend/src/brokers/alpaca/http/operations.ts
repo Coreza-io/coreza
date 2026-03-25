@@ -246,4 +246,14 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       return body;
     },
   },
+  close_position: {
+    method: "delete",
+    path: (input: any) => `/v2/positions/${encodeURIComponent(input.symbol)}`,
+    makeParams: (input: any) => {
+      const params: any = {};
+      if (input.qty) params.qty = String(input.qty);
+      if (input.percentage) params.percentage = String(input.percentage);
+      return params;
+    },
+  },
 };

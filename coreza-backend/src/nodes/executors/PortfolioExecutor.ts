@@ -61,14 +61,18 @@ function parseRequiredNumber(value: any, field: string): number {
 }
 
 function normalizeSide(value: any): "buy" | "sell" {
-  const s = String(value ?? "").trim().toLowerCase();
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (s === "buy") return "buy";
   if (s === "sell") return "sell";
   throw new Error(`side must be BUY or SELL, got: ${value}`);
 }
 
 function normalizeSymbol(value: any): string {
-  const s = String(value ?? "").trim().toUpperCase();
+  const s = String(value ?? "")
+    .trim()
+    .toUpperCase();
   if (!s) throw new Error("symbol is required");
   return s;
 }
@@ -343,9 +347,10 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerLegacyRegisterOrder(pm, params);
       }
       case "cancel_order": {
-        const cancelOrderId = parseOptionalString(params.broker_order_id)
-          ?? parseOptionalString(params.fill_id)
-          ?? parseOptionalString(params.order_id);
+        const cancelOrderId =
+          parseOptionalString(params.broker_order_id) ??
+          parseOptionalString(params.fill_id) ??
+          parseOptionalString(params.order_id);
         if (!cancelOrderId) {
           return toNodeResult(
             createErrorOutput(
@@ -472,7 +477,9 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         status: status.toLowerCase(),
         origQty: parseOptionalNumber(params.orig_qty),
-        cumFilledQty: parseOptionalNumber(params.filled_qty ?? params.cum_filled_qty),
+        cumFilledQty: parseOptionalNumber(
+          params.filled_qty ?? params.cum_filled_qty,
+        ),
         avgFillPrice: parseOptionalNumber(params.avg_fill_price),
       });
 
@@ -496,8 +503,14 @@ export class PortfolioExecutor implements INodeExecutor {
     try {
       const symbol = normalizeSymbol(params.symbol);
       const side = normalizeSide(params.side);
-      const filledQty = parseRequiredNumber(params.filled_qty ?? params.cum_filled_qty, "filled_qty");
-      const avgFillPrice = parseRequiredNumber(params.avg_fill_price, "avg_fill_price");
+      const filledQty = parseRequiredNumber(
+        params.filled_qty ?? params.cum_filled_qty,
+        "filled_qty",
+      );
+      const avgFillPrice = parseRequiredNumber(
+        params.avg_fill_price,
+        "avg_fill_price",
+      );
 
       const brokerOrderId = parseOptionalString(params.broker_order_id);
       const clientOrderId = parseOptionalString(params.client_order_id);
@@ -518,15 +531,14 @@ export class PortfolioExecutor implements INodeExecutor {
             reason: "unknown_order",
             broker_order_id: brokerOrderId,
             client_order_id: clientOrderId,
-            message:
-              "Order was not placed by this system — execution skipped",
+            message: "Order was not placed by this system — execution skipped",
           }),
         );
       }
 
       // Derive execution delta from cumulative filled qty
-      const resolvedBrokerOrderId = brokerOrderId
-        ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+      const resolvedBrokerOrderId =
+        brokerOrderId ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
       const previousCumQty = resolvedBrokerOrderId
         ? pm.getOrderCumFilledQty(resolvedBrokerOrderId)
         : 0;
@@ -596,7 +608,9 @@ export class PortfolioExecutor implements INodeExecutor {
       side: parseOptionalString(params.side),
       executionId: parseOptionalString(params.execution_id),
       origQty: parseOptionalNumber(params.orig_qty),
-      filledQty: parseOptionalNumber(params.filled_qty ?? params.cum_filled_qty),
+      filledQty: parseOptionalNumber(
+        params.filled_qty ?? params.cum_filled_qty,
+      ),
       avgFillPrice: parseOptionalNumber(params.avg_fill_price),
       feeAmount: parseOptionalNumber(params.fee_amount),
       feeAsset: parseOptionalString(params.fee_asset),
@@ -649,8 +663,7 @@ export class PortfolioExecutor implements INodeExecutor {
       // 1. Order update (if status provided)
       if (status) {
         const resolvedBrokerOrderId =
-          brokerOrderId
-          ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+          brokerOrderId ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
 
         if (!resolvedBrokerOrderId) {
           console.warn(
@@ -673,36 +686,28 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // 2. Execution (if filled_qty and avg_fill_price and side provided)
       if (filledQty !== undefined && avgFillPrice !== undefined && side) {
-        const resolvedBrokerOrderId = brokerOrderId
-          ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
-        const previousCumQty = resolvedBrokerOrderId
-          ? pm.getOrderCumFilledQty(resolvedBrokerOrderId)
-          : 0;
-        const derivedExecQty = Math.max(0, filledQty - previousCumQty);
+        // const resolvedBrokerOrderId = brokerOrderId
+        //   ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+        //const derivedExecQty = Math.max(0, filledQty - previousCumQty);
 
-        if (derivedExecQty > 0) {
-          const execResult = pm.applyExecution({
-            brokerOrderId,
-            executionId,
-            clientOrderId,
-            symbol,
-            side: normalizeSide(side),
-            execQty: derivedExecQty,
-            execPrice: avgFillPrice,
-            feeAmount,
-            feeAsset,
-            cumFilledQty: filledQty,
-            baseCurrency,
-            applyPositionDelta: positionQty === undefined,
-          });
-          executionApplied = execResult.applied;
-          executionResult = {
-            reason: execResult.reason,
-            executionId: execResult.executionId,
-          };
-        } else {
-          executionResult = { reason: "no_new_fill_qty" };
-        }
+        const execResult = pm.applyExecution({
+          brokerOrderId,
+          executionId,
+          clientOrderId,
+          symbol,
+          side: normalizeSide(side),
+          execQty: filledQty,
+          execPrice: avgFillPrice,
+          feeAmount,
+          feeAsset,
+          baseCurrency,
+          applyPositionDelta: positionQty != undefined,
+        });
+        executionApplied = execResult.applied;
+        executionResult = {
+          reason: execResult.reason,
+          executionId: execResult.executionId,
+        };
       }
 
       // 3. Position reconcile (if position_qty provided — Alpaca fee-in-kind adjustment)
@@ -812,8 +817,7 @@ export class PortfolioExecutor implements INodeExecutor {
       undefined;
     const stopPrice =
       parseFloat(params.stopPrice ?? params.stop_price) || undefined;
-    const tif =
-      params.tif?.trim() || params.timeInForce?.trim() || undefined;
+    const tif = params.tif?.trim() || params.timeInForce?.trim() || undefined;
     const trailPercent =
       parseFloat(params.trail_percent ?? params.trailPercent) || undefined;
     const trailPrice =
@@ -874,9 +878,7 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
     baseCurrency: string,
   ): Promise<NodeResult> {
-    console.log(
-      "[PortfolioExecutor] legacy_operation_used: update_portfolio",
-    );
+    console.log("[PortfolioExecutor] legacy_operation_used: update_portfolio");
 
     const fillSymbol = params.symbol?.trim().toUpperCase();
     const side = params.side?.trim().toUpperCase();
@@ -902,9 +904,7 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
     if (isNaN(price) || price <= 0) {
-      return toNodeResult(
-        createErrorOutput("price must be a positive number"),
-      );
+      return toNodeResult(createErrorOutput("price must be a positive number"));
     }
 
     // Order ownership verification
@@ -932,8 +932,7 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     const normalizedQuantity = Math.abs(rawQuantity);
-    const quantity =
-      side === "SELL" ? -normalizedQuantity : normalizedQuantity;
+    const quantity = side === "SELL" ? -normalizedQuantity : normalizedQuantity;
 
     const fillResult = pm.applyFill(
       { symbol: fillSymbol, quantity, price, orderStatus, commission },

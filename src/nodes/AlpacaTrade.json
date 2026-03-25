@@ -56,8 +56,19 @@
     {
       "key": "operation",
       "label": "Operation",
-      "type": "hidden",
-      "default": "place_order"
+      "type": "select",
+      "options": [
+        {
+          "id": "place_order",
+          "name": "Place Order"
+        },
+        {
+          "id": "close_position",
+          "name": "Close Position"
+        }
+      ],
+      "default": "place_order",
+      "required": true
     },
     {
       "key": "credential_id",
@@ -123,14 +134,36 @@
         }
       ],
       "default": "buy",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["place_order"]
+        }
+      }
     },
     {
       "key": "qty",
       "label": "Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
-      "required": false
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["place_order", "close_position"]
+        }
+      }
+    },
+    {
+      "key": "percentage",
+      "label": "Percentage",
+      "type": "text",
+      "placeholder": "e.g. 50",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["close_position"]
+        }
+      }
     },
     {
       "key": "type",
@@ -155,7 +188,12 @@
         }
       ],
       "default": "market",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["place_order"]
+        }
+      }
     },
     {
       "key": "limit_price",
@@ -165,6 +203,7 @@
       "placeholder": "e.g. 1",
       "displayOptions": {
         "show": {
+          "operation": ["place_order"],
           "type": "limit"
         }
       }
@@ -177,6 +216,7 @@
       "placeholder": "e.g. 1",
       "displayOptions": {
         "show": {
+          "operation": ["place_order"],
           "type": "stop"
         }
       }
@@ -190,6 +230,7 @@
       "description": "Dollar amount to trail. Required if trail_percent is not provided",
       "displayOptions": {
         "show": {
+          "operation": ["place_order"],
           "type": "trailing_stop"
         }
       },
@@ -204,6 +245,7 @@
       "description": "Percentage to trail (0-1). Required if trail_price is not provided",
       "displayOptions": {
         "show": {
+          "operation": ["place_order"],
           "type": "trailing_stop"
         }
       },
@@ -243,6 +285,7 @@
       "required": true,
       "displayOptions": {
         "show": {
+          "operation": ["place_order"],
           "asset_type": ["stock", "crypto"]
         }
       }
@@ -266,6 +309,7 @@
       "description": "Enable execution during pre-market and after-hours. Only available for limit orders with day time-in-force.",
       "displayOptions": {
         "show": {
+          "operation": ["place_order"],
           "type": ["limit"],
           "time_in_force": ["day"],
           "asset_type": ["stock"]

@@ -1025,8 +1025,7 @@ export class PortfolioManager {
   }
 
   /**
-   * Cancel/remove a pending order by orderId.
-   * Appends a cancel OrderEvent to the ticket.
+   * Cancel/remove a pending order by orderId (broker or client).
    */
   cancelOrder(orderId: string): { removed: boolean; order?: OrderState } {
     // Try direct lookup by broker order ID

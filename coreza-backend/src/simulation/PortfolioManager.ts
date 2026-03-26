@@ -36,7 +36,7 @@ export interface OrderState {
   timeInForce?: string;
   status: string;
   origQty: number;
-  cumFilledQty: number;
+  filledQty: number;
   remainingQty?: number;
   avgFillPrice?: number;
   totalFees: number;
@@ -55,7 +55,7 @@ export interface ExecutionRecord {
   quoteNotional?: number;
   feeAmount: number;
   feeAsset?: string;
-  cumFilledQty?: number;
+  filledQty?: number;
   ts: string;
 }
 
@@ -325,7 +325,7 @@ export class PortfolioManager {
       timeInForce: input.timeInForce,
       status: input.status ?? "new",
       origQty: input.origQty,
-      cumFilledQty: 0,
+      filledQty: 0,
       remainingQty: input.origQty,
       avgFillPrice: undefined,
       totalFees: 0,
@@ -353,7 +353,7 @@ export class PortfolioManager {
     symbol: string;
     status: string;
     origQty?: number;
-    cumFilledQty?: number;
+    filledQty?: number;
     remainingQty?: number;
     avgFillPrice?: number;
   }): { updated: boolean; order: OrderState } {
@@ -369,7 +369,7 @@ export class PortfolioManager {
         side: "buy", // will be corrected by execution
         status: input.status,
         origQty: input.origQty ?? 0,
-        cumFilledQty: input.cumFilledQty ?? 0,
+        filledQty: input.filledQty ?? 0,
         remainingQty: input.remainingQty,
         avgFillPrice: input.avgFillPrice,
         totalFees: 0,
@@ -386,8 +386,8 @@ export class PortfolioManager {
     } else {
       // Update lifecycle fields
       order.status = input.status;
-      if (input.cumFilledQty !== undefined) {
-        order.cumFilledQty = input.cumFilledQty;
+      if (input.filledQty !== undefined) {
+        order.filledQty = input.filledQty;
       }
       if (input.remainingQty !== undefined) {
         order.remainingQty = input.remainingQty;
@@ -408,19 +408,18 @@ export class PortfolioManager {
     // Auto-derive status from cumulative qty
     if (
       order.origQty > 0 &&
-      order.cumFilledQty >= order.origQty &&
+      order.filledQty >= order.origQty &&
       !TERMINAL_ORDER_STATUSES.has(order.status)
     ) {
       order.status = "filled";
     }
 
     // Compute remaining if not provided
-    if (order.remainingQty === undefined && order.origQty > 0) {
-      order.remainingQty = Math.max(0, order.origQty - order.cumFilledQty);
-    }
+
+    order.remainingQty = Math.max(0, order.origQty - order.filledQty);
 
     console.log(
-      `[PortfolioManager] Order update: ${input.brokerOrderId} → status=${order.status}, cumFilled=${order.cumFilledQty}`,
+      `[PortfolioManager] Order update: ${input.brokerOrderId} → status=${order.status}, cumFilled=${order.filledQty}`,
     );
     return { updated: true, order };
   }
@@ -447,7 +446,7 @@ export class PortfolioManager {
     quoteNotional?: number;
     feeAmount?: number;
     feeAsset?: string;
-    cumFilledQty?: number;
+    filledQty?: number;
     baseCurrency: string;
     applyPositionDelta?: boolean;
   }): { applied: boolean; reason?: string; executionId?: string } {
@@ -496,7 +495,7 @@ export class PortfolioManager {
       quoteNotional: notional,
       feeAmount,
       feeAsset,
-      cumFilledQty: input.cumFilledQty,
+      filledQty: input.filledQty,
       ts: now,
     };
     this.executions.set(execKey, record);
@@ -657,13 +656,13 @@ export class PortfolioManager {
   private buildExecutionKey(input: {
     executionId?: string;
     brokerOrderId?: string;
-    cumFilledQty?: number;
+    filledQty?: number;
     execPrice?: number;
     execQty?: number;
   }): string {
     if (input.executionId) return input.executionId;
     // Fallback composite key
-    return `${input.brokerOrderId ?? "unknown"}|${input.cumFilledQty ?? 0}|${input.execPrice ?? 0}|${input.execQty ?? 0}`;
+    return `${input.brokerOrderId ?? "unknown"}|${input.filledQty ?? 0}|${input.execPrice ?? 0}|${input.execQty ?? 0}`;
   }
 
   private findOrderByClientId(clientOrderId: string): OrderState | undefined {
@@ -681,9 +680,9 @@ export class PortfolioManager {
    * Get the current cumulative filled quantity for an order.
    * Returns 0 if the order is not found.
    */
-  getOrderCumFilledQty(brokerOrderId: string): number {
+  getOrderfilledQty(brokerOrderId: string): number {
     const order = this.orders.get(brokerOrderId);
-    return order?.cumFilledQty ?? 0;
+    return order?.filledQty ?? 0;
   }
 
   private adjustQuoteBalance(

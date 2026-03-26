@@ -103,14 +103,14 @@ router.post("/", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const parsed = portfolioRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: "Invalid request", details: parsed.error.flatten() });
-    }
+    // const parsed = portfolioRequestSchema.safeParse(req.body);
+    // if (!parsed.success) {
+    //   return res
+    //     .status(400)
+    //     .json({ error: "Invalid request", details: parsed.error.flatten() });
+    // }
 
-    const body = parsed.data;
+    const body = req.body;
 
     const executor = getNodeExecutor("Portfolio");
     if (!executor) {

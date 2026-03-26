@@ -87,18 +87,6 @@
       }
     },
     {
-      "key": "account_id",
-      "label": "Account ID",
-      "type": "text",
-      "placeholder": "e.g. primary",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "mode": ["broker"]
-        }
-      }
-    },
-    {
       "key": "operation",
       "label": "Operation",
       "type": "select",
@@ -267,7 +255,7 @@
       }
     },
     {
-      "key": "order_type",
+      "key": "orderType",
       "label": "Order Type",
       "type": "text",
       "placeholder": "e.g. market, limit, stop",
@@ -279,7 +267,7 @@
       }
     },
     {
-      "key": "time_in_force",
+      "key": "timeInForce",
       "label": "Time In Force",
       "type": "text",
       "placeholder": "e.g. gtc, day, ioc",
@@ -309,7 +297,7 @@
       }
     },
     {
-      "key": "broker_order_id",
+      "key": "brokerOrderId",
       "label": "Broker Order ID",
       "type": "text",
       "placeholder": "e.g. broker order id",
@@ -327,7 +315,7 @@
       }
     },
     {
-      "key": "client_order_id",
+      "key": "clientOrderId",
       "label": "Client Order ID",
       "type": "text",
       "placeholder": "e.g. client order id",
@@ -345,7 +333,7 @@
       }
     },
     {
-      "key": "execution_id",
+      "key": "executionId",
       "label": "Execution ID",
       "type": "text",
       "placeholder": "e.g. execution or trade id",
@@ -357,7 +345,7 @@
       }
     },
     {
-      "key": "orig_qty",
+      "key": "origQty",
       "label": "Original Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
@@ -373,7 +361,7 @@
       }
     },
     {
-      "key": "filled_qty",
+      "key": "filledQty",
       "label": "Filled Quantity",
       "type": "text",
       "placeholder": "e.g. 1",
@@ -390,7 +378,7 @@
       }
     },
     {
-      "key": "avg_fill_price",
+      "key": "avgFillPrice",
       "label": "Average Price",
       "type": "text",
       "placeholder": "e.g. 2122.79",
@@ -406,7 +394,7 @@
       }
     },
     {
-      "key": "market_price",
+      "key": "marketPrice",
       "label": "Market Price",
       "type": "text",
       "placeholder": "e.g. 2125.10",
@@ -418,7 +406,7 @@
       }
     },
     {
-      "key": "fee_amount",
+      "key": "feeAmount",
       "label": "Fee Amount",
       "type": "text",
       "placeholder": "0",
@@ -431,7 +419,7 @@
       }
     },
     {
-      "key": "fee_asset",
+      "key": "feeAsset",
       "label": "Fee Asset",
       "type": "text",
       "placeholder": "e.g. USD, ETH, BNB",
@@ -443,7 +431,7 @@
       }
     },
     {
-      "key": "position_qty",
+      "key": "positionQty",
       "label": "Position Quantity",
       "type": "text",
       "placeholder": "e.g. 0.9982",
@@ -456,7 +444,7 @@
       }
     },
     {
-      "key": "limit_price",
+      "key": "limitPrice",
       "label": "Limit Price",
       "type": "text",
       "placeholder": "e.g. 2120.00",
@@ -468,7 +456,7 @@
       }
     },
     {
-      "key": "stop_price",
+      "key": "stopPrice",
       "label": "Stop Price",
       "type": "text",
       "placeholder": "e.g. 2100.00",
@@ -480,7 +468,7 @@
       }
     },
     {
-      "key": "trail_percent",
+      "key": "trailPercent",
       "label": "Trail Percent",
       "type": "text",
       "placeholder": "e.g. 1.5",
@@ -492,7 +480,7 @@
       }
     },
     {
-      "key": "trail_price",
+      "key": "trailPrice",
       "label": "Trail Price",
       "type": "text",
       "placeholder": "e.g. 2.0",
@@ -504,7 +492,7 @@
       }
     },
     {
-      "key": "avg_entry_price",
+      "key": "avgEntryPrice",
       "label": "Average Entry Price",
       "type": "text",
       "placeholder": "e.g. 2126.62",
@@ -552,7 +540,7 @@
       }
     },
     {
-      "key": "current_bar",
+      "key": "currentBar",
       "label": "Current Bar",
       "type": "textarea",
       "placeholder": "{{ $('OnBar').json.bar }}",

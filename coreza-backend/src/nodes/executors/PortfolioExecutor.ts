@@ -153,7 +153,7 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
     _context?: NodeExecutionContext,
   ): NodeResult {
-    const backtestId = params.backtest_id;
+    const backtestId = params.backtestId;
     if (!backtestId) {
       return toNodeResult(createErrorOutput("backtest_id is required"));
     }
@@ -170,7 +170,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
     const operation = params.operation || "get_portfolio";
     const symbol = params.symbol?.trim().toUpperCase();
-    const currentBar = parseBar(params.current_bar);
+    const currentBar = parseBar(params.currentBar);
     const prices = parsePrices(params.prices);
 
     // Mark-to-market before reading
@@ -280,11 +280,11 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_mtm": {
-        // Accept market_price (new) or price (legacy) for MTM
-        const mtmPrice = parseFloat(params.market_price ?? params.price);
+        // Accept marketPrice (new) or price (legacy) for MTM
+        const mtmPrice = parseFloat(params.marketPrice ?? params.price);
         if (symbols.length === 0 || isNaN(mtmPrice) || mtmPrice <= 0) {
           return toNodeResult(
-            createErrorOutput("Provide symbol and market_price for update_mtm"),
+            createErrorOutput("Provide symbol and marketPrice for update_mtm"),
           );
         }
 
@@ -324,8 +324,8 @@ export class PortfolioExecutor implements INodeExecutor {
         return toNodeResult(
           createSuccessOutput({
             removed: cancelResult.removed,
-            cancelled_order: cancelResult.order || null,
-            pending_orders_count: pm.getPendingOrders().length,
+            cancelledOrder: cancelResult.order || null,
+            pendingOrdersCount: pm.getPendingOrders().length,
           }),
         );
       }
@@ -338,8 +338,8 @@ export class PortfolioExecutor implements INodeExecutor {
 
         return toNodeResult(
           createSuccessOutput({
-            pending_orders: filtered,
-            pending_orders_count: filtered.length,
+            pendingOrders: filtered,
+            pendingOrdersCount: filtered.length,
           }),
         );
       }
@@ -357,31 +357,38 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
   ): NodeResult {
     try {
-      const brokerOrderId = params.broker_order_id;
+      const brokerOrderId = params.brokerOrderId;
+      const clientOrderId = params.clientOrderId;
       const symbol = params.symbol;
       const side = params.side;
-      const origQty = params.orig_qty;
-
+      const orderType = params.orderType;
+      const origQty = params.origQty;
+      const timeInForce = params.timeInForce;
+      const limitPrice = params.limitPrice;
+      const stopPrice = params.stopPrice;
+      const trailPercent = params.trailPercent;
+      const trailPrice = params.trailPrice;
+      const status = params.status;
       const result = pm.registerOrderIntent({
         brokerOrderId,
-        clientOrderId: params.client_order_id,
+        clientOrderId,
         symbol,
         side,
         origQty,
-        orderType: params.order_type,
-        timeInForce: params.time_in_force,
-        limitPrice: params.limit_price,
-        stopPrice: params.stop_price,
-        trailPercent: params.trail_percent,
-        trailPrice: params.trail_price,
-        status: params.status,
+        orderType,
+        timeInForce,
+        limitPrice,
+        stopPrice,
+        trailPercent,
+        trailPrice,
+        status,
       });
 
       return toNodeResult(
         createSuccessOutput({
           registered: result.registered,
           order: result.order,
-          pending_orders_count: pm.getPendingOrders().length,
+          pendingOrdersCount: pm.getPendingOrders().length,
         }),
       );
     } catch (error: any) {
@@ -434,8 +441,8 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             skipped: true,
             reason: "unknown_order",
-            broker_order_id: brokerOrderId,
-            client_order_id: clientOrderId,
+            brokerOrderId,
+            clientOrderId,
           }),
         );
       }
@@ -461,7 +468,7 @@ export class PortfolioExecutor implements INodeExecutor {
             symbol,
             status,
             origQty,
-            cumFilledQty: filledQty,
+            filledQty,
             avgFillPrice,
           });
           orderUpdated = orderResult.updated;
@@ -495,7 +502,7 @@ export class PortfolioExecutor implements INodeExecutor {
         };
       }
 
-      // 3. Position reconcile (if position_qty provided — Alpaca fee-in-kind adjustment)
+      // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
       let positionReconciled = false;
       if (positionQty !== undefined && symbol) {
         const posResult = pm.reconcilePosition({
@@ -528,14 +535,14 @@ export class PortfolioExecutor implements INodeExecutor {
   ): NodeResult {
     try {
       const symbol = normalizeSymbol(params.symbol);
-      const positionQty = params.position_qty;
+      const positionQty = params.positionQty;
 
       const result = pm.reconcilePosition({
         symbol,
         positionQty,
-        avgEntryPrice: params.avg_entry_price,
+        avgEntryPrice: params.avgEntryPrice,
         realizedPnl: params.realized_pnl,
-        currentPrice: params.market_price,
+        currentPrice: params.marketPrice,
       });
 
       return toNodeResult(
@@ -636,7 +643,7 @@ export class PortfolioExecutor implements INodeExecutor {
       symbol,
       quantity: position?.quantity || 0,
       side: position?.side || null,
-      avg_entry_price: position?.avgEntryPrice || 0,
+      avgEntryPrice: position?.avgEntryPrice || 0,
       current_price: position?.currentPrice || 0,
       unrealized_pnl_pct: toPercent(
         position?.unrealizedPnl || 0,
@@ -661,7 +668,7 @@ export class PortfolioExecutor implements INodeExecutor {
     if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
       return toNodeResult(
         createErrorOutput(
-          "Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm",
+          "Provide either 'prices' map or both 'symbol' and 'currentBar' for update_mtm",
         ),
       );
     }
@@ -804,7 +811,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         quantity: position?.quantity || 0,
         side: position?.side || null,
-        avg_entry_price: position?.avgEntryPrice || 0,
+        avgEntryPrice: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
         unrealized_pnl_pct: toPercent(position?.unrealizedPnl || 0, costBasis),
         unrealized_pnl: position?.unrealizedPnl || 0,
@@ -826,7 +833,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         quantity: position?.quantity || 0,
         side: position?.side || null,
-        avg_entry_price: position?.avgEntryPrice || 0,
+        avgEntryPrice: position?.avgEntryPrice || 0,
         current_price: position?.currentPrice || 0,
         unrealized_pnl_pct: toPercent(position?.unrealizedPnl || 0, costBasis),
         unrealized_pnl: position?.unrealizedPnl || 0,

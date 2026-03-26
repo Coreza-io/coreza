@@ -913,7 +913,17 @@ export class PortfolioManager {
     peakEquity: number;
     pendingOrders: OrderState[];
   } {
-    const positions = this.getPositions();
+    const positionStates = this.getPositions();
+    const positions: Position[] = positionStates.map((p) => ({
+      symbol: p.symbol,
+      side: p.quantity >= 0 ? ("long" as const) : ("short" as const),
+      quantity: p.quantity,
+      avgEntryPrice: p.avgEntryPrice,
+      currentPrice: p.currentPrice,
+      unrealizedPnl: (p.currentPrice - p.avgEntryPrice) * p.quantity,
+      realizedPnl: p.realizedPnl,
+      marketValue: p.quantity * p.currentPrice,
+    }));
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
     const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
     const totalEquity = cashBase + positionsValue;

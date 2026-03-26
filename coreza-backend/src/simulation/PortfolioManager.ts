@@ -939,18 +939,18 @@ export class PortfolioManager {
   }
 
   getPosition(symbol: string): Position | null {
-    const h = this.holdings.get(symbol);
-    if (!h) return null;
+    const p = this.positions.get(symbol);
+    if (!p) return null;
 
     return {
-      symbol: h.symbol,
-      side: h.quantity >= 0 ? "long" : "short",
-      quantity: h.quantity,
-      avgEntryPrice: h.avgEntryPrice,
-      currentPrice: h.currentPrice,
-      unrealizedPnl: (h.currentPrice - h.avgEntryPrice) * h.quantity,
-      realizedPnl: h.realizedPnl,
-      marketValue: h.quantity * h.currentPrice,
+      symbol: p.symbol,
+      side: p.quantity >= 0 ? "long" : "short",
+      quantity: p.quantity,
+      avgEntryPrice: p.avgEntryPrice,
+      currentPrice: p.currentPrice,
+      unrealizedPnl: (p.currentPrice - p.avgEntryPrice) * p.quantity,
+      realizedPnl: p.realizedPnl,
+      marketValue: p.quantity * p.currentPrice,
     };
   }
 

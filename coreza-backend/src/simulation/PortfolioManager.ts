@@ -1028,47 +1028,37 @@ export class PortfolioManager {
    * Cancel/remove a pending order by orderId.
    * Appends a cancel OrderEvent to the ticket.
    */
-  cancelOrder(orderId: string): { removed: boolean; order?: OrderTicket } {
-    // Also cancel in v2 model
-    const v2Order = this.orders.get(orderId);
-    if (v2Order) {
-      v2Order.status = "canceled";
-      v2Order.updatedAt = new Date().toISOString();
-      // Keep in orders map for audit — getV2PendingOrders() already filters by OPEN_ORDER_STATUSES
+  cancelOrder(orderId: string): { removed: boolean; order?: OrderState } {
+    // Try direct lookup by broker order ID
+    let order = this.orders.get(orderId);
+
+    // Fallback: try resolving via client order ID index
+    if (!order) {
+      const resolvedId = this.clientOrderIdIndex.get(orderId);
+      if (resolvedId) {
+        order = this.orders.get(resolvedId);
+      }
     }
 
-    const ticket = this.tickets.get(orderId);
-    if (!ticket) {
-      if (v2Order) {
-        console.log(
-          `[PortfolioManager] Cancel: v2 order cancelled for ${orderId}`,
-        );
-        return { removed: true };
-      }
+    if (!order) {
       console.log(
         `[PortfolioManager] Cancel: no pending order found for ${orderId}`,
       );
       return { removed: false };
     }
 
-    // Append cancel event
-    const cancelEvent: OrderEvent = {
-      orderId,
-      symbol: ticket.order.symbol,
-      utcTime: new Date().toISOString(),
-      status: "canceled",
-      side: ticket.order.side,
-      fillPrice: 0,
-      fillQuantity: 0,
-      message: "Order cancelled",
-    };
-    ticket.orderEvents.push(cancelEvent);
-    ticket.order.status = "canceled";
+    if (order.status === "canceled" || order.status === "filled") {
+      console.log(
+        `[PortfolioManager] Cancel: order ${orderId} already ${order.status}`,
+      );
+      return { removed: false, order };
+    }
 
-    this.tickets.delete(orderId);
+    order.status = "canceled";
+    order.updatedAt = new Date().toISOString();
     console.log(
-      `[PortfolioManager] Cancelled pending order: ${orderId} (${ticket.order.side} ${ticket.order.quantity} ${ticket.order.symbol})`,
+      `[PortfolioManager] Cancelled order: ${orderId} (${order.side} ${order.origQty} ${order.symbol})`,
     );
-    return { removed: true, order: ticket };
+    return { removed: true, order };
   }
 }

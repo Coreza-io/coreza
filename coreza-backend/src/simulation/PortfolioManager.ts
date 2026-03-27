@@ -62,12 +62,15 @@ export interface ExecutionRecord {
 export interface PositionState {
   symbol: string;
   quantity: number;
+  side: string;
   currentPrice: number;
   avgEntryPrice: number;
+  marketValue: number;
   realizedPnl: number;
+  unrealizedPnl: number;
+  totalPnl: number;
   openCostBasis: number;
-  lastBrokerQuantity?: number;
-  updatedAt: string;
+  //updatedAt: string;
 }
 
 export interface BalanceState {
@@ -293,29 +296,8 @@ export class PortfolioManager {
     trailPercent?: number;
     trailPrice?: number;
     status?: string;
-  }): { registered: boolean; order: OrderState } {
+  }): { order: OrderState } {
     const now = new Date().toISOString();
-    const existing = this.orders.get(input.brokerOrderId);
-
-    if (existing) {
-      // Upsert — update mutable fields
-      existing.symbol = input.symbol;
-      existing.side = input.side;
-      existing.orderType = input.orderType ?? existing.orderType;
-      existing.timeInForce = input.timeInForce ?? existing.timeInForce;
-      existing.status = input.status ?? existing.status;
-      existing.origQty = input.origQty || existing.origQty;
-      if (input.clientOrderId) {
-        existing.clientOrderId = input.clientOrderId;
-        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
-      }
-      existing.updatedAt = now;
-      console.log(
-        `[PortfolioManager] Updated existing order intent: ${input.brokerOrderId}`,
-      );
-      return { registered: true, order: existing };
-    }
-
     const order: OrderState = {
       brokerOrderId: input.brokerOrderId,
       clientOrderId: input.clientOrderId,
@@ -340,7 +322,7 @@ export class PortfolioManager {
     console.log(
       `[PortfolioManager] Registered order intent: ${input.side} ${input.origQty} ${input.symbol} (${input.brokerOrderId})`,
     );
-    return { registered: true, order };
+    return { order };
   }
 
   /**
@@ -352,60 +334,37 @@ export class PortfolioManager {
     clientOrderId?: string;
     symbol: string;
     status: string;
-    origQty?: number;
     filledQty?: number;
-    remainingQty?: number;
     avgFillPrice?: number;
-  }): { updated: boolean; order: OrderState } {
+    feeAmount?: number;
+    feeAsset?: string;
+  }): void {
     const now = new Date().toISOString();
-    let order = this.orders.get(input.brokerOrderId);
 
+    const order = this.orders.get(input.brokerOrderId);
     if (!order) {
-      // Auto-create if we haven't seen this order before
-      order = {
-        brokerOrderId: input.brokerOrderId,
-        clientOrderId: input.clientOrderId,
-        symbol: input.symbol,
-        side: "buy", // will be corrected by execution
-        status: input.status,
-        origQty: input.origQty ?? 0,
-        filledQty: input.filledQty ?? 0,
-        remainingQty: input.remainingQty,
-        avgFillPrice: input.avgFillPrice,
-        totalFees: 0,
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.orders.set(input.brokerOrderId, order);
-      if (input.clientOrderId) {
-        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
-      }
-      console.log(
-        `[PortfolioManager] Auto-created order on update: ${input.brokerOrderId}`,
+      throw new Error(
+        `[PortfolioManager] applyOrderUpdate: order not found for brokerOrderId=${input.brokerOrderId}`,
       );
-    } else {
-      // Update lifecycle fields
-      order.status = input.status;
-      if (input.filledQty !== undefined) {
-        order.filledQty = input.filledQty;
-      }
-      if (input.remainingQty !== undefined) {
-        order.remainingQty = input.remainingQty;
-      }
-      if (input.avgFillPrice !== undefined) {
-        order.avgFillPrice = input.avgFillPrice;
-      }
-      if (input.origQty !== undefined && input.origQty > 0) {
-        order.origQty = input.origQty;
-      }
-      if (input.clientOrderId) {
-        order.clientOrderId = input.clientOrderId;
-        this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
-      }
-      order.updatedAt = now;
     }
 
-    // Auto-derive status from cumulative qty
+    // Safety check: avoid silently mutating the wrong order
+    if (order.symbol !== input.symbol) {
+      throw new Error(
+        `[PortfolioManager] applyOrderUpdate: symbol mismatch for brokerOrderId=${input.brokerOrderId}. existing=${order.symbol}, incoming=${input.symbol}`,
+      );
+    }
+
+    // Apply broker lifecycle status first
+    order.status = input.status;
+    order.filledQty = input.filledQty || 0;
+    order.avgFillPrice = input.avgFillPrice;
+
+    // Derive remaining quantity from cumulative filled quantity
+    order.remainingQty = Math.max(0, order.origQty - order.filledQty);
+
+    // Auto-normalize to filled when cumulative fill reaches origQty,
+    // unless the status is already terminal
     if (
       order.origQty > 0 &&
       order.filledQty >= order.origQty &&
@@ -414,127 +373,13 @@ export class PortfolioManager {
       order.status = "filled";
     }
 
-    // Compute remaining if not provided
+    order.totalFees += input.feeAmount;
 
-    order.remainingQty = Math.max(0, order.origQty - order.filledQty);
-
-    console.log(
-      `[PortfolioManager] Order update: ${input.brokerOrderId} → status=${order.status}, cumFilled=${order.filledQty}`,
-    );
-    return { updated: true, order };
-  }
-
-  /**
-   * Apply an execution (trade fill). Handles:
-   * - Execution deduplication by executionId
-   * - Cash/quote balance adjustment
-   * - Fee accounting (supports fee in any asset)
-   * - Trade generation on position close/flip
-   * - Optionally applies position delta (controlled by applyPositionDelta flag)
-   *
-   * When applyPositionDelta is false (e.g. Alpaca), use reconcilePosition() for position truth.
-   * When applyPositionDelta is true (default, e.g. Binance spot), execution-derived delta is used.
-   */
-  applyExecution(input: {
-    brokerOrderId?: string;
-    executionId?: string;
-    clientOrderId?: string;
-    symbol: string;
-    side: "buy" | "sell";
-    execQty: number;
-    execPrice: number;
-    quoteNotional?: number;
-    feeAmount?: number;
-    feeAsset?: string;
-    filledQty?: number;
-    baseCurrency: string;
-    applyPositionDelta?: boolean;
-  }): { applied: boolean; reason?: string; executionId?: string } {
-    const execKey = this.buildExecutionKey(input);
-
-    // Dedup check
-    if (this.executionKeysSeen.has(execKey)) {
-      console.log(`[PortfolioManager] Duplicate execution skipped: ${execKey}`);
-      return {
-        applied: false,
-        reason: "duplicate_execution",
-        executionId: execKey,
-      };
-    }
-    this.executionKeysSeen.add(execKey);
-    // Cap executionKeysSeen to prevent unbounded growth
-    if (this.executionKeysSeen.size > PortfolioManager.MAX_EXECUTION_KEYS) {
-      const iter = this.executionKeysSeen.values();
-      // Remove oldest 10% entries
-      const toRemove = Math.floor(PortfolioManager.MAX_EXECUTION_KEYS * 0.1);
-      for (let i = 0; i < toRemove; i++) {
-        const val = iter.next().value;
-        if (val) this.executionKeysSeen.delete(val);
-      }
-    }
-
-    const now = new Date().toISOString();
-    const feeAmount = input.feeAmount ?? 0;
-    const feeAsset = input.feeAsset;
-    const notional = input.quoteNotional ?? input.execQty * input.execPrice;
-    const { quoteAsset } = this.parseInstrument(
-      input.symbol,
-      input.baseCurrency,
-    );
-    const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency;
-
-    // Record execution
-    const record: ExecutionRecord = {
-      executionId: execKey,
-      brokerOrderId: input.brokerOrderId,
-      clientOrderId: input.clientOrderId,
-      symbol: input.symbol,
-      side: input.side,
-      execQty: input.execQty,
-      execPrice: input.execPrice,
-      quoteNotional: notional,
-      feeAmount,
-      feeAsset,
-      filledQty: input.filledQty,
-      ts: now,
-    };
-    this.executions.set(execKey, record);
-
-    // Update order totals if matching order exists
-    const order =
-      this.orders.get(input.brokerOrderId ?? "") ??
-      (input.clientOrderId
-        ? this.findOrderByClientId(input.clientOrderId)
-        : undefined);
-    if (order) {
-      order.totalFees += feeAmount;
-      order.side = input.side; // correct side if it was defaulted
-      order.updatedAt = now;
-    }
-
-    // Cash/balance adjustment
-    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional, now);
-
-    // Fee adjustment (supports fee in any asset)
-    if (feeAmount > 0) {
-      const feeBalanceAsset = feeAsset ?? effectiveQuoteAsset;
-      this.adjustFeeBalance(feeBalanceAsset, feeAmount, now);
-    }
-
-    // Apply execution-derived position delta (opt-in, default true)
-    // For Alpaca: pass false since reconcilePosition() is the source of truth
-    // For Binance spot: pass true (default) since no reconcilePosition call follows
-    if (input.applyPositionDelta !== false) {
-      this.applyExecutionDerivedPositionDelta(input, feeAmount, now);
-    }
-
-    // Update peak equity
-    this.updatePeakEquity(input.baseCurrency);
+    order.updatedAt = now;
 
     console.log(
-      `[PortfolioManager] Execution applied: ${input.side} ${input.execQty} ${input.symbol} @ ${input.execPrice} (exec=${execKey})`,
+      `[PortfolioManager] Order update: ${input.brokerOrderId} -> status=${order.status}, cumFilled=${order.filledQty}, remaining=${order.remainingQty}`,
     );
-    return { applied: true, executionId: execKey };
   }
 
   /**
@@ -542,86 +387,56 @@ export class PortfolioManager {
    * Sets the position to the exact quantity the broker reports.
    * This is where Alpaca's 0.9982 gets recorded correctly.
    */
-  reconcilePosition(input: {
+  applyPositionUpdate(input: {
     symbol: string;
-    positionQty: number;
+    netFilledQty: number;
     avgEntryPrice?: number;
-    realizedPnl?: number;
     currentPrice?: number;
-  }): { reconciled: boolean; position: PositionState | null } {
-    const now = new Date().toISOString();
+  }): { position: PositionState | null } {
     const existing = this.positions.get(input.symbol);
 
-    if (input.positionQty === 0) {
-      // Position fully closed
-      if (existing) {
-        this.positions.delete(input.symbol);
-        console.log(
-          `[PortfolioManager] Position reconciled to zero: ${input.symbol}`,
-        );
-      }
-      // Also remove from legacy holdings
-      this.holdings.delete(input.symbol);
-      return { reconciled: true, position: null };
-    }
-
     if (existing) {
-      // Update existing position with broker truth
-      const prevQty = existing.quantity;
-      existing.quantity = input.positionQty;
-      existing.lastBrokerQuantity = input.positionQty;
-      if (input.avgEntryPrice !== undefined) {
-        existing.avgEntryPrice = input.avgEntryPrice;
-        existing.openCostBasis = Math.abs(
-          input.avgEntryPrice * input.positionQty,
-        );
-      } else {
-        // Preserve cost basis, recompute avgEntryPrice from cost basis
-        if (existing.openCostBasis > 0) {
-          existing.avgEntryPrice =
-            existing.openCostBasis / Math.abs(input.positionQty);
-        }
-      }
-      if (input.realizedPnl !== undefined) {
-        existing.realizedPnl = input.realizedPnl;
-      }
-      if (input.currentPrice !== undefined) {
-        existing.currentPrice = input.currentPrice;
-      }
-      existing.updatedAt = now;
+      const avgEntryPrice = input.avgEntryPrice ?? existing.avgEntryPrice ?? 0;
 
-      // Sync to legacy holdings
-      this.syncPositionToHoldings(existing);
+      const currentPrice =
+        input.currentPrice ?? existing.currentPrice ?? avgEntryPrice;
 
-      console.log(
-        `[PortfolioManager] Position reconciled: ${input.symbol} qty ${prevQty} → ${input.positionQty}`,
-      );
-      return { reconciled: true, position: existing };
+      existing.quantity = input.netFilledQty;
+      existing.avgEntryPrice = avgEntryPrice;
+      existing.currentPrice = currentPrice;
+      existing.openCostBasis = Math.abs(input.netFilledQty * avgEntryPrice);
+      existing.marketValue = Math.abs(input.netFilledQty * currentPrice);
+      existing.unrealizedPnl = existing.marketValue - existing.openCostBasis;
+      existing.totalPnl = existing.realizedPnl + existing.unrealizedPnl;
+
+      return { position: existing };
     }
 
-    // Create new position from broker reconciliation
-    const avgEntry = input.avgEntryPrice ?? 0;
+    const avgEntryPrice = input.avgEntryPrice ?? 0;
+    const currentPrice = input.currentPrice ?? avgEntryPrice;
+
     const position: PositionState = {
       symbol: input.symbol,
-      quantity: input.positionQty,
-      currentPrice: input.currentPrice ?? avgEntry,
-      avgEntryPrice: avgEntry,
-      realizedPnl: input.realizedPnl ?? 0,
-      openCostBasis: Math.abs(avgEntry * input.positionQty),
-      lastBrokerQuantity: input.positionQty,
-      updatedAt: now,
+      quantity: input.netFilledQty,
+      side: input.netFilledQty >= 0 ? "long" : "short",
+      avgEntryPrice,
+      currentPrice,
+      openCostBasis: Math.abs(input.netFilledQty * avgEntryPrice),
+      marketValue: Math.abs(input.netFilledQty * currentPrice),
+      realizedPnl: 0,
+      unrealizedPnl:
+        Math.abs(input.netFilledQty * currentPrice) -
+        Math.abs(input.netFilledQty * avgEntryPrice),
+      totalPnl:
+        0 +
+        (Math.abs(input.netFilledQty * currentPrice) -
+          Math.abs(input.netFilledQty * avgEntryPrice)),
     };
+
     this.positions.set(input.symbol, position);
 
-    // Sync to legacy holdings
-    this.syncPositionToHoldings(position);
-
-    console.log(
-      `[PortfolioManager] Position created via reconciliation: ${input.symbol} qty=${input.positionQty}`,
-    );
-    return { reconciled: true, position };
+    return { position };
   }
-
   /**
    * Reconcile a balance with broker truth (one asset per call).
    * Becomes the source of truth for getCash().
@@ -757,10 +572,10 @@ export class PortfolioManager {
         avgEntryPrice: input.execPrice,
         realizedPnl: 0,
         openCostBasis: input.execQty * input.execPrice,
-        updatedAt: now,
+        //updatedAt: now,
       };
       this.positions.set(input.symbol, position);
-      this.syncPositionToHoldings(position);
+      //this.syncPositionToHoldings(position);
 
       this.currentEntryMap.set(input.symbol, {
         fillId: `exec-${Date.now()}`,
@@ -782,7 +597,7 @@ export class PortfolioManager {
       existing.quantity = totalQty;
       existing.openCostBasis = totalCostBasis;
       existing.currentPrice = input.execPrice;
-      existing.updatedAt = now;
+      //existing.updatedAt = now;
 
       if (!this.currentEntryMap.has(input.symbol)) {
         this.currentEntryMap.set(input.symbol, {
@@ -846,20 +661,8 @@ export class PortfolioManager {
         const remainingQty = Math.abs(newQty);
         existing.openCostBasis = existing.avgEntryPrice * remainingQty;
       }
-      existing.updatedAt = now;
+      //existing.updatedAt = now;
     }
-
-    this.syncPositionToHoldings(existing);
-  }
-
-  private syncPositionToHoldings(pos: PositionState): void {
-    this.holdings.set(pos.symbol, {
-      symbol: pos.symbol,
-      quantity: pos.quantity,
-      avgEntryPrice: pos.avgEntryPrice,
-      realizedPnl: pos.realizedPnl,
-      currentPrice: pos.currentPrice,
-    });
   }
 
   // ============== v2 READ METHODS ==============
@@ -916,7 +719,7 @@ export class PortfolioManager {
     const positionStates = this.getPositions();
     const positions: Position[] = positionStates.map((p) => ({
       symbol: p.symbol,
-      side: p.quantity >= 0 ? ("long" as const) : ("short" as const),
+      side: p.side,
       quantity: p.quantity,
       avgEntryPrice: p.avgEntryPrice,
       currentPrice: p.currentPrice,
@@ -1010,17 +813,19 @@ export class PortfolioManager {
     prices: Record<string, number>,
     baseCurrency: string = "USDT",
   ): void {
+    //const now = new Date().toISOString();
+
     for (const [symbol, price] of Object.entries(prices)) {
-      const holding = this.holdings.get(symbol);
-      if (holding) {
-        holding.currentPrice = price;
-      }
-      // Also update v2 positions
       const position = this.positions.get(symbol);
-      if (position) {
-        position.currentPrice = price;
-      }
+      if (!position) continue;
+
+      position.currentPrice = price;
+      position.marketValue = position.quantity * price;
+      position.unrealizedPnl = position.marketValue - position.openCostBasis;
+      position.totalPnl = position.realizedPnl + position.unrealizedPnl;
+      //position.updatedAt = now;
     }
+
     this.updatePeakEquity(baseCurrency);
   }
 

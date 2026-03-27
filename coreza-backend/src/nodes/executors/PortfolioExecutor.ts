@@ -271,16 +271,10 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerRegisterOrderIntent(pm, params);
       case "sync_order_event":
         return this.brokerSyncOrderEvent(pm, params, baseCurrency);
-      case "reconcile_position":
-        return this.brokerReconcilePosition(pm, params);
-      case "reconcile_balances":
-        return this.brokerReconcileBalances(pm, params);
-
-      // ============== EXISTING OPERATIONS ==============
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_mtm": {
-        // Accept marketPrice (new) or price (legacy) for MTM
+        // Accept marketPrice (new)
         const mtmPrice = parseFloat(params.marketPrice ?? params.price);
         if (symbols.length === 0 || isNaN(mtmPrice) || mtmPrice <= 0) {
           return toNodeResult(
@@ -304,10 +298,6 @@ export class PortfolioExecutor implements INodeExecutor {
       }
       case "get_position":
         return this.brokerGetPosition(pm, symbols);
-      case "get_cash":
-        return this.brokerGetCash(pm, baseCurrency);
-      case "get_equity":
-        return this.brokerGetEquity(pm, baseCurrency);
       case "get_trades":
         return this.brokerGetTrades(pm);
       case "cancel_order": {
@@ -414,23 +404,22 @@ export class PortfolioExecutor implements INodeExecutor {
   private async brokerSyncOrderEvent(
     pm: PortfolioManager,
     params: any,
-    baseCurrency: string,
   ): Promise<NodeResult> {
     try {
       const {
+        baseCurrency,
         symbol,
         brokerOrderId,
         clientOrderId,
         status,
-        side,
-        executionId,
-        origQty,
         filledQty,
+        positionQty,
         avgFillPrice,
         feeAmount,
         feeAsset,
-        positionQty,
       } = params;
+
+      let netFilledQty = positionQty ?? filledQty;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
         brokerOrderId,
@@ -447,11 +436,6 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
-      let order: any | undefined;
-      let executionApplied = false;
-      let executionResult: { reason?: string; executionId?: string } = {};
-      let orderUpdated = false;
-
       // 1. Order update (if status provided)
       if (status) {
         const resolvedBrokerOrderId =
@@ -462,119 +446,54 @@ export class PortfolioExecutor implements INodeExecutor {
             `[PortfolioExecutor] sync_order_event: order update skipped due to missing broker_order_id and unresolved client_order_id=${clientOrderId}`,
           );
         } else {
-          const orderResult = pm.applyOrderUpdate({
+          pm.applyOrderUpdate({
             brokerOrderId: resolvedBrokerOrderId,
             clientOrderId,
             symbol,
             status,
-            origQty,
             filledQty,
             avgFillPrice,
+            feeAmount,
+            feeAsset,
           });
-          orderUpdated = orderResult.updated;
-          order = orderResult.order;
         }
       }
 
-      // 2. Execution (if filled_qty and avg_fill_price and side provided)
-      if (filledQty !== undefined && avgFillPrice !== undefined && side) {
-        // const resolvedBrokerOrderId = brokerOrderId
-        //   ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
-        //const derivedExecQty = Math.max(0, filledQty - previousCumQty);
-
-        const execResult = pm.applyExecution({
-          brokerOrderId,
-          executionId,
-          clientOrderId,
-          symbol,
-          side: side.toLowerCase(),
-          execQty: filledQty,
-          execPrice: avgFillPrice,
-          feeAmount,
-          feeAsset,
-          baseCurrency,
-          applyPositionDelta: positionQty != undefined,
-        });
-        executionApplied = execResult.applied;
-        executionResult = {
-          reason: execResult.reason,
-          executionId: execResult.executionId,
-        };
-      }
-
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
-      let positionReconciled = false;
-      if (positionQty !== undefined && symbol) {
-        const posResult = pm.reconcilePosition({
-          symbol,
-          positionQty,
-        });
-        positionReconciled = posResult.reconciled;
+
+      pm.applyPositionUpdate({
+        symbol,
+        netFilledQty,
+        avgEntryPrice: avgFillPrice,
+        currentPrice: avgFillPrice,
+      });
+
+      const { quoteAsset } = this.parseInstrument(
+        input.symbol,
+        input.baseCurrency,
+      );
+      const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency;
+
+      // Cash/balance adjustment
+      this.adjustQuoteBalance(
+        effectiveQuoteAsset,
+        order.side,
+        order.avgFillPrice || 0,
+        now,
+      );
+
+      // Fee adjustment (supports fee in any asset)
+      if (input.feeAmount > 0) {
+        const feeBalanceAsset = input.feeAsset ?? effectiveQuoteAsset;
+        this.adjustFeeBalance(feeBalanceAsset, input.feeAmount, now);
       }
 
+      // Update peak equity
+      this.updatePeakEquity(input.baseCurrency);
+
       return toNodeResult(
         createSuccessOutput({
-          order_updated: orderUpdated,
-          execution_applied: executionApplied,
-          position_reconciled: positionReconciled,
-          skipped: false,
-          order,
-          execution_id: executionResult.executionId ?? executionId,
-          execution_reason: executionResult.reason,
           ...this.getPortfolioSummary(pm, baseCurrency),
-        }),
-      );
-    } catch (error: any) {
-      return toNodeResult(createErrorOutput(error.message));
-    }
-  }
-
-  private brokerReconcilePosition(
-    pm: PortfolioManager,
-    params: any,
-  ): NodeResult {
-    try {
-      const symbol = normalizeSymbol(params.symbol);
-      const positionQty = params.positionQty;
-
-      const result = pm.reconcilePosition({
-        symbol,
-        positionQty,
-        avgEntryPrice: params.avgEntryPrice,
-        realizedPnl: params.realized_pnl,
-        currentPrice: params.marketPrice,
-      });
-
-      return toNodeResult(
-        createSuccessOutput({
-          reconciled: result.reconciled,
-          position: result.position,
-        }),
-      );
-    } catch (error: any) {
-      return toNodeResult(createErrorOutput(error.message));
-    }
-  }
-
-  private brokerReconcileBalances(
-    pm: PortfolioManager,
-    params: any,
-  ): NodeResult {
-    try {
-      const asset = params.asset;
-      const total = params.total;
-
-      const result = pm.reconcileBalance({
-        asset,
-        total,
-        available: params.available,
-        locked: params.locked,
-      });
-
-      return toNodeResult(
-        createSuccessOutput({
-          reconciled: result.reconciled,
-          balance: result.balance,
         }),
       );
     } catch (error: any) {
@@ -801,45 +720,17 @@ export class PortfolioExecutor implements INodeExecutor {
       // Single symbol: keep backward-compatible flat output
       const symbol = symbols[0];
       const position = pm.getPosition(symbol);
-      const costBasis = position
-        ? Math.abs(position.avgEntryPrice * position.quantity)
-        : 0;
 
       return leanSuccess({
-        has_position: !!position,
-        position: position ? formatPositionWithPnlPercent(position) : null,
-        symbol,
-        quantity: position?.quantity || 0,
-        side: position?.side || null,
-        avgEntryPrice: position?.avgEntryPrice || 0,
-        current_price: position?.currentPrice || 0,
-        unrealized_pnl_pct: toPercent(position?.unrealizedPnl || 0, costBasis),
-        unrealized_pnl: position?.unrealizedPnl || 0,
-        realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
-        realized_pnl: position?.realizedPnl || 0,
-        market_value: position?.marketValue || 0,
+        position,
       });
     }
 
     // Multiple symbols: return array of positions
     const results = symbols.map((symbol) => {
       const position = pm.getPosition(symbol);
-      const costBasis = position
-        ? Math.abs(position.avgEntryPrice * position.quantity)
-        : 0;
       return {
-        has_position: !!position,
-        position: position ? formatPositionWithPnlPercent(position) : null,
-        symbol,
-        quantity: position?.quantity || 0,
-        side: position?.side || null,
-        avgEntryPrice: position?.avgEntryPrice || 0,
-        current_price: position?.currentPrice || 0,
-        unrealized_pnl_pct: toPercent(position?.unrealizedPnl || 0, costBasis),
-        unrealized_pnl: position?.unrealizedPnl || 0,
-        realized_pnl_pct: toPercent(position?.realizedPnl || 0, costBasis),
-        realized_pnl: position?.realizedPnl || 0,
-        market_value: position?.marketValue || 0,
+        position,
       };
     });
 

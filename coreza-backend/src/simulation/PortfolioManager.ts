@@ -578,6 +578,18 @@ export class PortfolioManager {
     }
 
     this.updatePeakEquity(input.baseCurrency);
+
+    this.applyTrade(
+      {
+        symbol: input.symbol,
+        side: input.side,
+        filledQty: input.fillQty,
+        fillPrice: input.fillPrice,
+        baseCurrency: input.baseCurrency ?? "USD",
+      },
+      input.feeAmount ?? 0,
+      now,
+    );
   }
 
   private applyTrade(
@@ -608,8 +620,8 @@ export class PortfolioManager {
 
     const isClosingLong = prevQty > 0;
     const grossPnl = isClosingLong
-      ? (input.filledQty - existing.avgEntryPrice) * closingQty
-      : (existing.avgEntryPrice - input.filledQty) * closingQty;
+      ? (input.fillPrice - existing.avgEntryPrice) * closingQty
+      : (existing.avgEntryPrice - input.fillPrice) * closingQty;
 
     const entry = this.currentEntryMap.get(input.symbol);
 

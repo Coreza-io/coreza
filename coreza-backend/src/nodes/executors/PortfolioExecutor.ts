@@ -270,7 +270,7 @@ export class PortfolioExecutor implements INodeExecutor {
       case "register_order_intent":
         return this.brokerRegisterOrderIntent(pm, params);
       case "sync_order_event":
-        return this.brokerSyncOrderEvent(pm, params, baseCurrency);
+        return this.brokerSyncOrderEvent(pm, params);
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_mtm": {

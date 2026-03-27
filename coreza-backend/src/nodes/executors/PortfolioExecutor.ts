@@ -419,7 +419,7 @@ export class PortfolioExecutor implements INodeExecutor {
         feeAsset,
       } = params;
 
-      let netFilledQty = positionQty ?? filledQty;
+      const netFilledQty = positionQty ?? filledQty;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
         brokerOrderId,
@@ -468,28 +468,16 @@ export class PortfolioExecutor implements INodeExecutor {
         currentPrice: avgFillPrice,
       });
 
-      const { quoteAsset } = this.parseInstrument(
-        input.symbol,
-        input.baseCurrency,
-      );
-      const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency;
-
-      // Cash/balance adjustment
-      this.adjustQuoteBalance(
-        effectiveQuoteAsset,
-        order.side,
-        order.avgFillPrice || 0,
-        now,
-      );
-
-      // Fee adjustment (supports fee in any asset)
-      if (input.feeAmount > 0) {
-        const feeBalanceAsset = input.feeAsset ?? effectiveQuoteAsset;
-        this.adjustFeeBalance(feeBalanceAsset, input.feeAmount, now);
-      }
-
-      // Update peak equity
-      this.updatePeakEquity(input.baseCurrency);
+      // Cash + fee + peak equity adjustment (delegated to PM)
+      pm.applyFillAccounting({
+        symbol,
+        side: params.side,
+        fillPrice: avgFillPrice ?? 0,
+        fillQty: netFilledQty,
+        feeAmount,
+        feeAsset,
+        baseCurrency,
+      });
 
       return toNodeResult(
         createSuccessOutput({

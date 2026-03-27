@@ -563,7 +563,10 @@ export class PortfolioManager {
     baseCurrency?: string;
   }): void {
     const now = new Date().toISOString();
-    const { quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
+    const { quoteAsset } = this.parseInstrument(
+      input.symbol,
+      input.baseCurrency,
+    );
     const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency ?? "USD";
 
     const notional = input.fillPrice * input.fillQty;
@@ -577,120 +580,58 @@ export class PortfolioManager {
     this.updatePeakEquity(input.baseCurrency);
   }
 
-  private applyExecutionDerivedPositionDelta(
+  private applyTrade(
     input: {
       symbol: string;
       side: "buy" | "sell";
-      execQty: number;
-      execPrice: number;
+      filledQty: number;
+      fillPrice: number;
       baseCurrency: string;
     },
     feeAmount: number,
     now: string,
   ): void {
     const existing = this.positions.get(input.symbol);
-    const signedQty = input.side === "buy" ? input.execQty : -input.execQty;
+    if (!existing) return;
 
-    if (!existing) {
-      // New position
-      const position: PositionState = {
-        symbol: input.symbol,
-        quantity: signedQty,
-        currentPrice: input.execPrice,
-        avgEntryPrice: input.execPrice,
-        realizedPnl: 0,
-        openCostBasis: input.execQty * input.execPrice,
-        //updatedAt: now,
-      };
-      this.positions.set(input.symbol, position);
-      //this.syncPositionToHoldings(position);
-
-      this.currentEntryMap.set(input.symbol, {
-        fillId: `exec-${Date.now()}`,
-        entryTime: now,
-      });
-      return;
-    }
-
+    const signedQty = input.side === "buy" ? input.filledQty : -input.filledQty;
     const prevQty = existing.quantity;
+
+    // Same direction means position increase, so no closed trade to record
     const sameDirection =
       (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
 
-    if (sameDirection) {
-      // Adding to position — weighted average cost
-      const totalQty = prevQty + signedQty;
-      const totalCostBasis =
-        existing.openCostBasis + input.execQty * input.execPrice;
-      existing.avgEntryPrice = totalCostBasis / Math.abs(totalQty);
-      existing.quantity = totalQty;
-      existing.openCostBasis = totalCostBasis;
-      existing.currentPrice = input.execPrice;
-      //existing.updatedAt = now;
+    if (sameDirection) return;
 
-      if (!this.currentEntryMap.has(input.symbol)) {
-        this.currentEntryMap.set(input.symbol, {
-          fillId: `exec-${Date.now()}`,
-          entryTime: now,
-        });
-      }
-    } else {
-      // Reducing/flipping position
-      const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
-      const isClosingLong = prevQty > 0;
-      const grossPnl = isClosingLong
-        ? (input.execPrice - existing.avgEntryPrice) * closingQty
-        : (existing.avgEntryPrice - input.execPrice) * closingQty;
+    const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
+    if (closingQty <= 0) return;
 
-      existing.realizedPnl += grossPnl;
+    const isClosingLong = prevQty > 0;
+    const grossPnl = isClosingLong
+      ? (input.filledQty - existing.avgEntryPrice) * closingQty
+      : (existing.avgEntryPrice - input.filledQty) * closingQty;
 
-      // Generate trade record
-      const entry = this.currentEntryMap.get(input.symbol);
-      const trade: Trade = {
-        id: `LT-${++this.tradeIdCounter}`,
-        symbol: input.symbol,
-        side: isClosingLong ? "buy" : "sell",
-        entryOrderId: entry?.fillId ?? "",
-        exitOrderId: `exec-${Date.now()}`,
-        entryPrice: existing.avgEntryPrice,
-        exitPrice: input.execPrice,
-        quantity: closingQty,
-        grossPnl,
-        commission: feeAmount,
-        slippage: 0,
-        netPnl: grossPnl - feeAmount,
-        entryTime: entry?.entryTime ?? "",
-        exitTime: now,
-        holdingPeriodBars: 0,
-      };
-      this.trades.push(trade);
+    const entry = this.currentEntryMap.get(input.symbol);
 
-      const newQty = prevQty + signedQty;
-      if (newQty === 0) {
-        this.positions.delete(input.symbol);
-        this.holdings.delete(input.symbol);
-        this.currentEntryMap.delete(input.symbol);
-        return;
-      }
+    const trade: Trade = {
+      id: `LT-${++this.tradeIdCounter}`,
+      symbol: input.symbol,
+      side: isClosingLong ? "buy" : "sell",
+      entryOrderId: entry?.fillId ?? "",
+      exitOrderId: `exec-${Date.now()}`,
+      entryPrice: existing.avgEntryPrice,
+      exitPrice: input.fillPrice,
+      quantity: closingQty,
+      grossPnl,
+      commission: feeAmount ?? 0,
+      slippage: 0,
+      netPnl: grossPnl - (feeAmount ?? 0),
+      entryTime: entry?.entryTime ?? "",
+      exitTime: now,
+      holdingPeriodBars: 0,
+    };
 
-      // Position flipped or reduced
-      existing.quantity = newQty;
-      existing.currentPrice = input.execPrice;
-      if ((prevQty > 0 && newQty < 0) || (prevQty < 0 && newQty > 0)) {
-        // Flipped — reset cost basis
-        const remainingQty = Math.abs(newQty);
-        existing.avgEntryPrice = input.execPrice;
-        existing.openCostBasis = remainingQty * input.execPrice;
-        this.currentEntryMap.set(input.symbol, {
-          fillId: `exec-${Date.now()}`,
-          entryTime: now,
-        });
-      } else {
-        // Reduced — proportional cost basis
-        const remainingQty = Math.abs(newQty);
-        existing.openCostBasis = existing.avgEntryPrice * remainingQty;
-      }
-      //existing.updatedAt = now;
-    }
+    this.trades.push(trade);
   }
 
   // ============== v2 READ METHODS ==============

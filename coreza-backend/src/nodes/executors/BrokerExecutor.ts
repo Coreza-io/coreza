@@ -48,7 +48,7 @@ export class BrokerExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
-    let isPlaceOrder = false;
+    let isOrderOperation = false;
 
     try {
       const operation = node.values?.operation;
@@ -95,24 +95,27 @@ export class BrokerExecutor implements INodeExecutor {
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`,
       );
 
-      isPlaceOrder = operation === "place_order";
+      isOrderOperation = operation === "place_order" || operation === "close_position";
 
-      if (isPlaceOrder) {
+      if (isOrderOperation) {
         idempotencyKey = generateIdempotencyKey({
           workflowId: context?.workflowId ?? "manual",
           nodeId: node.id,
           runId: context?.executionId ?? context?.runId ?? `manual-${Date.now()}`,
           symbol: resolvedParams.symbol ?? "",
           side:
-            resolvedParams.side ??
-            resolvedParams.instruction ??
-            resolvedParams.transactionType ??
-            "",
+            operation === "close_position"
+              ? "close"
+              : resolvedParams.side ??
+                resolvedParams.instruction ??
+                resolvedParams.transactionType ??
+                "",
           quantity:
             resolvedParams.quantity ??
             resolvedParams.qty ??
+            resolvedParams.percentage ??
             resolvedParams.notional ??
-            "",
+            "full",
         });
 
         const cached = await getOrderFromCache(idempotencyKey);
@@ -229,7 +232,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
-      if (isPlaceOrder && idempotencyKey) {
+      if (isOrderOperation && idempotencyKey) {
         await updateOrderCache(
           idempotencyKey,
           "success",
@@ -243,7 +246,7 @@ export class BrokerExecutor implements INodeExecutor {
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
 
-      if (isPlaceOrder && idempotencyKey) {
+      if (isOrderOperation && idempotencyKey) {
         await updateOrderCache(idempotencyKey, "failed", {
           error: error instanceof Error ? error.message : String(error),
         });

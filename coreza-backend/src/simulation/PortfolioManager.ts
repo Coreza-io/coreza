@@ -549,6 +549,34 @@ export class PortfolioManager {
     this.cashBook.set(feeAsset, newTotal);
   }
 
+  /**
+   * Apply fill-level accounting updates for quote cash, fees, and peak equity.
+   * Intended for broker_sync_order_event execution paths.
+   */
+  applyFillAccounting(input: {
+    symbol: string;
+    side: "buy" | "sell";
+    fillPrice: number;
+    fillQty: number;
+    feeAmount?: number;
+    feeAsset?: string;
+    baseCurrency?: string;
+  }): void {
+    const now = new Date().toISOString();
+    const { quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
+    const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency ?? "USD";
+
+    const notional = input.fillPrice * input.fillQty;
+    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional, now);
+
+    if (input.feeAmount && input.feeAmount > 0) {
+      const feeBalanceAsset = input.feeAsset ?? effectiveQuoteAsset;
+      this.adjustFeeBalance(feeBalanceAsset, input.feeAmount, now);
+    }
+
+    this.updatePeakEquity(input.baseCurrency);
+  }
+
   private applyExecutionDerivedPositionDelta(
     input: {
       symbol: string;

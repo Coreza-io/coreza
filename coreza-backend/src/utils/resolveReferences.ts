@@ -65,7 +65,7 @@ export function resolveReferences(
   inputData: any,
   allNodeData?: Record<string, any>,
   nodes?: any[]
-): string {
+): any {
   if (typeof expr !== "string") {
     return expr as any;
   }
@@ -178,14 +178,17 @@ export function resolveReferences(
     return result;
   }
 
-  return expr.replace(TEMPLATE_REGEX, (full, g1, g1b, g2, g3, rawPath) => {
+  function resolveTemplateValue(
+    nodeNameRaw: string,
+    rawPath: string
+  ): any {
     let targetData = inputData;
-    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
+    const nodeName = (nodeNameRaw || "").trim();
 
     if (nodeName && allNodeData) {
       const resolvedKey =
         resolveNodeKey(nodeName, allNodeData, nodes as any) || nodeName;
-      if (allNodeData[resolvedKey] === undefined) return full;
+      if (allNodeData[resolvedKey] === undefined) return undefined;
       targetData = pickJsonSource(allNodeData[resolvedKey]);
     } else {
       targetData = pickJsonSource(targetData);
@@ -194,14 +197,27 @@ export function resolveReferences(
     const cleanPath = (rawPath || "").trim().replace(/^[.\s]+/, "");
 
     if (!cleanPath) {
-      const val = targetData;
-      return typeof val === "object" && val !== null
-        ? JSON.stringify(val)
-        : String(val);
+      return targetData;
     }
 
-    const value = getValueByPath(targetData, cleanPath);
-    if (value === undefined) return null;
+    return getValueByPath(targetData, cleanPath);
+  }
+
+  const fullMatch = expr.trim().match(/^\{\{[^}]+\}\}$/);
+  if (fullMatch) {
+    TEMPLATE_REGEX.lastIndex = 0;
+    const m = TEMPLATE_REGEX.exec(expr);
+    if (m) {
+      const [, g1, g1b, g2, g3, rawPath] = m;
+      const nodeName = (g1 || g1b || g2 || g3 || "").trim();
+      return resolveTemplateValue(nodeName, rawPath || "");
+    }
+  }
+
+  return expr.replace(TEMPLATE_REGEX, (full, g1, g1b, g2, g3, rawPath) => {
+    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
+    const value = resolveTemplateValue(nodeName, rawPath || "");
+    if (value === undefined) return "";
 
     return value instanceof Date
       ? value.toISOString()

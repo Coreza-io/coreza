@@ -312,10 +312,7 @@ function compileTemplate(
 
   if (isPure) {
     const acc = matches[0].accessor;
-    const accessor = (allNodeData: Record<string, any>) => {
-      const value = acc(allNodeData);
-      return value === undefined ? null : value;
-    };
+    const accessor = (allNodeData: Record<string, any>) => acc(allNodeData);
     return { accessor, deps };
   }
 

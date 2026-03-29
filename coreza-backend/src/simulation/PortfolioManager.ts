@@ -389,7 +389,7 @@ export class PortfolioManager {
    */
   applyPositionUpdate(input: {
     symbol: string;
-    filledQty?: number; // signed delta: buy +, sell -
+    filledQty?: number;
     positionQty?: number; // broker truth
     avgEntryPrice?: number;
     currentPrice?: number;

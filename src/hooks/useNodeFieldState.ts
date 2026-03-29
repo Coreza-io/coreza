@@ -57,16 +57,16 @@ export function useNodeFieldState({
           f.type === "select" &&
           (savedValue === undefined || savedValue === null || savedValue === "")
         ) {
-          return [f.key, f.default || null];
+          return [f.key, f.default || undefined];
         }
 
         // For repeater fields
         if (f.type === "repeater") {
-          return [f.key, savedValue || f.default || []];
+          return [f.key, savedValue || f.default || undefined];
         }
 
         // For all other fields
-        return [f.key, savedValue ?? f.default ?? null];
+        return [f.key, savedValue ?? f.default ?? undefined];
       }),
     );
 
@@ -90,16 +90,16 @@ export function useNodeFieldState({
           f.type === "select" &&
           (savedValue === undefined || savedValue === null || savedValue === "")
         ) {
-          return [f.key, f.default || null];
+          return [f.key, f.default || undefined];
         }
 
         // For repeater fields
         if (f.type === "repeater") {
-          return [f.key, savedValue || f.default || []];
+          return [f.key, savedValue || f.default || undefined];
         }
 
         // For all other fields
-        return [f.key, savedValue ?? f.default ?? null];
+        return [f.key, savedValue ?? f.default ?? undefined];
       }),
     );
 

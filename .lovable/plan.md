@@ -1,66 +1,88 @@
 
 
-# Fix Position & Cancel Order — Updated Plan
+# Plan: Formalize `logicalOps` and Remove Dynamic Fields Block
 
-## Problems Found
+## Feasibility Analysis
 
-### 1. `cancelOrder` references non-existent `this.tickets` map
-The `tickets` map was removed during manual refactoring but `cancelOrder()` (lines 1030-1062) still calls `this.tickets.get()` and `this.tickets.delete()`. This will crash at runtime. The method already handles the `this.orders` map correctly (lines 1022-1028), so the legacy ticket block is dead code.
+### How `logicalOps` flows today
 
-### 2. `getPortfolioState` accesses `marketValue` on `PositionState`
-Line 918: `positions.reduce((s, p) => s + p.marketValue, 0)` — but `PositionState` has no `marketValue` field. It has `quantity` and `currentPrice`. This returns `NaN`.
+1. **RepeaterNodeLayout.tsx** reads it from `fieldState.logicalOps` and writes it via `handleChange("logicalOps", ...)` and `handleFieldStateBatch({ logicalOps: [...] })`
+2. **useNodeExecution.ts** (line 169) copies `fieldState.logicalOps` into the execution payload
+3. **Backend comparator.ts** (line 30) reads `req.body.logicalOps` to combine condition results with AND/OR
+4. **useNodeFieldState.ts** persists it only because the dynamic fields block catches it as an unknown key
 
-### 3. `getPosition` uses legacy `this.holdings` instead of `this.positions`
-Line 932 reads from `this.holdings` which is a legacy `SpotHolding` mirror. It should read from the primary `this.positions` map and compute `Position` fields from `PositionState`.
+### What `type: "hidden"` does
+
+- **NodeFieldRenderer.tsx** (line 51): `if (field.type === "hidden") return null;` — no UI rendered
+- **AIAgentExecutor.ts** (line 467): `if (field.type === "hidden") continue;` — skipped in backend field processing
+- The field is still initialized, stored in `fieldState`, and synced to `data.values` — exactly what `logicalOps` needs
+
+### Will anything break?
+
+| Concern | Safe? | Why |
+|---|---|---|
+| RepeaterNodeLayout reads/writes `fieldState.logicalOps` | Yes | Field will exist in fieldState as a defined field with default `[]` |
+| handleChange / handleFieldStateBatch | Yes | These work on any key in fieldState regardless of field type |
+| useNodeExecution payload | Yes | Reads from `fieldState.logicalOps` — unchanged |
+| Backend comparator | Yes | Receives `logicalOps` in payload — unchanged |
+| Existing saved workflows with logicalOps data | Yes | On load, `savedValue ?? f.default` picks up the saved array |
+| Other nodes (no logicalOps) | Yes | Only If.json gets this field; other nodes unaffected |
+
+**Verdict: Fully feasible. No breaking changes.**
 
 ---
 
 ## Changes
 
-### File: `coreza-backend/src/simulation/PortfolioManager.ts`
+### 1. `src/nodes/If.json` — Add `logicalOps` as hidden field
 
-**A. Rewrite `cancelOrder` — remove all `this.tickets` references**
+Add to the end of the `fields` array:
 
-Replace lines 1021-1063 with a clean implementation that only uses `this.orders`:
-- Look up order by `orderId` in `this.orders`
-- If not found, try `this.clientOrderIdIndex` to resolve broker order ID
-- If found and status is open, set `status = "canceled"`, update `updatedAt`
-- Return `{ removed: boolean, order?: OrderState }`
-- No ticket, no OrderEvent append — those are legacy constructs
-
-**B. Fix `getPortfolioState` — compute position market value**
-
-Replace line 918:
-```
-const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
-```
-with:
-```
-const positionsValue = positions.reduce((s, p) => s + p.quantity * p.currentPrice, 0);
+```json
+{
+  "key": "logicalOps",
+  "label": "Logical Operators",
+  "type": "hidden",
+  "default": []
+}
 ```
 
-Also convert `PositionState[]` to `Position[]` for the return type by mapping each position with computed `side`, `marketValue`, `unrealizedPnl`.
+This ensures `logicalOps` is treated as a defined field — initialized from saved data or default `[]`, persisted normally.
 
-**C. Fix `getPosition` — use `this.positions` map**
+### 2. `src/hooks/useNodeFieldState.ts` — Remove dynamic fields blocks
 
-Replace lines 931-944 to read from `this.positions.get(symbol)` instead of `this.holdings.get(symbol)`. Compute the `Position` interface fields:
-- `side`: `quantity >= 0 ? "long" : "short"`
-- `marketValue`: `quantity * currentPrice`
-- `unrealizedPnl`: `(currentPrice - avgEntryPrice) * quantity`
+**Location 1: `useState` initializer (lines 73-80)**
 
-### File: `coreza-backend/src/nodes/executors/PortfolioExecutor.ts`
+Remove:
+```ts
+const existingValues = data.fieldState || data.values || {};
+const definedKeys = new Set(definition.fields.map((f: any) => f.key));
+const dynamicFields = Object.fromEntries(
+  Object.entries(existingValues).filter(([key]) => !definedKeys.has(key)),
+);
 
-**D. Update `cancel_order` handler return shape**
+return { ...definedFields, ...dynamicFields };
+```
 
-Lines 323-330: Update to match new return type (`order?: OrderState` instead of `OrderTicket`). The handler already works correctly with the current shape — just ensure `cancelResult.order` maps to `OrderState`.
+Replace with:
+```ts
+return definedFields;
+```
+
+**Location 2: `useEffect` initializer (lines 113-122)**
+
+Same removal — replace `{ ...definedFields, ...dynamicFields }` block with just `definedFields`.
+
+### 3. Check for other nodes with dynamic keys
+
+No other nodes use dynamic keys. Verified by search — `logicalOps` is the only key written to fieldState that isn't in a node definition.
 
 ---
 
-## What stays unchanged
+## Result
 
-- `brokerSyncOrderEvent` delta logic — no changes (user explicitly excluded this)
-- `applyPositionDelta` flag — no changes (user explicitly excluded this)
-- All other executor methods
-- `getPendingOrders`, `getPositions`, `initializePortfolio`, `updateMarketPrices`
-- Backtest mode — zero changes
+- Stale renamed fields (e.g., `trail_percent`) are automatically dropped on load
+- `logicalOps` continues to work identically — initialized, persisted, and sent to backend
+- ~12 lines of fragile dynamic-field code removed
+- 2 files changed, no backend changes needed
 

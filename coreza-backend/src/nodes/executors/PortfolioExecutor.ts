@@ -83,7 +83,7 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     const cached = PortfolioExecutor.ownershipCache.get(id);
-    if (cached && cached.expiry > Date.now()) return cached.ours;
+    //if (cached && cached.expiry > Date.now()) return cached.ours;
 
     const result = await isOurOrder(id);
     PortfolioExecutor.ownershipCache.set(id, {
@@ -376,7 +376,6 @@ export class PortfolioExecutor implements INodeExecutor {
 
       return toNodeResult(
         createSuccessOutput({
-          registered: result.registered,
           order: result.order,
           pendingOrdersCount: pm.getPendingOrders().length,
         }),
@@ -418,8 +417,6 @@ export class PortfolioExecutor implements INodeExecutor {
         feeAmount,
         feeAsset,
       } = params;
-
-      const netFilledQty = positionQty ?? filledQty;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
         brokerOrderId,
@@ -463,7 +460,8 @@ export class PortfolioExecutor implements INodeExecutor {
 
       pm.applyPositionUpdate({
         symbol,
-        netFilledQty,
+        filledQty,
+        positionQty,
         avgEntryPrice: avgFillPrice,
         currentPrice: avgFillPrice,
       });
@@ -473,7 +471,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         side: params.side,
         fillPrice: avgFillPrice ?? 0,
-        fillQty: netFilledQty,
+        fillQty: filledQty,
         feeAmount,
         feeAsset,
         baseCurrency,

@@ -373,7 +373,7 @@ export class PortfolioManager {
       order.status = "filled";
     }
 
-    order.totalFees += input.feeAmount;
+    order.totalFees += input.feeAmount || 0;
 
     order.updatedAt = now;
 
@@ -389,48 +389,109 @@ export class PortfolioManager {
    */
   applyPositionUpdate(input: {
     symbol: string;
-    netFilledQty: number;
+    filledQty?: number; // signed delta: buy +, sell -
+    positionQty?: number; // broker truth
     avgEntryPrice?: number;
     currentPrice?: number;
   }): { position: PositionState | null } {
     const existing = this.positions.get(input.symbol);
 
+    const calculatePositionMetrics = (
+      quantity: number,
+      avgEntryPrice: number,
+      currentPrice: number,
+      realizedPnl: number,
+    ) => {
+      const absQty = Math.abs(quantity);
+
+      const openCostBasis = absQty * avgEntryPrice;
+      const marketValue = absQty * currentPrice;
+
+      const unrealizedPnl =
+        quantity >= 0
+          ? (currentPrice - avgEntryPrice) * absQty
+          : (avgEntryPrice - currentPrice) * absQty;
+
+      const totalPnl = realizedPnl + unrealizedPnl;
+
+      return {
+        side: quantity >= 0 ? ("long" as const) : ("short" as const),
+        openCostBasis,
+        marketValue,
+        unrealizedPnl,
+        totalPnl,
+      };
+    };
+
     if (existing) {
+      let nextQty = existing.quantity;
+
+      if (input.positionQty !== undefined) {
+        nextQty = input.positionQty;
+      } else if (input.filledQty !== undefined) {
+        nextQty = existing.quantity + input.filledQty;
+      }
+
+      if (nextQty === 0) {
+        this.positions.delete(input.symbol);
+        return { position: null };
+      }
+
       const avgEntryPrice = input.avgEntryPrice ?? existing.avgEntryPrice ?? 0;
 
       const currentPrice =
         input.currentPrice ?? existing.currentPrice ?? avgEntryPrice;
 
-      existing.quantity = input.netFilledQty;
-      existing.avgEntryPrice = avgEntryPrice;
+      existing.quantity = nextQty;
+      existing.side = nextQty >= 0 ? "long" : "short";
+      //existing.avgEntryPrice = avgEntryPrice;
       existing.currentPrice = currentPrice;
-      existing.openCostBasis = Math.abs(input.netFilledQty * avgEntryPrice);
-      existing.marketValue = Math.abs(input.netFilledQty * currentPrice);
-      existing.unrealizedPnl = existing.marketValue - existing.openCostBasis;
-      existing.totalPnl = existing.realizedPnl + existing.unrealizedPnl;
+
+      const metrics = calculatePositionMetrics(
+        existing.quantity,
+        existing.avgEntryPrice,
+        existing.currentPrice,
+        existing.realizedPnl ?? 0,
+      );
+
+      existing.openCostBasis = metrics.openCostBasis;
+      existing.marketValue = metrics.marketValue;
+      existing.unrealizedPnl = metrics.unrealizedPnl;
+      existing.totalPnl = metrics.totalPnl;
 
       return { position: existing };
+    }
+
+    const quantity =
+      input.positionQty !== undefined
+        ? input.positionQty
+        : (input.filledQty ?? 0);
+
+    if (quantity === 0) {
+      return { position: null };
     }
 
     const avgEntryPrice = input.avgEntryPrice ?? 0;
     const currentPrice = input.currentPrice ?? avgEntryPrice;
 
-    const position: PositionState = {
-      symbol: input.symbol,
-      quantity: input.netFilledQty,
-      side: input.netFilledQty >= 0 ? "long" : "short",
+    const metrics = calculatePositionMetrics(
+      quantity,
       avgEntryPrice,
       currentPrice,
-      openCostBasis: Math.abs(input.netFilledQty * avgEntryPrice),
-      marketValue: Math.abs(input.netFilledQty * currentPrice),
+      0,
+    );
+
+    const position: PositionState = {
+      symbol: input.symbol,
+      quantity,
+      side: metrics.side,
+      avgEntryPrice,
+      currentPrice,
+      openCostBasis: metrics.openCostBasis,
+      marketValue: metrics.marketValue,
       realizedPnl: 0,
-      unrealizedPnl:
-        Math.abs(input.netFilledQty * currentPrice) -
-        Math.abs(input.netFilledQty * avgEntryPrice),
-      totalPnl:
-        0 +
-        (Math.abs(input.netFilledQty * currentPrice) -
-          Math.abs(input.netFilledQty * avgEntryPrice)),
+      unrealizedPnl: metrics.unrealizedPnl,
+      totalPnl: metrics.totalPnl,
     };
 
     this.positions.set(input.symbol, position);

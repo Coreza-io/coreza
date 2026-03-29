@@ -433,7 +433,7 @@
     {
       "key": "positionQty",
       "label": "Position Quantity",
-      "type": "number",
+      "type": "text",
       "placeholder": "e.g. 0.9982",
       "required": false,
       "description": "Final broker-reported position quantity (after fees). Used by Alpaca where position differs from filled quantity.",

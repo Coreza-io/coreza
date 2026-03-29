@@ -70,14 +70,7 @@ export function useNodeFieldState({
       }),
     );
 
-    // Preserve additional dynamic fields (like logicalOps) from saved data
-    const existingValues = data.fieldState || data.values || {};
-    const definedKeys = new Set(definition.fields.map((f: any) => f.key));
-    const dynamicFields = Object.fromEntries(
-      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key)),
-    );
-
-    return { ...definedFields, ...dynamicFields };
+    return definedFields;
   });
 
   // Initialize fieldState when definition changes
@@ -110,14 +103,7 @@ export function useNodeFieldState({
       }),
     );
 
-    // Preserve additional dynamic fields (like logicalOps) from saved data
-    const existingValues = data.fieldState || data.values || {};
-    const definedKeys = new Set(definition.fields.map((f: any) => f.key));
-    const dynamicFields = Object.fromEntries(
-      Object.entries(existingValues).filter(([key]) => !definedKeys.has(key)),
-    );
-
-    const newFieldState = { ...definedFields, ...dynamicFields };
+    const newFieldState = definedFields;
 
     // Only set if we actually have fields to initialize
     if (Object.keys(newFieldState).length > 0) {

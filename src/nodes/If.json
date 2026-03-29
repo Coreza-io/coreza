@@ -120,6 +120,12 @@
         { "key": "right", "type": "string", "placeholder": "stocks" }
       ],
       "default": { "left": "", "operator": "===", "right": "" }
+    },
+    {
+      "key": "logicalOps",
+      "label": "Logical Operators",
+      "type": "hidden",
+      "default": []
     }
   ]
 }

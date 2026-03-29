@@ -78,18 +78,9 @@ const portfolioRequestSchema = z.object({
   locked: z.union([z.string(), z.number()]).optional(),
   avg_entry_price: z.union([z.string(), z.number()]).optional(),
   realized_pnl: z.union([z.string(), z.number()]).optional(),
-  time_in_force: z.string().optional(),
-  limit_price: z.union([z.string(), z.number()]).optional(),
-  stop_price: z.union([z.string(), z.number()]).optional(),
-  trail_percent: z.union([z.string(), z.number()]).optional(),
-  trail_price: z.union([z.string(), z.number()]).optional(),
-
-  // Legacy aliases
   orderType: z.string().optional(),
   limitPrice: z.union([z.string(), z.number()]).optional(),
   stopPrice: z.union([z.string(), z.number()]).optional(),
-  tif: z.string().optional(),
-  timeInForce: z.string().optional(),
   trailPercent: z.union([z.string(), z.number()]).optional(),
   trailPrice: z.union([z.string(), z.number()]).optional(),
 });

@@ -426,9 +426,9 @@ export class PortfolioManager {
     if (existing) {
       let nextQty = existing.quantity;
 
-      if (input.positionQty !== undefined) {
+      if (input.positionQty != null) {
         nextQty = input.positionQty;
-      } else if (input.filledQty !== undefined) {
+      } else if (input.filledQty != null) {
         nextQty = existing.quantity + input.filledQty;
       }
 
@@ -463,9 +463,7 @@ export class PortfolioManager {
     }
 
     const quantity =
-      input.positionQty !== undefined
-        ? input.positionQty
-        : (input.filledQty ?? 0);
+      input.positionQty != null ? input.positionQty : (input.filledQty ?? 0);
 
     if (quantity === 0) {
       return { position: null };

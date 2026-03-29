@@ -16,7 +16,7 @@
 
 export const isFieldVisible = (
   field: any,
-  currentFieldState: Record<string, any>
+  currentFieldState: Record<string, any>,
 ): boolean => {
   if (field.displayOptions?.show) {
     const showResult = Object.entries(field.displayOptions.show).every(
@@ -26,10 +26,10 @@ export const isFieldVisible = (
           : [rawAllowed];
         const current = currentFieldState[depKey];
         if (Array.isArray(current)) {
-          return current.some(v => allowedValues.includes(v));
+          return current.some((v) => allowedValues.includes(v));
         }
         return allowedValues.includes(current);
-      }
+      },
     );
 
     if (!showResult) return false;
@@ -44,10 +44,10 @@ export const isFieldVisible = (
         const current = currentFieldState[depKey];
         return allowedValues.some((v: any) => {
           const compareVal =
-            typeof v === 'object' && v !== null ? (v.id || v.value) : v;
+            typeof v === "object" && v !== null ? v.id || v.value : v;
           return String(current) === String(compareVal);
         });
-      }
+      },
     );
 
     if (shouldHide) return false;
@@ -58,7 +58,7 @@ export const isFieldVisible = (
 
 export const getVisibleValues = (
   definition: any,
-  values: Record<string, any>
+  values: Record<string, any>,
 ): Record<string, any> => {
   if (!definition?.fields || !values) return values || {};
 
@@ -73,11 +73,11 @@ export const getVisibleValues = (
     }
   }
 
-  for (const [key, value] of Object.entries(values)) {
-    if (!definedKeys.has(key) && value !== undefined) {
-      result[key] = value;
-    }
-  }
+  // for (const [key, value] of Object.entries(values)) {
+  //   if (!definedKeys.has(key) && value !== undefined) {
+  //     result[key] = value;
+  //   }
+  // }
 
   return result;
 };

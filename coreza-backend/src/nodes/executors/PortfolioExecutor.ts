@@ -52,6 +52,14 @@ function normalizeSymbol(value: any): string {
   return s;
 }
 
+function toNumber(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "string" && value.trim() === "") return undefined;
+
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -246,8 +254,9 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
-      const cashBalance = parseFloat(params.cash_balance);
-      if (baseCurrency && !isNaN(cashBalance) && cashBalance >= 0) {
+      const cashBalance = toNumber(params.cash_balance);
+
+      if (baseCurrency && cashBalance !== undefined && cashBalance >= 0) {
         pm.initializePortfolio(baseCurrency, cashBalance);
         return toNodeResult(
           createSuccessOutput({
@@ -275,8 +284,8 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerGetAll(pm, baseCurrency);
       case "update_mtm": {
         // Accept marketPrice (new)
-        const mtmPrice = parseFloat(params.marketPrice ?? params.price);
-        if (symbols.length === 0 || isNaN(mtmPrice) || mtmPrice <= 0) {
+        const mtmPrice = toNumber(params.marketPrice ?? params.price);
+        if (symbols.length === 0 || mtmPrice === undefined || mtmPrice <= 0) {
           return toNodeResult(
             createErrorOutput("Provide symbol and marketPrice for update_mtm"),
           );
@@ -340,8 +349,6 @@ export class PortfolioExecutor implements INodeExecutor {
     }
   }
 
-  // ============== NEW v2 BROKER OPERATION HANDLERS ==============
-
   private brokerRegisterOrderIntent(
     pm: PortfolioManager,
     params: any,
@@ -352,12 +359,12 @@ export class PortfolioExecutor implements INodeExecutor {
       const symbol = params.symbol;
       const side = params.side;
       const orderType = params.orderType;
-      const origQty = params.origQty;
+      const origQty = toNumber(params.origQty);
       const timeInForce = params.timeInForce;
-      const limitPrice = params.limitPrice;
-      const stopPrice = params.stopPrice;
-      const trailPercent = params.trailPercent;
-      const trailPrice = params.trailPrice;
+      const limitPrice = toNumber(params.limitPrice);
+      const stopPrice = toNumber(params.stopPrice);
+      const trailPercent = toNumber(params.trailPercent);
+      const trailPrice = toNumber(params.trailPrice);
       const status = params.status;
       const result = pm.registerOrderIntent({
         brokerOrderId,
@@ -405,18 +412,18 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
   ): Promise<NodeResult> {
     try {
-      const {
-        baseCurrency,
-        symbol,
-        brokerOrderId,
-        clientOrderId,
-        status,
-        filledQty,
-        positionQty,
-        avgFillPrice,
-        feeAmount,
-        feeAsset,
-      } = params;
+      const baseCurrency = params.baseCurrency;
+      const symbol = params.symbol;
+      const brokerOrderId = params.brokerOrderId;
+      const clientOrderId = params.clientOrderId;
+      const status = params.status;
+
+      const filledQty = toNumber(params.filledQty);
+      const positionQty = toNumber(params.positionQty);
+      const avgFillPrice = toNumber(params.avgFillPrice);
+      const feeAmount = toNumber(params.feeAmount);
+
+      const feeAsset = params.feeAsset;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
         brokerOrderId,
@@ -461,6 +468,7 @@ export class PortfolioExecutor implements INodeExecutor {
       pm.applyPositionUpdate({
         symbol,
         filledQty,
+        side: params.side,
         positionQty,
         avgEntryPrice: avgFillPrice,
         currentPrice: avgFillPrice,
@@ -471,7 +479,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         side: params.side,
         fillPrice: avgFillPrice ?? 0,
-        fillQty: filledQty,
+        fillQty: filledQty ?? 0,
         feeAmount,
         feeAsset,
         baseCurrency,

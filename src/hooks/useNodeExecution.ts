@@ -98,25 +98,44 @@ export function useNodeExecution({
   const userId = user?.id;
 
   // Resolve references recursively
+  // Resolve references recursively
   const resolveDeep = useCallback(
     (val: any, selectedInputData: any, allNodeData: any): any => {
-      // Read nodes imperatively when needed - avoids subscription re-renders
-      const nodes = getNodes();
-      if (typeof val === "string") {
-        return resolveReferences(val, selectedInputData, allNodeData, nodes);
-      }
-      if (Array.isArray(val)) {
-        return val.map((v) => resolveDeep(v, selectedInputData, allNodeData));
-      }
-      if (typeof val === "object" && val !== null) {
-        return Object.fromEntries(
-          Object.entries(val).map(([k, v]) => [
-            k,
-            resolveDeep(v, selectedInputData, allNodeData),
-          ]),
-        );
-      }
-      return val;
+      const nodes = getNodes(); // only once per call
+
+      const _resolve = (value: any): any => {
+        if (typeof value === "string") {
+          // Preserve normal strings that are not templates
+          if (!value.includes("{{")) {
+            return value;
+          }
+
+          return resolveReferences(
+            value,
+            selectedInputData,
+            allNodeData,
+            nodes,
+          );
+        }
+
+        if (Array.isArray(value)) {
+          return value.map(_resolve);
+        }
+
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          Object.prototype.toString.call(value) === "[object Object]"
+        ) {
+          return Object.fromEntries(
+            Object.entries(value).map(([k, v]) => [k, _resolve(v)]),
+          );
+        }
+
+        return value;
+      };
+
+      return _resolve(val);
     },
     [getNodes],
   );

@@ -172,7 +172,9 @@ export function useNodeFieldState({
       // Don't allow changes in readOnly mode
       if (readOnly) return;
 
-      const newFieldState = { ...fieldState, [key]: value };
+      const normalizedValue =
+        typeof value === "string" && value.trim() === "" ? null : value;
+      const newFieldState = { ...fieldState, [key]: normalizedValue };
 
       // Check if any field has dynamicOptions that depends on this key
       if (definition?.fields) {

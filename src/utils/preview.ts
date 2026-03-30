@@ -26,7 +26,7 @@ const isISODateString = (value: any): boolean => {
 // Helper to format dates in user's timezone
 const formatDateWithTimezone = (
   isoString: string,
-  timezone?: string
+  timezone?: string,
 ): string => {
   try {
     const tz = timezone || "UTC";
@@ -42,13 +42,13 @@ export function summarizePreview(
   value: any,
   maxArrayItems = 3,
   maxLength = 100,
-  timezone?: string
+  timezone?: string,
 ): string {
   try {
     // Handle null/undefined
-    if (value === null || value === undefined) {
-      return "null";
-    }
+    // if (value === null || value === undefined) {
+    //   return "null";
+    // }
 
     // Handle strings - check for dates first, then try JSON parse
     if (typeof value === "string") {
@@ -77,7 +77,7 @@ export function summarizePreview(
         typeof item === "object"
           ? JSON.stringify(item).slice(0, 30) +
             (JSON.stringify(item).length > 30 ? "..." : "")
-          : String(item)
+          : String(item),
       );
       return `[${preview.join(", ")}${
         value.length > maxArrayItems ? `, ... (${value.length} items)` : ""
@@ -135,17 +135,19 @@ function truncateForPreview(obj: any, maxItems: number, depth: number): any {
 
   if (Array.isArray(obj)) {
     if (obj.length > maxItems) {
-      const truncated = obj.slice(0, maxItems).map((item) =>
-        typeof item === "object" && item !== null
-          ? truncateForPreview(item, maxItems, depth - 1)
-          : item
-      );
+      const truncated = obj
+        .slice(0, maxItems)
+        .map((item) =>
+          typeof item === "object" && item !== null
+            ? truncateForPreview(item, maxItems, depth - 1)
+            : item,
+        );
       return truncated;
     }
     return obj.map((item) =>
       typeof item === "object" && item !== null
         ? truncateForPreview(item, maxItems, depth - 1)
-        : item
+        : item,
     );
   }
 
@@ -176,7 +178,11 @@ export function fullePreview(value: any, maxItems = 5, maxDepth = 3): string {
     // For large arrays, truncate and show summary
     if (Array.isArray(value) && value.length > maxItems) {
       const totalItems = value.length;
-      const truncated = truncateForPreview(value.slice(0, maxItems), maxItems, maxDepth);
+      const truncated = truncateForPreview(
+        value.slice(0, maxItems),
+        maxItems,
+        maxDepth,
+      );
       const previewJson = JSON.stringify(truncated, null, 2);
       // Remove closing bracket and add indicator
       return `${previewJson.slice(0, -1)},\n  // ... and ${(totalItems - maxItems).toLocaleString()} more items\n]`;

@@ -288,7 +288,7 @@ export class PortfolioManager {
     clientOrderId?: string;
     symbol: string;
     side: "buy" | "sell";
-    origQty: number;
+    origQty?: number;
     orderType?: string;
     timeInForce?: string;
     limitPrice?: number;
@@ -390,6 +390,7 @@ export class PortfolioManager {
   applyPositionUpdate(input: {
     symbol: string;
     filledQty?: number;
+    side: "buy" | "sell";
     positionQty?: number; // broker truth
     avgEntryPrice?: number;
     currentPrice?: number;
@@ -427,9 +428,37 @@ export class PortfolioManager {
       let nextQty = existing.quantity;
 
       if (input.positionQty != null) {
+        // Broker truth wins
         nextQty = input.positionQty;
       } else if (input.filledQty != null) {
-        nextQty = existing.quantity + input.filledQty;
+        const fillQty = Math.abs(input.filledQty);
+        const currentQty = existing.quantity;
+
+        if (currentQty > 0) {
+          // Existing long
+          if (input.side === "buy") {
+            // Add to long
+            nextQty = currentQty + fillQty;
+          } else if (input.side === "sell") {
+            // Reduce long, clamp so we do not go negative accidentally
+            const reduceQty = Math.min(currentQty, fillQty);
+            nextQty = currentQty - reduceQty;
+          }
+        } else if (currentQty < 0) {
+          // Existing short
+          if (input.side === "sell") {
+            // Add to short
+            nextQty = currentQty - fillQty;
+          } else if (input.side === "buy") {
+            // Reduce short, clamp so we do not go positive accidentally
+            const reduceQty = Math.min(Math.abs(currentQty), fillQty);
+            nextQty = currentQty + reduceQty;
+          }
+        } else {
+          // Flat position should normally not exist here because zero qty is deleted,
+          // but keep safe fallback behavior.
+          nextQty = input.side === "buy" ? fillQty : -fillQty;
+        }
       }
 
       if (nextQty === 0) {
@@ -437,14 +466,20 @@ export class PortfolioManager {
         return { position: null };
       }
 
-      const avgEntryPrice = input.avgEntryPrice ?? existing.avgEntryPrice ?? 0;
-
       const currentPrice =
-        input.currentPrice ?? existing.currentPrice ?? avgEntryPrice;
+        input.currentPrice ??
+        existing.currentPrice ??
+        existing.avgEntryPrice ??
+        0;
 
       existing.quantity = nextQty;
       existing.side = nextQty >= 0 ? "long" : "short";
-      //existing.avgEntryPrice = avgEntryPrice;
+
+      // Preserve old avgEntryPrice unless an authoritative new one is passed
+      if (input.avgEntryPrice != null) {
+        existing.avgEntryPrice = input.avgEntryPrice;
+      }
+
       existing.currentPrice = currentPrice;
 
       const metrics = calculatePositionMetrics(
@@ -462,8 +497,14 @@ export class PortfolioManager {
       return { position: existing };
     }
 
-    const quantity =
-      input.positionQty != null ? input.positionQty : (input.filledQty ?? 0);
+    let quantity =
+      input.positionQty != null
+        ? input.positionQty
+        : input.filledQty != null
+          ? input.side === "buy"
+            ? Math.abs(input.filledQty)
+            : -Math.abs(input.filledQty)
+          : 0;
 
     if (quantity === 0) {
       return { position: null };
@@ -637,18 +678,6 @@ export class PortfolioManager {
     }
 
     this.updatePeakEquity(input.baseCurrency);
-
-    this.applyTrade(
-      {
-        symbol: input.symbol,
-        side: input.side,
-        filledQty: input.fillQty,
-        fillPrice: input.fillPrice,
-        baseCurrency: input.baseCurrency ?? "USD",
-      },
-      input.feeAmount ?? 0,
-      now,
-    );
   }
 
   private applyTrade(

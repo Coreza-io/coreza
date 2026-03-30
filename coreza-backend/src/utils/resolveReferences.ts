@@ -19,11 +19,10 @@ type PathKey = string | number | SliceObject;
 
 /**
  * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
- * Now supports negative numbers (e.g. -1, -2) and slice syntax (e.g. [0:10], [-5:], [:10]).
+ * Supports negative numbers (e.g. -1, -2) and slice syntax (e.g. [0:10], [-5:], [:10]).
  */
 function parsePath(path: string): PathKey[] {
   const parts: PathKey[] = [];
-  // Match slice patterns [start:end] before single indices
   const regex = /([^[.\]]+)|\[(-?\d+)?:(-?\d+)?\]|\[(-?\d+|["'][^"']+["'])\]/g;
   let match: RegExpExecArray | null;
 
@@ -33,18 +32,16 @@ function parsePath(path: string): PathKey[] {
     if (dotKey !== undefined) {
       parts.push(dotKey);
     } else if (sliceStart !== undefined || sliceEnd !== undefined) {
-      // Slice pattern detected: [start:end], [:end], [start:], or [:]
       parts.push({
         type: "slice",
         start: sliceStart ? parseInt(sliceStart, 10) : null,
         end: sliceEnd ? parseInt(sliceEnd, 10) : null,
       });
     } else {
-      // Single index or quoted key
       if (/^-?\d+$/.test(bracketKey!)) {
-        parts.push(Number(bracketKey)); // e.g. "-1" → -1
+        parts.push(Number(bracketKey));
       } else {
-        parts.push(bracketKey!.slice(1, -1)); // strip quotes from 'foo' or "foo"
+        parts.push(bracketKey!.slice(1, -1));
       }
     }
   }
@@ -52,29 +49,26 @@ function parsePath(path: string): PathKey[] {
   return parts;
 }
 
-/**
- * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
- * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
- */
-// Hoisted to module scope to avoid recompilation on every call (~2.86M times per backtest)
+// Hoisted to module scope to avoid recompilation on every call
 const TEMPLATE_REGEX =
   /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
+
+const PURE_TEMPLATE_REGEX =
+  /^\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}$/;
 
 export function resolveReferences(
   expr: string,
   inputData: any,
   allNodeData?: Record<string, any>,
-  nodes?: any[]
-): any {
+  nodes?: any[],
+): unknown {
   if (typeof expr !== "string") {
-    return expr as any;
+    return expr;
   }
-
-  // Reset lastIndex since the regex is now module-scoped and stateful (global flag)
-  TEMPLATE_REGEX.lastIndex = 0;
 
   function pickJsonSource(d: any) {
     if (d == null) return d;
+
     const candidates = [
       d.json,
       d.output?.json,
@@ -87,17 +81,22 @@ export function resolveReferences(
       d.data?.input,
       d,
     ];
-    for (const c of candidates) if (c !== undefined) return c;
+
+    for (const c of candidates) {
+      if (c !== undefined) return c;
+    }
+
     return d;
   }
 
   function resolveNodeKey(
     nodeName: string,
     allNodeData?: Record<string, any>,
-    nodes?: Array<{ id: string; data?: any; label?: string; name?: string }>
+    nodes?: Array<{ id: string; data?: any; label?: string; name?: string }>,
   ): string | undefined {
     if (!nodeName) return undefined;
     if (allNodeData?.[nodeName] !== undefined) return nodeName;
+
     const candidate = nodes?.find(
       (n) =>
         n.id === nodeName ||
@@ -106,15 +105,19 @@ export function resolveReferences(
         n.data?.title === nodeName ||
         n.data?.name === nodeName ||
         n.data?.label === nodeName ||
-        (n.data as any)?.displayName === nodeName
+        (n.data as any)?.displayName === nodeName,
     );
-    if (candidate && allNodeData?.[candidate.id] !== undefined)
+
+    if (candidate && allNodeData?.[candidate.id] !== undefined) {
       return candidate.id;
+    }
+
     return undefined;
   }
 
   function getValueByPath(targetData: any, cleanPath: string) {
     if (!cleanPath) return targetData;
+
     const keys = parsePath(cleanPath);
     let result: any = targetData;
 
@@ -123,10 +126,8 @@ export function resolveReferences(
 
       if (result == null) return undefined;
 
-      // Handle slice object
       if (typeof key === "object" && key.type === "slice") {
         if (!Array.isArray(result)) {
-          console.warn("Cannot slice non-array:", result);
           return undefined;
         }
 
@@ -138,28 +139,49 @@ export function resolveReferences(
 
         result = result.slice(start, end);
 
-        // If there are more keys after the slice, map over sliced array
         const remainingKeys = keys.slice(i + 1);
         if (remainingKeys.length > 0) {
           result = result.map((item: any) => {
             let temp = item;
+
             for (const rKey of remainingKeys) {
               if (temp == null) return undefined;
+
               if (typeof rKey === "number") {
                 temp = Array.isArray(temp)
                   ? temp[rKey >= 0 ? rKey : temp.length + rKey]
                   : temp[rKey];
               } else if (typeof rKey === "string") {
                 temp = temp[rKey];
+              } else if (typeof rKey === "object" && rKey?.type === "slice") {
+                if (!Array.isArray(temp)) return undefined;
+
+                const innerLen = temp.length;
+                const innerStart =
+                  rKey.start === null
+                    ? 0
+                    : rKey.start < 0
+                      ? innerLen + rKey.start
+                      : rKey.start;
+                const innerEnd =
+                  rKey.end === null
+                    ? innerLen
+                    : rKey.end < 0
+                      ? innerLen + rKey.end
+                      : rKey.end;
+
+                temp = temp.slice(innerStart, innerEnd);
+              } else {
+                return undefined;
               }
             }
+
             return temp;
           });
+
           return result;
         }
-      }
-      // Handle regular index/key
-      else if (Array.isArray(result)) {
+      } else if (Array.isArray(result)) {
         if (
           typeof key === "number" ||
           (typeof key === "string" && /^-?\d+$/.test(key))
@@ -178,17 +200,21 @@ export function resolveReferences(
     return result;
   }
 
-  function resolveTemplateValue(
-    nodeNameRaw: string,
-    rawPath: string
-  ): any {
+  function resolveSingleReference(
+    nodeNameRaw: string | undefined,
+    rawPath: string | undefined,
+  ): unknown {
     let targetData = inputData;
     const nodeName = (nodeNameRaw || "").trim();
 
     if (nodeName && allNodeData) {
       const resolvedKey =
         resolveNodeKey(nodeName, allNodeData, nodes as any) || nodeName;
-      if (allNodeData[resolvedKey] === undefined) return undefined;
+
+      if (allNodeData[resolvedKey] === undefined) {
+        return undefined;
+      }
+
       targetData = pickJsonSource(allNodeData[resolvedKey]);
     } else {
       targetData = pickJsonSource(targetData);
@@ -203,26 +229,45 @@ export function resolveReferences(
     return getValueByPath(targetData, cleanPath);
   }
 
-  const fullMatch = expr.trim().match(/^\{\{[^}]+\}\}$/);
-  if (fullMatch) {
-    TEMPLATE_REGEX.lastIndex = 0;
-    const m = TEMPLATE_REGEX.exec(expr);
-    if (m) {
-      const [, g1, g1b, g2, g3, rawPath] = m;
-      const nodeName = (g1 || g1b || g2 || g3 || "").trim();
-      return resolveTemplateValue(nodeName, rawPath || "");
-    }
+  // No template at all -> undefined
+  TEMPLATE_REGEX.lastIndex = 0;
+  if (!TEMPLATE_REGEX.test(expr)) {
+    return undefined;
   }
 
-  return expr.replace(TEMPLATE_REGEX, (full, g1, g1b, g2, g3, rawPath) => {
-    const nodeName = (g1 || g1b || g2 || g3 || "").trim();
-    const value = resolveTemplateValue(nodeName, rawPath || "");
-    if (value === undefined) return "";
+  // Pure expression: return raw value, missing path -> undefined
+  const pureMatch = expr.match(PURE_TEMPLATE_REGEX);
+  if (pureMatch) {
+    TEMPLATE_REGEX.lastIndex = 0;
+    const m = TEMPLATE_REGEX.exec(expr);
 
-    return value instanceof Date
-      ? value.toISOString()
-      : typeof value === "object" && value !== null
-      ? JSON.stringify(value)
-      : String(value);
+    if (m) {
+      const [, g1, g1b, g2, g3, rawPath] = m;
+      const nodeName = g1 || g1b || g2 || g3;
+      const value = resolveSingleReference(nodeName, rawPath);
+
+      if (value === undefined || value === null) return undefined;
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    }
+
+    return undefined;
+  }
+
+  // Mixed/interpolated string: missing path -> "undefined"
+  TEMPLATE_REGEX.lastIndex = 0;
+  return expr.replace(TEMPLATE_REGEX, (full, g1, g1b, g2, g3, rawPath) => {
+    const nodeName = g1 || g1b || g2 || g3;
+    const value = resolveSingleReference(nodeName, rawPath);
+
+    if (value === undefined || value === null) return "undefined";
+
+    if (value instanceof Date) return value.toISOString();
+
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
   });
 }

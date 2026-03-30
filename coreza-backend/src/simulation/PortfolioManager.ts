@@ -382,6 +382,62 @@ export class PortfolioManager {
     );
   }
 
+  applyTrade(
+    input: {
+      brokerOrderId: string;
+      clientOrderId: string;
+      symbol: string;
+      side: "buy" | "sell";
+      filledQty: number;
+      fillPrice: number;
+      baseCurrency: string;
+    },
+    feeAmount: number,
+    now: string,
+  ): void {
+    const existing = this.positions.get(input.symbol);
+    if (!existing) return;
+
+    const signedQty = input.side === "buy" ? input.filledQty : -input.filledQty;
+    const prevQty = existing.quantity;
+
+    // Same direction means position increase, so no closed trade to record
+    const sameDirection =
+      (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
+
+    if (sameDirection) return;
+
+    const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
+    if (closingQty <= 0) return;
+
+    const isClosingLong = prevQty > 0;
+    const grossPnl = isClosingLong
+      ? (input.fillPrice - existing.avgEntryPrice) * closingQty
+      : (existing.avgEntryPrice - input.fillPrice) * closingQty;
+
+    const entry = this.currentEntryMap.get(input.symbol);
+
+    const trade: Trade = {
+      id: `LT-${++this.tradeIdCounter}`,
+      symbol: input.symbol,
+      side: isClosingLong ? "buy" : "sell",
+      entryOrderId: entry?.fillId ?? "",
+      exitOrderId: input.brokerOrderId,
+      entryPrice: existing.avgEntryPrice,
+      exitPrice: input.fillPrice,
+      quantity: closingQty,
+      grossPnl,
+      commission: feeAmount ?? 0,
+      slippage: 0,
+      netPnl: grossPnl - (feeAmount ?? 0),
+      entryTime: entry?.entryTime ?? "",
+      exitTime: now,
+      holdingPeriodBars: 0,
+    };
+
+    this.trades.push(trade);
+  }
+
   /**
    * Reconcile position with absolute broker quantity.
    * Sets the position to the exact quantity the broker reports.
@@ -678,72 +734,6 @@ export class PortfolioManager {
     }
 
     this.updatePeakEquity(input.baseCurrency);
-
-    this.applyTrade(
-      {
-        symbol: input.symbol,
-        side: input.side,
-        filledQty: input.fillQty,
-        fillPrice: input.fillPrice,
-        baseCurrency: input.baseCurrency ?? "USD",
-      },
-      input.feeAmount ?? 0,
-      now,
-    );
-  }
-
-  private applyTrade(
-    input: {
-      symbol: string;
-      side: "buy" | "sell";
-      filledQty: number;
-      fillPrice: number;
-      baseCurrency: string;
-    },
-    feeAmount: number,
-    now: string,
-  ): void {
-    const existing = this.positions.get(input.symbol);
-    if (!existing) return;
-
-    const signedQty = input.side === "buy" ? input.filledQty : -input.filledQty;
-    const prevQty = existing.quantity;
-
-    // Same direction means position increase, so no closed trade to record
-    const sameDirection =
-      (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
-
-    if (sameDirection) return;
-
-    const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
-    if (closingQty <= 0) return;
-
-    const isClosingLong = prevQty > 0;
-    const grossPnl = isClosingLong
-      ? (input.fillPrice - existing.avgEntryPrice) * closingQty
-      : (existing.avgEntryPrice - input.fillPrice) * closingQty;
-
-    const entry = this.currentEntryMap.get(input.symbol);
-
-    const trade: Trade = {
-      id: `LT-${++this.tradeIdCounter}`,
-      symbol: input.symbol,
-      side: isClosingLong ? "buy" : "sell",
-      entryOrderId: entry?.fillId ?? "",
-      exitOrderId: `exec-${Date.now()}`,
-      entryPrice: existing.avgEntryPrice,
-      exitPrice: input.fillPrice,
-      quantity: closingQty,
-      grossPnl,
-      commission: feeAmount ?? 0,
-      slippage: 0,
-      netPnl: grossPnl - (feeAmount ?? 0),
-      entryTime: entry?.entryTime ?? "",
-      exitTime: now,
-      holdingPeriodBars: 0,
-    };
-
-    this.trades.push(trade);
   }
 
   // ============== v2 READ METHODS ==============

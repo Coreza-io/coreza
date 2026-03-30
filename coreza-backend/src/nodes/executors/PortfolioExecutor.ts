@@ -463,6 +463,23 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
+      // 2. Record closed trade (must run before position update which may delete the position)
+      if (filledQty && avgFillPrice && params.side) {
+        pm.applyTrade(
+          {
+            brokerOrderId,
+            clientOrderId,
+            symbol,
+            side: params.side,
+            filledQty,
+            fillPrice: avgFillPrice,
+            baseCurrency: baseCurrency ?? "USD",
+          },
+          feeAmount ?? 0,
+          new Date().toISOString(),
+        );
+      }
+
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
 
       pm.applyPositionUpdate({

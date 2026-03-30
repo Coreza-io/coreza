@@ -678,6 +678,18 @@ export class PortfolioManager {
     }
 
     this.updatePeakEquity(input.baseCurrency);
+
+    this.applyTrade(
+      {
+        symbol: input.symbol,
+        side: input.side,
+        filledQty: input.fillQty,
+        fillPrice: input.fillPrice,
+        baseCurrency: input.baseCurrency ?? "USD",
+      },
+      input.feeAmount ?? 0,
+      now,
+    );
   }
 
   private applyTrade(

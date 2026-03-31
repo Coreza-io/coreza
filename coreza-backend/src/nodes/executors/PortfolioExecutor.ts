@@ -486,6 +486,7 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         filledQty,
         side: params.side,
+        brokerOrderId,
         positionQty,
         avgEntryPrice: avgFillPrice,
         currentPrice: avgFillPrice,

@@ -32,6 +32,11 @@ import {
 } from "../../utils/portfolioHelpers";
 import { isOurOrder } from "../../utils/orderIdempotency";
 import { NodeExecutionContext } from "../../engine/types";
+import { FillEventBus, FillStreamEvent } from "../../services/FillEventBus";
+import { SnapshotCache, LatestSnapshotState } from "../../services/SnapshotCache";
+import { createLogger } from "../../utils/logger";
+
+const fillLogger = createLogger("PortfolioExecutor:fills");
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";

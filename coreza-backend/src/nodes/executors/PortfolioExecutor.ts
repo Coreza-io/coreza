@@ -14,6 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { createHash } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
@@ -31,6 +32,11 @@ import {
 } from "../../utils/portfolioHelpers";
 import { isOurOrder } from "../../utils/orderIdempotency";
 import { NodeExecutionContext } from "../../engine/types";
+import { FillEventBus, FillStreamEvent } from "../../services/FillEventBus";
+import { SnapshotCache, LatestSnapshotState } from "../../services/SnapshotCache";
+import { createLogger } from "../../utils/logger";
+
+const fillLogger = createLogger("PortfolioExecutor:fills");
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
@@ -279,7 +285,7 @@ export class PortfolioExecutor implements INodeExecutor {
       case "register_order_intent":
         return this.brokerRegisterOrderIntent(pm, params);
       case "sync_order_event":
-        return this.brokerSyncOrderEvent(pm, params);
+        return this.brokerSyncOrderEvent(pm, params, context);
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_mtm": {
@@ -407,9 +413,94 @@ export class PortfolioExecutor implements INodeExecutor {
     return { ours: !!isOurs };
   }
 
+  // Tracks cumulative filled qty per order for delta computation
+  private orderFillState = new Map<string, number>();
+
+  private computeFillDelta(orderId: string, currentFilledQty: number): number {
+    const prev = this.orderFillState.get(orderId) || 0;
+    if (currentFilledQty <= prev) return 0;
+    const delta = currentFilledQty - prev;
+    this.orderFillState.set(orderId, currentFilledQty);
+    return delta;
+  }
+
+  private buildDeterministicEventId(parts: Record<string, any>): string {
+    const payload = Object.values(parts).map(String).join("|");
+    return createHash("sha256").update(payload).digest("hex").slice(0, 32);
+  }
+
+  private buildFillStreamEvent(opts: {
+    context: NodeExecutionContext;
+    params: any;
+    symbol: string;
+    side: string;
+    orderId?: string;
+    executionId?: string;
+    fillDeltaQty: number;
+    fillPrice: number;
+    feeAmount?: number;
+    feeAsset?: string;
+    baseCurrency?: string;
+  }): FillStreamEvent {
+    const eventId = opts.executionId || this.buildDeterministicEventId({
+      user_id: opts.context.userId,
+      broker: opts.params.broker || "binance",
+      symbol: opts.symbol,
+      order_id: opts.orderId,
+      fill_qty_delta: opts.fillDeltaQty,
+      fill_price: opts.fillPrice,
+      event_time: new Date().toISOString(),
+    });
+
+    return {
+      event_id: eventId,
+      user_id: opts.context.userId,
+      workflow_id: opts.context.workflowId,
+      run_id: opts.context.runId,
+      broker: opts.params.broker || "binance",
+      credential_id: opts.params.credential_id,
+      symbol: opts.symbol,
+      side: opts.side as "buy" | "sell",
+      order_id: opts.orderId,
+      execution_id: opts.executionId,
+      fill_qty_delta: opts.fillDeltaQty,
+      fill_price: opts.fillPrice,
+      quote_qty: opts.fillDeltaQty * opts.fillPrice,
+      commission: opts.feeAmount,
+      commission_asset: opts.feeAsset,
+      event_time: new Date().toISOString(),
+      base_currency: opts.baseCurrency,
+    };
+  }
+
+  private buildLatestSnapshot(
+    pm: PortfolioManager,
+    meta: { userId: string; workflowId: string; runId?: string; broker: string; credentialId?: string; baseCurrency?: string },
+  ): LatestSnapshotState {
+    const state = pm.getPortfolioState(meta.baseCurrency);
+    const positionsValue = state.positions.reduce((s, p) => s + p.marketValue, 0);
+
+    return {
+      user_id: meta.userId,
+      workflow_id: meta.workflowId,
+      run_id: meta.runId,
+      broker: meta.broker,
+      credential_id: meta.credentialId,
+      snapshot_at: new Date().toISOString(),
+      base_currency: meta.baseCurrency,
+      cash: state.cash,
+      equity: state.totalEquity,
+      realized_pnl: state.positions.reduce((s, p) => s + p.realizedPnl, 0),
+      unrealized_pnl: state.positions.reduce((s, p) => s + p.unrealizedPnl, 0),
+      positions_count: state.positions.length,
+      balances_json: pm.getCash(),
+    };
+  }
+
   private async brokerSyncOrderEvent(
     pm: PortfolioManager,
     params: any,
+    context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     try {
       const baseCurrency = params.baseCurrency;
@@ -502,6 +593,44 @@ export class PortfolioExecutor implements INodeExecutor {
         feeAsset,
         baseCurrency,
       });
+
+      // 5. Buffer fill for async DB persistence (fire-and-forget)
+      if (filledQty && avgFillPrice && brokerOrderId) {
+        const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
+
+        if (fillDeltaQty > 0 && context?.userId && context?.workflowId) {
+          const event = this.buildFillStreamEvent({
+            context,
+            params,
+            symbol,
+            side: params.side,
+            orderId: brokerOrderId,
+            executionId: params.executionId,
+            fillDeltaQty,
+            fillPrice: avgFillPrice,
+            feeAmount,
+            feeAsset,
+            baseCurrency,
+          });
+
+          void FillEventBus.publish(event).catch((err) =>
+            fillLogger.warn({ err, eventId: event.event_id }, "fill event append failed")
+          );
+
+          // 6. Coalesced snapshot update
+          const snapshot = this.buildLatestSnapshot(pm, {
+            userId: context.userId,
+            workflowId: context.workflowId,
+            runId: context.runId,
+            broker: params.broker || "binance",
+            credentialId: params.credential_id,
+            baseCurrency,
+          });
+          void SnapshotCache.upsertLatest(snapshot).catch((err) =>
+            fillLogger.warn({ err }, "snapshot cache update failed")
+          );
+        }
+      }
 
       return toNodeResult(
         createSuccessOutput({

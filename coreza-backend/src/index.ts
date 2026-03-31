@@ -71,6 +71,7 @@ import { setupBufferFlush } from "./utils/flushRedisBuffer";
 import RunSyncService from "./workers/RunSyncService";
 import streamingCleanupService from "./workers/StreamingCleanupService";
 import { workflowRecoveryService } from "./workers/WorkflowRecoveryService";
+import FillSyncWorker from "./workers/FillSyncWorker";
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -228,6 +229,11 @@ async function startServer() {
     streamingCleanupService.start();
     logger.info("StreamingCleanupService started (cleanup every 5min)");
 
+    // Start FillSyncWorker for async fill persistence (Redis Streams → Supabase)
+    logger.info("Starting FillSyncWorker...");
+    FillSyncWorker.start();
+    logger.info("FillSyncWorker started");
+
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || "8081", 10);
     await WebSocketManager.initialize(wsPort);
@@ -257,6 +263,10 @@ async function startServer() {
       // Stop RunSyncService and flush remaining runs
       RunSyncService.stop();
       await RunSyncService.flushAll();
+
+      // Stop FillSyncWorker and flush remaining fills/snapshots
+      FillSyncWorker.stop();
+      await FillSyncWorker.flushAll();
 
       // Close WebSocket server
       await WebSocketManager.shutdown();

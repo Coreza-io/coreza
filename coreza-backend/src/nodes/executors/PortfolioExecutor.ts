@@ -594,6 +594,44 @@ export class PortfolioExecutor implements INodeExecutor {
         baseCurrency,
       });
 
+      // 5. Buffer fill for async DB persistence (fire-and-forget)
+      if (filledQty && avgFillPrice && brokerOrderId) {
+        const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
+
+        if (fillDeltaQty > 0 && context?.userId && context?.workflowId) {
+          const event = this.buildFillStreamEvent({
+            context,
+            params,
+            symbol,
+            side: params.side,
+            orderId: brokerOrderId,
+            executionId: params.executionId,
+            fillDeltaQty,
+            fillPrice: avgFillPrice,
+            feeAmount,
+            feeAsset,
+            baseCurrency,
+          });
+
+          void FillEventBus.publish(event).catch((err) =>
+            fillLogger.warn({ err, eventId: event.event_id }, "fill event append failed")
+          );
+
+          // 6. Coalesced snapshot update
+          const snapshot = this.buildLatestSnapshot(pm, {
+            userId: context.userId,
+            workflowId: context.workflowId,
+            runId: context.runId,
+            broker: params.broker || "binance",
+            credentialId: params.credential_id,
+            baseCurrency,
+          });
+          void SnapshotCache.upsertLatest(snapshot).catch((err) =>
+            fillLogger.warn({ err }, "snapshot cache update failed")
+          );
+        }
+      }
+
       return toNodeResult(
         createSuccessOutput({
           ...this.getPortfolioSummary(pm, baseCurrency),

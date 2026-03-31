@@ -447,10 +447,12 @@ export class PortfolioManager {
     symbol: string;
     filledQty?: number;
     side: "buy" | "sell";
+    brokerOrderId?: string;
     positionQty?: number; // broker truth
     avgEntryPrice?: number;
     currentPrice?: number;
   }): { position: PositionState | null } {
+    const now = new Date().toISOString();
     const existing = this.positions.get(input.symbol);
 
     const calculatePositionMetrics = (
@@ -519,6 +521,7 @@ export class PortfolioManager {
 
       if (nextQty === 0) {
         this.positions.delete(input.symbol);
+        this.currentEntryMap.delete(input.symbol);
         return { position: null };
       }
 
@@ -549,6 +552,17 @@ export class PortfolioManager {
       existing.marketValue = metrics.marketValue;
       existing.unrealizedPnl = metrics.unrealizedPnl;
       existing.totalPnl = metrics.totalPnl;
+
+      const fillIncreasesPosition =
+        input.filledQty != null &&
+        ((existing.quantity > 0 && input.side === "buy") ||
+          (existing.quantity < 0 && input.side === "sell"));
+      if (fillIncreasesPosition && !this.currentEntryMap.has(input.symbol)) {
+        this.currentEntryMap.set(input.symbol, {
+          fillId: input.brokerOrderId ?? `entry-${Date.now()}`,
+          entryTime: now,
+        });
+      }
 
       return { position: existing };
     }
@@ -590,6 +604,10 @@ export class PortfolioManager {
     };
 
     this.positions.set(input.symbol, position);
+    this.currentEntryMap.set(input.symbol, {
+      fillId: input.brokerOrderId ?? `entry-${Date.now()}`,
+      entryTime: now,
+    });
 
     return { position };
   }

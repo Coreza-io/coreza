@@ -264,6 +264,10 @@ async function startServer() {
       RunSyncService.stop();
       await RunSyncService.flushAll();
 
+      // Stop FillSyncWorker and flush remaining fills/snapshots
+      FillSyncWorker.stop();
+      await FillSyncWorker.flushAll();
+
       // Close WebSocket server
       await WebSocketManager.shutdown();
 

@@ -413,9 +413,94 @@ export class PortfolioExecutor implements INodeExecutor {
     return { ours: !!isOurs };
   }
 
+  // Tracks cumulative filled qty per order for delta computation
+  private orderFillState = new Map<string, number>();
+
+  private computeFillDelta(orderId: string, currentFilledQty: number): number {
+    const prev = this.orderFillState.get(orderId) || 0;
+    if (currentFilledQty <= prev) return 0;
+    const delta = currentFilledQty - prev;
+    this.orderFillState.set(orderId, currentFilledQty);
+    return delta;
+  }
+
+  private buildDeterministicEventId(parts: Record<string, any>): string {
+    const payload = Object.values(parts).map(String).join("|");
+    return createHash("sha256").update(payload).digest("hex").slice(0, 32);
+  }
+
+  private buildFillStreamEvent(opts: {
+    context: NodeExecutionContext;
+    params: any;
+    symbol: string;
+    side: string;
+    orderId?: string;
+    executionId?: string;
+    fillDeltaQty: number;
+    fillPrice: number;
+    feeAmount?: number;
+    feeAsset?: string;
+    baseCurrency?: string;
+  }): FillStreamEvent {
+    const eventId = opts.executionId || this.buildDeterministicEventId({
+      user_id: opts.context.userId,
+      broker: opts.params.broker || "binance",
+      symbol: opts.symbol,
+      order_id: opts.orderId,
+      fill_qty_delta: opts.fillDeltaQty,
+      fill_price: opts.fillPrice,
+      event_time: new Date().toISOString(),
+    });
+
+    return {
+      event_id: eventId,
+      user_id: opts.context.userId,
+      workflow_id: opts.context.workflowId,
+      run_id: opts.context.runId,
+      broker: opts.params.broker || "binance",
+      credential_id: opts.params.credential_id,
+      symbol: opts.symbol,
+      side: opts.side as "buy" | "sell",
+      order_id: opts.orderId,
+      execution_id: opts.executionId,
+      fill_qty_delta: opts.fillDeltaQty,
+      fill_price: opts.fillPrice,
+      quote_qty: opts.fillDeltaQty * opts.fillPrice,
+      commission: opts.feeAmount,
+      commission_asset: opts.feeAsset,
+      event_time: new Date().toISOString(),
+      base_currency: opts.baseCurrency,
+    };
+  }
+
+  private buildLatestSnapshot(
+    pm: PortfolioManager,
+    meta: { userId: string; workflowId: string; runId?: string; broker: string; credentialId?: string; baseCurrency?: string },
+  ): LatestSnapshotState {
+    const state = pm.getPortfolioState(meta.baseCurrency);
+    const positionsValue = state.positions.reduce((s, p) => s + p.marketValue, 0);
+
+    return {
+      user_id: meta.userId,
+      workflow_id: meta.workflowId,
+      run_id: meta.runId,
+      broker: meta.broker,
+      credential_id: meta.credentialId,
+      snapshot_at: new Date().toISOString(),
+      base_currency: meta.baseCurrency,
+      cash: state.cash,
+      equity: state.totalEquity,
+      realized_pnl: state.positions.reduce((s, p) => s + p.realizedPnl, 0),
+      unrealized_pnl: state.positions.reduce((s, p) => s + p.unrealizedPnl, 0),
+      positions_count: state.positions.length,
+      balances_json: pm.getCash(),
+    };
+  }
+
   private async brokerSyncOrderEvent(
     pm: PortfolioManager,
     params: any,
+    context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     try {
       const baseCurrency = params.baseCurrency;

@@ -14,6 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { createHash } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";

@@ -63,7 +63,6 @@ export const getVisibleValues = (
   if (!definition?.fields || !values) return values || {};
 
   const result: Record<string, any> = {};
-  const definedKeys = new Set(definition.fields.map((field: any) => field.key));
 
   for (const field of definition.fields) {
     if (!isFieldVisible(field, values)) continue;
@@ -73,11 +72,13 @@ export const getVisibleValues = (
     }
   }
 
-  // for (const [key, value] of Object.entries(values)) {
-  //   if (!definedKeys.has(key) && value !== undefined) {
-  //     result[key] = value;
-  //   }
-  // }
+  // Preserve system-level keys not in definition.fields
+  const systemKeys = ["checkDependency", "logicalOps"];
+  for (const key of systemKeys) {
+    if (values[key] !== undefined) {
+      result[key] = values[key];
+    }
+  }
 
   return result;
 };

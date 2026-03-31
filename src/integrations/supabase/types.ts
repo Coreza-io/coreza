@@ -286,33 +286,57 @@ export type Database = {
       cash_snapshots: {
         Row: {
           balances: Json
+          base_currency: string | null
           broker: string
+          cash: number | null
           created_at: string
           credential_id: string
+          equity: number | null
           id: string
+          positions_count: number | null
+          realized_pnl: number | null
+          run_id: string | null
           snapshot_at: string
           total_value_usdt: number | null
+          unrealized_pnl: number | null
           user_id: string
+          workflow_id: string | null
         }
         Insert: {
           balances?: Json
+          base_currency?: string | null
           broker: string
+          cash?: number | null
           created_at?: string
           credential_id: string
+          equity?: number | null
           id?: string
+          positions_count?: number | null
+          realized_pnl?: number | null
+          run_id?: string | null
           snapshot_at: string
           total_value_usdt?: number | null
+          unrealized_pnl?: number | null
           user_id: string
+          workflow_id?: string | null
         }
         Update: {
           balances?: Json
+          base_currency?: string | null
           broker?: string
+          cash?: number | null
           created_at?: string
           credential_id?: string
+          equity?: number | null
           id?: string
+          positions_count?: number | null
+          realized_pnl?: number | null
+          run_id?: string | null
           snapshot_at?: string
           total_value_usdt?: number | null
+          unrealized_pnl?: number | null
           user_id?: string
+          workflow_id?: string | null
         }
         Relationships: []
       }
@@ -323,16 +347,20 @@ export type Database = {
           commission_asset: string | null
           created_at: string
           credential_id: string
+          event_id: string | null
           event_time: string
+          execution_id: string | null
           id: string
           order_id: string | null
           price: number
           qty: number
           quote_qty: number | null
+          run_id: string | null
           side: string
           symbol: string
           trade_id: string
           user_id: string
+          workflow_id: string | null
         }
         Insert: {
           broker: string
@@ -340,16 +368,20 @@ export type Database = {
           commission_asset?: string | null
           created_at?: string
           credential_id: string
+          event_id?: string | null
           event_time: string
+          execution_id?: string | null
           id?: string
           order_id?: string | null
           price: number
           qty: number
           quote_qty?: number | null
+          run_id?: string | null
           side: string
           symbol: string
           trade_id: string
           user_id: string
+          workflow_id?: string | null
         }
         Update: {
           broker?: string
@@ -357,16 +389,20 @@ export type Database = {
           commission_asset?: string | null
           created_at?: string
           credential_id?: string
+          event_id?: string | null
           event_time?: string
+          execution_id?: string | null
           id?: string
           order_id?: string | null
           price?: number
           qty?: number
           quote_qty?: number | null
+          run_id?: string | null
           side?: string
           symbol?: string
           trade_id?: string
           user_id?: string
+          workflow_id?: string | null
         }
         Relationships: []
       }

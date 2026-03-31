@@ -525,21 +525,21 @@ export class PortfolioManager {
         return { position: null };
       }
 
-      const currentPrice =
-        input.currentPrice ??
-        existing.currentPrice ??
-        existing.avgEntryPrice ??
-        0;
+      // const currentPrice =
+      //   input.currentPrice ??
+      //   existing.currentPrice ??
+      //   existing.avgEntryPrice ??
+      //   0;
 
       existing.quantity = nextQty;
-      existing.side = nextQty >= 0 ? "long" : "short";
+      //existing.side = nextQty >= 0 ? "long" : "short";
 
       // Preserve old avgEntryPrice unless an authoritative new one is passed
-      if (input.avgEntryPrice != null) {
-        existing.avgEntryPrice = input.avgEntryPrice;
-      }
+      // if (input.avgEntryPrice != null) {
+      //   existing.avgEntryPrice = input.avgEntryPrice;
+      // }
 
-      existing.currentPrice = currentPrice;
+      // existing.currentPrice = currentPrice;
 
       const metrics = calculatePositionMetrics(
         existing.quantity,
@@ -638,20 +638,6 @@ export class PortfolioManager {
       `[PortfolioManager] Balance reconciled: ${input.asset} total=${input.total}`,
     );
     return { reconciled: true, balance };
-  }
-
-  // ============== v2 HELPER METHODS ==============
-
-  private buildExecutionKey(input: {
-    executionId?: string;
-    brokerOrderId?: string;
-    filledQty?: number;
-    execPrice?: number;
-    execQty?: number;
-  }): string {
-    if (input.executionId) return input.executionId;
-    // Fallback composite key
-    return `${input.brokerOrderId ?? "unknown"}|${input.filledQty ?? 0}|${input.execPrice ?? 0}|${input.execQty ?? 0}`;
   }
 
   private findOrderByClientId(clientOrderId: string): OrderState | undefined {

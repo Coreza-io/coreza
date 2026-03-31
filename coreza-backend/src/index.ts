@@ -71,6 +71,7 @@ import { setupBufferFlush } from "./utils/flushRedisBuffer";
 import RunSyncService from "./workers/RunSyncService";
 import streamingCleanupService from "./workers/StreamingCleanupService";
 import { workflowRecoveryService } from "./workers/WorkflowRecoveryService";
+import FillSyncWorker from "./workers/FillSyncWorker";
 
 const app = express();
 const PORT = process.env.PORT || 8000;

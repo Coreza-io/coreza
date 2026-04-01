@@ -89,6 +89,7 @@ export interface CorezaMarketEvent {
   // Metadata
   timeframe?: string;
   isClosed?: boolean;
+  _seq?: number;
 }
 
 export interface ControlMessage {

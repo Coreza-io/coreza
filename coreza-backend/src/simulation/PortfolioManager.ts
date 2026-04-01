@@ -102,6 +102,21 @@ export interface PortfolioSnapshot {
 
 const MAX_FILL_LEDGER_SIZE = 10_000;
 
+const ORDER_STATUS_RANK: Record<string, number> = {
+  pending_new: 10,
+  accepted: 15,
+  new: 20,
+  replaced: 25,
+  pending_replace: 25,
+  partially_filled: 30,
+  pending_cancel: 35,
+  filled: 40,
+  canceled: 50,
+  cancelled: 50,
+  expired: 50,
+  rejected: 50,
+};
+
 const OPEN_ORDER_STATUSES = new Set([
   "new",
   "pending_new",
@@ -355,9 +370,24 @@ export class PortfolioManager {
       );
     }
 
+    // Stale-event guard: reject lifecycle status regression
+    const incomingRank = ORDER_STATUS_RANK[input.status] ?? 0;
+    const currentRank = ORDER_STATUS_RANK[order.status] ?? 0;
+
+    if (
+      incomingRank < currentRank ||
+      (incomingRank === currentRank && input.status !== order.status)
+    ) {
+      console.warn(
+        `[PortfolioManager] Stale order update ignored: ${input.brokerOrderId} current=${order.status}(${currentRank}) incoming=${input.status}(${incomingRank})`,
+      );
+      return;
+    }
+
     // Apply broker lifecycle status first
     order.status = input.status;
-    order.filledQty = input.filledQty || 0;
+    const incomingFilled = input.filledQty || 0;
+    order.filledQty = Math.max(order.filledQty, incomingFilled);
     order.avgFillPrice = input.avgFillPrice;
 
     // Derive remaining quantity from cumulative filled quantity

@@ -36,6 +36,7 @@ export class MarketDataGateway {
   private redis = getRedisQueue();
   private logger = createLogger("MarketDataGateway");
   private keepaliveInterval: NodeJS.Timeout | null = null;
+  private messageSequence = 0;
 
   private constructor(config: GatewayConfig, source: string) {
     this.config = config;
@@ -194,6 +195,7 @@ export class MarketDataGateway {
         // Normalize message - pass source for proper event formatting
         const event = this.config.normalize(msg, this.source);
         if (!event || !event.symbol) continue;
+        event._seq = ++this.messageSequence;
 
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations

@@ -436,6 +436,7 @@ export class MarketDataSubscriber {
       return {
         data: {
           type,
+          _seq: event._seq,
           BarSeries: [
             {
               symbol,
@@ -486,6 +487,7 @@ export class MarketDataSubscriber {
         status: event.orderStatus,
       },
       rawOrderData: event.rawOrderData,
+      _seq: event._seq,
     },
   };
 }
@@ -496,6 +498,7 @@ export class MarketDataSubscriber {
         symbol,
         type,
         timeframe: event.timeframe,
+        _seq: event._seq,
         [dataKey]: cleanEventData,
       },
     };

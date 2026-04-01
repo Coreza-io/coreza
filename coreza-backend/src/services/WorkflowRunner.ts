@@ -23,6 +23,12 @@ interface StreamEventEnvelope {
   symbol?: string;
 }
 
+interface StreamMessageWithSequence {
+  messageId: string;
+  fields: string[];
+  seq: number;
+}
+
 export class WorkflowRunner {
   private readonly engine: WorkflowEngine;
   private readonly streamRedisClient: Redis;
@@ -125,9 +131,11 @@ export class WorkflowRunner {
       const messages = claimed?.[1];
       if (!messages?.length) return;
 
-      for (const [messageId, fields] of messages) {
+      const parsed = this.parseAndSortMessages(messages);
+
+      for (const item of parsed) {
         if (!this.running) break;
-        await this.processMessage(messageId, fields);
+        await this.processMessage(item.messageId, item.fields);
       }
     } catch (err) {
       // XAUTOCLAIM may not be supported on older Redis; log and continue
@@ -168,9 +176,11 @@ export class WorkflowRunner {
       if (!results?.length) continue;
 
       for (const [, messages] of results) {
-        for (const [messageId, fields] of messages) {
+        const parsed = this.parseAndSortMessages(messages);
+
+        for (const item of parsed) {
           if (!this.running) break;
-          await this.processMessage(messageId, fields);
+          await this.processMessage(item.messageId, item.fields);
         }
       }
     }
@@ -247,6 +257,37 @@ export class WorkflowRunner {
 
     // Phase 6: Ack
     await this.ack(messageId);
+  }
+
+  private parseAndSortMessages(
+    messages: [string, string[]][],
+  ): StreamMessageWithSequence[] {
+    const parsed = messages.map(([messageId, fields]) => {
+      const rawPayload = this.extractPayload(fields);
+      let seq = 0;
+
+      if (rawPayload) {
+        try {
+          const parsedEnvelope = this.parseEnvelope(rawPayload);
+          if (
+            parsedEnvelope.data &&
+            typeof parsedEnvelope.data === "object" &&
+            "_seq" in parsedEnvelope.data
+          ) {
+            const value = (parsedEnvelope.data as { _seq?: unknown })._seq;
+            seq = typeof value === "number" ? value : 0;
+          }
+        } catch {
+          seq = 0;
+        }
+      }
+
+      return { messageId, fields, seq };
+    });
+
+    parsed.sort((a, b) => a.seq - b.seq);
+
+    return parsed;
   }
 
   private extractPayload(fields: string[]): string | undefined {

@@ -264,6 +264,9 @@ export class WorkflowRunner {
   private parseAndSortMessages(
     messages: [string, string[]][],
   ): StreamMessageWithSequence[] {
+    // Secondary ordering safety only:
+    // subscriber ingress serializes per workflow+orderingDomain before XADD.
+    // This sort protects reclaimed/mixed batches and malformed edge cases.
     const parsed = messages.map(([messageId, fields], index) => {
       const rawPayload = this.extractPayload(fields);
       let seq = 0;

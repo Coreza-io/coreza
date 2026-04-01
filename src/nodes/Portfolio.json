@@ -126,8 +126,8 @@
           "name": "Cancel Order"
         },
         {
-          "id": "get_pending_orders",
-          "name": "Get Pending Orders"
+          "id": "get_open_orders",
+          "name": "Get Open Orders"
         },
         {
           "id": "get_portfolio",
@@ -220,7 +220,7 @@
             "reconcile_position",
             "get_position",
             "update_mtm",
-            "get_pending_orders",
+            "get_open_orders",
             "sync_order_event"
           ]
         }
@@ -585,7 +585,7 @@
         "mode": ["broker"]
       }
     },
-    "get_pending_orders": {
+    "get_open_orders": {
       "show": {
         "mode": ["broker"]
       }

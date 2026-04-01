@@ -745,7 +745,7 @@ export class PortfolioManager {
   /**
    * Get all pending orders (v2 model — derives from orders map).
    */
-  getPendingOrders(): OrderState[] {
+  getOpenOrders(): OrderState[] {
     return Array.from(this.orders.values()).filter((o) =>
       OPEN_ORDER_STATUSES.has(o.status),
     );
@@ -812,7 +812,7 @@ export class PortfolioManager {
       trades: this.trades,
       totalEquity,
       peakEquity: this.peakEquity,
-      pendingOrders: this.getPendingOrders(),
+      pendingOrders: this.getOpenOrders(),
     };
   }
 

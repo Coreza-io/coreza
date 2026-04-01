@@ -33,7 +33,10 @@ import {
 import { isOurOrder } from "../../utils/orderIdempotency";
 import { NodeExecutionContext } from "../../engine/types";
 import { FillEventBus, FillStreamEvent } from "../../services/FillEventBus";
-import { SnapshotCache, LatestSnapshotState } from "../../services/SnapshotCache";
+import {
+  SnapshotCache,
+  LatestSnapshotState,
+} from "../../services/SnapshotCache";
 import { createLogger } from "../../utils/logger";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
@@ -330,12 +333,12 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             removed: cancelResult.removed,
             cancelledOrder: cancelResult.order || null,
-            pendingOrdersCount: pm.getPendingOrders().length,
+            pendingOrdersCount: pm.getOpenOrders().length,
           }),
         );
       }
-      case "get_pending_orders": {
-        const PendingOrders = pm.getPendingOrders();
+      case "get_open_orders": {
+        const PendingOrders = pm.getOpenOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
         const filtered = filterSymbol
           ? PendingOrders.filter((o) => o.symbol === filterSymbol)
@@ -390,7 +393,7 @@ export class PortfolioExecutor implements INodeExecutor {
       return toNodeResult(
         createSuccessOutput({
           order: result.order,
-          pendingOrdersCount: pm.getPendingOrders().length,
+          pendingOrdersCount: pm.getOpenOrders().length,
         }),
       );
     } catch (error: any) {
@@ -442,15 +445,17 @@ export class PortfolioExecutor implements INodeExecutor {
     feeAsset?: string;
     baseCurrency?: string;
   }): FillStreamEvent {
-    const eventId = opts.executionId || this.buildDeterministicEventId({
-      user_id: opts.context.userId,
-      broker: opts.params.broker || "binance",
-      symbol: opts.symbol,
-      order_id: opts.orderId,
-      fill_qty_delta: opts.fillDeltaQty,
-      fill_price: opts.fillPrice,
-      event_time: new Date().toISOString(),
-    });
+    const eventId =
+      opts.executionId ||
+      this.buildDeterministicEventId({
+        user_id: opts.context.userId,
+        broker: opts.params.broker || "binance",
+        symbol: opts.symbol,
+        order_id: opts.orderId,
+        fill_qty_delta: opts.fillDeltaQty,
+        fill_price: opts.fillPrice,
+        event_time: new Date().toISOString(),
+      });
 
     return {
       event_id: eventId,
@@ -475,10 +480,20 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private buildLatestSnapshot(
     pm: PortfolioManager,
-    meta: { userId: string; workflowId: string; runId?: string; broker: string; credentialId?: string; baseCurrency?: string },
+    meta: {
+      userId: string;
+      workflowId: string;
+      runId?: string;
+      broker: string;
+      credentialId?: string;
+      baseCurrency?: string;
+    },
   ): LatestSnapshotState {
     const state = pm.getPortfolioState(meta.baseCurrency);
-    const positionsValue = state.positions.reduce((s, p) => s + p.marketValue, 0);
+    const positionsValue = state.positions.reduce(
+      (s, p) => s + p.marketValue,
+      0,
+    );
 
     return {
       user_id: meta.userId,
@@ -614,7 +629,10 @@ export class PortfolioExecutor implements INodeExecutor {
           });
 
           void FillEventBus.publish(event).catch((err) =>
-            fillLogger.warn({ err, eventId: event.event_id }, "fill event append failed")
+            fillLogger.warn(
+              { err, eventId: event.event_id },
+              "fill event append failed",
+            ),
           );
 
           // 6. Coalesced snapshot update
@@ -627,7 +645,7 @@ export class PortfolioExecutor implements INodeExecutor {
             baseCurrency,
           });
           void SnapshotCache.upsertLatest(snapshot).catch((err) =>
-            fillLogger.warn({ err }, "snapshot cache update failed")
+            fillLogger.warn({ err }, "snapshot cache update failed"),
           );
         }
       }
@@ -660,7 +678,7 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     const initialCapital = simBroker.getConfig().initialCapital;
-    const pendingOrders = simBroker.getPendingOrders();
+    const pendingOrders = simBroker.getOpenOrders();
 
     return leanSuccess({
       cash: state.cash,
@@ -848,36 +866,21 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
+    let positions;
+
     if (symbols.length === 0) {
-      // No symbol provided: return all tracked positions
-      const positions = pm.getPositions();
-      return leanSuccess({
-        positions: positions.map((p) => formatPositionWithPnlPercent(p)),
-        positions_count: positions.length,
-      });
+      // All positions
+      positions = pm.getPositions();
+    } else {
+      // One or multiple symbols
+      positions = symbols
+        .map((symbol) => pm.getPosition(symbol))
+        .filter(Boolean); // remove nulls
     }
-
-    if (symbols.length === 1) {
-      // Single symbol: keep backward-compatible flat output
-      const symbol = symbols[0];
-      const position = pm.getPosition(symbol);
-
-      return leanSuccess({
-        position,
-      });
-    }
-
-    // Multiple symbols: return array of positions
-    const results = symbols.map((symbol) => {
-      const position = pm.getPosition(symbol);
-      return {
-        position,
-      };
-    });
 
     return leanSuccess({
-      positions: results,
-      positions_count: results.length,
+      positions: positions.map((p) => formatPositionWithPnlPercent(p)),
+      positions_count: positions.length,
     });
   }
 

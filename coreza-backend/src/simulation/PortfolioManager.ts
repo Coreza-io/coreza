@@ -399,11 +399,13 @@ export class PortfolioManager {
       return;
     }
 
+    const previousFilledQty = order.filledQty;
+
     if (incomingSeq > 0) {
       order.lastSeq = incomingSeq;
     }
 
-    // Apply broker lifecycle status first
+    // Apply broker lifecycle status first (only after freshness guards pass)
     order.status = input.status;
     const incomingFilled = input.filledQty || 0;
     order.filledQty = Math.max(order.filledQty, incomingFilled);
@@ -422,7 +424,10 @@ export class PortfolioManager {
       order.status = "filled";
     }
 
-    order.totalFees += input.feeAmount || 0;
+    const fillIncreased = order.filledQty > previousFilledQty;
+    if (fillIncreased && (input.feeAmount || 0) > 0) {
+      order.totalFees += input.feeAmount || 0;
+    }
 
     order.updatedAt = now;
 

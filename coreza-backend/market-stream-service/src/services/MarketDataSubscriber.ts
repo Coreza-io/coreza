@@ -43,7 +43,7 @@ export class MarketDataSubscriber {
   private messageHandler:
     | ((channel: string, message: string) => Promise<void>)
     | null = null;
-  private xaddQueues = new Map<string, Promise<void>>();
+  private deliveryQueues = new Map<string, Promise<void>>();
 
   private constructor() {
     // Lazy initialization - don't create Redis connections here
@@ -271,7 +271,7 @@ export class MarketDataSubscriber {
     }
 
     // Create new handler
-    this.messageHandler = async (channel: string, message: string) => {
+    this.messageHandler = async (_channel: string, message: string) => {
       try {
         // Parse market event
         const event: CorezaMarketEvent = JSON.parse(message);
@@ -355,48 +355,7 @@ export class MarketDataSubscriber {
             continue;
           }
 
-          // Format event using shared helper (same format for frontend and backend)
-          const formattedPayload = this.formatMarketEventPayload(event);
-
-          // Publish market data to Redis for WebSocketManager to forward to frontend
-          try {
-            const userChannel = `ws:user:${registration.userId}`;
-
-            const payload = JSON.stringify({
-              type: "market_data",
-              payload: {
-                nodeId: registration.nodeId,
-                data: formattedPayload.data,
-              },
-            });
-
-            await redisPublishBreaker.fire(userChannel, payload);
-
-            console.log(`🟣 [DEBUG-3] MESSAGE RECEIVED on channel: ${channel}`);
-            console.log(`🟣 [DEBUG-3] Raw message:`, message.substring(0, 200));
-
-            logger.debug(
-              {
-                userId: registration.userId,
-                symbol: event.symbol,
-                eventType: event.type,
-              },
-              "Published market data to user channel",
-            );
-          } catch (error) {
-            logger.error(
-              { err: error, userId: registration.userId },
-              "Failed to publish market data to user channel",
-            );
-          }
-
-          // Trigger backend workflow execution with same formatted payload
-          await this.triggerWorkflowExecution(
-            workflowId,
-            registration.userId,
-            event,
-            registration.nodeId,
-          );
+          this.enqueueWorkflowDelivery(workflowId, registration, event);
         }
       } catch (error) {
         console.error(
@@ -508,37 +467,110 @@ export class MarketDataSubscriber {
     };
   }
 
-  private async serializedXadd(
+  private enqueueWorkflowDelivery(
+    workflowId: string,
+    registration: WorkflowRegistration,
+    event: CorezaMarketEvent,
+  ): void {
+    const domain = event._orderingDomain || `${event.source}:${event.type}`;
+    const queueKey = `${workflowId}:${domain}`;
+    const enqueueAt = Date.now();
+    const orderId = event.orderId || event.clientOrderId;
+
+    logger.debug(
+      {
+        workflowId,
+        queueKey,
+        orderId,
+        symbol: event.symbol,
+        eventType: event.type,
+        orderEvent: event.orderEvent,
+        orderStatus: event.orderStatus,
+        seq: event._seq,
+        orderingDomain: domain,
+        enqueueAt,
+      },
+      "Workflow delivery enqueued",
+    );
+
+    const prev = this.deliveryQueues.get(queueKey) ?? Promise.resolve();
+    const next = prev.then(async () => {
+      await this.deliverWorkflowEvent(workflowId, registration, event, enqueueAt);
+    });
+    const trackedNext = next.catch((error) => {
+      logger.error(
+        {
+          err: error,
+          workflowId,
+          queueKey,
+          orderId,
+          seq: event._seq,
+          orderingDomain: domain,
+        },
+        "Workflow delivery queue task failed",
+      );
+    });
+    this.deliveryQueues.set(queueKey, trackedNext);
+    trackedNext.finally(() => {
+      if (this.deliveryQueues.get(queueKey) === trackedNext) {
+        this.deliveryQueues.delete(queueKey);
+      }
+    });
+  }
+
+  private async publishToFrontend(
+    registration: WorkflowRegistration,
+    formattedPayload: { data: Record<string, any> },
+    event: CorezaMarketEvent,
+  ): Promise<void> {
+    const userChannel = `ws:user:${registration.userId}`;
+    const payload = JSON.stringify({
+      type: "market_data",
+      payload: {
+        nodeId: registration.nodeId,
+        data: formattedPayload.data,
+      },
+    });
+    await redisPublishBreaker.fire(userChannel, payload);
+    logger.debug(
+      {
+        userId: registration.userId,
+        workflowId: registration.workflowId,
+        symbol: event.symbol,
+        eventType: event.type,
+        seq: event._seq,
+        orderingDomain:
+          event._orderingDomain || `${event.source}:${event.type}`,
+      },
+      "Published market data to user channel",
+    );
+  }
+
+  private async appendToWorkflowStream(
     queueKey: string,
     streamKey: string,
     payload: string,
   ): Promise<void> {
-    const prev = this.xaddQueues.get(queueKey) ?? Promise.resolve();
-    const next = prev.then(async () => {
-      const redis = getRedisCache();
-      await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*", "event", payload);
-    });
-    const trackedNext = next.catch(() => {});
-    this.xaddQueues.set(queueKey, trackedNext);
-    try {
-      await next;
-    } finally {
-      if (this.xaddQueues.get(queueKey) === trackedNext) {
-        this.xaddQueues.delete(queueKey);
-      }
-    }
+    const redis = getRedisCache();
+    await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*", "event", payload);
+    logger.debug({ queueKey, streamKey }, "Appended market event to strategy stream");
   }
 
   /**
-   * Trigger workflow execution with market event
-   * Uses Redis-first storage for high-frequency performance
+   * Deliver market event for one workflow in strict queue order:
+   * 1) publish frontend update
+   * 2) append to backend strategy stream
    */
-  private async triggerWorkflowExecution(
+  private async deliverWorkflowEvent(
     workflowId: string,
-    userId: string,
+    registration: WorkflowRegistration,
     event: CorezaMarketEvent,
-    nodeId: string,
+    enqueueAt: number,
   ): Promise<void> {
+    const domain = event._orderingDomain || `${event.source}:${event.type}`;
+    const queueKey = `${workflowId}:${domain}`;
+    const streamKey = `strategy:stream:${workflowId}`;
+    const orderId = event.orderId || event.clientOrderId;
     try {
       // Fetch workflow definition from cache (60s TTL)
       const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
@@ -560,24 +592,64 @@ export class MarketDataSubscriber {
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
       const payloadStr = JSON.stringify(formattedPayload);
-
-      // Push to Redis Stream for long-lived strategy runner consumption
-      const streamKey = `strategy:stream:${workflowId}`;
-      const domain = event._orderingDomain || `${event.source}:${event.type}`;
-      const queueKey = `${workflowId}:${domain}`;
-      await this.serializedXadd(queueKey, streamKey, payloadStr);
+      const executeAt = Date.now();
 
       logger.debug(
         {
           workflowId,
+          queueKey,
+          orderId,
           symbol: event.symbol,
+          eventType: event.type,
+          orderEvent: event.orderEvent,
+          orderStatus: event.orderStatus,
+          seq: event._seq,
+          orderingDomain: domain,
+          enqueueAt,
+          executeAt,
+          queueWaitMs: executeAt - enqueueAt,
         },
-        "Pushed market event to strategy stream",
+        "Workflow delivery dequeued",
+      );
+
+      try {
+        await this.publishToFrontend(registration, formattedPayload, event);
+      } catch (error) {
+        logger.error(
+          { err: error, userId: registration.userId, workflowId, queueKey },
+          "Failed to publish market data to user channel",
+        );
+      }
+
+      await this.appendToWorkflowStream(queueKey, streamKey, payloadStr);
+
+      logger.debug(
+        {
+          workflowId,
+          queueKey,
+          orderId,
+          seq: event._seq,
+          orderingDomain: domain,
+          symbol: event.symbol,
+          orderStatus: event.orderStatus,
+          executeAt,
+          completeAt: Date.now(),
+        },
+        "Completed workflow delivery",
       );
     } catch (error) {
       logger.error(
-        { err: error, workflowId, userId, symbol: event.symbol },
-        "Trigger workflow error",
+        {
+          err: error,
+          workflowId,
+          userId: registration.userId,
+          symbol: event.symbol,
+          queueKey,
+          orderId,
+          seq: event._seq,
+          orderingDomain: domain,
+        },
+        "Workflow delivery error",
       );
     }
   }
@@ -708,6 +780,7 @@ export class MarketDataSubscriber {
     // Clear memory
     this.registrations.clear();
     this.symbolWorkflows.clear();
+    this.deliveryQueues.clear();
 
     this.isInitialized = false;
 

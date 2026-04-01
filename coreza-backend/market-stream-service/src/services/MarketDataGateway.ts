@@ -196,6 +196,8 @@ export class MarketDataGateway {
         const event = this.config.normalize(msg, this.source);
         if (!event || !event.symbol) continue;
         event._seq = ++this.messageSequence;
+        // Keep ordering domain bound to gateway source identifier (this.source),
+        // not normalized event.source. Example: alpaca_trading -> *_trading domain.
         event._orderingDomain = `${this.source}:${event.type}`;
 
         // Publish to Redis symbol channel with circuit breaker

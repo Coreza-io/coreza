@@ -39,10 +39,7 @@ import {
   leanError,
 } from "../utils/normalizeOutput";
 import { discoverIndicators } from "../nodes/executors/InitializeIndicatorsExecutor";
-import {
-  buildIndicatorKey,
-  IndicatorStateManager,
-} from "../engine";
+import { buildIndicatorKey, IndicatorStateManager } from "../engine";
 import { parseBar, parsePrices, toPercent } from "../utils/barParser";
 import { formatPositionWithPnlPercent } from "../utils/portfolioHelpers";
 
@@ -112,7 +109,9 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   static getSimBrokerForBacktest(backtestId: string): SimBroker | undefined {
-    return BacktestExecutor.simBrokerCache.get(`${SIM_BROKER_KEY_PREFIX}${backtestId}`);
+    return BacktestExecutor.simBrokerCache.get(
+      `${SIM_BROKER_KEY_PREFIX}${backtestId}`,
+    );
   }
 
   public static cleanupBacktestResources(backtestId: string): void {
@@ -165,7 +164,6 @@ export class BacktestExecutor implements INodeExecutor {
         );
     }
   }
-
 
   private clearResultCachesForRun(runId?: string): void {
     if (runId && runId !== this.cachedRunId) {
@@ -308,7 +306,9 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (!broker || symbols.length === 0 || !interval) {
         return toNodeResult(
-          createErrorOutput("broker, symbol/symbols, and interval are required"),
+          createErrorOutput(
+            "broker, symbol/symbols, and interval are required",
+          ),
         );
       }
 
@@ -347,7 +347,10 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const warmupPeriodRaw = parseInt(params.warmup_period, 10) || 200;
-      const warmupPeriod = Math.min(Math.max(warmupPeriodRaw, 0), primaryBars.length);
+      const warmupPeriod = Math.min(
+        Math.max(warmupPeriodRaw, 0),
+        primaryBars.length,
+      );
       //const autoDetect = String(params.auto_detect ?? "true") === "true";
 
       const allNodes: WorkflowNode[] = context?.nodes || [];
@@ -367,8 +370,14 @@ export class BacktestExecutor implements INodeExecutor {
 
       for (const currentSymbol of symbols) {
         const symbolBars = historicalDataBySymbol.get(currentSymbol) || [];
-        warmupBarsBySymbol.set(currentSymbol, symbolBars.slice(0, warmupPeriod));
-        remainingBarsBySymbol.set(currentSymbol, symbolBars.slice(warmupPeriod));
+        warmupBarsBySymbol.set(
+          currentSymbol,
+          symbolBars.slice(0, warmupPeriod),
+        );
+        remainingBarsBySymbol.set(
+          currentSymbol,
+          symbolBars.slice(warmupPeriod),
+        );
       }
 
       const stateManager = new IndicatorStateManager();
@@ -417,7 +426,11 @@ export class BacktestExecutor implements INodeExecutor {
       } = extractStrategySubgraph(node.id, allNodes, allEdges);
 
       // Build bar events array for in-memory processing (no Redis Stream)
-      const barEvents = this.alignMultiSymbolBars(symbols, interval, remainingBarsBySymbol);
+      const barEvents = this.alignMultiSymbolBars(
+        symbols,
+        interval,
+        remainingBarsBySymbol,
+      );
 
       // Build the BacktestInit result that downstream nodes need via templates
       const backtestInitData = {
@@ -501,7 +514,10 @@ export class BacktestExecutor implements INodeExecutor {
             commission_value: config.commissionValue,
           },
           data: {
-            bars_fetched: Array.from(historicalDataBySymbol.values()).reduce((sum, bars) => sum + bars.length, 0),
+            bars_fetched: Array.from(historicalDataBySymbol.values()).reduce(
+              (sum, bars) => sum + bars.length,
+              0,
+            ),
             warmup_bars_used: warmupPeriod,
             bars_emitted: barEvents.length,
             indicators_initialized: discoveredIndicators.length,
@@ -518,12 +534,14 @@ export class BacktestExecutor implements INodeExecutor {
   private parseSymbols(symbolsRaw: unknown, fallbackSymbol: unknown): string[] {
     const preferred = String(symbolsRaw || "").trim();
     const base = preferred || String(fallbackSymbol || "").trim();
-    return [...new Set(
-      base
-        .split(",")
-        .map((symbol) => symbol.trim())
-        .filter(Boolean),
-    )];
+    return [
+      ...new Set(
+        base
+          .split(",")
+          .map((symbol) => symbol.trim())
+          .filter(Boolean),
+      ),
+    ];
   }
 
   private async fetchHistoricalBarsForSymbols(
@@ -541,42 +559,50 @@ export class BacktestExecutor implements INodeExecutor {
   ): Promise<Map<string, any[]>> {
     const brokerExecutor = new BrokerExecutor();
 
-    const results = await Promise.all(symbols.map(async (symbol) => {
-      const brokerInput: NodeInput = {
-        operation: "get_candle",
-        symbol,
-        interval: params.interval,
-        start: params.startDate,
-        end: params.endDate,
-        asset_type: params.assetType,
-        feed: params.feed,
-        credential_id: params.credentialId,
-        limit: "50000",
-      };
+    const results = await Promise.all(
+      symbols.map(async (symbol) => {
+        const brokerInput: NodeInput = {
+          operation: "get_candle",
+          symbol,
+          interval: params.interval,
+          start: params.startDate,
+          end: params.endDate,
+          asset_type: params.assetType,
+          feed: params.feed,
+          credential_id: params.credentialId,
+          limit: "50000",
+        };
 
-      const brokerNode: WorkflowNode = {
-        id: `broker:${broker}:get_candle:${symbol}`,
-        name: broker,
-        node_type: "main",
-        category: "Broker",
-        subCategory: broker,
-        values: brokerInput,
-      };
+        const brokerNode: WorkflowNode = {
+          id: `broker:${broker}:get_candle:${symbol}`,
+          name: broker,
+          node_type: "main",
+          category: "Broker",
+          subCategory: broker,
+          values: brokerInput,
+        };
 
-      const brokerResult = await brokerExecutor.execute(brokerNode, brokerInput, {
-        userId: context?.userId,
-        workflowId: context?.workflowId || "backtest-init",
-        runId: context?.runId || `backtest-${Date.now()}`,
-      });
+        const brokerResult = await brokerExecutor.execute(
+          brokerNode,
+          brokerInput,
+          {
+            userId: context?.userId,
+            workflowId: context?.workflowId || "backtest-init",
+            runId: context?.runId || `backtest-${Date.now()}`,
+          },
+        );
 
-      if (!brokerResult.success) {
-        throw new Error(`Failed to fetch historical data for ${symbol}: ${brokerResult.error}`);
-      }
+        if (!brokerResult.success) {
+          throw new Error(
+            `Failed to fetch historical data for ${symbol}: ${brokerResult.error}`,
+          );
+        }
 
-      const barSeries = brokerResult.data?.BarSeries;
-      const bars = barSeries?.[0]?.bars || [];
-      return [symbol, Array.isArray(bars) ? bars : []] as const;
-    }));
+        const barSeries = brokerResult.data?.BarSeries;
+        const bars = barSeries?.[0]?.bars || [];
+        return [symbol, Array.isArray(bars) ? bars : []] as const;
+      }),
+    );
 
     return new Map(results.filter(([, bars]) => bars.length > 0));
   }
@@ -596,7 +622,13 @@ export class BacktestExecutor implements INodeExecutor {
     const orderedTimestamps = [...timestamps].sort((a, b) => a - b);
     const indexes = new Map<string, number>();
     const previousBars = new Map<string, any>();
-    const events: Array<{ timestamp: number; barIndex: number; interval: string; symbols: string[]; bars: Record<string, any> }> = [];
+    const events: Array<{
+      timestamp: number;
+      barIndex: number;
+      interval: string;
+      symbols: string[];
+      bars: Record<string, any>;
+    }> = [];
 
     for (const symbol of symbols) {
       indexes.set(symbol, 0);
@@ -752,7 +784,7 @@ export class BacktestExecutor implements INodeExecutor {
       // Get updated state (for pending orders that weren't filled) - SYNCHRONOUS
       const cash = simBroker.getCash();
       const positions = simBroker.getPositions();
-      const pendingOrders = simBroker.getPendingOrders();
+      const pendingOrders = simBroker.getOpenOrders();
       const totalEquity = simBroker.getTotalEquity();
 
       if (!this._tradeResults.has(node.id)) {
@@ -1070,7 +1102,7 @@ export class BacktestExecutor implements INodeExecutor {
           return this.portfolioGetEquity(simBroker);
 
         case "get_pending_orders":
-          return this.portfolioGetPendingOrders(simBroker);
+          return this.portfoliogetOpenOrders(simBroker);
 
         case "get_trades":
           return this.portfolioGetTrades(simBroker);
@@ -1103,7 +1135,7 @@ export class BacktestExecutor implements INodeExecutor {
       (sum, pos) => sum + pos.realizedPnl,
       0,
     );
-    const pendingOrders = simBroker.getPendingOrders();
+    const pendingOrders = simBroker.getOpenOrders();
 
     return leanSuccess({
       cash: state.cash,
@@ -1147,7 +1179,7 @@ export class BacktestExecutor implements INodeExecutor {
       symbol,
       quantity: position?.quantity || 0,
       side: position?.side || null,
-      avg_entry_price: position?.avgEntryPrice || 0,
+      avg_entry_price: position?.avgFillPrice || 0,
       current_price: position?.currentPrice || 0,
       unrealized_pnl_pct: toPercent(unrealizedPnlValue, positionCostBasis),
       unrealized_pnl: unrealizedPnlValue,
@@ -1205,8 +1237,8 @@ export class BacktestExecutor implements INodeExecutor {
     });
   }
 
-  private portfolioGetPendingOrders(simBroker: SimBroker): NodeResult {
-    const orders = simBroker.getPendingOrders();
+  private portfoliogetOpenOrders(simBroker: SimBroker): NodeResult {
+    const orders = simBroker.getOpenOrders();
 
     return leanSuccess({
       pending_orders: orders,

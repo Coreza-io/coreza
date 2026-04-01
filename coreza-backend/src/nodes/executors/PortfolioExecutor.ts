@@ -526,6 +526,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const positionQty = toNumber(params.positionQty);
       const avgFillPrice = toNumber(params.avgFillPrice);
       const feeAmount = toNumber(params.feeAmount);
+      const seq = toNumber(params._seq);
 
       const feeAsset = params.feeAsset;
 
@@ -563,6 +564,7 @@ export class PortfolioExecutor implements INodeExecutor {
             avgFillPrice,
             feeAmount,
             feeAsset,
+            _seq: seq,
           });
         }
       }

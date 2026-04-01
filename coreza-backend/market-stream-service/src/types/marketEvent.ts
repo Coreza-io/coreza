@@ -90,6 +90,7 @@ export interface CorezaMarketEvent {
   timeframe?: string;
   isClosed?: boolean;
   _seq?: number;
+  _orderingDomain?: string;
 }
 
 export interface ControlMessage {

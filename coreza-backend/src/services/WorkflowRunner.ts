@@ -27,6 +27,8 @@ interface StreamMessageWithSequence {
   messageId: string;
   fields: string[];
   seq: number;
+  orderingDomain: string;
+  index: number;
 }
 
 export class WorkflowRunner {
@@ -262,9 +264,10 @@ export class WorkflowRunner {
   private parseAndSortMessages(
     messages: [string, string[]][],
   ): StreamMessageWithSequence[] {
-    const parsed = messages.map(([messageId, fields]) => {
+    const parsed = messages.map(([messageId, fields], index) => {
       const rawPayload = this.extractPayload(fields);
       let seq = 0;
+      let orderingDomain = "unknown";
 
       if (rawPayload) {
         try {
@@ -277,15 +280,30 @@ export class WorkflowRunner {
             const value = (parsedEnvelope.data as { _seq?: unknown })._seq;
             seq = typeof value === "number" ? value : 0;
           }
+          if (
+            parsedEnvelope.data &&
+            typeof parsedEnvelope.data === "object" &&
+            "_orderingDomain" in parsedEnvelope.data
+          ) {
+            const value = (parsedEnvelope.data as { _orderingDomain?: unknown })
+              ._orderingDomain;
+            orderingDomain = typeof value === "string" ? value : "unknown";
+          }
         } catch {
           seq = 0;
+          orderingDomain = "unknown";
         }
       }
 
-      return { messageId, fields, seq };
+      return { messageId, fields, seq, orderingDomain, index };
     });
 
-    parsed.sort((a, b) => a.seq - b.seq);
+    parsed.sort((a, b) => {
+      if (a.orderingDomain !== b.orderingDomain) {
+        return a.index - b.index;
+      }
+      return a.seq - b.seq;
+    });
 
     return parsed;
   }

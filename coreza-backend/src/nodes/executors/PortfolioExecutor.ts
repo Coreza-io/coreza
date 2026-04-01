@@ -717,7 +717,7 @@ export class PortfolioExecutor implements INodeExecutor {
       ? formatPositionWithPnlPercent(position)
       : null;
     const positionCostBasis = position
-      ? Math.abs(position.avgEntryPrice * position.quantity)
+      ? Math.abs(position.avgFillPrice * position.quantity)
       : 0;
 
     return leanSuccess({
@@ -726,7 +726,7 @@ export class PortfolioExecutor implements INodeExecutor {
       symbol,
       quantity: position?.quantity || 0,
       side: position?.side || null,
-      avgEntryPrice: position?.avgEntryPrice || 0,
+      avgFillPrice: position?.avgFillPrice || 0,
       current_price: position?.currentPrice || 0,
       unrealized_pnl_pct: toPercent(
         position?.unrealizedPnl || 0,

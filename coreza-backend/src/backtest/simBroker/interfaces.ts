@@ -27,17 +27,17 @@ export {
   OrderTicket,
   normalizeOrderType,
   isTicketPending,
-} from '../../types/order';
+} from "../../types/order";
 
 // ============== CONFIGURATION ==============
 
 export interface SimBrokerConfig {
   initialCapital: number;
   expectedBars: number;
-  fillModel: 'immediate' | 'next_bar_open';
-  slippageModel: 'none' | 'fixed' | 'percentage';
+  fillModel: "immediate" | "next_bar_open";
+  slippageModel: "none" | "fixed" | "percentage";
   slippageValue: number; // e.g., 0.001 for 0.1% or 0.01 for $0.01 fixed
-  commissionModel: 'none' | 'per_share' | 'percentage' | 'fixed';
+  commissionModel: "none" | "per_share" | "percentage" | "fixed";
   commissionValue: number; // e.g., 0.01 for $0.01/share or 0.001 for 0.1%
   allowShort: boolean;
 }
@@ -45,10 +45,10 @@ export interface SimBrokerConfig {
 export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
   initialCapital: 10000,
   expectedBars: 10000,
-  fillModel: 'next_bar_open',
-  slippageModel: 'percentage',
+  fillModel: "next_bar_open",
+  slippageModel: "percentage",
   slippageValue: 0.001, // 0.1%
-  commissionModel: 'per_share',
+  commissionModel: "per_share",
   commissionValue: 0.01, // $0.01 per share
   allowShort: false,
 };
@@ -75,13 +75,13 @@ export interface NumericBar {
 
 // ============== POSITIONS ==============
 
-export type PositionSide = 'long' | 'short';
+export type PositionSide = "long" | "short";
 
 export interface Position {
   symbol: string;
   side: PositionSide; // 'long' for positive qty, 'short' for negative qty
   quantity: number; // Positive for long, negative for short
-  avgEntryPrice: number;
+  avgFillPrice: number;
   currentPrice: number;
   unrealizedPnl: number;
   realizedPnl: number;
@@ -93,7 +93,7 @@ export interface Position {
 export interface Trade {
   id: string;
   symbol: string;
-  side: import('../../types/order').OrderSide;
+  side: import("../../types/order").OrderSide;
   entryOrderId: string;
   exitOrderId: string;
   entryPrice: number;
@@ -129,7 +129,7 @@ export interface NumericEquityPoint {
 export interface PortfolioState {
   cash: number;
   positions: Record<string, Position>; // symbol -> Position
-  tickets: Record<string, import('../../types/order').OrderTicket>; // orderId -> OrderTicket
+  tickets: Record<string, import("../../types/order").OrderTicket>; // orderId -> OrderTicket
   trades: Trade[]; // Closed trades
   equityCurve: EquityPoint[];
   peakEquity: number;
@@ -146,19 +146,31 @@ export interface FillResult {
 }
 
 export interface IFillModel {
-  fill(order: import('../../types/order').Order, bar: Bar, previousBar?: Bar): FillResult;
+  fill(
+    order: import("../../types/order").Order,
+    bar: Bar,
+    previousBar?: Bar,
+  ): FillResult;
 }
 
 // ============== SLIPPAGE MODEL ==============
 
 export interface ISlippageModel {
-  getSlippage(order: import('../../types/order').Order, fillPrice: number, bar: Bar): number;
+  getSlippage(
+    order: import("../../types/order").Order,
+    fillPrice: number,
+    bar: Bar,
+  ): number;
 }
 
 // ============== FEE MODEL ==============
 
 export interface IFeeModel {
-  getCommission(order: import('../../types/order').Order, fillPrice: number, fillQty: number): number;
+  getCommission(
+    order: import("../../types/order").Order,
+    fillPrice: number,
+    fillQty: number,
+  ): number;
 }
 
 // ============== PERFORMANCE METRICS ==============
@@ -168,32 +180,32 @@ export interface BacktestMetrics {
   totalReturn: number;
   totalReturnPct: number;
   annualizedReturn: number;
-  
+
   // Risk
   maxDrawdown: number;
   maxDrawdownPct: number;
   sharpeRatio: number;
   sortinoRatio: number;
   calmarRatio: number;
-  
+
   // Trade Statistics
   totalTrades: number;
   winningTrades: number;
   losingTrades: number;
   winRate: number;
   profitFactor: number;
-  
+
   // P&L
   avgWin: number;
   avgLoss: number;
   largestWin: number;
   largestLoss: number;
   avgTradePnl: number;
-  
+
   // Execution
   totalCommission: number;
   totalSlippage: number;
-  
+
   // Period
   startDate: string;
   endDate: string;

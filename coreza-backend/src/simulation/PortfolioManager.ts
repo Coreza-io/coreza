@@ -64,7 +64,7 @@ export interface PositionState {
   quantity: number;
   side: string;
   currentPrice: number;
-  avgEntryPrice: number;
+  avgFillPrice: number;
   marketValue: number;
   realizedPnl: number;
   unrealizedPnl: number;
@@ -86,7 +86,7 @@ export interface BalanceState {
 export interface SpotHolding {
   symbol: string;
   quantity: number;
-  avgEntryPrice: number;
+  avgFillPrice: number;
   realizedPnl: number;
   currentPrice: number;
 }
@@ -412,8 +412,8 @@ export class PortfolioManager {
 
     const isClosingLong = prevQty > 0;
     const grossPnl = isClosingLong
-      ? (input.fillPrice - existing.avgEntryPrice) * closingQty
-      : (existing.avgEntryPrice - input.fillPrice) * closingQty;
+      ? (input.fillPrice - existing.avgFillPrice) * closingQty
+      : (existing.avgFillPrice - input.fillPrice) * closingQty;
 
     const entry = this.currentEntryMap.get(input.symbol);
 
@@ -423,7 +423,7 @@ export class PortfolioManager {
       side: isClosingLong ? "buy" : "sell",
       entryOrderId: entry?.fillId ?? "",
       exitOrderId: input.brokerOrderId,
-      entryPrice: existing.avgEntryPrice,
+      entryPrice: existing.avgFillPrice,
       exitPrice: input.fillPrice,
       quantity: closingQty,
       grossPnl,
@@ -446,10 +446,11 @@ export class PortfolioManager {
   applyPositionUpdate(input: {
     symbol: string;
     filledQty?: number;
+    avgFillPrice?: number; // Alpaca: order.filled_avg_price or raw price
     side: "buy" | "sell";
     brokerOrderId?: string;
-    positionQty?: number; // broker truth
-    avgEntryPrice?: number;
+    executionId?: string;
+    positionQty?: number; // broker-truth resulting position qty
     currentPrice?: number;
   }): { position: PositionState | null } {
     const now = new Date().toISOString();
@@ -457,19 +458,19 @@ export class PortfolioManager {
 
     const calculatePositionMetrics = (
       quantity: number,
-      avgEntryPrice: number,
+      avgFillPrice: number,
       currentPrice: number,
       realizedPnl: number,
     ) => {
       const absQty = Math.abs(quantity);
 
-      const openCostBasis = absQty * avgEntryPrice;
+      const openCostBasis = absQty * avgFillPrice;
       const marketValue = absQty * currentPrice;
 
       const unrealizedPnl =
         quantity >= 0
-          ? (currentPrice - avgEntryPrice) * absQty
-          : (avgEntryPrice - currentPrice) * absQty;
+          ? (currentPrice - avgFillPrice) * absQty
+          : (avgFillPrice - currentPrice) * absQty;
 
       const totalPnl = realizedPnl + unrealizedPnl;
 
@@ -482,42 +483,72 @@ export class PortfolioManager {
       };
     };
 
-    if (existing) {
-      let nextQty = existing.quantity;
+    const getSignedFillQty = (
+      filledQty: number,
+      side: "buy" | "sell",
+    ): number => {
+      const abs = Math.abs(filledQty);
+      return side === "buy" ? abs : -abs;
+    };
 
+    const deriveNextQty = (
+      previousQty: number,
+      input: {
+        filledQty?: number;
+        side: "buy" | "sell";
+        positionQty?: number;
+      },
+    ): number => {
       if (input.positionQty != null) {
-        // Broker truth wins
-        nextQty = input.positionQty;
-      } else if (input.filledQty != null) {
-        const fillQty = Math.abs(input.filledQty);
-        const currentQty = existing.quantity;
-
-        if (currentQty > 0) {
-          // Existing long
-          if (input.side === "buy") {
-            // Add to long
-            nextQty = currentQty + fillQty;
-          } else if (input.side === "sell") {
-            // Reduce long, clamp so we do not go negative accidentally
-            const reduceQty = Math.min(currentQty, fillQty);
-            nextQty = currentQty - reduceQty;
-          }
-        } else if (currentQty < 0) {
-          // Existing short
-          if (input.side === "sell") {
-            // Add to short
-            nextQty = currentQty - fillQty;
-          } else if (input.side === "buy") {
-            // Reduce short, clamp so we do not go positive accidentally
-            const reduceQty = Math.min(Math.abs(currentQty), fillQty);
-            nextQty = currentQty + reduceQty;
-          }
-        } else {
-          // Flat position should normally not exist here because zero qty is deleted,
-          // but keep safe fallback behavior.
-          nextQty = input.side === "buy" ? fillQty : -fillQty;
-        }
+        return input.positionQty;
       }
+
+      if (input.filledQty == null) {
+        return previousQty;
+      }
+
+      return previousQty + getSignedFillQty(input.filledQty, input.side);
+    };
+
+    const isSameDirectionIncrease = (
+      previousQty: number,
+      nextQty: number,
+    ): boolean => {
+      if (previousQty > 0 && nextQty > previousQty) return true; // long increased
+      if (previousQty < 0 && nextQty < previousQty) return true; // short increased
+      if (previousQty === 0 && nextQty !== 0) return true; // new position opened
+      return false;
+    };
+
+    const isReductionWithoutFlip = (
+      previousQty: number,
+      nextQty: number,
+    ): boolean => {
+      if (previousQty > 0 && nextQty >= 0 && nextQty < previousQty) return true;
+      if (previousQty < 0 && nextQty <= 0 && nextQty > previousQty) return true;
+      return false;
+    };
+
+    const isFlip = (previousQty: number, nextQty: number): boolean => {
+      return (
+        (previousQty > 0 && nextQty < 0) || (previousQty < 0 && nextQty > 0)
+      );
+    };
+
+    const getEffectiveIncreaseQty = (
+      previousQty: number,
+      nextQty: number,
+    ): number => {
+      return Math.max(0, Math.abs(nextQty) - Math.abs(previousQty));
+    };
+
+    if (existing) {
+      const previousQty = existing.quantity;
+      const previousavgFillPrice = existing.avgFillPrice ?? 0;
+      const previousCurrentPrice =
+        existing.currentPrice ?? previousavgFillPrice ?? 0;
+
+      const nextQty = deriveNextQty(previousQty, input);
 
       if (nextQty === 0) {
         this.positions.delete(input.symbol);
@@ -525,25 +556,54 @@ export class PortfolioManager {
         return { position: null };
       }
 
-      // const currentPrice =
-      //   input.currentPrice ??
-      //   existing.currentPrice ??
-      //   existing.avgEntryPrice ??
-      //   0;
+      let nextavgFillPrice = previousavgFillPrice;
+
+      // Explicit broker avg wins if provided
+      if (input.avgFillPrice != null) {
+        if (isSameDirectionIncrease(previousQty, nextQty)) {
+          const previousAbsQty = Math.abs(previousQty);
+          const nextAbsQty = Math.abs(nextQty);
+
+          if (previousAbsQty === 0) {
+            nextavgFillPrice = input.avgFillPrice;
+          } else {
+            const effectiveIncreaseQty = getEffectiveIncreaseQty(
+              previousQty,
+              nextQty,
+            );
+
+            if (effectiveIncreaseQty > 0 && nextAbsQty > 0) {
+              nextavgFillPrice =
+                (previousAbsQty * previousavgFillPrice +
+                  effectiveIncreaseQty * input.avgFillPrice) /
+                nextAbsQty;
+            }
+          }
+        } else if (isReductionWithoutFlip(previousQty, nextQty)) {
+          // Keep old avg on partial reduction / close without reversal
+          nextavgFillPrice = previousavgFillPrice;
+        } else if (isFlip(previousQty, nextQty)) {
+          // Opposite-side leftover becomes a fresh position at fill price
+          nextavgFillPrice = input.avgFillPrice;
+        }
+      }
+
+      const nextCurrentPrice =
+        input.currentPrice ??
+        existing.currentPrice ??
+        input.avgFillPrice ??
+        nextavgFillPrice ??
+        previousCurrentPrice ??
+        0;
 
       existing.quantity = nextQty;
-      //existing.side = nextQty >= 0 ? "long" : "short";
-
-      // Preserve old avgEntryPrice unless an authoritative new one is passed
-      // if (input.avgEntryPrice != null) {
-      //   existing.avgEntryPrice = input.avgEntryPrice;
-      // }
-
-      // existing.currentPrice = currentPrice;
+      existing.side = nextQty >= 0 ? "long" : "short";
+      existing.avgFillPrice = nextavgFillPrice;
+      existing.currentPrice = nextCurrentPrice;
 
       const metrics = calculatePositionMetrics(
         existing.quantity,
-        existing.avgEntryPrice,
+        existing.avgFillPrice,
         existing.currentPrice,
         existing.realizedPnl ?? 0,
       );
@@ -553,13 +613,17 @@ export class PortfolioManager {
       existing.unrealizedPnl = metrics.unrealizedPnl;
       existing.totalPnl = metrics.totalPnl;
 
-      const fillIncreasesPosition =
-        input.filledQty != null &&
-        ((existing.quantity > 0 && input.side === "buy") ||
-          (existing.quantity < 0 && input.side === "sell"));
-      if (fillIncreasesPosition && !this.currentEntryMap.has(input.symbol)) {
+      // Refresh entry map when a brand-new position is opened or a flip happens
+      if (previousQty === 0 || isFlip(previousQty, nextQty)) {
         this.currentEntryMap.set(input.symbol, {
-          fillId: input.brokerOrderId ?? `entry-${Date.now()}`,
+          fillId:
+            input.executionId ?? input.brokerOrderId ?? `entry-${Date.now()}`,
+          entryTime: now,
+        });
+      } else if (!this.currentEntryMap.has(input.symbol)) {
+        this.currentEntryMap.set(input.symbol, {
+          fillId:
+            input.executionId ?? input.brokerOrderId ?? `entry-${Date.now()}`,
           entryTime: now,
         });
       }
@@ -567,25 +631,19 @@ export class PortfolioManager {
       return { position: existing };
     }
 
-    let quantity =
-      input.positionQty != null
-        ? input.positionQty
-        : input.filledQty != null
-          ? input.side === "buy"
-            ? Math.abs(input.filledQty)
-            : -Math.abs(input.filledQty)
-          : 0;
+    const quantity = deriveNextQty(0, input);
 
     if (quantity === 0) {
       return { position: null };
     }
 
-    const avgEntryPrice = input.avgEntryPrice ?? 0;
-    const currentPrice = input.currentPrice ?? avgEntryPrice;
+    const avgFillPrice = input.avgFillPrice ?? 0;
+
+    const currentPrice = input.currentPrice ?? avgFillPrice;
 
     const metrics = calculatePositionMetrics(
       quantity,
-      avgEntryPrice,
+      avgFillPrice,
       currentPrice,
       0,
     );
@@ -594,7 +652,7 @@ export class PortfolioManager {
       symbol: input.symbol,
       quantity,
       side: metrics.side,
-      avgEntryPrice,
+      avgFillPrice,
       currentPrice,
       openCostBasis: metrics.openCostBasis,
       marketValue: metrics.marketValue,
@@ -605,7 +663,7 @@ export class PortfolioManager {
 
     this.positions.set(input.symbol, position);
     this.currentEntryMap.set(input.symbol, {
-      fillId: input.brokerOrderId ?? `entry-${Date.now()}`,
+      fillId: input.executionId ?? input.brokerOrderId ?? `entry-${Date.now()}`,
       entryTime: now,
     });
 
@@ -796,9 +854,9 @@ export class PortfolioManager {
       symbol: p.symbol,
       side: p.side,
       quantity: p.quantity,
-      avgEntryPrice: p.avgEntryPrice,
+      avgFillPrice: p.avgFillPrice,
       currentPrice: p.currentPrice,
-      unrealizedPnl: (p.currentPrice - p.avgEntryPrice) * p.quantity,
+      unrealizedPnl: (p.currentPrice - p.avgFillPrice) * p.quantity,
       realizedPnl: p.realizedPnl,
       marketValue: p.quantity * p.currentPrice,
     }));
@@ -824,9 +882,9 @@ export class PortfolioManager {
       symbol: p.symbol,
       side: p.quantity >= 0 ? "long" : "short",
       quantity: p.quantity,
-      avgEntryPrice: p.avgEntryPrice,
+      avgFillPrice: p.avgFillPrice,
       currentPrice: p.currentPrice,
-      unrealizedPnl: (p.currentPrice - p.avgEntryPrice) * p.quantity,
+      unrealizedPnl: (p.currentPrice - p.avgFillPrice) * p.quantity,
       realizedPnl: p.realizedPnl,
       marketValue: p.quantity * p.currentPrice,
     };

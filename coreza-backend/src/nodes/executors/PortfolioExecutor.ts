@@ -333,21 +333,19 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             removed: cancelResult.removed,
             cancelledOrder: cancelResult.order || null,
-            pendingOrdersCount: pm.getOpenOrders().length,
           }),
         );
       }
       case "get_open_orders": {
-        const PendingOrders = pm.getOpenOrders();
+        const openOrders = pm.getOpenOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
-        const filtered = filterSymbol
-          ? PendingOrders.filter((o) => o.symbol === filterSymbol)
-          : PendingOrders;
+        const filteredOpenOrders = filterSymbol
+          ? openOrders.filter((o) => o.symbol === filterSymbol)
+          : openOrders;
 
         return toNodeResult(
           createSuccessOutput({
-            pendingOrders: filtered,
-            pendingOrdersCount: filtered.length,
+            openOrders: filteredOpenOrders,
           }),
         );
       }
@@ -589,12 +587,12 @@ export class PortfolioExecutor implements INodeExecutor {
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
 
       pm.applyPositionUpdate({
+        brokerOrderId,
         symbol,
         filledQty,
+        avgFillPrice,
         side: params.side,
-        brokerOrderId,
         positionQty,
-        avgEntryPrice: avgFillPrice,
         currentPrice: avgFillPrice,
       });
 
@@ -613,7 +611,12 @@ export class PortfolioExecutor implements INodeExecutor {
       if (filledQty && avgFillPrice && brokerOrderId) {
         const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
 
-        if (fillDeltaQty > 0 && context?.isLive && context?.userId && context?.workflowId) {
+        if (
+          fillDeltaQty > 0 &&
+          context?.isLive &&
+          context?.userId &&
+          context?.workflowId
+        ) {
           const event = this.buildFillStreamEvent({
             context,
             params,

@@ -71,13 +71,19 @@ export class SimBroker {
   private fillModel: IFillModel;
   private slippageModel: ISlippageModel;
   private feeModel: IFeeModel;
-  private symbolStates = new Map<string, {
-    previousBar: Bar | null;
-    lastFillPrice?: number;
-  }>();
+  private symbolStates = new Map<
+    string,
+    {
+      previousBar: Bar | null;
+      lastFillPrice?: number;
+    }
+  >();
   private orderIdCounter = 0;
   private tradeIdCounter = 0;
-  private currentEntryMap = new Map<string, { orderId: string; filledAt: string; barIndex: number }>();
+  private currentEntryMap = new Map<
+    string,
+    { orderId: string; filledAt: string; barIndex: number }
+  >();
   private pendingTicketsBySymbol = new Map<string, Set<string>>();
   private equityCurveData: {
     timestamps: Float64Array;
@@ -170,7 +176,7 @@ export class SimBroker {
       stopPrice: request.stopPrice,
       tag: request.tag,
       properties: request.properties,
-      status: 'new',
+      status: "new",
       createdAt: new Date().toISOString(),
     };
 
@@ -187,7 +193,7 @@ export class SimBroker {
     this.state.tickets[orderId] = ticket;
     this.trackPendingTicket(order.symbol, orderId);
 
-    return { success: true, orderId, status: 'new' };
+    return { success: true, orderId, status: "new" };
   }
 
   private ensureEquityCapacity(): void {
@@ -356,11 +362,11 @@ export class SimBroker {
             orderId: order.id,
             symbol: order.symbol,
             utcTime: asIsoTimestamp(bar.timestamp),
-            status: 'filled',
+            status: "filled",
             side: order.side,
             fillPrice: adjustedPrice,
             fillQuantity: fillResult.quantity,
-            orderFee: { value: commission, currency: 'USD' },
+            orderFee: { value: commission, currency: "USD" },
             slippage,
           };
 
@@ -372,7 +378,10 @@ export class SimBroker {
           symbolState.lastFillPrice = adjustedPrice;
 
           // Update order status (the only mutable field)
-          order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
+          order.status =
+            ticket.quantityFilled >= order.quantity
+              ? "filled"
+              : "partially_filled";
           if (!isTicketPending(ticket)) {
             pendingTickets.delete(ticketId);
           }
@@ -466,11 +475,11 @@ export class SimBroker {
       orderId: order.id,
       symbol: order.symbol,
       utcTime: asIsoTimestamp(bar.timestamp),
-      status: 'filled',
+      status: "filled",
       side: order.side,
       fillPrice: adjustedPrice,
       fillQuantity: fillResult.quantity,
-      orderFee: { value: commission, currency: 'USD' },
+      orderFee: { value: commission, currency: "USD" },
       slippage,
     };
 
@@ -482,7 +491,8 @@ export class SimBroker {
     this.getSymbolState(order.symbol).lastFillPrice = adjustedPrice;
 
     // Update order status
-    order.status = ticket.quantityFilled >= order.quantity ? 'filled' : 'partially_filled';
+    order.status =
+      ticket.quantityFilled >= order.quantity ? "filled" : "partially_filled";
     if (!isTicketPending(ticket)) {
       this.untrackPendingTicket(order.symbol, order.id);
     }
@@ -669,7 +679,8 @@ export class SimBroker {
 
     // Equity from TypedArrays (no object array)
     const lastIdx = ecIdx - 1;
-    const finalEquity = lastIdx >= 0 ? ecData.totalEquity[lastIdx] : initialCapital;
+    const finalEquity =
+      lastIdx >= 0 ? ecData.totalEquity[lastIdx] : initialCapital;
     const totalReturn = finalEquity - initialCapital;
     const totalReturnPct = (totalReturn / initialCapital) * 100;
 
@@ -734,10 +745,14 @@ export class SimBroker {
       maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : 0;
 
     // Timestamps from TypedArrays
-    const startDate = ecIdx > 0 ? new Date(ecData.timestamps[0]).toISOString() : "";
-    const endDate = ecIdx > 0 ? new Date(ecData.timestamps[lastIdx]).toISOString() : "";
+    const startDate =
+      ecIdx > 0 ? new Date(ecData.timestamps[0]).toISOString() : "";
+    const endDate =
+      ecIdx > 0 ? new Date(ecData.timestamps[lastIdx]).toISOString() : "";
 
-    console.log(`[SimBroker] Completed: ${trades.length} trades, ${ecIdx} bars`);
+    console.log(
+      `[SimBroker] Completed: ${trades.length} trades, ${ecIdx} bars`,
+    );
 
     return {
       totalReturn,
@@ -860,7 +875,7 @@ export class SimBroker {
   /**
    * Get pending orders (derived from tickets with non-terminal status).
    */
-  getPendingOrders(): Order[] {
+  getOpenOrders(): Order[] {
     const pendingOrders: Order[] = [];
     for (const ticketIds of this.pendingTicketsBySymbol.values()) {
       for (const ticketId of ticketIds) {

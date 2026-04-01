@@ -11,6 +11,7 @@ export class WorkflowEngine {
   private readonly workflowId: string;
   private readonly userId: string;
   private readonly mode: "best-effort" | "fail-fast";
+  private readonly isLive: boolean;
   readonly isBacktest: boolean;
 
   constructor(
@@ -22,15 +23,24 @@ export class WorkflowEngine {
     mode: "best-effort" | "fail-fast" = "best-effort",
     abortSignal?: AbortSignal,
     executionKind?: ExecutionKind,
+    isLive = false,
   ) {
     this.workflowId = workflowId;
     this.userId = userId;
     this.mode = mode;
+    this.isLive = isLive;
 
     const kind = executionKind ?? this.detectKind(nodes);
     this.plan = WorkflowPlan.compile(nodes, edges, kind);
     this.isBacktest = this.plan.isBacktest;
-    this.run = this.plan.createRun({ runId, workflowId, userId, mode, abortSignal });
+    this.run = this.plan.createRun({
+      runId,
+      workflowId,
+      userId,
+      mode,
+      abortSignal,
+      isLive: this.isLive,
+    });
   }
 
   private detectKind(nodes: WorkflowNode[]): ExecutionKind {
@@ -67,6 +77,7 @@ export class WorkflowEngine {
       userId: this.userId,
       mode: this.mode,
       abortSignal,
+      isLive: this.isLive,
     });
   }
 
@@ -84,6 +95,7 @@ export class WorkflowEngine {
 export type ExecutionOptions = {
   mode?: "best-effort" | "fail-fast";
   executionKind?: ExecutionKind;
+  isLive?: boolean;
   initialInput?: unknown;
   startNodeId?: string;
   abortSignal?: AbortSignal;
@@ -98,7 +110,14 @@ export async function executeWorkflow(
   opts?: ExecutionOptions,
 ): Promise<WorkflowExecutionResult> {
   const plan = WorkflowPlan.compile(nodes, edges, opts?.executionKind ?? "standard");
-  const run = plan.createRun({ runId, workflowId, userId, mode: opts?.mode, abortSignal: opts?.abortSignal });
+  const run = plan.createRun({
+    runId,
+    workflowId,
+    userId,
+    mode: opts?.mode,
+    abortSignal: opts?.abortSignal,
+    isLive: opts?.isLive,
+  });
   try {
     return await run.execute(opts?.initialInput, opts?.startNodeId);
   } finally {

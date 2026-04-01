@@ -613,7 +613,7 @@ export class PortfolioExecutor implements INodeExecutor {
       if (filledQty && avgFillPrice && brokerOrderId) {
         const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
 
-        if (fillDeltaQty > 0 && context?.userId && context?.workflowId) {
+        if (fillDeltaQty > 0 && context?.isLive && context?.userId && context?.workflowId) {
           const event = this.buildFillStreamEvent({
             context,
             params,

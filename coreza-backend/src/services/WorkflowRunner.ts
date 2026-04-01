@@ -70,6 +70,7 @@ export class WorkflowRunner {
       "best-effort",
       this.abortController.signal,
       "standard",
+      true,
     );
 
     // Cache trigger node IDs and their downstream targets at build time

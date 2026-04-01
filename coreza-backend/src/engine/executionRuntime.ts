@@ -24,6 +24,7 @@ export type RuntimeOptions = {
   mode: "best-effort" | "fail-fast";
   abortSignal?: AbortSignal;
   isBacktest: boolean;
+  isLive?: boolean;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   nodeExecutorMap?: ReadonlyMap<string, INodeExecutor>;
@@ -150,6 +151,7 @@ export abstract class BaseExecutionRuntime {
         abortSignal: this.options.abortSignal,
         checkCancellation: () => this.options.abortSignal?.aborted ?? false,
         isBacktest: this.options.isBacktest,
+        isLive: this.options.isLive,
         getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
         setState: (key: string, value: any) =>
           this.store.setNodeState(ctx.nodeId, key, value),

@@ -10,6 +10,7 @@ export interface MultiBarExecutionContext {
 }
 
 export interface NodeExecutionContext {
+  user_id?: string;
   userId: string;
   runId: string;
   executionId?: string;
@@ -28,6 +29,7 @@ export interface NodeExecutionContext {
   abortSignal?: AbortSignal;
   checkCancellation: () => boolean;
   isBacktest?: boolean;
+  isLive?: boolean;
   multiBarContext?: MultiBarExecutionContext;
   getState: (key: string) => any;
   setState: (key: string, value: any) => void;

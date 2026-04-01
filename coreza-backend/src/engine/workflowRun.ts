@@ -10,6 +10,7 @@ import { ENGINE_CONFIG } from "./config/engineConfig";
 import { WorkflowPlan } from "./workflowPlan";
 import {
   FlushPolicy,
+  MultiBarExecutionContext,
   WorkflowExecutionResult,
   toExecutionError,
 } from "./types";
@@ -23,10 +24,11 @@ interface WorkflowRunOptions {
   mode?: "best-effort" | "fail-fast";
   abortSignal?: AbortSignal;
   flushPolicy?: FlushPolicy;
+  isLive?: boolean;
 }
 
 interface ExecutionContextExtras {
-  multiBarContext?: unknown;
+  multiBarContext?: MultiBarExecutionContext;
 }
 
 export class WorkflowRun {
@@ -83,6 +85,7 @@ export class WorkflowRun {
       mode: this.options.mode ?? "best-effort",
       abortSignal: this.options.abortSignal,
       isBacktest: this.plan.isBacktest,
+      isLive: this.options.isLive,
       nodes: [...this.plan.nodes],
       edges: [...this.plan.edges],
       nodeExecutorMap: this.plan.nodeExecutorMap,

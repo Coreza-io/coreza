@@ -56,6 +56,7 @@ export class WorkflowPlan {
     mode?: "best-effort" | "fail-fast";
     abortSignal?: AbortSignal;
     flushPolicy?: FlushPolicy;
+    isLive?: boolean;
   }): WorkflowRun {
     return new WorkflowRun(this, opts);
   }

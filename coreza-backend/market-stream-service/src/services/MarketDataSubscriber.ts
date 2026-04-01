@@ -43,6 +43,7 @@ export class MarketDataSubscriber {
   private messageHandler:
     | ((channel: string, message: string) => Promise<void>)
     | null = null;
+  private xaddQueues = new Map<string, Promise<void>>();
 
   private constructor() {
     // Lazy initialization - don't create Redis connections here
@@ -437,6 +438,7 @@ export class MarketDataSubscriber {
         data: {
           type,
           _seq: event._seq,
+          _orderingDomain: event._orderingDomain,
           BarSeries: [
             {
               symbol,
@@ -467,30 +469,31 @@ export class MarketDataSubscriber {
     }
 
     // Order update events (from trading WebSocket)
- if (type === "order_update") {
-  return {
-    data: {
-      symbol,
-      type: "order_update",
-      order: {
-        event: event.orderEvent,
-        orderId: event.orderId,
-        clientOrderId: event.clientOrderId,
-        side: event.side,
-        filledQty: event.filledQty,
-        filledAvgPrice: event.filledAvgPrice,
-        requestedQty: event.requestedQty,
-        positionQty: event.positionQty,
-        executionId: event.executionId,
-        orderType: event.orderType,
-        assetClass: event.assetClass,
-        status: event.orderStatus,
-      },
-      rawOrderData: event.rawOrderData,
-      _seq: event._seq,
-    },
-  };
-}
+    if (type === "order_update") {
+      return {
+        data: {
+          symbol,
+          type: "order_update",
+          order: {
+            event: event.orderEvent,
+            orderId: event.orderId,
+            clientOrderId: event.clientOrderId,
+            side: event.side,
+            filledQty: event.filledQty,
+            filledAvgPrice: event.filledAvgPrice,
+            requestedQty: event.requestedQty,
+            positionQty: event.positionQty,
+            executionId: event.executionId,
+            orderType: event.orderType,
+            assetClass: event.assetClass,
+            status: event.orderStatus,
+          },
+          rawOrderData: event.rawOrderData,
+          _seq: event._seq,
+          _orderingDomain: event._orderingDomain,
+        },
+      };
+    }
 
     // Include timeframe in the data payload (useful for kline interval)
     return {
@@ -499,9 +502,31 @@ export class MarketDataSubscriber {
         type,
         timeframe: event.timeframe,
         _seq: event._seq,
+        _orderingDomain: event._orderingDomain,
         [dataKey]: cleanEventData,
       },
     };
+  }
+
+  private async serializedXadd(
+    queueKey: string,
+    streamKey: string,
+    payload: string,
+  ): Promise<void> {
+    const prev = this.xaddQueues.get(queueKey) ?? Promise.resolve();
+    const next = prev.then(async () => {
+      const redis = getRedisCache();
+      await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*", "event", payload);
+    });
+    const trackedNext = next.catch(() => {});
+    this.xaddQueues.set(queueKey, trackedNext);
+    try {
+      await next;
+    } finally {
+      if (this.xaddQueues.get(queueKey) === trackedNext) {
+        this.xaddQueues.delete(queueKey);
+      }
+    }
   }
 
   /**
@@ -532,22 +557,15 @@ export class MarketDataSubscriber {
         return;
       }
 
-      const redis = getRedisCache();
-
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
+      const payloadStr = JSON.stringify(formattedPayload);
 
       // Push to Redis Stream for long-lived strategy runner consumption
       const streamKey = `strategy:stream:${workflowId}`;
-      await redis.xadd(
-        streamKey,
-        "MAXLEN",
-        "~",
-        "1000",
-        "*",
-        "event",
-        JSON.stringify(formattedPayload),
-      );
+      const domain = event._orderingDomain || `${event.source}:${event.type}`;
+      const queueKey = `${workflowId}:${domain}`;
+      await this.serializedXadd(queueKey, streamKey, payloadStr);
 
       logger.debug(
         {

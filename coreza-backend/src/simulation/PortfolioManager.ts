@@ -40,6 +40,7 @@ export interface OrderState {
   remainingQty?: number;
   avgFillPrice?: number;
   totalFees: number;
+  lastSeq?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -353,6 +354,7 @@ export class PortfolioManager {
     avgFillPrice?: number;
     feeAmount?: number;
     feeAsset?: string;
+    _seq?: number;
   }): void {
     const now = new Date().toISOString();
 
@@ -370,7 +372,20 @@ export class PortfolioManager {
       );
     }
 
-    // Stale-event guard: reject lifecycle status regression
+    // Guard 1: Sequence freshness — reject replayed/stale events
+    const incomingSeq = input._seq ?? 0;
+    if (
+      order.lastSeq !== undefined &&
+      incomingSeq > 0 &&
+      incomingSeq <= order.lastSeq
+    ) {
+      console.warn(
+        `[PortfolioManager] Stale seq ignored: ${input.brokerOrderId} lastSeq=${order.lastSeq} incomingSeq=${incomingSeq}`,
+      );
+      return;
+    }
+
+    // Guard 2: Status rank regression — reject lower-rank status
     const incomingRank = ORDER_STATUS_RANK[input.status] ?? 0;
     const currentRank = ORDER_STATUS_RANK[order.status] ?? 0;
 
@@ -382,6 +397,10 @@ export class PortfolioManager {
         `[PortfolioManager] Stale order update ignored: ${input.brokerOrderId} current=${order.status}(${currentRank}) incoming=${input.status}(${incomingRank})`,
       );
       return;
+    }
+
+    if (incomingSeq > 0) {
+      order.lastSeq = incomingSeq;
     }
 
     // Apply broker lifecycle status first

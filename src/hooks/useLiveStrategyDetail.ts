@@ -27,20 +27,50 @@ const mapFillToTrade = (fill: any, workflowId: string): BacktestTrade => ({
 const mapClosedTradeToBacktestTrade = (
   trade: any,
   workflowId: string,
-): BacktestTrade => ({
-  id: trade.id,
-  backtest_id: workflowId,
-  symbol: trade.symbol,
-  action: trade.side,
-  quantity: trade.quantity ?? 0,
-  entryPrice: trade.entryPrice ?? null,
-  entryTime: trade.entryTime ?? null,
-  exitPrice: trade.exitPrice ?? null,
-  exitTime: trade.exitTime ?? null,
-  commission: trade.commission ?? null,
-  slippage: trade.slippage ?? null,
-  net_pnl: trade.netPnl ?? null,
-});
+  fills?: any[],
+): BacktestTrade => {
+  const entryOrderId = trade.entryOrderId;
+  const exitOrderId = trade.exitOrderId;
+
+  let orders: BacktestTrade["orders"];
+  if (fills && fills.length > 0 && (entryOrderId || exitOrderId)) {
+    const matchedFills = fills.filter(
+      (f: any) => f.order_id === entryOrderId || f.order_id === exitOrderId,
+    );
+    if (matchedFills.length > 0) {
+      orders = matchedFills.map((f: any) => ({
+        id: f.id,
+        symbol: f.symbol,
+        side: f.side,
+        orderType: "Market",
+        fillPrice: f.price,
+        quantity: f.qty,
+        status: "Filled",
+        exitReason: f.order_id === exitOrderId ? (trade.exitReason ?? undefined) : undefined,
+        time: f.event_time,
+      }));
+    }
+  }
+
+  return {
+    id: trade.id,
+    backtest_id: workflowId,
+    symbol: trade.symbol,
+    action: trade.side,
+    quantity: trade.quantity ?? 0,
+    entryPrice: trade.entryPrice ?? null,
+    entryTime: trade.entryTime ?? null,
+    exitPrice: trade.exitPrice ?? null,
+    exitTime: trade.exitTime ?? null,
+    commission: trade.commission ?? null,
+    slippage: trade.slippage ?? null,
+    net_pnl: trade.netPnl ?? null,
+    grossPnl: trade.grossPnl ?? null,
+    fees: trade.commission ?? null,
+    result: trade.netPnl != null ? (trade.netPnl >= 0 ? "Win" : "Loss") : null,
+    orders,
+  };
+};
 
 const mapSnapshotToPortfolioSnapshot = (
   snapshot: any,

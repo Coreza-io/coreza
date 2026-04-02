@@ -406,6 +406,75 @@ export type Database = {
         }
         Relationships: []
       }
+      live_trades: {
+        Row: {
+          action: string
+          commission: number | null
+          created_at: string
+          entry_order_id: string | null
+          entryPrice: number | null
+          entryTime: string | null
+          exit_order_id: string | null
+          exit_reason: string | null
+          exitPrice: number
+          exitTime: string
+          gross_pnl: number | null
+          holding_period_bars: number | null
+          id: string
+          net_pnl: number | null
+          quantity: number
+          run_id: string | null
+          slippage: number | null
+          symbol: string
+          user_id: string
+          workflow_id: string | null
+        }
+        Insert: {
+          action: string
+          commission?: number | null
+          created_at?: string
+          entry_order_id?: string | null
+          entryPrice?: number | null
+          entryTime?: string | null
+          exit_order_id?: string | null
+          exit_reason?: string | null
+          exitPrice: number
+          exitTime: string
+          gross_pnl?: number | null
+          holding_period_bars?: number | null
+          id?: string
+          net_pnl?: number | null
+          quantity: number
+          run_id?: string | null
+          slippage?: number | null
+          symbol: string
+          user_id: string
+          workflow_id?: string | null
+        }
+        Update: {
+          action?: string
+          commission?: number | null
+          created_at?: string
+          entry_order_id?: string | null
+          entryPrice?: number | null
+          entryTime?: string | null
+          exit_order_id?: string | null
+          exit_reason?: string | null
+          exitPrice?: number
+          exitTime?: string
+          gross_pnl?: number | null
+          holding_period_bars?: number | null
+          id?: string
+          net_pnl?: number | null
+          quantity?: number
+          run_id?: string | null
+          slippage?: number | null
+          symbol?: string
+          user_id?: string
+          workflow_id?: string | null
+        }
+        Relationships: []
+      }
       node_executions: {
         Row: {
           error_message: string | null

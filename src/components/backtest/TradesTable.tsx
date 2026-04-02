@@ -201,7 +201,7 @@ export const TradesTable = ({ trades }: TradesTableProps) => {
                     colSpan={11}
                     className="text-center text-muted-foreground"
                   >
-                    No trades yet.
+                    No closed trades yet.
                   </TableCell>
                 </TableRow>
               ) : (

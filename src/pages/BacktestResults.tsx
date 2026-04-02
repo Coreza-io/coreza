@@ -174,7 +174,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         <TabsList>
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="trades">
-            {isLive ? "Fills" : "Trades"}
+            {isLive ? "Trades" : "Trades"}
           </TabsTrigger>
           {!isLive && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>

@@ -37,6 +37,7 @@ import {
   SnapshotCache,
   LatestSnapshotState,
 } from "../../services/SnapshotCache";
+import { LiveTradeRepository } from "../../repositories/LiveTradeRepository";
 import { createLogger } from "../../utils/logger";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
@@ -593,8 +594,9 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       // 2. Record closed trade (must run before position update which may delete the position)
+      let closedTrade: import("../../backtest/simBroker/interfaces").Trade | null = null;
       if (filledQty && avgFillPrice && params.side) {
-        pm.applyTrade(
+        closedTrade = pm.applyTrade(
           {
             brokerOrderId,
             clientOrderId,
@@ -607,6 +609,31 @@ export class PortfolioExecutor implements INodeExecutor {
           feeAmount ?? 0,
           new Date().toISOString(),
         );
+
+        // Persist closed trade to live_trades table
+        if (closedTrade && context?.isLive && context?.userId && context?.workflowId) {
+          void LiveTradeRepository.insert({
+            user_id: context.userId,
+            workflow_id: context.workflowId,
+            run_id: context.runId,
+            symbol: closedTrade.symbol,
+            action: closedTrade.side,
+            quantity: closedTrade.quantity,
+            entryPrice: closedTrade.entryPrice,
+            entryTime: closedTrade.entryTime,
+            exitPrice: closedTrade.exitPrice,
+            exitTime: closedTrade.exitTime,
+            commission: closedTrade.commission,
+            slippage: closedTrade.slippage,
+            net_pnl: closedTrade.netPnl,
+            gross_pnl: closedTrade.grossPnl,
+            entry_order_id: closedTrade.entryOrderId,
+            exit_order_id: closedTrade.exitOrderId,
+            holding_period_bars: closedTrade.holdingPeriodBars,
+          }).catch((err) =>
+            fillLogger.warn({ err, symbol: closedTrade!.symbol }, "live trade persist failed"),
+          );
+        }
       }
 
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)

@@ -1,101 +1,152 @@
 
 
-# Plan: Redesign TradesTable to Show Trades with Expandable Orders
+# Plan: Unified vs Separate Tables for Backtest and Live Trades
 
-## Current Problem
+## Analysis: Why Renaming/Unifying is Problematic
 
-The `TradesTable` currently shows **raw fills** (individual order executions) as flat rows. The reference screenshots show a different UX:
+### Structural Differences
 
-1. **Primary rows** = Closed trades (entry→exit pairs) showing: Entry Time, Symbol, Exit Time, Direction, Entry Price, Exit Price, Quantity, P&L, Fees, MAE, MFE, Drawdown, Result (Win/Loss)
-2. **Expandable sub-rows** = When clicking a trade row, show the individual orders/fills that make up that trade (e.g., "Buy Market Fill: $7.92 USD 1265 Filled" and "Sell Market Fill: $8.20 USD -1265 Filled Liquidated")
+| Aspect | Backtest Tables | Live Tables |
+|--------|----------------|-------------|
+| Primary FK | `backtest_id` → `backtests` table | `workflow_id` + `run_id` + `user_id` |
+| RLS | Joins through `backtests` to get `user_id` | Direct `user_id` column |
+| Data lifecycle | Batch insert at backtest completion | Incremental inserts during execution |
+| Existing data | Has production data in 3 tables | `live_fills` and `cash_snapshots` exist |
 
-## Data Available
+### What Would Unification Require
 
-The backend already produces closed `Trade` objects (via `PortfolioManager.applyTrade()`) with:
-- `id`, `symbol`, `side`, `entryPrice`, `exitPrice`, `quantity`, `grossPnl`, `commission`, `netPnl`, `entryTime`, `exitTime`, `entryOrderId`, `exitOrderId`
+To rename `backtest_trades` → `trades` (generic):
+1. **Add columns**: `workflow_id`, `run_id`, `user_id`, `broker`, `source_type` (backtest vs live), `entry_order_id`, `exit_order_id`
+2. **Keep columns**: `backtest_id` (nullable for live rows)
+3. **Rewrite RLS**: New policies that handle both backtest (join through `backtests`) and live (direct `user_id`) access patterns
+4. **Migrate all references**: `BacktestExecutor.ts`, `useBacktestResults.ts`, `useBacktests.ts` (joined query), `useLiveStrategyDetail.ts`, `types/supabase.ts` (auto-generated, cannot edit)
+5. **Same for `backtest_results`** → `results` and `backtest_portfolio_snapshots` → `portfolio_snapshots`
+6. **Data migration**: Backfill `user_id` on all existing rows
 
-These are passed to the frontend via `portfolio_summary.trades` in `workflow_runs.result`.
+**The `supabase/types.ts` file is auto-generated and cannot be manually edited** — table renames would require waiting for regeneration, and all existing Supabase joined queries (like `backtests` → `backtest_results` FK relationship used in `useBacktests.ts` line 58) would break.
 
-The `live_fills` table has individual fill events with: `order_id`, `side`, `price`, `qty`, `commission`, `event_time`, `symbol`.
+### Verdict
 
-## Implementation
+Unifying tables adds significant migration risk and complexity for marginal benefit. The backtest and live data have fundamentally different lifecycles (batch vs incremental) and access patterns (backtest_id vs workflow_id). The frontend hooks are already separate (`useBacktestResults` vs `useLiveStrategyDetail`).
 
-### Step 1: Extend `BacktestTrade` interface
+## Recommended Approach: Create `live_trades` (Mirror Pattern)
 
-Add optional fields to support the new columns and expandable orders:
+Create a new `live_trades` table that mirrors `backtest_trades` column structure but uses live-appropriate FKs. The frontend mapping code is already shared via the `BacktestTrade` interface.
 
-```typescript
-// In useBacktestResults.ts
-export interface BacktestTrade {
-  // ... existing fields ...
-  grossPnl?: number | null;
-  fees?: number | null;          // alias for commission
-  result?: "Win" | "Loss" | null;
-  orders?: TradeOrder[];         // child fills/orders for expansion
-}
+### Step 1: Create `live_trades` table (migration)
 
-export interface TradeOrder {
-  id: string;
-  symbol: string;
-  side: string;
-  orderType?: string;            // "Market", "Limit", etc.
-  fillPrice: number;
-  quantity: number;
-  status?: string;               // "Filled"
-  exitReason?: string;           // "Liquidated", etc.
-  time: string;
-}
+```sql
+CREATE TABLE public.live_trades (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  workflow_id uuid,
+  run_id uuid,
+  symbol text NOT NULL,
+  action text NOT NULL,           -- matches backtest_trades.action
+  quantity numeric NOT NULL,
+  "entryPrice" numeric,
+  "entryTime" timestamptz,
+  "exitPrice" numeric NOT NULL,
+  "exitTime" timestamptz NOT NULL,
+  commission numeric DEFAULT 0,
+  slippage numeric DEFAULT 0,
+  net_pnl numeric,
+  gross_pnl numeric,
+  entry_order_id text,
+  exit_order_id text,
+  holding_period_bars integer DEFAULT 0,
+  exit_reason text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.live_trades ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own live trades"
+  ON public.live_trades FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Service role full access to live_trades"
+  ON public.live_trades FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
+
+CREATE INDEX idx_live_trades_workflow ON public.live_trades (workflow_id, run_id);
 ```
 
-### Step 2: Update `mapClosedTradeToBacktestTrade` in `useLiveStrategyDetail.ts`
+### Step 2: Backend — Persist trades on close
 
-Map the new fields from the backend `Trade` object:
-- `fees` from `trade.commission`
-- `grossPnl` from `trade.grossPnl`
-- `result` = `trade.netPnl >= 0 ? "Win" : "Loss"`
-- `entryOrderId` and `exitOrderId` preserved for linking fills
+**File: `coreza-backend/src/repositories/LiveTradeRepository.ts`** (new)
 
-### Step 3: Link fills to trades as child orders
+Simple repository with `batchUpsert` method, similar to `LiveFillRepository`.
 
-After loading both `latestClosedTrades` and `fillMappedTrades`, group fills by `order_id` matching `entryOrderId`/`exitOrderId` on each trade. Attach matched fills as `trade.orders[]`.
+**File: `coreza-backend/src/simulation/PortfolioManager.ts`**
+
+Change `applyTrade()` to return the `Trade` object instead of void.
+
+**File: `coreza-backend/src/nodes/executors/PortfolioExecutor.ts`**
+
+After `applyTrade()` returns a trade, insert it into `live_trades` via `LiveTradeRepository`. Direct insert is fine since trade closes are infrequent events.
+
+### Step 3: Frontend — Query `live_trades` instead of parsing `workflow_runs.result`
+
+**File: `src/hooks/useLiveStrategyDetail.ts`**
+
+- Replace the `workflow_runs.result` portfolio node parsing (lines 257-284) with a query to `live_trades`:
+  ```
+  SELECT * FROM live_trades
+  WHERE workflow_id = ? AND run_id = ?
+  ORDER BY "exitTime" ASC
+  ```
+- Map results to `BacktestTrade[]` (same interface used by backtest)
+- For expandable order details: match `live_fills` by `entry_order_id` / `exit_order_id`
+- Remove `mapFillToTrade` fallback entirely
+- Remove `closedTradesRef` and `portfolioSummary` state
+
+**File: `src/lib/liveMetrics.ts`**
+
+- Remove `portfolioSummary` parameter dependency
+- Compute all trade-derived metrics from `live_trades` data (same `netPnl` shape already works)
+- Keep `cash_snapshots` for equity curve / risk metrics
+
+### Step 4: UI updates
+
+**File: `src/pages/BacktestResults.tsx`** — Change live tab label from "Fills" to "Trades"
+
+**File: `src/components/backtest/TradesTable.tsx`** — Update empty state to "No closed trades yet."
+
+## Data Flow After Fix
 
 ```text
-For each closed trade:
-  orders = fills.filter(f => 
-    f.order_id === trade.entryOrderId || f.order_id === trade.exitOrderId
-  )
-  Map each fill → TradeOrder { side, orderType, fillPrice, quantity, status, time }
+BACKTEST (unchanged):
+  BacktestExecutor → INSERT backtest_trades, backtest_results, backtest_portfolio_snapshots
+  Frontend: useBacktestResults → SELECT from 3 backtest_* tables
+
+LIVE (fixed):
+  PortfolioManager.applyTrade() → LiveTradeRepository → INSERT live_trades
+  FillSyncWorker → INSERT live_fills (for order expansion detail)
+  SnapshotCache → INSERT cash_snapshots (for equity curve)
+  Frontend: useLiveStrategyDetail → SELECT live_trades + cash_snapshots
+            + SELECT live_fills WHERE order_id IN (entry/exit) for expansion
 ```
 
-### Step 4: Redesign `TradesTable.tsx`
+## Why This is Better Than Unification
 
-**Main trade row columns** (matching reference screenshots):
-- Entry Time, Symbol, Exit Time, Direction (Buy/Sell), Entry Price, Exit Price, Quantity, P&L, Fees, Result (Win/Loss badge)
-- Expand/collapse toggle icon (`+`/`-`) on the left
+- Zero risk to existing backtest functionality
+- No data migration needed
+- No RLS policy rewrites
+- No `supabase/types.ts` regeneration issues
+- Frontend `BacktestTrade` interface already serves as the shared contract
+- Each mode queries its own tables cleanly
 
-**Expanded sub-section** (when clicked):
-- Header: "Orders"
-- Sub-rows with tree-line styling showing each order/fill:
-  - Time, Symbol, Side + Order Type (e.g., "Buy Market"), Fill Price, Quantity, Status ("Filled"), Exit Reason if applicable
-
-**State management**: Use local `expandedTradeIds: Set<string>` state to track which trade rows are expanded.
-
-### Step 5: Handle backtest mode
-
-For backtest mode, trades come from `backtest_trades` table which has the same shape. The `orders` field will be empty/undefined since backtest trades don't have separate fill records. The expand toggle simply won't appear when `orders` is empty.
-
-## Files to modify
+## Files to Create/Modify
 
 | File | Change |
 |------|--------|
-| `src/hooks/useBacktestResults.ts` | Add `TradeOrder` interface, extend `BacktestTrade` with `grossPnl`, `fees`, `result`, `orders` |
-| `src/hooks/useLiveStrategyDetail.ts` | Map new trade fields, link fills to trades as child orders |
-| `src/components/backtest/TradesTable.tsx` | Full redesign with expandable rows |
-
-## Key design decisions
-
-- P&L, Fees, Result shown only on **trade rows** (not order sub-rows) — matching reference
-- Order sub-rows show fill-level detail: price, qty, status, exit reason
-- Backtest trades work unchanged (no orders to expand)
-- No new backend changes needed — all data already available
+| Migration SQL | Create `live_trades` table with RLS |
+| `coreza-backend/src/repositories/LiveTradeRepository.ts` | New — insert closed trades |
+| `coreza-backend/src/simulation/PortfolioManager.ts` | Return `Trade` from `applyTrade()` |
+| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Insert to `live_trades` after trade close |
+| `src/hooks/useLiveStrategyDetail.ts` | Query `live_trades`, remove fill fallback and portfolio node parsing |
+| `src/lib/liveMetrics.ts` | Remove `portfolioSummary` dependency |
+| `src/pages/BacktestResults.tsx` | Tab label change |
+| `src/components/backtest/TradesTable.tsx` | Empty state text |
 

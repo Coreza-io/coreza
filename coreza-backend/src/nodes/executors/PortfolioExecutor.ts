@@ -488,10 +488,14 @@ export class PortfolioExecutor implements INodeExecutor {
     },
   ): LatestSnapshotState {
     const state = pm.getPortfolioState(meta.baseCurrency);
-    const positionsValue = state.positions.reduce(
-      (s, p) => s + p.marketValue,
-      0,
-    );
+    const balances = pm.getCash() as Record<string, unknown>;
+    const baseCashRaw =
+      (meta.baseCurrency && balances ? balances[meta.baseCurrency] : undefined) ??
+      0;
+    const baseCash =
+      typeof baseCashRaw === "number"
+        ? baseCashRaw
+        : Number(baseCashRaw) || 0;
 
     return {
       user_id: meta.userId,
@@ -501,12 +505,12 @@ export class PortfolioExecutor implements INodeExecutor {
       credential_id: meta.credentialId,
       snapshot_at: new Date().toISOString(),
       base_currency: meta.baseCurrency,
-      cash: state.cash,
+      cash: baseCash,
       equity: state.totalEquity,
       realized_pnl: state.positions.reduce((s, p) => s + p.realizedPnl, 0),
       unrealized_pnl: state.positions.reduce((s, p) => s + p.unrealizedPnl, 0),
       positions_count: state.positions.length,
-      balances_json: pm.getCash(),
+      balances_json: balances,
     };
   }
 
@@ -516,7 +520,7 @@ export class PortfolioExecutor implements INodeExecutor {
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     try {
-      const baseCurrency = params.baseCurrency;
+      const baseCurrency = params.base_currency || "USDT";
       const symbol = params.symbol;
       const brokerOrderId = params.brokerOrderId;
       const clientOrderId = params.clientOrderId;
@@ -579,7 +583,7 @@ export class PortfolioExecutor implements INodeExecutor {
             side: params.side,
             filledQty,
             fillPrice: avgFillPrice,
-            baseCurrency: baseCurrency ?? "USD",
+            baseCurrency,
           },
           feeAmount ?? 0,
           new Date().toISOString(),

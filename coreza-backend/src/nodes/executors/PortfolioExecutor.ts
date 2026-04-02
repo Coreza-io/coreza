@@ -37,6 +37,7 @@ import {
   SnapshotCache,
   LatestSnapshotState,
 } from "../../services/SnapshotCache";
+import { LiveTradeRepository } from "../../repositories/LiveTradeRepository";
 import { createLogger } from "../../utils/logger";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");

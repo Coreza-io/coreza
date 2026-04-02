@@ -450,9 +450,9 @@ export class PortfolioManager {
     },
     feeAmount: number,
     now: string,
-  ): void {
+  ): Trade | null {
     const existing = this.positions.get(input.symbol);
-    if (!existing) return;
+    if (!existing) return null;
 
     const signedQty = input.side === "buy" ? input.filledQty : -input.filledQty;
     const prevQty = existing.quantity;
@@ -461,10 +461,10 @@ export class PortfolioManager {
     const sameDirection =
       (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
 
-    if (sameDirection) return;
+    if (sameDirection) return null;
 
     const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
-    if (closingQty <= 0) return;
+    if (closingQty <= 0) return null;
 
     const isClosingLong = prevQty > 0;
     const grossPnl = isClosingLong
@@ -492,6 +492,7 @@ export class PortfolioManager {
     };
 
     this.trades.push(trade);
+    return trade;
   }
 
   /**

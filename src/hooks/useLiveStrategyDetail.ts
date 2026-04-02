@@ -97,7 +97,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [portfolioSummary, setPortfolioSummary] = useState<any | null>(null);
   const closedTradesRef = useRef<any[]>([]);
-  const latestRunIdRef = useRef<string | null>(null);
+  const activeSessionRunIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,7 +109,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setSnapshots([]);
       setPortfolioSummary(null);
       closedTradesRef.current = [];
-      latestRunIdRef.current = null;
+      activeSessionRunIdRef.current = null;
       setLoading(false);
       return;
     }
@@ -147,12 +147,55 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       if (latestRunErr) throw latestRunErr;
 
-      const latestRunId = latestRun?.id ?? null;
-      latestRunIdRef.current = latestRunId;
+      const latestRunStartedAt = latestRun?.started_at ?? null;
+
+      let latestSnapshotSessionQuery = supabase
+        .from("cash_snapshots")
+        .select("run_id")
+        .eq("user_id", user.id)
+        .eq("workflow_id", workflowId)
+        .not("run_id", "is", null)
+        .order("snapshot_at", { ascending: false })
+        .limit(1);
+      if (latestRunStartedAt) {
+        latestSnapshotSessionQuery = latestSnapshotSessionQuery.gte(
+          "snapshot_at",
+          latestRunStartedAt,
+        );
+      }
+      const { data: latestSnapshotSession, error: latestSnapshotSessionErr } =
+        await latestSnapshotSessionQuery.maybeSingle();
+
+      if (latestSnapshotSessionErr) throw latestSnapshotSessionErr;
+
+      let sessionRunId = latestSnapshotSession?.run_id ?? null;
+      if (!sessionRunId) {
+        let latestFillSessionQuery = supabase
+          .from("live_fills")
+          .select("run_id")
+          .eq("user_id", user.id)
+          .eq("workflow_id", workflowId)
+          .not("run_id", "is", null)
+          .order("event_time", { ascending: false })
+          .limit(1);
+        if (latestRunStartedAt) {
+          latestFillSessionQuery = latestFillSessionQuery.gte(
+            "event_time",
+            latestRunStartedAt,
+          );
+        }
+        const { data: latestFillSession, error: latestFillSessionErr } =
+          await latestFillSessionQuery.maybeSingle();
+
+        if (latestFillSessionErr) throw latestFillSessionErr;
+        sessionRunId = latestFillSession?.run_id ?? null;
+      }
+
+      activeSessionRunIdRef.current = sessionRunId;
 
       let rawFills: any[] = [];
       let filteredSnapshots: any[] = [];
-      if (latestRunId) {
+      if (sessionRunId) {
         const [{ data: fillsData, error: fillsErr }, { data: snapshotsData, error: snapshotsErr }] =
           await Promise.all([
             supabase
@@ -160,14 +203,14 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
               .select("*")
               .eq("user_id", user.id)
               .eq("workflow_id", workflowId)
-              .eq("run_id", latestRunId)
+              .eq("run_id", sessionRunId)
               .order("event_time", { ascending: true }),
             supabase
               .from("cash_snapshots")
               .select("*")
               .eq("user_id", user.id)
               .eq("workflow_id", workflowId)
-              .eq("run_id", latestRunId)
+              .eq("run_id", sessionRunId)
               .order("snapshot_at", { ascending: true }),
           ]);
 
@@ -262,7 +305,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setSnapshots([]);
       setPortfolioSummary(null);
       closedTradesRef.current = [];
-      latestRunIdRef.current = null;
+      activeSessionRunIdRef.current = null;
       setLoading(false);
       setError(null);
       return;
@@ -300,7 +343,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           const newFill = payload.new as any;
           if (newFill.user_id !== user.id || newFill.workflow_id !== workflowId)
             return;
-          if (!latestRunIdRef.current || newFill.run_id !== latestRunIdRef.current)
+          if (!activeSessionRunIdRef.current || newFill.run_id !== activeSessionRunIdRef.current)
             return;
 
           if (closedTradesRef.current.length === 0) {
@@ -323,7 +366,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             newSnapshot.workflow_id !== workflowId
           )
             return;
-          if (!latestRunIdRef.current || newSnapshot.run_id !== latestRunIdRef.current)
+          if (!activeSessionRunIdRef.current || newSnapshot.run_id !== activeSessionRunIdRef.current)
             return;
 
           setSnapshots((prev) => {

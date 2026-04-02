@@ -189,6 +189,7 @@ export class PortfolioManager {
   >();
   private tradeIdCounter = 0;
   private peakEquity = 0;
+  private startingEquity: number | null = null;
 
   private bootstrapped = false;
 
@@ -239,6 +240,7 @@ export class PortfolioManager {
     this.currentEntryMap.clear();
     this.tradeIdCounter = 0;
     this.peakEquity = 0;
+    this.startingEquity = null;
     this.bootstrapped = false;
 
     PortfolioManager.instances.delete(`${this.userId}:${this.runId}`);
@@ -888,6 +890,9 @@ export class PortfolioManager {
 
   private updatePeakEquity(baseCurrency: string = "USDT"): void {
     const currentEquity = this.getTotalEquity(baseCurrency);
+    if (this.startingEquity === null && currentEquity > 0) {
+      this.startingEquity = currentEquity;
+    }
     this.peakEquity = Math.max(this.peakEquity, currentEquity);
   }
   // ============== GETTERS (mirror SimBroker interface) ==============
@@ -901,6 +906,7 @@ export class PortfolioManager {
     trades: Trade[];
     totalEquity: number;
     peakEquity: number;
+    startingEquity: number | null;
     pendingOrders: OrderState[];
   } {
     const positionStates = this.getPositions();
@@ -917,6 +923,9 @@ export class PortfolioManager {
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
     const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
     const totalEquity = cashBase + positionsValue;
+    if (this.startingEquity === null && totalEquity > 0) {
+      this.startingEquity = totalEquity;
+    }
 
     return {
       cash: Object.fromEntries(this.cashBook),
@@ -924,6 +933,7 @@ export class PortfolioManager {
       trades: this.trades,
       totalEquity,
       peakEquity: this.peakEquity,
+      startingEquity: this.startingEquity,
       pendingOrders: this.getOpenOrders(),
     };
   }
@@ -950,8 +960,8 @@ export class PortfolioManager {
 
   getTotalEquity(baseCurrency: string = "USDT"): number {
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
-    const posValue = Array.from(this.holdings.values()).reduce(
-      (s, h) => s + h.quantity * h.currentPrice,
+    const posValue = Array.from(this.positions.values()).reduce(
+      (sum, position) => sum + position.quantity * position.currentPrice,
       0,
     );
     return cashBase + posValue;
@@ -959,6 +969,10 @@ export class PortfolioManager {
 
   getPeakEquity(): number {
     return this.peakEquity;
+  }
+
+  getStartingEquity(): number | null {
+    return this.startingEquity;
   }
 
   getTrades(): Trade[] {
@@ -984,6 +998,9 @@ export class PortfolioManager {
       total: cashBalance,
       updatedAt: new Date().toISOString(),
     });
+    if (this.startingEquity === null && cashBalance > 0) {
+      this.startingEquity = cashBalance;
+    }
     this.bootstrapped = true;
     console.log(
       `[PortfolioManager] Initialized portfolio: ${baseCurrency} = ${cashBalance}`,

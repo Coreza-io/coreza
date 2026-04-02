@@ -77,6 +77,21 @@ function toNumber(value: unknown): number | undefined {
  */
 type BrokerPortfolioState = ReturnType<PortfolioManager["getPortfolioState"]>;
 
+type TradeAnalytics = {
+  netProfit: number;
+  totalTrades: number;
+  profitableTrades: number;
+  losingTrades: number;
+  winRate: number;
+  profitFactor: number;
+  avgWin: number;
+  avgLoss: number;
+  largestWin: number;
+  largestLoss: number;
+  averageTradeReturn: number;
+  expectancy: number;
+};
+
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
   // Backtest mode is fully sync. Broker mode is async, but compiled execution
@@ -488,6 +503,10 @@ export class PortfolioExecutor implements INodeExecutor {
     },
   ): LatestSnapshotState {
     const state = pm.getPortfolioState(meta.baseCurrency);
+    const tradeStats = this.calculateTradeAnalytics(
+      state.trades,
+      state.startingEquity,
+    );
     const balances = pm.getCash() as Record<string, unknown>;
     const baseCashRaw =
       (meta.baseCurrency && balances ? balances[meta.baseCurrency] : undefined) ??
@@ -507,7 +526,7 @@ export class PortfolioExecutor implements INodeExecutor {
       base_currency: meta.baseCurrency,
       cash: baseCash,
       equity: state.totalEquity,
-      realized_pnl: state.positions.reduce((s, p) => s + p.realizedPnl, 0),
+      realized_pnl: tradeStats.netProfit,
       unrealized_pnl: state.positions.reduce((s, p) => s + p.unrealizedPnl, 0),
       positions_count: state.positions.length,
       balances_json: balances,
@@ -847,14 +866,19 @@ export class PortfolioExecutor implements INodeExecutor {
     const formattedPositions: FormattedPosition[] = [];
     let positionsValue = 0;
     let unrealizedPnl = 0;
-    let realizedPnl = 0;
 
     for (const position of state.positions) {
       formattedPositions.push(formatPositionWithPnlPercent(position));
       positionsValue += position.marketValue;
       unrealizedPnl += position.unrealizedPnl;
-      realizedPnl += position.realizedPnl;
     }
+
+    const startingEquity = state.startingEquity;
+    const tradeStats = this.calculateTradeAnalytics(state.trades, startingEquity);
+    const totalReturn =
+      startingEquity && startingEquity > 0
+        ? ((state.totalEquity - startingEquity) / startingEquity) * 100
+        : undefined;
 
     return {
       cash: state.cash,
@@ -862,12 +886,88 @@ export class PortfolioExecutor implements INodeExecutor {
       positions_count: state.positions.length,
       positions_value: positionsValue,
       unrealized_pnl: unrealizedPnl,
-      realized_pnl: realizedPnl,
+      realized_pnl: tradeStats.netProfit,
       total_equity: state.totalEquity,
       peak_equity: state.peakEquity,
-      trades_count: state.trades.length,
+      initial_capital: startingEquity,
+      starting_equity: startingEquity,
+      total_return: totalReturn,
+      net_profit: tradeStats.netProfit,
+      final_portfolio_value: state.totalEquity,
+      trades_count: tradeStats.totalTrades,
+      total_trades: tradeStats.totalTrades,
+      profitable_trades: tradeStats.profitableTrades,
+      losing_trades: tradeStats.losingTrades,
+      win_rate: tradeStats.winRate,
+      profit_factor: Number.isFinite(tradeStats.profitFactor)
+        ? tradeStats.profitFactor
+        : null,
+      avg_win: tradeStats.avgWin,
+      avg_loss: tradeStats.avgLoss,
+      largest_win: tradeStats.largestWin,
+      largest_loss: tradeStats.largestLoss,
+      average_trade_return: tradeStats.averageTradeReturn,
+      expectancy: tradeStats.expectancy,
       pending_orders: state.pendingOrders,
       pending_orders_count: state.pendingOrders.length,
+    };
+  }
+
+  private calculateTradeAnalytics(
+    trades: BrokerPortfolioState["trades"],
+    startingEquity?: number | null,
+  ): TradeAnalytics {
+    const totalTrades = trades.length;
+    const netProfit = trades.reduce((sum, trade) => sum + trade.netPnl, 0);
+    const winningTrades = trades.filter((trade) => trade.netPnl > 0);
+    const losingTrades = trades.filter((trade) => trade.netPnl < 0);
+    const profitableTrades = winningTrades.length;
+    const losingTradesCount = losingTrades.length;
+    const winRate = totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
+
+    const totalWins = winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0);
+    const totalLossesAbs = Math.abs(
+      losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0),
+    );
+    const profitFactor =
+      totalLossesAbs > 0
+        ? totalWins / totalLossesAbs
+        : totalWins > 0
+          ? Infinity
+          : 0;
+
+    const avgWin = profitableTrades > 0 ? totalWins / profitableTrades : 0;
+    const avgLoss =
+      losingTradesCount > 0
+        ? losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) /
+          losingTradesCount
+        : 0;
+    const largestWin = profitableTrades > 0 ? Math.max(...winningTrades.map((trade) => trade.netPnl)) : 0;
+    const largestLoss = losingTradesCount > 0 ? Math.min(...losingTrades.map((trade) => trade.netPnl)) : 0;
+
+    const averageTradeReturn =
+      totalTrades > 0
+        ? trades.reduce((sum, trade) => {
+            if (startingEquity && startingEquity > 0) {
+              return sum + (trade.netPnl / startingEquity) * 100;
+            }
+            return sum;
+          }, 0) / totalTrades
+        : 0;
+
+    return {
+      netProfit,
+      totalTrades,
+      profitableTrades,
+      losingTrades: losingTradesCount,
+      winRate,
+      profitFactor,
+      avgWin,
+      avgLoss,
+      largestWin,
+      largestLoss,
+      averageTradeReturn,
+      expectancy: totalTrades > 0 ? netProfit / totalTrades : 0,
     };
   }
 

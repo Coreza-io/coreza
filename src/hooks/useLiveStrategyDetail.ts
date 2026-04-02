@@ -97,6 +97,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [portfolioSummary, setPortfolioSummary] = useState<any | null>(null);
   const closedTradesRef = useRef<any[]>([]);
+  const activeSessionRunIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +109,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setSnapshots([]);
       setPortfolioSummary(null);
       closedTradesRef.current = [];
+      activeSessionRunIdRef.current = null;
       setLoading(false);
       return;
     }
@@ -135,39 +137,94 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         started_at: wf.created_at ?? undefined,
       } as BacktestWithRelations);
 
-      const [fillsResult, snapshotsResult, runsResult] =
-        await Promise.allSettled([
-          supabase
-            .from("live_fills")
-            .select("*")
-            .eq("user_id", user.id)
-            .eq("workflow_id", workflowId)
-            .order("event_time", { ascending: true }),
-          supabase
-            .from("cash_snapshots")
-            .select("*")
-            .eq("user_id", user.id)
-            .eq("workflow_id", workflowId)
-            .order("snapshot_at", { ascending: true }),
-          supabase
-            .from("workflow_runs")
-            .select("result")
-            .eq("workflow_id", workflowId)
-            .order("started_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-        ]);
+      const { data: latestRun, error: latestRunErr } = await supabase
+        .from("workflow_runs")
+        .select("id, result, status, started_at")
+        .eq("workflow_id", workflowId)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      let fillMappedTrades: BacktestTrade[] = [];
-      if (fillsResult.status === "fulfilled" && fillsResult.value.data) {
-        fillMappedTrades = fillsResult.value.data
-          .map((fill: any) => mapFillToTrade(fill, workflowId));
+      if (latestRunErr) throw latestRunErr;
+
+      const latestRunStartedAt = latestRun?.started_at ?? null;
+
+      let latestSnapshotSessionQuery = supabase
+        .from("cash_snapshots")
+        .select("run_id")
+        .eq("user_id", user.id)
+        .eq("workflow_id", workflowId)
+        .not("run_id", "is", null)
+        .order("snapshot_at", { ascending: false })
+        .limit(1);
+      if (latestRunStartedAt) {
+        latestSnapshotSessionQuery = latestSnapshotSessionQuery.gte(
+          "snapshot_at",
+          latestRunStartedAt,
+        );
+      }
+      const { data: latestSnapshotSession, error: latestSnapshotSessionErr } =
+        await latestSnapshotSessionQuery.maybeSingle();
+
+      if (latestSnapshotSessionErr) throw latestSnapshotSessionErr;
+
+      let sessionRunId = latestSnapshotSession?.run_id ?? null;
+      if (!sessionRunId) {
+        let latestFillSessionQuery = supabase
+          .from("live_fills")
+          .select("run_id")
+          .eq("user_id", user.id)
+          .eq("workflow_id", workflowId)
+          .not("run_id", "is", null)
+          .order("event_time", { ascending: false })
+          .limit(1);
+        if (latestRunStartedAt) {
+          latestFillSessionQuery = latestFillSessionQuery.gte(
+            "event_time",
+            latestRunStartedAt,
+          );
+        }
+        const { data: latestFillSession, error: latestFillSessionErr } =
+          await latestFillSessionQuery.maybeSingle();
+
+        if (latestFillSessionErr) throw latestFillSessionErr;
+        sessionRunId = latestFillSession?.run_id ?? null;
       }
 
-      const filteredSnapshots =
-        snapshotsResult.status === "fulfilled" && snapshotsResult.value.data
-          ? snapshotsResult.value.data
-          : [];
+      activeSessionRunIdRef.current = sessionRunId;
+
+      let rawFills: any[] = [];
+      let filteredSnapshots: any[] = [];
+      if (sessionRunId) {
+        const [{ data: fillsData, error: fillsErr }, { data: snapshotsData, error: snapshotsErr }] =
+          await Promise.all([
+            supabase
+              .from("live_fills")
+              .select("*")
+              .eq("user_id", user.id)
+              .eq("workflow_id", workflowId)
+              .eq("run_id", sessionRunId)
+              .order("event_time", { ascending: true }),
+            supabase
+              .from("cash_snapshots")
+              .select("*")
+              .eq("user_id", user.id)
+              .eq("workflow_id", workflowId)
+              .eq("run_id", sessionRunId)
+              .order("snapshot_at", { ascending: true }),
+          ]);
+
+        if (fillsErr) throw fillsErr;
+        if (snapshotsErr) throw snapshotsErr;
+
+        rawFills = fillsData ?? [];
+        filteredSnapshots = snapshotsData ?? [];
+      }
+
+      let fillMappedTrades: BacktestTrade[] = [];
+      if (rawFills.length > 0) {
+        fillMappedTrades = rawFills.map((fill: any) => mapFillToTrade(fill, workflowId));
+      }
 
       if (filteredSnapshots.length > 0) {
         const mapped: PortfolioSnapshot[] = filteredSnapshots
@@ -199,8 +256,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       let latestPortfolioSummary: any | null = null;
       let latestClosedTrades: any[] = [];
-      if (runsResult.status === "fulfilled" && runsResult.value.data?.result) {
-        const result = runsResult.value.data.result as any;
+      if (latestRun?.result) {
+        const result = latestRun.result as any;
         const nodeResults = result?.nodeResults || {};
         const portfolioNode = Object.values(nodeResults).find(
           (nr: any) => nr?.data?.total_equity !== undefined,
@@ -216,7 +273,6 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       setPortfolioSummary(latestPortfolioSummary);
       closedTradesRef.current = latestClosedTrades;
-      const rawFills = fillsResult.status === "fulfilled" ? (fillsResult.value.data || []) : [];
       if (latestClosedTrades.length > 0) {
         setTrades(
           latestClosedTrades.map((trade) =>
@@ -249,6 +305,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setSnapshots([]);
       setPortfolioSummary(null);
       closedTradesRef.current = [];
+      activeSessionRunIdRef.current = null;
       setLoading(false);
       setError(null);
       return;
@@ -286,6 +343,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           const newFill = payload.new as any;
           if (newFill.user_id !== user.id || newFill.workflow_id !== workflowId)
             return;
+          if (!activeSessionRunIdRef.current || newFill.run_id !== activeSessionRunIdRef.current)
+            return;
 
           if (closedTradesRef.current.length === 0) {
             setTrades((prev) => [...prev, mapFillToTrade(newFill, workflowId)]);
@@ -306,6 +365,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             newSnapshot.user_id !== user.id ||
             newSnapshot.workflow_id !== workflowId
           )
+            return;
+          if (!activeSessionRunIdRef.current || newSnapshot.run_id !== activeSessionRunIdRef.current)
             return;
 
           setSnapshots((prev) => {

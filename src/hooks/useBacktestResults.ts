@@ -28,6 +28,18 @@ export interface BacktestResultMetrics {
   avg_holding_period?: number;
 }
 
+export interface TradeOrder {
+  id: string;
+  symbol: string;
+  side: string;
+  orderType?: string;
+  fillPrice: number;
+  quantity: number;
+  status?: string;
+  exitReason?: string;
+  time: string;
+}
+
 export interface BacktestTrade {
   id: string;
   backtest_id: string;
@@ -46,6 +58,10 @@ export interface BacktestTrade {
   return_pct?: number | null;
   net_pnl?: number | null;
   holding_period_bars?: number | null;
+  grossPnl?: number | null;
+  fees?: number | null;
+  result?: "Win" | "Loss" | null;
+  orders?: TradeOrder[];
 }
 
 export interface PortfolioSnapshot {

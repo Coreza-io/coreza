@@ -81,6 +81,15 @@ const mapSnapshotToPortfolioSnapshot = (
   daily_return: undefined,
 });
 
+const toNumberOrUndefined = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
 /**
  * Returns live strategy detail data shaped identically to useBacktestResults
  * for seamless UI reuse (EquityCurveChart, TradesTable, PerformanceMetricsCard).
@@ -143,11 +152,13 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             .from("live_fills")
             .select("*")
             .eq("user_id", user.id)
+            .eq("workflow_id", workflowId)
             .order("event_time", { ascending: true }),
           supabase
             .from("cash_snapshots")
             .select("*")
             .eq("user_id", user.id)
+            .eq("workflow_id", workflowId)
             .order("snapshot_at", { ascending: true }),
           supabase
             .from("workflow_runs")
@@ -189,18 +200,18 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         const result = runsResult.value.data.result as any;
         const nodeResults = result?.nodeResults || {};
         const portfolioNode = Object.values(nodeResults).find(
-          (nr: any) => nr?.data?.equity !== undefined,
+          (nr: any) => nr?.data?.total_equity !== undefined,
         ) as any;
 
         if (portfolioNode?.data) {
           const p = portfolioNode.data;
           setMetrics({
-            total_return: p.totalReturnPct,
-            net_profit: p.realizedPnl,
-            total_trades: p.tradeCount,
-            final_portfolio_value: p.equity,
-            win_rate: p.winRate,
-            sharpe_ratio: p.sharpeRatio,
+            total_return: toNumberOrUndefined(p.total_return),
+            net_profit: toNumberOrUndefined(p.realized_pnl),
+            total_trades: toNumberOrUndefined(p.trades_count),
+            final_portfolio_value: toNumberOrUndefined(p.total_equity),
+            win_rate: undefined,
+            sharpe_ratio: undefined,
           } as BacktestResultMetrics);
         }
       }
@@ -238,10 +249,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           event: "INSERT",
           schema: "public",
           table: "live_fills",
-          filter: `user_id=eq.${user.id}`,
+          filter: `and(user_id.eq.${user.id},workflow_id.eq.${workflowId})`,
         },
         (payload) => {
           const newFill = payload.new as any;
+          if (newFill.user_id !== user.id || newFill.workflow_id !== workflowId)
+            return;
           if (
             credentialFilter.size > 0 &&
             !credentialFilter.has(newFill.credential_id)
@@ -257,10 +270,15 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           event: "INSERT",
           schema: "public",
           table: "cash_snapshots",
-          filter: `user_id=eq.${user.id}`,
+          filter: `and(user_id.eq.${user.id},workflow_id.eq.${workflowId})`,
         },
         (payload) => {
           const newSnapshot = payload.new as any;
+          if (
+            newSnapshot.user_id !== user.id ||
+            newSnapshot.workflow_id !== workflowId
+          )
+            return;
           if (
             credentialFilter.size > 0 &&
             !credentialFilter.has(newSnapshot.credential_id)

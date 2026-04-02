@@ -24,6 +24,17 @@ const SNAPSHOT_FLUSH_INTERVAL_MS = 5000;
 const DLQ_STREAM = "portfolio:fills:dlq";
 const MAX_RETRIES = 5;
 
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
 /**
  * FillSyncWorker — Background service that consumes fill events from
  * workflow-scoped Redis streams and persists them to Supabase in batches.
@@ -264,20 +275,52 @@ export class FillSyncWorker {
 
       try {
         const snapshot: LatestSnapshotState = JSON.parse(json);
+        const balances =
+          snapshot.balances_json && typeof snapshot.balances_json === "object"
+            ? (snapshot.balances_json as Record<string, unknown>)
+            : {};
+        const cash = toFiniteNumber(snapshot.cash);
+        const equity = toFiniteNumber(snapshot.equity);
+        const realizedPnl = toFiniteNumber(snapshot.realized_pnl);
+        const unrealizedPnl = toFiniteNumber(snapshot.unrealized_pnl);
+
+        if (
+          cash === null ||
+          equity === null ||
+          realizedPnl === null ||
+          unrealizedPnl === null
+        ) {
+          logger.warn(
+            {
+              key,
+              base_currency: snapshot.base_currency,
+              cash_type: typeof snapshot.cash,
+              equity_type: typeof snapshot.equity,
+              realized_pnl_type: typeof snapshot.realized_pnl,
+              unrealized_pnl_type: typeof snapshot.unrealized_pnl,
+              skipped: true,
+            },
+            "snapshot payload malformed, skipping key",
+          );
+          await redis.del(key);
+          await redis.srem(SnapshotCache.ACTIVE_KEYS_SET, key);
+          continue;
+        }
+
         rows.push({
           user_id: snapshot.user_id,
           broker: snapshot.broker,
           credential_id: snapshot.credential_id || snapshot.user_id,
           snapshot_at: snapshot.snapshot_at,
-          balances: (snapshot.balances_json as Record<string, unknown>) || {},
-          total_value_usdt: snapshot.equity,
+          balances,
+          total_value_usdt: equity,
           workflow_id: snapshot.workflow_id || null as any,
           run_id: snapshot.run_id || null as any,
           base_currency: snapshot.base_currency,
-          cash: snapshot.cash,
-          equity: snapshot.equity,
-          realized_pnl: snapshot.realized_pnl,
-          unrealized_pnl: snapshot.unrealized_pnl,
+          cash,
+          equity,
+          realized_pnl: realizedPnl,
+          unrealized_pnl: unrealizedPnl,
           positions_count: snapshot.positions_count,
         });
         processedKeys.push(key);

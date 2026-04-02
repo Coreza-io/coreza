@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -7,8 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BacktestTrade } from "@/hooks/useBacktestResults";
+import { BacktestTrade, TradeOrder } from "@/hooks/useBacktestResults";
 import { Badge } from "@/components/ui/badge";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 interface TradesTableProps {
   trades: BacktestTrade[];
@@ -17,31 +19,76 @@ interface TradesTableProps {
 const formatCurrency = (value?: number | null) =>
   value == null ? "—" : `$${value.toFixed(2)}`;
 
-const getExitReasonLabel = (reason?: string) => {
-  if (!reason) return null;
-  const map: Record<string, string> = {
-    TAKE_PROFIT: "TAKE PROFIT",
-    STOP_LOSS: "STOP LOSS",
-    SIGNAL: "SIGNAL",
-    MANUAL: "MANUAL",
-  };
-  return map[reason] || reason;
-};
+const formatTime = (time?: string | null) =>
+  time ? new Date(time).toLocaleString() : "—";
 
-const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
+const OrderSubRow = ({ order }: { order: TradeOrder }) => (
+  <TableRow className="bg-muted/30 text-xs">
+    <TableCell />
+    <TableCell className="text-muted-foreground whitespace-nowrap">
+      {formatTime(order.time)}
+    </TableCell>
+    <TableCell>{order.symbol}</TableCell>
+    <TableCell colSpan={2}>
+      <span className="font-medium">
+        {order.side?.charAt(0).toUpperCase() + order.side?.slice(1)}{" "}
+        {order.orderType ?? "Market"} Fill
+      </span>
+      {order.exitReason && (
+        <span className="ml-1.5 text-muted-foreground">
+          ({order.exitReason})
+        </span>
+      )}
+    </TableCell>
+    <TableCell>{formatCurrency(order.fillPrice)}</TableCell>
+    <TableCell>{order.quantity}</TableCell>
+    <TableCell>
+      <Badge
+        variant="outline"
+        className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-xs"
+      >
+        {order.status ?? "Filled"}
+      </Badge>
+    </TableCell>
+    <TableCell />
+    <TableCell />
+  </TableRow>
+);
+
+const TradeRow = ({
+  trade,
+  isExpanded,
+  onToggle,
+}: {
+  trade: BacktestTrade;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) => {
+  const hasOrders = trade.orders && trade.orders.length > 0;
   const isBuy = trade.action?.toLowerCase() === "buy";
-  const reasonLabel = getExitReasonLabel(trade.exit_reason);
 
   return (
-    <TableRow className="text-sm">
-      <TableCell className="text-muted-foreground whitespace-nowrap">
-        {trade.entryTime ? new Date(trade.entryTime).toLocaleString() : "—"}
-      </TableCell>
-      <TableCell className="text-muted-foreground whitespace-nowrap">
-        {trade.exitTime ? new Date(trade.exitTime).toLocaleString() : "—"}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
+    <>
+      <TableRow
+        className={`text-sm ${hasOrders ? "cursor-pointer hover:bg-muted/50" : ""}`}
+        onClick={hasOrders ? onToggle : undefined}
+      >
+        <TableCell className="w-8 px-2">
+          {hasOrders &&
+            (isExpanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            ))}
+        </TableCell>
+        <TableCell className="text-muted-foreground whitespace-nowrap">
+          {formatTime(trade.entryTime)}
+        </TableCell>
+        <TableCell className="font-medium">{trade.symbol}</TableCell>
+        <TableCell className="text-muted-foreground whitespace-nowrap">
+          {formatTime(trade.exitTime)}
+        </TableCell>
+        <TableCell>
           <Badge
             variant={isBuy ? "secondary" : "outline"}
             className={
@@ -52,90 +99,106 @@ const TradeLogRow = ({ trade }: { trade: BacktestTrade }) => {
           >
             {trade.action?.toUpperCase()}
           </Badge>
-          {isBuy && reasonLabel && (
-            <span className="text-xs text-muted-foreground">
-              ({reasonLabel})
+        </TableCell>
+        <TableCell>{formatCurrency(trade.entryPrice)}</TableCell>
+        <TableCell>{formatCurrency(trade.exitPrice)}</TableCell>
+        <TableCell>{trade.quantity}</TableCell>
+        <TableCell>
+          {trade.net_pnl != null ? (
+            <span
+              className={
+                trade.net_pnl >= 0 ? "text-emerald-600" : "text-red-600"
+              }
+            >
+              {trade.net_pnl >= 0 ? "+" : ""}
+              {formatCurrency(trade.net_pnl)}
             </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
           )}
-        </div>
-      </TableCell>
-      <TableCell className="font-medium">{trade.symbol}</TableCell>
-      <TableCell>
-        <span>@ {formatCurrency(trade.entryPrice)}</span>
-      </TableCell>
-      <TableCell>
-        <span>@ {formatCurrency(trade.exitPrice)}</span>
-      </TableCell>
-      <TableCell>{trade.quantity}</TableCell>
-      <TableCell>
-        {isBuy && trade.return_pct != null ? (
-          <Badge
-            variant="outline"
-            className={
-              trade.return_pct >= 0
-                ? "bg-emerald-500/15 text-emerald-600 border-emerald-500/30"
-                : "bg-red-500/15 text-red-600 border-red-500/30"
-            }
-          >
-            {trade.return_pct >= 0 ? "+" : ""}
-            {trade.return_pct.toFixed(2)}%
-          </Badge>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell>
-        {isBuy && trade.net_pnl != null ? (
-          <span
-            className={trade.net_pnl >= 0 ? "text-emerald-600" : "text-red-600"}
-          >
-            {trade.net_pnl >= 0 ? "+" : ""}
-            {formatCurrency(trade.net_pnl)}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </TableCell>
-      <TableCell className="text-muted-foreground">
-        {trade.portfolio_value_after != null
-          ? formatCurrency(trade.portfolio_value_after)
-          : "—"}
-      </TableCell>
-    </TableRow>
+        </TableCell>
+        <TableCell className="text-muted-foreground">
+          {formatCurrency(trade.fees ?? trade.commission)}
+        </TableCell>
+        <TableCell>
+          {trade.result ? (
+            <Badge
+              variant="outline"
+              className={
+                trade.result === "Win"
+                  ? "bg-emerald-500/15 text-emerald-600 border-emerald-500/30"
+                  : "bg-red-500/15 text-red-600 border-red-500/30"
+              }
+            >
+              {trade.result}
+            </Badge>
+          ) : trade.net_pnl != null ? (
+            <Badge
+              variant="outline"
+              className={
+                trade.net_pnl >= 0
+                  ? "bg-emerald-500/15 text-emerald-600 border-emerald-500/30"
+                  : "bg-red-500/15 text-red-600 border-red-500/30"
+              }
+            >
+              {trade.net_pnl >= 0 ? "Win" : "Loss"}
+            </Badge>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </TableCell>
+      </TableRow>
+      {isExpanded &&
+        trade.orders?.map((order) => (
+          <OrderSubRow key={order.id} order={order} />
+        ))}
+    </>
   );
 };
 
 export const TradesTable = ({ trades }: TradesTableProps) => {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Trade Log</CardTitle>
-          <Badge variant="outline">{trades.length} entries</Badge>
+          <Badge variant="outline">{trades.length} trades</Badge>
         </div>
       </CardHeader>
       <CardContent className="overflow-auto">
-        <div className="min-w-[800px]">
+        <div className="min-w-[900px]">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Entry Time</TableHead>
-                <TableHead>Exit Time</TableHead>
-                <TableHead>Action</TableHead>
                 <TableHead>Symbol</TableHead>
+                <TableHead>Exit Time</TableHead>
+                <TableHead>Direction</TableHead>
                 <TableHead>Entry Price</TableHead>
                 <TableHead>Exit Price</TableHead>
                 <TableHead>Qty</TableHead>
-                <TableHead>Return</TableHead>
-                <TableHead>Net P&L</TableHead>
-                <TableHead>Portfolio</TableHead>
+                <TableHead>P&L</TableHead>
+                <TableHead>Fees</TableHead>
+                <TableHead>Result</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {trades.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={11}
                     className="text-center text-muted-foreground"
                   >
                     No trades yet.
@@ -143,7 +206,12 @@ export const TradesTable = ({ trades }: TradesTableProps) => {
                 </TableRow>
               ) : (
                 trades.map((trade) => (
-                  <TradeLogRow key={trade.id} trade={trade} />
+                  <TradeRow
+                    key={trade.id}
+                    trade={trade}
+                    isExpanded={expandedIds.has(trade.id)}
+                    onToggle={() => toggleExpand(trade.id)}
+                  />
                 ))
               )}
             </TableBody>

@@ -216,10 +216,11 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       setPortfolioSummary(latestPortfolioSummary);
       closedTradesRef.current = latestClosedTrades;
+      const rawFills = fillsResult.status === "fulfilled" ? (fillsResult.value.data || []) : [];
       if (latestClosedTrades.length > 0) {
         setTrades(
           latestClosedTrades.map((trade) =>
-            mapClosedTradeToBacktestTrade(trade, workflowId),
+            mapClosedTradeToBacktestTrade(trade, workflowId, rawFills),
           ),
         );
       } else {

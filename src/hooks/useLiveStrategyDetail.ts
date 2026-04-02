@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -8,51 +8,6 @@ import {
   PortfolioSnapshot,
 } from "./useBacktestResults";
 import { buildLiveMetrics } from "@/lib/liveMetrics";
-
-const getNodeMode = (node: any) =>
-  node?.values?.mode ??
-  node?.data?.values?.mode ??
-  node?.data?.config?.mode ??
-  node?.data?.mode;
-
-const isPortfolioNode = (node: any) => {
-  const nodeName =
-    `${node?.type ?? node?.name ?? node?.def ?? node?.node_type ?? ""}`.toLowerCase();
-  return nodeName === "portfolio";
-};
-
-const extractCredentialIds = (nodes: unknown): string[] => {
-  if (!Array.isArray(nodes)) return [];
-
-  const credentialIds = new Set<string>();
-
-  for (const node of nodes) {
-    const values =
-      node?.values ?? node?.data?.values ?? node?.data?.config ?? {};
-    const credentialId =
-      values?.credential_id ?? node?.data?.credential_id ?? node?.credential_id;
-
-    if (typeof credentialId === "string" && credentialId.length > 0) {
-      credentialIds.add(credentialId);
-    }
-
-    if (isPortfolioNode(node) && getNodeMode(node) === "broker") {
-      const portfolioCredentialId =
-        values?.credential_id ??
-        node?.data?.credential_id ??
-        node?.credential_id;
-
-      if (
-        typeof portfolioCredentialId === "string" &&
-        portfolioCredentialId.length > 0
-      ) {
-        credentialIds.add(portfolioCredentialId);
-      }
-    }
-  }
-
-  return Array.from(credentialIds);
-};
 
 const mapFillToTrade = (fill: any, workflowId: string): BacktestTrade => ({
   id: fill.id,
@@ -111,14 +66,9 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [trades, setTrades] = useState<BacktestTrade[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [portfolioSummary, setPortfolioSummary] = useState<any | null>(null);
-  const [closedTrades, setClosedTrades] = useState<any[]>([]);
+  const closedTradesRef = useRef<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [credentialIds, setCredentialIds] = useState<string[]>([]);
-  const credentialFilter = useMemo(
-    () => new Set(credentialIds),
-    [credentialIds],
-  );
 
   const loadData = useCallback(async () => {
     if (!enabled || !user || !workflowId) {
@@ -127,8 +77,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setTrades([]);
       setSnapshots([]);
       setPortfolioSummary(null);
-      setClosedTrades([]);
-      setCredentialIds([]);
+      closedTradesRef.current = [];
       setLoading(false);
       return;
     }
@@ -138,16 +87,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     try {
       const { data: wf, error: wfErr } = await supabase
         .from("workflows")
-        .select("id, name, is_active, created_at, updated_at, nodes")
+        .select("id, name, is_active, created_at, updated_at")
         .eq("user_id", user.id)
         .eq("id", workflowId)
         .single();
 
       if (wfErr) throw wfErr;
-
-      const scopedCredentialIds = extractCredentialIds(wf.nodes);
-      const scopedCredentialSet = new Set(scopedCredentialIds);
-      setCredentialIds(scopedCredentialIds);
 
       setBacktest({
         id: wf.id,
@@ -186,21 +131,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       let fillMappedTrades: BacktestTrade[] = [];
       if (fillsResult.status === "fulfilled" && fillsResult.value.data) {
         fillMappedTrades = fillsResult.value.data
-          .filter(
-            (fill: any) =>
-              scopedCredentialSet.size === 0 ||
-              scopedCredentialSet.has(fill.credential_id),
-          )
           .map((fill: any) => mapFillToTrade(fill, workflowId));
       }
 
       const filteredSnapshots =
         snapshotsResult.status === "fulfilled" && snapshotsResult.value.data
-          ? snapshotsResult.value.data.filter(
-              (snapshot: any) =>
-                scopedCredentialSet.size === 0 ||
-                scopedCredentialSet.has(snapshot.credential_id),
-            )
+          ? snapshotsResult.value.data
           : [];
 
       if (filteredSnapshots.length > 0) {
@@ -249,7 +185,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       }
 
       setPortfolioSummary(latestPortfolioSummary);
-      setClosedTrades(latestClosedTrades);
+      closedTradesRef.current = latestClosedTrades;
       if (latestClosedTrades.length > 0) {
         setTrades(
           latestClosedTrades.map((trade) =>
@@ -281,8 +217,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setTrades([]);
       setSnapshots([]);
       setPortfolioSummary(null);
-      setClosedTrades([]);
-      setCredentialIds([]);
+      closedTradesRef.current = [];
       setLoading(false);
       setError(null);
       return;
@@ -320,13 +255,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           const newFill = payload.new as any;
           if (newFill.user_id !== user.id || newFill.workflow_id !== workflowId)
             return;
-          if (
-            credentialFilter.size > 0 &&
-            !credentialFilter.has(newFill.credential_id)
-          )
-            return;
 
-          if (closedTrades.length === 0) {
+          if (closedTradesRef.current.length === 0) {
             setTrades((prev) => [...prev, mapFillToTrade(newFill, workflowId)]);
           }
         },
@@ -346,11 +276,6 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             newSnapshot.workflow_id !== workflowId
           )
             return;
-          if (
-            credentialFilter.size > 0 &&
-            !credentialFilter.has(newSnapshot.credential_id)
-          )
-            return;
 
           setSnapshots((prev) => {
             const nextSnapshot = mapSnapshotToPortfolioSnapshot(
@@ -367,7 +292,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             setMetrics(
               buildLiveMetrics(
                 portfolioSummary ?? undefined,
-                closedTrades,
+                closedTradesRef.current,
                 nextSnapshots.map((snapshot) => ({
                   id: snapshot.id,
                   snapshot_at: snapshot.date,
@@ -386,8 +311,6 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       channel.unsubscribe();
     };
   }, [
-    closedTrades,
-    credentialFilter,
     enabled,
     loadData,
     portfolioSummary,

@@ -7,6 +7,7 @@ import {
   BacktestTrade,
   PortfolioSnapshot,
 } from "./useBacktestResults";
+import { buildLiveMetrics } from "@/lib/liveMetrics";
 
 const getNodeMode = (node: any) =>
   node?.values?.mode ??
@@ -68,6 +69,24 @@ const mapFillToTrade = (fill: any, workflowId: string): BacktestTrade => ({
   net_pnl: fill.quote_qty ?? null,
 });
 
+const mapClosedTradeToBacktestTrade = (
+  trade: any,
+  workflowId: string,
+): BacktestTrade => ({
+  id: trade.id,
+  backtest_id: workflowId,
+  symbol: trade.symbol,
+  action: trade.side,
+  quantity: trade.quantity ?? 0,
+  entryPrice: trade.entryPrice ?? null,
+  entryTime: trade.entryTime ?? null,
+  exitPrice: trade.exitPrice ?? null,
+  exitTime: trade.exitTime ?? null,
+  commission: trade.commission ?? null,
+  slippage: trade.slippage ?? null,
+  net_pnl: trade.netPnl ?? null,
+});
+
 const mapSnapshotToPortfolioSnapshot = (
   snapshot: any,
   workflowId: string,
@@ -75,20 +94,11 @@ const mapSnapshotToPortfolioSnapshot = (
   id: snapshot.id,
   backtest_id: workflowId,
   date: snapshot.snapshot_at,
-  cash_balance: snapshot.total_value_usdt ?? 0,
+  cash_balance: snapshot.cash ?? snapshot.total_value_usdt ?? 0,
   stock_value: 0,
-  total_value: snapshot.total_value_usdt ?? 0,
+  total_value: snapshot.equity ?? snapshot.total_value_usdt ?? 0,
   daily_return: undefined,
 });
-
-const toNumberOrUndefined = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-};
 
 /**
  * Returns live strategy detail data shaped identically to useBacktestResults
@@ -100,6 +110,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [metrics, setMetrics] = useState<BacktestResultMetrics | null>(null);
   const [trades, setTrades] = useState<BacktestTrade[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
+  const [portfolioSummary, setPortfolioSummary] = useState<any | null>(null);
+  const [closedTrades, setClosedTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [credentialIds, setCredentialIds] = useState<string[]>([]);
@@ -114,6 +126,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setMetrics(null);
       setTrades([]);
       setSnapshots([]);
+      setPortfolioSummary(null);
+      setClosedTrades([]);
       setCredentialIds([]);
       setLoading(false);
       return;
@@ -169,33 +183,56 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             .maybeSingle(),
         ]);
 
+      let fillMappedTrades: BacktestTrade[] = [];
       if (fillsResult.status === "fulfilled" && fillsResult.value.data) {
-        const mapped: BacktestTrade[] = fillsResult.value.data
+        fillMappedTrades = fillsResult.value.data
           .filter(
             (fill: any) =>
               scopedCredentialSet.size === 0 ||
               scopedCredentialSet.has(fill.credential_id),
           )
           .map((fill: any) => mapFillToTrade(fill, workflowId));
-        setTrades(mapped);
       }
 
-      if (
-        snapshotsResult.status === "fulfilled" &&
-        snapshotsResult.value.data
-      ) {
-        const mapped: PortfolioSnapshot[] = snapshotsResult.value.data
+      const filteredSnapshots =
+        snapshotsResult.status === "fulfilled" && snapshotsResult.value.data
+          ? snapshotsResult.value.data.filter(
+              (snapshot: any) =>
+                scopedCredentialSet.size === 0 ||
+                scopedCredentialSet.has(snapshot.credential_id),
+            )
+          : [];
+
+      if (filteredSnapshots.length > 0) {
+        const mapped: PortfolioSnapshot[] = filteredSnapshots
           .filter(
-            (snapshot: any) =>
-              scopedCredentialSet.size === 0 ||
-              scopedCredentialSet.has(snapshot.credential_id),
+            (snapshot: any) => snapshot.snapshot_at,
           )
-          .map((snapshot: any) =>
-            mapSnapshotToPortfolioSnapshot(snapshot, workflowId),
-          );
+          .map((snapshot: any, index: number, snapshots: any[]) => {
+            const mappedSnapshot = mapSnapshotToPortfolioSnapshot(
+              snapshot,
+              workflowId,
+            );
+            if (index > 0) {
+              const prev = mapSnapshotToPortfolioSnapshot(
+                snapshots[index - 1],
+                workflowId,
+              );
+              mappedSnapshot.daily_return =
+                prev.total_value > 0
+                  ? (mappedSnapshot.total_value - prev.total_value) /
+                    prev.total_value
+                  : undefined;
+            }
+            return mappedSnapshot;
+          });
         setSnapshots(mapped);
+      } else {
+        setSnapshots([]);
       }
 
+      let latestPortfolioSummary: any | null = null;
+      let latestClosedTrades: any[] = [];
       if (runsResult.status === "fulfilled" && runsResult.value.data?.result) {
         const result = runsResult.value.data.result as any;
         const nodeResults = result?.nodeResults || {};
@@ -204,17 +241,31 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         ) as any;
 
         if (portfolioNode?.data) {
-          const p = portfolioNode.data;
-          setMetrics({
-            total_return: toNumberOrUndefined(p.total_return),
-            net_profit: toNumberOrUndefined(p.realized_pnl),
-            total_trades: toNumberOrUndefined(p.trades_count),
-            final_portfolio_value: toNumberOrUndefined(p.total_equity),
-            win_rate: undefined,
-            sharpe_ratio: undefined,
-          } as BacktestResultMetrics);
+          latestPortfolioSummary = portfolioNode.data;
+          latestClosedTrades = Array.isArray(portfolioNode.data.trades)
+            ? portfolioNode.data.trades
+            : [];
         }
       }
+
+      setPortfolioSummary(latestPortfolioSummary);
+      setClosedTrades(latestClosedTrades);
+      if (latestClosedTrades.length > 0) {
+        setTrades(
+          latestClosedTrades.map((trade) =>
+            mapClosedTradeToBacktestTrade(trade, workflowId),
+          ),
+        );
+      } else {
+        setTrades(fillMappedTrades);
+      }
+      setMetrics(
+        buildLiveMetrics(
+          latestPortfolioSummary ?? undefined,
+          latestClosedTrades,
+          filteredSnapshots,
+        ) as BacktestResultMetrics,
+      );
     } catch (err: any) {
       console.error("Error loading live strategy detail", err);
       setError(err.message || "Failed to load live strategy");
@@ -229,6 +280,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setMetrics(null);
       setTrades([]);
       setSnapshots([]);
+      setPortfolioSummary(null);
+      setClosedTrades([]);
       setCredentialIds([]);
       setLoading(false);
       setError(null);
@@ -243,6 +296,18 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
     const channel = supabase
       .channel(`live-detail-${workflowId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "workflow_runs",
+          filter: `workflow_id.eq.${workflowId}`,
+        },
+        () => {
+          void loadData();
+        },
+      )
       .on(
         "postgres_changes",
         {
@@ -261,7 +326,9 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           )
             return;
 
-          setTrades((prev) => [...prev, mapFillToTrade(newFill, workflowId)]);
+          if (closedTrades.length === 0) {
+            setTrades((prev) => [...prev, mapFillToTrade(newFill, workflowId)]);
+          }
         },
       )
       .on(
@@ -285,10 +352,32 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           )
             return;
 
-          setSnapshots((prev) => [
-            ...prev,
-            mapSnapshotToPortfolioSnapshot(newSnapshot, workflowId),
-          ]);
+          setSnapshots((prev) => {
+            const nextSnapshot = mapSnapshotToPortfolioSnapshot(
+              newSnapshot,
+              workflowId,
+            );
+            const previous = prev[prev.length - 1];
+            if (previous && previous.total_value > 0) {
+              nextSnapshot.daily_return =
+                (nextSnapshot.total_value - previous.total_value) /
+                previous.total_value;
+            }
+            const nextSnapshots = [...prev, nextSnapshot];
+            setMetrics(
+              buildLiveMetrics(
+                portfolioSummary ?? undefined,
+                closedTrades,
+                nextSnapshots.map((snapshot) => ({
+                  id: snapshot.id,
+                  snapshot_at: snapshot.date,
+                  cash: snapshot.cash_balance,
+                  equity: snapshot.total_value,
+                })),
+              ) as BacktestResultMetrics,
+            );
+            return nextSnapshots;
+          });
         },
       )
       .subscribe();
@@ -296,7 +385,15 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     return () => {
       channel.unsubscribe();
     };
-  }, [credentialFilter, enabled, user, workflowId]);
+  }, [
+    closedTrades,
+    credentialFilter,
+    enabled,
+    loadData,
+    portfolioSummary,
+    user,
+    workflowId,
+  ]);
 
   return {
     backtest,

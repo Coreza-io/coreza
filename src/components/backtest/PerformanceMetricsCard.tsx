@@ -65,8 +65,8 @@ export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps)
             <Section title="P&L Analysis">
               <MetricItem label="Avg Win" value={metrics.avg_win} format="currency" />
               <MetricItem label="Avg Loss" value={metrics.avg_loss} format="currency" />
-              <MetricItem label="Largest Win" value={metrics.largest_win} format="percent" />
-              <MetricItem label="Largest Loss" value={metrics.largest_loss} format="percent" />
+              <MetricItem label="Largest Win" value={metrics.largest_win} format="currency" />
+              <MetricItem label="Largest Loss" value={metrics.largest_loss} format="currency" />
               <MetricItem label="Expectancy" value={metrics.expectancy} format="currency" />
               <MetricItem label="Avg Trade Return" value={metrics.average_trade_return} format="percent" />
             </Section>

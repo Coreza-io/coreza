@@ -36,11 +36,11 @@
       "options": [
         {
           "id": "backtest",
-          "name": "Backtest (SimBroker)"
+          "name": "Backtest"
         },
         {
           "id": "broker",
-          "name": "Live (Broker)"
+          "name": "Broker"
         }
       ]
     },
@@ -65,7 +65,7 @@
       "options": [
         {
           "id": "generic",
-          "name": "Generic"
+          "name": "Backtest"
         },
         {
           "id": "alpaca",

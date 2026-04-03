@@ -237,9 +237,10 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["sync_broker_state", "create_portfolio"],
+          "operation": ["create_portfolio"],
           "mode": ["broker"],
-          "broker": ["alpaca"]
+          "broker": ["alpaca"],
+          "sync_from_broker": ["true", true]
         }
       }
     },
@@ -261,48 +262,10 @@
       ],
       "displayOptions": {
         "show": {
-          "operation": ["sync_broker_state", "create_portfolio"],
+          "operation": ["create_portfolio"],
           "mode": ["broker"],
-          "broker": ["alpaca"]
-        }
-      }
-    },
-    {
-      "key": "credential_id",
-      "label": "Credential",
-      "type": "select",
-      "optionsSource": "credentialsApi",
-      "placeholder": "Select credential",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "operation": ["sync_broker_state", "create_portfolio"],
-          "mode": ["broker"],
-          "broker": ["alpaca"]
-        }
-      }
-    },
-    {
-      "key": "environment",
-      "label": "Environment",
-      "type": "select",
-      "required": true,
-      "default": "paper",
-      "options": [
-        {
-          "id": "paper",
-          "name": "Paper Trading (Sandbox)"
-        },
-        {
-          "id": "live",
-          "name": "Live Trading (Production)"
-        }
-      ],
-      "displayOptions": {
-        "show": {
-          "operation": ["sync_broker_state", "create_portfolio"],
-          "mode": ["broker"],
-          "broker": ["alpaca"]
+          "broker": ["alpaca"],
+          "sync_from_broker": ["true", true]
         }
       }
     },

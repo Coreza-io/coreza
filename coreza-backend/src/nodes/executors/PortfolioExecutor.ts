@@ -455,14 +455,16 @@ export class PortfolioExecutor implements INodeExecutor {
       if (params.broker !== "alpaca") {
         return toNodeResult(
           createErrorOutput(
-            "sync_broker_state currently supports broker=alpaca only",
+            "sync_from_broker currently supports broker=alpaca only",
           ),
         );
       }
 
       if (!params.credential_id) {
         return toNodeResult(
-          createErrorOutput("credential_id is required for sync_broker_state"),
+          createErrorOutput(
+            "credential_id is required when sync_from_broker is enabled",
+          ),
         );
       }
 

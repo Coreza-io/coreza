@@ -19,8 +19,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
   get_orders: {
     method: "get",
     path: "/v2/orders",
-    makeParams: () => ({
-      status: "all",
+    makeParams: (input: any) => ({
+      status: input.status || "all",
       limit: "100",
     }),
     transformResult: (raw: any, input: any) => {

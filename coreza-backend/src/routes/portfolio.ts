@@ -14,6 +14,7 @@ import { getNodeExecutor } from "../nodes/registry";
 const router = Router();
 const portfolioOperationSchema = z.enum([
   "create_portfolio",
+  "sync_broker_state",
   "register_order_intent",
   "apply_order_update",
   "apply_execution",
@@ -55,6 +56,8 @@ const portfolioRequestSchema = z.object({
   current_bar: z.any().optional(),
   prices: z.any().optional(),
   backtest_id: z.string().optional(),
+  credential_id: z.string().optional(),
+  environment: z.enum(["paper", "live"]).optional(),
 
   // v2 fields
   broker_order_id: z.string().optional(),

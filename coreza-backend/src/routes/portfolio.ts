@@ -14,6 +14,7 @@ import { getNodeExecutor } from "../nodes/registry";
 const router = Router();
 const portfolioOperationSchema = z.enum([
   "create_portfolio",
+  "sync_broker_state",
   "register_order_intent",
   "apply_order_update",
   "apply_execution",

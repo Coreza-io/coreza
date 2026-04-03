@@ -342,6 +342,10 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
+    if (operation === "sync_broker_state") {
+      return this.brokerSyncState(pm, params, context);
+    }
+
     switch (operation) {
       // ============== NEW v2 OPERATIONS ==============
       case "register_order_intent":

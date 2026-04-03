@@ -71,6 +71,16 @@ function toNumber(value: unknown): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
+function toBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -305,6 +315,11 @@ export class PortfolioExecutor implements INodeExecutor {
             ...this.getPortfolioSummary(pm, baseCurrency),
           }),
         );
+      }
+
+      const syncFromBroker = toBoolean(params.sync_from_broker);
+      if (syncFromBroker) {
+        return this.brokerSyncState(pm, params, context);
       }
 
       const cashBalance = toNumber(params.cash_balance);

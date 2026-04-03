@@ -197,12 +197,27 @@
       }
     },
     {
+      "key": "sync_from_broker",
+      "label": "Sync from Broker",
+      "type": "toggle",
+      "required": false,
+      "default": false,
+      "description": "When enabled, create_portfolio seeds cash, positions, and open orders from Alpaca.",
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "broker": ["alpaca"]
+        }
+      }
+    },
+    {
       "key": "cash_balance",
       "label": "Cash Balance",
       "type": "text",
       "placeholder": "e.g. 100000",
-      "required": true,
-      "description": "Starting cash balance in the base currency.",
+      "required": false,
+      "description": "Starting cash balance in the base currency (used when Sync from Broker is disabled).",
       "displayOptions": {
         "show": {
           "operation": ["create_portfolio"]
@@ -218,7 +233,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["sync_broker_state"],
+          "operation": ["sync_broker_state", "create_portfolio"],
           "mode": ["broker"],
           "broker": ["alpaca"]
         }
@@ -242,7 +257,7 @@
       ],
       "displayOptions": {
         "show": {
-          "operation": ["sync_broker_state"],
+          "operation": ["sync_broker_state", "create_portfolio"],
           "mode": ["broker"],
           "broker": ["alpaca"]
         }

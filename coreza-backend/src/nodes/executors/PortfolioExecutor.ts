@@ -39,6 +39,7 @@ import {
 } from "../../services/SnapshotCache";
 import { LiveTradeRepository } from "../../repositories/LiveTradeRepository";
 import { createLogger } from "../../utils/logger";
+import { BrokerExecutor } from "./BrokerExecutor";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
 
@@ -70,6 +71,16 @@ function toNumber(value: unknown): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
+function toBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -93,11 +104,38 @@ type TradeAnalytics = {
   expectancy: number;
 };
 
+type AlpacaAccountResponse = {
+  cash?: string | number;
+  currency?: string;
+  buying_power?: string | number;
+  equity?: string | number;
+  portfolio_value?: string | number;
+};
+
+type AlpacaPosition = {
+  symbol?: string;
+  qty?: string | number;
+  avg_entry_price?: string | number;
+  current_price?: string | number;
+  side?: string;
+};
+
+type AlpacaOrder = {
+  id?: string;
+  client_order_id?: string;
+  symbol?: string;
+  qty?: string | number;
+  side?: string;
+  type?: string;
+  status?: string;
+};
+
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
   // Backtest mode is fully sync. Broker mode is async, but compiled execution
   // only calls this node in backtest mode and the adapter safely rejects Promise returns.
   readonly syncCapable = true;
+  private brokerExecutor = new BrokerExecutor();
 
   // Local ownership cache: avoids Redis round-trip on every fill event (5-min TTL)
   private static ownershipCache = new Map<
@@ -279,6 +317,11 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
+      const syncFromBroker = toBoolean(params.sync_from_broker);
+      if (syncFromBroker) {
+        return this.brokerSyncState(pm, params, context);
+      }
+
       const cashBalance = toNumber(params.cash_balance);
 
       if (baseCurrency && cashBalance !== undefined && cashBalance >= 0) {
@@ -297,6 +340,10 @@ export class PortfolioExecutor implements INodeExecutor {
           "cash_balance must be a non-negative number for create_portfolio",
         ),
       );
+    }
+
+    if (operation === "sync_broker_state") {
+      return this.brokerSyncState(pm, params, context);
     }
 
     switch (operation) {
@@ -369,6 +416,195 @@ export class PortfolioExecutor implements INodeExecutor {
         return toNodeResult(
           createErrorOutput(`Unknown portfolio operation: ${operation}`),
         );
+    }
+  }
+
+  private async callBrokerOperation(
+    operation: string,
+    params: Record<string, any>,
+    context?: NodeExecutionContext,
+  ): Promise<any> {
+    const result = await this.brokerExecutor.execute(
+      {
+        id: `portfolio-sync-${operation}`,
+        name: "alpaca",
+        node_type: "alpaca",
+        subCategory: "alpaca",
+        values: {
+          operation,
+          ...params,
+        },
+      } as WorkflowNode & { subCategory?: string },
+      {},
+      context,
+    );
+
+    if (!result.success) {
+      throw new Error(result.error || `Broker operation ${operation} failed`);
+    }
+
+    return result.data;
+  }
+
+  private async brokerSyncState(
+    pm: PortfolioManager,
+    params: any,
+    context?: NodeExecutionContext,
+  ): Promise<NodeResult> {
+    try {
+      if (params.broker !== "alpaca") {
+        return toNodeResult(
+          createErrorOutput(
+            "sync_broker_state currently supports broker=alpaca only",
+          ),
+        );
+      }
+
+      if (!params.credential_id) {
+        return toNodeResult(
+          createErrorOutput("credential_id is required for sync_broker_state"),
+        );
+      }
+
+      const brokerParams = {
+        credential_id: params.credential_id,
+        environment: params.environment || "paper",
+      };
+
+      const account = (await this.callBrokerOperation(
+        "get_account",
+        brokerParams,
+        context,
+      )) as AlpacaAccountResponse;
+
+      const positionsResult = (await this.callBrokerOperation(
+        "get_positions",
+        brokerParams,
+        context,
+      )) as { positions?: AlpacaPosition[] };
+      const positions = Array.isArray(positionsResult.positions)
+        ? positionsResult.positions
+        : [];
+
+      const ordersResult = (await this.callBrokerOperation(
+        "get_orders",
+        {
+          ...brokerParams,
+          status: "open",
+        },
+        context,
+      )) as { orders?: AlpacaOrder[] };
+      const allOrders = Array.isArray(ordersResult.orders) ? ordersResult.orders : [];
+      const openOrders = allOrders.filter((order) => {
+        const status = String(order.status ?? "").toLowerCase();
+        return ![
+          "filled",
+          "canceled",
+          "cancelled",
+          "expired",
+          "rejected",
+        ].includes(status);
+      });
+
+      const baseCurrency = String(account.currency || "USD").toUpperCase();
+      const cash = toNumber(account.cash) ?? 0;
+      pm.initializePortfolio(baseCurrency, cash);
+
+      pm.reconcileBalance({
+        asset: baseCurrency,
+        total: cash,
+        available: toNumber(account.buying_power) ?? cash,
+        locked: Math.max(0, (toNumber(account.equity) ?? cash) - cash),
+      });
+
+      const syncedPositions: Array<{
+        symbol: string;
+        qty: number;
+        avg_entry_price?: number;
+        current_price?: number;
+        side?: string;
+      }> = [];
+
+      for (const position of positions) {
+        if (!position.symbol) continue;
+        const symbol = normalizeSymbol(position.symbol);
+        const qty = Math.abs(toNumber(position.qty) ?? 0);
+        if (qty <= 0) continue;
+        const side = String(position.side ?? "").toLowerCase() === "short"
+          ? "sell"
+          : "buy";
+
+        pm.applyPositionUpdate({
+          symbol,
+          positionQty: qty,
+          avgFillPrice: toNumber(position.avg_entry_price) ?? 0,
+          side,
+          currentPrice: toNumber(position.current_price),
+        });
+
+        syncedPositions.push({
+          symbol,
+          qty,
+          avg_entry_price: toNumber(position.avg_entry_price),
+          current_price: toNumber(position.current_price),
+          side: position.side,
+        });
+      }
+
+      const syncedOrders: Array<{
+        brokerOrderId: string;
+        clientOrderId?: string;
+        symbol: string;
+        side: string;
+        qty: number;
+        status?: string;
+      }> = [];
+
+      for (const order of openOrders) {
+        const brokerOrderId = order.id || order.client_order_id;
+        const symbol = order.symbol;
+        if (!brokerOrderId || !symbol || !order.side) continue;
+        const normalizedSymbol = normalizeSymbol(symbol);
+        const side = normalizeSide(order.side);
+        const orderQty = Math.abs(toNumber(order.qty) ?? 0);
+
+        pm.registerOrderIntent({
+          brokerOrderId,
+          clientOrderId: order.client_order_id,
+          symbol: normalizedSymbol,
+          side,
+          origQty: orderQty,
+          orderType: order.type,
+          status: order.status,
+        });
+
+        syncedOrders.push({
+          brokerOrderId,
+          clientOrderId: order.client_order_id,
+          symbol: normalizedSymbol,
+          side,
+          qty: orderQty,
+          status: order.status,
+        });
+      }
+
+      return toNodeResult(
+        createSuccessOutput({
+          synced: true,
+          broker: "alpaca",
+          environment: brokerParams.environment,
+          cash,
+          currency: baseCurrency,
+          positionsCount: syncedPositions.length,
+          openOrdersCount: syncedOrders.length,
+          positions: syncedPositions,
+          openOrders: syncedOrders,
+        }),
+      );
+    } catch (error: any) {
+      return toNodeResult(
+        createErrorOutput(error?.message || "Failed to sync broker state"),
+      );
     }
   }
 

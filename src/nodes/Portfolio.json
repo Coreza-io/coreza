@@ -221,6 +221,49 @@
       "displayOptions": {
         "show": {
           "operation": ["create_portfolio"]
+        },
+        "hide": {
+          "sync_from_broker": ["true", true]
+        }
+      }
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "dependsOn": "broker",
+      "placeholder": "Select credential",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["sync_broker_state", "create_portfolio"],
+          "mode": ["broker"],
+          "broker": ["alpaca"]
+        }
+      }
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "required": true,
+      "default": "paper",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": ["sync_broker_state", "create_portfolio"],
+          "mode": ["broker"],
+          "broker": ["alpaca"]
         }
       }
     },

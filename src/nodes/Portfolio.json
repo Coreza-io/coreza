@@ -193,15 +193,75 @@
       }
     },
     {
+      "key": "sync_from_broker",
+      "label": "Sync from Broker",
+      "type": "toggle",
+      "required": false,
+      "default": false,
+      "description": "When enabled, create_portfolio seeds cash, positions, and open orders from Alpaca.",
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "broker": ["alpaca"]
+        }
+      }
+    },
+    {
       "key": "cash_balance",
       "label": "Cash Balance",
       "type": "text",
       "placeholder": "e.g. 100000",
-      "required": true,
-      "description": "Starting cash balance in the base currency.",
+      "required": false,
+      "description": "Starting cash balance in the base currency (used when Sync from Broker is disabled).",
       "displayOptions": {
         "show": {
           "operation": ["create_portfolio"]
+        },
+        "hide": {
+          "sync_from_broker": ["true", true]
+        }
+      }
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "dependsOn": "broker",
+      "placeholder": "Select credential",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "broker": ["alpaca"],
+          "sync_from_broker": ["true", true]
+        }
+      }
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "required": true,
+      "default": "paper",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "broker": ["alpaca"],
+          "sync_from_broker": ["true", true]
         }
       }
     },

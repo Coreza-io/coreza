@@ -55,6 +55,9 @@ const portfolioRequestSchema = z.object({
   current_bar: z.any().optional(),
   prices: z.any().optional(),
   backtest_id: z.string().optional(),
+  credential_id: z.string().optional(),
+  environment: z.enum(["paper", "live"]).optional(),
+  sync_from_broker: z.union([z.boolean(), z.string()]).optional(),
 
   // v2 fields
   broker_order_id: z.string().optional(),

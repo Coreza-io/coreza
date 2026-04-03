@@ -496,7 +496,9 @@ export class PortfolioExecutor implements INodeExecutor {
         },
         context,
       )) as { orders?: AlpacaOrder[] };
-      const allOrders = Array.isArray(ordersResult.orders) ? ordersResult.orders : [];
+      const allOrders = Array.isArray(ordersResult.orders)
+        ? ordersResult.orders
+        : [];
       const openOrders = allOrders.filter((order) => {
         const status = String(order.status ?? "").toLowerCase();
         return ![
@@ -532,9 +534,10 @@ export class PortfolioExecutor implements INodeExecutor {
         const symbol = normalizeSymbol(position.symbol);
         const qty = Math.abs(toNumber(position.qty) ?? 0);
         if (qty <= 0) continue;
-        const side = String(position.side ?? "").toLowerCase() === "short"
-          ? "sell"
-          : "buy";
+        const side =
+          String(position.side ?? "").toLowerCase() === "short"
+            ? "sell"
+            : "buy";
 
         pm.applyPositionUpdate({
           symbol,
@@ -748,12 +751,11 @@ export class PortfolioExecutor implements INodeExecutor {
     );
     const balances = pm.getCash() as Record<string, unknown>;
     const baseCashRaw =
-      (meta.baseCurrency && balances ? balances[meta.baseCurrency] : undefined) ??
-      0;
+      (meta.baseCurrency && balances
+        ? balances[meta.baseCurrency]
+        : undefined) ?? 0;
     const baseCash =
-      typeof baseCashRaw === "number"
-        ? baseCashRaw
-        : Number(baseCashRaw) || 0;
+      typeof baseCashRaw === "number" ? baseCashRaw : Number(baseCashRaw) || 0;
 
     return {
       user_id: meta.userId,
@@ -832,7 +834,9 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       // 2. Record closed trade (must run before position update which may delete the position)
-      let closedTrade: import("../../backtest/simBroker/interfaces").Trade | null = null;
+      let closedTrade:
+        | import("../../backtest/simBroker/interfaces").Trade
+        | null = null;
       if (filledQty && avgFillPrice && params.side) {
         closedTrade = pm.applyTrade(
           {
@@ -849,7 +853,12 @@ export class PortfolioExecutor implements INodeExecutor {
         );
 
         // Persist closed trade to live_trades table
-        if (closedTrade && context?.isLive && context?.userId && context?.workflowId) {
+        if (
+          closedTrade &&
+          context?.isLive &&
+          context?.userId &&
+          context?.workflowId
+        ) {
           void LiveTradeRepository.insert({
             user_id: context.userId,
             workflow_id: context.workflowId,
@@ -869,7 +878,10 @@ export class PortfolioExecutor implements INodeExecutor {
             exit_order_id: closedTrade.exitOrderId,
             holding_period_bars: closedTrade.holdingPeriodBars,
           }).catch((err) =>
-            fillLogger.warn({ err, symbol: closedTrade!.symbol }, "live trade persist failed"),
+            fillLogger.warn(
+              { err, symbol: closedTrade!.symbol },
+              "live trade persist failed",
+            ),
           );
         }
       }
@@ -1139,7 +1151,10 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     const startingEquity = state.startingEquity;
-    const tradeStats = this.calculateTradeAnalytics(state.trades, startingEquity);
+    const tradeStats = this.calculateTradeAnalytics(
+      state.trades,
+      startingEquity,
+    );
     const totalReturn =
       startingEquity && startingEquity > 0
         ? ((state.totalEquity - startingEquity) / startingEquity) * 100
@@ -1188,9 +1203,13 @@ export class PortfolioExecutor implements INodeExecutor {
     const losingTrades = trades.filter((trade) => trade.netPnl < 0);
     const profitableTrades = winningTrades.length;
     const losingTradesCount = losingTrades.length;
-    const winRate = totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
+    const winRate =
+      totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
 
-    const totalWins = winningTrades.reduce((sum, trade) => sum + trade.netPnl, 0);
+    const totalWins = winningTrades.reduce(
+      (sum, trade) => sum + trade.netPnl,
+      0,
+    );
     const totalLossesAbs = Math.abs(
       losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0),
     );
@@ -1207,8 +1226,14 @@ export class PortfolioExecutor implements INodeExecutor {
         ? losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) /
           losingTradesCount
         : 0;
-    const largestWin = profitableTrades > 0 ? Math.max(...winningTrades.map((trade) => trade.netPnl)) : 0;
-    const largestLoss = losingTradesCount > 0 ? Math.min(...losingTrades.map((trade) => trade.netPnl)) : 0;
+    const largestWin =
+      profitableTrades > 0
+        ? Math.max(...winningTrades.map((trade) => trade.netPnl))
+        : 0;
+    const largestLoss =
+      losingTradesCount > 0
+        ? Math.min(...losingTrades.map((trade) => trade.netPnl))
+        : 0;
 
     const averageTradeReturn =
       totalTrades > 0

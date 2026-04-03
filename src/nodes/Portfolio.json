@@ -98,10 +98,6 @@
           "name": "Create Portfolio"
         },
         {
-          "id": "sync_broker_state",
-          "name": "Sync Broker State"
-        },
-        {
           "id": "register_order_intent",
           "name": "Register Order Intent"
         },
@@ -660,11 +656,6 @@
       }
     },
     "sync_order_event": {
-      "show": {
-        "mode": ["broker"]
-      }
-    },
-    "sync_broker_state": {
       "show": {
         "mode": ["broker"]
       }

@@ -82,10 +82,11 @@ export class MarketDataSubscriber {
     streams: string[],
     source: MarketSource | string,
     onlyClosedBars?: boolean,
+    isLive?: boolean,
   ): Promise<void> {
     try {
       console.log(
-        `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams:`,
+        `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams (isLive: ${isLive ?? false}):`,
         streams,
       );
 
@@ -97,6 +98,7 @@ export class MarketDataSubscriber {
         streams: new Set(streams.map((s) => s)),
         source,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
+        isLive: isLive ?? false,
       };
 
       // Store in memory

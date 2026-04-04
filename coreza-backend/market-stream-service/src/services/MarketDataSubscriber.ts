@@ -741,6 +741,7 @@ export class MarketDataSubscriber {
       streams: Array.from(registration.streams),
       source: registration.source,
       onlyClosedBars: registration.onlyClosedBars,
+      isLive: registration.isLive,
     });
 
     try {

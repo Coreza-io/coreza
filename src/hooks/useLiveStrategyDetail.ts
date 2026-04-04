@@ -103,7 +103,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     try {
       const { data: wf, error: wfErr } = await supabase
         .from("workflows")
-        .select("id, name, is_active, created_at, updated_at")
+        .select("id, name, is_active, created_at, updated_at, active_session_id")
         .eq("user_id", user.id)
         .eq("id", workflowId)
         .single();
@@ -121,61 +121,11 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         started_at: wf.created_at ?? undefined,
       } as BacktestWithRelations);
 
-      // Get latest run for session scoping
-      const { data: latestRun, error: latestRunErr } = await supabase
-        .from("workflow_runs")
-        .select("id, status, started_at")
-        .eq("workflow_id", workflowId)
-        .order("started_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (latestRunErr) throw latestRunErr;
-
-      const latestRunStartedAt = latestRun?.started_at ?? null;
-
-      // Find the active session run_id
-      let latestSnapshotSessionQuery = supabase
-        .from("cash_snapshots")
-        .select("run_id")
-        .eq("user_id", user.id)
-        .eq("workflow_id", workflowId)
-        .not("run_id", "is", null)
-        .order("snapshot_at", { ascending: false })
-        .limit(1);
-      if (latestRunStartedAt) {
-        latestSnapshotSessionQuery = latestSnapshotSessionQuery.gte(
-          "snapshot_at",
-          latestRunStartedAt,
-        );
-      }
-      const { data: latestSnapshotSession, error: latestSnapshotSessionErr } =
-        await latestSnapshotSessionQuery.maybeSingle();
-
-      if (latestSnapshotSessionErr) throw latestSnapshotSessionErr;
-
-      let sessionRunId = latestSnapshotSession?.run_id ?? null;
-      if (!sessionRunId) {
-        let latestFillSessionQuery = supabase
-          .from("live_fills")
-          .select("run_id")
-          .eq("user_id", user.id)
-          .eq("workflow_id", workflowId)
-          .not("run_id", "is", null)
-          .order("event_time", { ascending: false })
-          .limit(1);
-        if (latestRunStartedAt) {
-          latestFillSessionQuery = latestFillSessionQuery.gte(
-            "event_time",
-            latestRunStartedAt,
-          );
-        }
-        const { data: latestFillSession, error: latestFillSessionErr } =
-          await latestFillSessionQuery.maybeSingle();
-
-        if (latestFillSessionErr) throw latestFillSessionErr;
-        sessionRunId = latestFillSession?.run_id ?? null;
-      }
+      // Use active_session_id from DB (primary), localStorage (fallback)
+      let sessionRunId: string | null =
+        (wf as any).active_session_id ??
+        localStorage.getItem(`live_session_${workflowId}`) ??
+        null;
 
       activeSessionRunIdRef.current = sessionRunId;
 

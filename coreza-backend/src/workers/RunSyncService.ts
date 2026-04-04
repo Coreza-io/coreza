@@ -192,6 +192,7 @@ export class RunSyncService {
         ...(run.edges ? { edges: JSON.parse(run.edges) } : {}),
         ...(run.node_count ? { node_count: parseInt(run.node_count, 10) } : {}),
         ...(run.edge_count ? { edge_count: parseInt(run.edge_count, 10) } : {}),
+        ...(run.session_id ? { session_id: run.session_id } : {}),
       }));
 
       // Batch upsert to Supabase

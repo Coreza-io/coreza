@@ -251,6 +251,7 @@ export class RegistrationService {
     source: string;
     scope: string;
     onlyClosedBars?: boolean;
+    isLive?: boolean;
   }): Promise<void> {
     const redis = getRedisCache();
 
@@ -262,6 +263,7 @@ export class RegistrationService {
       source: params.source,
       scope: params.scope,
       onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
+      isLive: params.isLive ?? false,
     };
 
     await redis.publish(

@@ -26,6 +26,7 @@ interface WorkflowRegistration {
   streams: Set<string>;
   source: MarketSource;
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
+  isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
 }
 
 export class MarketDataSubscriber {
@@ -81,10 +82,11 @@ export class MarketDataSubscriber {
     streams: string[],
     source: MarketSource | string,
     onlyClosedBars?: boolean,
+    isLive?: boolean,
   ): Promise<void> {
     try {
       console.log(
-        `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams:`,
+        `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams (isLive: ${isLive ?? false}):`,
         streams,
       );
 
@@ -96,6 +98,7 @@ export class MarketDataSubscriber {
         streams: new Set(streams.map((s) => s)),
         source,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
+        isLive: isLive ?? false,
       };
 
       // Store in memory
@@ -220,6 +223,7 @@ export class MarketDataSubscriber {
             streams: string[];
             source: MarketSource;
             onlyClosedBars?: boolean;
+            isLive?: boolean;
           };
 
           // Verify workflow is still active (use cache)
@@ -235,7 +239,7 @@ export class MarketDataSubscriber {
             continue;
           }
 
-          // Restore registration
+          // Restore registration (only restore live registrations on restart)
           await this.registerWorkflow(
             registration.workflowId,
             registration.nodeId,
@@ -243,6 +247,7 @@ export class MarketDataSubscriber {
             registration.streams,
             registration.source,
             registration.onlyClosedBars,
+            registration.isLive,
           );
 
           restored++;
@@ -629,7 +634,10 @@ export class MarketDataSubscriber {
         );
       }
 
-      await this.appendToWorkflowStream(queueKey, streamKey, payloadStr);
+      // Only append to strategy stream if this is a live activation (not manual test)
+      if (registration.isLive) {
+        await this.appendToWorkflowStream(queueKey, streamKey, payloadStr);
+      }
 
       logger.debug(
         {
@@ -733,6 +741,7 @@ export class MarketDataSubscriber {
       streams: Array.from(registration.streams),
       source: registration.source,
       onlyClosedBars: registration.onlyClosedBars,
+      isLive: registration.isLive,
     });
 
     try {

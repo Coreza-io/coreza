@@ -557,29 +557,10 @@ router.post("/:source/register", async (req, res) => {
 
     // Note: Companion trading gateway auto-spawn removed.
     // Trading subscriptions (order_update) are now explicitly managed via AlpacaSubscribe/BinanceSubscribe nodes.
+    // Note: WorkflowRunner is NOT started here for manual tests.
+    // It is only started by StreamingLifecycleAdapter during formal workflow activation.
 
-    // Start in-backend live strategy runner for stream event consumption
-    const { data: workflow, error: workflowError } = await supabase
-      .from("workflows")
-      .select("nodes, edges")
-      .eq("id", workflowId)
-      .eq("user_id", userId)
-      .single();
-
-    if (workflowError || !workflow) {
-      throw new Error(
-        `Failed to load workflow ${workflowId} for live strategy start: ${workflowError?.message || "not found"}`,
-      );
-    }
-
-    await bullMqJobQueue.startWorkflowRunner(
-      workflowId,
-      userId,
-      (workflow.nodes as any[]) || [],
-      (workflow.edges as any[]) || [],
-    );
-
-    console.log(`📡 [ExecuteStreamNode] Published register_workflow`);
+    console.log(`📡 [ExecuteStreamNode] Published register_workflow (manual test, no WorkflowRunner)`);
 
     // Return success response
     const response: StreamExecutionResponse = {
@@ -663,7 +644,8 @@ router.post("/unregister", async (req, res) => {
       workflowId: workflowId,
     });
 
-    await bullMqJobQueue.stopWorkflowRunner(workflowId);
+    // Note: WorkflowRunner stop is handled by StreamingLifecycleAdapter during deactivation.
+    // Manual test unregister does not need to stop a runner since none was started.
 
     console.log(`🛑 Stopped listener: ${workflowId}:${node_id}`);
 

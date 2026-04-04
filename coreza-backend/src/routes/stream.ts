@@ -644,7 +644,8 @@ router.post("/unregister", async (req, res) => {
       workflowId: workflowId,
     });
 
-    await bullMqJobQueue.stopWorkflowRunner(workflowId);
+    // Note: WorkflowRunner stop is handled by StreamingLifecycleAdapter during deactivation.
+    // Manual test unregister does not need to stop a runner since none was started.
 
     console.log(`🛑 Stopped listener: ${workflowId}:${node_id}`);
 

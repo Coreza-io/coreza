@@ -73,6 +73,7 @@ export class StreamingLifecycleAdapter {
       source: sourceId,
       scope: nodeValues.scope || "workflow",
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
+      isLive: true,
     });
 
     const symbols = parseSymbols(nodeValues.symbols);

@@ -632,7 +632,10 @@ export class MarketDataSubscriber {
         );
       }
 
-      await this.appendToWorkflowStream(queueKey, streamKey, payloadStr);
+      // Only append to strategy stream if this is a live activation (not manual test)
+      if (registration.isLive) {
+        await this.appendToWorkflowStream(queueKey, streamKey, payloadStr);
+      }
 
       logger.debug(
         {

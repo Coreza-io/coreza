@@ -495,7 +495,12 @@ export class MarketDataSubscriber {
 
     const prev = this.deliveryQueues.get(queueKey) ?? Promise.resolve();
     const next = prev.then(async () => {
-      await this.deliverWorkflowEvent(workflowId, registration, event, enqueueAt);
+      await this.deliverWorkflowEvent(
+        workflowId,
+        registration,
+        event,
+        enqueueAt,
+      );
     });
     const trackedNext = next.catch((error) => {
       logger.error(
@@ -553,7 +558,10 @@ export class MarketDataSubscriber {
   ): Promise<void> {
     const redis = getRedisCache();
     await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*", "event", payload);
-    logger.debug({ queueKey, streamKey }, "Appended market event to strategy stream");
+    logger.debug(
+      { queueKey, streamKey },
+      "Appended market event to strategy stream",
+    );
   }
 
   /**
@@ -582,12 +590,12 @@ export class MarketDataSubscriber {
         return;
       }
 
-      if (!workflow.is_active) {
-        console.log(
-          `⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`,
-        );
-        return;
-      }
+      // if (!workflow.is_active) {
+      //   console.log(
+      //     `⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`,
+      //   );
+      //   return;
+      // }
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);

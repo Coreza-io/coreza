@@ -38,6 +38,7 @@ export class ParameterResolver {
       const out: Record<string, any> = {};
       for (const [key, value] of Object.entries(nodeParams)) {
         if (key !== "credential_id") out[key] = value;
+        //out[key] = value;
       }
       return out;
     }
@@ -88,7 +89,8 @@ export class ParameterResolver {
 
   private containsTemplates(value: any): boolean {
     if (typeof value === "string") return value.includes("{{");
-    if (Array.isArray(value)) return value.some((v) => this.containsTemplates(v));
+    if (Array.isArray(value))
+      return value.some((v) => this.containsTemplates(v));
     if (value && typeof value === "object") {
       return Object.values(value).some((v) => this.containsTemplates(v));
     }

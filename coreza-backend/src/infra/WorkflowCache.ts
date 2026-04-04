@@ -14,11 +14,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { createLogger } from '../utils/logger';
-import { workflowCacheSizeGauge } from '../utils/metrics';
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createLogger } from "../utils/logger";
+import { workflowCacheSizeGauge } from "../utils/metrics";
 
-const logger = createLogger('WorkflowCache');
+const logger = createLogger("WorkflowCache");
 
 interface CachedWorkflow {
   workflow: any;
@@ -27,7 +27,7 @@ interface CachedWorkflow {
 
 /**
  * WorkflowCache - Production-ready workflow definition cache
- * 
+ *
  * Caches workflow definitions in memory to avoid repeated Supabase queries
  * during high-frequency market data events. Implements TTL-based expiration.
  */
@@ -41,8 +41,8 @@ export class WorkflowCache {
 
   private constructor() {
     this.supabase = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+      process.env.SUPABASE_URL || "",
+      process.env.SUPABASE_SERVICE_ROLE_KEY || "",
     );
   }
 
@@ -59,32 +59,35 @@ export class WorkflowCache {
    * @param ttlMs - Cache TTL in milliseconds (default: 60s)
    * @returns Workflow definition or null if not found
    */
-  async getWorkflow(workflowId: string, ttlMs: number = this.DEFAULT_TTL_MS): Promise<any | null> {
+  async getWorkflow(
+    workflowId: string,
+    ttlMs: number = this.DEFAULT_TTL_MS,
+  ): Promise<any | null> {
     // Check cache first
     const cached = this.cache.get(workflowId);
     if (cached && cached.expiresAt > Date.now()) {
-      logger.debug({ workflowId, cacheSize: this.cache.size }, 'Cache HIT');
+      logger.debug({ workflowId, cacheSize: this.cache.size }, "Cache HIT");
       return cached.workflow;
     }
 
     // Cache miss - fetch from Supabase
-    logger.debug({ workflowId }, 'Cache MISS - fetching from database');
-    
+    logger.debug({ workflowId }, "Cache MISS - fetching from database");
+
     try {
       const { data: workflow, error } = await this.supabase
-        .from('workflows')
-        .select('*')
-        .eq('id', workflowId)
-        .eq('is_active', true)
+        .from("workflows")
+        .select("*")
+        .eq("id", workflowId)
+        //.eq('is_active', true)
         .single();
 
       if (error) {
-        logger.error({ workflowId, error }, 'Failed to fetch workflow');
+        logger.error({ workflowId, error }, "Failed to fetch workflow");
         return null;
       }
 
       if (!workflow) {
-        logger.warn({ workflowId }, 'Workflow not found or inactive');
+        logger.warn({ workflowId }, "Workflow not found or inactive");
         return null;
       }
 
@@ -95,10 +98,13 @@ export class WorkflowCache {
       });
 
       workflowCacheSizeGauge.set(this.cache.size);
-      logger.info({ workflowId, ttlMs, cacheSize: this.cache.size }, 'Workflow cached');
+      logger.info(
+        { workflowId, ttlMs, cacheSize: this.cache.size },
+        "Workflow cached",
+      );
       return workflow;
     } catch (error) {
-      logger.error({ workflowId, error }, 'Error fetching workflow');
+      logger.error({ workflowId, error }, "Error fetching workflow");
       return null;
     }
   }
@@ -109,7 +115,10 @@ export class WorkflowCache {
   invalidate(workflowId: string): void {
     this.cache.delete(workflowId);
     workflowCacheSizeGauge.set(this.cache.size);
-    logger.info({ workflowId, cacheSize: this.cache.size }, 'Workflow invalidated');
+    logger.info(
+      { workflowId, cacheSize: this.cache.size },
+      "Workflow invalidated",
+    );
   }
 
   /**
@@ -118,18 +127,23 @@ export class WorkflowCache {
   invalidateAll(): void {
     this.cache.clear();
     workflowCacheSizeGauge.set(0);
-    logger.info('Cleared all cached workflows');
+    logger.info("Cleared all cached workflows");
   }
 
   /**
    * Get cache statistics
    */
-  getStats(): { size: number; entries: Array<{ workflowId: string; expiresIn: number }> } {
+  getStats(): {
+    size: number;
+    entries: Array<{ workflowId: string; expiresIn: number }>;
+  } {
     const now = Date.now();
-    const entries = Array.from(this.cache.entries()).map(([workflowId, cached]) => ({
-      workflowId,
-      expiresIn: Math.max(0, cached.expiresAt - now),
-    }));
+    const entries = Array.from(this.cache.entries()).map(
+      ([workflowId, cached]) => ({
+        workflowId,
+        expiresIn: Math.max(0, cached.expiresAt - now),
+      }),
+    );
 
     return {
       size: this.cache.size,
@@ -154,9 +168,10 @@ export class WorkflowCache {
     // Enforce max cache size with LRU-style eviction
     if (this.cache.size > this.MAX_CACHE_SIZE) {
       const entriesToRemove = this.cache.size - this.MAX_CACHE_SIZE;
-      const sortedEntries = Array.from(this.cache.entries())
-        .sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-      
+      const sortedEntries = Array.from(this.cache.entries()).sort(
+        (a, b) => a[1].expiresAt - b[1].expiresAt,
+      );
+
       for (let i = 0; i < entriesToRemove; i++) {
         this.cache.delete(sortedEntries[i][0]);
         removed++;
@@ -165,7 +180,10 @@ export class WorkflowCache {
 
     if (removed > 0) {
       workflowCacheSizeGauge.set(this.cache.size);
-      logger.info({ removed, cacheSize: this.cache.size, maxSize: this.MAX_CACHE_SIZE }, 'Cleanup completed');
+      logger.info(
+        { removed, cacheSize: this.cache.size, maxSize: this.MAX_CACHE_SIZE },
+        "Cleanup completed",
+      );
     }
   }
 
@@ -174,12 +192,12 @@ export class WorkflowCache {
    */
   startCleanupTimer(): void {
     if (this.cleanupInterval) return;
-    
+
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 60000); // 60 seconds
-    
-    logger.info('Cleanup timer started (every 60s)');
+
+    logger.info("Cleanup timer started (every 60s)");
   }
 
   /**
@@ -189,7 +207,7 @@ export class WorkflowCache {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
-      logger.info('Cleanup timer stopped');
+      logger.info("Cleanup timer stopped");
     }
   }
 }

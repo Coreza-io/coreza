@@ -201,6 +201,9 @@ export class PortfolioExecutor implements INodeExecutor {
       if (mode === "backtest") {
         return this.executeBacktestMode(params, context);
       } else if (mode === "broker") {
+        if (node.values?.credential_id) {
+          params.credential_id = node.values.credential_id;
+        }
         return this.executeBrokerMode(params, context);
       }
 

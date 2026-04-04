@@ -139,6 +139,7 @@ export class RunSyncService {
         edges?: string;
         node_count?: string;
         edge_count?: string;
+        session_id?: string;
       }> = [];
 
       for (let i = 0; i < parsedEntries.length; i++) {

@@ -67,6 +67,9 @@ export async function createRunInRedis(
   if (snapshot?.source) {
     runData.source = snapshot.source;
   }
+  if (sessionId) {
+    runData.session_id = sessionId;
+  }
 
   // Store run data in Redis hash with TTL and queue for sync in one round-trip
   const pipeline = redis.pipeline();

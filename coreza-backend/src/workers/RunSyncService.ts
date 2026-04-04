@@ -162,6 +162,7 @@ export class RunSyncService {
           edges: data.edges,
           node_count: data.node_count,
           edge_count: data.edge_count,
+          session_id: data.session_id,
         });
       }
 

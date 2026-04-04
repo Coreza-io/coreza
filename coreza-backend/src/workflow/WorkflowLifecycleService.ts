@@ -26,6 +26,7 @@ export class WorkflowLifecycleService {
     userId: string;
     workflowId: string;
     isActive: boolean;
+    sessionId?: string;
   }): Promise<ActivationResult> {
     const workflow = await this.workflowRepo.getOwnedWorkflow(
       input.userId,

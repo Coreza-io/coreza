@@ -34,6 +34,7 @@ export async function createRunInRedis(
     edge_count?: number;
     source?: string;
   },
+  sessionId?: string,
 ): Promise<void> {
   const redis = getRedisCache();
 

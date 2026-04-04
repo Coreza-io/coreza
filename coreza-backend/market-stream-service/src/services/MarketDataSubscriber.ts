@@ -26,6 +26,7 @@ interface WorkflowRegistration {
   streams: Set<string>;
   source: MarketSource;
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
+  isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
 }
 
 export class MarketDataSubscriber {

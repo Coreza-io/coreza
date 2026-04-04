@@ -162,10 +162,20 @@ const Workflows = () => {
 
       const newStatus = !currentStatus;
       
+      // Generate session ID for activation
+      const sessionId = newStatus ? crypto.randomUUID() : undefined;
+      
+      // Store/clear session ID in localStorage
+      if (newStatus && sessionId) {
+        localStorage.setItem(`live_session_${workflowId}`, sessionId);
+      } else {
+        localStorage.removeItem(`live_session_${workflowId}`);
+      }
+
       // Call the correct backend endpoint
       const res = await apiClient.put(
         `/workflows/${user?.id}/${workflowId}/schedule`,
-        { is_active: newStatus },
+        { is_active: newStatus, session_id: sessionId },
         session?.access_token
       );
 

@@ -1,75 +1,99 @@
 
 
-# Plan: Use `isLive` Flag to Gate Stream Append in Market Data Delivery
+# Updated Plan: Frontend-Generated `runnerInstanceId` + DB Persistence
 
-## Why `isLive` Cannot Be Used Directly
+## Approach
 
-The `isLive` flag lives in `WorkflowEngine` / `NodeExecutionContext` inside the **backend engine** (`coreza-backend/src/engine/`). It's set when a `WorkflowRunner` is constructed to consume the Redis Stream.
+Frontend generates `sessionId` at activation, sends to backend. Backend uses it as `runnerInstanceId` AND saves it to a new `active_session_id` column in the `workflows` table. This gives:
+- Instant frontend access (no waiting for first trade)
+- Survives page refresh (read from DB)
+- Works across tabs/devices
+- Clear audit trail of which session is active
 
-However, the decision to **write to the Redis Stream** (`appendToWorkflowStream`) happens in `MarketDataSubscriber` inside **market-stream-service** — a completely separate process. This service has no access to `WorkflowEngine` or its `isLive` flag. It only knows about `WorkflowRegistration` objects (workflowId, nodeId, userId, streams, source).
+## Data Flow
 
-The `isLive` flag answers: "should the engine persist trades/fills?" — an engine-level concern. The question here is: "should market data be written to the Redis Stream?" — a routing-level concern. These are different layers.
+```text
+ACTIVATION:
+  Frontend (Workflows.tsx):
+    1. sessionId = crypto.randomUUID()
+    2. localStorage.setItem(`live_session_${workflowId}`, sessionId)  ← instant access
+    3. PUT /workflows/:id/schedule { is_active: true, session_id: sessionId }
 
-## What Actually Works
+  Backend:
+    route → WorkflowLifecycleService → StreamingLifecycleAdapter
+    → WorkflowRunner uses sessionId as runnerInstanceId
+    → WorkflowRepository.setActivationState() saves active_session_id to DB
 
-The cleanest approach is to add an `isLive` field to the **registration control message** and store it in the `WorkflowRegistration` object. This way:
+LIVE PAGE (load or refresh):
+  useLiveStrategyDetail:
+    1. Primary: read workflow.active_session_id from DB (always correct)
+    2. Fallback: localStorage (faster on initial render)
+    3. Use as run_id filter for all queries + realtime subscriptions
 
-- **Manual test** (`/stream/:source/register` route) → publishes with `isLive: false` → `MarketDataSubscriber` skips `appendToWorkflowStream`, only calls `publishToFrontend`
-- **Workflow activation** (`StreamingLifecycleAdapter`) → publishes with `isLive: true` → full pipeline (frontend publish + stream append)
-
-This reuses the `isLive` naming convention without inventing a new concept.
+DEACTIVATION:
+    Backend: clears active_session_id to null
+    Frontend: removes localStorage entry
+```
 
 ## Changes
 
-### 1. `RegistrationService.publishRegisterWorkflow()` — Add `isLive` param
+### 1. DB Migration
+Add `active_session_id UUID` column to `workflows` table (nullable, default null).
 
-Add optional `isLive?: boolean` to the control message payload (default `false`).
+### 2. Backend Route: `coreza-backend/src/routes/workflow.ts`
+Parse `session_id` from request body in the schedule endpoint, forward to `lifecycleService.setActivationState()`.
 
-### 2. `StreamingLifecycleAdapter.activateStreaming()` — Pass `isLive: true`
+### 3. `WorkflowLifecycleService.ts`
+- Accept optional `sessionId` in activation input
+- Pass to `StreamingLifecycleAdapter.activateStreaming()`
+- Pass to `WorkflowRepository.setActivationState()` for DB persistence
+- On deactivation: `setActivationState()` clears `active_session_id` to null
 
-The activation path explicitly sets `isLive: true` when calling `publishRegisterWorkflow`.
+### 4. `WorkflowRepository.setActivationState()`
+- Add `activeSessionId` param
+- Write `active_session_id: isActive ? activeSessionId : null` in the update
 
-### 3. `stream.ts` register route — No change needed
+### 5. `StreamingLifecycleAdapter.activateStreaming()`
+- Accept `sessionId` param
+- Pass to `jobQueue.startWorkflowRunner(workflowId, userId, nodes, edges, sessionId)`
 
-It already calls `publishRegisterWorkflow` without `isLive`, which defaults to `false`.
+### 6. `workflowRunnerManager.ts` → `WorkflowRunner.ts`
+- `startStrategy()` accepts optional `sessionId`, forwards to `WorkflowRunner` constructor
+- `WorkflowRunner` constructor: `this.runnerInstanceId = sessionId ?? randomUUID()` (use provided ID or fallback)
 
-### 4. `MarketControlHandler.handleRegister()` — Forward `isLive` to subscriber
+### 7. Frontend: `src/pages/Workflows.tsx` (or wherever activation is triggered)
+- Generate `sessionId = crypto.randomUUID()` before activation API call
+- Store in `localStorage.setItem(`live_session_${workflowId}`, sessionId)`
+- Send `session_id` in request body
+- On deactivation: `localStorage.removeItem(`live_session_${workflowId}`)`
 
-Pass the `isLive` field through to `subscriber.registerWorkflow()`.
+### 8. Frontend: `src/hooks/useLiveStrategyDetail.ts`
+- Read `workflow.active_session_id` from the workflow record (DB — survives refresh)
+- Use as the `run_id` filter for `live_trades`, `live_fills`, `cash_snapshots` queries
+- Use as realtime subscription filter
+- Remove the complex session discovery logic (lines 137-178)
 
-### 5. `MarketDataSubscriber` — Store and check `isLive`
+## Files Summary
 
-- Add `isLive: boolean` to `WorkflowRegistration` interface
-- In `registerWorkflow()`, store the flag
-- In `deliverWorkflowEvent()`, skip `appendToWorkflowStream()` when `isLive === false`
+| Layer | File | Change |
+|-------|------|--------|
+| DB | Migration | Add `active_session_id UUID` to `workflows` |
+| Backend | `src/routes/workflow.ts` | Parse + forward `session_id` |
+| Backend | `WorkflowLifecycleService.ts` | Accept + forward `sessionId`; pass to repo |
+| Backend | `WorkflowRepository.ts` | Store/clear `active_session_id` |
+| Backend | `StreamingLifecycleAdapter.ts` | Accept + forward `sessionId` |
+| Backend | `workflowRunnerManager.ts` | Accept + forward `sessionId` |
+| Backend | `WorkflowRunner.ts` | Use provided `sessionId` as `runnerInstanceId` |
+| Frontend | `Workflows.tsx` | Generate + store + send `sessionId` |
+| Frontend | `useLiveStrategyDetail.ts` | Read from DB, drop discovery logic |
 
-### 6. `stream.ts` register route — Remove `startWorkflowRunner`
+## Edge Cases
 
-Remove lines 561-580 (`startWorkflowRunner`) and line 666 (`stopWorkflowRunner`) from register/unregister routes. The `WorkflowRunner` is only started by `StreamingLifecycleAdapter` during activation.
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| `coreza-backend/src/services/RegistrationService.ts` | Add `isLive?: boolean` to `publishRegisterWorkflow` params and control message |
-| `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts` | Pass `isLive: true` to `publishRegisterWorkflow` |
-| `coreza-backend/market-stream-service/src/services/MarketControlHandler.ts` | Forward `isLive` from control message to `registerWorkflow()` |
-| `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` | Add `isLive` to `WorkflowRegistration`; skip `appendToWorkflowStream` when `!isLive` |
-| `coreza-backend/src/routes/stream.ts` | Remove `startWorkflowRunner` (lines 561-580) and `stopWorkflowRunner` (line 666) |
-
-## Data Flow After Fix
-
-```text
-MANUAL TEST (editor "Run" on AlpacaStreamData):
-  /register → publishRegisterWorkflow(isLive: false)
-  → MarketDataSubscriber stores registration with isLive=false
-  → On market tick: publishToFrontend() ✅, appendToWorkflowStream() ❌ SKIPPED
-  → No WorkflowRunner started, no downstream execution
-
-WORKFLOW ACTIVATION:
-  StreamingLifecycleAdapter → publishRegisterWorkflow(isLive: true)
-  → MarketDataSubscriber stores registration with isLive=true
-  → On market tick: publishToFrontend() ✅, appendToWorkflowStream() ✅
-  → WorkflowRunner consumes stream, executes full graph
-```
+| Scenario | Handling |
+|----------|----------|
+| Page refresh | Reads `active_session_id` from workflow record in DB |
+| Different browser | Same — reads from DB |
+| Backend restart | Job queue payload contains `sessionId`, runner reuses it |
+| No `session_id` sent (old clients) | `runnerInstanceId = randomUUID()` fallback; DB column stays null; frontend falls back to existing discovery |
+| Deactivation | DB column cleared to null; localStorage removed |
 

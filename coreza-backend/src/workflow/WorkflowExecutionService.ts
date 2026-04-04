@@ -29,6 +29,7 @@ export class WorkflowExecutionService {
       nodes: workflow.nodes,
       edges: workflow.edges,
       trigger: "manual",
+      executionMode: "manual",
       initialInput: inputData,
     });
 

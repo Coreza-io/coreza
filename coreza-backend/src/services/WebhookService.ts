@@ -312,6 +312,7 @@ export class WebhookService {
           nodes: workflow.nodes,
           edges: workflow.edges,
           trigger: "webhook",
+          executionMode: "manual",
           initialInput: {
             webhookPayload: normalizedPayload,
           },

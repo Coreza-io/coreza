@@ -14,6 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { ExecutionMode } from "../../engine/types";
+
 export interface WorkflowJobData {
   runId: string;
   workflowId: string;
@@ -30,6 +32,7 @@ export interface WorkflowJobData {
     | "loop_parallel"
     | "loop_continuation";
   initialInput?: any;
+  executionMode?: ExecutionMode;
   /** If true, skip all database logging for this run (high-frequency optimization) */
   useRedisStorage?: boolean;
 
@@ -69,6 +72,8 @@ export interface ParallelLoopOptions {
   parentEdges?: any[];
   /** Parent workflow store data (all node outputs) for child context */
   parentStoreData?: Record<string, any>;
+  /** Execution mode to propagate into loop child/continuation jobs */
+  executionMode?: ExecutionMode;
 }
 
 export interface IWorkflowJobQueue {

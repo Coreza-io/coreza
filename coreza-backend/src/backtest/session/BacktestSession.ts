@@ -106,6 +106,7 @@ export class BacktestSession {
       userId: this.userId,
       mode: "best-effort",
       abortSignal: this.abortController.signal,
+      executionMode: "backtest",
     });
 
     if (stateManager) {
@@ -845,6 +846,7 @@ export class BacktestSession {
       userId: this.userId,
       mode: "best-effort",
       abortSignal: this.abortController.signal,
+      executionMode: "backtest",
     });
     if (this.stateManager) {
       this.run.setIndicatorStateManager(this.stateManager);

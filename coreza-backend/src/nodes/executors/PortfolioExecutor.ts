@@ -858,7 +858,7 @@ export class PortfolioExecutor implements INodeExecutor {
         // Persist closed trade to live_trades table
         if (
           closedTrade &&
-          context?.isLive &&
+          context?.executionMode === "live" &&
           context?.userId &&
           context?.workflowId
         ) {
@@ -918,7 +918,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
         if (
           fillDeltaQty > 0 &&
-          context?.isLive &&
+          context?.executionMode === "live" &&
           context?.userId &&
           context?.workflowId
         ) {

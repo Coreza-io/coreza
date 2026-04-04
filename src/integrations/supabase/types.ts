@@ -782,6 +782,7 @@ export type Database = {
           nodes: Json | null
           result: Json | null
           schedule_key: string | null
+          session_id: string | null
           started_at: string
           status: string
           workflow_id: string
@@ -797,6 +798,7 @@ export type Database = {
           nodes?: Json | null
           result?: Json | null
           schedule_key?: string | null
+          session_id?: string | null
           started_at?: string
           status: string
           workflow_id: string
@@ -812,6 +814,7 @@ export type Database = {
           nodes?: Json | null
           result?: Json | null
           schedule_key?: string | null
+          session_id?: string | null
           started_at?: string
           status?: string
           workflow_id?: string

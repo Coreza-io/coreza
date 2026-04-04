@@ -221,7 +221,7 @@ export class WorkflowRunner {
         node_count: this.serializedSnapshot.nodeCount,
         edge_count: this.serializedSnapshot.edgeCount,
         source: "stream",
-      });
+      }, this.runnerInstanceId);
     } catch (err) {
       console.warn(
         "[WorkflowRunner] createRunInRedis failed (will retry):",

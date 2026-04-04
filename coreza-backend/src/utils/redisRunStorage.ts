@@ -34,6 +34,7 @@ export async function createRunInRedis(
     edge_count?: number;
     source?: string;
   },
+  sessionId?: string,
 ): Promise<void> {
   const redis = getRedisCache();
 
@@ -65,6 +66,9 @@ export async function createRunInRedis(
   }
   if (snapshot?.source) {
     runData.source = snapshot.source;
+  }
+  if (sessionId) {
+    runData.session_id = sessionId;
   }
 
   // Store run data in Redis hash with TTL and queue for sync in one round-trip

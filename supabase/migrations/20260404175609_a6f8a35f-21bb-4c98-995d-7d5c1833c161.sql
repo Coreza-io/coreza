@@ -1,0 +1,1 @@
+ALTER TABLE public.workflow_runs ADD COLUMN session_id UUID DEFAULT NULL;

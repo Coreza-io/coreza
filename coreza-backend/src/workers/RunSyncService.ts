@@ -139,6 +139,7 @@ export class RunSyncService {
         edges?: string;
         node_count?: string;
         edge_count?: string;
+        session_id?: string;
       }> = [];
 
       for (let i = 0; i < parsedEntries.length; i++) {
@@ -161,6 +162,7 @@ export class RunSyncService {
           edges: data.edges,
           node_count: data.node_count,
           edge_count: data.edge_count,
+          session_id: data.session_id,
         });
       }
 
@@ -190,6 +192,7 @@ export class RunSyncService {
         ...(run.edges ? { edges: JSON.parse(run.edges) } : {}),
         ...(run.node_count ? { node_count: parseInt(run.node_count, 10) } : {}),
         ...(run.edge_count ? { edge_count: parseInt(run.edge_count, 10) } : {}),
+        ...(run.session_id ? { session_id: run.session_id } : {}),
       }));
 
       // Batch upsert to Supabase

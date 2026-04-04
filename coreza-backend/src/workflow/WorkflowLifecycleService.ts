@@ -38,7 +38,7 @@ export class WorkflowLifecycleService {
 
     try {
       if (input.isActive) {
-        return await this.activate(workflow, trigger, input.userId);
+        return await this.activate(workflow, trigger, input.userId, input.sessionId);
       }
 
       return await this.deactivate(workflow, trigger, input.userId);

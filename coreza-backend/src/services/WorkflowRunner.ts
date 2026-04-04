@@ -55,8 +55,9 @@ export class WorkflowRunner {
     private readonly userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
+    sessionId?: string,
   ) {
-    this.runnerInstanceId = randomUUID();
+    this.runnerInstanceId = sessionId ?? randomUUID();
     this.streamRedisClient = createDedicatedStreamConnection(
       `Strategy-${workflowId}`,
     );

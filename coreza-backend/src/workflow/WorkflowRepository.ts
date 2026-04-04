@@ -98,12 +98,14 @@ export class WorkflowRepository {
     workflowId: string,
     isActive: boolean,
     scheduleCron: string | null = null,
+    activeSessionId: string | null = null,
   ) {
     const { data, error } = await supabase
       .from("workflows")
       .update({
         is_active: isActive,
         schedule_cron: isActive ? scheduleCron : null,
+        active_session_id: isActive ? activeSessionId : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", workflowId)

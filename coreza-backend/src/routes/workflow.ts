@@ -125,11 +125,12 @@ router.post("/:workflowId/execute", async (req, res, next) => {
 router.put("/:workflowId/schedule", async (req, res, next) => {
   try {
     const userId = requireUserId(req);
-    const { is_active } = scheduleWorkflowSchema.parse(req.body);
+    const { is_active, session_id } = scheduleWorkflowSchema.parse(req.body);
     const result = await lifecycleService.setActivationState({
       userId,
       workflowId: req.params.workflowId,
       isActive: is_active,
+      sessionId: session_id,
     });
     res.json(result);
   } catch (error) {

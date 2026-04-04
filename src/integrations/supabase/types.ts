@@ -888,6 +888,7 @@ export type Database = {
       }
       workflows: {
         Row: {
+          active_session_id: string | null
           created_at: string | null
           edges: Json
           id: string
@@ -901,6 +902,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active_session_id?: string | null
           created_at?: string | null
           edges: Json
           id?: string
@@ -914,6 +916,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active_session_id?: string | null
           created_at?: string | null
           edges?: Json
           id?: string

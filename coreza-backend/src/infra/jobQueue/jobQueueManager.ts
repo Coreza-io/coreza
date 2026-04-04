@@ -286,10 +286,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     workflowId: string,
     userId: string,
     nodes: any[],
-    edges: any[]
+    edges: any[],
+    sessionId?: string
   ): Promise<void> {
     const manager = WorkflowRunnerManager.getInstance();
-    await manager.startStrategy(workflowId, userId, nodes, edges);
+    await manager.startStrategy(workflowId, userId, nodes, edges, sessionId);
   }
 
   async stopWorkflowRunner(workflowId: string): Promise<void> {

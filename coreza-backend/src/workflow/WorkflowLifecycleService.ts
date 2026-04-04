@@ -78,6 +78,7 @@ export class WorkflowLifecycleService {
           trigger.node,
           workflow.nodes,
           workflow.edges,
+          sessionId,
         );
         message = `Workflow subscribed to streaming source ${sourceId}`;
         break;

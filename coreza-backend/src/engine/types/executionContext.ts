@@ -1,4 +1,5 @@
 import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
+import { ExecutionMode } from "./executionError";
 
 export interface MultiBarExecutionContext {
   timestamp: string;
@@ -28,8 +29,7 @@ export interface NodeExecutionContext {
   indicatorStateManager?: any;
   abortSignal?: AbortSignal;
   checkCancellation: () => boolean;
-  isBacktest?: boolean;
-  isLive?: boolean;
+  executionMode: ExecutionMode;
   multiBarContext?: MultiBarExecutionContext;
   getState: (key: string) => any;
   setState: (key: string, value: any) => void;

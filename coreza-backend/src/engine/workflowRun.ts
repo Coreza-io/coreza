@@ -9,6 +9,7 @@ import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
 import { WorkflowPlan } from "./workflowPlan";
 import {
+  ExecutionMode,
   FlushPolicy,
   MultiBarExecutionContext,
   WorkflowExecutionResult,
@@ -24,7 +25,7 @@ interface WorkflowRunOptions {
   mode?: "best-effort" | "fail-fast";
   abortSignal?: AbortSignal;
   flushPolicy?: FlushPolicy;
-  isLive?: boolean;
+  executionMode: ExecutionMode;
 }
 
 interface ExecutionContextExtras {
@@ -84,8 +85,7 @@ export class WorkflowRun {
       userId: this.options.userId,
       mode: this.options.mode ?? "best-effort",
       abortSignal: this.options.abortSignal,
-      isBacktest: this.plan.isBacktest,
-      isLive: this.options.isLive,
+      executionMode: this.plan.executionMode,
       nodes: [...this.plan.nodes],
       edges: [...this.plan.edges],
       nodeExecutorMap: this.plan.nodeExecutorMap,

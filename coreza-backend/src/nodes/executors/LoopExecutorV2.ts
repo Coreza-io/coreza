@@ -145,6 +145,7 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
           maxConcurrency,
           continueOnError,
           useRedisStorage: true,
+          executionMode: context.executionMode,
           doneEdges,
           parentNodes: context.nodes,
           parentEdges: context.edges,

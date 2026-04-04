@@ -15,6 +15,7 @@
  */
 
 import { WorkflowNode, NodeResult } from "../../nodes/types";
+import { ExecutionMode } from "../../engine/types";
 
 /**
  * Compiled Plan VM Types
@@ -158,7 +159,7 @@ export interface CompiledExecContext {
   dataContext: any;
   indicatorStateManager: any;
   abortSignal?: AbortSignal;
-  isBacktest: boolean;
+  executionMode: ExecutionMode;
   /** Per-instruction pre-resolved params injected by VM */
   resolvedParams?: Record<string, any>;
   /** Overridden to return pre-resolved params from slots */

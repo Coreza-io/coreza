@@ -1,6 +1,6 @@
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 
-export type ExecutionKind = "standard" | "backtest";
+export type ExecutionMode = "manual" | "live" | "backtest";
 export type ExecutionPhase = "init" | "queue" | "execute" | "flush" | "destroy";
 
 export interface ExecutionError {

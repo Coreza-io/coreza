@@ -178,7 +178,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass entry point to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-              executionKind: (job.data as any).executionKind,
+              executionMode: (job.data as any).executionMode,
             },
           );
 
@@ -290,6 +290,7 @@ export function createWorkflowWorker({
                   nodes: parentNodes,
                   edges: parentEdges,
                   trigger: "loop_continuation",
+                  executionMode: (job.data as any).executionMode,
                   initialInput: {
                     data: aggregatedOutput,
                     $loopResult: {
@@ -432,7 +433,7 @@ export function createWorkflowWorker({
               initialInput: job.data.initialInput,
               startNodeId, // Pass start node to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
-              executionKind: (job.data as any).executionKind,
+              executionMode: (job.data as any).executionMode,
             },
           );
 
@@ -508,7 +509,7 @@ export function createWorkflowWorker({
           {
             mode: "best-effort",
             abortSignal: signal,
-            executionKind: (job.data as any).executionKind,
+            executionMode: (job.data as any).executionMode,
           },
         );
 

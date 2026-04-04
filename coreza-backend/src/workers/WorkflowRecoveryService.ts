@@ -288,6 +288,7 @@ export class WorkflowRecoveryService {
         nodes: workflow.nodes,
         edges: workflow.edges,
         trigger: "recovery_retry",
+        executionMode: "manual",
       },
       {
         removeOnComplete: 50,

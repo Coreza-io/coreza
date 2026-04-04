@@ -3,14 +3,14 @@ import { resolveCategory } from "../nodes/categoryMap";
 import { getNodeExecutor } from "../nodes/registry";
 import { GraphRuntime } from "./graphRuntime";
 import { ParameterResolver } from "./parameterResolver";
-import { ExecutionKind, FlushPolicy } from "./types";
+import { ExecutionMode, FlushPolicy } from "./types";
 import { WorkflowRun } from "./workflowRun";
 
 export class WorkflowPlan {
   readonly graph: GraphRuntime;
   readonly resolver: ParameterResolver;
   readonly entryNodeIds: readonly string[];
-  readonly executionKind: ExecutionKind;
+  readonly executionMode: ExecutionMode;
   readonly nodeExecutorMap: ReadonlyMap<string, INodeExecutor>;
   readonly nodes: readonly WorkflowNode[];
   readonly edges: readonly WorkflowEdge[];
@@ -18,21 +18,21 @@ export class WorkflowPlan {
   private constructor(
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
-    executionKind: ExecutionKind,
+    executionMode: ExecutionMode,
     graph: GraphRuntime,
     resolver: ParameterResolver,
     executorMap: Map<string, INodeExecutor>,
   ) {
     this.nodes = Object.freeze([...nodes]);
     this.edges = Object.freeze([...edges]);
-    this.executionKind = executionKind;
+    this.executionMode = executionMode;
     this.graph = graph;
     this.resolver = resolver;
     this.entryNodeIds = graph.entryNodeIds;
     this.nodeExecutorMap = executorMap;
   }
 
-  static compile(nodes: WorkflowNode[], edges: WorkflowEdge[], executionKind: ExecutionKind): WorkflowPlan {
+  static compile(nodes: WorkflowNode[], edges: WorkflowEdge[], executionMode: ExecutionMode): WorkflowPlan {
     const graph = new GraphRuntime(nodes, edges);
     const resolver = new ParameterResolver(nodes);
 
@@ -42,11 +42,11 @@ export class WorkflowPlan {
       if (exec) executorMap.set(node.id, exec);
     }
 
-    return new WorkflowPlan(nodes, edges, executionKind, graph, resolver, executorMap);
+    return new WorkflowPlan(nodes, edges, executionMode, graph, resolver, executorMap);
   }
 
   get isBacktest(): boolean {
-    return this.executionKind === "backtest";
+    return this.executionMode === "backtest";
   }
 
   createRun(opts: {
@@ -56,7 +56,7 @@ export class WorkflowPlan {
     mode?: "best-effort" | "fail-fast";
     abortSignal?: AbortSignal;
     flushPolicy?: FlushPolicy;
-    isLive?: boolean;
+    executionMode: ExecutionMode;
   }): WorkflowRun {
     return new WorkflowRun(this, opts);
   }

@@ -1,5 +1,5 @@
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
-import { ExecutionKind } from "./types";
+import { ExecutionMode } from "./types";
 import { WorkflowPlan } from "./workflowPlan";
 import { WorkflowRun } from "./workflowRun";
 
@@ -34,15 +34,17 @@ export class EnginePool {
     opts?: {
       mode?: "best-effort" | "fail-fast";
       abortSignal?: AbortSignal;
-      executionKind?: ExecutionKind;
+      executionMode?: ExecutionMode;
     },
   ): WorkflowRun {
-    let cached = this.cache.get(workflowId);
+    const mode = opts?.executionMode ?? "manual";
+    const cacheKey = `${workflowId}:${mode}`;
+    let cached = this.cache.get(cacheKey);
 
     if (!cached) {
-      const plan = WorkflowPlan.compile(nodes, edges, opts?.executionKind ?? "standard");
+      const plan = WorkflowPlan.compile(nodes, edges, mode);
       cached = { plan, lastUsed: Date.now() };
-      this.cache.set(workflowId, cached);
+      this.cache.set(cacheKey, cached);
     }
 
     cached.lastUsed = Date.now();
@@ -53,11 +55,16 @@ export class EnginePool {
       userId,
       mode: opts?.mode,
       abortSignal: opts?.abortSignal,
+      executionMode: cached.plan.executionMode,
     });
   }
 
   evict(workflowId: string): void {
-    this.cache.delete(workflowId);
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${workflowId}:`)) {
+        this.cache.delete(key);
+      }
+    }
   }
 
   private cleanupIdlePlans(): void {

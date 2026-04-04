@@ -209,6 +209,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           // No redundant top-level fields needed
           initialInput: { $parentStore: itemParentStore },
           trigger: "loop_parallel",
+          executionMode: options.executionMode ?? "manual",
           parentRunId,
           loopId,
           itemIndex: i,
@@ -254,6 +255,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         nodes: [],
         edges: [],
         continueOnError,
+        executionMode: options.executionMode ?? "manual",
         // Include continuation metadata for done edge routing
         doneEdges: options.doneEdges || [],
         parentNodes: options.parentNodes || [],

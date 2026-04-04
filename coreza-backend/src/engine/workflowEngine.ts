@@ -1,7 +1,7 @@
 import { INodeExecutor, WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { DataContext } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
-import { ExecutionKind, WorkflowExecutionResult } from "./types";
+import { ExecutionMode, WorkflowExecutionResult } from "./types";
 import { WorkflowPlan } from "./workflowPlan";
 import { WorkflowRun } from "./workflowRun";
 
@@ -11,7 +11,7 @@ export class WorkflowEngine {
   private readonly workflowId: string;
   private readonly userId: string;
   private readonly mode: "best-effort" | "fail-fast";
-  private readonly isLive: boolean;
+  readonly executionMode: ExecutionMode;
   readonly isBacktest: boolean;
 
   constructor(
@@ -22,16 +22,15 @@ export class WorkflowEngine {
     edges: WorkflowEdge[],
     mode: "best-effort" | "fail-fast" = "best-effort",
     abortSignal?: AbortSignal,
-    executionKind?: ExecutionKind,
-    isLive = false,
+    executionMode?: ExecutionMode,
   ) {
     this.workflowId = workflowId;
     this.userId = userId;
     this.mode = mode;
-    this.isLive = isLive;
 
-    const kind = executionKind ?? this.detectKind(nodes);
-    this.plan = WorkflowPlan.compile(nodes, edges, kind);
+    const detectedExecutionMode = executionMode ?? this.detectMode(nodes);
+    this.executionMode = detectedExecutionMode;
+    this.plan = WorkflowPlan.compile(nodes, edges, detectedExecutionMode);
     this.isBacktest = this.plan.isBacktest;
     this.run = this.plan.createRun({
       runId,
@@ -39,16 +38,16 @@ export class WorkflowEngine {
       userId,
       mode,
       abortSignal,
-      isLive: this.isLive,
+      executionMode: this.executionMode,
     });
   }
 
-  private detectKind(nodes: WorkflowNode[]): ExecutionKind {
+  private detectMode(nodes: WorkflowNode[]): ExecutionMode {
     const detected = nodes.some((n) => (n.name || n.node_type || "").toLowerCase().includes("backtest"));
     if (detected) {
-      console.warn("[WorkflowEngine] DEPRECATED: isBacktest detected via node name. Pass executionKind explicitly.");
+      console.warn("[WorkflowEngine] DEPRECATED: isBacktest detected via node name. Pass executionMode explicitly.");
     }
-    return detected ? "backtest" : "standard";
+    return detected ? "backtest" : "manual";
   }
 
   getGraph() { return this.plan.graph as Readonly<typeof this.plan.graph>; }
@@ -77,7 +76,7 @@ export class WorkflowEngine {
       userId: this.userId,
       mode: this.mode,
       abortSignal,
-      isLive: this.isLive,
+      executionMode: this.executionMode,
     });
   }
 
@@ -94,8 +93,7 @@ export class WorkflowEngine {
 
 export type ExecutionOptions = {
   mode?: "best-effort" | "fail-fast";
-  executionKind?: ExecutionKind;
-  isLive?: boolean;
+  executionMode?: ExecutionMode;
   initialInput?: unknown;
   startNodeId?: string;
   abortSignal?: AbortSignal;
@@ -109,14 +107,14 @@ export async function executeWorkflow(
   edges: WorkflowEdge[],
   opts?: ExecutionOptions,
 ): Promise<WorkflowExecutionResult> {
-  const plan = WorkflowPlan.compile(nodes, edges, opts?.executionKind ?? "standard");
+  const plan = WorkflowPlan.compile(nodes, edges, opts?.executionMode ?? "manual");
   const run = plan.createRun({
     runId,
     workflowId,
     userId,
     mode: opts?.mode,
     abortSignal: opts?.abortSignal,
-    isLive: opts?.isLive,
+    executionMode: opts?.executionMode ?? plan.executionMode,
   });
   try {
     return await run.execute(opts?.initialInput, opts?.startNodeId);

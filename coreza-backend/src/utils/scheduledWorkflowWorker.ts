@@ -103,6 +103,7 @@ export function createScheduledWorkflowWorker({
           nodes: workflow.nodes,
           edges: workflow.edges,
           trigger: "scheduled",
+          executionMode: "manual" as const,
         };
 
         workflowQueue.add("execute-workflow", data, {

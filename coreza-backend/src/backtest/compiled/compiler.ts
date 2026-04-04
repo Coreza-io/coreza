@@ -229,7 +229,7 @@ export function compilePlan(
     dataContext: ctxBase.dataContext,
     indicatorStateManager: ctxBase.indicatorStateManager,
     abortSignal: ctxBase.abortSignal,
-    isBacktest: true,
+    executionMode: "backtest",
     resolveNodeParameters: () => ctx.resolvedParams ?? {},
     getAllNodeResults: () => {
       if (plan.nodeResultsDirty) {

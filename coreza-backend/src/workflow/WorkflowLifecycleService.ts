@@ -123,6 +123,7 @@ export class WorkflowLifecycleService {
       workflow.id,
       true,
       cronToSave,
+      sessionId ?? null,
     );
 
     return {

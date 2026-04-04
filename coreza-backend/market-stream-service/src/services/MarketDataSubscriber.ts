@@ -223,6 +223,7 @@ export class MarketDataSubscriber {
             streams: string[];
             source: MarketSource;
             onlyClosedBars?: boolean;
+            isLive?: boolean;
           };
 
           // Verify workflow is still active (use cache)
@@ -238,7 +239,7 @@ export class MarketDataSubscriber {
             continue;
           }
 
-          // Restore registration
+          // Restore registration (only restore live registrations on restart)
           await this.registerWorkflow(
             registration.workflowId,
             registration.nodeId,
@@ -246,6 +247,7 @@ export class MarketDataSubscriber {
             registration.streams,
             registration.source,
             registration.onlyClosedBars,
+            registration.isLive,
           );
 
           restored++;

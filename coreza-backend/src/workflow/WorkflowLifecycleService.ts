@@ -56,6 +56,7 @@ export class WorkflowLifecycleService {
     workflow: any,
     trigger: ClassifiedTrigger,
     userId: string,
+    sessionId?: string,
   ): Promise<ActivationResult> {
     let cronToSave: string | null = null;
     let nextRun: string | null = null;

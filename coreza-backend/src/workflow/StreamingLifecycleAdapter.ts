@@ -26,6 +26,7 @@ export class StreamingLifecycleAdapter {
     triggerNode: WorkflowNode,
     allNodes: WorkflowNode[],
     allEdges: WorkflowEdge[],
+    sessionId?: string,
   ): Promise<string> {
     const redis = getRedisCache();
     const nodeValues = ((

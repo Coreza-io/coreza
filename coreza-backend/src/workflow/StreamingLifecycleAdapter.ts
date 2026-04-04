@@ -132,7 +132,7 @@ export class StreamingLifecycleAdapter {
       });
     }
 
-    await jobQueue.startWorkflowRunner(workflowId, userId, allNodes, allEdges);
+    await jobQueue.startWorkflowRunner(workflowId, userId, allNodes, allEdges, sessionId);
     return sourceId;
   }
 

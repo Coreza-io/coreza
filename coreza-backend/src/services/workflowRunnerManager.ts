@@ -17,10 +17,11 @@ export class WorkflowRunnerManager {
     userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
+    sessionId?: string,
   ): Promise<void> {
     if (this.runners.has(workflowId)) return;
 
-    const runner = new WorkflowRunner(workflowId, userId, nodes, edges);
+    const runner = new WorkflowRunner(workflowId, userId, nodes, edges, sessionId);
     this.runners.set(workflowId, runner);
 
     runner.start().catch((error) => {

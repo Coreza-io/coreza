@@ -267,6 +267,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     loadData();
   }, [enabled, loadData]);
 
+  // Realtime: workflow_runs, live_trades, cash_snapshots
   useEffect(() => {
     if (!enabled || !user || !workflowId) return;
 
@@ -341,6 +342,48 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       channel.unsubscribe();
     };
   }, [enabled, loadData, user, workflowId]);
+
+  // Realtime: listen to workflows table for active_session_id / is_active changes
+  useEffect(() => {
+    if (!enabled || !user || !workflowId) return;
+
+    const channel = supabase
+      .channel(`live-workflow-session-${workflowId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "workflows",
+          filter: `id.eq.${workflowId}`,
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          const newSessionId: string | null = updated.active_session_id ?? null;
+          const currentSessionId = activeSessionRunIdRef.current;
+
+          // If session changed, reset immediately and refetch
+          if (newSessionId !== currentSessionId) {
+            activeSessionRunIdRef.current = newSessionId;
+            pendingSessionRunIdRef.current = null;
+            if (newSessionId) {
+              localStorage.setItem(`live_session_${workflowId}`, newSessionId);
+            }
+            setTrades([]);
+            setSnapshots([]);
+            setMetrics(
+              buildLiveMetrics(undefined, [], []) as BacktestResultMetrics,
+            );
+            void loadData();
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [enabled, user, workflowId, loadData]);
 
   useEffect(() => {
     if (!enabled || !workflowId) return;

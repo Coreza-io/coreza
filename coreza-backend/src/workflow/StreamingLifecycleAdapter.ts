@@ -149,6 +149,10 @@ export class StreamingLifecycleAdapter {
       workflowId,
       isTestListener: false,
     });
+
+    // Stop the in-memory WorkflowRunner so it doesn't keep persisting
+    // data under the old runnerInstanceId after deactivation.
+    await jobQueue.stopWorkflowRunner(workflowId);
   }
 
   async unsubscribeStreamingNodes(

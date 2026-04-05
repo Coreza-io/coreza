@@ -63,6 +63,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
+import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 
 interface Workflow {
   id: string;
@@ -90,6 +91,7 @@ const Workflows = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, session } = useAuth();
+  const { toggleActivation } = useWorkflowActivation();
 
   const projectId = searchParams.get("project");
 
@@ -176,95 +178,13 @@ const Workflows = () => {
     workflowId: string,
     currentStatus: boolean,
   ) => {
-    let priorSessionId: string | null = null;
-    try {
-      // Check backend health first for both activation and deactivation
-      try {
-        const healthCheck = await apiClient.get(
-          "/health",
-          session?.access_token,
-        );
-
-        if (!healthCheck.ok) {
-          throw new Error("Backend server is not responding");
-        }
-      } catch (healthError: any) {
-        console.error("Backend health check failed:", healthError);
-        throw new Error(
-          "Backend server is not available. Please ensure your backend is running.",
-        );
-      }
-
-      const newStatus = !currentStatus;
-      const sessionStorageKey = `live_session_${workflowId}`;
-      priorSessionId = localStorage.getItem(sessionStorageKey);
-
-      // Generate session ID for activation
-      const sessionId = newStatus ? crypto.randomUUID() : undefined;
-
-      // Persist the new session ID on activation; preserve prior session on deactivation
-      if (newStatus && sessionId) {
-        localStorage.setItem(sessionStorageKey, sessionId);
-        window.dispatchEvent(
-          new CustomEvent("coreza-live-session-updated", {
-            detail: { workflowId, sessionId },
-          }),
-        );
-      }
-
-      // Call the correct backend endpoint
-      const res = await apiClient.put(
-        `/workflows/${user?.id}/${workflowId}/schedule`,
-        { is_active: newStatus, session_id: sessionId },
-        session?.access_token,
-      );
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText);
-      }
-
-      // // Update database to reflect the change
-      // const { error } = await supabase
-      //   .from('workflows')
-      //   .update({ is_active: newStatus })
-      //   .eq('id', workflowId);
-
-      // if (error) {
-      //   throw error;
-      // }
-
-      // Update local state
+    const result = await toggleActivation(workflowId, currentStatus);
+    if (result !== null) {
       setWorkflows(
         workflows.map((w) =>
-          w.id === workflowId ? { ...w, is_active: newStatus } : w,
+          w.id === workflowId ? { ...w, is_active: result } : w,
         ),
       );
-
-      toast({
-        title: "Success",
-        description: `Workflow ${!currentStatus ? "activated" : "deactivated"} successfully`,
-      });
-    } catch (error: any) {
-      if (!currentStatus) {
-        const sessionStorageKey = `live_session_${workflowId}`;
-        if (priorSessionId) {
-          localStorage.setItem(sessionStorageKey, priorSessionId);
-        } else {
-          localStorage.removeItem(sessionStorageKey);
-        }
-        window.dispatchEvent(
-          new CustomEvent("coreza-live-session-updated", {
-            detail: { workflowId, sessionId: priorSessionId },
-          }),
-        );
-      }
-
-      toast({
-        title: "Error",
-        description: `Failed to ${!currentStatus ? "activate" : "deactivate"} workflow: ${error.message}`,
-        variant: "destructive",
-      });
     }
   };
 

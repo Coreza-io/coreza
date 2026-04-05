@@ -93,6 +93,7 @@ import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
+import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -177,6 +178,7 @@ const WorkflowEditorContent = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user: authUser, session, loading: authLoading } = useAuth();
+  const { toggleActivation } = useWorkflowActivation();
   const executionStore = useExecutionStore();
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlerRef = useRef<
@@ -755,57 +757,12 @@ const WorkflowEditorContent = () => {
   const handleActivate = async () => {
     if (!authUser || !workflowId) return;
 
-    try {
-      const API_URL = API_BASE_URL;
+    const result = await toggleActivation(workflowId, isActive);
+    if (result !== null) {
+      setIsActive(result);
 
-      // // Check backend health first for both activation and deactivation
-      // try {
-      //   const healthCheck = await fetch(`${API_URL}/health`, {
-      //     method: "GET",
-      //     headers: { "Content-Type": "application/json" },
-      //   });
-
-      //   if (!healthCheck.ok) {
-      //     throw new Error("Backend server is not responding");
-      //   }
-      // } catch (healthError: any) {
-      //   console.error("Backend health check failed:", healthError);
-      //   toast({
-      //     title: "Error",
-      //     description: `Backend server is not available. Please ensure your backend is running on ${API_BASE_URL}`,
-      //     variant: "destructive",
-      //   });
-      //   return;
-      // }
-
-      const newStatus = !isActive;
-
-      // Call the correct backend endpoint
-      const res = await apiClient.put(
-        `/workflows/${workflowId}/schedule`,
-        { is_active: newStatus },
-        session?.access_token,
-      );
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText);
-      }
-
-      // Update database to reflect the change
-      const { error } = await supabase
-        .from("workflows")
-        .update({ is_active: newStatus })
-        .eq("id", workflowId);
-
-      if (error) {
-        throw error;
-      }
-
-      // Update local state
-      setIsActive(newStatus);
-
-      if (!newStatus) {
+      // Cleanup Alpaca subscriptions on deactivation
+      if (!result) {
         nodes
           .filter((node) => {
             const nodeName = (node.data?.definition as any)?.name;
@@ -824,21 +781,6 @@ const WorkflowEditorContent = () => {
             );
           });
       }
-
-      toast({
-        title: "Success",
-        description: `Workflow ${
-          newStatus ? "activated" : "deactivated"
-        } successfully`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: `Failed to ${
-          !isActive ? "activate" : "deactivate"
-        } workflow: ${error.message}`,
-        variant: "destructive",
-      });
     }
   };
 

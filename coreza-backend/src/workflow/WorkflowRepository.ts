@@ -100,14 +100,19 @@ export class WorkflowRepository {
     scheduleCron: string | null = null,
     activeSessionId: string | null = null,
   ) {
+    const updatePayload: Record<string, any> = {
+      is_active: isActive,
+      schedule_cron: isActive ? scheduleCron : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isActive) {
+      updatePayload.active_session_id = activeSessionId;
+    }
+
     const { data, error } = await supabase
       .from("workflows")
-      .update({
-        is_active: isActive,
-        schedule_cron: isActive ? scheduleCron : null,
-        active_session_id: isActive ? activeSessionId : null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", workflowId)
       .eq("user_id", userId)
       .select()

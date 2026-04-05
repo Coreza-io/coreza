@@ -176,6 +176,7 @@ const Workflows = () => {
     workflowId: string,
     currentStatus: boolean,
   ) => {
+    let priorSessionId: string | null = null;
     try {
       // Check backend health first for both activation and deactivation
       try {
@@ -195,15 +196,20 @@ const Workflows = () => {
       }
 
       const newStatus = !currentStatus;
+      const sessionStorageKey = `live_session_${workflowId}`;
+      priorSessionId = localStorage.getItem(sessionStorageKey);
 
       // Generate session ID for activation
       const sessionId = newStatus ? crypto.randomUUID() : undefined;
 
-      // Store/clear session ID in localStorage
+      // Persist the new session ID on activation; preserve prior session on deactivation
       if (newStatus && sessionId) {
-        localStorage.setItem(`live_session_${workflowId}`, sessionId);
-      } else {
-        localStorage.removeItem(`live_session_${workflowId}`);
+        localStorage.setItem(sessionStorageKey, sessionId);
+        window.dispatchEvent(
+          new CustomEvent("coreza-live-session-updated", {
+            detail: { workflowId, sessionId },
+          }),
+        );
       }
 
       // Call the correct backend endpoint
@@ -240,6 +246,20 @@ const Workflows = () => {
         description: `Workflow ${!currentStatus ? "activated" : "deactivated"} successfully`,
       });
     } catch (error: any) {
+      if (!currentStatus) {
+        const sessionStorageKey = `live_session_${workflowId}`;
+        if (priorSessionId) {
+          localStorage.setItem(sessionStorageKey, priorSessionId);
+        } else {
+          localStorage.removeItem(sessionStorageKey);
+        }
+        window.dispatchEvent(
+          new CustomEvent("coreza-live-session-updated", {
+            detail: { workflowId, sessionId: priorSessionId },
+          }),
+        );
+      }
+
       toast({
         title: "Error",
         description: `Failed to ${!currentStatus ? "activate" : "deactivate"} workflow: ${error.message}`,

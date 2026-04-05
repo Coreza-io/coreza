@@ -84,6 +84,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [trades, setTrades] = useState<BacktestTrade[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const activeSessionRunIdRef = useRef<string | null>(null);
+  const pendingSessionRunIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +95,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setTrades([]);
       setSnapshots([]);
       activeSessionRunIdRef.current = null;
+      pendingSessionRunIdRef.current = null;
       setLoading(false);
       return;
     }
@@ -121,13 +123,41 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         started_at: wf.created_at ?? undefined,
       } as BacktestWithRelations);
 
-      // Use active_session_id from DB (primary), localStorage (fallback)
-      let sessionRunId: string | null =
-        (wf as any).active_session_id ??
-        localStorage.getItem(`live_session_${workflowId}`) ??
-        null;
+      // Use a pending session (set by immediate activation UI event) first,
+      // then DB active_session_id, then localStorage fallback.
+      const dbSessionRunId: string | null = (wf as any).active_session_id ?? null;
+      const localSessionRunId =
+        localStorage.getItem(`live_session_${workflowId}`) ?? null;
+      const pendingSessionRunId = pendingSessionRunIdRef.current;
+      const sessionRunId: string | null =
+        pendingSessionRunId ?? dbSessionRunId ?? localSessionRunId;
+
+      // Clear pending override once DB has caught up to the same session,
+      // or when workflow is no longer active.
+      if (
+        (pendingSessionRunId && dbSessionRunId === pendingSessionRunId) ||
+        !wf.is_active
+      ) {
+        pendingSessionRunIdRef.current = null;
+      }
+
+      // Keep localStorage aligned with DB session id when the workflow is inactive
+      // so refreshes and fallback resolution stay consistent.
+      if (!wf.is_active && dbSessionRunId) {
+        localStorage.setItem(`live_session_${workflowId}`, dbSessionRunId);
+      }
 
       activeSessionRunIdRef.current = sessionRunId;
+
+      // No session means no scoped live data; return empty state to prevent cross-session mixing.
+      if (!sessionRunId) {
+        setTrades([]);
+        setSnapshots([]);
+        setMetrics(
+          buildLiveMetrics(undefined, [], []) as BacktestResultMetrics,
+        );
+        return;
+      }
 
       // Fetch live_trades, live_fills, and cash_snapshots in parallel
       const tradesQuery = supabase
@@ -135,9 +165,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .select("*")
         .eq("user_id", user.id)
         .eq("workflow_id", workflowId);
-      if (sessionRunId) {
-        tradesQuery.eq("run_id", sessionRunId);
-      }
+      tradesQuery.eq("run_id", sessionRunId);
       tradesQuery.order("exitTime" as any, { ascending: true });
 
       const fillsQuery = supabase
@@ -145,9 +173,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .select("*")
         .eq("user_id", user.id)
         .eq("workflow_id", workflowId);
-      if (sessionRunId) {
-        fillsQuery.eq("run_id", sessionRunId);
-      }
+      fillsQuery.eq("run_id", sessionRunId);
       fillsQuery.order("event_time", { ascending: true });
 
       const snapshotsQuery = supabase
@@ -155,9 +181,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .select("*")
         .eq("user_id", user.id)
         .eq("workflow_id", workflowId);
-      if (sessionRunId) {
-        snapshotsQuery.eq("run_id", sessionRunId);
-      }
+      snapshotsQuery.eq("run_id", sessionRunId);
       snapshotsQuery.order("snapshot_at", { ascending: true });
 
       const [
@@ -234,6 +258,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setTrades([]);
       setSnapshots([]);
       activeSessionRunIdRef.current = null;
+      pendingSessionRunIdRef.current = null;
       setLoading(false);
       setError(null);
       return;
@@ -270,10 +295,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           const newTrade = payload.new as any;
           if (newTrade.user_id !== user.id || newTrade.workflow_id !== workflowId)
             return;
-          if (
-            activeSessionRunIdRef.current &&
-            newTrade.run_id !== activeSessionRunIdRef.current
-          )
+          if (newTrade.run_id !== activeSessionRunIdRef.current)
             return;
 
           // Reload to get full data with matched fills
@@ -295,10 +317,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             newSnapshot.workflow_id !== workflowId
           )
             return;
-          if (
-            activeSessionRunIdRef.current &&
-            newSnapshot.run_id !== activeSessionRunIdRef.current
-          )
+          if (newSnapshot.run_id !== activeSessionRunIdRef.current)
             return;
 
           setSnapshots((prev) => {
@@ -322,6 +341,34 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       channel.unsubscribe();
     };
   }, [enabled, loadData, user, workflowId]);
+
+  useEffect(() => {
+    if (!enabled || !workflowId) return;
+
+    const handleSessionUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        workflowId: string;
+        sessionId: string | null;
+      }>;
+
+      if (customEvent.detail?.workflowId !== workflowId) return;
+
+      pendingSessionRunIdRef.current = customEvent.detail.sessionId;
+      activeSessionRunIdRef.current = customEvent.detail.sessionId;
+      setTrades([]);
+      setSnapshots([]);
+      setMetrics(buildLiveMetrics(undefined, [], []) as BacktestResultMetrics);
+      void loadData();
+    };
+
+    window.addEventListener("coreza-live-session-updated", handleSessionUpdate);
+    return () => {
+      window.removeEventListener(
+        "coreza-live-session-updated",
+        handleSessionUpdate,
+      );
+    };
+  }, [enabled, workflowId, loadData]);
 
   return {
     backtest,

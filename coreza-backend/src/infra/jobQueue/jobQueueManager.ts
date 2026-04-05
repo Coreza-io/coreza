@@ -33,6 +33,7 @@ import {
 import { WorkflowRunnerManager } from "../../services/workflowRunnerManager";
 import { BacktestSessionManager } from "../../backtest";
 import { BacktestExecutor } from "../../backtest";
+import { RedisKeys } from "../redisKeys";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -152,15 +153,17 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
     // Store loop metadata in Redis for continuation
     await redis.set(
-      `loop:${parentRunId}:${loopId}:meta`,
+      RedisKeys.loopMeta(userId, workflowId, parentRunId, loopId),
       JSON.stringify({
         totalItems: items.length,
         maxConcurrency,
         continueOnError,
+        userId,
+        workflowId,
         startedAt: new Date().toISOString(),
       })
     );
-    await redis.expire(`loop:${parentRunId}:${loopId}:meta`, 3600);
+    await redis.expire(RedisKeys.loopMeta(userId, workflowId, parentRunId, loopId), 3600);
 
     // Find the first node(s) in the loop body - targets of edges from the Loop node's "loop" handle
     const loopBodyEntryEdges = subgraphEdges.filter(

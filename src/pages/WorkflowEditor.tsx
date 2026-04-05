@@ -93,6 +93,7 @@ import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
+import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";

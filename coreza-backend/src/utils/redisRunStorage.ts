@@ -14,7 +14,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getRedisCache } from "../config/redis";
+import { RedisKeys } from "../infra/redisKeys";
+import { RedisOps } from "../infra/redisOps";
 import logger from "../utils/logger";
 import { WorkflowExecutionResult } from "../engine/types";
 
@@ -36,7 +37,6 @@ export async function createRunInRedis(
   },
   sessionId?: string,
 ): Promise<void> {
-  const redis = getRedisCache();
 
   const runData: Record<string, string> = {
     id: runId,
@@ -72,11 +72,14 @@ export async function createRunInRedis(
   }
 
   // Store run data in Redis hash with TTL and queue for sync in one round-trip
-  const pipeline = redis.pipeline();
-  pipeline.hset(`user:${userId}:runs:data:${runId}`, runData);
-  pipeline.expire(`user:${userId}:runs:data:${runId}`, RUN_TTL_SECONDS);
-  pipeline.lpush(`runs:pending:all`, `${userId}:${runId}`);
-  pipeline.ltrim(`runs:pending:all`, 0, 9999);
+  const pipeline = RedisOps.pipeline();
+  const runKey = RedisKeys.userRun(userId, runId);
+  const pendingQueue = RedisKeys.userRunsPending(userId);
+  pipeline.hset(runKey, runData);
+  pipeline.expire(runKey, RUN_TTL_SECONDS);
+  pipeline.lpush(pendingQueue, runId);
+  pipeline.ltrim(pendingQueue, 0, 9999);
+  pipeline.sadd(RedisKeys.registryRunsPending(), userId);
   await pipeline.exec();
 
   logger.debug({ runId, workflowId }, "Created run in Redis");
@@ -91,7 +94,6 @@ export async function updateRunStatusInRedis(
   status: "running" | "success" | "failed" | "cancelled",
   executionResult?: any,
 ): Promise<void> {
-  const redis = getRedisCache();
 
   const updates: Record<string, string> = {
     status,
@@ -110,7 +112,7 @@ export async function updateRunStatusInRedis(
     updates.error_message = executionResult.errorMessage;
   }
 
-  await redis.hset(`user:${userId}:runs:data:${runId}`, updates);
+  await RedisOps.hset(RedisKeys.userRun(userId, runId), updates);
 
   logger.debug({ runId, status }, "Updated run status in Redis");
 }
@@ -122,6 +124,5 @@ export async function runExistsInRedis(
   userId: string,
   runId: string,
 ): Promise<boolean> {
-  const redis = getRedisCache();
-  return (await redis.exists(`user:${userId}:runs:data:${runId}`)) === 1;
+  return (await RedisOps.exists(RedisKeys.userRun(userId, runId))) === 1;
 }

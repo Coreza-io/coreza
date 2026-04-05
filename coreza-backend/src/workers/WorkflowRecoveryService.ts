@@ -18,6 +18,7 @@ import { Queue } from "bullmq";
 import { supabase } from "../config/supabase";
 import { getRedisQueue, getRedisCache } from "../config/redis";
 import logger from "../utils/logger";
+import { RedisKeys } from "../infra/redisKeys";
 import { workflowRecoveryCounter, staleRunsGauge } from "../utils/metrics";
 
 export interface RecoveryStats {
@@ -309,15 +310,38 @@ export class WorkflowRecoveryService {
     let cleanedCount = 0;
 
     try {
-      // Find all loop:* keys
-      const keys = await this.redis.keys("loop:*:meta");
+      const scanKeys = async (pattern: string): Promise<string[]> => {
+        let cursor = "0";
+        const allKeys: string[] = [];
+
+        do {
+          const [nextCursor, batch] = await this.redis.scan(
+            cursor,
+            "MATCH",
+            pattern,
+            "COUNT",
+            200,
+          );
+          cursor = nextCursor;
+          if (batch.length > 0) {
+            allKeys.push(...batch);
+          }
+        } while (cursor !== "0");
+
+        return allKeys;
+      };
+
+      // Find all user/workflow scoped loop metadata keys
+      const keys = await scanKeys("userId:*:workflowId:*:loop:*:meta");
 
       for (const metaKey of keys) {
-        // Extract parentRunId from key pattern: loop:{parentRunId}:{loopId}:meta
+        // Extract key segments: userId:{uid}:workflowId:{wid}:loop:{parentRunId}:{loopId}:meta
         const parts = metaKey.split(":");
-        if (parts.length < 4) continue;
+        if (parts.length < 8) continue;
 
-        const parentRunId = parts[1];
+        const userId = parts[1];
+        const workflowId = parts[3];
+        const parentRunId = parts[5];
 
         // Check if parent run is still active
         const { data: run, error } = await supabase
@@ -329,8 +353,12 @@ export class WorkflowRecoveryService {
         // If run doesn't exist or is in terminal state, clean up
         if (error || !run || ["success", "failed", "cancelled", "interrupted"].includes(run.status)) {
           // Get all keys for this loop
-          const loopPattern = `loop:${parentRunId}:*`;
-          const loopKeys = await this.redis.keys(loopPattern);
+          const loopPattern = RedisKeys.loopPattern(
+            userId,
+            workflowId,
+            parentRunId,
+          );
+          const loopKeys = await scanKeys(loopPattern);
 
           if (loopKeys.length > 0) {
             await this.redis.del(...loopKeys);

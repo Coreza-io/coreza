@@ -9,6 +9,7 @@ import {
   updateRunStatusInRedis,
 } from "../utils/redisRunStorage";
 import { WorkflowExecutionResult } from "../engine/types";
+import { RedisKeys } from "../infra/redisKeys";
 
 const STRATEGY_GROUP = "strategy-group";
 const AUTOCLAIM_IDLE_MS = 60_000; // 60s idle threshold for reclaiming
@@ -61,7 +62,7 @@ export class WorkflowRunner {
     this.streamRedisClient = createDedicatedStreamConnection(
       `Strategy-${workflowId}`,
     );
-    this.streamKey = `strategy:stream:${workflowId}`;
+    this.streamKey = RedisKeys.strategyStream(userId, workflowId);
     this.abortController = new AbortController();
     this.consumerName = `consumer-${workflowId}-${this.runnerInstanceId}`;
     this.serializedSnapshot = {
@@ -393,7 +394,11 @@ export class WorkflowRunner {
   }
 
   private async cleanupRunnerKeys(): Promise<void> {
-    const pattern = `user:${this.userId}:workflow:${this.workflowId}:runId:${this.runnerInstanceId}:*`;
+    const pattern = RedisKeys.sessionPattern(
+      this.userId,
+      this.workflowId,
+      this.runnerInstanceId,
+    );
     let cursor = "0";
 
     do {

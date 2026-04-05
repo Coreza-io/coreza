@@ -14,29 +14,62 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { redis } from '../config/redis';
+import { getRedisCache } from "../config/redis";
+import { RedisKeys } from "./redisKeys";
 
-const keyFor = (runId: string, nodeId: string) => `workflow:${runId}:node:${nodeId}`;
+const keyFor = (
+  userId: string,
+  workflowId: string,
+  sessionId: string,
+  runId: string,
+  nodeId: string,
+) => RedisKeys.nodeState(userId, workflowId, sessionId, runId, nodeId);
 
 export class NodeStore {
-  static async setNodeState(runId: string, nodeId: string, state: string): Promise<void> {
-    const key = keyFor(runId, nodeId);
-    await redis.hset(key, 'state', state);
+  static async setNodeState(
+    userId: string,
+    workflowId: string,
+    sessionId: string,
+    runId: string,
+    nodeId: string,
+    state: string,
+  ): Promise<void> {
+    const key = keyFor(userId, workflowId, sessionId, runId, nodeId);
+    await getRedisCache().hset(key, "state", state);
   }
 
-  static async getNodeState(runId: string, nodeId: string): Promise<string | null> {
-    const key = keyFor(runId, nodeId);
-    return await redis.hget(key, 'state');
+  static async getNodeState(
+    userId: string,
+    workflowId: string,
+    sessionId: string,
+    runId: string,
+    nodeId: string,
+  ): Promise<string | null> {
+    const key = keyFor(userId, workflowId, sessionId, runId, nodeId);
+    return getRedisCache().hget(key, "state");
   }
 
-  static async setNodeOutput(runId: string, nodeId: string, output: any): Promise<void> {
-    const key = keyFor(runId, nodeId);
-    await redis.hset(key, 'output', JSON.stringify(output ?? null));
+  static async setNodeOutput(
+    userId: string,
+    workflowId: string,
+    sessionId: string,
+    runId: string,
+    nodeId: string,
+    output: unknown,
+  ): Promise<void> {
+    const key = keyFor(userId, workflowId, sessionId, runId, nodeId);
+    await getRedisCache().hset(key, "output", JSON.stringify(output ?? null));
   }
 
-  static async getNodeOutput(runId: string, nodeId: string): Promise<any> {
-    const key = keyFor(runId, nodeId);
-    const value = await redis.hget(key, 'output');
+  static async getNodeOutput(
+    userId: string,
+    workflowId: string,
+    sessionId: string,
+    runId: string,
+    nodeId: string,
+  ): Promise<unknown> {
+    const key = keyFor(userId, workflowId, sessionId, runId, nodeId);
+    const value = await getRedisCache().hget(key, "output");
     return value ? JSON.parse(value) : null;
   }
 }

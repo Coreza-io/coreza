@@ -12,10 +12,10 @@ import { LiveFillRepository, LiveFillRow } from "../repositories/LiveFillReposit
 import { CashSnapshotRepository, CashSnapshotRow } from "../repositories/CashSnapshotRepository";
 import { LatestSnapshotState, SnapshotCache } from "../services/SnapshotCache";
 import Redis from "ioredis";
+import { RedisKeys } from "../infra/redisKeys";
 
 const logger = createLogger("FillSyncWorker");
 
-const ACTIVE_STREAMS_KEY = "portfolio:fills:active_streams";
 const CONSUMER_GROUP = "fill-sync";
 const CONSUMER_NAME = "worker-1";
 const BATCH_SIZE = 100;
@@ -132,124 +132,132 @@ export class FillSyncWorker {
     const redis = getRedisCache();
     const streamConn = this.streamConnection || redis;
 
-    // Discover active streams
-    const activeStreams = await redis.smembers(ACTIVE_STREAMS_KEY);
-    if (activeStreams.length === 0) {
+    const activeUsers = await redis.smembers(RedisKeys.registryFillsActive());
+    if (activeUsers.length === 0) {
       // No active streams, sleep briefly
       await new Promise((r) => setTimeout(r, BLOCK_TIMEOUT_MS));
       return;
     }
 
-    for (const streamKey of activeStreams) {
-      // Ensure consumer group exists
-      await this.ensureConsumerGroup(redis, streamKey);
-
-      // Read from stream
-      let results: any;
-      try {
-        results = await streamConn.xreadgroup(
-          "GROUP", CONSUMER_GROUP, CONSUMER_NAME,
-          "COUNT", BATCH_SIZE,
-          "BLOCK", BLOCK_TIMEOUT_MS,
-          "STREAMS", streamKey, ">"
-        );
-      } catch (err: any) {
-        if (err.message?.includes("NOGROUP")) {
-          await this.ensureConsumerGroup(redis, streamKey);
-          continue;
-        }
-        throw err;
+    for (const userId of activeUsers) {
+      const activeStreamsKey = RedisKeys.userActiveFillStreams(userId);
+      const activeStreams = await redis.smembers(activeStreamsKey);
+      if (activeStreams.length === 0) {
+        await redis.srem(RedisKeys.registryFillsActive(), userId);
+        continue;
       }
 
-      if (!results || results.length === 0) continue;
+      for (const streamKey of activeStreams) {
+        await this.ensureConsumerGroup(redis, streamKey);
 
-      // Parse entries from [ [streamKey, [[entryId, [field, value, ...]], ...]] ]
-      const [, entries] = results[0];
-      if (!entries || entries.length === 0) continue;
-
-      // Dedupe by event_id
-      const deduped = new Map<string, { entryId: string; fields: Record<string, string> }>();
-      const entryIds: string[] = [];
-
-      for (const [entryId, fieldValues] of entries) {
-        entryIds.push(entryId);
-        const fields: Record<string, string> = {};
-        for (let i = 0; i < fieldValues.length; i += 2) {
-          fields[fieldValues[i]] = fieldValues[i + 1];
-        }
-        const eventId = fields.event_id;
-        if (eventId) {
-          deduped.set(eventId, { entryId, fields });
-        }
-      }
-
-      // Map to DB rows
-      const rows: LiveFillRow[] = [];
-      for (const [, { fields }] of deduped) {
-        rows.push({
-          event_id: fields.event_id,
-          user_id: fields.user_id,
-          broker: fields.broker,
-          credential_id: fields.credential_id || fields.user_id,
-          symbol: fields.symbol,
-          trade_id: fields.event_id, // use event_id as trade_id for backward compat
-          order_id: fields.order_id || null as any,
-          execution_id: fields.execution_id || null as any,
-          side: fields.side,
-          price: parseFloat(fields.fill_price) || 0,
-          qty: parseFloat(fields.fill_qty_delta) || 0,
-          quote_qty: fields.quote_qty ? parseFloat(fields.quote_qty) : undefined,
-          commission: parseFloat(fields.commission) || 0,
-          commission_asset: fields.commission_asset || null as any,
-          event_time: fields.event_time,
-          workflow_id: fields.workflow_id || null as any,
-          run_id: fields.run_id || null as any,
-        });
-      }
-
-      // Batch upsert to Supabase
-      try {
-        await LiveFillRepository.batchUpsert(rows);
-
-        // ACK all entries on success
-        if (entryIds.length > 0) {
-          await redis.xack(streamKey, CONSUMER_GROUP, ...entryIds);
+        let results: any;
+        try {
+          results = await streamConn.xreadgroup(
+            "GROUP", CONSUMER_GROUP, CONSUMER_NAME,
+            "COUNT", BATCH_SIZE,
+            "BLOCK", BLOCK_TIMEOUT_MS,
+            "STREAMS", streamKey, ">",
+          );
+        } catch (err: any) {
+          if (err.message?.includes("NOGROUP")) {
+            await this.ensureConsumerGroup(redis, streamKey);
+            continue;
+          }
+          throw err;
         }
 
-        // Clear retry counters for these entries
-        for (const id of entryIds) {
-          this.retryCounters.delete(id);
-        }
+        if (!results || results.length === 0) continue;
 
-        logger.debug({ stream: streamKey, count: rows.length }, "fills synced");
-      } catch (err) {
-        // Increment retry counters; move poison messages to DLQ
-        for (const entryId of entryIds) {
-          const count = (this.retryCounters.get(entryId) || 0) + 1;
-          this.retryCounters.set(entryId, count);
+        const [, entries] = results[0];
+        if (!entries || entries.length === 0) continue;
 
-          if (count >= MAX_RETRIES) {
-            logger.warn({ entryId, stream: streamKey }, "moving poison message to DLQ");
-            try {
-              // Find the original fields for this entry
-              const entry = entries.find(([id]: any) => id === entryId);
-              if (entry) {
-                const [, fieldValues] = entry;
-                await redis.xadd(DLQ_STREAM, "MAXLEN", "~", "10000", "*",
-                  "original_stream", streamKey,
-                  "original_entry_id", entryId,
-                  ...fieldValues
-                );
-              }
-              await redis.xack(streamKey, CONSUMER_GROUP, entryId);
-              this.retryCounters.delete(entryId);
-            } catch (dlqErr) {
-              logger.error({ err: dlqErr, entryId }, "DLQ append failed");
-            }
+        const deduped = new Map<string, { entryId: string; fields: Record<string, string> }>();
+        const entryIds: string[] = [];
+
+        for (const [entryId, fieldValues] of entries) {
+          entryIds.push(entryId);
+          const fields: Record<string, string> = {};
+          for (let i = 0; i < fieldValues.length; i += 2) {
+            fields[fieldValues[i]] = fieldValues[i + 1];
+          }
+          const eventId = fields.event_id;
+          if (eventId) {
+            deduped.set(eventId, { entryId, fields });
           }
         }
 
-        logger.error({ err, stream: streamKey, count: entryIds.length }, "fill upsert failed, will retry");
+        const rows: LiveFillRow[] = [];
+        for (const [, { fields }] of deduped) {
+          rows.push({
+            event_id: fields.event_id,
+            user_id: fields.user_id,
+            broker: fields.broker,
+            credential_id: fields.credential_id || fields.user_id,
+            symbol: fields.symbol,
+            trade_id: fields.event_id,
+            order_id: fields.order_id || null as any,
+            execution_id: fields.execution_id || null as any,
+            side: fields.side,
+            price: parseFloat(fields.fill_price) || 0,
+            qty: parseFloat(fields.fill_qty_delta) || 0,
+            quote_qty: fields.quote_qty ? parseFloat(fields.quote_qty) : undefined,
+            commission: parseFloat(fields.commission) || 0,
+            commission_asset: fields.commission_asset || null as any,
+            event_time: fields.event_time,
+            workflow_id: fields.workflow_id || null as any,
+            run_id: fields.run_id || null as any,
+          });
+        }
+
+        try {
+          await LiveFillRepository.batchUpsert(rows);
+
+          if (entryIds.length > 0) {
+            await redis.xack(streamKey, CONSUMER_GROUP, ...entryIds);
+          }
+
+          for (const id of entryIds) {
+            this.retryCounters.delete(id);
+          }
+
+          logger.debug({ stream: streamKey, count: rows.length }, "fills synced");
+        } catch (err) {
+          for (const entryId of entryIds) {
+            const count = (this.retryCounters.get(entryId) || 0) + 1;
+            this.retryCounters.set(entryId, count);
+
+            if (count >= MAX_RETRIES) {
+              logger.warn({ entryId, stream: streamKey }, "moving poison message to DLQ");
+              try {
+                const entry = entries.find(([id]: any) => id === entryId);
+                if (entry) {
+                  const [, fieldValues] = entry;
+                  await redis.xadd(
+                    DLQ_STREAM,
+                    "MAXLEN",
+                    "~",
+                    "10000",
+                    "*",
+                    "original_stream",
+                    streamKey,
+                    "original_entry_id",
+                    entryId,
+                    ...fieldValues,
+                  );
+                }
+                await redis.xack(streamKey, CONSUMER_GROUP, entryId);
+                this.retryCounters.delete(entryId);
+              } catch (dlqErr) {
+                logger.error({ err: dlqErr, entryId }, "DLQ append failed");
+              }
+            }
+          }
+
+          logger.error(
+            { err, stream: streamKey, count: entryIds.length },
+            "fill upsert failed, will retry",
+          );
+        }
       }
     }
   }
@@ -258,93 +266,111 @@ export class FillSyncWorker {
 
   private async flushSnapshots(): Promise<void> {
     const redis = getRedisCache();
+    const activeUsers = await redis.smembers(RedisKeys.registrySnapshotsActive());
+    if (activeUsers.length === 0) return;
 
-    const activeKeys = await redis.smembers(SnapshotCache.ACTIVE_KEYS_SET);
-    if (activeKeys.length === 0) return;
-
-    const rows: CashSnapshotRow[] = [];
-    const processedKeys: string[] = [];
-
-    for (const key of activeKeys) {
-      const json = await redis.get(key);
-      if (!json) {
-        // Key expired or missing — remove from set
-        await redis.srem(SnapshotCache.ACTIVE_KEYS_SET, key);
+    for (const userId of activeUsers) {
+      const activeKeysSet = SnapshotCache.activeKeysSet(userId);
+      const activeKeys = await redis.smembers(activeKeysSet);
+      if (activeKeys.length === 0) {
+        await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
         continue;
       }
 
-      try {
-        const snapshot: LatestSnapshotState = JSON.parse(json);
-        const balances =
-          snapshot.balances_json && typeof snapshot.balances_json === "object"
-            ? (snapshot.balances_json as Record<string, unknown>)
-            : {};
-        const cash = toFiniteNumber(snapshot.cash);
-        const equity = toFiniteNumber(snapshot.equity);
-        const realizedPnl = toFiniteNumber(snapshot.realized_pnl);
-        const unrealizedPnl = toFiniteNumber(snapshot.unrealized_pnl);
+      const rows: CashSnapshotRow[] = [];
+      const processedKeys: string[] = [];
 
-        if (
-          cash === null ||
-          equity === null ||
-          realizedPnl === null ||
-          unrealizedPnl === null
-        ) {
-          logger.warn(
-            {
-              key,
-              base_currency: snapshot.base_currency,
-              cash_type: typeof snapshot.cash,
-              equity_type: typeof snapshot.equity,
-              realized_pnl_type: typeof snapshot.realized_pnl,
-              unrealized_pnl_type: typeof snapshot.unrealized_pnl,
-              skipped: true,
-            },
-            "snapshot payload malformed, skipping key",
-          );
-          await redis.del(key);
-          await redis.srem(SnapshotCache.ACTIVE_KEYS_SET, key);
+      for (const key of activeKeys) {
+        const json = await redis.get(key);
+        if (!json) {
+          await redis.srem(activeKeysSet, key);
           continue;
         }
 
-        rows.push({
-          user_id: snapshot.user_id,
-          broker: snapshot.broker,
-          credential_id: snapshot.credential_id || snapshot.user_id,
-          snapshot_at: snapshot.snapshot_at,
-          balances,
-          total_value_usdt: equity,
-          workflow_id: snapshot.workflow_id || null as any,
-          run_id: snapshot.run_id || null as any,
-          base_currency: snapshot.base_currency,
-          cash,
-          equity,
-          realized_pnl: realizedPnl,
-          unrealized_pnl: unrealizedPnl,
-          positions_count: snapshot.positions_count,
-        });
-        processedKeys.push(key);
-      } catch (parseErr) {
-        logger.warn({ err: parseErr, key }, "snapshot parse failed, removing");
-        await redis.srem(SnapshotCache.ACTIVE_KEYS_SET, key);
-      }
-    }
+        try {
+          const snapshot: LatestSnapshotState = JSON.parse(json);
+          const balances =
+            snapshot.balances_json && typeof snapshot.balances_json === "object"
+              ? (snapshot.balances_json as Record<string, unknown>)
+              : {};
+          const cash = toFiniteNumber(snapshot.cash);
+          const equity = toFiniteNumber(snapshot.equity);
+          const realizedPnl = toFiniteNumber(snapshot.realized_pnl);
+          const unrealizedPnl = toFiniteNumber(snapshot.unrealized_pnl);
 
-    if (rows.length > 0) {
-      try {
-        await CashSnapshotRepository.batchInsert(rows);
+          if (
+            cash === null ||
+            equity === null ||
+            realizedPnl === null ||
+            unrealizedPnl === null
+          ) {
+            logger.warn(
+              {
+                key,
+                base_currency: snapshot.base_currency,
+                cash_type: typeof snapshot.cash,
+                equity_type: typeof snapshot.equity,
+                realized_pnl_type: typeof snapshot.realized_pnl,
+                unrealized_pnl_type: typeof snapshot.unrealized_pnl,
+                skipped: true,
+              },
+              "snapshot payload malformed, skipping key",
+            );
+            await redis.del(key);
+            await redis.srem(activeKeysSet, key);
+            continue;
+          }
 
-        // Delete flushed keys from Redis and remove from active set
-        const pipeline = redis.pipeline();
-        for (const key of processedKeys) {
-          pipeline.del(key);
-          pipeline.srem(SnapshotCache.ACTIVE_KEYS_SET, key);
+          rows.push({
+            user_id: snapshot.user_id,
+            broker: snapshot.broker,
+            credential_id: snapshot.credential_id || snapshot.user_id,
+            snapshot_at: snapshot.snapshot_at,
+            balances,
+            total_value_usdt: equity,
+            workflow_id: snapshot.workflow_id || null as any,
+            run_id: snapshot.run_id || null as any,
+            base_currency: snapshot.base_currency,
+            cash,
+            equity,
+            realized_pnl: realizedPnl,
+            unrealized_pnl: unrealizedPnl,
+            positions_count: snapshot.positions_count,
+          });
+          processedKeys.push(key);
+        } catch (parseErr) {
+          logger.warn({ err: parseErr, key }, "snapshot parse failed, removing");
+          await redis.srem(activeKeysSet, key);
         }
-        await pipeline.exec();
+      }
 
-        logger.debug({ count: rows.length }, "snapshots flushed");
-      } catch (err) {
-        logger.error({ err, count: rows.length }, "snapshot flush to DB failed");
+      if (rows.length > 0) {
+        try {
+          await CashSnapshotRepository.batchInsert(rows);
+
+          const pipeline = redis.pipeline();
+          for (const key of processedKeys) {
+            pipeline.del(key);
+            pipeline.srem(activeKeysSet, key);
+          }
+          pipeline.scard(activeKeysSet);
+          const results = await pipeline.exec();
+          const lenResult = results?.[results.length - 1];
+          const pendingLen =
+            lenResult && !lenResult[0] ? Number(lenResult[1] ?? 0) : null;
+          if (pendingLen === 0) {
+            await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
+          }
+
+          logger.debug({ count: rows.length }, "snapshots flushed");
+        } catch (err) {
+          logger.error({ err, count: rows.length }, "snapshot flush to DB failed");
+        }
+      }
+
+      const remaining = await redis.scard(activeKeysSet);
+      if (remaining === 0) {
+        await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
       }
     }
   }

@@ -24,6 +24,7 @@ import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
 import type { WorkflowJobData } from "../infra/jobQueue/queueInterface";
+import { RedisKeys } from "../infra/redisKeys";
 import type {
   WorkflowJobResult,
   LoopItemResult,
@@ -40,6 +41,8 @@ interface WorkflowWorkerDependencies {
  */
 async function collectOrderedResults(
   redis: Redis,
+  userId: string,
+  workflowId: string,
   parentRunId: string,
   loopId: string,
   totalItems: number,
@@ -48,7 +51,7 @@ async function collectOrderedResults(
   hasErrors: boolean;
   errorCount: number;
 }> {
-  const key = `loop:${parentRunId}:${loopId}:results`;
+  const key = RedisKeys.loopResults(userId, workflowId, parentRunId, loopId);
   const resultsHash = await redis.hgetall(key);
 
   const results: LoopItemResult[] = new Array(totalItems);
@@ -107,13 +110,15 @@ async function collectOrderedResults(
  */
 async function cleanupLoopKeys(
   redis: Redis,
+  userId: string,
+  workflowId: string,
   parentRunId: string,
   loopId: string,
 ): Promise<void> {
   const keysToDelete = [
-    `loop:${parentRunId}:${loopId}:results`,
-    `loop:${parentRunId}:${loopId}:aggregated`,
-    `loop:${parentRunId}:${loopId}:meta`,
+    RedisKeys.loopResults(userId, workflowId, parentRunId, loopId),
+    RedisKeys.loopAggregated(userId, workflowId, parentRunId, loopId),
+    RedisKeys.loopMeta(userId, workflowId, parentRunId, loopId),
   ];
 
   await Promise.all(keysToDelete.map((key) => redis.del(key)));
@@ -183,7 +188,12 @@ export function createWorkflowWorker({
           );
 
           // Store successful result in Redis by itemIndex
-          const key = `loop:${parentRunId}:${loopId}:results`;
+          const key = RedisKeys.loopResults(
+            userId,
+            workflowId,
+            parentRunId!,
+            loopId!,
+          );
           await redis.hset(key, String(itemIndex), JSON.stringify(result));
           await redis.expire(key, 3600); // 1 hour TTL
 
@@ -206,7 +216,12 @@ export function createWorkflowWorker({
           );
 
           // Store error in Redis for aggregation (allows continueOnError)
-          const key = `loop:${parentRunId}:${loopId}:results`;
+          const key = RedisKeys.loopResults(
+            userId,
+            workflowId,
+            parentRunId!,
+            loopId!,
+          );
           await redis.hset(key, String(itemIndex), JSON.stringify(errorOutput));
           await redis.expire(key, 3600);
 
@@ -236,6 +251,8 @@ export function createWorkflowWorker({
           const { results, hasErrors, errorCount } =
             await collectOrderedResults(
               redis,
+              userId,
+              workflowId,
               parentRunId!,
               loopId!,
               totalItems ?? 0,
@@ -252,7 +269,7 @@ export function createWorkflowWorker({
           }));
 
           // Store aggregated results for parent workflow to retrieve
-          const aggregatedKey = `loop:${parentRunId}:${loopId}:aggregated`;
+          const aggregatedKey = RedisKeys.loopAggregated(userId, workflowId, parentRunId!, loopId!);
           await redis.set(
             aggregatedKey,
             JSON.stringify({
@@ -337,7 +354,7 @@ export function createWorkflowWorker({
 
             if (useRedisStorage) {
               // Update Redis-stored run
-              await redis.hset(`user:${userId}:runs:data:${parentRunId}`, {
+              await redis.hset(RedisKeys.userRun(userId, parentRunId!), {
                 status: "success",
                 result: JSON.stringify(finalResult),
                 completed_at: new Date().toISOString(),
@@ -378,7 +395,7 @@ export function createWorkflowWorker({
           );
 
           // Cleanup Redis keys after successful aggregation
-          await cleanupLoopKeys(redis, parentRunId!, loopId!);
+          await cleanupLoopKeys(redis, userId, workflowId, parentRunId!, loopId!);
 
           return createSuccessOutput(
             {

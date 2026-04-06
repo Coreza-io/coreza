@@ -240,7 +240,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         buildLiveMetrics(
           undefined,
           tradeMetricInput,
-          filteredSnapshots,
+          filteredSnapshots as any[],
         ) as BacktestResultMetrics,
       );
     } catch (err: any) {

@@ -164,25 +164,25 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .from("live_trades" as any)
         .select("*")
         .eq("user_id", user.id)
-        .eq("workflow_id", workflowId);
-      tradesQuery.eq("execution_id" as any, sessionRunId);
-      tradesQuery.order("exitTime" as any, { ascending: true });
+        .eq("workflow_id", workflowId)
+        .eq("execution_id", sessionRunId)
+        .order("exitTime" as any, { ascending: true });
 
       const fillsQuery = supabase
-        .from("live_fills")
+        .from("live_fills" as any)
         .select("*")
         .eq("user_id", user.id)
-        .eq("workflow_id", workflowId);
-      fillsQuery.eq("execution_id" as any, sessionRunId);
-      fillsQuery.order("event_time", { ascending: true });
+        .eq("workflow_id", workflowId)
+        .eq("execution_id", sessionRunId)
+        .order("event_time", { ascending: true });
 
       const snapshotsQuery = supabase
-        .from("cash_snapshots")
+        .from("cash_snapshots" as any)
         .select("*")
         .eq("user_id", user.id)
-        .eq("workflow_id", workflowId);
-      snapshotsQuery.eq("execution_id" as any, sessionRunId);
-      snapshotsQuery.order("snapshot_at", { ascending: true });
+        .eq("workflow_id", workflowId)
+        .eq("execution_id", sessionRunId)
+        .order("snapshot_at", { ascending: true });
 
       const [
         { data: liveTradesData, error: liveTradesErr },

@@ -193,6 +193,11 @@ const WorkflowEditorContent = () => {
   const [workflowId, setWorkflowId] = useState<string | null>(
     isNewWorkflow ? null : id || null,
   );
+  const workflowSessionId = useMemo(() => {
+    // Tie lifecycle to workflowId changes (new workflow => new session scope).
+    void workflowId;
+    return crypto.randomUUID();
+  }, [workflowId]);
 
   // CRITICAL FIX: Sync workflowId with URL parameter changes
   useEffect(() => {
@@ -372,6 +377,27 @@ const WorkflowEditorContent = () => {
       })),
     );
   }, [executingNode]);
+
+  // Scope manual node execution state to this editor session.
+  useEffect(() => {
+    if (nodes.length === 0) return;
+
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        if (node.data?.workflowSessionId === workflowSessionId) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            workflowSessionId,
+          },
+        };
+      }),
+    );
+  }, [workflowSessionId, nodes.length, setNodes]);
 
   const cleanupAlpacaSubscription = useCallback(
     async (
@@ -818,12 +844,13 @@ const WorkflowEditorContent = () => {
         data: {
           label: nodeDefinition?.name || `${nodeType} node`,
           definition: nodeDefinition,
+          workflowSessionId,
         },
       };
 
       setNodes((nds) => nds.concat(newNode));
     },
-    [setNodes, nodes],
+    [setNodes, nodes, workflowSessionId],
   );
 
   const onDrop = useCallback(

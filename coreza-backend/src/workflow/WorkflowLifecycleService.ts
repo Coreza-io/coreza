@@ -26,7 +26,7 @@ export class WorkflowLifecycleService {
     userId: string;
     workflowId: string;
     isActive: boolean;
-    sessionId?: string;
+    executionId?: string;
   }): Promise<ActivationResult> {
     const workflow = await this.workflowRepo.getOwnedWorkflow(
       input.userId,
@@ -38,7 +38,7 @@ export class WorkflowLifecycleService {
 
     try {
       if (input.isActive) {
-        return await this.activate(workflow, trigger, input.userId, input.sessionId);
+        return await this.activate(workflow, trigger, input.userId, input.executionId);
       }
 
       return await this.deactivate(workflow, trigger, input.userId);
@@ -56,7 +56,7 @@ export class WorkflowLifecycleService {
     workflow: any,
     trigger: ClassifiedTrigger,
     userId: string,
-    sessionId?: string,
+    executionId?: string,
   ): Promise<ActivationResult> {
     let cronToSave: string | null = null;
     let nextRun: string | null = null;
@@ -78,7 +78,7 @@ export class WorkflowLifecycleService {
           trigger.node,
           workflow.nodes,
           workflow.edges,
-          sessionId,
+          executionId,
         );
         message = `Workflow subscribed to streaming source ${sourceId}`;
         break;
@@ -123,7 +123,7 @@ export class WorkflowLifecycleService {
       workflow.id,
       true,
       cronToSave,
-      sessionId ?? null,
+      executionId ?? null,
     );
 
     return {

@@ -15,6 +15,7 @@
  */
 
 import { getRedisCache } from '../config/redis';
+import { RedisKeys } from '../infra/redisKeys';
 
 type LoopState = {
   loopItems: any[];
@@ -32,6 +33,9 @@ type LoopState = {
  */
 export class NodeStoreV2 {
   private runId: string;
+  private readonly userId: string;
+  private readonly workflowId: string;
+  private readonly sessionId: string;
   private nodes = new Map<string, any>();
   private loops = new Map<string, LoopState>();
   private nodeResults = new Map<string, any>();
@@ -40,8 +44,17 @@ export class NodeStoreV2 {
   private _cachedResults: Record<string, any> | null = null;
   private pinnedResults = new Map<string, any>();
 
-  constructor(runId: string, nodes: any[]) {
+  constructor(
+    runId: string,
+    nodes: any[],
+    userId: string,
+    workflowId: string,
+    sessionId?: string,
+  ) {
     this.runId = runId;
+    this.userId = userId;
+    this.workflowId = workflowId;
+    this.sessionId = sessionId ?? runId;
     this.workflowNodes = nodes;
     
     // Populate node definitions
@@ -240,41 +253,50 @@ export class NodeStoreV2 {
   }
 
   // Persistent value management (for Edit Fields nodes)
-  async getPersistentValue(workflowId: string, key: string): Promise<any> {
+  async getPersistentValue(
+    userId: string,
+    workflowId: string,
+    key: string,
+  ): Promise<any> {
     const redis = getRedisCache();
-    const redisKey = `workflow:${workflowId}:persistent:${key}`;
+    const redisKey = RedisKeys.persistent(userId, workflowId, key);
     const value = await redis.get(redisKey);
     return value ? JSON.parse(value) : null;
   }
 
-  async setPersistentValue(workflowId: string, key: string, value: any): Promise<void> {
+  async setPersistentValue(
+    userId: string,
+    workflowId: string,
+    key: string,
+    value: any,
+  ): Promise<void> {
     const redis = getRedisCache();
-    const redisKey = `workflow:${workflowId}:persistent:${key}`;
+    const redisKey = RedisKeys.persistent(userId, workflowId, key);
     await redis.set(redisKey, JSON.stringify(value));
   }
 
   // Redis persistence methods (legacy compatibility)
   async setNodeStateRedis(nodeId: string, state: string): Promise<void> {
     const redis = getRedisCache();
-    const key = `workflow:${this.runId}:node:${nodeId}`;
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.runId, nodeId);
     await redis.hset(key, 'state', state);
   }
 
   async getNodeStateRedis(nodeId: string): Promise<string | null> {
     const redis = getRedisCache();
-    const key = `workflow:${this.runId}:node:${nodeId}`;
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.runId, nodeId);
     return await redis.hget(key, 'state');
   }
 
   async setNodeOutput(nodeId: string, output: any): Promise<void> {
     const redis = getRedisCache();
-    const key = `workflow:${this.runId}:node:${nodeId}`;
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.runId, nodeId);
     await redis.hset(key, 'output', JSON.stringify(output ?? null));
   }
 
   async getNodeOutput(nodeId: string): Promise<any> {
     const redis = getRedisCache();
-    const key = `workflow:${this.runId}:node:${nodeId}`;
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.runId, nodeId);
     const value = await redis.hget(key, 'output');
     return value ? JSON.parse(value) : null;
   }

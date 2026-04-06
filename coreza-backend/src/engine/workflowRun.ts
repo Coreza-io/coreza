@@ -51,7 +51,13 @@ export class WorkflowRun {
         ? ENGINE_CONFIG.BACKTEST_FLUSH_POLICY
         : ENGINE_CONFIG.DEFAULT_FLUSH_POLICY);
 
-    this.store = new NodeStoreV2(options.runId, [...plan.nodes]);
+    this.store = new NodeStoreV2(
+      options.runId,
+      [...plan.nodes],
+      options.userId,
+      options.workflowId,
+      options.runId,
+    );
 
     this.dataContext = DataContextManager.getInstance().getContext({
       runId: options.runId,

@@ -16,6 +16,7 @@
 
 import crypto from "crypto";
 import { getRedisCache } from "../config/redis";
+import { RedisKeys } from "../infra/redisKeys";
 
 export interface OrderIdempotencyParams {
   workflowId: string;
@@ -63,10 +64,12 @@ export function generateIdempotencyKey(params: OrderIdempotencyParams): string {
  * Check if order already exists in cache.
  */
 export async function getOrderFromCache(
+  userId: string,
+  workflowId: string,
   idempotencyKey: string
 ): Promise<CachedOrder | null> {
   const redis = getRedisCache();
-  const cached = await redis.get(`order:${idempotencyKey}`);
+  const cached = await redis.get(RedisKeys.order(userId, workflowId, idempotencyKey));
   return cached ? JSON.parse(cached) : null;
 }
 
@@ -74,6 +77,8 @@ export async function getOrderFromCache(
  * Cache order intent before submission.
  */
 export async function cacheOrderIntent(
+  userId: string,
+  workflowId: string,
   idempotencyKey: string,
   broker: string
 ): Promise<void> {
@@ -85,26 +90,36 @@ export async function cacheOrderIntent(
     broker,
   };
   await Promise.all([
-    redis.setex(`order:${idempotencyKey}`, ORDER_CACHE_TTL, JSON.stringify(order)),
+    redis.setex(
+      RedisKeys.order(userId, workflowId, idempotencyKey),
+      ORDER_CACHE_TTL,
+      JSON.stringify(order),
+    ),
     // Pre-register reverse index: idempotency key IS the client_order_id sent to brokers.
     // This ensures fills arriving before updateOrderCache() can still be verified.
-    redis.setex(`order-reverse:${idempotencyKey}`, ORDER_CACHE_TTL, idempotencyKey),
+    redis.setex(
+      RedisKeys.orderReverse(userId, workflowId, idempotencyKey),
+      ORDER_CACHE_TTL,
+      idempotencyKey,
+    ),
   ]);
 }
 
 /**
  * Update cache with order result.
- * Also creates a reverse index (order-reverse:{orderId} → idempotencyKey)
+ * Also creates a scoped reverse index (`...:orderReverse:{orderId}` → idempotencyKey)
  * so we can look up whether an incoming orderId belongs to us.
  */
 export async function updateOrderCache(
+  userId: string,
+  workflowId: string,
   idempotencyKey: string,
   status: "success" | "failed",
   result: any,
   orderId?: string
 ): Promise<void> {
   const redis = getRedisCache();
-  const existing = await getOrderFromCache(idempotencyKey);
+  const existing = await getOrderFromCache(userId, workflowId, idempotencyKey);
   if (existing) {
     const updated: CachedOrder = {
       ...existing,
@@ -112,11 +127,19 @@ export async function updateOrderCache(
       result,
       orderId,
     };
-    await redis.setex(`order:${idempotencyKey}`, ORDER_CACHE_TTL, JSON.stringify(updated));
+    await redis.setex(
+      RedisKeys.order(userId, workflowId, idempotencyKey),
+      ORDER_CACHE_TTL,
+      JSON.stringify(updated),
+    );
 
     // Create reverse index for order ownership verification
     if (orderId) {
-      await redis.setex(`order-reverse:${orderId}`, ORDER_CACHE_TTL, idempotencyKey);
+      await redis.setex(
+        RedisKeys.orderReverse(userId, workflowId, orderId),
+        ORDER_CACHE_TTL,
+        idempotencyKey,
+      );
     }
   }
 }
@@ -125,12 +148,18 @@ export async function updateOrderCache(
  * Check if an orderId was placed by this system (exists in Redis reverse index).
  * Returns the cached order if found, null otherwise.
  */
-export async function isOurOrder(orderId: string): Promise<{ ours: boolean; order?: CachedOrder }> {
+export async function isOurOrder(
+  userId: string,
+  workflowId: string,
+  orderId: string,
+): Promise<{ ours: boolean; order?: CachedOrder }> {
   const redis = getRedisCache();
-  const idempotencyKey = await redis.get(`order-reverse:${orderId}`);
+  const idempotencyKey = await redis.get(
+    RedisKeys.orderReverse(userId, workflowId, orderId),
+  );
   if (!idempotencyKey) {
     return { ours: false };
   }
-  const order = await getOrderFromCache(idempotencyKey);
+  const order = await getOrderFromCache(userId, workflowId, idempotencyKey);
   return { ours: true, order: order ?? undefined };
 }

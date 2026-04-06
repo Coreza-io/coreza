@@ -15,13 +15,14 @@
  */
 
 import type { Redis } from "ioredis";
+import { RedisKeys } from "../infra/redisKeys";
 
 export function buildStoreKey(
   userId: string,
   workflowId: string,
   variableName: string,
 ): string {
-  return `store:${userId}:${workflowId}:${variableName}`;
+  return RedisKeys.store(userId, workflowId, variableName);
 }
 
 export function parseStoredValue(raw: string | null): unknown {

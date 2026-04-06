@@ -6,6 +6,8 @@
  * (at your option) any later version.
  */
 
+import { RedisKeys } from "../infra/redisKeys";
+
 interface BuildExecutionKeyConfig {
   userId: string;
   workflowId: string;
@@ -13,23 +15,41 @@ interface BuildExecutionKeyConfig {
   scope: string;
   nodeId?: string;
   parts?: Array<string | number>;
+  sessionId?: string;
 }
 
 export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string {
-  const segments: Array<string | number> = [
-    "user",
-    config.userId,
-    "workflow",
-    config.workflowId,
-    "runId",
-    config.runId,
-  ];
+  const sessionId = config.sessionId ?? config.runId;
 
-  if (config.nodeId) {
-    segments.push("node", config.nodeId);
+  if (config.scope === "indicator" && config.parts && config.parts.length >= 3) {
+    const [symbol, timeframe, indicator] = config.parts;
+    return RedisKeys.indicator(
+      config.userId,
+      config.workflowId,
+      sessionId,
+      String(symbol),
+      String(timeframe),
+      String(indicator),
+    );
   }
 
-  segments.push(config.scope);
+  if (config.nodeId) {
+    return RedisKeys.nodeState(
+      config.userId,
+      config.workflowId,
+      sessionId,
+      config.runId,
+      config.nodeId,
+    );
+  }
+
+  const segments: Array<string | number> = [
+    `userId:${config.userId}`,
+    `workflowId:${config.workflowId}`,
+    `sessionId:${sessionId}`,
+    `runId:${config.runId}`,
+    config.scope,
+  ];
 
   if (config.parts?.length) {
     segments.push(...config.parts);

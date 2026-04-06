@@ -8,6 +8,7 @@
 
 import { getRedisCache } from "../config/redis";
 import { createLogger } from "../utils/logger";
+import { RedisKeys } from "../infra/redisKeys";
 
 const logger = createLogger("FillEventBus");
 
@@ -31,7 +32,6 @@ export interface FillStreamEvent {
   base_currency?: string;
 }
 
-const ACTIVE_STREAMS_KEY = "portfolio:fills:active_streams";
 const STREAM_MAX_LEN = "100000";
 
 export class FillEventBus {
@@ -41,7 +41,8 @@ export class FillEventBus {
    */
   static async publish(event: FillStreamEvent): Promise<void> {
     const redis = getRedisCache();
-    const streamKey = `${event.user_id}:${event.workflow_id}:portfolio:fills:stream`;
+    const streamKey = RedisKeys.portfolioFillsStream(event.user_id, event.workflow_id);
+    const activeStreamsKey = RedisKeys.userActiveFillStreams(event.user_id);
 
     // Flatten event to string key-value pairs for XADD
     const fields: string[] = [];
@@ -52,7 +53,8 @@ export class FillEventBus {
     }
 
     const pipeline = redis.pipeline();
-    pipeline.sadd(ACTIVE_STREAMS_KEY, streamKey);
+    pipeline.sadd(activeStreamsKey, streamKey);
+    pipeline.sadd(RedisKeys.registryFillsActive(), event.user_id);
     pipeline.xadd(streamKey, "MAXLEN", "~", STREAM_MAX_LEN, "*", ...fields);
     await pipeline.exec();
 

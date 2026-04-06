@@ -7,8 +7,8 @@
  */
 
 import { getRedisCache } from "../config/redis";
+import { RedisKeys } from "../infra/redisKeys";
 
-const ACTIVE_KEYS_SET = "portfolio:snapshots:active_keys";
 const SNAPSHOT_TTL = 86400; // 24 hours
 
 export interface LatestSnapshotState {
@@ -35,16 +35,17 @@ export class SnapshotCache {
    */
   static async upsertLatest(snapshot: LatestSnapshotState): Promise<void> {
     const redis = getRedisCache();
-    const key = `${snapshot.user_id}:${snapshot.workflow_id}:portfolio:snapshot:latest`;
+    const key = RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id);
+    const activeKeysSet = RedisKeys.userActiveSnapshotKeys(snapshot.user_id);
 
     const pipeline = redis.pipeline();
     pipeline.set(key, JSON.stringify(snapshot), "EX", SNAPSHOT_TTL);
-    pipeline.sadd(ACTIVE_KEYS_SET, key);
+    pipeline.sadd(activeKeysSet, key);
+    pipeline.sadd(RedisKeys.registrySnapshotsActive(), snapshot.user_id);
     await pipeline.exec();
   }
 
-  /** Return set key name for the worker to discover active snapshot keys. */
-  static get ACTIVE_KEYS_SET() {
-    return ACTIVE_KEYS_SET;
+  static activeKeysSet(userId: string): string {
+    return RedisKeys.userActiveSnapshotKeys(userId);
   }
 }

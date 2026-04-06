@@ -17,6 +17,7 @@
 import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
 import logger from "../utils/logger";
+import { RedisKeys } from "../infra/redisKeys";
 
 /**
  * RunSyncService - Periodically syncs workflow runs from Redis to Supabase
@@ -26,8 +27,9 @@ import logger from "../utils/logger";
  * 2. Batch syncing completed runs to Supabase every N seconds
  * 3. Cleaning up synced runs from Redis
  *
- * Pending list uses composite entries: `${userId}:${runId}`
- * Data keys are user-scoped: `user:${userId}:runs:data:${runId}`
+ * Pending lists are user-scoped: `userId:${userId}:runs:pending`
+ * Active users are discovered from: `registry:users:runs:pending`
+ * Data keys are user-scoped: `userId:${userId}:runId:${runId}`
  */
 export class RunSyncService {
   private static instance: RunSyncService;
@@ -92,33 +94,37 @@ export class RunSyncService {
     const redis = getRedisCache();
 
     try {
-      // Get pending composite entries (userId:runId) from global list
-      const pendingEntries = await redis.lrange(
-        `runs:pending:all`,
-        0,
-        this.BATCH_SIZE - 1,
-      );
-
-      if (pendingEntries.length === 0) {
+      const activeUsers = await redis.smembers(RedisKeys.registryRunsPending());
+      if (activeUsers.length === 0) {
         return;
       }
 
-      logger.debug({ count: pendingEntries.length }, "Processing pending runs");
+      logger.debug({ count: activeUsers.length }, "Processing users with pending runs");
 
-      // Parse composite entries and fetch run data from Redis
+      // Fetch run data for each active user's pending queue
       const parsedEntries: Array<{ userId: string; runId: string }> = [];
       const fetchPipeline = redis.pipeline();
 
-      for (const entry of pendingEntries) {
-        const separatorIndex = entry.indexOf(":");
-        if (separatorIndex === -1) {
-          logger.warn({ entry }, "Invalid pending entry format, skipping");
+      for (const userId of activeUsers) {
+        const pendingEntries = await redis.lrange(
+          RedisKeys.userRunsPending(userId),
+          0,
+          this.BATCH_SIZE - 1,
+        );
+
+        if (pendingEntries.length === 0) {
+          await redis.srem(RedisKeys.registryRunsPending(), userId);
           continue;
         }
-        const userId = entry.substring(0, separatorIndex);
-        const runId = entry.substring(separatorIndex + 1);
-        parsedEntries.push({ userId, runId });
-        fetchPipeline.hgetall(`user:${userId}:runs:data:${runId}`);
+
+        for (const runId of pendingEntries) {
+          parsedEntries.push({ userId, runId });
+          fetchPipeline.hgetall(RedisKeys.userRun(userId, runId));
+        }
+      }
+
+      if (parsedEntries.length === 0) {
+        return;
       }
 
       const results = await fetchPipeline.exec();
@@ -215,11 +221,33 @@ export class RunSyncService {
 
       // Remove synced runs from Redis using initiated_by for user-scoped keys
       const cleanupPipeline = redis.pipeline();
+      const touchedUsers = new Set<string>();
       for (const run of completedRuns) {
-        cleanupPipeline.del(`user:${run.initiated_by}:runs:data:${run.id}`);
-        cleanupPipeline.lrem(`runs:pending:all`, 1, `${run.initiated_by}:${run.id}`);
+        cleanupPipeline.del(RedisKeys.userRun(run.initiated_by, run.id));
+        cleanupPipeline.lrem(
+          RedisKeys.userRunsPending(run.initiated_by),
+          1,
+          run.id,
+        );
+        touchedUsers.add(run.initiated_by);
       }
-      await cleanupPipeline.exec();
+
+      for (const userId of touchedUsers) {
+        cleanupPipeline.llen(RedisKeys.userRunsPending(userId));
+      }
+      const cleanupResults = await cleanupPipeline.exec();
+
+      if (cleanupResults) {
+        let index = completedRuns.length * 2;
+        for (const userId of touchedUsers) {
+          const [lenErr, lenRaw] = cleanupResults[index] ?? [];
+          const pendingLen = lenErr ? null : Number(lenRaw ?? 0);
+          if (pendingLen === 0) {
+            await redis.srem(RedisKeys.registryRunsPending(), userId);
+          }
+          index += 1;
+        }
+      }
 
       logger.debug(
         { count: completedRuns.length },
@@ -241,7 +269,11 @@ export class RunSyncService {
     let hasMore = true;
     while (hasMore) {
       const redis = getRedisCache();
-      const count = await redis.llen(`runs:pending:all`);
+      const activeUsers = await redis.smembers(RedisKeys.registryRunsPending());
+      let count = 0;
+      for (const userId of activeUsers) {
+        count += await redis.llen(RedisKeys.userRunsPending(userId));
+      }
       if (count === 0) {
         hasMore = false;
       } else {
@@ -257,7 +289,11 @@ export class RunSyncService {
    */
   async getStats(): Promise<{ pendingCount: number }> {
     const redis = getRedisCache();
-    const pendingCount = await redis.llen(`runs:pending:all`);
+    const activeUsers = await redis.smembers(RedisKeys.registryRunsPending());
+    let pendingCount = 0;
+    for (const userId of activeUsers) {
+      pendingCount += await redis.llen(RedisKeys.userRunsPending(userId));
+    }
     return { pendingCount };
   }
 }

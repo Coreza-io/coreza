@@ -144,7 +144,12 @@ export class PortfolioExecutor implements INodeExecutor {
   >();
   private static ownershipLookupCount = 0;
 
-  private async checkOwnership(id: string): Promise<boolean> {
+  private async checkOwnership(
+    userId: string,
+    workflowId: string,
+    id: string,
+  ): Promise<boolean> {
+    const cacheKey = `${userId}:${workflowId}:${id}`;
     // Periodic sweep every 1000 lookups to prevent unbounded memory growth
     if (++PortfolioExecutor.ownershipLookupCount % 1000 === 0) {
       const now = Date.now();
@@ -153,11 +158,11 @@ export class PortfolioExecutor implements INodeExecutor {
       }
     }
 
-    const cached = PortfolioExecutor.ownershipCache.get(id);
+    const cached = PortfolioExecutor.ownershipCache.get(cacheKey);
     //if (cached && cached.expiry > Date.now()) return cached.ours;
 
-    const result = await isOurOrder(id);
-    PortfolioExecutor.ownershipCache.set(id, {
+    const result = await isOurOrder(userId, workflowId, id);
+    PortfolioExecutor.ownershipCache.set(cacheKey, {
       ours: result.ours,
       expiry: Date.now() + 300_000, // 5 minutes
     });
@@ -660,6 +665,8 @@ export class PortfolioExecutor implements INodeExecutor {
   }
 
   private async brokerEnsureOwnedOrder(
+    userId: string,
+    workflowId: string,
     brokerOrderId?: string,
     clientOrderId?: string,
   ): Promise<{ ours: boolean }> {
@@ -668,8 +675,10 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     const isOurs =
-      (brokerOrderId && (await this.checkOwnership(brokerOrderId))) ||
-      (clientOrderId && (await this.checkOwnership(clientOrderId)));
+      (brokerOrderId &&
+        (await this.checkOwnership(userId, workflowId, brokerOrderId))) ||
+      (clientOrderId &&
+        (await this.checkOwnership(userId, workflowId, clientOrderId)));
 
     return { ours: !!isOurs };
   }
@@ -798,6 +807,8 @@ export class PortfolioExecutor implements INodeExecutor {
       const feeAsset = params.feeAsset;
 
       const { ours } = await this.brokerEnsureOwnedOrder(
+        context?.userId ?? "system",
+        context?.workflowId ?? "manual",
         brokerOrderId,
         clientOrderId,
       );

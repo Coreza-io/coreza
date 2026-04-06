@@ -13,6 +13,7 @@ import {
 } from "../utils/redisCircuitBreaker";
 import logger from "../utils/logger";
 import { getSourceMapping } from "../marketGateways";
+import { RedisKeys } from "../infra/redisKeys";
 
 /**
  * Workflow registration metadata for receiving market data
@@ -582,7 +583,7 @@ export class MarketDataSubscriber {
   ): Promise<void> {
     const domain = event._orderingDomain || `${event.source}:${event.type}`;
     const queueKey = `${workflowId}:${domain}`;
-    const streamKey = `strategy:stream:${workflowId}`;
+    const streamKey = RedisKeys.strategyStream(registration.userId, workflowId);
     const orderId = event.orderId || event.clientOrderId;
     try {
       // Fetch workflow definition from cache (60s TTL)

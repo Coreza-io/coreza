@@ -145,11 +145,24 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         | undefined;
       const userId = context?.userId;
       const workflowId = context?.workflowId;
-      const runId = context?.runId;
+      const executionId = context?.executionId ?? context?.runId;
 
       if (!stateManager) {
         const normalized = createErrorOutput(
           new Error("IndicatorStateManager not available in execution context"),
+          {
+            nodeId: node.id,
+            nodeName: node.name,
+            category: this.category,
+            startTime,
+          },
+        );
+        return toNodeResult(normalized);
+      }
+
+      if (!executionId) {
+        const normalized = createErrorOutput(
+          new Error("executionId not available in execution context"),
           {
             nodeId: node.id,
             nodeName: node.name,
@@ -226,7 +239,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         const key = buildIndicatorKey(
           userId,
           workflowId,
-          runId,
+          executionId,
           symbol,
           timeframe,
           ind.nodeId,

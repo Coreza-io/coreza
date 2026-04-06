@@ -47,15 +47,21 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       symbol,
       timeframe,
       workflowId,
-      run_id,
+      workflowSessionId,
       node_id,
     } = req.body;
+    if (!workflowSessionId) {
+      return res.status(400).json({
+        success: false,
+        error: "workflowSessionId is required for manual rolling-window execution",
+      });
+    }
 
     const windowSize = Math.min(Math.max(parseInt(size) || 20, 1), 500);
     const storeKey = buildExecutionScopedKey({
       userId,
       workflowId,
-      runId: run_id || workflowId,
+      executionId: workflowSessionId,
       scope: node_id,
       parts: [symbol || "_", timeframe || "_"],
     });

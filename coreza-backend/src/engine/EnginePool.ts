@@ -27,7 +27,7 @@ export class EnginePool {
 
   getOrCreate(
     workflowId: string,
-    runId: string,
+    executionId: string,
     userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
@@ -50,7 +50,7 @@ export class EnginePool {
     cached.lastUsed = Date.now();
 
     return cached.plan.createRun({
-      runId,
+      executionId,
       workflowId,
       userId,
       mode: opts?.mode,

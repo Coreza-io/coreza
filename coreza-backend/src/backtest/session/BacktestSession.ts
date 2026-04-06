@@ -94,14 +94,14 @@ export class BacktestSession {
     private readonly entryNodeIds: string[],
     private readonly backtestInitResult: Record<string, any>,
     private readonly bars: MultiBarEvent[],
-    private readonly runId: string,
+    private readonly executionId: string,
     stateManager?: IndicatorStateManager,
   ) {
     this.abortController = new AbortController();
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
     this.run = this.plan.createRun({
-      runId: this.runId,
+      executionId: this.executionId,
       workflowId: this.workflowId,
       userId: this.userId,
       mode: "best-effort",
@@ -143,7 +143,7 @@ export class BacktestSession {
       this.logCompileEligibilitySnapshot(compiledParams);
 
       const dataContext = DataContextManager.getInstance().getContext({
-        runId: this.runId,
+        executionId: this.executionId,
         workflowId: this.workflowId,
         userId: this.userId,
       });
@@ -155,7 +155,7 @@ export class BacktestSession {
         compiledParams,
         this.backtestInitResult,
         {
-          runId: this.runId,
+          runId: this.executionId,
           workflowId: this.workflowId,
           userId: this.userId,
           nodes: this.nodes,
@@ -841,7 +841,7 @@ export class BacktestSession {
     BacktestExecutor.resetBacktestState(this.backtestId);
     this.run.destroy();
     this.run = this.plan.createRun({
-      runId: this.runId,
+      executionId: this.executionId,
       workflowId: this.workflowId,
       userId: this.userId,
       mode: "best-effort",

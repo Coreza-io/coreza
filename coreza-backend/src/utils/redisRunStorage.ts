@@ -35,7 +35,7 @@ export async function createRunInRedis(
     edge_count?: number;
     source?: string;
   },
-  sessionId?: string,
+  executionId?: string,
 ): Promise<void> {
 
   const runData: Record<string, string> = {
@@ -67,8 +67,8 @@ export async function createRunInRedis(
   if (snapshot?.source) {
     runData.source = snapshot.source;
   }
-  if (sessionId) {
-    runData.session_id = sessionId;
+  if (executionId) {
+    runData.execution_id = executionId;
   }
 
   // Store run data in Redis hash with TTL and queue for sync in one round-trip

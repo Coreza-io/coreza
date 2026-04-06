@@ -8,8 +8,8 @@
 
 export const RedisKeys = {
   // ── User scope ──
-  userRun: (userId: string, runId: string): string =>
-    `userId:${userId}:runId:${runId}`,
+  userRun: (userId: string, executionId: string): string =>
+    `userId:${userId}:runId:${executionId}`,
   userRunsPending: (userId: string): string =>
     `userId:${userId}:runs:pending`,
 
@@ -42,43 +42,42 @@ export const RedisKeys = {
   userActiveSnapshotKeys: (userId: string): string =>
     `userId:${userId}:portfolio:snapshots:active_keys`,
 
-  // ── Session scope ──
+  // ── Execution scope ──
   indicator: (
     userId: string,
     workflowId: string,
-    sessionId: string,
+    executionId: string,
     symbol: string,
     timeframe: string,
     indicator: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:ind:${symbol}:${timeframe}:${indicator}`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:ind:${symbol}:${timeframe}:${indicator}`,
 
   rollingWindow: (
     userId: string,
     workflowId: string,
-    sessionId: string,
+    executionId: string,
     nodeId: string,
     symbol: string,
     timeframe: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:rw:${nodeId}:${symbol}:${timeframe}`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:rw:${nodeId}:${symbol}:${timeframe}`,
 
-  sessionPattern: (
+  executionPattern: (
     userId: string,
     workflowId: string,
-    sessionId: string,
+    executionId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:*`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:*`,
 
   // ── Run scope ──
   nodeState: (
     userId: string,
     workflowId: string,
-    sessionId: string,
-    runId: string,
+    executionId: string,
     nodeId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:runId:${runId}:node:${nodeId}`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:node:${nodeId}`,
 
   // ── Loop scope ──
   loopMeta: (

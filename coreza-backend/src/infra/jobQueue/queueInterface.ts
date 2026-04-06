@@ -93,7 +93,7 @@ export interface IWorkflowJobQueue {
     userId: string,
     nodes: any[],
     edges: any[],
-    sessionId?: string
+    executionId?: string
   ): Promise<void>;
   startBacktest(
     runId: string,

@@ -19,7 +19,7 @@ import {
 type NodeResults = NonNullable<WorkflowExecutionResult["nodeResults"]>;
 
 interface WorkflowRunOptions {
-  runId: string;
+  executionId: string;
   workflowId: string;
   userId: string;
   mode?: "best-effort" | "fail-fast";
@@ -30,6 +30,7 @@ interface WorkflowRunOptions {
 
 interface ExecutionContextExtras {
   multiBarContext?: MultiBarExecutionContext;
+  runId?: string;
 }
 
 export class WorkflowRun {
@@ -52,15 +53,14 @@ export class WorkflowRun {
         : ENGINE_CONFIG.DEFAULT_FLUSH_POLICY);
 
     this.store = new NodeStoreV2(
-      options.runId,
+      options.executionId,
       [...plan.nodes],
       options.userId,
       options.workflowId,
-      options.runId,
     );
 
     this.dataContext = DataContextManager.getInstance().getContext({
-      runId: options.runId,
+      executionId: options.executionId,
       workflowId: options.workflowId,
       userId: options.userId,
     });
@@ -86,7 +86,7 @@ export class WorkflowRun {
 
   private buildRuntime(): BaseExecutionRuntime {
     const runtimeOptions = {
-      runId: this.options.runId,
+      executionId: this.options.executionId,
       workflowId: this.options.workflowId,
       userId: this.options.userId,
       mode: this.options.mode ?? "best-effort",
@@ -215,8 +215,8 @@ export class WorkflowRun {
     this.runtime.setExecutionContextExtras(extras);
   }
 
-  setExecutionId(executionId: string): void {
-    this.runtime.setExecutionContextExtras({ executionId });
+  setRunId(runId: string): void {
+    this.runtime.setExecutionContextExtras({ runId });
   }
 
   checkCancellation(): boolean {
@@ -224,7 +224,7 @@ export class WorkflowRun {
   }
 
   destroy(): void {
-    DataContextManager.getInstance().destroyContext(this.options.runId);
+    DataContextManager.getInstance().destroyContext(this.options.executionId);
     this.indicatorStateManager.clearL1Cache();
   }
 

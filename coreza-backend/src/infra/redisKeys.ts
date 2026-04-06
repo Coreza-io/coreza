@@ -8,8 +8,8 @@
 
 export const RedisKeys = {
   // ── User scope ──
-  userRun: (userId: string, executionId: string): string =>
-    `userId:${userId}:runId:${executionId}`,
+  userRun: (userId: string, runId: string): string =>
+    `userId:${userId}:runId:${runId}`,
   userRunsPending: (userId: string): string =>
     `userId:${userId}:runs:pending`,
 

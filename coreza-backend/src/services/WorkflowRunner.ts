@@ -214,12 +214,12 @@ export class WorkflowRunner {
     }
 
     // Phase 3: Create run record — transient failure, do NOT ack
-    const executionRunId = randomUUID();
+    const runId = randomUUID();
     try {
       await createRunInRedis(
         this.userId,
         this.workflowId,
-        executionRunId,
+        runId,
         {
           nodes: this.serializedSnapshot.nodes,
           edges: this.serializedSnapshot.edges,
@@ -239,7 +239,7 @@ export class WorkflowRunner {
 
     // Phase 4: Execute workflow — skip trigger, start from downstream
     this.engine.resetForNextBar(true);
-    this.engine.setExecutionId(executionRunId);
+    this.engine.setRunId(runId);
 
     // Preload trigger node results with actual stream data so downstream
     // nodes can reference them (e.g. $('OnBar').json.data)
@@ -258,10 +258,10 @@ export class WorkflowRunner {
       );
 
       // Phase 5a: Record success
-      await this.recordSuccess(executionRunId, executionResult, messageId);
+      await this.recordSuccess(runId, executionResult, messageId);
     } catch (error) {
       // Phase 5b: Record failure (execution failed — not retryable)
-      await this.recordFailure(executionRunId, error);
+      await this.recordFailure(runId, error);
     }
 
     // Phase 6: Ack
@@ -333,14 +333,14 @@ export class WorkflowRunner {
   }
 
   private async recordSuccess(
-    executionRunId: string,
+    runId: string,
     executionResult: WorkflowExecutionResult,
     messageId: string,
   ): Promise<void> {
     try {
       await updateRunStatusInRedis(
         this.userId,
-        executionRunId,
+        runId,
         "success",
         executionResult,
       );
@@ -353,11 +353,11 @@ export class WorkflowRunner {
   }
 
   private async recordFailure(
-    executionRunId: string,
+    runId: string,
     error: unknown,
   ): Promise<void> {
     try {
-      await updateRunStatusInRedis(this.userId, executionRunId, "failed", {
+      await updateRunStatusInRedis(this.userId, runId, "failed", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
     } catch (err) {

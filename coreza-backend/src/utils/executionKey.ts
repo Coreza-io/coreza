@@ -11,15 +11,19 @@ import { RedisKeys } from "../infra/redisKeys";
 interface BuildExecutionKeyConfig {
   userId: string;
   workflowId: string;
-  runId: string;
+  executionId?: string;
+  runId?: string;
   scope: string;
   nodeId?: string;
   parts?: Array<string | number>;
-  sessionId?: string;
 }
 
 export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string {
-  const sessionId = config.sessionId ?? config.runId;
+  const executionId = config.executionId ?? config.runId;
+  if (!executionId) {
+    throw new Error("buildExecutionScopedKey requires executionId (or legacy runId)");
+  }
+  const sessionId = executionId;
 
   if (config.scope === "indicator" && config.parts && config.parts.length >= 3) {
     const [symbol, timeframe, indicator] = config.parts;
@@ -38,7 +42,7 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
       config.userId,
       config.workflowId,
       sessionId,
-      config.runId,
+      executionId,
       config.nodeId,
     );
   }
@@ -47,7 +51,7 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
     `userId:${config.userId}`,
     `workflowId:${config.workflowId}`,
     `sessionId:${sessionId}`,
-    `runId:${config.runId}`,
+    `executionId:${executionId}`,
     config.scope,
   ];
 
@@ -61,7 +65,7 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
 export function buildIndicatorKey(
   userId: string,
   workflowId: string,
-  runId: string,
+  executionId: string,
   symbol: string,
   timeframe: string,
   indicator: string,
@@ -69,7 +73,7 @@ export function buildIndicatorKey(
   return buildExecutionScopedKey({
     userId,
     workflowId,
-    runId,
+    executionId,
     scope: "indicator",
     parts: [symbol, timeframe, indicator],
   });

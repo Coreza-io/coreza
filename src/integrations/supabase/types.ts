@@ -292,10 +292,10 @@ export type Database = {
           created_at: string
           credential_id: string
           equity: number | null
+          execution_id: string | null
           id: string
           positions_count: number | null
           realized_pnl: number | null
-          run_id: string | null
           snapshot_at: string
           total_value_usdt: number | null
           unrealized_pnl: number | null
@@ -310,10 +310,10 @@ export type Database = {
           created_at?: string
           credential_id: string
           equity?: number | null
+          execution_id?: string | null
           id?: string
           positions_count?: number | null
           realized_pnl?: number | null
-          run_id?: string | null
           snapshot_at: string
           total_value_usdt?: number | null
           unrealized_pnl?: number | null
@@ -328,10 +328,10 @@ export type Database = {
           created_at?: string
           credential_id?: string
           equity?: number | null
+          execution_id?: string | null
           id?: string
           positions_count?: number | null
           realized_pnl?: number | null
-          run_id?: string | null
           snapshot_at?: string
           total_value_usdt?: number | null
           unrealized_pnl?: number | null
@@ -343,6 +343,7 @@ export type Database = {
       live_fills: {
         Row: {
           broker: string
+          broker_execution_id: string | null
           commission: number
           commission_asset: string | null
           created_at: string
@@ -355,7 +356,6 @@ export type Database = {
           price: number
           qty: number
           quote_qty: number | null
-          run_id: string | null
           side: string
           symbol: string
           trade_id: string
@@ -364,6 +364,7 @@ export type Database = {
         }
         Insert: {
           broker: string
+          broker_execution_id?: string | null
           commission?: number
           commission_asset?: string | null
           created_at?: string
@@ -376,7 +377,6 @@ export type Database = {
           price: number
           qty: number
           quote_qty?: number | null
-          run_id?: string | null
           side: string
           symbol: string
           trade_id: string
@@ -385,6 +385,7 @@ export type Database = {
         }
         Update: {
           broker?: string
+          broker_execution_id?: string | null
           commission?: number
           commission_asset?: string | null
           created_at?: string
@@ -397,7 +398,6 @@ export type Database = {
           price?: number
           qty?: number
           quote_qty?: number | null
-          run_id?: string | null
           side?: string
           symbol?: string
           trade_id?: string
@@ -414,6 +414,7 @@ export type Database = {
           entry_order_id: string | null
           entryPrice: number | null
           entryTime: string | null
+          execution_id: string | null
           exit_order_id: string | null
           exit_reason: string | null
           exitPrice: number
@@ -423,7 +424,6 @@ export type Database = {
           id: string
           net_pnl: number | null
           quantity: number
-          run_id: string | null
           slippage: number | null
           symbol: string
           user_id: string
@@ -436,6 +436,7 @@ export type Database = {
           entry_order_id?: string | null
           entryPrice?: number | null
           entryTime?: string | null
+          execution_id?: string | null
           exit_order_id?: string | null
           exit_reason?: string | null
           exitPrice: number
@@ -445,7 +446,6 @@ export type Database = {
           id?: string
           net_pnl?: number | null
           quantity: number
-          run_id?: string | null
           slippage?: number | null
           symbol: string
           user_id: string
@@ -458,6 +458,7 @@ export type Database = {
           entry_order_id?: string | null
           entryPrice?: number | null
           entryTime?: string | null
+          execution_id?: string | null
           exit_order_id?: string | null
           exit_reason?: string | null
           exitPrice?: number
@@ -467,7 +468,6 @@ export type Database = {
           id?: string
           net_pnl?: number | null
           quantity?: number
-          run_id?: string | null
           slippage?: number | null
           symbol?: string
           user_id?: string
@@ -776,13 +776,13 @@ export type Database = {
           edge_count: number | null
           edges: Json | null
           error_message: string | null
+          execution_id: string | null
           id: string
           initiated_by: string | null
           node_count: number | null
           nodes: Json | null
           result: Json | null
           schedule_key: string | null
-          session_id: string | null
           started_at: string
           status: string
           workflow_id: string
@@ -792,13 +792,13 @@ export type Database = {
           edge_count?: number | null
           edges?: Json | null
           error_message?: string | null
+          execution_id?: string | null
           id?: string
           initiated_by?: string | null
           node_count?: number | null
           nodes?: Json | null
           result?: Json | null
           schedule_key?: string | null
-          session_id?: string | null
           started_at?: string
           status: string
           workflow_id: string
@@ -808,13 +808,13 @@ export type Database = {
           edge_count?: number | null
           edges?: Json | null
           error_message?: string | null
+          execution_id?: string | null
           id?: string
           initiated_by?: string | null
           node_count?: number | null
           nodes?: Json | null
           result?: Json | null
           schedule_key?: string | null
-          session_id?: string | null
           started_at?: string
           status?: string
           workflow_id?: string
@@ -891,7 +891,7 @@ export type Database = {
       }
       workflows: {
         Row: {
-          active_session_id: string | null
+          active_execution_id: string | null
           created_at: string | null
           edges: Json
           id: string
@@ -905,7 +905,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          active_session_id?: string | null
+          active_execution_id?: string | null
           created_at?: string | null
           edges: Json
           id?: string
@@ -919,7 +919,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          active_session_id?: string | null
+          active_execution_id?: string | null
           created_at?: string | null
           edges?: Json
           id?: string

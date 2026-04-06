@@ -14,7 +14,7 @@ const SNAPSHOT_TTL = 86400; // 24 hours
 export interface LatestSnapshotState {
   user_id: string;
   workflow_id: string;
-  run_id?: string;
+  execution_id?: string;
   broker: string;
   credential_id?: string;
   snapshot_at: string;

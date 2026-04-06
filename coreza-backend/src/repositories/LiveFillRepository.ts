@@ -19,7 +19,7 @@ export interface LiveFillRow {
   symbol: string;
   trade_id: string;
   order_id?: string;
-  execution_id?: string;
+  broker_execution_id?: string;
   side: string;
   price: number;
   qty: number;
@@ -28,7 +28,7 @@ export interface LiveFillRow {
   commission_asset?: string;
   event_time: string;
   workflow_id?: string;
-  run_id?: string;
+  execution_id?: string;
 }
 
 export class LiveFillRepository {

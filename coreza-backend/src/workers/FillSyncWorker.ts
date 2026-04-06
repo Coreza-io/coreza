@@ -196,7 +196,7 @@ export class FillSyncWorker {
             symbol: fields.symbol,
             trade_id: fields.event_id,
             order_id: fields.order_id || null as any,
-            execution_id: fields.execution_id || null as any,
+            broker_execution_id: fields.broker_execution_id || null as any,
             side: fields.side,
             price: parseFloat(fields.fill_price) || 0,
             qty: parseFloat(fields.fill_qty_delta) || 0,
@@ -205,7 +205,7 @@ export class FillSyncWorker {
             commission_asset: fields.commission_asset || null as any,
             event_time: fields.event_time,
             workflow_id: fields.workflow_id || null as any,
-            run_id: fields.run_id || null as any,
+            execution_id: fields.execution_id || null as any,
           });
         }
 
@@ -329,7 +329,7 @@ export class FillSyncWorker {
             balances,
             total_value_usdt: equity,
             workflow_id: snapshot.workflow_id || null as any,
-            run_id: snapshot.run_id || null as any,
+            execution_id: snapshot.execution_id || null as any,
             base_currency: snapshot.base_currency,
             cash,
             equity,

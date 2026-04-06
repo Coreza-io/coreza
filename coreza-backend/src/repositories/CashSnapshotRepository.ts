@@ -19,7 +19,7 @@ export interface CashSnapshotRow {
   balances: Record<string, unknown>;
   total_value_usdt?: number;
   workflow_id?: string;
-  run_id?: string;
+  execution_id?: string;
   base_currency?: string;
   cash?: number;
   equity?: number;

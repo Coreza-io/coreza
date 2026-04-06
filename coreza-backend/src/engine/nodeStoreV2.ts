@@ -275,25 +275,25 @@ export class NodeStoreV2 {
   // Redis persistence methods (legacy compatibility)
   async setNodeStateRedis(nodeId: string, state: string): Promise<void> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, nodeId);
     await redis.hset(key, 'state', state);
   }
 
   async getNodeStateRedis(nodeId: string): Promise<string | null> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, nodeId);
     return await redis.hget(key, 'state');
   }
 
   async setNodeOutput(nodeId: string, output: any): Promise<void> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, nodeId);
     await redis.hset(key, 'output', JSON.stringify(output ?? null));
   }
 
   async getNodeOutput(nodeId: string): Promise<any> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, nodeId);
     const value = await redis.hget(key, 'output');
     return value ? JSON.parse(value) : null;
   }

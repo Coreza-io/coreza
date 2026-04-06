@@ -41,7 +41,6 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
       config.userId,
       config.workflowId,
       executionId,
-      executionId,
       config.nodeId,
     );
   }
@@ -49,7 +48,6 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
   const segments: Array<string | number> = [
     `userId:${config.userId}`,
     `workflowId:${config.workflowId}`,
-    `sessionId:${executionId}`,
     `executionId:${executionId}`,
     config.scope,
   ];

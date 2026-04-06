@@ -68,7 +68,7 @@ export async function createRunInRedis(
     runData.source = snapshot.source;
   }
   if (executionId) {
-    runData.session_id = executionId;
+    runData.execution_id = executionId;
   }
 
   // Store run data in Redis hash with TTL and queue for sync in one round-trip

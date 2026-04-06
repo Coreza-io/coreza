@@ -42,7 +42,7 @@ export const RedisKeys = {
   userActiveSnapshotKeys: (userId: string): string =>
     `userId:${userId}:portfolio:snapshots:active_keys`,
 
-  // ── Session scope ──
+  // ── Execution scope ──
   indicator: (
     userId: string,
     workflowId: string,
@@ -51,7 +51,7 @@ export const RedisKeys = {
     timeframe: string,
     indicator: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${executionId}:ind:${symbol}:${timeframe}:${indicator}`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:ind:${symbol}:${timeframe}:${indicator}`,
 
   rollingWindow: (
     userId: string,
@@ -61,32 +61,23 @@ export const RedisKeys = {
     symbol: string,
     timeframe: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${executionId}:rw:${nodeId}:${symbol}:${timeframe}`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:rw:${nodeId}:${symbol}:${timeframe}`,
 
   executionPattern: (
     userId: string,
     workflowId: string,
     executionId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${executionId}:*`,
-
-  // Backward-compatible alias (execution-scoped).
-  sessionPattern: (
-    userId: string,
-    workflowId: string,
-    executionId: string,
-  ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${executionId}:*`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:*`,
 
   // ── Run scope ──
   nodeState: (
     userId: string,
     workflowId: string,
-    executionIdScope: string,
     executionId: string,
     nodeId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${executionIdScope}:runId:${executionId}:node:${nodeId}`,
+    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:node:${nodeId}`,
 
   // ── Loop scope ──
   loopMeta: (

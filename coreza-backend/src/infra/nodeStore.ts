@@ -20,14 +20,12 @@ import { RedisKeys } from "./redisKeys";
 const keyFor = (
   userId: string,
   workflowId: string,
-  executionIdScope: string,
   executionId: string,
   nodeId: string,
 ) =>
   RedisKeys.nodeState(
     userId,
     workflowId,
-    executionIdScope,
     executionId,
     nodeId,
   );
@@ -36,7 +34,6 @@ export class NodeStore {
   static async setNodeState(
     userId: string,
     workflowId: string,
-    executionIdScope: string,
     executionId: string,
     nodeId: string,
     state: string,
@@ -44,7 +41,6 @@ export class NodeStore {
     const key = keyFor(
       userId,
       workflowId,
-      executionIdScope,
       executionId,
       nodeId,
     );
@@ -54,14 +50,12 @@ export class NodeStore {
   static async getNodeState(
     userId: string,
     workflowId: string,
-    executionIdScope: string,
     executionId: string,
     nodeId: string,
   ): Promise<string | null> {
     const key = keyFor(
       userId,
       workflowId,
-      executionIdScope,
       executionId,
       nodeId,
     );
@@ -71,7 +65,6 @@ export class NodeStore {
   static async setNodeOutput(
     userId: string,
     workflowId: string,
-    executionIdScope: string,
     executionId: string,
     nodeId: string,
     output: unknown,
@@ -79,7 +72,6 @@ export class NodeStore {
     const key = keyFor(
       userId,
       workflowId,
-      executionIdScope,
       executionId,
       nodeId,
     );
@@ -89,14 +81,12 @@ export class NodeStore {
   static async getNodeOutput(
     userId: string,
     workflowId: string,
-    executionIdScope: string,
     executionId: string,
     nodeId: string,
   ): Promise<unknown> {
     const key = keyFor(
       userId,
       workflowId,
-      executionIdScope,
       executionId,
       nodeId,
     );

@@ -8,8 +8,8 @@
 
 export const RedisKeys = {
   // ── User scope ──
-  userRun: (userId: string, runId: string): string =>
-    `userId:${userId}:runId:${runId}`,
+  userRun: (userId: string, executionId: string): string =>
+    `userId:${userId}:runId:${executionId}`,
   userRunsPending: (userId: string): string =>
     `userId:${userId}:runs:pending`,
 
@@ -75,10 +75,10 @@ export const RedisKeys = {
     userId: string,
     workflowId: string,
     sessionId: string,
-    runId: string,
+    executionId: string,
     nodeId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:runId:${runId}:node:${nodeId}`,
+    `userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:runId:${executionId}:node:${nodeId}`,
 
   // ── Loop scope ──
   loopMeta: (

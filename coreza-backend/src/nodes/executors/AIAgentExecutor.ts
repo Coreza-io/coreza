@@ -56,20 +56,21 @@ export class AIAgentExecutor implements INodeExecutor {
     };
 
     // Create DataContext for this agent execution
-    const runId = context?.runId || `agent-${node.id}-${Date.now()}`;
+    const executionId =
+      context?.executionId || context?.runId || `agent-${node.id}-${Date.now()}`;
     const workflowId = context?.workflow_id || "unknown";
     const userId = context?.userId || "unknown";
 
     const dataContextManager = DataContextManager.getInstance();
     const dataContext = dataContextManager.getContext({
-      runId,
+      executionId,
       workflowId,
       userId,
     });
 
     try {
       console.log(
-        `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (run: ${runId})`,
+        `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (execution: ${executionId})`,
       );
 
       // Get user_id from context
@@ -243,7 +244,7 @@ export class AIAgentExecutor implements INodeExecutor {
       return toNodeResult(errOutput);
     } finally {
       // Cleanup DataContext after agent execution
-      dataContextManager.destroyContext(runId);
+      dataContextManager.destroyContext(executionId);
     }
   }
 

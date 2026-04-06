@@ -15,7 +15,7 @@ export class WorkflowEngine {
   readonly isBacktest: boolean;
 
   constructor(
-    runId: string,
+    executionId: string,
     workflowId: string,
     userId: string,
     nodes: WorkflowNode[],
@@ -33,7 +33,7 @@ export class WorkflowEngine {
     this.plan = WorkflowPlan.compile(nodes, edges, detectedExecutionMode);
     this.isBacktest = this.plan.isBacktest;
     this.run = this.plan.createRun({
-      runId,
+      executionId,
       workflowId,
       userId,
       mode,
@@ -93,21 +93,21 @@ export class WorkflowEngine {
   resetForNextBar(full = false): void {
     this.run.resetForNextBar(full);
   }
-  setExecutionId(executionId: string): void {
-    this.run.setExecutionId(executionId);
+  setRunId(runId: string): void {
+    this.run.setRunId(runId);
   }
   checkCancellation(): boolean {
     return this.run.checkCancellation();
   }
 
-  reset(newRunId: string, abortSignal?: AbortSignal): void {
-    this.resetForNewRun(newRunId, abortSignal);
+  reset(newExecutionId: string, abortSignal?: AbortSignal): void {
+    this.resetForNewRun(newExecutionId, abortSignal);
   }
 
-  resetForNewRun(newRunId: string, abortSignal?: AbortSignal): void {
+  resetForNewRun(newExecutionId: string, abortSignal?: AbortSignal): void {
     this.run.destroy();
     this.run = this.plan.createRun({
-      runId: newRunId,
+      executionId: newExecutionId,
       workflowId: this.workflowId,
       userId: this.userId,
       mode: this.mode,
@@ -156,9 +156,8 @@ export async function executeWorkflow(
     edges,
     opts?.executionMode ?? "manual",
   );
-  const runId = executionId;
   const run = plan.createRun({
-    runId,
+    executionId,
     workflowId,
     userId,
     mode: opts?.mode,

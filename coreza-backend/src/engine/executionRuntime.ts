@@ -18,7 +18,7 @@ import { ParameterResolver } from "./parameterResolver";
 import { ExecutionMode, NodeExecutionContext } from "./types";
 
 export type RuntimeOptions = {
-  runId: string;
+  executionId: string;
   workflowId: string;
   userId: string;
   mode: "best-effort" | "fail-fast";
@@ -32,7 +32,7 @@ export type RuntimeOptions = {
 };
 
 type ExecutionContextExtras = Partial<
-  Pick<NodeExecutionContext, "multiBarContext" | "executionId">
+  Pick<NodeExecutionContext, "multiBarContext" | "runId">
 >;
 
 export abstract class BaseExecutionRuntime {
@@ -128,8 +128,8 @@ export abstract class BaseExecutionRuntime {
       const ctx: NodeExecutionContext = {
         user_id: this.options.userId,
         userId: this.options.userId,
-        runId: this.options.runId,
-        executionId: this.options.runId,
+        executionId: this.options.executionId,
+        runId: this.options.executionId,
         workflowId: this.options.workflowId,
         nodeId,
         nodes: this.options.nodes,

@@ -1,147 +1,138 @@
 
-Final resolution after end-to-end review:
 
-1. Primary root cause: backend runner is not being replaced between live sessions
-- `coreza-backend/src/workflow/WorkflowLifecycleService.ts`
-  - deactivation calls `streaming.deactivateStreaming(...)`
-  - but it never stops the in-memory `WorkflowRunner`
-- `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`
-  - `deactivateStreaming()` unregisters stream subscriptions only
-  - it does not call `jobQueue.stopWorkflowRunner(workflowId)`
-- `coreza-backend/src/services/workflowRunnerManager.ts`
-  - `startStrategy()` returns early if a runner already exists for that workflow
-- Result:
-  - old runner stays alive with old `runnerInstanceId`
-  - new activation writes new `workflows.active_session_id`
-  - frontend queries new session
-  - backend still persists trades/fills/snapshots under old session
-  - live page shows zero data for the new session
+# Plan: Rename `active_session_id` and Align `execution_id` Across DB and Code
 
-2. Secondary root cause: activation flows are inconsistent
-- `src/pages/WorkflowEditor.tsx`
-  - activates via `/workflows/${workflowId}/schedule`
-  - but does not send `session_id`
-  - also performs a redundant direct Supabase update
-- `src/pages/Workflows.tsx`
-  - generates `sessionId` and dispatches the session event
-  - but calls the wrong endpoint: `/workflows/${user?.id}/${workflowId}/schedule`
-- Result:
-  - some activation paths create no `active_session_id`
-  - some paths may fail or bypass the intended session lifecycle
-  - frontend/live page behavior becomes inconsistent
+## Summary
 
-3. Tertiary root cause: live hook fallback is too permissive for active workflows
-- `src/hooks/useLiveStrategyDetail.ts`
-  - current resolution is `pending ?? db ?? localStorage`
-  - for active workflows, localStorage should not be used as a general fallback
-- Result:
-  - stale session IDs can leak into a new run
-  - or the hook can stay disconnected from the real backend session state
+Rename the DB column `workflows.active_session_id` to `active_execution_id`, add `execution_id` column to `workflow_runs`, and rename `run_id` to `execution_id` in `live_trades`, `live_fills`, `cash_snapshots` (since that field stores the session/instance-level ID, not the per-tick `runId`).
 
-Best implementation approach:
+**Note**: `live_fills.execution_id` already exists but stores the **broker execution ID** (Alpaca/Binance fill execution ID). This is NOT the same as our workflow `execution_id`. We must keep both — rename our session-scoped field from `run_id` → `execution_id` and rename the broker field to `broker_execution_id` to avoid confusion.
 
-A. Fix backend session lifecycle first
-- In `StreamingLifecycleAdapter.deactivateStreaming()` or `WorkflowLifecycleService.deactivate()`, explicitly stop the workflow runner on deactivation.
-- Also harden `WorkflowRunnerManager.startStrategy()`:
-  - if an existing runner is found for the same workflow and its session differs from the requested session, stop it and create a fresh runner
-  - only no-op when the session is exactly the same
-- This is the key fix. Without it, frontend changes alone will never work reliably.
+---
 
-B. Unify activation logic into one shared frontend flow
-Create one shared activation helper/hook used by both:
-- `src/pages/Workflows.tsx`
-- `src/pages/WorkflowEditor.tsx`
+## Database Migrations
 
-That shared flow should:
-- generate `sessionId` on activation
-- call the correct backend route: `/workflows/${workflowId}/schedule`
-- send `{ is_active, session_id }`
-- store `live_session_${workflowId}` in localStorage on activation
-- dispatch `coreza-live-session-updated`
-- rollback localStorage + dispatch previous session on API failure
-- remove the redundant direct Supabase `.update({ is_active })` path from the editor/list pages
-
-C. Tighten session selection in `useLiveStrategyDetail`
-Change resolution rules to:
-```text
-if pending session exists:
-  use pending
-else if DB active_session_id exists:
-  use DB session
-else if workflow is inactive:
-  use preserved DB/local last session
-else:
-  no session yet -> show cleared state and wait
+### Migration 1: `workflows` table
+```sql
+ALTER TABLE public.workflows RENAME COLUMN active_session_id TO active_execution_id;
 ```
 
-Important change:
-- do not use localStorage as fallback for an active workflow unless it is the current pending activation session
-- this prevents stale-session reuse
+### Migration 2: `workflow_runs` table
+```sql
+ALTER TABLE public.workflow_runs
+  ADD COLUMN IF NOT EXISTS execution_id text;
 
-D. Make the live page react to workflow session changes directly
-In `useLiveStrategyDetail.ts`, add a realtime listener on `workflows` for that workflow’s row:
-- react to changes in `is_active`
-- react to changes in `active_session_id`
-- immediately refetch/reset when the backend confirms the new session
-
-This removes dependence on only the custom browser event and makes refresh/multi-page flows reliable.
-
-Where live data is actually populated today:
-- `workflows.active_session_id`
-  - set in `WorkflowLifecycleService.activate()` -> `WorkflowRepository.setActivationState(...)`
-- `workflow_runs.session_id`
-  - set in `WorkflowRunner.processMessage()` -> `createRunInRedis(..., this.runnerInstanceId)` -> `RunSyncService`
-- `live_trades.run_id`
-  - `coreza-backend/src/nodes/executors/PortfolioExecutor.ts`
-  - `LiveTradeRepository.insert({ run_id: context.runId, ... })`
-- `live_fills.run_id`
-  - `PortfolioExecutor` builds fill events with `run_id: context.runId`
-  - `FillSyncWorker` writes them to `live_fills`
-- `cash_snapshots.run_id`
-  - `PortfolioExecutor` builds snapshot with `run_id: context.runId`
-  - `SnapshotCache.upsertLatest()` stores it
-  - `FillSyncWorker.flushSnapshots()` inserts into `cash_snapshots`
-
-Critical technical insight:
-- In live mode, `context.runId` is the session-level runner ID, not the per-tick execution ID
-- That is correct for dashboard filtering
-- So if metrics are empty, the usual cause is not the table mapping; it is session mismatch between:
-  - frontend `active_session_id`
-  - backend runner `runnerInstanceId`
-
-Implementation order:
-1. Stop/restart runner correctly on deactivate/reactivate
-2. Unify frontend activation logic across Workflows + WorkflowEditor
-3. Tighten `useLiveStrategyDetail` session resolution
-4. Add `workflows` realtime subscription
-5. Remove redundant frontend direct DB updates
-
-Expected behavior after fix:
-```text
-Inactive workflow:
-  show last preserved session data
-
-Activate new run:
-  frontend generates new sessionId
-  UI clears immediately
-  backend starts a fresh runner with that same sessionId
-  new trades/fills/snapshots are written with that sessionId
-  live metrics populate only from the new session
-
-Deactivate:
-  runner stops
-  last session remains viewable
+ALTER TABLE public.workflow_runs RENAME COLUMN session_id TO execution_id;
+-- If session_id and execution_id would conflict, drop session_id after migrating data:
+-- UPDATE workflow_runs SET execution_id = session_id WHERE execution_id IS NULL AND session_id IS NOT NULL;
+-- ALTER TABLE workflow_runs DROP COLUMN session_id;
 ```
 
-Verification checklist:
-- Activate from Workflows page -> new session appears, metrics start updating
-- Activate from WorkflowEditor -> same behavior
-- Deactivate -> last session remains visible
-- Reactivate -> UI clears immediately, old data does not append
-- Confirm DB alignment:
-  - `workflows.active_session_id`
-  - `live_trades.run_id`
-  - `live_fills.run_id`
-  - `cash_snapshots.run_id`
-  - `workflow_runs.session_id`
-  all match for the active session
+Actually, since `workflow_runs` already has `session_id` and we want `execution_id` instead:
+```sql
+ALTER TABLE public.workflow_runs RENAME COLUMN session_id TO execution_id;
+```
+
+### Migration 3: `live_trades` table
+```sql
+ALTER TABLE public.live_trades RENAME COLUMN run_id TO execution_id;
+```
+
+### Migration 4: `live_fills` table
+```sql
+-- Rename broker execution_id to avoid conflict
+ALTER TABLE public.live_fills RENAME COLUMN execution_id TO broker_execution_id;
+-- Rename our session-scoped run_id to execution_id
+ALTER TABLE public.live_fills RENAME COLUMN run_id TO execution_id;
+```
+
+### Migration 5: `cash_snapshots` table
+```sql
+ALTER TABLE public.cash_snapshots RENAME COLUMN run_id TO execution_id;
+```
+
+### Migration 6: `position_snapshots` — No change needed
+This table has no `run_id` or session-scoped field currently.
+
+---
+
+## Backend Code Changes
+
+### 1. `WorkflowRepository.ts` (line 110)
+- `updatePayload.active_session_id` → `updatePayload.active_execution_id`
+- Parameter name `activeSessionId` → `activeExecutionId`
+
+### 2. `LiveTradeRepository.ts`
+- `LiveTradeRow.run_id` → `LiveTradeRow.execution_id`
+- Insert call: `run_id: row.run_id` → `execution_id: row.execution_id`
+
+### 3. `LiveFillRepository.ts`
+- `LiveFillRow.run_id` → `LiveFillRow.execution_id`
+- `LiveFillRow.execution_id` (broker) → `LiveFillRow.broker_execution_id`
+
+### 4. `CashSnapshotRepository.ts`
+- `CashSnapshotRow.run_id` → `CashSnapshotRow.execution_id`
+
+### 5. `FillEventBus.ts`
+- `FillStreamEvent.run_id` → `FillStreamEvent.execution_id`
+- `FillStreamEvent.execution_id` (broker) → `FillStreamEvent.broker_execution_id`
+
+### 6. `SnapshotCache.ts`
+- `LatestSnapshotState.run_id` → `LatestSnapshotState.execution_id`
+
+### 7. `PortfolioExecutor.ts`
+- All references passing `run_id: context.runId` for live persistence → `execution_id: context.executionId`
+- `execution_id: params.executionId` (broker) → `broker_execution_id: params.executionId`
+
+### 8. `FillSyncWorker.ts`
+- Field mapping: `execution_id` (broker) → `broker_execution_id`
+- `run_id` → `execution_id` for session-scoped field
+
+### 9. `RunSyncService.ts`
+- Already writes `execution_id` — verify the field name matches the renamed `workflow_runs.execution_id` column (was `session_id`)
+
+### 10. `market-stream-service/src/types/supabase.ts`
+- Update `workflow_runs` type: remove `session_id`, ensure `execution_id` present
+
+### 11. `coreza-backend/src/types/supabase.ts`
+- Update `workflow_runs` type: `session_id` → `execution_id`
+- Update `workflows` references if any
+
+---
+
+## Frontend Code Changes
+
+### 12. `src/hooks/useLiveStrategyDetail.ts`
+- Line 108: `active_session_id` → `active_execution_id` in select query
+- Line 128: `(wf as any).active_session_id` → `(wf as any).active_execution_id`
+- Line 346 comment: update reference
+- Line 362: `updated.active_session_id` → `updated.active_execution_id`
+- Lines 168, 176, 184: `.eq("run_id", sessionRunId)` → `.eq("execution_id", sessionRunId)`
+- All live_fills queries referencing `execution_id` for broker data should use `broker_execution_id`
+
+### 13. `src/integrations/supabase/types.ts`
+- Auto-regenerates from Supabase schema after migrations — no manual edit needed
+
+### 14. `src/hooks/useWorkflowActivation.ts` (if it references `active_session_id`)
+- Update localStorage key names or field references as needed
+
+---
+
+## What Does NOT Need `execution_id`
+
+| Table | Reason |
+|-------|--------|
+| `position_snapshots` | No session scoping — stores point-in-time position data per credential |
+| `backtest_*` tables | Backtests have their own `backtest_id` scoping — unrelated to live execution sessions |
+
+---
+
+## Verification After Implementation
+
+1. Activate a streaming workflow — `workflows.active_execution_id` is set
+2. Per-tick runs sync to `workflow_runs.execution_id`
+3. Live fills persist with `execution_id` (session) and `broker_execution_id` (broker)
+4. Live trades persist with `execution_id` (session)
+5. Cash snapshots persist with `execution_id` (session)
+6. Frontend filters all live data by `execution_id` correctly
+

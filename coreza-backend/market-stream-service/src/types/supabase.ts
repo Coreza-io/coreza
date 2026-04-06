@@ -57,6 +57,7 @@ export interface Database {
           error_message: string | null;
           result: any | null;
           initiated_by: string | null;
+          execution_id: string | null;
         };
         Insert: {
           id?: string;
@@ -67,6 +68,7 @@ export interface Database {
           error_message?: string | null;
           result?: any | null;
           initiated_by?: string | null;
+          execution_id?: string | null;
         };
         Update: {
           id?: string;
@@ -77,6 +79,7 @@ export interface Database {
           error_message?: string | null;
           result?: any | null;
           initiated_by?: string | null;
+          execution_id?: string | null;
         };
       };
       node_executions: {

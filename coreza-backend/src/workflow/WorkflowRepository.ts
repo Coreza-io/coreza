@@ -98,7 +98,7 @@ export class WorkflowRepository {
     workflowId: string,
     isActive: boolean,
     scheduleCron: string | null = null,
-    activeSessionId: string | null = null,
+    activeExecutionId: string | null = null,
   ) {
     const updatePayload: Record<string, any> = {
       is_active: isActive,
@@ -107,7 +107,7 @@ export class WorkflowRepository {
     };
 
     if (isActive) {
-      updatePayload.active_session_id = activeSessionId;
+      updatePayload.active_execution_id = activeExecutionId;
     }
 
     const { data, error } = await supabase

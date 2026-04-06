@@ -16,13 +16,13 @@ export interface FillStreamEvent {
   event_id: string;
   user_id: string;
   workflow_id: string;
-  run_id?: string;
+  execution_id?: string;
   broker: string;
   credential_id?: string;
   symbol: string;
   side: "buy" | "sell";
   order_id?: string;
-  execution_id?: string;
+  broker_execution_id?: string;
   fill_qty_delta: number;
   fill_price: number;
   quote_qty?: number;

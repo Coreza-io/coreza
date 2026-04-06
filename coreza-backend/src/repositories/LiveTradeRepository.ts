@@ -14,7 +14,7 @@ const logger = createLogger("LiveTradeRepository");
 export interface LiveTradeRow {
   user_id: string;
   workflow_id?: string;
-  run_id?: string;
+  execution_id?: string;
   symbol: string;
   action: string;
   quantity: number;
@@ -42,7 +42,7 @@ export class LiveTradeRepository {
       .insert({
         user_id: row.user_id,
         workflow_id: row.workflow_id,
-        run_id: row.run_id,
+        execution_id: row.execution_id,
         symbol: row.symbol,
         action: row.action,
         quantity: row.quantity,

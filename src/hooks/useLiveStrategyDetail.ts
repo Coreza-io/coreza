@@ -124,7 +124,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       } as BacktestWithRelations);
 
       // Use a pending session (set by immediate activation UI event) first,
-      // then DB active_session_id, then localStorage fallback.
+      // then DB active_execution_id, then localStorage fallback.
       const dbSessionRunId: string | null = (wf as any).active_execution_id ?? null;
       const localSessionRunId =
         localStorage.getItem(`live_session_${workflowId}`) ?? null;

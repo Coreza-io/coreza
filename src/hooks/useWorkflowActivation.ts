@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 /**
  * Shared activation/deactivation logic used by both Workflows.tsx and WorkflowEditor.tsx.
  *
- * - Generates a stable `sessionId` on activation
+ * - Generates a stable `executionId` on activation
  * - Calls the correct backend route: `/workflows/${workflowId}/schedule`
  * - Persists session in localStorage and dispatches the custom event
  * - Rolls back on failure
@@ -26,14 +26,14 @@ export function useWorkflowActivation() {
     const priorSessionId = localStorage.getItem(sessionStorageKey);
 
     // Generate session ID only when activating
-    const sessionId = newStatus ? crypto.randomUUID() : undefined;
+    const executionId = newStatus ? crypto.randomUUID() : undefined;
 
     // Optimistically set the new session so the live page resets immediately
-    if (newStatus && sessionId) {
-      localStorage.setItem(sessionStorageKey, sessionId);
+    if (newStatus && executionId) {
+      localStorage.setItem(sessionStorageKey, executionId);
       window.dispatchEvent(
         new CustomEvent("coreza-live-session-updated", {
-          detail: { workflowId, sessionId },
+          detail: { workflowId, sessionId: executionId },
         }),
       );
     }
@@ -51,7 +51,7 @@ export function useWorkflowActivation() {
       // Single backend call — this handles DB update + runner lifecycle
       const res = await apiClient.put(
         `/workflows/${workflowId}/schedule`,
-        { is_active: newStatus, session_id: sessionId },
+        { is_active: newStatus, executionId },
         session?.access_token,
       );
 

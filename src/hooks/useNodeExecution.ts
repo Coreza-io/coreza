@@ -329,7 +329,6 @@ export function useNodeExecution({
         payload.node_type = definition.node_type;
         payload.workflowId = workflowId;
         payload.workflowSessionId = data?.workflowSessionId;
-        payload.executionId = data?.workflowSessionId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;

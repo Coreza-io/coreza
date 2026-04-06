@@ -28,6 +28,11 @@ export const RedisKeys = {
   portfolioSnapshotLatest: (userId: string, workflowId: string): string =>
     `userId:${userId}:workflowId:${workflowId}:portfolio:snapshot:latest`,
 
+  order: (userId: string, workflowId: string, idempotencyKey: string): string =>
+    `userId:${userId}:workflowId:${workflowId}:order:${idempotencyKey}`,
+  orderReverse: (userId: string, workflowId: string, orderId: string): string =>
+    `userId:${userId}:workflowId:${workflowId}:orderReverse:${orderId}`,
+
   persistent: (userId: string, workflowId: string, key: string): string =>
     `userId:${userId}:workflowId:${workflowId}:persistent:${key}`,
 

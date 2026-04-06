@@ -52,6 +52,8 @@ export class BrokerExecutor implements INodeExecutor {
 
     try {
       const operation = node.values?.operation;
+      const userId = context?.userId ?? "system";
+      const workflowId = context?.workflowId ?? "manual";
       const brokerNode = node as WorkflowNode & { subCategory?: string };
       const broker = (
         brokerNode.subCategory ??
@@ -99,7 +101,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       if (isOrderOperation) {
         idempotencyKey = generateIdempotencyKey({
-          workflowId: context?.workflowId ?? "manual",
+          workflowId,
           nodeId: node.id,
           runId: context?.executionId ?? context?.runId ?? `manual-${Date.now()}`,
           symbol: resolvedParams.symbol ?? "",
@@ -118,7 +120,7 @@ export class BrokerExecutor implements INodeExecutor {
             "full",
         });
 
-        const cached = await getOrderFromCache(idempotencyKey);
+        const cached = await getOrderFromCache(userId, workflowId, idempotencyKey);
         if (cached) {
           if (cached.status === "success") {
             console.log(
@@ -140,7 +142,7 @@ export class BrokerExecutor implements INodeExecutor {
           }
         }
 
-        await cacheOrderIntent(idempotencyKey, broker);
+        await cacheOrderIntent(userId, workflowId, idempotencyKey, broker);
         resolvedParams._idempotencyKey = idempotencyKey;
       }
 
@@ -234,6 +236,8 @@ export class BrokerExecutor implements INodeExecutor {
 
       if (isOrderOperation && idempotencyKey) {
         await updateOrderCache(
+          userId,
+          workflowId,
           idempotencyKey,
           "success",
           data,
@@ -247,7 +251,7 @@ export class BrokerExecutor implements INodeExecutor {
       console.error(`❌ [BROKER] Execution failed:`, error);
 
       if (isOrderOperation && idempotencyKey) {
-        await updateOrderCache(idempotencyKey, "failed", {
+        await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
           error: error instanceof Error ? error.message : String(error),
         });
       }

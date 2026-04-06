@@ -34,9 +34,9 @@ Date: 2026-04-05
    - Appears intentional and consistent with `REDIS_CHANNELS`.
 
 3. **Order idempotency cache**
-   - `order:{idempotencyKey}`, `order-reverse:{orderId}`
-   - Not yet in `RedisKeys`; currently isolated and global by idempotency key.
-   - Recommendation: optionally move to `RedisKeys` as global helpers for consistency.
+   - Now migrated to user/workflow-scoped keys:
+     - `userId:{userId}:workflowId:{workflowId}:order:{idempotencyKey}`
+     - `userId:{userId}:workflowId:{workflowId}:orderReverse:{orderId}`
 
 4. **Credential cache**
    - `cred:{key}`
@@ -51,6 +51,5 @@ Date: 2026-04-05
 1. Continue replacing remaining direct `redis.keys(...)` in streaming cleanup paths with SCAN-based iteration.
 2. Consider extending `RedisKeys` with optional helper groups for:
    - WebSocket keys/channels
-   - Idempotency cache keys
    - Backtest progress keys
 3. Keep `md:*` namespace in `REDIS_CHANNELS` as the source of truth to avoid drift.

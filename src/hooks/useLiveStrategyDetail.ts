@@ -105,7 +105,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     try {
       const { data: wf, error: wfErr } = await supabase
         .from("workflows")
-        .select("id, name, is_active, created_at, updated_at, active_session_id")
+        .select("id, name, is_active, created_at, updated_at, active_execution_id")
         .eq("user_id", user.id)
         .eq("id", workflowId)
         .single();
@@ -125,7 +125,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       // Use a pending session (set by immediate activation UI event) first,
       // then DB active_session_id, then localStorage fallback.
-      const dbSessionRunId: string | null = (wf as any).active_session_id ?? null;
+      const dbSessionRunId: string | null = (wf as any).active_execution_id ?? null;
       const localSessionRunId =
         localStorage.getItem(`live_session_${workflowId}`) ?? null;
       const pendingSessionRunId = pendingSessionRunIdRef.current;
@@ -165,7 +165,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .select("*")
         .eq("user_id", user.id)
         .eq("workflow_id", workflowId);
-      tradesQuery.eq("run_id", sessionRunId);
+      tradesQuery.eq("execution_id" as any, sessionRunId);
       tradesQuery.order("exitTime" as any, { ascending: true });
 
       const fillsQuery = supabase
@@ -173,7 +173,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .select("*")
         .eq("user_id", user.id)
         .eq("workflow_id", workflowId);
-      fillsQuery.eq("run_id", sessionRunId);
+      fillsQuery.eq("execution_id" as any, sessionRunId);
       fillsQuery.order("event_time", { ascending: true });
 
       const snapshotsQuery = supabase
@@ -181,7 +181,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .select("*")
         .eq("user_id", user.id)
         .eq("workflow_id", workflowId);
-      snapshotsQuery.eq("run_id", sessionRunId);
+      snapshotsQuery.eq("execution_id" as any, sessionRunId);
       snapshotsQuery.order("snapshot_at", { ascending: true });
 
       const [
@@ -296,7 +296,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           const newTrade = payload.new as any;
           if (newTrade.user_id !== user.id || newTrade.workflow_id !== workflowId)
             return;
-          if (newTrade.run_id !== activeSessionRunIdRef.current)
+          if (newTrade.execution_id !== activeSessionRunIdRef.current)
             return;
 
           // Reload to get full data with matched fills
@@ -318,7 +318,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             newSnapshot.workflow_id !== workflowId
           )
             return;
-          if (newSnapshot.run_id !== activeSessionRunIdRef.current)
+          if (newSnapshot.execution_id !== activeSessionRunIdRef.current)
             return;
 
           setSnapshots((prev) => {
@@ -343,7 +343,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     };
   }, [enabled, loadData, user, workflowId]);
 
-  // Realtime: listen to workflows table for active_session_id / is_active changes
+  // Realtime: listen to workflows table for active_execution_id / is_active changes
   useEffect(() => {
     if (!enabled || !user || !workflowId) return;
 
@@ -359,7 +359,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         },
         (payload) => {
           const updated = payload.new as any;
-          const newSessionId: string | null = updated.active_session_id ?? null;
+          const newSessionId: string | null = updated.active_execution_id ?? null;
           const currentSessionId = activeSessionRunIdRef.current;
 
           // If session changed, reset immediately and refetch

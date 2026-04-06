@@ -400,7 +400,7 @@ export class WorkflowRunner {
   }
 
   private async cleanupRunnerKeys(): Promise<void> {
-    const pattern = RedisKeys.sessionPattern(
+    const pattern = RedisKeys.executionPattern(
       this.userId,
       this.workflowId,
       this.executionId,

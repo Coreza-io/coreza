@@ -23,14 +23,13 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
   if (!executionId) {
     throw new Error("buildExecutionScopedKey requires executionId (or legacy runId)");
   }
-  const sessionId = executionId;
 
   if (config.scope === "indicator" && config.parts && config.parts.length >= 3) {
     const [symbol, timeframe, indicator] = config.parts;
     return RedisKeys.indicator(
       config.userId,
       config.workflowId,
-      sessionId,
+      executionId,
       String(symbol),
       String(timeframe),
       String(indicator),
@@ -41,7 +40,7 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
     return RedisKeys.nodeState(
       config.userId,
       config.workflowId,
-      sessionId,
+      executionId,
       executionId,
       config.nodeId,
     );
@@ -50,7 +49,7 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
   const segments: Array<string | number> = [
     `userId:${config.userId}`,
     `workflowId:${config.workflowId}`,
-    `sessionId:${sessionId}`,
+    `sessionId:${executionId}`,
     `executionId:${executionId}`,
     config.scope,
   ];

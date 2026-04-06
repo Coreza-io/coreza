@@ -57,7 +57,6 @@ export class WorkflowRun {
       [...plan.nodes],
       options.userId,
       options.workflowId,
-      options.executionId,
     );
 
     this.dataContext = DataContextManager.getInstance().getContext({

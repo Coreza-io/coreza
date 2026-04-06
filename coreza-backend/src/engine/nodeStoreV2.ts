@@ -35,7 +35,6 @@ export class NodeStoreV2 {
   private executionId: string;
   private readonly userId: string;
   private readonly workflowId: string;
-  private readonly sessionId: string;
   private nodes = new Map<string, any>();
   private loops = new Map<string, LoopState>();
   private nodeResults = new Map<string, any>();
@@ -49,12 +48,10 @@ export class NodeStoreV2 {
     nodes: any[],
     userId: string,
     workflowId: string,
-    sessionId?: string,
   ) {
     this.executionId = executionId;
     this.userId = userId;
     this.workflowId = workflowId;
-    this.sessionId = sessionId ?? executionId;
     this.workflowNodes = nodes;
     
     // Populate node definitions
@@ -278,25 +275,25 @@ export class NodeStoreV2 {
   // Redis persistence methods (legacy compatibility)
   async setNodeStateRedis(nodeId: string, state: string): Promise<void> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
     await redis.hset(key, 'state', state);
   }
 
   async getNodeStateRedis(nodeId: string): Promise<string | null> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
     return await redis.hget(key, 'state');
   }
 
   async setNodeOutput(nodeId: string, output: any): Promise<void> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
     await redis.hset(key, 'output', JSON.stringify(output ?? null));
   }
 
   async getNodeOutput(nodeId: string): Promise<any> {
     const redis = getRedisCache();
-    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.sessionId, this.executionId, nodeId);
+    const key = RedisKeys.nodeState(this.userId, this.workflowId, this.executionId, this.executionId, nodeId);
     const value = await redis.hget(key, 'output');
     return value ? JSON.parse(value) : null;
   }

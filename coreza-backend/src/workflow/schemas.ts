@@ -17,7 +17,7 @@ export const updateWorkflowSchema = z.object({
 
 export const scheduleWorkflowSchema = z.object({
   is_active: z.boolean(),
-  session_id: z.string().uuid().optional(),
+  executionId: z.string().uuid().optional(),
 });
 
 export const executeWorkflowSchema = z.object({

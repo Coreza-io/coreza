@@ -19,6 +19,7 @@ export interface Database {
           is_active: boolean;
           schedule_cron: string | null;
           project_id: string | null;
+          active_execution_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -31,6 +32,7 @@ export interface Database {
           is_active?: boolean;
           schedule_cron?: string | null;
           project_id?: string | null;
+          active_execution_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -43,6 +45,7 @@ export interface Database {
           is_active?: boolean;
           schedule_cron?: string | null;
           project_id?: string | null;
+          active_execution_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };

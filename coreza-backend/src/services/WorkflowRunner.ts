@@ -36,7 +36,7 @@ export class WorkflowRunner {
   private readonly engine: WorkflowEngine;
   private readonly streamRedisClient: Redis;
   private readonly streamKey: string;
-  private readonly runnerInstanceId: string;
+  private readonly executionId: string;
   private running = false;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
@@ -56,15 +56,15 @@ export class WorkflowRunner {
     private readonly userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
-    sessionId?: string,
+    executionId?: string,
   ) {
-    this.runnerInstanceId = sessionId ?? randomUUID();
+    this.executionId = executionId ?? "";
     this.streamRedisClient = createDedicatedStreamConnection(
       `Strategy-${workflowId}`,
     );
     this.streamKey = RedisKeys.strategyStream(userId, workflowId);
     this.abortController = new AbortController();
-    this.consumerName = `consumer-${workflowId}-${this.runnerInstanceId}`;
+    this.consumerName = `consumer-${workflowId}-${this.executionId}`;
     this.serializedSnapshot = {
       nodes: JSON.stringify(nodes),
       edges: JSON.stringify(edges),
@@ -72,7 +72,7 @@ export class WorkflowRunner {
       edgeCount: edges.length,
     };
     this.engine = new WorkflowEngine(
-      this.runnerInstanceId,
+      this.executionId,
       workflowId,
       userId,
       nodes,
@@ -216,13 +216,19 @@ export class WorkflowRunner {
     // Phase 3: Create run record — transient failure, do NOT ack
     const executionRunId = randomUUID();
     try {
-      await createRunInRedis(this.userId, this.workflowId, executionRunId, {
-        nodes: this.serializedSnapshot.nodes,
-        edges: this.serializedSnapshot.edges,
-        node_count: this.serializedSnapshot.nodeCount,
-        edge_count: this.serializedSnapshot.edgeCount,
-        source: "stream",
-      }, this.runnerInstanceId);
+      await createRunInRedis(
+        this.userId,
+        this.workflowId,
+        executionRunId,
+        {
+          nodes: this.serializedSnapshot.nodes,
+          edges: this.serializedSnapshot.edges,
+          node_count: this.serializedSnapshot.nodeCount,
+          edge_count: this.serializedSnapshot.edgeCount,
+          source: "stream",
+        },
+        this.executionId,
+      );
     } catch (err) {
       console.warn(
         "[WorkflowRunner] createRunInRedis failed (will retry):",
@@ -388,7 +394,7 @@ export class WorkflowRunner {
     this.running = false;
     this.abortController.abort();
     this.engine.destroy();
-    PortfolioManager.removeInstance(this.userId, this.runnerInstanceId);
+    PortfolioManager.removeInstance(this.userId, this.executionId);
     await this.cleanupRunnerKeys();
     await this.streamRedisClient.quit();
   }
@@ -397,7 +403,7 @@ export class WorkflowRunner {
     const pattern = RedisKeys.sessionPattern(
       this.userId,
       this.workflowId,
-      this.runnerInstanceId,
+      this.executionId,
     );
     let cursor = "0";
 

@@ -43,30 +43,66 @@ export class WorkflowEngine {
   }
 
   private detectMode(nodes: WorkflowNode[]): ExecutionMode {
-    const detected = nodes.some((n) => (n.name || n.node_type || "").toLowerCase().includes("backtest"));
+    const detected = nodes.some((n) =>
+      (n.name || n.node_type || "").toLowerCase().includes("backtest"),
+    );
     if (detected) {
-      console.warn("[WorkflowEngine] DEPRECATED: isBacktest detected via node name. Pass executionMode explicitly.");
+      console.warn(
+        "[WorkflowEngine] DEPRECATED: isBacktest detected via node name. Pass executionMode explicitly.",
+      );
     }
     return detected ? "backtest" : "manual";
   }
 
-  getGraph() { return this.plan.graph as Readonly<typeof this.plan.graph>; }
-  getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> { return this.plan.nodeExecutorMap; }
-  getCompiledParams() { return this.run.getCompiledParams(); }
-  getDataContext(): DataContext { return this.run.getDataContext(); }
-  getIndicatorStateManager(): IndicatorStateManager { return this.run.getIndicatorStateManager(); }
-  setIndicatorStateManager(m: IndicatorStateManager): void { this.run.setIndicatorStateManager(m); }
-  getNodeState(nodeId: string, key: string): any { return this.run.getNodeState(nodeId, key); }
-  setNodeState(nodeId: string, key: string, value: any): void { this.run.setNodeState(nodeId, key, value); }
-  clearNodeTiming(): void { this.run.clearNodeTiming(); }
-  getNodeTiming() { return this.run.getNodeTiming(); }
-  pinResults(results: Record<string, any>): void { this.run.pinResults(results); }
-  preloadResults(results: Record<string, any>): void { this.run.preloadResults(results); }
-  resetForNextBar(full = false): void { this.run.resetForNextBar(full); }
-  setExecutionId(executionId: string): void { this.run.setExecutionId(executionId); }
-  checkCancellation(): boolean { return this.run.checkCancellation(); }
+  getGraph() {
+    return this.plan.graph as Readonly<typeof this.plan.graph>;
+  }
+  getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> {
+    return this.plan.nodeExecutorMap;
+  }
+  getCompiledParams() {
+    return this.run.getCompiledParams();
+  }
+  getDataContext(): DataContext {
+    return this.run.getDataContext();
+  }
+  getIndicatorStateManager(): IndicatorStateManager {
+    return this.run.getIndicatorStateManager();
+  }
+  setIndicatorStateManager(m: IndicatorStateManager): void {
+    this.run.setIndicatorStateManager(m);
+  }
+  getNodeState(nodeId: string, key: string): any {
+    return this.run.getNodeState(nodeId, key);
+  }
+  setNodeState(nodeId: string, key: string, value: any): void {
+    this.run.setNodeState(nodeId, key, value);
+  }
+  clearNodeTiming(): void {
+    this.run.clearNodeTiming();
+  }
+  getNodeTiming() {
+    return this.run.getNodeTiming();
+  }
+  pinResults(results: Record<string, any>): void {
+    this.run.pinResults(results);
+  }
+  preloadResults(results: Record<string, any>): void {
+    this.run.preloadResults(results);
+  }
+  resetForNextBar(full = false): void {
+    this.run.resetForNextBar(full);
+  }
+  setExecutionId(executionId: string): void {
+    this.run.setExecutionId(executionId);
+  }
+  checkCancellation(): boolean {
+    return this.run.checkCancellation();
+  }
 
-  reset(newRunId: string, abortSignal?: AbortSignal): void { this.resetForNewRun(newRunId, abortSignal); }
+  reset(newRunId: string, abortSignal?: AbortSignal): void {
+    this.resetForNewRun(newRunId, abortSignal);
+  }
 
   resetForNewRun(newRunId: string, abortSignal?: AbortSignal): void {
     this.run.destroy();
@@ -80,15 +116,23 @@ export class WorkflowEngine {
     });
   }
 
-  async execute(initialInput?: unknown, startNodeId?: string): Promise<WorkflowExecutionResult> {
+  async execute(
+    initialInput?: unknown,
+    startNodeId?: string,
+  ): Promise<WorkflowExecutionResult> {
     return this.run.execute(initialInput, startNodeId);
   }
 
-  async executeFromEntries(input: unknown, entryNodeIds: string[]): Promise<WorkflowExecutionResult> {
+  async executeFromEntries(
+    input: unknown,
+    entryNodeIds: string[],
+  ): Promise<WorkflowExecutionResult> {
     return this.run.executeFromEntries(input, entryNodeIds);
   }
 
-  destroy(): void { this.run.destroy(); }
+  destroy(): void {
+    this.run.destroy();
+  }
 }
 
 export type ExecutionOptions = {
@@ -100,14 +144,19 @@ export type ExecutionOptions = {
 };
 
 export async function executeWorkflow(
-  runId: string,
+  executionId: string,
   workflowId: string,
   userId: string,
   nodes: WorkflowNode[],
   edges: WorkflowEdge[],
   opts?: ExecutionOptions,
 ): Promise<WorkflowExecutionResult> {
-  const plan = WorkflowPlan.compile(nodes, edges, opts?.executionMode ?? "manual");
+  const plan = WorkflowPlan.compile(
+    nodes,
+    edges,
+    opts?.executionMode ?? "manual",
+  );
+  const runId = executionId;
   const run = plan.createRun({
     runId,
     workflowId,

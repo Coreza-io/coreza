@@ -17,15 +17,15 @@ export class WorkflowRunnerManager {
     userId: string,
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
-    sessionId?: string,
+    executionId?: string,
   ): Promise<void> {
     const existing = this.runners.get(workflowId);
     if (existing) {
       // If the existing runner has the same session, no-op.
       // Otherwise stop the stale runner first so the new session takes over.
-      if (sessionId && (existing as any).runnerInstanceId !== sessionId) {
+      if (executionId && (existing as any).runnerInstanceId !== executionId) {
         console.log(
-          `[WorkflowRunnerManager] Replacing runner for ${workflowId}: old session → new session ${sessionId}`,
+          `[WorkflowRunnerManager] Replacing runner for ${workflowId}: old session → new session ${executionId}`,
         );
         await existing.stop();
         this.runners.delete(workflowId);
@@ -34,11 +34,20 @@ export class WorkflowRunnerManager {
       }
     }
 
-    const runner = new WorkflowRunner(workflowId, userId, nodes, edges, sessionId);
+    const runner = new WorkflowRunner(
+      workflowId,
+      userId,
+      nodes,
+      edges,
+      executionId,
+    );
     this.runners.set(workflowId, runner);
 
     runner.start().catch((error) => {
-      console.error(`[WorkflowRunnerManager] Strategy ${workflowId} crashed:`, error);
+      console.error(
+        `[WorkflowRunnerManager] Strategy ${workflowId} crashed:`,
+        error,
+      );
       this.runners.delete(workflowId);
     });
   }

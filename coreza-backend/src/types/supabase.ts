@@ -65,6 +65,7 @@ export interface Database {
           error_message: string | null;
           result: any | null;
           initiated_by: string | null;
+          execution_id: string | null;
           schedule_key: string | null;
           nodes: any | null;
           edges: any | null;
@@ -80,6 +81,7 @@ export interface Database {
           error_message?: string | null;
           result?: any | null;
           initiated_by?: string | null;
+          execution_id?: string | null;
           schedule_key?: string | null;
           nodes?: any | null;
           edges?: any | null;

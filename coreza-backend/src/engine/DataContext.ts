@@ -30,7 +30,7 @@ import { InMemoryStore, DataRef } from './InMemoryStore';
  */
 
 export interface DataContextConfig {
-  runId: string;
+  executionId: string;
   workflowId: string;
   userId: string;
   maxMemoryMB?: number;
@@ -64,7 +64,7 @@ export interface IndicatorResult {
 
 export class DataContext {
   private readonly inMemoryStore: InMemoryStore;
-  private readonly runId: string;
+  private readonly executionId: string;
   private readonly workflowId: string;
   private readonly userId: string;
 
@@ -72,19 +72,19 @@ export class DataContext {
   private pendingFetches = new Map<string, Promise<DataRef>>();
 
   constructor(config: DataContextConfig) {
-    this.runId = config.runId;
+    this.executionId = config.executionId;
     this.workflowId = config.workflowId;
     this.userId = config.userId;
-    this.inMemoryStore = new InMemoryStore(config.runId, config.maxMemoryMB || 256);
+    this.inMemoryStore = new InMemoryStore(config.executionId, config.maxMemoryMB || 256);
 
-    console.log(`🌐 DataContext created for run ${config.runId} (workflow: ${config.workflowId})`);
+    console.log(`🌐 DataContext created for execution ${config.executionId} (workflow: ${config.workflowId})`);
   }
 
   /**
    * Get the run ID for this context
    */
-  getRunId(): string {
-    return this.runId;
+  getExecutionId(): string {
+    return this.executionId;
   }
 
   /**
@@ -270,7 +270,7 @@ export class DataContext {
   destroy(): void {
     const stats = this.inMemoryStore.getStats();
     console.log(
-      `🧹 DataContext[${this.runId}]: Destroying with ${stats.entryCount} entries ` +
+      `🧹 DataContext[${this.executionId}]: Destroying with ${stats.entryCount} entries ` +
       `(${(stats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB used)`
     );
     this.inMemoryStore.clear();
@@ -302,32 +302,32 @@ export class DataContextManager {
    * Get or create a DataContext for a workflow run
    */
   getContext(config: DataContextConfig): DataContext {
-    const existing = this.contexts.get(config.runId);
+    const existing = this.contexts.get(config.executionId);
     if (existing) {
       return existing;
     }
 
     const context = new DataContext(config);
-    this.contexts.set(config.runId, context);
+    this.contexts.set(config.executionId, context);
     return context;
   }
 
   /**
    * Destroy a DataContext when workflow run completes
    */
-  destroyContext(runId: string): void {
-    const context = this.contexts.get(runId);
+  destroyContext(executionId: string): void {
+    const context = this.contexts.get(executionId);
     if (context) {
       context.destroy();
-      this.contexts.delete(runId);
+      this.contexts.delete(executionId);
     }
   }
 
   /**
    * Check if a context exists
    */
-  hasContext(runId: string): boolean {
-    return this.contexts.has(runId);
+  hasContext(executionId: string): boolean {
+    return this.contexts.has(executionId);
   }
 
   /**

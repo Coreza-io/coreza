@@ -50,7 +50,7 @@ export class WorkflowPlan {
   }
 
   createRun(opts: {
-    runId: string;
+    executionId: string;
     workflowId: string;
     userId: string;
     mode?: "best-effort" | "fail-fast";

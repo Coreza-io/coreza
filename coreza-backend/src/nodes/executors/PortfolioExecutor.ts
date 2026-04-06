@@ -728,7 +728,7 @@ export class PortfolioExecutor implements INodeExecutor {
       event_id: eventId,
       user_id: opts.context.userId,
       workflow_id: opts.context.workflowId,
-      run_id: opts.context.runId,
+      execution_id: opts.context.executionId,
       broker: opts.params.broker || "binance",
       credential_id: opts.params.credential_id,
       symbol: opts.symbol,

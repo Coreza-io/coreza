@@ -298,17 +298,17 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
 
-    const runId = context.runId || context.workflowId;
-    if (!runId) {
+    const executionId = context.executionId || context.workflowId;
+    if (!executionId) {
       return toNodeResult(
         createErrorOutput(
-          "runId is required for broker mode — cannot use workflowId as fallback",
+          "executionId is required for broker mode — cannot use workflowId as fallback",
         ),
       );
     }
 
     // Get or create PortfolioManager
-    const pm = PortfolioManager.getInstance(userId, runId);
+    const pm = PortfolioManager.getInstance(userId, executionId);
 
     const symbols = this.parseSymbols(params.symbol);
     const operation = params.operation || "get_portfolio";

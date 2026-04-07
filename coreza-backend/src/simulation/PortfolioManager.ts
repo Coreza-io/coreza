@@ -151,7 +151,7 @@ const TERMINAL_ORDER_STATUSES = new Set([
  *
  * v2 model: Separate order lifecycle, execution accounting, position reconciliation, and balance reconciliation.
  *
- * One instance per (userId, runId) pair, managed via static cache.
+ * One instance per (userId, executionId) pair, managed via static cache.
  */
 export class PortfolioManager {
   private static instances = new Map<string, PortfolioManager>();
@@ -163,7 +163,7 @@ export class PortfolioManager {
   ];
 
   private userId: string;
-  private runId: string;
+  private executionId: string;
 
   // ============== v2 STATE MAPS ==============
   private orders = new Map<string, OrderState>();
@@ -193,19 +193,19 @@ export class PortfolioManager {
 
   private bootstrapped = false;
 
-  private constructor(userId: string, runId: string) {
+  private constructor(userId: string, executionId: string) {
     this.userId = userId;
-    this.runId = runId;
+    this.executionId = executionId;
   }
 
   /**
    * Get or create a PortfolioManager instance for the given user/run.
    */
-  static getInstance(userId: string, runId: string): PortfolioManager {
-    const key = `${userId}:${runId}`;
+  static getInstance(userId: string, executionId: string): PortfolioManager {
+    const key = `${userId}:${executionId}`;
     let instance = PortfolioManager.instances.get(key);
     if (!instance) {
-      instance = new PortfolioManager(userId, runId);
+      instance = new PortfolioManager(userId, executionId);
       PortfolioManager.instances.set(key, instance);
     }
     return instance;
@@ -214,8 +214,8 @@ export class PortfolioManager {
   /**
    * Remove a cached instance (e.g., on run cleanup).
    */
-  static removeInstance(userId: string, runId: string): void {
-    PortfolioManager.instances.delete(`${userId}:${runId}`);
+  static removeInstance(userId: string, executionId: string): void {
+    PortfolioManager.instances.delete(`${userId}:${executionId}`);
   }
 
   /**
@@ -243,9 +243,9 @@ export class PortfolioManager {
     this.startingEquity = null;
     this.bootstrapped = false;
 
-    PortfolioManager.instances.delete(`${this.userId}:${this.runId}`);
+    PortfolioManager.instances.delete(`${this.userId}:${this.executionId}`);
     console.log(
-      `[PortfolioManager] Destroyed instance for user=${this.userId} run=${this.runId}`,
+      `[PortfolioManager] Destroyed instance for user=${this.userId} execution=${this.executionId}`,
     );
   }
 

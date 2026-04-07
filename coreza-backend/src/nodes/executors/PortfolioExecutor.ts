@@ -131,10 +131,7 @@ type AlpacaOrder = {
   status?: string;
 };
 
-function normalizeAlpacaCryptoSymbol(
-  symbol: any,
-  assetClass?: string,
-): string {
+function normalizeAlpacaCryptoSymbol(symbol: any, assetClass?: string): string {
   const normalized = normalizeSymbol(symbol);
   if (String(assetClass || "").toLowerCase() !== "crypto") {
     return normalized;
@@ -542,12 +539,13 @@ export class PortfolioExecutor implements INodeExecutor {
 
       const baseCurrency = String(account.currency || "USD").toUpperCase();
       const cash = toNumber(account.cash) ?? 0;
+      const buyingPower = toNumber(account.buying_power) ?? cash;
       pm.initializePortfolio(baseCurrency, cash);
 
       pm.reconcileBalance({
         asset: baseCurrency,
-        total: cash,
-        available: toNumber(account.buying_power) ?? cash,
+        cash: cash,
+        buyingPower: toNumber(account.buying_power) ?? cash,
         locked: Math.max(0, (toNumber(account.equity) ?? cash) - cash),
       });
 
@@ -628,13 +626,10 @@ export class PortfolioExecutor implements INodeExecutor {
 
       return toNodeResult(
         createSuccessOutput({
-          synced: true,
-          broker: "alpaca",
           environment: brokerParams.environment,
           cash,
           currency: baseCurrency,
-          positionsCount: syncedPositions.length,
-          openOrdersCount: syncedOrders.length,
+          buyingPower,
           positions: syncedPositions,
           openOrders: syncedOrders,
         }),

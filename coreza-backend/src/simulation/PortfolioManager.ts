@@ -76,8 +76,8 @@ export interface PositionState {
 
 export interface BalanceState {
   asset: string;
-  total: number;
-  available?: number;
+  cash: number;
+  buyingPower?: number;
   locked?: number;
   updatedAt: string;
 }
@@ -732,25 +732,25 @@ export class PortfolioManager {
    */
   reconcileBalance(input: {
     asset: string;
-    total: number;
-    available?: number;
+    cash: number;
+    buyingPower?: number;
     locked?: number;
   }): { reconciled: boolean; balance: BalanceState } {
     const now = new Date().toISOString();
     const balance: BalanceState = {
       asset: input.asset,
-      total: input.total,
-      available: input.available,
+      cash: input.cash,
+      buyingPower: input.buyingPower,
       locked: input.locked,
       updatedAt: now,
     };
     this.balances.set(input.asset, balance);
 
     // Sync to legacy cashBook
-    this.cashBook.set(input.asset, input.total);
+    this.cashBook.set(input.asset, input.cash);
 
     console.log(
-      `[PortfolioManager] Balance reconciled: ${input.asset} total=${input.total}`,
+      `[PortfolioManager] Balance reconciled: ${input.asset} total=${input.cash}`,
     );
     return { reconciled: true, balance };
   }
@@ -782,16 +782,16 @@ export class PortfolioManager {
     now: string,
   ): void {
     const balance = this.balances.get(quoteAsset);
-    const current = balance?.total ?? this.cashBook.get(quoteAsset) ?? 0;
+    const current = balance?.cash ?? this.cashBook.get(quoteAsset) ?? 0;
     const newTotal = side === "buy" ? current - notional : current + notional;
 
     if (balance) {
-      balance.total = newTotal;
+      balance.cash = newTotal;
       balance.updatedAt = now;
     } else {
       this.balances.set(quoteAsset, {
         asset: quoteAsset,
-        total: newTotal,
+        cash: newTotal,
         updatedAt: now,
       });
     }

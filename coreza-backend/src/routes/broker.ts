@@ -160,7 +160,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const result = await brokerExecutor.execute(node, req.body, {
       userId,
       workflowId,
-      runId: undefined,
+      executionId: req.body.workflowSessionId || workflowId,
     });
 
     if (result.success) {

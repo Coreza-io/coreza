@@ -36,6 +36,7 @@ const portfolioOperationSchema = z.enum([
 const portfolioRequestSchema = z.object({
   mode: z.enum(["backtest", "broker"]),
   workflowId: z.string().uuid(),
+  workflowSessionId: z.string().optional(),
   node_id: z.string(),
   nodeName: z.string().optional(),
   node_type: z.string().optional(),
@@ -122,7 +123,11 @@ router.post("/", async (req: Request, res: Response) => {
         values: { ...body, mode: body.mode },
       } as any,
       {},
-      { userId, workflowId: body.workflowId },
+      {
+        userId,
+        workflowId: body.workflowId,
+        executionId: body.workflowSessionId || body.workflowId,
+      },
     );
 
     if (!result.success) {

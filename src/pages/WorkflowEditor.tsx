@@ -349,6 +349,19 @@ const WorkflowEditorContent = () => {
     }));
   }, []);
 
+  const stampNodesWithWorkflowSession = useCallback(
+    (sourceNodes: Node[]) => {
+      return sourceNodes.map((node) => ({
+        ...node,
+        data: {
+          ...(node.data ?? {}),
+          workflowSessionId,
+        },
+      }));
+    },
+    [workflowSessionId],
+  );
+
   const cloneEdges = useCallback((sourceEdges: Edge[]) => {
     return sourceEdges.map((edge) => ({
       ...edge,
@@ -930,7 +943,7 @@ const WorkflowEditorContent = () => {
         },
       }));
 
-      setNodes(nodesWithDefinitions);
+      setNodes(stampNodesWithWorkflowSession(nodesWithDefinitions));
       setEdges(edgesWithHandlers);
 
       toast({
@@ -938,7 +951,7 @@ const WorkflowEditorContent = () => {
         description: `Restored ${nodesWithDefinitions.length} nodes. Remember to save your changes.`,
       });
     },
-    [setNodes, setEdges, removeEdge, toast],
+    [setNodes, setEdges, removeEdge, stampNodesWithWorkflowSession, toast],
   );
 
   // Check for user authentication and load latest workflow
@@ -971,7 +984,7 @@ const WorkflowEditorContent = () => {
         } catch {
           setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
         }
-        setNodes(initialNodes);
+        setNodes(stampNodesWithWorkflowSession(initialNodes));
         setEdges(initialEdges);
         setIsActive(false);
         setLoading(false);
@@ -983,7 +996,7 @@ const WorkflowEditorContent = () => {
         if (loaded) {
           setWorkflowName(loaded.name);
           setIsActive(loaded.isActive);
-          setNodes(loaded.nodes);
+          setNodes(stampNodesWithWorkflowSession(loaded.nodes));
           setEdges(loaded.edges);
           setHasLoadedWorkflowId(workflowId);
         } else {
@@ -1001,6 +1014,7 @@ const WorkflowEditorContent = () => {
     isNewWorkflow,
     workflowId,
     hasLoadedWorkflowId,
+    stampNodesWithWorkflowSession,
   ]); // Added hasLoadedWorkflowId to prevent unnecessary reloads
 
   // Auto-hide palette when clicking outside or on editor
@@ -1057,7 +1071,7 @@ const WorkflowEditorContent = () => {
           return;
         }
 
-        setNodes(cloneNodes(previousState.nodes));
+        setNodes(stampNodesWithWorkflowSession(cloneNodes(previousState.nodes)));
         setEdges(cloneEdges(previousState.edges));
         toast({ description: "Undid last change" });
         return;
@@ -1313,6 +1327,7 @@ const WorkflowEditorContent = () => {
     removeEdge,
     cloneEdges,
     cloneNodes,
+    stampNodesWithWorkflowSession,
     saveHistorySnapshot,
   ]);
 

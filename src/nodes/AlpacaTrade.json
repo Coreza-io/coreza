@@ -108,10 +108,42 @@
       }
     },
     {
-      "key": "symbol",
-      "label": "Crypto Pair",
+      "key": "crypto_base",
+      "label": "Base Asset",
       "type": "text",
-      "placeholder": "e.g. BTC/USD",
+      "placeholder": "e.g. BTC, ETH",
+      "description": "The cryptocurrency to trade (e.g. BTC, ETH, DOGE).",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "asset_type": ["crypto"]
+        }
+      }
+    },
+    {
+      "key": "crypto_quote",
+      "label": "Quote Currency",
+      "type": "select",
+      "options": [
+        {
+          "id": "USD",
+          "name": "USD"
+        },
+        {
+          "id": "USDT",
+          "name": "USDT"
+        },
+        {
+          "id": "USDC",
+          "name": "USDC"
+        },
+        {
+          "id": "BTC",
+          "name": "BTC"
+        }
+      ],
+      "default": "USD",
+      "description": "The currency to price against.",
       "required": true,
       "displayOptions": {
         "show": {

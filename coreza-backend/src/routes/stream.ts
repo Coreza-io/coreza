@@ -29,6 +29,43 @@ import {
 
 const router = express.Router();
 
+function normalizeSymbolList(symbols: unknown): string[] {
+  if (Array.isArray(symbols)) {
+    return symbols
+      .map((s) => String(s).trim().toUpperCase())
+      .filter(Boolean);
+  }
+
+  if (typeof symbols === "string") {
+    return symbols
+      .split(",")
+      .map((s: string) => s.trim().toUpperCase())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function buildCryptoSymbols(
+  dataType: unknown,
+  cryptoBase: unknown,
+  cryptoQuote: unknown,
+): string[] {
+  if (dataType !== "crypto" || !cryptoBase) {
+    return [];
+  }
+
+  const quote = String(cryptoQuote || "USD")
+    .trim()
+    .toUpperCase();
+  const bases = String(cryptoBase)
+    .split(",")
+    .map((b) => b.trim().toUpperCase())
+    .filter(Boolean);
+
+  return bases.map((base) => `${base}/${quote}`);
+}
+
 // Apply JWT auth to all routes
 router.use(requireAuth);
 
@@ -84,6 +121,8 @@ router.post("/:source/subscribe", async (req, res) => {
       workflowId,
       stream_types,
       data_type,
+      crypto_base,
+      crypto_quote,
       feed,
       environment,
       asset_type,
@@ -134,6 +173,14 @@ router.post("/:source/subscribe", async (req, res) => {
     }
 
     // Subscribe to market/crypto streams (excluding order_update)
+    const normalizedSymbols = buildCryptoSymbols(
+      data_type,
+      crypto_base,
+      crypto_quote,
+    );
+    const resolvedSymbols =
+      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+
     let result;
     if (marketStreamTypes.length > 0 || !hasOrderUpdate) {
       result = await SubscriptionService.subscribe({
@@ -142,7 +189,7 @@ router.post("/:source/subscribe", async (req, res) => {
         workflowId: workflowId,
         nodeId: node_id,
         credentialId: credential_id,
-        symbols,
+        symbols: resolvedSymbols,
         streamTypes:
           marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
         feed,
@@ -205,6 +252,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       workflowId,
       stream_types,
       data_type,
+      crypto_base,
+      crypto_quote,
       feed,
       environment,
       asset_type,
@@ -253,13 +302,21 @@ router.post("/:source/unsubscribe", async (req, res) => {
       });
     }
 
+    const normalizedSymbols = buildCryptoSymbols(
+      data_type,
+      crypto_base,
+      crypto_quote,
+    );
+    const resolvedSymbols =
+      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+
     const result = await SubscriptionService.unsubscribe({
       source: sourceId,
       userId,
       workflowId: workflowId,
       nodeId: node_id,
       credentialId: credential_id,
-      symbols,
+      symbols: resolvedSymbols,
       streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
       feed,
       environment,
@@ -391,6 +448,8 @@ router.post("/:source/register", async (req, res) => {
       mode = "subscribe",
       symbols,
       data_type,
+      crypto_base,
+      crypto_quote,
       stream_types,
       credential_id,
       environment,
@@ -419,14 +478,9 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Parse symbols
-    const parsedSymbols: string[] = Array.isArray(symbols)
-      ? symbols.map((s: string) => s.toUpperCase())
-      : typeof symbols === "string"
-        ? symbols
-            .split(",")
-            .map((s: string) => s.trim().toUpperCase())
-            .filter(Boolean)
-        : [];
+    const cryptoSymbols = buildCryptoSymbols(data_type, crypto_base, crypto_quote);
+    const parsedSymbols: string[] =
+      cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
     // If subscribe mode, subscribe first and WAIT for completion
     if (mode === "subscribe") {

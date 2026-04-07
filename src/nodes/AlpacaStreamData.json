@@ -142,11 +142,58 @@
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
-      "placeholder": "AAPL, TSLA, SPY or BTC/USD, ETH/USD",
+      "placeholder": "AAPL, TSLA, SPY",
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"]
+          "mode": ["subscribe"],
+          "data_type": ["market", "news"]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "crypto_base",
+      "label": "Base Asset(s)",
+      "type": "text",
+      "placeholder": "e.g. BTC, ETH",
+      "description": "Comma-separated crypto bases to subscribe (e.g. BTC, ETH, DOGE).",
+      "displayOptions": {
+        "show": {
+          "mode": ["subscribe"],
+          "data_type": ["crypto"]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "crypto_quote",
+      "label": "Quote Currency",
+      "type": "select",
+      "options": [
+        {
+          "id": "USD",
+          "name": "USD"
+        },
+        {
+          "id": "USDT",
+          "name": "USDT"
+        },
+        {
+          "id": "USDC",
+          "name": "USDC"
+        },
+        {
+          "id": "BTC",
+          "name": "BTC"
+        }
+      ],
+      "default": "USD",
+      "description": "The currency to price against.",
+      "displayOptions": {
+        "show": {
+          "mode": ["subscribe"],
+          "data_type": ["crypto"]
         }
       },
       "showDescription": false

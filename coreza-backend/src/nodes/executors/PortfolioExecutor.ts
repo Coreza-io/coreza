@@ -118,6 +118,7 @@ type AlpacaPosition = {
   avg_entry_price?: string | number;
   current_price?: string | number;
   side?: string;
+  asset_class?: string;
 };
 
 type AlpacaOrder = {
@@ -129,6 +130,27 @@ type AlpacaOrder = {
   type?: string;
   status?: string;
 };
+
+function normalizeAlpacaCryptoSymbol(
+  symbol: any,
+  assetClass?: string,
+): string {
+  const normalized = normalizeSymbol(symbol);
+  if (String(assetClass || "").toLowerCase() !== "crypto") {
+    return normalized;
+  }
+
+  if (normalized.includes("/")) {
+    return normalized;
+  }
+
+  const match = normalized.match(/^([A-Z0-9]+)(USDT|USDC|USD|BTC)$/);
+  if (!match) {
+    return normalized;
+  }
+
+  return `${match[1]}/${match[2]}`;
+}
 
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
@@ -539,7 +561,10 @@ export class PortfolioExecutor implements INodeExecutor {
 
       for (const position of positions) {
         if (!position.symbol) continue;
-        const symbol = normalizeSymbol(position.symbol);
+        const symbol = normalizeAlpacaCryptoSymbol(
+          position.symbol,
+          position.asset_class,
+        );
         const qty = Math.abs(toNumber(position.qty) ?? 0);
         if (qty <= 0) continue;
         const side =

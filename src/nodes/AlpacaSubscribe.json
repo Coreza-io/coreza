@@ -142,7 +142,58 @@
       "placeholder": "AAPL, TSLA or BTC/USD, ETH/USD",
       "description": "Comma-separated symbols or * for all",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "data_type": ["market", "news"]
+        }
+      }
+    },
+    {
+      "key": "crypto_base",
+      "label": "Base Asset(s)",
+      "type": "text",
+      "placeholder": "e.g. BTC, ETH",
+      "description": "Comma-separated crypto bases (e.g. BTC, ETH, DOGE).",
+      "required": true,
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "data_type": ["crypto"]
+        }
+      }
+    },
+    {
+      "key": "crypto_quote",
+      "label": "Quote Currency",
+      "type": "select",
+      "options": [
+        {
+          "id": "USD",
+          "name": "USD"
+        },
+        {
+          "id": "USDT",
+          "name": "USDT"
+        },
+        {
+          "id": "USDC",
+          "name": "USDC"
+        },
+        {
+          "id": "BTC",
+          "name": "BTC"
+        }
+      ],
+      "default": "USD",
+      "description": "The currency to price against.",
+      "required": true,
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "data_type": ["crypto"]
+        }
+      }
     },
     {
       "key": "feed",

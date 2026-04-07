@@ -16,7 +16,9 @@ export interface StreamExecutionRequest {
   mode: "listen" | "subscribe"; // User-selected mode
 
   // For subscribe mode
-  symbols?: string[];
+  symbols?: string[] | string;
+  crypto_base?: string;
+  crypto_quote?: string;
   data_type: string;
   stream_types?: string[];
   credential_id?: string;

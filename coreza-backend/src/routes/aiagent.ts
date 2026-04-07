@@ -94,6 +94,7 @@ router.post("/execute", async (req: Request, res: Response) => {
       nodes: workflowNodes,
       edges: workflowEdges,
       workflow_id,
+      executionId: req.body.workflowSessionId || workflow_id,
       // Add a simple resolver function
       resolveNodeParameters: (node: WorkflowNode, input: any) => {
         return { ...node.values, ...input };

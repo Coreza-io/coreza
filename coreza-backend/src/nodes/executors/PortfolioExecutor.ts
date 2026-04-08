@@ -540,12 +540,18 @@ export class PortfolioExecutor implements INodeExecutor {
       const baseCurrency = String(account.currency || "USD").toUpperCase();
       const cash = toNumber(account.cash) ?? 0;
       const buyingPower = toNumber(account.buying_power) ?? cash;
+      const margin = toNumber(account.multiplier);
+      const equity = toNumber(account.equity);
+      const initialMargin = toNumber(account.initial_margin);
       pm.initializePortfolio(baseCurrency, cash);
 
       pm.reconcileBalance({
         asset: baseCurrency,
         cash: cash,
         buyingPower: toNumber(account.buying_power) ?? cash,
+        initialMargin: initialMargin,
+        margin: margin,
+        equity: equity,
         locked: Math.max(0, (toNumber(account.equity) ?? cash) - cash),
       });
 
@@ -630,6 +636,9 @@ export class PortfolioExecutor implements INodeExecutor {
           cash,
           currency: baseCurrency,
           buyingPower,
+          margin,
+          initialMargin,
+          equity,
           positions: syncedPositions,
           openOrders: syncedOrders,
         }),

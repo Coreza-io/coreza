@@ -74,13 +74,16 @@ export interface PositionState {
   //updatedAt: string;
 }
 
-export interface BalanceState {
+type BalanceState = {
   asset: string;
   cash: number;
+  equity: number;
+  margin: number; // multiplier: 1 | 2 | 4
+  initialMargin?: number;
   buyingPower?: number;
   locked?: number;
   updatedAt: string;
-}
+};
 
 // ============== LEGACY INTERFACES ==============
 
@@ -734,24 +737,46 @@ export class PortfolioManager {
     asset: string;
     cash: number;
     buyingPower?: number;
+    initialMargin?: number;
+    margin: number;
+    equity: number;
     locked?: number;
   }): { reconciled: boolean; balance: BalanceState } {
     const now = new Date().toISOString();
+
+    const multiplier = input.margin ?? 1;
+
+    // For your current Alpaca behavior:
+    // - if broker gives buyingPower, trust it
+    // - otherwise fallback to cash-based BP
+    const computedBuyingPower =
+      input.buyingPower ?? Math.max(input.cash, 0) * multiplier;
+
     const balance: BalanceState = {
       asset: input.asset,
       cash: input.cash,
-      buyingPower: input.buyingPower,
-      locked: input.locked,
+      buyingPower: computedBuyingPower,
+      margin: multiplier,
+      initialMargin: input.initialMargin ?? 0,
+      equity: input.equity,
+      locked: input.locked ?? 0,
       updatedAt: now,
     };
+
     this.balances.set(input.asset, balance);
 
     // Sync to legacy cashBook
     this.cashBook.set(input.asset, input.cash);
 
+    // Update peak equity if this is trusted account state
+    if (input.equity > this.peakEquity) {
+      this.peakEquity = input.equity;
+    }
+
     console.log(
-      `[PortfolioManager] Balance reconciled: ${input.asset} total=${input.cash}`,
+      `[PortfolioManager] Balance reconciled: ${input.asset} cash=${input.cash} equity=${input.equity} buyingPower=${computedBuyingPower} margin=${multiplier} initialMargin=${input.initialMargin ?? 0}`,
     );
+
     return { reconciled: true, balance };
   }
 
@@ -775,55 +800,92 @@ export class PortfolioManager {
     return order?.filledQty ?? 0;
   }
 
-  private adjustQuoteBalance(
+  private computeBuyingPower(balance: BalanceState): number {
+    const multiplier = balance.margin ?? 1;
+    return Math.max(balance.cash, 0) * multiplier;
+  }
+
+  private updateBalance(
     quoteAsset: string,
     side: "buy" | "sell",
     notional: number,
     now: string,
   ): void {
     const balance = this.balances.get(quoteAsset);
-    const current = balance?.cash ?? this.cashBook.get(quoteAsset) ?? 0;
-    const newTotal = side === "buy" ? current - notional : current + notional;
+    const currentCash = balance?.cash ?? this.cashBook.get(quoteAsset) ?? 0;
 
-    if (balance) {
-      balance.cash = newTotal;
-      balance.updatedAt = now;
-    } else {
-      this.balances.set(quoteAsset, {
-        asset: quoteAsset,
-        cash: newTotal,
-        updatedAt: now,
-      });
+    const updatedCash =
+      side === "buy" ? currentCash - notional : currentCash + notional;
+
+    const nextBalance: BalanceState = balance ?? {
+      asset: quoteAsset,
+      cash: 0,
+      margin: 1,
+      buyingPower: 0,
+      equity: 0,
+      initialMargin: 0,
+      locked: 0,
+      updatedAt: now,
+    };
+
+    nextBalance.cash = updatedCash;
+    nextBalance.updatedAt = now;
+
+    // keep legacy cashBook in sync first
+    this.cashBook.set(quoteAsset, updatedCash);
+
+    // equity is still total account value
+    nextBalance.equity = this.getTotalEquity(quoteAsset);
+
+    // Alpaca current behavior in your case: BP from cash, not total equity
+    nextBalance.buyingPower = this.computeBuyingPower(nextBalance);
+
+    this.balances.set(quoteAsset, nextBalance);
+
+    if (nextBalance.equity > this.peakEquity) {
+      this.peakEquity = nextBalance.equity;
     }
-
-    // Sync to legacy cashBook
-    this.cashBook.set(quoteAsset, newTotal);
   }
 
-  private adjustFeeBalance(
+  private updateFeeBalance(
     feeAsset: string,
     feeAmount: number,
     now: string,
   ): void {
     const balance = this.balances.get(feeAsset);
-    const current = balance?.total ?? this.cashBook.get(feeAsset) ?? 0;
-    const newTotal = current - feeAmount;
+    const currentCash = balance?.cash ?? this.cashBook.get(feeAsset) ?? 0;
 
-    if (balance) {
-      balance.total = newTotal;
-      balance.updatedAt = now;
-    } else {
-      this.balances.set(feeAsset, {
-        asset: feeAsset,
-        total: newTotal,
-        updatedAt: now,
-      });
+    const updatedCash = currentCash - feeAmount;
+
+    const nextBalance: BalanceState = balance ?? {
+      asset: feeAsset,
+      cash: 0,
+      margin: 1,
+      buyingPower: 0,
+      equity: 0,
+      initialMargin: 0,
+      locked: 0,
+      updatedAt: now,
+    };
+
+    nextBalance.cash = updatedCash;
+    nextBalance.updatedAt = now;
+
+    // sync legacy cashBook first
+    this.cashBook.set(feeAsset, updatedCash);
+
+    // recompute equity
+    nextBalance.equity = this.getTotalEquity(feeAsset);
+
+    // Alpaca current behavior in your case: BP from cash, not total equity
+    nextBalance.buyingPower = this.computeBuyingPower(nextBalance);
+
+    this.balances.set(feeAsset, nextBalance);
+
+    if (nextBalance.equity > this.peakEquity) {
+      this.peakEquity = nextBalance.equity;
     }
-
-    // Sync to legacy cashBook
-    this.cashBook.set(feeAsset, newTotal);
   }
-
   /**
    * Apply fill-level accounting updates for quote cash, fees, and peak equity.
    * Intended for broker_sync_order_event execution paths.
@@ -845,14 +907,13 @@ export class PortfolioManager {
     const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency ?? "USD";
 
     const notional = input.fillPrice * input.fillQty;
-    this.adjustQuoteBalance(effectiveQuoteAsset, input.side, notional, now);
+    this.updateEquity(input.baseCurrency);
+    this.updateBalance(effectiveQuoteAsset, input.side, notional, now);
 
     if (input.feeAmount && input.feeAmount > 0) {
       const feeBalanceAsset = input.feeAsset ?? effectiveQuoteAsset;
-      this.adjustFeeBalance(feeBalanceAsset, input.feeAmount, now);
+      this.updateFeeBalance(feeBalanceAsset, input.feeAmount, now);
     }
-
-    this.updatePeakEquity(input.baseCurrency);
   }
 
   // ============== v2 READ METHODS ==============
@@ -889,7 +950,7 @@ export class PortfolioManager {
 
   // ============== PEAK EQUITY ==============
 
-  private updatePeakEquity(baseCurrency: string = "USDT"): void {
+  private updateEquity(baseCurrency: string = "USDT"): void {
     const currentEquity = this.getTotalEquity(baseCurrency);
     if (this.startingEquity === null && currentEquity > 0) {
       this.startingEquity = currentEquity;
@@ -1031,7 +1092,7 @@ export class PortfolioManager {
       //position.updatedAt = now;
     }
 
-    this.updatePeakEquity(baseCurrency);
+    this.updateEquity(baseCurrency);
   }
 
   /**

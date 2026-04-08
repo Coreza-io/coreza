@@ -344,28 +344,46 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
 
-      const syncFromBroker = toBoolean(params.sync_from_broker);
-      if (syncFromBroker) {
-        return this.brokerSyncState(pm, params, context);
+      // Read balance fields (broker mode uses balance_cash, backtest uses cash_balance)
+      const cash = toNumber(params.balance_cash ?? params.cash_balance) ?? 0;
+      pm.initializePortfolio(baseCurrency, cash);
+
+      // Reconcile balance with explicit values if provided
+      const buyingPower = toNumber(params.balance_buying_power);
+      const equity = toNumber(params.balance_equity);
+      const margin = toNumber(params.balance_margin);
+      const initialMargin = toNumber(params.balance_initial_margin);
+
+      if (buyingPower !== undefined || equity !== undefined || margin !== undefined || initialMargin !== undefined) {
+        pm.reconcileBalance({
+          asset: baseCurrency,
+          cash,
+          buyingPower,
+          initialMargin,
+          margin: margin ?? 1,
+          equity: equity ?? cash,
+        });
       }
 
-      const cashBalance = toNumber(params.cash_balance);
-
-      if (baseCurrency && cashBalance !== undefined && cashBalance >= 0) {
-        pm.initializePortfolio(baseCurrency, cashBalance);
-        return toNodeResult(
-          createSuccessOutput({
-            message: "Portfolio created with explicit cash balance",
-            created: true,
-            ...this.getPortfolioSummary(pm, baseCurrency),
-          }),
-        );
+      // Seed position if provided
+      const posQty = toNumber(params.position_quantity);
+      if (params.position_symbol && posQty !== undefined && posQty > 0) {
+        const side = params.position_side === "short" ? "sell" : "buy";
+        pm.applyPositionUpdate({
+          symbol: params.position_symbol.toUpperCase().trim(),
+          positionQty: posQty,
+          avgFillPrice: toNumber(params.position_avg_fill_price) ?? 0,
+          side,
+          currentPrice: toNumber(params.position_current_price),
+        });
       }
 
       return toNodeResult(
-        createErrorOutput(
-          "cash_balance must be a non-negative number for create_portfolio",
-        ),
+        createSuccessOutput({
+          message: "Portfolio created with explicit balance and position data",
+          created: true,
+          ...this.getPortfolioSummary(pm, baseCurrency),
+        }),
       );
     }
 

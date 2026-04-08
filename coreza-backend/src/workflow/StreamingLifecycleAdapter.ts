@@ -231,6 +231,7 @@ export class StreamingLifecycleAdapter {
   ): Promise<void> {
     await RegistrationService.publishUnregisterWorkflow({ userId, workflowId });
     await jobQueue.stopWorkflowRunner(workflowId);
+    await this.clearSessionData(userId, workflowId);
   }
 
   async cleanupWorkflowSubscriptions(
@@ -290,6 +291,7 @@ export class StreamingLifecycleAdapter {
     },
   ): Promise<void> {
     const redis = getRedisCache();
+    let sessionDataCleared = false;
 
     await redis.srem(
       REDIS_CHANNELS.activeStreamingWorkflows(userId),
@@ -305,11 +307,16 @@ export class StreamingLifecycleAdapter {
       );
       if (hasStreamingTrigger) {
         await this.unregisterStreamingTriggers(userId, workflowId);
+        sessionDataCleared = true;
       }
     }
 
     if (!options?.skipSubscriptionCleanup) {
       await this.cleanupWorkflowSubscriptions(userId, workflowId);
+    }
+
+    if (!sessionDataCleared) {
+      await this.clearSessionData(userId, workflowId);
     }
   }
 }

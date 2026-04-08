@@ -28,7 +28,10 @@ import {
   buildStreamingTriggerListeningConfig,
   buildWebhookListeningConfig,
 } from "@/hooks/useListeningConfigs";
-import { isFieldVisible } from "@/utils/fieldVisibility";
+import {
+  isFieldVisible,
+  shouldIncludeFieldInPayload,
+} from "@/utils/fieldVisibility";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -167,19 +170,25 @@ export function useNodeExecution({
 
       console.log("🔧 All node data map:", allNodeData);
 
-      const visibleFieldKeys = new Set<string>();
+      const payload: Record<string, any> = {};
       const definedFields = definition?.fields || [];
 
       for (const field of definedFields) {
-        if (isFieldVisible(field, fieldState)) {
-          visibleFieldKeys.add(field.key);
+        if (
+          !shouldIncludeFieldInPayload(field, fieldState, {
+            ignoreShowKeys: ["portfolio_tab"],
+            ignoreHideKeys: ["portfolio_tab"],
+          })
+        ) {
+          continue;
         }
-      }
 
-      const payload: Record<string, any> = {};
-      for (const [key, value] of Object.entries(fieldState)) {
-        if (visibleFieldKeys.has(key)) {
-          payload[key] = resolveDeep(value, selectedInputData, allNodeData);
+        if (fieldState[field.key] !== undefined) {
+          payload[field.key] = resolveDeep(
+            fieldState[field.key],
+            selectedInputData,
+            allNodeData,
+          );
         }
       }
 
@@ -299,11 +308,24 @@ export function useNodeExecution({
       );
       console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
 
-      // Validate required fields *only if visible*
+      // Validate required fields using payload inclusion rules.
+      // Tabs are UI-only groupings, so hidden tab fields still validate when relevant.
       for (const f of definition?.fields || []) {
-        if (!isFieldVisible(f, fieldState)) continue;
+        if (
+          !shouldIncludeFieldInPayload(f, fieldState, {
+            ignoreShowKeys: ["portfolio_tab"],
+            ignoreHideKeys: ["portfolio_tab"],
+          })
+        ) {
+          continue;
+        }
 
-        if (f.required && !fieldState[f.key]) {
+        const value = fieldState[f.key];
+        const isEmptyArray = Array.isArray(value) && value.length === 0;
+        const isMissingValue =
+          value === undefined || value === null || value === "" || isEmptyArray;
+
+        if (f.required && isMissingValue) {
           setError(`${f.label || f.key} is required`);
           return;
         }

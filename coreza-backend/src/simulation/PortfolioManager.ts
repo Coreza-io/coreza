@@ -512,6 +512,10 @@ export class PortfolioManager {
     executionId?: string;
     positionQty?: number; // broker-truth resulting position qty
     currentPrice?: number;
+    openCostBasis?: number;
+    marketValue?: number;
+    realizedPnl?: number;
+    unrealizedPnl?: number;
   }): { position: PositionState | null } {
     const now = new Date().toISOString();
     const existing = this.positions.get(input.symbol);
@@ -1057,7 +1061,7 @@ export class PortfolioManager {
     // Also set in v2 balances
     this.balances.set(baseCurrency, {
       asset: baseCurrency,
-      total: cashBalance,
+      cash: cashBalance,
       updatedAt: new Date().toISOString(),
     });
     if (this.startingEquity === null && cashBalance > 0) {

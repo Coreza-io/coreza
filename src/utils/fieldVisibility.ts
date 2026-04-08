@@ -14,39 +14,79 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-export const isFieldVisible = (
+type DisplayOptionsMap = Record<string, any>;
+
+const matchesAllowedValues = (current: any, rawAllowed: any): boolean => {
+  const allowedValues = Array.isArray(rawAllowed) ? rawAllowed : [rawAllowed];
+
+  if (Array.isArray(current)) {
+    return current.some((v) => allowedValues.includes(v));
+  }
+
+  return allowedValues.includes(current);
+};
+
+const shouldHideForValue = (current: any, rawAllowed: any): boolean => {
+  const allowedValues = Array.isArray(rawAllowed) ? rawAllowed : [rawAllowed];
+
+  return allowedValues.some((v: any) => {
+    const compareVal =
+      typeof v === "object" && v !== null ? v.id || v.value : v;
+    return String(current) === String(compareVal);
+  });
+};
+
+const filterDisplayOptions = (
+  options: DisplayOptionsMap | undefined,
+  ignoredKeys: string[] = [],
+): DisplayOptionsMap | undefined => {
+  if (!options) return undefined;
+
+  const filteredEntries = Object.entries(options).filter(
+    ([key]) => !ignoredKeys.includes(key),
+  );
+
+  if (filteredEntries.length === 0) return undefined;
+
+  return Object.fromEntries(filteredEntries);
+};
+
+interface FieldEvaluationOptions {
+  ignoreShowKeys?: string[];
+  ignoreHideKeys?: string[];
+}
+
+const evaluateFieldDisplayRules = (
   field: any,
   currentFieldState: Record<string, any>,
+  options: FieldEvaluationOptions = {},
 ): boolean => {
-  if (field.displayOptions?.show) {
-    const showResult = Object.entries(field.displayOptions.show).every(
+  const showOptions = filterDisplayOptions(
+    field.displayOptions?.show,
+    options.ignoreShowKeys,
+  );
+
+  if (showOptions) {
+    const showResult = Object.entries(showOptions).every(
       ([depKey, rawAllowed]) => {
-        const allowedValues = Array.isArray(rawAllowed)
-          ? rawAllowed
-          : [rawAllowed];
         const current = currentFieldState[depKey];
-        if (Array.isArray(current)) {
-          return current.some((v) => allowedValues.includes(v));
-        }
-        return allowedValues.includes(current);
+        return matchesAllowedValues(current, rawAllowed);
       },
     );
 
     if (!showResult) return false;
   }
 
-  if (field.displayOptions?.hide) {
-    const shouldHide = Object.entries(field.displayOptions.hide).some(
+  const hideOptions = filterDisplayOptions(
+    field.displayOptions?.hide,
+    options.ignoreHideKeys,
+  );
+
+  if (hideOptions) {
+    const shouldHide = Object.entries(hideOptions).some(
       ([depKey, rawAllowed]) => {
-        const allowedValues = Array.isArray(rawAllowed)
-          ? rawAllowed
-          : [rawAllowed];
         const current = currentFieldState[depKey];
-        return allowedValues.some((v: any) => {
-          const compareVal =
-            typeof v === "object" && v !== null ? v.id || v.value : v;
-          return String(current) === String(compareVal);
-        });
+        return shouldHideForValue(current, rawAllowed);
       },
     );
 
@@ -54,6 +94,21 @@ export const isFieldVisible = (
   }
 
   return true;
+};
+
+export const isFieldVisible = (
+  field: any,
+  currentFieldState: Record<string, any>,
+): boolean => {
+  return evaluateFieldDisplayRules(field, currentFieldState);
+};
+
+export const shouldIncludeFieldInPayload = (
+  field: any,
+  currentFieldState: Record<string, any>,
+  options: FieldEvaluationOptions = {},
+): boolean => {
+  return evaluateFieldDisplayRules(field, currentFieldState, options);
 };
 
 export const getVisibleValues = (

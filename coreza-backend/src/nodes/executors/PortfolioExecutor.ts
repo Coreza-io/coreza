@@ -71,7 +71,6 @@ function toNumber(value: unknown): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
-
 function toArray(value: unknown): any[] {
   if (value == null) return [];
   if (typeof value === "string") {
@@ -374,7 +373,12 @@ export class PortfolioExecutor implements INodeExecutor {
       const margin = toNumber(params.balance_margin);
       const initialMargin = toNumber(params.balance_initial_margin);
 
-      if (buyingPower !== undefined || equity !== undefined || margin !== undefined || initialMargin !== undefined) {
+      if (
+        buyingPower !== undefined ||
+        equity !== undefined ||
+        margin !== undefined ||
+        initialMargin !== undefined
+      ) {
         pm.reconcileBalance({
           asset: baseCurrency,
           cash,
@@ -391,6 +395,10 @@ export class PortfolioExecutor implements INodeExecutor {
       const posSides = toArray(params.position_side);
       const posAvgPrices = toArray(params.position_avg_fill_price);
       const posCurPrices = toArray(params.position_current_price);
+      const posOpenCostBasis = toArray(params.position_open_cost_basis);
+      const posMarketValue = toArray(params.position_market_value);
+      const posRealizedPnl = toArray(params.position_realized_pnl);
+      const posUnrealizedPnl = toArray(params.position_unrealized_pnl);
 
       for (let i = 0; i < posSymbols.length; i++) {
         const symbol = String(posSymbols[i] ?? "")
@@ -406,10 +414,14 @@ export class PortfolioExecutor implements INodeExecutor {
 
         pm.applyPositionUpdate({
           symbol,
-          positionQty: qty,
+          filledQty: qty,
           avgFillPrice: toNumber(posAvgPrices[i]) ?? 0,
           side,
           currentPrice: toNumber(posCurPrices[i]),
+          openCostBasis: toNumber(posOpenCostBasis[i]) ?? 0,
+          marketValue: toNumber(posMarketValue[i]) ?? 0,
+          realizedPnl: toNumber(posRealizedPnl[i]) ?? 0,
+          unrealizedPnl: toNumber(posUnrealizedPnl[i]) ?? 0,
         });
       }
 

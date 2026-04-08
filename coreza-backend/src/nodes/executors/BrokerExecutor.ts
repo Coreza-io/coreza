@@ -53,8 +53,7 @@ function toCanonicalCryptoSymbol(symbol: string): string {
   }
 
   const detectedQuote = KNOWN_CRYPTO_QUOTES.find(
-    (quote) =>
-      upperSymbol.endsWith(quote) && upperSymbol.length > quote.length,
+    (quote) => upperSymbol.endsWith(quote) && upperSymbol.length > quote.length,
   );
 
   if (detectedQuote) {
@@ -147,21 +146,23 @@ export class BrokerExecutor implements INodeExecutor {
         normalizeAlpacaCryptoSymbol(resolvedParams);
       }
 
-      isOrderOperation = operation === "place_order" || operation === "close_position";
+      isOrderOperation =
+        operation === "place_order" || operation === "close_position";
 
       if (isOrderOperation) {
         idempotencyKey = generateIdempotencyKey({
           workflowId,
           nodeId: node.id,
-          runId: context?.executionId ?? context?.runId ?? `manual-${Date.now()}`,
+          runId:
+            context?.runId ?? context?.executionId ?? `manual-${Date.now()}`,
           symbol: resolvedParams.symbol ?? "",
           side:
             operation === "close_position"
               ? "close"
-              : resolvedParams.side ??
+              : (resolvedParams.side ??
                 resolvedParams.instruction ??
                 resolvedParams.transactionType ??
-                "",
+                ""),
           quantity:
             resolvedParams.quantity ??
             resolvedParams.qty ??
@@ -170,7 +171,11 @@ export class BrokerExecutor implements INodeExecutor {
             "full",
         });
 
-        const cached = await getOrderFromCache(userId, workflowId, idempotencyKey);
+        const cached = await getOrderFromCache(
+          userId,
+          workflowId,
+          idempotencyKey,
+        );
         if (cached) {
           if (cached.status === "success") {
             console.log(

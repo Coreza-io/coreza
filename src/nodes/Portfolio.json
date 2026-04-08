@@ -307,15 +307,12 @@
       }
     },
     {
-      "key": "position_side",
+      "key": "side",
       "label": "Side",
-      "type": "select",
-      "options": [
-        { "id": "long", "name": "Long" },
-        { "id": "short", "name": "Short" }
-      ],
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g. long, short",
       "default": "long",
-      "required": false,
       "displayOptions": {
         "show": {
           "operation": ["create_portfolio"],

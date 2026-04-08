@@ -8,6 +8,7 @@ import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 import { SubscriptionService } from "../services/SubscriptionService";
 import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
+import { RedisKeys } from "../infra/redisKeys";
 
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
@@ -20,6 +21,42 @@ function toMarketSource(
 }
 
 export class StreamingLifecycleAdapter {
+  private async deleteByPattern(pattern: string): Promise<void> {
+    const redis = getRedisCache();
+    let cursor = "0";
+
+    do {
+      const [nextCursor, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        100,
+      );
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } while (cursor !== "0");
+  }
+
+  private async clearSessionData(
+    userId: string,
+    workflowId: string,
+  ): Promise<void> {
+    const redis = getRedisCache();
+    const keysToDelete = [
+      RedisKeys.strategyStream(userId, workflowId),
+      RedisKeys.portfolioFillsStream(userId, workflowId),
+      RedisKeys.portfolioSnapshotLatest(userId, workflowId),
+    ];
+
+    await redis.del(...keysToDelete);
+    await this.deleteByPattern(RedisKeys.order(userId, workflowId, "*"));
+    await this.deleteByPattern(RedisKeys.orderReverse(userId, workflowId, "*"));
+  }
+
   async activateStreaming(
     userId: string,
     workflowId: string,
@@ -132,6 +169,7 @@ export class StreamingLifecycleAdapter {
       });
     }
 
+    await this.clearSessionData(userId, workflowId);
     await jobQueue.startWorkflowRunner(
       workflowId,
       userId,
@@ -159,6 +197,7 @@ export class StreamingLifecycleAdapter {
     // Stop the in-memory WorkflowRunner so it doesn't keep persisting
     // data under the old runnerInstanceId after deactivation.
     await jobQueue.stopWorkflowRunner(workflowId);
+    await this.clearSessionData(userId, workflowId);
   }
 
   async unsubscribeStreamingNodes(

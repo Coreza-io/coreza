@@ -40,6 +40,31 @@ const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 
+function toCanonicalCryptoSymbol(symbol: string): string {
+  const fallbackSymbol = "ETH/USD";
+
+  if (!symbol || typeof symbol !== "string") return fallbackSymbol;
+
+  const upperSymbol = symbol.toUpperCase().replace(/\s+/g, "");
+  if (upperSymbol.includes("/")) {
+    const [rawBase, rawQuote] = upperSymbol.split("/");
+    if (rawBase && rawQuote) return `${rawBase}/${rawQuote}`;
+    return fallbackSymbol;
+  }
+
+  const detectedQuote = KNOWN_CRYPTO_QUOTES.find(
+    (quote) =>
+      upperSymbol.endsWith(quote) && upperSymbol.length > quote.length,
+  );
+
+  if (detectedQuote) {
+    const base = upperSymbol.slice(0, -detectedQuote.length);
+    return `${base}/${detectedQuote}`;
+  }
+
+  return fallbackSymbol;
+}
+
 function normalizeAlpacaCryptoSymbol(params: Record<string, any>) {
   const fallbackSymbol = "ETH/USD";
   const normalizePair = (base: string, quote: string) =>
@@ -56,29 +81,52 @@ function normalizeAlpacaCryptoSymbol(params: Record<string, any>) {
     return;
   }
 
-  const upperSymbol = params.symbol.toUpperCase().replace(/\s+/g, "");
-  if (upperSymbol.includes("/")) {
-    const [rawBase, rawQuote] = upperSymbol.split("/");
-    if (rawBase && rawQuote) {
-      params.symbol = `${rawBase}/${rawQuote}`;
+  params.symbol = toCanonicalCryptoSymbol(params.symbol);
+}
+
+function normalizeAlpacaCryptoResponseSymbols(payload: any): void {
+  if (!payload || typeof payload !== "object") return;
+
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => normalizeAlpacaCryptoResponseSymbols(item));
+    return;
+  }
+
+  Object.keys(payload).forEach((key) => {
+    const value = payload[key];
+
+    if (key === "symbol" && typeof value === "string") {
+      payload[key] = toCanonicalCryptoSymbol(value);
       return;
     }
-    params.symbol = fallbackSymbol;
-    return;
-  }
 
-  const detectedQuote = KNOWN_CRYPTO_QUOTES.find(
-    (quote) =>
-      upperSymbol.endsWith(quote) && upperSymbol.length > quote.length,
-  );
+    if (
+      key === "symbols" &&
+      typeof value === "string" &&
+      value.trim().length > 0
+    ) {
+      payload[key] = value
+        .split(",")
+        .map((s: string) => toCanonicalCryptoSymbol(s))
+        .join(",");
+      return;
+    }
 
-  if (detectedQuote) {
-    const base = upperSymbol.slice(0, -detectedQuote.length);
-    params.symbol = `${base}/${detectedQuote}`;
-    return;
-  }
+    if (Array.isArray(value)) {
+      if (key === "symbols") {
+        payload[key] = value.map((v) =>
+          typeof v === "string" ? toCanonicalCryptoSymbol(v) : v,
+        );
+      } else {
+        value.forEach((item) => normalizeAlpacaCryptoResponseSymbols(item));
+      }
+      return;
+    }
 
-  params.symbol = fallbackSymbol;
+    if (value && typeof value === "object") {
+      normalizeAlpacaCryptoResponseSymbols(value);
+    }
+  });
 }
 
 export class BrokerExecutor implements INodeExecutor {
@@ -280,6 +328,10 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
+
+      if (broker === "alpaca" && resolvedParams.asset_type === "crypto") {
+        normalizeAlpacaCryptoResponseSymbols(data);
+      }
 
       if (isOrderOperation && idempotencyKey) {
         await updateOrderCache(

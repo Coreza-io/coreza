@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FieldWrapper } from "./FieldWrapper";
 import GroupedSelect from "./GroupedSelect";
 import CredentialSelect from "./CredentialSelect";
@@ -587,6 +588,27 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               );
             })}
           </div>
+        );
+      }
+
+      case "tabs": {
+        const tabs = field.tabs || [];
+        const currentTab = fieldValue || field.default || tabs[0]?.id || "";
+
+        return (
+          <Tabs
+            value={currentTab}
+            onValueChange={(val) => onChange(field.key, val)}
+            className="w-full nodrag"
+          >
+            <TabsList className="w-full">
+              {tabs.map((tab: { id: string; label: string }) => (
+                <TabsTrigger key={tab.id} value={tab.id} className="flex-1">
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         );
       }
 

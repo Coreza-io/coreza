@@ -61,6 +61,23 @@ const portfolioRequestSchema = z.object({
   environment: z.enum(["paper", "live"]).optional(),
   sync_from_broker: z.union([z.boolean(), z.string()]).optional(),
 
+  // Tabbed balance/position fields for create_portfolio
+  portfolio_tab: z.string().optional(),
+  balance_cash: z.union([z.string(), z.number()]).optional(),
+  balance_buying_power: z.union([z.string(), z.number()]).optional(),
+  balance_equity: z.union([z.string(), z.number()]).optional(),
+  balance_margin: z.union([z.string(), z.number()]).optional(),
+  balance_initial_margin: z.union([z.string(), z.number()]).optional(),
+  position_symbol: z.string().optional(),
+  position_side: z.string().optional(),
+  position_quantity: z.union([z.string(), z.number()]).optional(),
+  position_avg_fill_price: z.union([z.string(), z.number()]).optional(),
+  position_current_price: z.union([z.string(), z.number()]).optional(),
+  position_open_cost_basis: z.union([z.string(), z.number()]).optional(),
+  position_market_value: z.union([z.string(), z.number()]).optional(),
+  position_realized_pnl: z.union([z.string(), z.number()]).optional(),
+  position_unrealized_pnl: z.union([z.string(), z.number()]).optional(),
+
   // v2 fields
   broker_order_id: z.string().optional(),
   execution_id: z.string().optional(),

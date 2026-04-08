@@ -193,75 +193,232 @@
       }
     },
     {
-      "key": "sync_from_broker",
-      "label": "Sync from Broker",
-      "type": "toggle",
-      "required": false,
-      "default": false,
-      "description": "When enabled, create_portfolio seeds cash, positions, and open orders from Alpaca.",
-      "displayOptions": {
-        "show": {
-          "operation": ["create_portfolio"],
-          "mode": ["broker"],
-          "broker": ["alpaca"]
-        }
-      }
-    },
-    {
       "key": "cash_balance",
       "label": "Cash Balance",
       "type": "text",
       "placeholder": "e.g. 100000",
       "required": false,
-      "description": "Starting cash balance in the base currency (used when Sync from Broker is disabled).",
-      "displayOptions": {
-        "show": {
-          "operation": ["create_portfolio"]
-        },
-        "hide": {
-          "sync_from_broker": ["true", true]
-        }
-      }
-    },
-    {
-      "key": "credential_id",
-      "label": "Credential",
-      "type": "select",
-      "optionsSource": "credentialsApi",
-      "dependsOn": "broker",
-      "placeholder": "Select credential",
-      "required": true,
+      "description": "Starting cash balance in the base currency.",
       "displayOptions": {
         "show": {
           "operation": ["create_portfolio"],
-          "mode": ["broker"],
-          "broker": ["alpaca"],
-          "sync_from_broker": ["true", true]
+          "mode": ["backtest"]
         }
       }
     },
     {
-      "key": "environment",
-      "label": "Environment",
-      "type": "select",
-      "required": true,
-      "default": "paper",
-      "options": [
-        {
-          "id": "paper",
-          "name": "Paper Trading (Sandbox)"
-        },
-        {
-          "id": "live",
-          "name": "Live Trading (Production)"
-        }
+      "key": "portfolio_tab",
+      "type": "tabs",
+      "label": "",
+      "tabs": [
+        { "id": "balance", "label": "Balance" },
+        { "id": "position", "label": "Position" }
       ],
+      "default": "balance",
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"]
+        }
+      }
+    },
+    {
+      "key": "balance_cash",
+      "label": "Cash",
+      "type": "text",
+      "placeholder": "e.g. 100000",
+      "required": false,
       "displayOptions": {
         "show": {
           "operation": ["create_portfolio"],
           "mode": ["broker"],
-          "broker": ["alpaca"],
-          "sync_from_broker": ["true", true]
+          "portfolio_tab": ["balance"]
+        }
+      }
+    },
+    {
+      "key": "balance_buying_power",
+      "label": "Buying Power",
+      "type": "text",
+      "placeholder": "e.g. 400000",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["balance"]
+        }
+      }
+    },
+    {
+      "key": "balance_equity",
+      "label": "Equity",
+      "type": "text",
+      "placeholder": "e.g. 105000",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["balance"]
+        }
+      }
+    },
+    {
+      "key": "balance_margin",
+      "label": "Margin Multiplier",
+      "type": "text",
+      "placeholder": "e.g. 4",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["balance"]
+        }
+      }
+    },
+    {
+      "key": "balance_initial_margin",
+      "label": "Initial Margin",
+      "type": "text",
+      "placeholder": "e.g. 0",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["balance"]
+        }
+      }
+    },
+    {
+      "key": "position_symbol",
+      "label": "Symbol",
+      "type": "text",
+      "placeholder": "e.g. ETH/USD",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        { "id": "long", "name": "Long" },
+        { "id": "short", "name": "Short" }
+      ],
+      "default": "long",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_quantity",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 10",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_avg_fill_price",
+      "label": "Avg Fill Price",
+      "type": "text",
+      "placeholder": "e.g. 2500.50",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_current_price",
+      "label": "Current Price",
+      "type": "text",
+      "placeholder": "e.g. 2600.00",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_open_cost_basis",
+      "label": "Open Cost Basis",
+      "type": "text",
+      "placeholder": "qty × avgFillPrice",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_market_value",
+      "label": "Market Value",
+      "type": "text",
+      "placeholder": "qty × currentPrice",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_realized_pnl",
+      "label": "Realized PnL",
+      "type": "text",
+      "placeholder": "e.g. 0",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
+        }
+      }
+    },
+    {
+      "key": "position_unrealized_pnl",
+      "label": "Unrealized PnL",
+      "type": "text",
+      "placeholder": "e.g. 500",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["create_portfolio"],
+          "mode": ["broker"],
+          "portfolio_tab": ["position"]
         }
       }
     },

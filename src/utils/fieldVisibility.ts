@@ -111,6 +111,19 @@ export const shouldIncludeFieldInPayload = (
   return evaluateFieldDisplayRules(field, currentFieldState, options);
 };
 
+
+
+// Check if field is relevant for persistence (ignoring tab-based visibility keys)
+const isFieldRelevantForPersistence = (
+  field: any,
+  currentFieldState: Record<string, any>,
+  tabKeys: string[] = ["portfolio_tab"],
+): boolean => {
+  return shouldIncludeFieldInPayload(field, currentFieldState, {
+    ignoreShowKeys: tabKeys,
+  });
+};
+
 export const getVisibleValues = (
   definition: any,
   values: Record<string, any>,
@@ -120,7 +133,7 @@ export const getVisibleValues = (
   const result: Record<string, any> = {};
 
   for (const field of definition.fields) {
-    if (!isFieldVisible(field, values)) continue;
+    if (!isFieldRelevantForPersistence(field, values)) continue;
 
     if (values[field.key] !== undefined) {
       result[field.key] = values[field.key];

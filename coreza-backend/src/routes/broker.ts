@@ -148,13 +148,6 @@ router.post("/:broker/:operation", async (req, res, next) => {
       }
     }
 
-    // Merge crypto_base + crypto_quote into symbol for crypto assets
-    if (req.body.asset_type === "crypto" && req.body.crypto_base && !req.body.symbol) {
-      const base = req.body.crypto_base.toUpperCase().trim();
-      const quote = (req.body.crypto_quote || "USD").toUpperCase().trim();
-      req.body.symbol = `${base}/${quote}`;
-    }
-
     const node: WorkflowNode = {
       id: node_id,
       name: nodeName,

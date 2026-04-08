@@ -2,6 +2,62 @@ import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
 import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 
+const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
+
+function toCanonicalCryptoSymbol(symbol: string): string {
+  const fallbackSymbol = "ETH/USD";
+  if (!symbol || typeof symbol !== "string") return fallbackSymbol;
+
+  const upperSymbol = symbol.toUpperCase().replace(/\s+/g, "");
+  if (upperSymbol.includes("/")) {
+    const [base, quote] = upperSymbol.split("/");
+    if (base && quote) return `${base}/${quote}`;
+    return fallbackSymbol;
+  }
+
+  const quote = KNOWN_CRYPTO_QUOTES.find(
+    (q) => upperSymbol.endsWith(q) && upperSymbol.length > q.length,
+  );
+  if (!quote) return fallbackSymbol;
+
+  return `${upperSymbol.slice(0, -quote.length)}/${quote}`;
+}
+
+function normalizeCryptoSymbolsInPayload(payload: any): any {
+  if (!payload || typeof payload !== "object") return payload;
+  if (Array.isArray(payload)) {
+    return payload.map((item) => normalizeCryptoSymbolsInPayload(item));
+  }
+
+  return Object.entries(payload).reduce(
+    (acc, [key, value]) => {
+      if (key === "symbol" && typeof value === "string") {
+        acc[key] = toCanonicalCryptoSymbol(value);
+        return acc;
+      }
+
+      if (key === "symbols" && typeof value === "string") {
+        acc[key] = value
+          .split(",")
+          .map((s) => toCanonicalCryptoSymbol(s))
+          .join(",");
+        return acc;
+      }
+
+      if (key === "symbols" && Array.isArray(value)) {
+        acc[key] = value.map((v) =>
+          typeof v === "string" ? toCanonicalCryptoSymbol(v) : v,
+        );
+        return acc;
+      }
+
+      acc[key] = normalizeCryptoSymbolsInPayload(value);
+      return acc;
+    },
+    {} as Record<string, any>,
+  );
+}
+
 export const alpacaOperations: Record<string, BrokerOperation> = {
   get_account: {
     method: "get",
@@ -11,9 +67,12 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: "/v2/positions",
     transformResult: (raw: any, input: any) => {
-      return {
+      const result = {
         positions: raw,
       };
+      return input.asset_type === "crypto"
+        ? normalizeCryptoSymbolsInPayload(result)
+        : result;
     },
   },
   get_orders: {
@@ -24,9 +83,12 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       limit: "100",
     }),
     transformResult: (raw: any, input: any) => {
-      return {
+      const result = {
         orders: raw,
       };
+      return input.asset_type === "crypto"
+        ? normalizeCryptoSymbolsInPayload(result)
+        : result;
     },
   },
   cancel_orders: {
@@ -75,7 +137,10 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
             .map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
 
           return {
-            symbol,
+            symbol:
+              input.asset_type === "crypto"
+                ? toCanonicalCryptoSymbol(symbol)
+                : symbol,
             interval: input.interval,
             bars,
           };
@@ -115,7 +180,10 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
             .map((x: any) => fromAlpacaBar(parseAlpacaRawBar(x)));
 
           return {
-            symbol,
+            symbol:
+              input.asset_type === "crypto"
+                ? toCanonicalCryptoSymbol(symbol)
+                : symbol,
             interval: input.interval || "1m",
             bars,
           };
@@ -245,6 +313,10 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
 
       return body;
     },
+    transformResult: (raw: any, input: any) =>
+      input.asset_type === "crypto"
+        ? normalizeCryptoSymbolsInPayload(raw)
+        : raw,
   },
   close_position: {
     method: "delete",
@@ -258,5 +330,9 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       if (input.percentage) params.percentage = String(input.percentage);
       return params;
     },
+    transformResult: (raw: any, input: any) =>
+      input.asset_type === "crypto"
+        ? normalizeCryptoSymbolsInPayload(raw)
+        : raw,
   },
 };

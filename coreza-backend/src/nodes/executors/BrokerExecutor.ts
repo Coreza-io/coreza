@@ -84,51 +84,6 @@ function normalizeAlpacaCryptoSymbol(params: Record<string, any>) {
   params.symbol = toCanonicalCryptoSymbol(params.symbol);
 }
 
-function normalizeAlpacaCryptoResponseSymbols(payload: any): void {
-  if (!payload || typeof payload !== "object") return;
-
-  if (Array.isArray(payload)) {
-    payload.forEach((item) => normalizeAlpacaCryptoResponseSymbols(item));
-    return;
-  }
-
-  Object.keys(payload).forEach((key) => {
-    const value = payload[key];
-
-    if (key === "symbol" && typeof value === "string") {
-      payload[key] = toCanonicalCryptoSymbol(value);
-      return;
-    }
-
-    if (
-      key === "symbols" &&
-      typeof value === "string" &&
-      value.trim().length > 0
-    ) {
-      payload[key] = value
-        .split(",")
-        .map((s: string) => toCanonicalCryptoSymbol(s))
-        .join(",");
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      if (key === "symbols") {
-        payload[key] = value.map((v) =>
-          typeof v === "string" ? toCanonicalCryptoSymbol(v) : v,
-        );
-      } else {
-        value.forEach((item) => normalizeAlpacaCryptoResponseSymbols(item));
-      }
-      return;
-    }
-
-    if (value && typeof value === "object") {
-      normalizeAlpacaCryptoResponseSymbols(value);
-    }
-  });
-}
-
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
 
@@ -328,10 +283,6 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
-
-      if (broker === "alpaca" && resolvedParams.asset_type === "crypto") {
-        normalizeAlpacaCryptoResponseSymbols(data);
-      }
 
       if (isOrderOperation && idempotencyKey) {
         await updateOrderCache(

@@ -71,6 +71,26 @@ function toNumber(value: unknown): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
+
+function toArray(value: unknown): any[] {
+  if (value == null) return [];
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Ignore JSON parsing errors and treat as scalar string
+    }
+
+    return [value];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
 function toBoolean(value: unknown, fallback = false): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -365,16 +385,31 @@ export class PortfolioExecutor implements INodeExecutor {
         });
       }
 
-      // Seed position if provided
-      const posQty = toNumber(params.position_quantity);
-      if (params.position_symbol && posQty !== undefined && posQty > 0) {
-        const side = params.position_side === "short" ? "sell" : "buy";
+      // Seed positions — supports single value or parallel arrays
+      const posSymbols = toArray(params.position_symbol);
+      const posQuantities = toArray(params.position_quantity);
+      const posSides = toArray(params.position_side);
+      const posAvgPrices = toArray(params.position_avg_fill_price);
+      const posCurPrices = toArray(params.position_current_price);
+
+      for (let i = 0; i < posSymbols.length; i++) {
+        const symbol = String(posSymbols[i] ?? "")
+          .trim()
+          .toUpperCase();
+        const qty = toNumber(posQuantities[i]);
+        if (!symbol || qty === undefined || qty <= 0) continue;
+
+        const sideValue = String(posSides[i] ?? posSides[0] ?? "long")
+          .trim()
+          .toLowerCase();
+        const side = sideValue === "short" ? "sell" : "buy";
+
         pm.applyPositionUpdate({
-          symbol: params.position_symbol.toUpperCase().trim(),
-          positionQty: posQty,
-          avgFillPrice: toNumber(params.position_avg_fill_price) ?? 0,
+          symbol,
+          positionQty: qty,
+          avgFillPrice: toNumber(posAvgPrices[i]) ?? 0,
           side,
-          currentPrice: toNumber(params.position_current_price),
+          currentPrice: toNumber(posCurPrices[i]),
         });
       }
 

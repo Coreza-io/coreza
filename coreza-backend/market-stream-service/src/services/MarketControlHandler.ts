@@ -852,7 +852,7 @@ export class MarketControlHandler {
         );
       }
       if (assetType) {
-        creds = { ...creds, assetType };
+        creds = { ...creds, asset_type: assetType };
         console.log(
           `📊 [MarketControl] Using ${assetType} asset type for ${source}`,
         );

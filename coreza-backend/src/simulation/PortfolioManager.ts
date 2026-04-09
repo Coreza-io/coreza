@@ -531,10 +531,7 @@ export class PortfolioManager {
       const openCostBasis = absQty * avgFillPrice;
       const marketValue = absQty * currentPrice;
 
-      const unrealizedPnl =
-        quantity >= 0
-          ? (currentPrice - avgFillPrice) * absQty
-          : (avgFillPrice - currentPrice) * absQty;
+      const unrealizedPnl = (currentPrice - avgFillPrice) * quantity;
 
       const totalPnl = realizedPnl + unrealizedPnl;
 
@@ -911,13 +908,15 @@ export class PortfolioManager {
     const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency ?? "USD";
 
     const notional = input.fillPrice * input.fillQty;
-    this.updateEquity(input.baseCurrency);
+
     this.updateBalance(effectiveQuoteAsset, input.side, notional, now);
 
     if (input.feeAmount && input.feeAmount > 0) {
       const feeBalanceAsset = input.feeAsset ?? effectiveQuoteAsset;
       this.updateFeeBalance(feeBalanceAsset, input.feeAmount, now);
     }
+
+    this.updateEquity(input.baseCurrency);
   }
 
   // ============== v2 READ METHODS ==============
@@ -976,19 +975,36 @@ export class PortfolioManager {
     pendingOrders: OrderState[];
   } {
     const positionStates = this.getPositions();
-    const positions: Position[] = positionStates.map((p) => ({
-      symbol: p.symbol,
-      side: p.side,
-      quantity: p.quantity,
-      avgFillPrice: p.avgFillPrice,
-      currentPrice: p.currentPrice,
-      unrealizedPnl: (p.currentPrice - p.avgFillPrice) * p.quantity,
-      realizedPnl: p.realizedPnl,
-      marketValue: p.quantity * p.currentPrice,
-    }));
+
+    const positions: Position[] = positionStates.map((p) => {
+      const absQty = Math.abs(p.quantity);
+      const marketValue = absQty * p.currentPrice;
+      const openCostBasis = absQty * p.avgFillPrice;
+      const unrealizedPnl = (p.currentPrice - p.avgFillPrice) * p.quantity;
+
+      return {
+        symbol: p.symbol,
+        side: p.quantity >= 0 ? "long" : "short",
+        quantity: p.quantity,
+        avgFillPrice: p.avgFillPrice,
+        currentPrice: p.currentPrice,
+        unrealizedPnl,
+        realizedPnl: p.realizedPnl,
+        marketValue,
+        openCostBasis,
+        totalPnl: p.realizedPnl + unrealizedPnl,
+      };
+    });
+
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
-    const positionsValue = positions.reduce((s, p) => s + p.marketValue, 0);
-    const totalEquity = cashBase + positionsValue;
+
+    const positionsEquityValue = positionStates.reduce(
+      (sum, p) => sum + p.quantity * p.currentPrice,
+      0,
+    );
+
+    const totalEquity = cashBase + positionsEquityValue;
+
     if (this.startingEquity === null && totalEquity > 0) {
       this.startingEquity = totalEquity;
     }
@@ -1008,15 +1024,22 @@ export class PortfolioManager {
     const p = this.positions.get(symbol);
     if (!p) return null;
 
+    const absQty = Math.abs(p.quantity);
+    const marketValue = absQty * p.currentPrice;
+    const openCostBasis = absQty * p.avgFillPrice;
+    const unrealizedPnl = (p.currentPrice - p.avgFillPrice) * p.quantity;
+
     return {
       symbol: p.symbol,
       side: p.quantity >= 0 ? "long" : "short",
       quantity: p.quantity,
       avgFillPrice: p.avgFillPrice,
       currentPrice: p.currentPrice,
-      unrealizedPnl: (p.currentPrice - p.avgFillPrice) * p.quantity,
+      unrealizedPnl,
       realizedPnl: p.realizedPnl,
-      marketValue: p.quantity * p.currentPrice,
+      marketValue,
+      openCostBasis,
+      totalPnl: p.realizedPnl + unrealizedPnl,
     };
   }
 
@@ -1089,11 +1112,13 @@ export class PortfolioManager {
       const position = this.positions.get(symbol);
       if (!position) continue;
 
+      const absQty = Math.abs(position.quantity);
+
       position.currentPrice = price;
-      position.marketValue = position.quantity * price;
-      position.unrealizedPnl = position.marketValue - position.openCostBasis;
-      position.totalPnl = position.realizedPnl + position.unrealizedPnl;
-      //position.updatedAt = now;
+      position.marketValue = absQty * price;
+      position.openCostBasis = absQty * position.avgFillPrice;
+      position.unrealizedPnl =
+        (position.currentPrice - position.avgFillPrice) * position.quantity;
     }
 
     this.updateEquity(baseCurrency);

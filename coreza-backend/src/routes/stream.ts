@@ -167,6 +167,8 @@ router.post("/:source/subscribe", async (req, res) => {
         credentialId: credential_id,
         symbols: ["*"],
         streamTypes: ["order_update"],
+        environment,
+        assetType: asset_type,
         scope,
         targetWorkflowId,
       });
@@ -519,6 +521,8 @@ router.post("/:source/register", async (req, res) => {
           credentialId: credential_id || "",
           symbols: ["*"],
           streamTypes: ["order_update"],
+          environment,
+          assetType: asset_type,
           scope,
           targetWorkflowId: workflowId,
         });

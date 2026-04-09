@@ -18,7 +18,7 @@ const BINANCE_REST_ENDPOINTS: Record<
 // ============ URL BUILDER (source-aware) ============
 export function getBinanceWsUrl(creds: any, source?: string): string {
   const isTestnet = creds.environment === "testnet";
-  const assetType = creds.asset_type || "spot";
+  const assetType = creds.asset_type || creds.assetType || "spot";
 
   // Trading stream: connect to User Data Stream via listenKey
   if (source === "binance_trading") {
@@ -55,7 +55,7 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
 // ============ PRE-CONNECT: Fetch listenKey for User Data Stream ============
 export async function preConnectBinance(creds: any): Promise<any> {
   const isTestnet = creds.environment === "testnet";
-  const assetType = creds.asset_type || "spot";
+  const assetType = creds.asset_type || creds.assetType || "spot";
   const env = isTestnet ? "testnet" : "live";
   const baseUrl = BINANCE_REST_ENDPOINTS[env][assetType as "spot" | "futures"];
 

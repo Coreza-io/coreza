@@ -141,6 +141,8 @@ export class StreamingLifecycleAdapter {
         //symbols,
         symbols: ["*"],
         streamTypes: ["order_update"],
+        environment: nodeValues.environment,
+        assetType: nodeValues.asset_type,
         scope: nodeValues.scope || "workflow",
         targetWorkflowId: workflowId,
       });

@@ -310,7 +310,7 @@
       "key": "side",
       "label": "Side",
       "type": "text",
-      "required": true,
+      "required": false,
       "placeholder": "e.g. long, short",
       "default": "long",
       "displayOptions": {

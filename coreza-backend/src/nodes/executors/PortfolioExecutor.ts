@@ -405,7 +405,7 @@ export class PortfolioExecutor implements INodeExecutor {
           .trim()
           .toUpperCase();
         const qty = toNumber(posQuantities[i]);
-        if (!symbol || qty === undefined || qty <= 0) continue;
+        if (!symbol || qty === undefined) continue;
 
         const sideValue = String(posSides[i] ?? posSides[0] ?? "long")
           .trim()

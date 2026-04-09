@@ -5,7 +5,7 @@ import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 
 function toCanonicalCryptoSymbol(symbol: string): string {
-  const fallbackSymbol = "ETH/USD";
+  const fallbackSymbol = symbol;
   if (!symbol || typeof symbol !== "string") return fallbackSymbol;
 
   const upperSymbol = symbol.toUpperCase().replace(/\s+/g, "");

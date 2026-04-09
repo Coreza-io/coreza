@@ -279,8 +279,10 @@ export class MarketDataGateway {
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.config.makeSubscribeMessage(newStreams, this.source);
-      const payload = this.encodeMessage(msg);
-      this.ws.send(payload);
+      if (msg !== null && msg !== undefined) {
+        const payload = this.encodeMessage(msg);
+        this.ws.send(payload);
+      }
       this.logger.info(
         { source: this.source, streams: newStreams },
         "Subscribed to streams",
@@ -302,8 +304,10 @@ export class MarketDataGateway {
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
-      const payload = this.encodeMessage(msg);
-      this.ws.send(payload);
+      if (msg !== null && msg !== undefined) {
+        const payload = this.encodeMessage(msg);
+        this.ws.send(payload);
+      }
       this.logger.info(
         { source: this.source, streams: existingStreams },
         "Unsubscribed from streams",
@@ -316,8 +320,10 @@ export class MarketDataGateway {
       const streams = Array.from(this.subscribedStreams);
 
       const msg = this.config.makeSubscribeMessage(streams, this.source);
-      const payload = this.encodeMessage(msg);
-      this.ws?.send(payload);
+      if (msg !== null && msg !== undefined) {
+        const payload = this.encodeMessage(msg);
+        this.ws?.send(payload);
+      }
       this.logger.info(
         { source: this.source, streams: streams },
         "Resubscribed to all streams",

@@ -133,9 +133,14 @@ export function buildBinanceAuthMessage(creds: any, source?: string): any {
     return null;
   }
 
+  if (!creds.secret_key) {
+    throw new Error("Binance secret_key is missing from credentials — cannot sign auth message");
+  }
+
   const timestamp = Date.now();
   const queryString = `apiKey=${creds.api_key}&timestamp=${timestamp}`;
-  const signature = createHmac("sha256", creds.api_secret)
+  // HMAC-SHA256 signing — for RSA/Ed25519 keys, different signing logic would be needed
+  const signature = createHmac("sha256", creds.secret_key)
     .update(queryString)
     .digest("hex");
 

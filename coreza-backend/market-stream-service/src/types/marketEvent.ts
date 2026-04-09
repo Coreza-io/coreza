@@ -76,6 +76,8 @@ export interface CorezaMarketEvent {
   executionId?: string; // Unique broker execution/fill identifier
   orderType?: string; // market, limit, stop, etc.
   assetClass?: string; // us_equity, crypto, etc.
+  feeAmount?: number; // Broker-reported commission/fee amount for executions
+  feeAsset?: string; // Asset/currency used to charge the commission
   rawOrderData?: Record<string, any>; // Full broker payload for downstream consumers
 
   // News data

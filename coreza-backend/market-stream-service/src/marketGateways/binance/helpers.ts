@@ -225,6 +225,7 @@ export function normalizeBinanceMessage(
         t: msg.E || Date.now(),
         orderEvent: BINANCE_EXECUTION_TYPE_MAP[msg.x] || msg.x?.toLowerCase(),
         orderId: String(msg.i),
+        clientOrderId: msg.c || undefined,
         side: msg.S?.toLowerCase(),
         filledQty: parseFloat(msg.z) || 0, // Cumulative filled qty
         filledAvgPrice:
@@ -233,6 +234,12 @@ export function normalizeBinanceMessage(
             : 0,
         orderStatus: BINANCE_ORDER_STATUS_MAP[msg.X] || msg.X?.toLowerCase(),
         orderSymbol: msg.s,
+        requestedQty: parseFloat(msg.q) || 0,
+        executionId: msg.t ? String(msg.t) : undefined,
+        orderType: msg.o?.toLowerCase(),
+        feeAmount: parseFloat(msg.n) || 0,
+        feeAsset: msg.N || undefined,
+        rawOrderData: msg,
       };
     }
 
@@ -246,11 +253,18 @@ export function normalizeBinanceMessage(
         t: msg.E || Date.now(),
         orderEvent: BINANCE_EXECUTION_TYPE_MAP[o.x] || o.x?.toLowerCase(),
         orderId: String(o.i),
+        clientOrderId: o.c || undefined,
         side: o.S?.toLowerCase(),
         filledQty: parseFloat(o.z) || 0, // Cumulative filled qty
         filledAvgPrice: parseFloat(o.ap) || 0, // Average price field in futures
         orderStatus: BINANCE_ORDER_STATUS_MAP[o.X] || o.X?.toLowerCase(),
         orderSymbol: o.s,
+        requestedQty: parseFloat(o.q) || 0,
+        executionId: o.t ? String(o.t) : undefined,
+        orderType: o.o?.toLowerCase(),
+        feeAmount: parseFloat(o.n) || 0,
+        feeAsset: o.N || undefined,
+        rawOrderData: msg,
       };
     }
 

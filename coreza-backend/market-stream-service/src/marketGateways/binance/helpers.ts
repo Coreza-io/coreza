@@ -1,3 +1,4 @@
+import { createHmac } from "crypto";
 import type { CorezaMarketEvent } from "../../types/marketEvent";
 
 // ============ BINANCE REST API ENDPOINTS ============
@@ -15,33 +16,45 @@ const BINANCE_REST_ENDPOINTS: Record<
   },
 };
 
+function isFuturesAssetType(creds: any): boolean {
+  const assetType = creds.asset_type || creds.assetType || "spot";
+  return assetType === "futures";
+}
+
+function unwrapBinanceUserDataEnvelope(msg: any): any {
+  if (msg && msg.subscriptionId !== undefined && msg.event) {
+    return msg.event;
+  }
+  return msg;
+}
+
 // ============ URL BUILDER (source-aware) ============
 export function getBinanceWsUrl(creds: any, source?: string): string {
   const isTestnet = creds.environment === "testnet";
-  const assetType = creds.asset_type || creds.assetType || "spot";
+  const isFutures = isFuturesAssetType(creds);
 
-  // Trading stream: connect to User Data Stream via listenKey
+  // Trading stream: spot uses WebSocket API, futures still uses listenKey stream
   if (source === "binance_trading") {
-    const listenKey = creds.listenKey;
-    if (!listenKey) {
-      throw new Error(
-        "listenKey is required for binance_trading — preConnect must run first",
-      );
-    }
+    if (isFutures) {
+      const listenKey = creds.listenKey;
+      if (!listenKey) {
+        throw new Error(
+          "listenKey is required for binance_trading futures — preConnect must run first",
+        );
+      }
 
-    if (assetType === "futures") {
       return isTestnet
         ? `wss://stream.testnet.binancefuture.com/ws/${listenKey}`
         : `wss://fstream.binance.com/ws/${listenKey}`;
     }
 
     return isTestnet
-      ? `wss://stream.testnet.binance.vision/ws/${listenKey}`
-      : `wss://stream.binance.com:9443/ws/${listenKey}`;
+      ? "wss://ws-api.testnet.binance.vision/ws-api/v3"
+      : "wss://ws-api.binance.com:443/ws-api/v3";
   }
 
   // Market data stream (default)
-  if (assetType === "futures") {
+  if (isFutures) {
     return isTestnet
       ? "wss://stream.testnet.binancefuture.com/ws"
       : "wss://fstream.binance.com/ws";
@@ -52,15 +65,18 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
     : "wss://stream.binance.com:9443/ws";
 }
 
-// ============ PRE-CONNECT: Fetch listenKey for User Data Stream ============
+// ============ PRE-CONNECT: Fetch listenKey for User Data Stream (futures only) ============
 export async function preConnectBinance(creds: any): Promise<any> {
-  const isTestnet = creds.environment === "testnet";
-  const assetType = creds.asset_type || creds.assetType || "spot";
-  const env = isTestnet ? "testnet" : "live";
-  const baseUrl = BINANCE_REST_ENDPOINTS[env][assetType as "spot" | "futures"];
+  if (!isFuturesAssetType(creds)) {
+    // Spot trading now authenticates directly over WebSocket API.
+    return creds;
+  }
 
-  const endpoint =
-    assetType === "futures" ? "/fapi/v1/listenKey" : "/api/v3/userDataStream";
+  const isTestnet = creds.environment === "testnet";
+  const env = isTestnet ? "testnet" : "live";
+  const baseUrl = BINANCE_REST_ENDPOINTS[env].futures;
+
+  const endpoint = "/fapi/v1/listenKey";
 
   const url = `${baseUrl}${endpoint}`;
 
@@ -111,6 +127,39 @@ export async function preConnectBinance(creds: any): Promise<any> {
   return { ...creds, listenKey, _listenKeyRefreshInterval: refreshInterval };
 }
 
+// ============ AUTH (source-aware) ============
+export function buildBinanceAuthMessage(creds: any, source?: string): any {
+  if (source !== "binance_trading" || isFuturesAssetType(creds)) {
+    return null;
+  }
+
+  const timestamp = Date.now();
+  const queryString = `apiKey=${creds.api_key}&timestamp=${timestamp}`;
+  const signature = createHmac("sha256", creds.api_secret)
+    .update(queryString)
+    .digest("hex");
+
+  return {
+    id: "uds-subscribe",
+    method: "userDataStream.subscribe.signature",
+    params: {
+      apiKey: creds.api_key,
+      timestamp,
+      signature,
+    },
+  };
+}
+
+export function isBinanceAuthSuccess(msg: any, source?: string): boolean {
+  if (source !== "binance_trading") return false;
+  return msg?.status === 200 && msg?.result?.subscriptionId !== undefined;
+}
+
+export function isBinanceAuthError(msg: any, source?: string): boolean {
+  if (source !== "binance_trading") return false;
+  return typeof msg?.status === "number" && msg.status !== 200;
+}
+
 // ============ SUBSCRIBE/UNSUBSCRIBE (source-aware) ============
 export function buildBinanceSubscribeMessage(
   stream: string[],
@@ -140,7 +189,7 @@ export function parseBinanceMessage(buffer: Buffer): any[] {
 }
 
 export function identifyBinanceMessageType(msg: any): string {
-  return msg.e;
+  return unwrapBinanceUserDataEnvelope(msg).e;
 }
 
 // ============ PUBLISH FILTER (source-aware) ============
@@ -148,9 +197,11 @@ export function shouldPublishBinanceMessage(
   msg: any,
   source?: string,
 ): boolean {
+  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+
   if (source === "binance_trading") {
     // Spot: executionReport, Futures: ORDER_TRADE_UPDATE
-    return msg.e === "executionReport" || msg.e === "ORDER_TRADE_UPDATE";
+    return eventMsg.e === "executionReport" || eventMsg.e === "ORDER_TRADE_UPDATE";
   }
   return [
     "trade",
@@ -160,7 +211,7 @@ export function shouldPublishBinanceMessage(
     "24hrTicker",
     "miniTicker",
     "depthUpdate",
-  ].includes(msg.e);
+  ].includes(eventMsg.e);
 }
 
 // ============ CONTROL MESSAGES ============
@@ -169,24 +220,47 @@ export function handleBinanceControlMessage(
   logger: any,
   source?: string,
 ) {
+  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+
   if (source === "binance_trading") {
+    if (msg?.status === 200 && msg?.result?.subscriptionId !== undefined) {
+      logger.info(
+        {
+          source: "binance_trading",
+          subscriptionId: msg.result.subscriptionId,
+        },
+        "Binance user data stream subscribed",
+      );
+      return;
+    }
+
+    if (typeof msg?.status === "number" && msg.status !== 200) {
+      logger.warn(
+        { source: "binance_trading", status: msg.status, msg },
+        "Binance WebSocket API control error",
+      );
+      return;
+    }
+
     // User Data Stream events that aren't order updates (e.g., outboundAccountPosition, balanceUpdate)
     if (
-      msg.e === "outboundAccountPosition" ||
-      msg.e === "balanceUpdate" ||
-      msg.e === "ACCOUNT_UPDATE"
+      eventMsg.e === "outboundAccountPosition" ||
+      eventMsg.e === "balanceUpdate" ||
+      eventMsg.e === "ACCOUNT_UPDATE"
     ) {
       logger.info(
-        { source: "binance_trading", eventType: msg.e },
+        { source: "binance_trading", eventType: eventMsg.e },
         "Account event received",
       );
     }
     return;
   }
 
-  if (msg.e !== undefined) {
+  if (eventMsg.e !== undefined) {
     const msgId =
-      msg.s && msg.E ? `${msg.s}:${msg.e}:${msg.k?.i}:${msg.E}` : undefined;
+      eventMsg.s && eventMsg.E
+        ? `${eventMsg.s}:${eventMsg.e}:${eventMsg.k?.i}:${eventMsg.E}`
+        : undefined;
     logger.info({ source: "binance", id: msgId }, "Subscription confirmed");
   }
 }
@@ -214,49 +288,53 @@ export function normalizeBinanceMessage(
   msg: any,
   source?: string,
 ): CorezaMarketEvent | null {
+  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+
   // TRADING source - order updates
   if (source === "binance_trading") {
     // Spot: executionReport
-    if (msg.e === "executionReport") {
+    if (eventMsg.e === "executionReport") {
       return {
         source: "binance" as any,
-        symbol: msg.s?.toUpperCase() || "*",
+        symbol: eventMsg.s?.toUpperCase() || "*",
         type: "order_update" as const,
-        t: msg.E || Date.now(),
-        orderEvent: BINANCE_EXECUTION_TYPE_MAP[msg.x] || msg.x?.toLowerCase(),
-        orderId: String(msg.i),
-        clientOrderId: msg.c || undefined,
-        side: msg.S?.toLowerCase(),
-        filledQty: parseFloat(msg.z) || 0, // Cumulative filled qty
+        t: eventMsg.E || Date.now(),
+        orderEvent:
+          BINANCE_EXECUTION_TYPE_MAP[eventMsg.x] || eventMsg.x?.toLowerCase(),
+        orderId: String(eventMsg.i),
+        clientOrderId: eventMsg.c || undefined,
+        side: eventMsg.S?.toLowerCase(),
+        filledQty: parseFloat(eventMsg.z) || 0,
         filledAvgPrice:
-          parseFloat(msg.z) > 0
-            ? parseFloat(msg.Z) / parseFloat(msg.z) // Cumulative quote qty / cumulative qty
+          parseFloat(eventMsg.z) > 0
+            ? parseFloat(eventMsg.Z) / parseFloat(eventMsg.z)
             : 0,
-        orderStatus: BINANCE_ORDER_STATUS_MAP[msg.X] || msg.X?.toLowerCase(),
-        orderSymbol: msg.s,
-        requestedQty: parseFloat(msg.q) || 0,
-        executionId: msg.t ? String(msg.t) : undefined,
-        orderType: msg.o?.toLowerCase(),
-        feeAmount: parseFloat(msg.n) || 0,
-        feeAsset: msg.N || undefined,
-        rawOrderData: msg,
+        orderStatus:
+          BINANCE_ORDER_STATUS_MAP[eventMsg.X] || eventMsg.X?.toLowerCase(),
+        orderSymbol: eventMsg.s,
+        requestedQty: parseFloat(eventMsg.q) || 0,
+        executionId: eventMsg.t ? String(eventMsg.t) : undefined,
+        orderType: eventMsg.o?.toLowerCase(),
+        feeAmount: parseFloat(eventMsg.n) || 0,
+        feeAsset: eventMsg.N || undefined,
+        rawOrderData: eventMsg,
       };
     }
 
     // Futures: ORDER_TRADE_UPDATE
-    if (msg.e === "ORDER_TRADE_UPDATE") {
-      const o = msg.o || {};
+    if (eventMsg.e === "ORDER_TRADE_UPDATE") {
+      const o = eventMsg.o || {};
       return {
         source: "binance" as any,
         symbol: o.s?.toUpperCase() || "*",
         type: "order_update" as const,
-        t: msg.E || Date.now(),
+        t: eventMsg.E || Date.now(),
         orderEvent: BINANCE_EXECUTION_TYPE_MAP[o.x] || o.x?.toLowerCase(),
         orderId: String(o.i),
         clientOrderId: o.c || undefined,
         side: o.S?.toLowerCase(),
-        filledQty: parseFloat(o.z) || 0, // Cumulative filled qty
-        filledAvgPrice: parseFloat(o.ap) || 0, // Average price field in futures
+        filledQty: parseFloat(o.z) || 0,
+        filledAvgPrice: parseFloat(o.ap) || 0,
         orderStatus: BINANCE_ORDER_STATUS_MAP[o.X] || o.X?.toLowerCase(),
         orderSymbol: o.s,
         requestedQty: parseFloat(o.q) || 0,
@@ -264,7 +342,7 @@ export function normalizeBinanceMessage(
         orderType: o.o?.toLowerCase(),
         feeAmount: parseFloat(o.n) || 0,
         feeAsset: o.N || undefined,
-        rawOrderData: msg,
+        rawOrderData: eventMsg,
       };
     }
 
@@ -272,17 +350,17 @@ export function normalizeBinanceMessage(
   }
 
   // MARKET DATA source (default)
-  const symbol = msg.s?.toUpperCase();
-  const t = msg.E;
+  const symbol = eventMsg.s?.toUpperCase();
+  const t = eventMsg.E;
 
-  switch (msg.e) {
+  switch (eventMsg.e) {
     case "trade":
       return {
         symbol,
         t,
-        p: parseFloat(msg.p),
-        q: parseFloat(msg.q),
-        type: msg.e,
+        p: parseFloat(eventMsg.p),
+        q: parseFloat(eventMsg.q),
+        type: eventMsg.e,
         source: "binance" as const,
       };
 
@@ -290,18 +368,18 @@ export function normalizeBinanceMessage(
       return {
         symbol,
         t,
-        p: parseFloat(msg.p),
-        q: parseFloat(msg.q),
-        type: msg.e,
+        p: parseFloat(eventMsg.p),
+        q: parseFloat(eventMsg.q),
+        type: eventMsg.e,
         source: "binance" as const,
-        aggregateTradeId: msg.a,
-        firstTradeId: msg.f,
-        lastTradeId: msg.l,
-        isBuyerMaker: msg.m,
+        aggregateTradeId: eventMsg.a,
+        firstTradeId: eventMsg.f,
+        lastTradeId: eventMsg.l,
+        isBuyerMaker: eventMsg.m,
       };
 
     case "kline": {
-      const k = msg.k;
+      const k = eventMsg.k;
       return {
         symbol,
         t: k.t,
@@ -312,7 +390,7 @@ export function normalizeBinanceMessage(
         v: parseFloat(k.v),
         timeframe: k.i,
         isClosed: k.x,
-        type: msg.e,
+        type: eventMsg.e,
         source: "binance" as const,
       };
     }
@@ -321,11 +399,11 @@ export function normalizeBinanceMessage(
       return {
         symbol,
         t,
-        b: parseFloat(msg.b),
-        B: parseFloat(msg.B),
-        a: parseFloat(msg.a),
-        A: parseFloat(msg.A),
-        type: msg.e,
+        b: parseFloat(eventMsg.b),
+        B: parseFloat(eventMsg.B),
+        a: parseFloat(eventMsg.a),
+        A: parseFloat(eventMsg.A),
+        type: eventMsg.e,
         source: "binance" as const,
       };
 
@@ -333,11 +411,11 @@ export function normalizeBinanceMessage(
       return {
         symbol,
         t,
-        c: parseFloat(msg.c),
-        pc: parseFloat(msg.p),
-        pcp: parseFloat(msg.P),
-        v: parseFloat(msg.v),
-        type: msg.e,
+        c: parseFloat(eventMsg.c),
+        pc: parseFloat(eventMsg.p),
+        pcp: parseFloat(eventMsg.P),
+        v: parseFloat(eventMsg.v),
+        type: eventMsg.e,
         source: "binance" as const,
       };
 
@@ -345,12 +423,12 @@ export function normalizeBinanceMessage(
       return {
         symbol,
         t,
-        c: parseFloat(msg.c),
-        o: parseFloat(msg.o),
-        h: parseFloat(msg.h),
-        l: parseFloat(msg.l),
-        v: parseFloat(msg.v),
-        type: msg.e,
+        c: parseFloat(eventMsg.c),
+        o: parseFloat(eventMsg.o),
+        h: parseFloat(eventMsg.h),
+        l: parseFloat(eventMsg.l),
+        v: parseFloat(eventMsg.v),
+        type: eventMsg.e,
         source: "binance" as const,
       };
 
@@ -358,15 +436,15 @@ export function normalizeBinanceMessage(
       return {
         symbol,
         t,
-        bids: msg.b?.map(([price, qty]: [string, string]) => ({
+        bids: eventMsg.b?.map(([price, qty]: [string, string]) => ({
           p: parseFloat(price),
           q: parseFloat(qty),
         })),
-        asks: msg.a?.map(([price, qty]: [string, string]) => ({
+        asks: eventMsg.a?.map(([price, qty]: [string, string]) => ({
           p: parseFloat(price),
           q: parseFloat(qty),
         })),
-        type: msg.e,
+        type: eventMsg.e,
         source: "binance" as const,
       };
 

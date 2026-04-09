@@ -73,7 +73,7 @@ export class MarketDataGateway {
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch, Binance listenKey)
     const needsPreConnect =
       typeof this.config.requiresPreConnect === "function"
-        ? this.config.requiresPreConnect(this.source)
+        ? this.config.requiresPreConnect(this.source, credentials)
         : this.config.requiresPreConnect;
     if (needsPreConnect && this.config.preConnect) {
       this.logger.info({ source: this.source }, "Running pre-connect setup");

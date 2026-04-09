@@ -94,11 +94,12 @@ export class BrokerExecutor implements INodeExecutor {
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
     let isOrderOperation = false;
+    let shouldPersistRedisState = false;
+    const userId = context?.userId ?? "system";
+    const workflowId = context?.workflowId ?? "manual";
 
     try {
       const operation = node.values?.operation;
-      const userId = context?.userId ?? "system";
-      const workflowId = context?.workflowId ?? "manual";
       const brokerNode = node as WorkflowNode & { subCategory?: string };
       const broker = (
         brokerNode.subCategory ??
@@ -106,6 +107,7 @@ export class BrokerExecutor implements INodeExecutor {
         node.node_type
       )?.toLowerCase();
       const credential_id = node.values?.credential_id;
+      shouldPersistRedisState = context?.executionMode === "live";
 
       if (!credential_id) {
         return {
@@ -170,33 +172,35 @@ export class BrokerExecutor implements INodeExecutor {
             "full",
         });
 
-        const cached = await getOrderFromCache(
-          userId,
-          workflowId,
-          idempotencyKey,
-        );
-        if (cached) {
-          if (cached.status === "success") {
-            console.log(
-              `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`,
-            );
-            return {
-              success: true,
-              data: cached.result,
-              meta: { cached: true },
-            };
+        if (shouldPersistRedisState) {
+          const cached = await getOrderFromCache(
+            userId,
+            workflowId,
+            idempotencyKey,
+          );
+          if (cached) {
+            if (cached.status === "success") {
+              console.log(
+                `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`,
+              );
+              return {
+                success: true,
+                data: cached.result,
+                meta: { cached: true },
+              };
+            }
+
+            if (cached.status === "pending") {
+              return {
+                success: false,
+                error: "Order is already being processed",
+                meta: { cached: true },
+              };
+            }
           }
 
-          if (cached.status === "pending") {
-            return {
-              success: false,
-              error: "Order is already being processed",
-              meta: { cached: true },
-            };
-          }
+          await cacheOrderIntent(userId, workflowId, idempotencyKey, broker);
         }
-
-        await cacheOrderIntent(userId, workflowId, idempotencyKey, broker);
         resolvedParams._idempotencyKey = idempotencyKey;
       }
 
@@ -205,6 +209,7 @@ export class BrokerExecutor implements INodeExecutor {
         context?.userId,
         broker,
         credential_id,
+        { useCache: shouldPersistRedisState },
       );
 
       if (!credentials) {
@@ -288,7 +293,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
-      if (isOrderOperation && idempotencyKey) {
+      if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         await updateOrderCache(
           userId,
           workflowId,
@@ -304,7 +309,7 @@ export class BrokerExecutor implements INodeExecutor {
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
 
-      if (isOrderOperation && idempotencyKey) {
+      if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
           error: error instanceof Error ? error.message : String(error),
         });

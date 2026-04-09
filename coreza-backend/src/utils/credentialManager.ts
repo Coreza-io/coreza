@@ -166,7 +166,10 @@ class CredentialManager {
   static async getDecryptedCredentials(
     userId: string,
     serviceType: string,
-    credentialName?: string
+    credentialName?: string,
+    options?: {
+      useCache?: boolean;
+    },
   ): Promise<{ credentials?: any; error?: string }> {
     try {
       let query = supabase
@@ -203,8 +206,10 @@ class CredentialManager {
       }
 
       if (!credentials) return { error: "No valid credential data found" };
-      const cache = CredentialCache.getInstance();
-      await cache.set(userId, serviceType, credentialName, credentials);
+      if (options?.useCache ?? true) {
+        const cache = CredentialCache.getInstance();
+        await cache.set(userId, serviceType, credentialName, credentials);
+      }
       return { credentials };
     } catch (error: any) {
       return { error: error?.message ?? "Unknown error" };
@@ -277,7 +282,10 @@ class CredentialManager {
   static async getCredentials(
     userId: string,
     serviceType: string,
-    credentialName: string
+    credentialName: string,
+    options?: {
+      useCache?: boolean;
+    },
   ): Promise<{
     credentials: {
       client_json: Record<string, any>;
@@ -285,22 +293,35 @@ class CredentialManager {
     } | null;
   }> {
     try {
-      const cache = CredentialCache.getInstance();
-      const cached = await cache.get(userId, serviceType, credentialName);
-      if (cached !== null) {
-        console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
-        return { credentials: { client_json: cached, token_json: {} } };
+      const useCache = options?.useCache ?? true;
+
+      if (useCache) {
+        const cache = CredentialCache.getInstance();
+        const cached = await cache.get(userId, serviceType, credentialName);
+        if (cached !== null) {
+          console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
+          return { credentials: { client_json: cached, token_json: {} } };
+        }
+      } else {
+        console.log(`📦 Cache BYPASS: ${serviceType}:${credentialName}`);
       }
 
       console.log(`📦 Cache MISS: ${serviceType}:${credentialName}`);
       const result = await this.getDecryptedCredentials(
         userId,
         serviceType,
-        credentialName
+        credentialName,
+        { useCache },
       );
 
       if (result.error || !result.credentials) {
         return { credentials: null };
+      }
+
+      if (!useCache) {
+        return {
+          credentials: { client_json: result.credentials, token_json: {} },
+        };
       }
 
       return {

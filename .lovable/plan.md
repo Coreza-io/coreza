@@ -1,157 +1,73 @@
 
 
-# Plan: Add Tabbed Balance + Position Fields to Portfolio `create_portfolio` Operation
+# Fix: Binance Trading Stream — Two Bugs
 
-## Summary
+## Bug 1: `creds.api_secret` is `undefined` (the crash)
 
-Replace the current "Sync from Broker" toggle (which auto-fetches account data from Alpaca) with a tabbed UI inside the Portfolio node. When `create_portfolio` is selected, users see two tabs: **Balance** and **Position**. Both tabs populate their own fields simultaneously when the node loads. The backend reads these fields to seed the `PortfolioManager` with explicit user-provided values instead of calling the broker API.
+**Root cause**: `buildBinanceAuthMessage` at line 138 uses `creds.api_secret`, but Binance credentials are stored with the field name `secret_key` (confirmed in `credentialValidator.ts` and all usages in `brokers/binance/http/operations.ts`).
 
-## Current Behavior
+**Fix in `coreza-backend/market-stream-service/src/marketGateways/binance/helpers.ts`** (line 138):
 
-When `create_portfolio` + `sync_from_broker=true`: the backend calls Alpaca's `get_account`, `get_positions`, and `get_orders` APIs to auto-populate cash, positions, and open orders. This is being removed.
-
-## New Behavior
-
-The user manually enters balance and position data in the node UI via tabs. The backend seeds `PortfolioManager` with these explicit values. No broker API calls during `create_portfolio`.
-
-## Frontend Changes
-
-### 1. Add `tab` field type support to `NodeFieldRenderer.tsx`
-
-Introduce a new field type `"tabs"` that renders a Radix `Tabs` component (already available in `src/components/ui/tabs.tsx`). The tab field definition specifies tab names, and child fields use `displayOptions` to bind to a tab value.
-
-**Field definition pattern in JSON:**
-```json
-{
-  "key": "portfolio_tab",
-  "type": "tabs",
-  "label": "",
-  "tabs": [
-    { "id": "balance", "label": "Balance" },
-    { "id": "position", "label": "Position" }
-  ],
-  "default": "balance",
-  "displayOptions": {
-    "show": { "operation": ["create_portfolio"], "mode": ["broker"] }
-  }
-}
-```
-
-Child fields then use `displayOptions.show.portfolio_tab: ["balance"]` or `["position"]` to appear under the correct tab.
-
-**Rendering logic**: When `NodeFieldRenderer` encounters `type: "tabs"`, it renders a `Tabs` + `TabsList` + `TabsTrigger` set. The selected tab value is stored in `fieldState["portfolio_tab"]`, and child fields' existing `displayOptions.show` logic already handles visibility — no special rendering needed beyond the tab selector itself.
-
-### 2. Update `Portfolio.json` — Remove sync fields, add tab + balance/position fields
-
-**Remove:**
-- `sync_from_broker` toggle field
-- `credential_id` field (under create_portfolio context only — keep it for other operations)
-- `environment` field (under create_portfolio context only)
-
-**Add — Tab selector:**
-```json
-{ "key": "portfolio_tab", "type": "tabs", "tabs": [...], "default": "balance" }
-```
-
-**Add — Balance tab fields** (shown when `portfolio_tab: "balance"`):
-
-| Key | Label | Type | Placeholder |
-|-----|-------|------|-------------|
-| `balance_cash` | Cash | text | e.g. 100000 |
-| `balance_buying_power` | Buying Power | text | e.g. 400000 |
-| `balance_equity` | Equity | text | e.g. 105000 |
-| `balance_margin` | Margin Multiplier | text | e.g. 4 |
-| `balance_initial_margin` | Initial Margin | text | e.g. 0 |
-
-All with `displayOptions.show: { operation: ["create_portfolio"], mode: ["broker"], portfolio_tab: ["balance"] }`
-
-**Add — Position tab fields** (shown when `portfolio_tab: "position"`):
-
-| Key | Label | Type | Placeholder |
-|-----|-------|------|-------------|
-| `position_symbol` | Symbol | text | e.g. ETH/USD |
-| `position_side` | Side | select | long / short |
-| `position_quantity` | Quantity | text | e.g. 10 |
-| `position_avg_fill_price` | Avg Fill Price | text | e.g. 2500.50 |
-| `position_current_price` | Current Price | text | e.g. 2600.00 |
-| `position_open_cost_basis` | Open Cost Basis | text | (auto: qty * avgFillPrice) |
-| `position_market_value` | Market Value | text | (auto: qty * currentPrice) |
-| `position_realized_pnl` | Realized PnL | text | e.g. 0 |
-| `position_unrealized_pnl` | Unrealized PnL | text | (auto: marketValue - costBasis) |
-
-All with `displayOptions.show: { operation: ["create_portfolio"], mode: ["broker"], portfolio_tab: ["position"] }`
-
-**Keep:** `base_currency` and `cash_balance` fields remain for backtest mode (they already have `displayOptions` that exclude broker mode or have no mode filter).
-
-### 3. Update node size in `Portfolio.json`
-
-Increase height to accommodate the new tabbed fields (from current to ~420px).
-
-## Backend Changes
-
-### 4. Update `PortfolioExecutor.ts` — `create_portfolio` operation (line 336-370)
-
-Replace the current `syncFromBroker` branch with explicit field reading:
-
+Change:
 ```typescript
-if (operation === "create_portfolio") {
-  if (pm.isBootstrapped()) {
-    return /* already initialized response */;
-  }
+const signature = createHmac("sha256", creds.api_secret)
+```
+To:
+```typescript
+const signature = createHmac("sha256", creds.secret_key)
+```
 
-  // Read balance fields
-  const cash = toNumber(params.balance_cash ?? params.cash_balance) ?? 0;
-  pm.initializePortfolio(baseCurrency, cash);
-
-  // Reconcile balance with explicit values
-  pm.reconcileBalance({
-    asset: baseCurrency,
-    cash,
-    buyingPower: toNumber(params.balance_buying_power),
-    initialMargin: toNumber(params.balance_initial_margin),
-    margin: toNumber(params.balance_margin) ?? 1,
-    equity: toNumber(params.balance_equity) ?? cash,
-  });
-
-  // Seed position if provided
-  if (params.position_symbol && toNumber(params.position_quantity) > 0) {
-    const side = params.position_side === "short" ? "sell" : "buy";
-    pm.applyPositionUpdate({
-      symbol: params.position_symbol.toUpperCase().trim(),
-      positionQty: toNumber(params.position_quantity),
-      avgFillPrice: toNumber(params.position_avg_fill_price) ?? 0,
-      side,
-      currentPrice: toNumber(params.position_current_price),
-    });
-  }
-
-  return toNodeResult(createSuccessOutput({
-    message: "Portfolio created with explicit balance and position data",
-    created: true,
-    ...this.getPortfolioSummary(pm, baseCurrency),
-  }));
+Also add a guard before signing to prevent cryptic Node.js errors:
+```typescript
+if (!creds.secret_key) {
+  throw new Error("Binance secret_key is missing from credentials — cannot sign auth message");
 }
 ```
 
-**Keep `sync_broker_state`** as a separate operation — it already exists and can be used independently if the user wants to sync later.
+## Bug 2: Null subscribe/unsubscribe messages sent to WebSocket
 
-### 5. Update `portfolio.ts` route schema
+**Root cause**: For `binance_trading`, `makeSubscribeMessage` and `makeUnsubscribeMessage` return `null` (by design — User Data Stream auto-sends events). But `MarketDataGateway` calls `JSON.stringify(null)` and sends `"null"` to the WebSocket.
 
-Add the new field keys to the Zod schema: `balance_cash`, `balance_buying_power`, `balance_equity`, `balance_margin`, `balance_initial_margin`, `position_symbol`, `position_side`, `position_quantity`, `position_avg_fill_price`, `position_current_price`, `position_open_cost_basis`, `position_market_value`, `position_realized_pnl`, `position_unrealized_pnl`, `portfolio_tab`.
+**Fix in `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts`** — Add null guards in three places:
+
+**`subscribeStreams()`** (lines 281-283):
+```typescript
+const msg = this.config.makeSubscribeMessage(newStreams, this.source);
+if (msg !== null && msg !== undefined) {
+  const payload = this.encodeMessage(msg);
+  this.ws.send(payload);
+}
+```
+
+**`unsubscribeStreams()`** (lines 304-306):
+```typescript
+const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
+if (msg !== null && msg !== undefined) {
+  const payload = this.encodeMessage(msg);
+  this.ws.send(payload);
+}
+```
+
+**`resubscribeAll()`** (lines 318-320):
+```typescript
+const msg = this.config.makeSubscribeMessage(streams, this.source);
+if (msg !== null && msg !== undefined) {
+  const payload = this.encodeMessage(msg);
+  this.ws?.send(payload);
+}
+```
+
+## PDF Recommendations (incorporated)
+
+Per the PDF review:
+- The HMAC approach is correct for HMAC keys (which is what Coreza uses). A comment should note that RSA/Ed25519 keys would need different signing logic.
+- Control frames (`{ id, status, result }`) vs event frames (`{ subscriptionId, event }`) — already handled correctly by `isBinanceAuthSuccess`, `isBinanceAuthError`, `handleBinanceControlMessage`, and `unwrapBinanceUserDataEnvelope`.
+- Futures stays on REST listenKey — already implemented correctly.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `src/components/nodes/layout/components/NodeFieldRenderer.tsx` | Add `case "tabs"` rendering with Radix Tabs component |
-| `src/nodes/Portfolio.json` | Remove sync fields, add `portfolio_tab` + balance/position fields |
-| `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` | Replace `syncFromBroker` branch with explicit field reading |
-| `coreza-backend/src/routes/portfolio.ts` | Add new field keys to Zod schema |
-
-## What Stays the Same
-
-- `sync_broker_state` operation (separate from `create_portfolio`) — still available
-- Backtest mode `create_portfolio` — still uses `cash_balance` field
-- All other portfolio operations — untouched
-- `PortfolioManager.initializePortfolio()` and `reconcileBalance()` APIs — called with explicit values instead of broker API responses
+| `coreza-backend/market-stream-service/src/marketGateways/binance/helpers.ts` | Fix `api_secret` → `secret_key`, add guard |
+| `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts` | Add null guards in `subscribeStreams`, `unsubscribeStreams`, `resubscribeAll` |
 

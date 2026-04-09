@@ -270,13 +270,13 @@ export const binanceOperations: Record<string, BrokerOperation> = {
 
       return signHmacSha256(params, creds.secret_key);
     },
-    transformResult: (raw: any) => ({
-      orderId: raw.orderId,
-      symbol: raw.symbol,
-      status: raw.status,
-      executedQty: raw.executedQty,
-      price: raw.price,
-      side: raw.side,
-    }),
+    // transformResult: (raw: any) => ({
+    //   orderId: raw.orderId,
+    //   symbol: raw.symbol,
+    //   status: raw.status,
+    //   executedQty: raw.executedQty,
+    //   price: raw.price,
+    //   side: raw.side,
+    // }),
   },
 };

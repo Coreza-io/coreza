@@ -320,16 +320,33 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
   },
   close_position: {
     method: "delete",
+
     path: (input: any) => {
-      const normalized = input.symbol.replace("/", ""); // ETH/USD → ETHUSD
-      return `/v2/positions/${normalized}`;
+      if (!input.symbol) {
+        throw new Error("close_position requires input.symbol");
+      }
+
+      const normalized = String(input.symbol).replace("/", "");
+      return `/v2/positions/${encodeURIComponent(normalized)}`;
     },
+
     makeParams: (input: any) => {
-      const params: any = {};
-      if (input.qty) params.qty = String(input.qty);
-      if (input.percentage) params.percentage = String(input.percentage);
+      const hasQty = input.qty !== undefined && input.qty !== null;
+      const hasPercentage =
+        input.percentage !== undefined && input.percentage !== null;
+
+      if (hasQty && hasPercentage) {
+        throw new Error("Provide either qty or percentage, not both");
+      }
+
+      const params: Record<string, string> = {};
+
+      if (hasQty) params.qty = String(input.qty);
+      if (hasPercentage) params.percentage = String(input.percentage);
+
       return params;
     },
+
     transformResult: (raw: any, input: any) =>
       input.asset_type === "crypto"
         ? normalizeCryptoSymbolsInPayload(raw)

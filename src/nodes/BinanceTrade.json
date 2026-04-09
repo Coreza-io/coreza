@@ -39,6 +39,19 @@
   },
   "fields": [
     {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "id": "place_order",
+          "name": "Place Order"
+        }
+      ],
+      "default": "place_order",
+      "required": true
+    },
+    {
       "key": "credential_id",
       "label": "Credential",
       "type": "select",

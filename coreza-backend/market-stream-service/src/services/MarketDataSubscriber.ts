@@ -452,6 +452,8 @@ export class MarketDataSubscriber {
             orderType: event.orderType,
             assetClass: event.assetClass,
             status: event.orderStatus,
+            feeAmount: event.feeAmount,
+            feeAsset: event.feeAsset,
           },
           rawOrderData: event.rawOrderData,
           _seq: event._seq,

@@ -727,9 +727,8 @@ export class WebSocketManager {
             console.log(
               `🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`
             );
-            break; // Only match first listener per event
           }
-          // If result is null, another event already claimed this listener OR circuit breaker fired
+          // If result is null, listener was not eligible anymore OR circuit breaker fired
         } catch (luaError) {
           // Fallback - still try to push via WebSocket even if Redis failed
           console.warn(
@@ -751,7 +750,6 @@ export class WebSocketManager {
           console.log(
             `🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`
           );
-          break;
         }
       }
     } catch (error) {

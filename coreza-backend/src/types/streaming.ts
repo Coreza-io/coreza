@@ -20,7 +20,7 @@ export interface StreamExecutionRequest {
   crypto_base?: string;
   crypto_quote?: string;
   data_type: string;
-  stream_types?: string[];
+  stream_types?: string[] | string;
   credential_id?: string;
   environment?: "testnet" | "live";
   asset_type?: "spot" | "futures";

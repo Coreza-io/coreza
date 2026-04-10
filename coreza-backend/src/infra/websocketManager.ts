@@ -32,6 +32,7 @@ import {
   MAX_CONNECTIONS_PER_USER,
   WS_HEARTBEAT_INTERVAL_MS,
   TEST_RESULT_TTL_SECONDS,
+  LISTENER_TTL_SECONDS,
   LUA_ATOMIC_LISTENER,
   LUA_DECREMENT_LISTENER_COUNT,
 } from "../config/streaming";
@@ -703,13 +704,13 @@ export class WebSocketManager {
           const result = await redisEvalBreaker.fire(
             redis,
             LUA_ATOMIC_LISTENER,
-            3, // number of keys
+            2, // number of keys
             testKey,
-            userActiveListenersKey,
             resultKey,
             userId,
             JSON.stringify(resultData),
-            String(TEST_RESULT_TTL_SECONDS)
+            String(TEST_RESULT_TTL_SECONDS),
+            String(LISTENER_TTL_SECONDS)
           );
 
           if (result) {

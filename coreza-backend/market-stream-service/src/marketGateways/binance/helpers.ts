@@ -1,5 +1,8 @@
 import { createHmac } from "crypto";
 import type { CorezaMarketEvent } from "../../types/marketEvent";
+import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
+
+const BINANCE_AUTH_RECV_WINDOW = 60_000;
 
 // ============ BINANCE REST API ENDPOINTS ============
 const BINANCE_REST_ENDPOINTS: Record<
@@ -129,7 +132,8 @@ export async function preConnectBinance(creds: any): Promise<any> {
 
 // ============ AUTH (source-aware) ============
 export function buildBinanceAuthMessage(creds: any, source?: string): any {
-  if (source !== "binance_trading" || isFuturesAssetType(creds)) {
+  const isFutures = isFuturesAssetType(creds);
+  if (source !== "binance_trading" || isFutures) {
     return null;
   }
 
@@ -137,8 +141,11 @@ export function buildBinanceAuthMessage(creds: any, source?: string): any {
     throw new Error("Binance secret_key is missing from credentials — cannot sign auth message");
   }
 
-  const timestamp = Date.now();
-  const queryString = `apiKey=${creds.api_key}&timestamp=${timestamp}`;
+  const timestamp = getBinanceTimestamp(
+    creds.environment === "testnet" ? "testnet" : "live",
+    isFutures ? "futures" : "spot",
+  );
+  const queryString = `apiKey=${creds.api_key}&recvWindow=${BINANCE_AUTH_RECV_WINDOW}&timestamp=${timestamp}`;
   // HMAC-SHA256 signing — for RSA/Ed25519 keys, different signing logic would be needed
   const signature = createHmac("sha256", creds.secret_key)
     .update(queryString)
@@ -149,6 +156,7 @@ export function buildBinanceAuthMessage(creds: any, source?: string): any {
     method: "userDataStream.subscribe.signature",
     params: {
       apiKey: creds.api_key,
+      recvWindow: BINANCE_AUTH_RECV_WINDOW,
       timestamp,
       signature,
     },

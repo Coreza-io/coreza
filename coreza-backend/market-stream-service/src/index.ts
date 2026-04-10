@@ -9,6 +9,7 @@ import { RedisBuffer } from './services/RedisBuffer';
 import { getRedisQueue } from './config/redis';
 import { redisPublishBreaker } from './utils/redisCircuitBreaker';
 import { runStartupValidation } from './utils/startupValidation';
+import { initBinanceTimeSync } from './utils/binanceTimeSync';
 
 // Lazy-initialized singleton instances (initialized after env validation)
 let workflowCacheInstance: ReturnType<typeof WorkflowCache.getInstance> | null = null;
@@ -23,6 +24,10 @@ async function startMarketStreamService() {
   try {
     // Run startup validation (Redis, Supabase, env vars)
     await runStartupValidation();
+
+    logger.info('Initializing Binance time synchronization...');
+    await initBinanceTimeSync();
+    logger.info('✅ Binance time synchronization initialized');
 
     // Initialize WorkflowCache (now safe - env vars are loaded)
     logger.info('Initializing WorkflowCache...');

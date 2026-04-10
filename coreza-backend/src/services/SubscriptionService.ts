@@ -56,6 +56,17 @@ export interface SubscriptionResult {
   error?: string;
 }
 
+/** Default timeout for waiting on subscription readiness (ms) */
+const SUBSCRIPTION_READY_TIMEOUT_MS = parseInt(
+  process.env.SUBSCRIPTION_READY_TIMEOUT_MS || "8000",
+  10,
+);
+/** Polling interval when checking subscription readiness (ms) */
+const SUBSCRIPTION_READY_POLL_MS = parseInt(
+  process.env.SUBSCRIPTION_READY_POLL_MS || "250",
+  10,
+);
+
 /**
  * Centralized service for managing market data subscriptions.
  * Used by both MarketExecutor (backend workflow execution) and
@@ -180,16 +191,6 @@ export class SubscriptionService {
         return [];
       }
       const symbolArray = normalizeSymbols(symbols);
-      // Resolve symbols
-      // const symbolArray =
-      //   typeof symbols === "string"
-      //     ? symbols
-      //         .split(",")
-      //         .map((s) => s.trim().toUpperCase())
-      //         .filter(Boolean)
-      //     : Array.isArray(symbols)
-      //       ? symbols.map((s) => s.trim().toUpperCase())
-      //       : [];
 
       // For unsubscribe, allow empty symbols if workflowId is provided (workflow cleanup)
       if (symbolArray.length === 0 && operation === "subscribe") {
@@ -285,5 +286,55 @@ export class SubscriptionService {
       operation: "unsubscribe",
       credentialId: params.credentialId || "",
     });
+  }
+
+  /**
+   * Wait until the subscription streams key in Redis contains at least one entry.
+   * This prevents the subscribe→register race condition where register_workflow
+   * runs before the MarketControlHandler has materialized the subscription.
+   *
+   * @param userId  - user who owns the subscription
+   * @param source  - sourceId (e.g. "alpaca_crypto", "binance_stream")
+   * @param scope   - "workflow" or "global"
+   * @param workflowId - required when scope === "workflow"
+   * @param timeoutMs  - max wait (default SUBSCRIPTION_READY_TIMEOUT_MS)
+   * @returns true if ready, false if timed out
+   */
+  static async waitForSubscriptionReady(params: {
+    userId: string;
+    source: string;
+    scope: string;
+    workflowId?: string;
+    timeoutMs?: number;
+  }): Promise<boolean> {
+    const { userId, source, scope, workflowId } = params;
+    const timeoutMs = params.timeoutMs ?? SUBSCRIPTION_READY_TIMEOUT_MS;
+    const redis = getRedisCache();
+
+    // Determine which Redis key to poll
+    const streamsKey =
+      scope === "workflow" && workflowId
+        ? REDIS_CHANNELS.workflowSubscriptionStreams(userId, workflowId, source)
+        : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+
+    const startTime = Date.now();
+    let attempt = 0;
+
+    while (Date.now() - startTime < timeoutMs) {
+      attempt++;
+      const count = await redis.scard(streamsKey);
+      if (count > 0) {
+        console.log(
+          `✅ [SubscriptionService] Subscription ready at ${streamsKey} (${count} streams, ${attempt} polls, ${Date.now() - startTime}ms)`,
+        );
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_READY_POLL_MS));
+    }
+
+    console.warn(
+      `⚠️ [SubscriptionService] Subscription readiness timed out after ${timeoutMs}ms for ${streamsKey}`,
+    );
+    return false;
   }
 }

@@ -54,6 +54,12 @@ export const LISTENER_TTL_SECONDS = parseInt(
   10,
 );
 
+/** TTL for test listener result data in Redis (seconds) */
+export const TEST_RESULT_TTL_SECONDS = parseInt(
+  process.env.TEST_RESULT_TTL_SECONDS || "300",
+  10,
+);
+
 // ============================================
 // POLLING CONFIGURATION
 // ============================================

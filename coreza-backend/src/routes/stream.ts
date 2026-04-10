@@ -26,45 +26,12 @@ import {
   StreamExecutionRequest,
   StreamExecutionResponse,
 } from "../types/streaming";
+import {
+  buildCryptoSymbols,
+  normalizeSymbolList,
+} from "../utils/symbolHelpers";
 
 const router = express.Router();
-
-function normalizeSymbolList(symbols: unknown): string[] {
-  if (Array.isArray(symbols)) {
-    return symbols
-      .map((s) => String(s).trim().toUpperCase())
-      .filter(Boolean);
-  }
-
-  if (typeof symbols === "string") {
-    return symbols
-      .split(",")
-      .map((s: string) => s.trim().toUpperCase())
-      .filter(Boolean);
-  }
-
-  return [];
-}
-
-function buildCryptoSymbols(
-  dataType: unknown,
-  cryptoBase: unknown,
-  cryptoQuote: unknown,
-): string[] {
-  if (dataType !== "crypto" || !cryptoBase) {
-    return [];
-  }
-
-  const quote = String(cryptoQuote || "USD")
-    .trim()
-    .toUpperCase();
-  const bases = String(cryptoBase)
-    .split(",")
-    .map((b) => b.trim().toUpperCase())
-    .filter(Boolean);
-
-  return bases.map((base) => `${base}/${quote}`);
-}
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
@@ -479,12 +446,12 @@ router.post("/:source/register", async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
-    // Parse symbols
+    // Parse symbols (crypto-aware)
     const cryptoSymbols = buildCryptoSymbols(data_type, crypto_base, crypto_quote);
     const parsedSymbols: string[] =
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
-    // If subscribe mode, subscribe first and WAIT for completion
+    // If subscribe mode, subscribe first and WAIT for readiness
     if (mode === "subscribe") {
       if (parsedSymbols.length === 0) {
         return res
@@ -538,6 +505,14 @@ router.post("/:source/register", async (req, res) => {
             error: tradingResult.error,
           } as StreamExecutionResponse);
         }
+
+        // Wait for trading subscription readiness
+        await SubscriptionService.waitForSubscriptionReady({
+          userId,
+          source: tradingSource,
+          scope,
+          workflowId,
+        });
       }
 
       // Subscribe to market streams (excluding order_update)
@@ -571,10 +546,18 @@ router.post("/:source/register", async (req, res) => {
             error: subscribeResult.error,
           } as StreamExecutionResponse);
         }
+
+        // Wait for market subscription readiness
+        await SubscriptionService.waitForSubscriptionReady({
+          userId,
+          source: sourceId,
+          scope,
+          workflowId,
+        });
       }
 
       console.log(
-        `✅ [ExecuteStreamNode] Subscription successful for ${parsedSymbols.length} symbols`,
+        `✅ [ExecuteStreamNode] Subscription ready for ${parsedSymbols.length} symbols`,
       );
     }
 
@@ -604,6 +587,7 @@ router.post("/:source/register", async (req, res) => {
     });
 
     // Publish registration control message to market-stream-service
+    // Now runs AFTER subscriptions are confirmed ready
     await RegistrationService.publishRegisterWorkflow({
       userId,
       workflowId,
@@ -612,11 +596,6 @@ router.post("/:source/register", async (req, res) => {
       scope,
       onlyClosedBars,
     });
-
-    // Note: Companion trading gateway auto-spawn removed.
-    // Trading subscriptions (order_update) are now explicitly managed via AlpacaSubscribe/BinanceSubscribe nodes.
-    // Note: WorkflowRunner is NOT started here for manual tests.
-    // It is only started by StreamingLifecycleAdapter during formal workflow activation.
 
     console.log(`📡 [ExecuteStreamNode] Published register_workflow (manual test, no WorkflowRunner)`);
 
@@ -670,27 +649,27 @@ router.post("/unregister", async (req, res) => {
         activeListener.nodeId === node_id,
     );
 
-    if (
-      listener?.source === "alpaca_market" ||
-      listener?.source === "binance_market"
-    ) {
-      const tradingSource =
-        listener.source === "alpaca_market"
-          ? "alpaca_trading"
-          : "binance_trading";
+    // Derive trading companion source from source family (not hardcoded list)
+    if (listener?.source) {
+      const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
+      const tradingSource = `${sourceFamily}_trading`;
 
-      await SubscriptionService.unsubscribe({
-        source: tradingSource as any,
-        userId,
-        workflowId,
-        nodeId: node_id,
-        symbols: ["*"],
-        scope:
-          listener.scope === "global" || listener.scope === "workflow"
-            ? listener.scope
-            : "workflow",
-        targetWorkflowId: workflowId,
-      });
+      // Only unsubscribe trading if this was a market/crypto/stream source
+      // (not if source is already a trading source)
+      if (!listener.source.includes("_trading")) {
+        await SubscriptionService.unsubscribe({
+          source: tradingSource as any,
+          userId,
+          workflowId,
+          nodeId: node_id,
+          symbols: ["*"],
+          scope:
+            listener.scope === "global" || listener.scope === "workflow"
+              ? listener.scope
+              : "workflow",
+          targetWorkflowId: workflowId,
+        });
+      }
     }
 
     // Delete listener through service
@@ -701,9 +680,6 @@ router.post("/unregister", async (req, res) => {
       userId,
       workflowId: workflowId,
     });
-
-    // Note: WorkflowRunner stop is handled by StreamingLifecycleAdapter during deactivation.
-    // Manual test unregister does not need to stop a runner since none was started.
 
     console.log(`🛑 Stopped listener: ${workflowId}:${node_id}`);
 

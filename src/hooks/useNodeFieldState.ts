@@ -16,6 +16,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNodeId, useReactFlow } from "@xyflow/react";
+import {
+  reconcileNodeValues,
+  getSchemaSignature,
+} from "@/utils/reconcileNodeValues";
 
 interface UseNodeFieldStateProps {
   definition: any;
@@ -30,8 +34,15 @@ interface UseNodeFieldStateReturn {
 }
 
 /**
- * Custom hook to manage node field state
- * Handles initialization, updates, and synchronization with node data
+ * Custom hook to manage node field state.
+ *
+ * Key behaviour:
+ *  - On mount (and when the definition schema changes) it reconciles the
+ *    persisted values against the current JSON definition so that any
+ *    newly-added fields are immediately present in both local state AND
+ *    the React Flow node store (node.data.values / node.data.fieldState).
+ *  - This ensures that saving the workflow will persist the new fields
+ *    without requiring the user to open the node panel first.
  */
 export function useNodeFieldState({
   definition,
@@ -40,147 +51,110 @@ export function useNodeFieldState({
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
   const nodeId = useNodeId();
   const { setNodes } = useReactFlow();
-  const hasInitialized = useRef(false);
+
+  // Track the schema signature so we re-reconcile when fields change
+  const lastSignatureRef = useRef<string>("");
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize fieldState from definition, saved data, or defaults
+  // ── Initial state ────────────────────────────────────────────────────
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
-    if (!definition?.fields) return {};
-
-    // Load defined fields from node definition
-    const definedFields = Object.fromEntries(
-      definition.fields.map((f: any) => {
-        const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
-
-        // For select fields, ensure we use default if saved value is empty/undefined
-        if (
-          f.type === "select" &&
-          (savedValue === undefined || savedValue === null || savedValue === "")
-        ) {
-          return [f.key, f.default || null];
-        }
-
-        // For repeater fields
-        if (f.type === "repeater") {
-          return [f.key, savedValue || f.default || null];
-        }
-
-        // For all other fields
-        return [f.key, savedValue ?? f.default ?? null];
-      }),
+    const { merged } = reconcileNodeValues(
+      definition,
+      data.values ?? {},
+      data.fieldState ?? {},
     );
-
-    return definedFields;
+    return merged;
   });
 
-  // Initialize fieldState when definition changes
+  // ── Reconcile when definition schema structurally changes ────────────
+  // Uses a lightweight signature (field keys + types) to avoid running on
+  // every render while still catching added/removed/retyped fields.
   useEffect(() => {
-    if (!definition?.fields) return;
+    const signature = getSchemaSignature(definition);
+    if (!signature) return;
+    if (signature === lastSignatureRef.current) return;
 
-    // Only initialize once when component mounts or definition actually changes
-    if (hasInitialized.current) return;
+    lastSignatureRef.current = signature;
 
-    // Load defined fields from node definition
-    const definedFields = Object.fromEntries(
-      definition.fields.map((f: any) => {
-        const savedValue = data.fieldState?.[f.key] ?? data.values?.[f.key];
+    const existingValues = data.values ?? {};
+    const existingFieldState = data.fieldState ?? {};
 
-        // For select fields, ensure we use default if saved value is empty/undefined
-        if (
-          f.type === "select" &&
-          (savedValue === undefined || savedValue === null || savedValue === "")
-        ) {
-          return [f.key, f.default || null];
-        }
-
-        // For repeater fields
-        if (f.type === "repeater") {
-          return [f.key, savedValue || f.default || null];
-        }
-
-        // For all other fields
-        return [f.key, savedValue ?? f.default ?? null];
-      }),
+    const { merged, hadMissingKeys } = reconcileNodeValues(
+      definition,
+      existingValues,
+      existingFieldState,
     );
 
-    const newFieldState = definedFields;
+    // Always update local state to match the reconciled result
+    setFieldState(merged);
 
-    // Only set if we actually have fields to initialize
-    if (Object.keys(newFieldState).length > 0) {
-      console.log("🔄 BaseNode initializing fieldState for", definition.name);
-      setFieldState(newFieldState);
-      hasInitialized.current = true;
+    // If we discovered missing keys, immediately push them into the
+    // React Flow store so save/live execution will see them even if the
+    // user never interacts with this node's panel.
+    if (hadMissingKeys && nodeId && !readOnly) {
+      console.log(
+        "🔄 useNodeFieldState: backfilling missing fields for",
+        definition?.name,
+      );
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  values: { ...merged },
+                  fieldState: { ...merged },
+                },
+              }
+            : n,
+        ),
+      );
     }
-  }, [definition?.fields?.length, definition?.name]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getSchemaSignature(definition), nodeId, readOnly]);
 
-  // Reset initialization flag if definition fundamentally changes
+  // ── Debounced sync: local fieldState → React Flow node.data.values ──
+  // Keeps the store up-to-date as the user types / selects values.
   useEffect(() => {
-    hasInitialized.current = false;
-  }, [definition?.name]);
+    if (readOnly) return;
+    if (Object.keys(fieldState).length === 0 || !nodeId) return;
 
-  // Sync fieldState changes to node data.values for proper persistence
-  // Skip in readOnly mode to prevent execution view from mutating nodes
-  // Debounced to prevent rapid updates during typing
-  useEffect(() => {
-    if (readOnly) return; // Don't sync in read-only/execution view mode
-    if (
-      Object.keys(fieldState).length === 0 ||
-      !nodeId ||
-      !hasInitialized.current
-    )
-      return;
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
 
-    // Clear any pending sync
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-
-    // Debounce the sync to batch rapid updates
     syncTimeoutRef.current = setTimeout(() => {
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
-
-          // Check if values actually changed to prevent redundant updates
           const currentValues = (n.data as any)?.values || {};
-          const valuesChanged =
-            JSON.stringify(currentValues) !== JSON.stringify(fieldState);
-
-          if (!valuesChanged) return n;
-
+          if (JSON.stringify(currentValues) === JSON.stringify(fieldState))
+            return n;
           return {
             ...n,
-            data: {
-              ...n.data,
-              values: { ...fieldState },
-            },
+            data: { ...n.data, values: { ...fieldState } },
           };
         }),
       );
-    }, 50); // 50ms debounce
+    }, 50);
 
     return () => {
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current);
-      }
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
   }, [fieldState, nodeId, setNodes, readOnly]);
 
-  // Handle single field change with dynamic options support
+  // ── Single field change ──────────────────────────────────────────────
   const handleChange = useCallback(
     (key: string, value: any) => {
-      // Don't allow changes in readOnly mode
       if (readOnly) return;
 
       const normalizedValue =
         typeof value === "string" && value.trim() === "" ? null : value;
       const newFieldState = { ...fieldState, [key]: normalizedValue };
 
-      // Check if any field has dynamicOptions that depends on this key
+      // Handle dynamicOptions dependencies
       if (definition?.fields) {
         for (const field of definition.fields) {
           if (field.dynamicOptions?.dependsOn === key) {
-            // Reset the dependent field to first option of new dataType
             const options = field.dynamicOptions.optionsByValue?.[value];
             if (options && options.length > 0) {
               newFieldState[field.key] = options[0].value;
@@ -208,10 +182,9 @@ export function useNodeFieldState({
     [fieldState, nodeId, setNodes, definition?.fields, readOnly],
   );
 
-  // Handle batch field updates
+  // ── Batch field update ───────────────────────────────────────────────
   const handleFieldStateBatch = useCallback(
     (updates: Record<string, any>) => {
-      // Don't allow changes in readOnly mode
       if (readOnly) return;
 
       const newFS = { ...fieldState, ...updates };
@@ -227,9 +200,5 @@ export function useNodeFieldState({
     [fieldState, nodeId, setNodes, readOnly],
   );
 
-  return {
-    fieldState,
-    handleChange,
-    handleFieldStateBatch,
-  };
+  return { fieldState, handleChange, handleFieldStateBatch };
 }

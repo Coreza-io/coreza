@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
 import { getVisibleValues } from '@/utils/fieldVisibility';
 import { nodeManifest } from '@/nodes/manifest';
+import { reconcileNodeValues } from '@/utils/reconcileNodeValues';
 
 export interface WorkflowPersistenceOptions {
   projectId: string | null;
@@ -297,13 +298,17 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
             node.data?.definition ||
             nodeManifest[nodeName as keyof typeof nodeManifest];
 
+          const rawValues = (node as any).values || node.data?.values || {};
+          const { merged } = reconcileNodeValues(definition, rawValues, node.data?.fieldState || {});
+
           return {
             ...node,
             type: nodeName,
             data: {
               ...node.data,
               definition,
-              values: (node as any).values || node.data?.values || {},
+              values: merged,
+              fieldState: merged,
               displayName: node.id,
             },
           };

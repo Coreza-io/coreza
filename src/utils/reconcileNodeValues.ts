@@ -44,8 +44,16 @@ export function reconcileNodeValues(
     const savedValue = merged[key] ?? existingFieldState[key];
 
     if (savedValue !== undefined) {
-      // Already has a value — keep it, ensure it's in merged
-      merged[key] = savedValue;
+      // Already has a value — keep it, ensure it's in merged.
+      // Normalize legacy empty strings to null for non-select fields.
+      const isSelectType =
+        field.type === "select" || field.type === "multiselect";
+      merged[key] =
+        !isSelectType &&
+        typeof savedValue === "string" &&
+        savedValue.trim() === ""
+          ? null
+          : savedValue;
     } else {
       // Missing key — backfill from definition
       hadMissingKeys = true;

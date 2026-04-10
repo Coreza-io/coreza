@@ -112,7 +112,7 @@ export const getTestListenerKey = (
 // ============================================
 
 /**
- * Lua script for atomic test listener check and delete
+ * Lua script for atomic test listener check and result update
  * Prevents race conditions when multiple events arrive simultaneously
  *
  * KEYS[1]: test listener key (stream:test:{workflow_id}:{node_id})
@@ -139,10 +139,10 @@ export const LUA_ATOMIC_LISTENER = `
     return nil
   end
   
-  -- Match found: store result, delete listener, remove from SET
+  -- Match found: store result but keep listener active for continuous streaming
   redis.call('SETEX', KEYS[3], ARGV[3], ARGV[2])
-  redis.call('DEL', KEYS[1])
-  redis.call('SREM', KEYS[2], KEYS[1])
+  listener.lastMatchAt = redis.call('TIME')[1]
+  redis.call('SET', KEYS[1], cjson.encode(listener), 'KEEPTTL')
   
   return listenerStr
 `;

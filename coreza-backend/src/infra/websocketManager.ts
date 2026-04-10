@@ -32,11 +32,10 @@ import {
   MAX_CONNECTIONS_PER_USER,
   WS_HEARTBEAT_INTERVAL_MS,
   TEST_RESULT_TTL_SECONDS,
-  REDIS_KEY_ACTIVE_TEST_LISTENERS,
-  REDIS_KEY_USER_TEST_COUNT_PREFIX,
-  LUA_ATOMIC_TEST_LISTENER,
-  LUA_DECREMENT_TEST_COUNT,
+  LUA_ATOMIC_LISTENER,
+  LUA_DECREMENT_LISTENER_COUNT,
 } from "../config/streaming";
+import { REDIS_CHANNELS } from "../config/redisChannels";
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -462,7 +461,6 @@ export class WebSocketManager {
     ws: AuthenticatedWebSocket,
     payload: any
   ): void {
-    // TODO: Implement workflow subscription logic
     console.log(`User ${ws.userId} subscribed to workflow updates`);
 
     this.sendMessage(ws, {
@@ -473,12 +471,10 @@ export class WebSocketManager {
   }
 
   private handleWorkflowAction(ws: AuthenticatedWebSocket, payload: any): void {
-    // TODO: Implement workflow action handling (start, stop, pause)
     console.log(`User ${ws.userId} performed workflow action:`, payload);
   }
 
   private handleAgentMessage(ws: AuthenticatedWebSocket, payload: any): void {
-    // TODO: Queue agent processing
     console.log(`User ${ws.userId} sent agent message:`, payload);
   }
 
@@ -618,8 +614,10 @@ export class WebSocketManager {
   }
 
   /**
-   * Check if incoming stream data matches any test listeners
-   * Uses atomic Lua script to prevent race conditions with concurrent events
+   * Check if incoming stream data matches any test listeners.
+   * Uses the per-user active listeners SET from REDIS_CHANNELS (same contract
+   * as RegistrationService.createListener) and atomic Lua script to prevent
+   * race conditions with concurrent events.
    */
   private async checkTestListeners(
     userId: string,
@@ -627,10 +625,11 @@ export class WebSocketManager {
     redis: Redis
   ): Promise<void> {
     try {
-      // Use circuit breaker for SMEMBERS - returns empty array on failure
+      // Read from the PER-USER active listeners SET (same key RegistrationService writes to)
+      const userActiveListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
       const activeTestKeys = (await redisSMembersBreaker.fire(
         redis,
-        REDIS_KEY_ACTIVE_TEST_LISTENERS
+        userActiveListenersKey
       )) as string[];
 
       if (!activeTestKeys || activeTestKeys.length === 0) return;
@@ -650,7 +649,7 @@ export class WebSocketManager {
         if (!listenerStr) {
           await redisSRemBreaker.fire(
             redis,
-            REDIS_KEY_ACTIVE_TEST_LISTENERS,
+            userActiveListenersKey,
             testKey
           );
           continue;
@@ -662,7 +661,7 @@ export class WebSocketManager {
         } catch {
           await redisSRemBreaker.fire(
             redis,
-            REDIS_KEY_ACTIVE_TEST_LISTENERS,
+            userActiveListenersKey,
             testKey
           );
           continue;
@@ -675,7 +674,12 @@ export class WebSocketManager {
         if (listener.status !== "listening") continue;
 
         // Check symbol and type filters using shared utility
+        // RegistrationService stores filterSymbols/filterTypes when available.
+        // Fall back to accepting all events for this listener if no filters set
+        // (mode=listen captures first matching event regardless of symbol/type).
+        const hasFilters = listener.filterSymbols || listener.filterTypes;
         if (
+          hasFilters &&
           !matchesEventFilters(eventSymbol, eventType, {
             filterSymbols: listener.filterSymbols,
             filterTypes: listener.filterTypes,
@@ -698,10 +702,10 @@ export class WebSocketManager {
           // Use circuit breaker for EVAL - returns null on failure
           const result = await redisEvalBreaker.fire(
             redis,
-            LUA_ATOMIC_TEST_LISTENER,
+            LUA_ATOMIC_LISTENER,
             3, // number of keys
             testKey,
-            REDIS_KEY_ACTIVE_TEST_LISTENERS,
+            userActiveListenersKey,
             resultKey,
             userId,
             JSON.stringify(resultData),
@@ -709,19 +713,6 @@ export class WebSocketManager {
           );
 
           if (result) {
-            //  Decrement user's test listener count (circuit breaker wrapped)
-            // const userCountKey = `${REDIS_KEY_USER_TEST_COUNT_PREFIX}${userId}`;
-            // await redisEvalBreaker.fire(redis, LUA_DECREMENT_TEST_COUNT, 1, userCountKey);
-
-            // // Unregister from MarketDataSubscriber to stop receiving data for this test listener
-            // const unsubscribeMessage = {
-            //   action: 'unregister_workflow',
-            //   workflowId: testKey, // Same pseudo workflow ID used during registration
-            //   userId,
-            //   isTestListener: true,
-            // };
-            // await redis.publish('md:control:unregister_workflow', JSON.stringify(unsubscribeMessage));
-
             // Push result directly to user via WebSocket (replaces polling)
             WebSocketManager.sendToUser(userId, {
               type: "test_data_received",

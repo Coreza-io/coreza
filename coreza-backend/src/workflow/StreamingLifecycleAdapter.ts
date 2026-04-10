@@ -9,6 +9,7 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
+import { buildCryptoSymbols } from "../utils/symbolHelpers";
 
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
@@ -79,6 +80,9 @@ export class StreamingLifecycleAdapter {
           asset_type?: string;
           interval?: string;
           depth_levels?: number;
+          data_type?: string;
+          crypto_base?: string;
+          crypto_quote?: string;
         };
       }
     ).values || {}) as {
@@ -92,6 +96,9 @@ export class StreamingLifecycleAdapter {
       asset_type?: string;
       interval?: string;
       depth_levels?: number;
+      data_type?: string;
+      crypto_base?: string;
+      crypto_quote?: string;
     };
 
     await redis.sadd(
@@ -104,17 +111,16 @@ export class StreamingLifecycleAdapter {
       throw createError("Unknown streaming source", 400);
     }
 
-    await RegistrationService.publishRegisterWorkflow({
-      userId,
-      workflowId,
-      nodeId: triggerNode.id,
-      source: sourceId,
-      scope: nodeValues.scope || "workflow",
-      onlyClosedBars: nodeValues.onlyClosedBars ?? true,
-      isLive: true,
-    });
+    // --- Resolve symbols (standard + crypto fallback) ---
+    let symbols = parseSymbols(nodeValues.symbols);
+    if (symbols.length === 0 && nodeValues.data_type === "crypto") {
+      symbols = buildCryptoSymbols(
+        nodeValues.data_type,
+        nodeValues.crypto_base,
+        nodeValues.crypto_quote,
+      );
+    }
 
-    const symbols = parseSymbols(nodeValues.symbols);
     const streamTypes = Array.isArray(nodeValues.stream_types)
       ? nodeValues.stream_types
       : typeof nodeValues.stream_types === "string"
@@ -127,6 +133,9 @@ export class StreamingLifecycleAdapter {
       (streamType) => streamType !== "order_update",
     );
 
+    // --- Subscribe FIRST, then wait for readiness, then register ---
+
+    // 1. Subscribe to trading source for order updates
     if (hasOrderUpdate) {
       const baseName = triggerNode.name;
       const tradingSource = baseName?.includes("Binance")
@@ -138,7 +147,6 @@ export class StreamingLifecycleAdapter {
         workflowId,
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
-        //symbols,
         symbols: ["*"],
         streamTypes: ["order_update"],
         environment: nodeValues.environment,
@@ -146,8 +154,17 @@ export class StreamingLifecycleAdapter {
         scope: nodeValues.scope || "workflow",
         targetWorkflowId: workflowId,
       });
+
+      // Wait for trading subscription readiness
+      await SubscriptionService.waitForSubscriptionReady({
+        userId,
+        source: tradingSource,
+        scope: nodeValues.scope || "workflow",
+        workflowId,
+      });
     }
 
+    // 2. Subscribe to market/crypto streams
     if (
       symbols.length > 0 &&
       (marketStreamTypes.length > 0 || !hasOrderUpdate)
@@ -169,7 +186,26 @@ export class StreamingLifecycleAdapter {
         scope: nodeValues.scope || "workflow",
         targetWorkflowId: workflowId,
       });
+
+      // Wait for market subscription readiness
+      await SubscriptionService.waitForSubscriptionReady({
+        userId,
+        source: sourceId,
+        scope: nodeValues.scope || "workflow",
+        workflowId,
+      });
     }
+
+    // 3. NOW register the workflow (subscriptions are materialized)
+    await RegistrationService.publishRegisterWorkflow({
+      userId,
+      workflowId,
+      nodeId: triggerNode.id,
+      source: sourceId,
+      scope: nodeValues.scope || "workflow",
+      onlyClosedBars: nodeValues.onlyClosedBars ?? true,
+      isLive: true,
+    });
 
     await this.clearSessionData(userId, workflowId);
     await jobQueue.startWorkflowRunner(

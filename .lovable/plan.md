@@ -1,129 +1,179 @@
 
-Goal: fix the actual state flow so newly added node fields become part of React Flow node.data.values and then persist normally to DB, instead of masking the issue with save-time defaults.
+Updated understanding after tracing manual run + live activation end to end:
 
-What I found end-to-end
+## What is actually broken
 
-1. Load path from DB into React Flow
-- `src/hooks/useWorkflowPersistence.ts:294-309`
-- Existing workflows are restored with:
-  - `definition` from `nodeManifest`
-  - `data.values` from DB only: `(node as any).values || node.data?.values || {}`
-- No reconciliation happens here between current node definition fields and old persisted values.
+This is not just a crypto symbol issue.
 
-2. Why manual run works but live/save stays stale
-- `src/components/nodes/BaseNode.tsx` manual execution uses `useNodeFieldState(...)`
-- `useNodeExecution` receives `fieldStateHook.fieldState`, not raw `node.data.values`
-- So manual run works because UI-local `fieldState` includes newly added fields/defaults.
+### 1) There is a subscribe/register race in both manual and live flows
+`SubscriptionService.subscribe()` does not wait for the broker/market-control layer to finish subscribing. It only publishes a Redis control message and returns success immediately.
 
-3. Why save/live still miss the field
-- Save path in `src/hooks/useWorkflowPersistence.ts:85-103` serializes only `n.data.values`
-- Live execution also depends on persisted `node.values` from DB
-- Therefore if React Flow state never got the new field into `node.data.values`, save just writes the same old shape back.
+Then both of these paths register the workflow right away:
+- `coreza-backend/src/routes/stream.ts` → `/:source/register`
+- `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts` → `activateStreaming()`
 
-4. The real bug in React Flow state sync
-- `src/hooks/useNodeFieldState.ts`
-- The hook initializes local `fieldState` from definition + saved values.
-- It is supposed to sync that local state back into React Flow `node.data.values`.
-- But there is a logic bug:
-  - init effect sets `hasInitialized.current = true`
-  - then another effect immediately resets it:
-    - `useEffect(() => { hasInitialized.current = false; }, [definition?.name])`
-- On mount for an existing node, both run for the same definition.
-- Result: the sync effect guarded by `!hasInitialized.current` often skips, so the derived field never gets written back to React Flow node state.
-- That matches your symptom exactly:
-  - UI/manual execution sees the new field
-  - DB/save/live do not
+That means `register_workflow` often runs before the subscription keys/streams exist, so MarketControl logs exactly what you pasted:
+- workflow registered
+- 0 symbols found
+- no data delivered
 
-Why this matters
-- The issue is not “default values” as a product decision.
-- The issue is architectural inconsistency:
-  - source of truth for save/live = `node.data.values`
-  - source of truth for manual execution = `fieldState`
-- These two drift because initialization-to-React-Flow sync is broken.
+This explains:
+- bar/kline not reaching workflow
+- order_update companion stream not being visible yet
+- manual run showing “success/listening” but backend not actually streaming to the workflow
 
-Implementation plan
+### 2) Manual test-listener delivery is using inconsistent Redis contracts
+`RegistrationService.createListener()` stores listeners in:
+- `REDIS_CHANNELS.Listener(...)`
+- `REDIS_CHANNELS.userActiveListeners(userId)`
 
-1. Fix `useNodeFieldState` lifecycle so initialization writes through to React Flow
-File:
-- `src/hooks/useNodeFieldState.ts`
+But `WebSocketManager.checkTestListeners()` is still reading a different legacy/global listener registry contract from `config/streaming` (`REDIS_KEY_ACTIVE_TEST_LISTENERS` + legacy key assumptions).
 
-Changes:
-- Remove the mount-time reset pattern that flips `hasInitialized` back to `false` right after initialization.
-- Replace current init logic with a deterministic reconciliation flow:
-  - compute merged state from definition fields + existing `data.values`/`data.fieldState`
-  - set local `fieldState`
-  - immediately sync merged state into React Flow node `data.values` and `data.fieldState` when missing keys were discovered
-- Ensure this runs:
-  - on mount
-  - when node definition changes meaningfully
-  - without causing infinite loops or clobbering user edits
+So even if events do arrive, the WebSocket test-listener path may not discover the listener correctly.
 
-2. Make initialization idempotent and key-aware
-File:
-- `src/hooks/useNodeFieldState.ts`
+Also, listener metadata is incomplete:
+- `createListener()` stores `mode/scope/source`
+- but `WebSocketManager` expects fields like `filterSymbols` / `filterTypes`
 
-Changes:
-- Stop using only `definition?.name` / `fields.length` as the init trigger
-- Track a lightweight schema signature such as:
-  - field keys
-  - field types
-  - maybe option ids for structural select changes
-- Reconcile only missing/new fields into node state instead of treating every render as a full reset
+So manual test delivery is only partially wired.
 
-3. Preserve user data while backfilling new fields
-Behavior to enforce:
-- If DB already has a value, keep it
-- If DB lacks a newly added field, add it into both:
-  - local `fieldState`
-  - React Flow `node.data.values`
-- Do not overwrite existing saved values
-- Do not require opening the node and manually changing anything before save
+### 3) Live crypto subscribe path still has a separate gap
+`StreamingLifecycleAdapter.activateStreaming()` still only parses `nodeValues.symbols`.
+For crypto nodes, live workflows use `crypto_base` + `crypto_quote`, so live market subscription can still be skipped there.
 
-4. Apply the same hydration fix to workflow-version restore path
-File:
-- `src/pages/WorkflowEditor.tsx`
-- `handleRestoreFromVersion`
+## Updated implementation plan
 
-Why:
-- This restore path repeats the same old pattern:
-  - `values: (node as any).values || node.data?.values || {}`
-- It should use the same node reconciliation strategy as normal workflow load so restored versions also hydrate newly added fields into React Flow state.
+### A. Fix the core race first
+Add a real “subscription ready” step before workflow registration.
 
-5. Keep backend safety net, but as defense-in-depth only
-File:
-- backend parameter resolver / workflow engine path already discussed
+#### Files
+- `coreza-backend/src/services/SubscriptionService.ts`
+- `coreza-backend/src/routes/stream.ts`
+- `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`
 
-Why:
-- Frontend fix is the real solution for persistence
-- Backend fallback is still useful for old workflows that haven’t been reopened/saved yet
-- But backend should not be the primary fix for your reported bug
+#### Change
+Create a helper in the backend that waits until the expected Redis subscription state exists before continuing.
 
-Expected result after implementation
+Example responsibility:
+- after publishing `md:control:subscribe`
+- wait until the expected workflow/global `...:streams` key contains the requested market streams
+- for order updates, wait until the trading source subscription is present too
+- timeout with a real backend error if readiness never happens
 
-For an old workflow like your BinanceTrade example:
+Then change ordering to:
 ```text
-DB load
-  -> React Flow node restored with old values
-  -> useNodeFieldState reconciles against current node schema
-  -> missing `operation` is inserted into node.data.values
-  -> user saves workflow
-  -> DB now stores `operation`
-  -> live execution sees it in node.values
+subscribe publish
+-> wait for subscription readiness
+-> publish register_workflow
+-> start listener / workflow runner
 ```
 
-Files to update
-- `src/hooks/useNodeFieldState.ts`
-- `src/pages/WorkflowEditor.tsx` (restore-from-version hydration path)
-- optionally a shared helper for “reconcile node values with current definition” to avoid duplicating logic across load/init paths
-- backend engine resolver as a safety net only
+This is the real fix for the “0 symbols” logs.
 
-Technical note
-The cleanest implementation is to centralize reconciliation in a helper, e.g.:
+### B. Unify manual test-listener storage and consumption
+#### Files
+- `coreza-backend/src/services/RegistrationService.ts`
+- `coreza-backend/src/infra/websocketManager.ts`
+- `coreza-backend/src/config/streaming.ts`
+- `coreza-backend/src/config/redisChannels.ts`
+
+#### Change
+Use one Redis key contract only.
+
+`WebSocketManager.checkTestListeners()` must read the same keys that `RegistrationService.createListener()` writes.
+
+Also extend listener payload to include everything the consumer expects:
+- `filterSymbols`
+- `filterTypes`
+- `scope`
+- `mode`
+- `source`
+- `workflowId`
+- `nodeId`
+
+This makes manual run truly end-to-end instead of “listener created but never matched”.
+
+### C. Fix live crypto symbol building in the workflow activation path
+#### Files
+- `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`
+- optionally shared helper: `coreza-backend/src/utils/symbolHelpers.ts`
+
+#### Change
+Use the same crypto symbol resolution in live activation that manual `/stream/:source/register` already uses:
+- `crypto_base` + `crypto_quote` -> `BTC/USD`, etc.
+
+Without this, live Alpaca crypto streaming can still register with no market symbols.
+
+### D. Make order_update registration wait for trading subscription readiness too
+#### Files
+- `coreza-backend/src/routes/stream.ts`
+- `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`
+
+#### Change
+When `order_update` is selected:
+- subscribe trading source first
+- wait for trading subscription Redis state
+- then register workflow
+
+This matters because companion trading stream discovery is happening during registration. If trading subscription is still not materialized, registration sees nothing.
+
+### E. Clean up stop/unregister logic for source variants
+#### Files
+- `coreza-backend/src/routes/stream.ts`
+
+#### Change
+`/stream/unregister` currently only special-cases:
+- `alpaca_market`
+- `binance_market`
+
+That is too narrow for:
+- `alpaca_crypto`
+- future source variants
+
+Make trading companion cleanup derive from source family, not hardcoded source names.
+
+### F. Optional but recommended: fix stale recovery fallback
+#### Files
+- `src/hooks/useListeningConfigs.ts`
+- corresponding backend route if needed
+
+#### Change
+The recovery polling endpoint/template looks stale/inconsistent (`workflow_id` vs `workflowId`, `/market/stream-test-result` path mismatch). WebSocket is primary, but fallback should be corrected so test listening degrades safely.
+
+## Expected result after the fix
 ```text
-reconcileNodeValues(definition, existingValues, existingFieldState)
-```
-and use it in:
-- `useNodeFieldState`
-- workflow load/restore hydration paths if needed
+Manual subscribe mode:
+  publish subscribe
+  -> backend waits until Redis shows active stream subscription
+  -> create/register listener
+  -> incoming bar/kline/order_update event matches listener
+  -> WebSocketManager pushes test_data_received
+  -> UI shows streaming output
 
-This avoids three different places inventing different rules for what a node’s values should look like.
+Live workflow activation:
+  publish subscribe
+  -> wait until stream keys exist
+  -> publish register_workflow
+  -> MarketControl sees non-zero subscribed streams
+  -> WorkflowRunner receives events
+```
+
+## Files most likely to change
+- `coreza-backend/src/services/SubscriptionService.ts`
+- `coreza-backend/src/routes/stream.ts`
+- `coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`
+- `coreza-backend/src/services/RegistrationService.ts`
+- `coreza-backend/src/infra/websocketManager.ts`
+- `coreza-backend/src/config/streaming.ts`
+- `coreza-backend/src/config/redisChannels.ts`
+- optional: `coreza-backend/src/utils/symbolHelpers.ts`
+- optional: `src/hooks/useListeningConfigs.ts`
+
+## Priority order
+1. Fix subscribe/register race
+2. Unify listener Redis contract
+3. Fix crypto live symbol construction
+4. Fix unregister source handling
+5. Fix recovery fallback
+
+This updated plan replaces the earlier “crypto-only” diagnosis. The main failure is orchestration timing plus mismatched listener plumbing.

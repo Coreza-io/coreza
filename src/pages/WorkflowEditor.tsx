@@ -82,6 +82,7 @@ import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHis
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
+import { reconcileNodeValues } from "@/utils/reconcileNodeValues";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
 import { useWorkflowPersistence } from "@/hooks/useWorkflowPersistence";
 import {
@@ -921,13 +922,17 @@ const WorkflowEditorContent = () => {
           node.data?.definition ||
           nodeManifest[nodeName as keyof typeof nodeManifest];
 
+        const rawValues = (node as any).values || node.data?.values || {};
+        const { merged } = reconcileNodeValues(definition, rawValues, node.data?.fieldState || {});
+
         return {
           ...node,
           type: nodeName,
           data: {
             ...node.data,
             definition,
-            values: (node as any).values || node.data?.values || {},
+            values: merged,
+            fieldState: merged,
             displayName: node.data?.displayName || node.id,
           },
         };

@@ -32,6 +32,7 @@ import {
   MAX_CONNECTIONS_PER_USER,
   WS_HEARTBEAT_INTERVAL_MS,
   TEST_RESULT_TTL_SECONDS,
+  LISTENER_TTL_SECONDS,
   LUA_ATOMIC_LISTENER,
   LUA_DECREMENT_LISTENER_COUNT,
 } from "../config/streaming";
@@ -703,13 +704,13 @@ export class WebSocketManager {
           const result = await redisEvalBreaker.fire(
             redis,
             LUA_ATOMIC_LISTENER,
-            3, // number of keys
+            2, // number of keys
             testKey,
-            userActiveListenersKey,
             resultKey,
             userId,
             JSON.stringify(resultData),
-            String(TEST_RESULT_TTL_SECONDS)
+            String(TEST_RESULT_TTL_SECONDS),
+            String(LISTENER_TTL_SECONDS)
           );
 
           if (result) {
@@ -727,9 +728,8 @@ export class WebSocketManager {
             console.log(
               `🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`
             );
-            break; // Only match first listener per event
           }
-          // If result is null, another event already claimed this listener OR circuit breaker fired
+          // If result is null, listener was not eligible anymore OR circuit breaker fired
         } catch (luaError) {
           // Fallback - still try to push via WebSocket even if Redis failed
           console.warn(
@@ -751,7 +751,6 @@ export class WebSocketManager {
           console.log(
             `🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`
           );
-          break;
         }
       }
     } catch (error) {

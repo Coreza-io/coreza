@@ -451,6 +451,19 @@ router.post("/:source/register", async (req, res) => {
     const parsedSymbols: string[] =
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
+    // Parse stream_types into array
+    const parsedStreamTypes: string[] = stream_types
+      ? typeof stream_types === "string"
+        ? stream_types.split(",").map((s: string) => s.trim())
+        : stream_types
+      : [];
+
+    // Split order_update from market stream types (same pattern as /subscribe endpoint)
+    const hasOrderUpdate = parsedStreamTypes.includes("order_update");
+    const marketStreamTypes = parsedStreamTypes.filter(
+      (t: string) => t !== "order_update",
+    );
+
     // If subscribe mode, subscribe first and WAIT for readiness
     if (mode === "subscribe") {
       if (parsedSymbols.length === 0) {
@@ -461,19 +474,6 @@ router.post("/:source/register", async (req, res) => {
 
       console.log(
         `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
-      );
-
-      // Parse stream_types into array
-      const parsedStreamTypes: string[] = stream_types
-        ? typeof stream_types === "string"
-          ? stream_types.split(",").map((s: string) => s.trim())
-          : stream_types
-        : [];
-
-      // Split order_update from market stream types (same pattern as /subscribe endpoint)
-      const hasOrderUpdate = parsedStreamTypes.includes("order_update");
-      const marketStreamTypes = parsedStreamTypes.filter(
-        (t: string) => t !== "order_update",
       );
 
       // Subscribe to trading source for order updates

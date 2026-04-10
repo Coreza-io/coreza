@@ -584,6 +584,8 @@ router.post("/:source/register", async (req, res) => {
       source: sourceId,
       mode,
       scope,
+      filterSymbols: parsedSymbols,
+      filterTypes: marketStreamTypes,
     });
 
     // Publish registration control message to market-stream-service

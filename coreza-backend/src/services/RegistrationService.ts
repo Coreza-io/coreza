@@ -46,6 +46,8 @@ export interface ListenerParams {
   source: string;
   mode: string;
   scope: string;
+  filterSymbols?: string[];
+  filterTypes?: string[];
 }
 
 export interface ListenerData {
@@ -57,6 +59,8 @@ export interface ListenerData {
   mode: string;
   scope: string;
   source: string;
+  filterSymbols?: string[];
+  filterTypes?: string[];
 }
 
 export interface CleanupResult {
@@ -118,6 +122,8 @@ export class RegistrationService {
       source,
       mode = "listen",
       scope,
+      filterSymbols,
+      filterTypes,
     } = params;
     const redis = getRedisCache();
 
@@ -133,6 +139,8 @@ export class RegistrationService {
       mode,
       scope,
       source,
+      filterSymbols,
+      filterTypes,
     };
 
     // Store listener with TTL (auto-expire)

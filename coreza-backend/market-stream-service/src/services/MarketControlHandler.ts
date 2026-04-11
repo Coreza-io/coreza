@@ -164,7 +164,15 @@ export class MarketControlHandler {
     onlyClosedBars?: boolean;
     isLive?: boolean;
   }): Promise<void> {
-    const { userId, workflowId, nodeId, source, scope, onlyClosedBars, isLive } = msg;
+    const {
+      userId,
+      workflowId,
+      nodeId,
+      source,
+      scope,
+      onlyClosedBars,
+      isLive,
+    } = msg;
 
     try {
       console.log(
@@ -178,8 +186,8 @@ export class MarketControlHandler {
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
       const streamToRegister =
         scope === "global"
-          ? await this.getUserSubscribedSymbols(userId, source)
-          : await this.getWorkflowScopedSymbols(userId, workflowId, source);
+          ? await this.getUserSubscribedStreams(userId, source)
+          : await this.getWorkflowScopedStreams(userId, workflowId, source);
 
       if (streamToRegister.length === 0) {
         console.log(
@@ -201,7 +209,7 @@ export class MarketControlHandler {
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
           streamToRegister.length
-        } symbols: ${streamToRegister.join(", ")}`,
+        } stream: ${streamToRegister.join(", ")}`,
       );
     } catch (error) {
       console.error(
@@ -247,7 +255,8 @@ export class MarketControlHandler {
    * we also need to discover any trading streams the user subscribed to.
    */
   private getCompanionTradingSource(source: string): string | null {
-    if (source === "alpaca_market" || source === "alpaca_crypto") return "alpaca_trading";
+    if (source === "alpaca_market" || source === "alpaca_crypto")
+      return "alpaca_trading";
     if (source === "binance_market") return "binance_trading";
     return null;
   }
@@ -255,7 +264,7 @@ export class MarketControlHandler {
   /**
    * Get symbols specifically scoped to a workflow
    */
-  private async getWorkflowScopedSymbols(
+  private async getWorkflowScopedStreams(
     userId: string,
     workflowId: string,
     source?: string,
@@ -307,7 +316,7 @@ export class MarketControlHandler {
    * Get all GLOBAL symbols currently subscribed for a user across all sources
    * Uses pattern matching to find ALL subscription keys (handles _stream suffix variants)
    */
-  private async getUserSubscribedSymbols(
+  private async getUserSubscribedStreams(
     userId: string,
     source: string,
   ): Promise<string[]> {

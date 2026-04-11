@@ -110,7 +110,7 @@ export class MarketDataSubscriber {
         if (!this.streamWorkflows.has(stream)) {
           this.streamWorkflows.set(stream, new Set());
 
-          // Subscribe to Redis channel for this symbol
+          // Subscribe to Redis channel for this stream
           const channel = REDIS_CHANNELS.marketData(stream);
           const { sub } = this.ensureRedisConnections();
           await sub.subscribe(channel);
@@ -168,7 +168,7 @@ export class MarketDataSubscriber {
         if (workflows) {
           workflows.delete(workflowId);
 
-          // If no more workflows need this symbol, unsubscribe from Redis channel
+          // If no more workflows need this stream, unsubscribe from Redis channel
           if (workflows.size === 0) {
             const channel = REDIS_CHANNELS.marketData(stream);
             const { sub } = this.ensureRedisConnections();
@@ -674,8 +674,8 @@ export class MarketDataSubscriber {
   }
 
   /**
-   * Add new streams to an existing workflow registration
-   * Used when new streams are subscribed after a streaming workflow is already active
+   * Add new stream to an existing workflow registration
+   * Used when new stream are subscribed after a streaming workflow is already active
    */
   async addStreamsToRegistration(
     workflowId: string,
@@ -691,7 +691,7 @@ export class MarketDataSubscriber {
     }
 
     console.log(
-      `➕ [MarketDataSubscriber] Adding streams to workflow ${workflowId}:`,
+      `➕ [MarketDataSubscriber] Adding stream to workflow ${workflowId}:`,
       newStreams,
     );
 
@@ -723,7 +723,7 @@ export class MarketDataSubscriber {
     await this.persistRegistration(registration);
 
     console.log(
-      `✅ [MarketDataSubscriber] Added ${newStreams.length} streams to workflow ${workflowId}`,
+      `✅ [MarketDataSubscriber] Added ${newStreams.length} stream to workflow ${workflowId}`,
     );
   }
 

@@ -41,7 +41,7 @@ interface SourceState {
   credentialId: string;
   // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
   streams: Set<string>;
-  workflowSymbols: Map<string, Set<string>>; // workflowId → symbols (for reference counting)
+  workflowStreams: Map<string, Set<string>>; // workflowId → streams (for reference counting)
 }
 
 export class MarketControlHandler {
@@ -343,8 +343,8 @@ export class MarketControlHandler {
   }
 
   /**
-   * Update active streaming workflows for a user with newly subscribed symbols
-   * This ensures workflows activated BEFORE symbols were subscribed still receive data
+   * Update active streaming workflows for a user with newly subscribed streams
+   * This ensures workflows activated BEFORE streams were subscribed still receive data
    *
    * IMPORTANT: Respects subscription scope:
    * - 'workflow' scope: ONLY updates the target workflow
@@ -362,9 +362,9 @@ export class MarketControlHandler {
       // If workflow-scoped, only update the target workflow AND any test listeners for it
       if (scope === "workflow" && targetWorkflowId) {
         console.log(
-          `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newStreamNames.length} workflow-scoped symbols`,
+          `📡 [MarketControl] Updating ONLY target workflow ${targetWorkflowId} with ${newStreamNames.length} workflow-scoped streams`,
         );
-        await subscriber.addSymbolsToRegistration(
+        await subscriber.addStreamsToRegistration(
           targetWorkflowId,
           newStreamNames,
         );
@@ -379,12 +379,12 @@ export class MarketControlHandler {
             );
             for (const listener of ListenerKeys) {
               const workflowId = listener.split(":")[4];
-              await subscriber.addSymbolsToRegistration(
+              await subscriber.addStreamsToRegistration(
                 workflowId,
                 newStreamNames,
               );
               console.log(
-                `🧪 [MarketControl] Updated test listener ${listener} with ${newStreamNames.length} symbols`,
+                `🧪 [MarketControl] Updated test listener ${listener} with ${newStreamNames.length} streams`,
               );
             }
           }
@@ -396,7 +396,7 @@ export class MarketControlHandler {
         }
 
         console.log(
-          `✅ [MarketControl] Added ${newStreamNames.length} symbols to target workflow ${targetWorkflowId} only`,
+          `✅ [MarketControl] Added ${newStreamNames.length} streams to target workflow ${targetWorkflowId} only`,
         );
         return;
       }
@@ -414,7 +414,7 @@ export class MarketControlHandler {
       }
 
       console.log(
-        `📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new GLOBAL symbols:`,
+        `📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new GLOBAL streams:`,
         newStreamNames,
       );
 
@@ -425,14 +425,14 @@ export class MarketControlHandler {
           const filterJson = await this.redisPub.get(filterKey);
           const filterConfig = filterJson ? JSON.parse(filterJson) : {};
 
-          // Apply symbol filter if specified
+          // Apply stream filter if specified
           let streamsToAdd = newStreamNames;
 
-          // Add new symbols to existing subscription
-          await subscriber.addSymbolsToRegistration(workflowId, streamsToAdd);
+          // Add new streams to existing registration
+          await subscriber.addStreamsToRegistration(workflowId, streamsToAdd);
 
           console.log(
-            `✅ [MarketControl] Added ${streamsToAdd.length} symbols to workflow ${workflowId}`,
+            `✅ [MarketControl] Added ${streamsToAdd.length} streams to workflow ${workflowId}`,
           );
         } catch (err) {
           console.error(
@@ -451,7 +451,7 @@ export class MarketControlHandler {
 
         if (listenerKeys.length > 0) {
           console.log(
-            `🔍 [MarketControl] Found ${listenerKeys.length} test listener(s) for user ${userId} to update with global symbols`,
+            `🔍 [MarketControl] Found ${listenerKeys.length} test listener(s) for user ${userId} to update with global streams`,
           );
 
           for (const listenerKey of listenerKeys) {
@@ -480,18 +480,18 @@ export class MarketControlHandler {
 
                 if (streamsToAdd.length === 0) {
                   console.log(
-                    `ℹ️ [MarketControl] Test listener ${listenerKey} filters exclude new symbols, skipping`,
+                    `ℹ️ [MarketControl] Test listener ${listenerKey} filters exclude new streams, skipping`,
                   );
                   continue;
                 }
               }
 
-              await subscriber.addSymbolsToRegistration(
+              await subscriber.addStreamsToRegistration(
                 listenerKey,
                 streamsToAdd,
               );
               console.log(
-                `🧪 [MarketControl] Updated test listener ${listenerKey} with ${streamsToAdd.length} global symbols`,
+                `🧪 [MarketControl] Updated test listener ${listenerKey} with ${streamsToAdd.length} global streams`,
               );
             } catch (err) {
               console.warn(
@@ -589,11 +589,11 @@ export class MarketControlHandler {
           // Add to tracking
           newStreamNames.forEach((name) => state.streams.add(name));
 
-          // Track workflow symbols (for reference counting only, NOT for data routing)
+          // Track workflow streams (for reference counting only, NOT for data routing)
           const currentStream =
-            state.workflowSymbols.get(workflowId) || new Set();
+            state.workflowStreams.get(workflowId) || new Set();
           newStreamNames.forEach((s) => currentStream.add(s));
-          state.workflowSymbols.set(workflowId, currentStream);
+          state.workflowStreams.set(workflowId, currentStream);
 
           // Subscribe gateway with stream names directly
           state.gateway.subscribeStreams(newStreamNames);
@@ -684,7 +684,7 @@ export class MarketControlHandler {
         );
 
         // Remove workflow tracking
-        state.workflowSymbols.delete(workflowId);
+        state.workflowStreams.delete(workflowId);
       }
 
       if (symbols.length > 0) {
@@ -876,7 +876,7 @@ export class MarketControlHandler {
         connectedUserId: userId,
         credentialId: credentialId || "default",
         streams: new Set(), // Native stream names as single source of truth
-        workflowSymbols: new Map(),
+        workflowStreams: new Map(),
       });
 
       console.log(
@@ -906,7 +906,7 @@ export class MarketControlHandler {
       credentialId: state.credentialId,
       // Store native stream names directly
       streams: Array.from(state.streams),
-      workflowSymbols: Array.from(state.workflowSymbols.entries()).map(
+      workflowStreams: Array.from(state.workflowStreams.entries()).map(
         ([wfId, stream]) => ({
           workflowId: wfId,
           streams: Array.from(stream),
@@ -951,10 +951,12 @@ export class MarketControlHandler {
         if (stateJson) {
           try {
             const stateData = JSON.parse(stateJson);
+            const persistedWorkflowStreams = stateData.workflowStreams || [];
+
             console.log(`📦 [MarketControl] Found saved state for ${source}:`, {
               userId: stateData.userId,
               streamCount: stateData.streams?.length || 0,
-              workflowCount: stateData.workflowSymbols?.length || 0,
+              workflowCount: persistedWorkflowStreams.length || 0,
             });
 
             // Reconnect gateway
@@ -979,50 +981,19 @@ export class MarketControlHandler {
               );
             }
 
-            // Backward compatibility: migrate old symbolTypes format
-            if (!stateData.streams && stateData.symbolTypes) {
-              console.log(
-                `🔄 [MarketControl] Migrating old symbolTypes format for ${source}`,
-              );
-              // Convert old format to stream names
-              const migratedStreams: string[] = [];
-              stateData.symbolTypes.forEach((entry: any) => {
-                const types =
-                  entry.types && Array.isArray(entry.types)
-                    ? entry.types
-                    : ["trades"];
-                types.forEach((type: string) => {
-                  const streamNames = buildStreamNames(
-                    source,
-                    [entry.symbol],
-                    [type],
-                    entry.interval,
-                  );
-                  streamNames.forEach((name) => migratedStreams.push(name));
-                });
-              });
-
-              migratedStreams.forEach((s: string) => state.streams.add(s));
-              state.gateway.subscribeStreams(migratedStreams);
-
-              console.log(
-                `🔄 [MarketControl] Migrated ${migratedStreams.length} streams from old format`,
-              );
-            }
-
             // Restore workflow mappings
-            if (
-              stateData.workflowSymbols &&
-              Array.isArray(stateData.workflowSymbols)
-            ) {
-              stateData.workflowSymbols.forEach((wf: any) => {
-                const symbols = new Set<string>();
-                if (wf.symbols && Array.isArray(wf.symbols)) {
-                  wf.symbols.forEach((s: string) =>
-                    symbols.add(s.toUpperCase()),
-                  );
-                }
-                state.workflowSymbols.set(wf.workflowId, symbols);
+            if (Array.isArray(persistedWorkflowStreams)) {
+              persistedWorkflowStreams.forEach((wf: any) => {
+                const streams = new Set<string>();
+                const persistedStreams = Array.isArray(wf.streams)
+                  ? wf.streams
+                  : [];
+
+                persistedStreams.forEach((s: string) =>
+                  streams.add(String(s).toLowerCase()),
+                );
+
+                state.workflowStreams.set(wf.workflowId, streams);
               });
             }
 
@@ -1061,11 +1032,11 @@ export class MarketControlHandler {
         userId: state.connectedUserId,
         streamCount: state.streams.size,
         streams: Array.from(state.streams),
-        workflowCount: state.workflowSymbols.size,
-        workflows: Array.from(state.workflowSymbols.entries()).map(
-          ([wfId, symbols]) => ({
+        workflowCount: state.workflowStreams.size,
+        workflows: Array.from(state.workflowStreams.entries()).map(
+          ([wfId, streams]) => ({
             workflowId: wfId,
-            symbolCount: symbols.size,
+            streamCount: streams.size,
           }),
         ),
       };

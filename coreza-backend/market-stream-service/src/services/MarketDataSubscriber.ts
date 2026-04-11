@@ -36,8 +36,8 @@ export class MarketDataSubscriber {
   // workflowId → registration metadata
   private registrations = new Map<string, WorkflowRegistration>();
 
-  // symbol → Set<workflowId> for fast lookup
-  private symbolWorkflows = new Map<string, Set<string>>();
+  // stream → Set<workflowId> for fast lookup
+  private streamWorkflows = new Map<string, Set<string>>();
 
   private redisSub: Redis | null = null;
   private redisPub: Redis | null = null;
@@ -105,10 +105,10 @@ export class MarketDataSubscriber {
       // Store in memory
       this.registrations.set(workflowId, registration);
 
-      // Update symbol→workflow mapping
+      // Update stream→workflow mapping
       for (const stream of registration.streams) {
-        if (!this.symbolWorkflows.has(stream)) {
-          this.symbolWorkflows.set(stream, new Set());
+        if (!this.streamWorkflows.has(stream)) {
+          this.streamWorkflows.set(stream, new Set());
 
           // Subscribe to Redis channel for this symbol
           const channel = REDIS_CHANNELS.marketData(stream);
@@ -119,10 +119,10 @@ export class MarketDataSubscriber {
           );
           console.log(
             `🟢 [DEBUG-2] Current subscribed channels:`,
-            this.symbolWorkflows.keys(),
+            this.streamWorkflows.keys(),
           );
         }
-        this.symbolWorkflows.get(stream)!.add(workflowId);
+        this.streamWorkflows.get(stream)!.add(workflowId);
       }
 
       // Persist to Redis
@@ -162,9 +162,9 @@ export class MarketDataSubscriber {
         return;
       }
 
-      // Remove from symbol→workflow mapping
+      // Remove from stream→workflow mapping
       for (const stream of registration.streams) {
-        const workflows = this.symbolWorkflows.get(stream);
+        const workflows = this.streamWorkflows.get(stream);
         if (workflows) {
           workflows.delete(workflowId);
 
@@ -173,7 +173,7 @@ export class MarketDataSubscriber {
             const channel = REDIS_CHANNELS.marketData(stream);
             const { sub } = this.ensureRedisConnections();
             await sub.unsubscribe(channel);
-            this.symbolWorkflows.delete(stream);
+            this.streamWorkflows.delete(stream);
             console.log(
               `📊 [MarketDataSubscriber] Unsubscribed from Redis channel: ${channel}`,
             );
@@ -297,18 +297,18 @@ export class MarketDataSubscriber {
           ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
           : `${event.symbol.toLowerCase()}@${event.type}`;
 
-        // Find workflows registered for this symbol
-        const workflows = this.symbolWorkflows.get(stream);
+        // Find workflows registered for this stream
+        const workflows = this.streamWorkflows.get(stream);
 
         // Handle wildcard registrations (*) — used by alpaca_trading (order_update covers all symbols)
-        const wildcardWorkflows = this.symbolWorkflows.get("*");
+        const wildcardWorkflows = this.streamWorkflows.get("*");
 
         // Also check for fixed trading stream names (companion gateways)
         const tradingStreamWorkflows =
           event.type === "order_update"
             ? new Set([
-                ...(this.symbolWorkflows.get("trade_updates") || []),
-                ...(this.symbolWorkflows.get("user_data_stream") || []),
+                ...(this.streamWorkflows.get("trade_updates") || []),
+                ...(this.streamWorkflows.get("user_data_stream") || []),
               ])
             : undefined;
 
@@ -674,10 +674,10 @@ export class MarketDataSubscriber {
   }
 
   /**
-   * Add new symbols to an existing workflow registration
-   * Used when new symbols are subscribed after a streaming workflow is already active
+   * Add new streams to an existing workflow registration
+   * Used when new streams are subscribed after a streaming workflow is already active
    */
-  async addSymbolsToRegistration(
+  async addStreamsToRegistration(
     workflowId: string,
     newStreams: string[],
   ): Promise<void> {
@@ -691,7 +691,7 @@ export class MarketDataSubscriber {
     }
 
     console.log(
-      `➕ [MarketDataSubscriber] Adding symbols to workflow ${workflowId}:`,
+      `➕ [MarketDataSubscriber] Adding streams to workflow ${workflowId}:`,
       newStreams,
     );
 
@@ -701,14 +701,14 @@ export class MarketDataSubscriber {
         continue;
       }
 
-      // Add to registration's symbol set
+      // Add to registration's stream set
       registration.streams.add(stream);
 
-      // Update symbol→workflow mapping
-      if (!this.symbolWorkflows.has(stream)) {
-        this.symbolWorkflows.set(stream, new Set());
+      // Update stream→workflow mapping
+      if (!this.streamWorkflows.has(stream)) {
+        this.streamWorkflows.set(stream, new Set());
 
-        // Subscribe to Redis channel for this symbol
+        // Subscribe to Redis channel for this stream
         const channel = REDIS_CHANNELS.marketData(stream);
         const { sub } = this.ensureRedisConnections();
         await sub.subscribe(channel);
@@ -716,14 +716,14 @@ export class MarketDataSubscriber {
           `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`,
         );
       }
-      this.symbolWorkflows.get(stream)!.add(workflowId);
+      this.streamWorkflows.get(stream)!.add(workflowId);
     }
 
     // Persist updated registration to Redis
     await this.persistRegistration(registration);
 
     console.log(
-      `✅ [MarketDataSubscriber] Added ${newStreams.length} symbols to workflow ${workflowId}`,
+      `✅ [MarketDataSubscriber] Added ${newStreams.length} streams to workflow ${workflowId}`,
     );
   }
 
@@ -771,7 +771,7 @@ export class MarketDataSubscriber {
   } {
     return {
       totalWorkflows: this.registrations.size,
-      totalStreams: this.symbolWorkflows.size,
+      totalStreams: this.streamWorkflows.size,
       registrations: Array.from(this.registrations.values()).map((reg) => ({
         workflowId: reg.workflowId,
         streams: Array.from(reg.streams),
@@ -799,7 +799,7 @@ export class MarketDataSubscriber {
 
     // Clear memory
     this.registrations.clear();
-    this.symbolWorkflows.clear();
+    this.streamWorkflows.clear();
     this.deliveryQueues.clear();
 
     this.isInitialized = false;

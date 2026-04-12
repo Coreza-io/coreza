@@ -34,6 +34,7 @@ interface StreamBadgeWithTooltipProps {
   scope?: "global" | "workflow";
   workflowName?: string;
   workflowId?: string;
+  environment?: string;
   onUnsubscribe?: () => void;
   isUnsubscribing?: boolean;
   className?: string;
@@ -44,12 +45,13 @@ export function StreamBadgeWithTooltip({
   source,
   scope = "global",
   workflowName,
+  environment: environmentOverride,
   onUnsubscribe,
   isUnsubscribing,
   className,
 }: StreamBadgeWithTooltipProps) {
   const parsed = parseStreamName(source, stream);
-  const environment = getEnvironment(source);
+  const environment = getEnvironment(source, environmentOverride);
   const eventLabel = getEventTypeLabel(parsed.eventType);
 
   return (
@@ -91,11 +93,13 @@ export function StreamBadgeWithTooltip({
           </div>
 
           <div className="grid gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <Target className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-muted-foreground">Symbol:</span>
-              <span className="font-medium">{parsed.symbol}</span>
-            </div>
+            {parsed.symbol && (
+              <div className="flex items-center gap-2">
+                <Target className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">Symbol:</span>
+                <span className="font-medium">{parsed.symbol}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <Activity className="h-3.5 w-3.5 text-muted-foreground" />

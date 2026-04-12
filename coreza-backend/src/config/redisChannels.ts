@@ -71,32 +71,22 @@ export const REDIS_CHANNELS = {
   // Global subscription streams (user-level, shared across all workflows)
   // Stores native stream names: btcusdt@kline_1m, bars.AAPL
   // Used by: SubscriptionService, MarketControlHandler
-  globalSubscriptionStreams: (userId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:global:${source}:streams`,
+  globalSubscriptionStreams: (
+    userId: string,
+    source: string,
+    environment: string,
+  ) => `md:user:${userId}:subscription:scope:global:${source}:${environment}:streams`,
 
   // Workflow-scoped subscription streams (isolated to specific workflow)
   // Stores native stream names: btcusdt@kline_1m, bars.AAPL
   // Used by: SubscriptionService, MarketControlHandler
-  workflowSubscriptionStreams: (userId: string, workflowId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`,
-
-  // Subscription environment metadata (testnet/live) for global scope
-  globalSubscriptionEnvironment: (userId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:global:${source}:environment`,
-
-  // Subscription environment metadata (testnet/live) for workflow scope
-  workflowSubscriptionEnvironment: (
+  workflowSubscriptionStreams: (
     userId: string,
     workflowId: string,
     source: string,
-  ) => `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:environment`,
-
-  // LEGACY: Symbol-only keys (for backward compatibility during migration)
-  // TODO: Remove after migration complete
-  globalSubscription: (userId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:global:${source}:symbols`,
-  workflowSubscription: (userId: string, workflowId: string, source: string) =>
-    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:symbols`,
+    environment: string,
+  ) =>
+    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:${environment}:streams`,
 
   // ============================================
   // GATEWAY STATE KEYS (MarketDataGateway)

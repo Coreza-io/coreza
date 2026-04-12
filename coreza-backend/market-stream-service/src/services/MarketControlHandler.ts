@@ -578,6 +578,11 @@ export class MarketControlHandler {
     } = msg;
 
     try {
+      if (!environment) {
+        throw new Error(
+          `[MarketControl] Missing required environment for subscribe (${source})`,
+        );
+      }
       // Acquire mutex to prevent concurrent gateway connections
       await this.gatewayMutex.runExclusive(async () => {
         const stateKey = this.getStateKey(userId, source);
@@ -647,8 +652,13 @@ export class MarketControlHandler {
                   userId,
                   targetWorkflowId,
                   source,
+                  environment,
                 )
-              : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+              : REDIS_CHANNELS.globalSubscriptionStreams(
+                  userId,
+                  source,
+                  environment,
+                );
 
           await this.redisPub.sadd(streamsKey, ...newStreamNames);
           console.log(
@@ -716,11 +726,17 @@ export class MarketControlHandler {
       eventTypes,
       interval,
       depthLevels,
+      environment,
       scope,
       targetWorkflowId,
     } = msg;
 
     try {
+      if (!environment) {
+        throw new Error(
+          `[MarketControl] Missing required environment for unsubscribe (${source})`,
+        );
+      }
       const stateKey = this.getStateKey(userId, source);
       const state = this.sourceStates.get(stateKey);
       if (!state) {
@@ -760,17 +776,21 @@ export class MarketControlHandler {
         // Unsubscribe gateway with stream names directly
         state.gateway.unsubscribeStreams(streamNamesToRemove);
 
-        // Remove from Redis
-        const streamsKey =
-          scope === "workflow" && targetWorkflowId
-            ? REDIS_CHANNELS.workflowSubscriptionStreams(
-                userId,
-                targetWorkflowId,
-                source,
-              )
-            : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
-
         if (streamNamesToRemove.length > 0) {
+          const streamsKey =
+            scope === "workflow" && targetWorkflowId
+              ? REDIS_CHANNELS.workflowSubscriptionStreams(
+                  userId,
+                  targetWorkflowId,
+                  source,
+                  environment,
+                )
+              : REDIS_CHANNELS.globalSubscriptionStreams(
+                  userId,
+                  source,
+                  environment,
+                );
+
           await this.redisPub.srem(streamsKey, ...streamNamesToRemove);
           console.log(
             `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
@@ -778,18 +798,9 @@ export class MarketControlHandler {
 
           const remainingStreamsCount = await this.redisPub.scard(streamsKey);
           if (remainingStreamsCount === 0) {
-            const environmentKey =
-              scope === "workflow" && targetWorkflowId
-                ? REDIS_CHANNELS.workflowSubscriptionEnvironment(
-                    userId,
-                    targetWorkflowId,
-                    source,
-                  )
-                : REDIS_CHANNELS.globalSubscriptionEnvironment(userId, source);
-
-            await this.redisPub.del(environmentKey);
+            await this.redisPub.del(streamsKey);
             console.log(
-              `🗑️ [MarketControl] Removed empty subscription environment key ${environmentKey}`,
+              `🗑️ [MarketControl] Removed empty streams key ${streamsKey}`,
             );
           }
 

@@ -93,14 +93,14 @@ interface WorkflowScopedSubscription {
   workflowName?: string;
   source: string;
   streams: string[];
-  environment?: string;
+  environment: string;
 }
 
 interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
   userSubscriptions: Record<string, string[]>; // source → streams (global scope)
-  userSubscriptionEnvironments?: Record<string, string>;
+  userSubscriptionEnvironments: Record<string, string>;
   workflowScopedSubscriptions: WorkflowScopedSubscription[]; // workflow-scoped subscriptions
   stats: SubscriptionStats;
   streamSourceMap: Record<string, string[]>;
@@ -807,9 +807,7 @@ const MarketSubscriptions = () => {
                                 stream={stream}
                                 source={source}
                                 scope="global"
-                                environment={
-                                  data?.userSubscriptionEnvironments?.[source]
-                                }
+                                environment={data.userSubscriptionEnvironments[source]}
                                 onUnsubscribe={() =>
                                   confirmUnsubscribestream(stream, source)
                                 }
@@ -926,7 +924,7 @@ const MarketSubscriptions = () => {
                     );
                   const environment =
                     (primarySource &&
-                      data?.userSubscriptionEnvironments?.[primarySource]) ||
+                      data?.userSubscriptionEnvironments[primarySource]) ||
                     workflowScopedMatch?.environment;
 
                   return (

@@ -490,6 +490,7 @@ router.post("/:source/register", async (req, res) => {
       console.log(
         `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
       );
+      const requiredEnvironment = environment as string;
 
       // Subscribe to trading source for order updates
       if (hasOrderUpdate) {
@@ -502,7 +503,7 @@ router.post("/:source/register", async (req, res) => {
           credentialId: credential_id || "",
           symbols: ["*"],
           streamTypes: tradingStreamTypes,
-          environment,
+          environment: requiredEnvironment,
           assetType: asset_type,
           scope,
           targetWorkflowId: workflowId,
@@ -525,6 +526,7 @@ router.post("/:source/register", async (req, res) => {
           {
             userId,
             source: tradingSourceId,
+            environment: requiredEnvironment,
             scope,
             workflowId,
           },
@@ -548,7 +550,7 @@ router.post("/:source/register", async (req, res) => {
           streamTypes:
             marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
           feed,
-          environment,
+          environment: requiredEnvironment,
           assetType: asset_type,
           interval,
           depth_levels: depth_levels,
@@ -572,6 +574,7 @@ router.post("/:source/register", async (req, res) => {
         const marketReady = await SubscriptionService.waitForSubscriptionReady({
           userId,
           source: sourceId,
+          environment: requiredEnvironment,
           scope,
           workflowId,
         });

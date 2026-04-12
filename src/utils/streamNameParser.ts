@@ -25,10 +25,20 @@ export interface ParsedStream {
  * Binance: btcusdt@kline_1m -> { symbol: "BTCUSDT", eventType: "kline", interval: "1m" }
  * Alpaca: bars.AAPL -> { symbol: "AAPL", eventType: "bars" }
  */
+export const KNOWN_TRADING_STREAMS = new Set([
+  "trade_updates",
+  "user_data_stream",
+]);
+
 export function parseStreamName(
   source: string,
   streamName: string,
 ): ParsedStream {
+  // Account-wide trading streams (no symbol)
+  if (KNOWN_TRADING_STREAMS.has(streamName.toLowerCase())) {
+    return { symbol: "", eventType: "order_update" };
+  }
+
   if (source.startsWith("binance")) {
     const atIndex = streamName.indexOf("@");
     if (atIndex === -1) {
@@ -84,6 +94,7 @@ export function getEventTypeLabel(eventType: string): string {
     bars: "Bars (OHLCV)",
     trades: "Trades",
     quotes: "Quotes",
+    order_update: "Order Updates (Fills)",
   };
   return labels[eventType] || eventType;
 }
@@ -91,7 +102,8 @@ export function getEventTypeLabel(eventType: string): string {
 /**
  * Extract environment from source
  */
-export function getEnvironment(source: string): string {
+export function getEnvironment(source: string, override?: string): string {
+  if (override) return override;
   if (source.includes("testnet")) return "Testnet";
   if (source.includes("paper")) return "Paper Trading";
   return "Live";

@@ -138,7 +138,9 @@ export function buildBinanceAuthMessage(creds: any, source?: string): any {
   }
 
   if (!creds.secret_key) {
-    throw new Error("Binance secret_key is missing from credentials — cannot sign auth message");
+    throw new Error(
+      "Binance secret_key is missing from credentials — cannot sign auth message",
+    );
   }
 
   const timestamp = getBinanceTimestamp(
@@ -214,7 +216,9 @@ export function shouldPublishBinanceMessage(
 
   if (source === "binance_trading") {
     // Spot: executionReport, Futures: ORDER_TRADE_UPDATE
-    return eventMsg.e === "executionReport" || eventMsg.e === "ORDER_TRADE_UPDATE";
+    return (
+      eventMsg.e === "executionReport" || eventMsg.e === "ORDER_TRADE_UPDATE"
+    );
   }
   return [
     "trade",
@@ -297,39 +301,66 @@ const BINANCE_EXECUTION_TYPE_MAP: Record<string, string> = {
 };
 
 // ============ NORMALIZATION (source-aware) ============
-export function normalizeBinanceMessage(
-  msg: any,
-  source?: string,
-): CorezaMarketEvent | null {
+export function normalizeBinanceMessage(msg: any, source?: string) {
   const eventMsg = unwrapBinanceUserDataEnvelope(msg);
 
   // TRADING source - order updates
   if (source === "binance_trading") {
     // Spot: executionReport
     if (eventMsg.e === "executionReport") {
+      const cumulativeFilledQty = parseFloat(eventMsg.z) || 0;
+      const cumulativeQuoteQty = parseFloat(eventMsg.Z) || 0;
+      const lastFilledQty = parseFloat(eventMsg.l) || 0;
+      const lastFillPrice = parseFloat(eventMsg.L) || 0;
+      const requestedQty = parseFloat(eventMsg.q) || 0;
+      const feeAmount = parseFloat(eventMsg.n) || 0;
+      const lastQuoteQty = parseFloat(eventMsg.Y) || 0;
       return {
-        source: "binance" as any,
+        source: "binance" as const,
         symbol: eventMsg.s?.toUpperCase() || "*",
         type: "order_update" as const,
-        t: eventMsg.E || Date.now(),
+        t: eventMsg.T || eventMsg.E || Date.now(),
+
         orderEvent:
           BINANCE_EXECUTION_TYPE_MAP[eventMsg.x] || eventMsg.x?.toLowerCase(),
-        orderId: String(eventMsg.i),
-        clientOrderId: eventMsg.c || undefined,
-        side: eventMsg.S?.toLowerCase(),
-        filledQty: parseFloat(eventMsg.z) || 0,
-        filledAvgPrice:
-          parseFloat(eventMsg.z) > 0
-            ? parseFloat(eventMsg.Z) / parseFloat(eventMsg.z)
-            : 0,
         orderStatus:
           BINANCE_ORDER_STATUS_MAP[eventMsg.X] || eventMsg.X?.toLowerCase(),
-        orderSymbol: eventMsg.s,
-        requestedQty: parseFloat(eventMsg.q) || 0,
-        executionId: eventMsg.t ? String(eventMsg.t) : undefined,
+
+        orderId: eventMsg.i != null ? String(eventMsg.i) : undefined,
+        clientOrderId: eventMsg.c || undefined,
+        executionId: eventMsg.I != null ? String(eventMsg.I) : undefined,
+        tradeId: eventMsg.t != null ? String(eventMsg.t) : undefined,
+
+        side: eventMsg.S?.toLowerCase(),
+        orderSymbol: eventMsg.s?.toUpperCase() || "*",
         orderType: eventMsg.o?.toLowerCase(),
-        feeAmount: parseFloat(eventMsg.n) || 0,
+
+        requestedQty,
+        lastFilledQty,
+        filledQty: cumulativeFilledQty,
+        cumulativeFilledQty,
+        lastFillPrice,
+        filledAvgPrice:
+          cumulativeFilledQty > 0
+            ? cumulativeQuoteQty / cumulativeFilledQty
+            : 0,
+        lastQuoteQty,
+        cumulativeQuoteQty,
+
+        feeAmount,
         feeAsset: eventMsg.N || undefined,
+
+        eventTime: eventMsg.E || undefined,
+        transactionTime: eventMsg.T || undefined,
+        orderCreateTime: eventMsg.O || undefined,
+        workingTime: eventMsg.W || undefined,
+
+        rejectReason:
+          eventMsg.r && eventMsg.r !== "NONE" ? eventMsg.r : undefined,
+        isMaker: typeof eventMsg.m === "boolean" ? eventMsg.m : undefined,
+        isOnBook: typeof eventMsg.w === "boolean" ? eventMsg.w : undefined,
+        stpMode: eventMsg.V || undefined,
+
         rawOrderData: eventMsg,
       };
     }

@@ -111,7 +111,7 @@ export class MarketDataSubscriber {
           this.streamWorkflows.set(stream, new Set());
 
           // Subscribe to Redis channel for this stream
-          const channel = REDIS_CHANNELS.marketData(stream);
+          const channel = REDIS_CHANNELS.streamData(stream);
           const { sub } = this.ensureRedisConnections();
           await sub.subscribe(channel);
           console.log(
@@ -170,7 +170,7 @@ export class MarketDataSubscriber {
 
           // If no more workflows need this stream, unsubscribe from Redis channel
           if (workflows.size === 0) {
-            const channel = REDIS_CHANNELS.marketData(stream);
+            const channel = REDIS_CHANNELS.streamData(stream);
             const { sub } = this.ensureRedisConnections();
             await sub.unsubscribe(channel);
             this.streamWorkflows.delete(stream);
@@ -308,7 +308,7 @@ export class MarketDataSubscriber {
           event.type === "order_update"
             ? new Set([
                 ...(this.streamWorkflows.get("trade_updates") || []),
-                ...(this.streamWorkflows.get("user_data_stream") || []),
+                //...(this.streamWorkflows.get("user_data_stream") || []),
               ])
             : undefined;
 
@@ -693,7 +693,7 @@ export class MarketDataSubscriber {
         this.streamWorkflows.set(stream, new Set());
 
         // Subscribe to Redis channel for this stream
-        const channel = REDIS_CHANNELS.marketData(stream);
+        const channel = REDIS_CHANNELS.streamData(stream);
         const { sub } = this.ensureRedisConnections();
         await sub.subscribe(channel);
         console.log(
@@ -746,7 +746,7 @@ export class MarketDataSubscriber {
         workflows.delete(workflowId);
 
         if (workflows.size === 0) {
-          const channel = REDIS_CHANNELS.marketData(stream);
+          const channel = REDIS_CHANNELS.streamData(stream);
           const { sub } = this.ensureRedisConnections();
           await sub.unsubscribe(channel);
           this.streamWorkflows.delete(stream);

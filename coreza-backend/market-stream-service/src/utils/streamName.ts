@@ -37,7 +37,7 @@ export function buildStreamName(
 
   // Binance trading: fixed stream name (User Data Stream covers all account events)
   if (source === "binance_trading") {
-    return "user_data_stream";
+    return "trade_updates";
   }
 
   // Universal format for all brokers

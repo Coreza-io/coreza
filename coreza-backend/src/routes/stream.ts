@@ -447,7 +447,11 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Parse symbols (crypto-aware)
-    const cryptoSymbols = buildCryptoSymbols(data_type, crypto_base, crypto_quote);
+    const cryptoSymbols = buildCryptoSymbols(
+      data_type,
+      crypto_base,
+      crypto_quote,
+    );
     const parsedSymbols: string[] =
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
@@ -460,8 +464,19 @@ router.post("/:source/register", async (req, res) => {
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
     const hasOrderUpdate = parsedStreamTypes.includes("order_update");
-    const marketStreamTypes = parsedStreamTypes.filter(
-      (t: string) => t !== "order_update",
+    const { marketStreamTypes, tradingStreamTypes } = parsedStreamTypes.reduce(
+      (acc, t: string) => {
+        if (t === "order_update") {
+          acc.tradingStreamTypes.push(t);
+        } else {
+          acc.marketStreamTypes.push(t);
+        }
+        return acc;
+      },
+      {
+        marketStreamTypes: [] as string[],
+        tradingStreamTypes: [] as string[],
+      },
     );
 
     // If subscribe mode, subscribe first and WAIT for readiness
@@ -478,16 +493,15 @@ router.post("/:source/register", async (req, res) => {
 
       // Subscribe to trading source for order updates
       if (hasOrderUpdate) {
-        const tradingSource =
-          source === "binance" ? "binance_trading" : "alpaca_trading";
+        const tradingSourceId = `${source}_trading`;
         const tradingResult = await SubscriptionService.subscribe({
-          source: tradingSource as any,
+          source: tradingSourceId,
           userId,
           workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
           symbols: ["*"],
-          streamTypes: ["order_update"],
+          streamTypes: tradingStreamTypes,
           environment,
           assetType: asset_type,
           scope,
@@ -507,15 +521,17 @@ router.post("/:source/register", async (req, res) => {
         }
 
         // Wait for trading subscription readiness
-        const tradingReady = await SubscriptionService.waitForSubscriptionReady({
-          userId,
-          source: tradingSource,
-          scope,
-          workflowId,
-        });
+        const tradingReady = await SubscriptionService.waitForSubscriptionReady(
+          {
+            userId,
+            source: tradingSourceId,
+            scope,
+            workflowId,
+          },
+        );
         if (!tradingReady) {
           console.warn(
-            `⚠️ [ExecuteStreamNode] Trading subscription readiness timed out for ${tradingSource}; continuing in market-only mode`,
+            `⚠️ [ExecuteStreamNode] Trading subscription readiness timed out for ${tradingSourceId}; continuing in market-only mode`,
           );
         }
       }
@@ -615,7 +631,9 @@ router.post("/:source/register", async (req, res) => {
       onlyClosedBars,
     });
 
-    console.log(`📡 [ExecuteStreamNode] Published register_workflow (manual test, no WorkflowRunner)`);
+    console.log(
+      `📡 [ExecuteStreamNode] Published register_workflow (manual test, no WorkflowRunner)`,
+    );
 
     // Return success response
     const response: StreamExecutionResponse = {

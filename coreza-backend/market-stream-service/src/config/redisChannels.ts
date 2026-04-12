@@ -17,7 +17,7 @@ export const REDIS_CHANNELS = {
   // ============================================
 
   // Symbol-level market data (fanout) - published by MarketDataGateway
-  marketData: (stream: string) => `md:symbol:${stream}`,
+  streamData: (stream: string) => `md:symbol:${stream}`,
 
   // Control channels for SUBSCRIPTION management (broker connections)
   controlSubscribe: "md:control:subscribe",

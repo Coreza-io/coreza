@@ -303,19 +303,25 @@ export class SubscriptionService {
   static async waitForSubscriptionReady(params: {
     userId: string;
     source: string;
+    environment: string;
     scope: string;
     workflowId?: string;
     timeoutMs?: number;
   }): Promise<boolean> {
-    const { userId, source, scope, workflowId } = params;
+    const { userId, source, environment, scope, workflowId } = params;
     const timeoutMs = params.timeoutMs ?? SUBSCRIPTION_READY_TIMEOUT_MS;
     const redis = getRedisCache();
 
     // Determine which Redis key to poll
     const streamsKey =
       scope === "workflow" && workflowId
-        ? REDIS_CHANNELS.workflowSubscriptionStreams(userId, workflowId, source)
-        : REDIS_CHANNELS.globalSubscriptionStreams(userId, source);
+        ? REDIS_CHANNELS.workflowSubscriptionStreams(
+            userId,
+            workflowId,
+            source,
+            environment,
+          )
+        : REDIS_CHANNELS.globalSubscriptionStreams(userId, source, environment);
 
     const startTime = Date.now();
     let attempt = 0;

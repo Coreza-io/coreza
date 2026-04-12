@@ -60,12 +60,14 @@ export interface WorkflowScopedSubscription {
   source: string;
   symbols: string[];
   streams?: string[]; // Native stream names (e.g., btcusdt@kline_1m)
+  environment: string;
 }
 
 export interface SubscriptionStatus {
   sources: GatewayState[];
   workflows: WorkflowRegistration[];
   userSubscriptions: Record<string, string[]>; // source -> stream names (new)
+  userSubscriptionEnvironments: Record<string, string>;
   workflowScopedSubscriptions: WorkflowScopedSubscription[];
   stats: {
     totalSources: number;
@@ -221,9 +223,11 @@ export class StatusService {
    */
   static async getGlobalSubscriptions(userId: string): Promise<{
     streams: Record<string, string[]>;
+    environments: Record<string, string>;
   }> {
     const redis = getRedisCache();
     const streams: Record<string, string[]> = {};
+    const environments: Record<string, string> = {};
 
     // Try new :streams key pattern first
     const streamKeys = await redis.keys(
@@ -231,19 +235,22 @@ export class StatusService {
     );
 
     for (const key of streamKeys) {
-      // Pattern: md:user:{userId}:subscription:scope:global:{source}:streams
+      // Pattern: md:user:{userId}:subscription:scope:global:{source}:{environment}:streams
       const match = key.match(
-        /md:user:[^:]+:subscription:scope:global:([^:]+):streams$/,
+        /md:user:[^:]+:subscription:scope:global:([^:]+):([^:]+):streams$/,
       );
       if (match) {
+        const source = match[1];
+        const environment = match[2];
         const streamNames = await redis.smembers(key);
         if (streamNames.length > 0) {
-          streams[match[1]] = streamNames;
+          streams[source] = streamNames;
+          environments[source] = environment;
         }
       }
     }
 
-    return { streams };
+    return { streams, environments };
   }
 
   /**
@@ -262,12 +269,12 @@ export class StatusService {
     );
 
     for (const key of streamKeys) {
-      // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:streams
+      // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:{environment}:streams
       const match = key.match(
-        /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):streams$/,
+        /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):([^:]+):streams$/,
       );
       if (match) {
-        const [, workflowId, source] = match;
+        const [, workflowId, source, environment] = match;
         const streamNames = await redis.smembers(key);
         if (streamNames.length > 0) {
           const mapKey = `${workflowId}:${source}`;
@@ -282,6 +289,7 @@ export class StatusService {
             source,
             symbols: Array.from(extractedSymbols),
             streams: streamNames,
+            environment,
           });
           workflowIds.add(workflowId);
         }
@@ -322,7 +330,10 @@ export class StatusService {
         this.getWorkflowScopedSubscriptions(userId),
       ]);
 
-    const { streams: userSubscriptions } = globalSubsResult;
+    const {
+      streams: userSubscriptions,
+      environments: userSubscriptionEnvironments,
+    } = globalSubsResult;
 
     // Count total streams
     let totalStreams = 0;
@@ -339,6 +350,7 @@ export class StatusService {
       sources,
       workflows,
       userSubscriptions,
+      userSubscriptionEnvironments,
       workflowScopedSubscriptions,
       stats: {
         totalSources: sources.filter((s) => s.connected).length,

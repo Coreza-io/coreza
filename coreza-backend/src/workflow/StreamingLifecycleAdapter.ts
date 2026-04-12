@@ -133,6 +133,7 @@ export class StreamingLifecycleAdapter {
     const marketStreamTypes = streamTypes.filter(
       (streamType) => streamType !== "order_update",
     );
+    const environment = nodeValues.environment as string;
     const subscriptionScope: "workflow" | "global" =
       nodeValues.scope === "global" ? "global" : "workflow";
 
@@ -152,7 +153,7 @@ export class StreamingLifecycleAdapter {
         credentialId: nodeValues.credential_id || "",
         symbols: ["*"],
         streamTypes: ["order_update"],
-        environment: nodeValues.environment,
+        environment,
         assetType: nodeValues.asset_type,
         scope: subscriptionScope,
         targetWorkflowId: workflowId,
@@ -162,6 +163,7 @@ export class StreamingLifecycleAdapter {
       const tradingReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
         source: tradingSource,
+        environment,
         scope: subscriptionScope,
         workflowId,
       });
@@ -192,7 +194,7 @@ export class StreamingLifecycleAdapter {
         streamTypes:
           marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
         feed: nodeValues.feed,
-        environment: nodeValues.environment,
+        environment,
         assetType: nodeValues.asset_type,
         interval: nodeValues.interval,
         depth_levels: nodeValues.depth_levels,
@@ -206,6 +208,7 @@ export class StreamingLifecycleAdapter {
       const marketReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
         source: sourceId,
+        environment,
         scope: subscriptionScope,
         workflowId,
         timeoutMs: 15000,
@@ -225,6 +228,7 @@ export class StreamingLifecycleAdapter {
           await SubscriptionService.waitForSubscriptionReady({
             userId,
             source: sourceId,
+            environment,
             scope: subscriptionScope,
             workflowId,
             timeoutMs: 10000,

@@ -58,7 +58,7 @@ export interface SubscriptionResult {
 
 /** Default timeout for waiting on subscription readiness (ms) */
 const SUBSCRIPTION_READY_TIMEOUT_MS = parseInt(
-  process.env.SUBSCRIPTION_READY_TIMEOUT_MS || "15000",
+  process.env.SUBSCRIPTION_READY_TIMEOUT_MS || "60000",
   10,
 );
 /** Polling interval when checking subscription readiness (ms) */
@@ -329,7 +329,9 @@ export class SubscriptionService {
         );
         return true;
       }
-      await new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_READY_POLL_MS));
+      await new Promise((resolve) =>
+        setTimeout(resolve, SUBSCRIPTION_READY_POLL_MS),
+      );
     }
 
     console.warn(

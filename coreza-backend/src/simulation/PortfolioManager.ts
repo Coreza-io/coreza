@@ -336,7 +336,9 @@ export class PortfolioManager {
       updatedAt: now,
     };
 
-    this.orders.set(input.brokerOrderId, order);
+    const normalizedBrokerId = String(input.brokerOrderId);
+
+    this.orders.set(normalizedBrokerId, order);
     if (input.clientOrderId) {
       this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
     }
@@ -363,7 +365,8 @@ export class PortfolioManager {
   }): void {
     const now = new Date().toISOString();
 
-    const order = this.orders.get(input.brokerOrderId);
+    const normalizedBrokerId = String(input.brokerOrderId);
+    const order = this.orders.get(normalizedBrokerId);
     if (!order) {
       throw new Error(
         `[PortfolioManager] applyOrderUpdate: order not found for brokerOrderId=${input.brokerOrderId}`,

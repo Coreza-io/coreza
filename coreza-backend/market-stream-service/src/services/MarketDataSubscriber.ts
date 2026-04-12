@@ -728,6 +728,63 @@ export class MarketDataSubscriber {
   }
 
   /**
+   * Remove specific streams from an existing workflow registration.
+   * If no streams remain after removal, the workflow registration is removed entirely.
+   */
+  async removeStreamsFromRegistration(
+    userId: string,
+    workflowId: string,
+    streamsToRemove: string[],
+  ): Promise<void> {
+    const registration = this.registrations.get(workflowId);
+
+    if (!registration) {
+      console.warn(
+        `⚠️ [MarketDataSubscriber] No registration found for workflow ${workflowId}`,
+      );
+      return;
+    }
+
+    console.log(
+      `➖ [MarketDataSubscriber] Removing streams from workflow ${workflowId}:`,
+      streamsToRemove,
+    );
+
+    for (const stream of streamsToRemove) {
+      if (!registration.streams.has(stream)) {
+        continue;
+      }
+
+      registration.streams.delete(stream);
+
+      const workflows = this.streamWorkflows.get(stream);
+      if (workflows) {
+        workflows.delete(workflowId);
+
+        if (workflows.size === 0) {
+          const channel = REDIS_CHANNELS.marketData(stream);
+          const { sub } = this.ensureRedisConnections();
+          await sub.unsubscribe(channel);
+          this.streamWorkflows.delete(stream);
+          console.log(
+            `📊 [MarketDataSubscriber] Unsubscribed from Redis channel: ${channel}`,
+          );
+        }
+      }
+    }
+
+    if (registration.streams.size === 0) {
+      await this.unregisterWorkflow(userId, workflowId);
+      return;
+    }
+
+    await this.persistRegistration(registration);
+    console.log(
+      `✅ [MarketDataSubscriber] Removed ${streamsToRemove.length} stream(s) from workflow ${workflowId}`,
+    );
+  }
+
+  /**
    * Persist workflow registration to Redis (with circuit breaker)
    */
   private async persistRegistration(
@@ -778,6 +835,16 @@ export class MarketDataSubscriber {
         source: reg.source,
       })),
     };
+  }
+
+  /**
+   * Get workflow registration IDs currently held in memory for a given user.
+   * Used as a fallback path when Redis tracking keys are missing or stale.
+   */
+  getRegisteredWorkflowIdsForUser(userId: string): string[] {
+    return Array.from(this.registrations.values())
+      .filter((registration) => registration.userId === userId)
+      .map((registration) => registration.workflowId);
   }
 
   /**

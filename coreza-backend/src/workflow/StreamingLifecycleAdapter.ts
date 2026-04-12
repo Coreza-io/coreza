@@ -10,6 +10,7 @@ import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
 import { buildCryptoSymbols } from "../utils/symbolHelpers";
+import logger from "../utils/logger";
 
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
@@ -156,12 +157,22 @@ export class StreamingLifecycleAdapter {
       });
 
       // Wait for trading subscription readiness
-      await SubscriptionService.waitForSubscriptionReady({
+      const tradingReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
         source: tradingSource,
         scope: nodeValues.scope || "workflow",
         workflowId,
       });
+      if (!tradingReady) {
+        logger.warn(
+          {
+            userId,
+            workflowId,
+            source: tradingSource,
+          },
+          "Trading subscription readiness timed out; continuing in market-only mode",
+        );
+      }
     }
 
     // 2. Subscribe to market/crypto streams
@@ -188,12 +199,17 @@ export class StreamingLifecycleAdapter {
       });
 
       // Wait for market subscription readiness
-      await SubscriptionService.waitForSubscriptionReady({
+      const marketReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
         source: sourceId,
         scope: nodeValues.scope || "workflow",
         workflowId,
       });
+      if (!marketReady) {
+        throw new Error(
+          `Market subscription readiness timed out for source ${sourceId}`,
+        );
+      }
     }
 
     // 3. NOW register the workflow (subscriptions are materialized)

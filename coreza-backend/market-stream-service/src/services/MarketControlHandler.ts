@@ -378,6 +378,17 @@ export class MarketControlHandler {
           newStreamNames,
         );
 
+        const fallbackWorkflowIds =
+          subscriber.getRegisteredWorkflowIdsForUser(userId);
+        if (!fallbackWorkflowIds.includes(targetWorkflowId)) {
+          console.warn(
+            `⚠️ [MarketControl] Target workflow ${targetWorkflowId} not found in memory; applying workflow-scope fallback for user ${userId}`,
+          );
+          for (const workflowId of fallbackWorkflowIds) {
+            await subscriber.addStreamsToRegistration(workflowId, newStreamNames);
+          }
+        }
+
         // Also update any test listeners for this workflow (handles race condition)
         const ListenerPattern = `md:user:${userId}:stream:${targetWorkflowId}:*`;
         try {
@@ -412,18 +423,27 @@ export class MarketControlHandler {
 
       // Global scope: update all active workflows for this user
       const activeWorkflowsKey = `md:user:${userId}:active_streaming_workflows`;
-      const activeWorkflowIds =
-        await this.redisPub.smembers(activeWorkflowsKey);
+      const activeWorkflowIds = new Set(
+        await this.redisPub.smembers(activeWorkflowsKey),
+      );
 
-      if (activeWorkflowIds.length === 0) {
+      // Fallback: include in-memory registrations so subscribe can patch workflows
+      // even if scope/targetWorkflowId metadata was missing in control message.
+      const inMemoryWorkflowIds =
+        subscriber.getRegisteredWorkflowIdsForUser(userId);
+      inMemoryWorkflowIds.forEach((workflowId) =>
+        activeWorkflowIds.add(workflowId),
+      );
+
+      if (activeWorkflowIds.size === 0) {
         console.log(
-          `ℹ️ [MarketControl] No active streaming workflows for user ${userId}`,
+          `ℹ️ [MarketControl] No active streaming workflows for user ${userId} (Redis SET and in-memory fallback empty)`,
         );
         return;
       }
 
       console.log(
-        `📡 [MarketControl] Updating ${activeWorkflowIds.length} active streaming workflows with new GLOBAL streams:`,
+        `📡 [MarketControl] Updating ${activeWorkflowIds.size} active streaming workflows with new GLOBAL streams:`,
         newStreamNames,
       );
 
@@ -435,7 +455,7 @@ export class MarketControlHandler {
           const filterConfig = filterJson ? JSON.parse(filterJson) : {};
 
           // Apply stream filter if specified
-          let streamsToAdd = newStreamNames;
+          const streamsToAdd = newStreamNames;
 
           // Add new streams to existing registration
           await subscriber.addStreamsToRegistration(workflowId, streamsToAdd);
@@ -684,17 +704,7 @@ export class MarketControlHandler {
         return;
       }
 
-      // Unregister workflow from MarketDataSubscriber
-      if (workflowId) {
-        const subscriber = MarketDataSubscriber.getInstance();
-        await subscriber.unregisterWorkflow(userId, workflowId);
-        console.log(
-          `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
-        );
-
-        // Remove workflow tracking
-        state.workflowStreams.delete(workflowId);
-      }
+      const subscriber = MarketDataSubscriber.getInstance();
 
       if (symbols.length > 0) {
         // Build stream names to remove
@@ -739,12 +749,36 @@ export class MarketControlHandler {
           console.log(
             `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
           );
+
+          if (workflowId) {
+            await subscriber.removeStreamsFromRegistration(
+              userId,
+              workflowId,
+              streamNamesToRemove,
+            );
+            console.log(
+              `✅ [MarketControl] Removed ${streamNamesToRemove.length} stream(s) from workflow ${workflowId} registration`,
+            );
+          }
         }
 
         await this.persistState(userId, source);
         console.log(
           `✅ [MarketControl] Unsubscribed from ${streamNamesToRemove.length} stream(s) on ${source}`,
         );
+      }
+
+      // If this unsubscribe was workflow-level without specific symbols,
+      // treat as full workflow deregistration.
+      if (workflowId && symbols.length === 0) {
+        await subscriber.unregisterWorkflow(userId, workflowId);
+        console.log(
+          `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
+        );
+      }
+
+      if (workflowId) {
+        state.workflowStreams.delete(workflowId);
       }
 
       // Disconnect if no more streams

@@ -68,6 +68,18 @@ export const REDIS_CHANNELS = {
   ) =>
     `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`,
 
+  // Subscription environment metadata (testnet/live) for global scope
+  globalSubscriptionEnvironment: (userId: string, source: string) =>
+    `md:user:${userId}:subscription:scope:global:${source}:environment`,
+
+  // Subscription environment metadata (testnet/live) for workflow scope
+  workflowSubscriptionEnvironment: (
+    userId: string,
+    workflowId: string,
+    source: string,
+  ) =>
+    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:environment`,
+
   // LEGACY: Symbol-only keys (for backward compatibility during migration)
   // TODO: Remove after migration complete
   globalSubscription: (userId: string, source: string) =>
@@ -123,6 +135,14 @@ export const REDIS_KEY_PATTERNS = {
   // All workflow-scoped subscription streams for a user (new format)
   userWorkflowSubscriptionStreams: (userId: string) =>
     `md:user:${userId}:subscription:scope:workflow:*:*:streams`,
+
+  // All global subscription environments for a user
+  userGlobalSubscriptionEnvironments: (userId: string) =>
+    `md:user:${userId}:subscription:scope:global:*:environment`,
+
+  // All workflow-scoped subscription environments for a user
+  userWorkflowSubscriptionEnvironments: (userId: string) =>
+    `md:user:${userId}:subscription:scope:workflow:*:*:environment`,
 
   // All gateway states for a user
   userGatewayStates: (userId: string) => `md:gateway:${userId}:*:state`,

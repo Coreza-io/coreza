@@ -655,6 +655,22 @@ export class MarketControlHandler {
             `💾 [MarketControl] Stored ${newStreamNames.length} stream names in ${streamsKey}`,
           );
 
+          if (environment) {
+            const environmentKey =
+              scope === "workflow" && targetWorkflowId
+                ? REDIS_CHANNELS.workflowSubscriptionEnvironment(
+                    userId,
+                    targetWorkflowId,
+                    source,
+                  )
+                : REDIS_CHANNELS.globalSubscriptionEnvironment(userId, source);
+
+            await this.redisPub.set(environmentKey, environment);
+            console.log(
+              `💾 [MarketControl] Stored subscription environment ${environment} in ${environmentKey}`,
+            );
+          }
+
           // Extract symbols from new stream names for workflow notification
           // const newSymbols = [
           //   ...new Set(
@@ -759,6 +775,23 @@ export class MarketControlHandler {
           console.log(
             `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
           );
+
+          const remainingStreamsCount = await this.redisPub.scard(streamsKey);
+          if (remainingStreamsCount === 0) {
+            const environmentKey =
+              scope === "workflow" && targetWorkflowId
+                ? REDIS_CHANNELS.workflowSubscriptionEnvironment(
+                    userId,
+                    targetWorkflowId,
+                    source,
+                  )
+                : REDIS_CHANNELS.globalSubscriptionEnvironment(userId, source);
+
+            await this.redisPub.del(environmentKey);
+            console.log(
+              `🗑️ [MarketControl] Removed empty subscription environment key ${environmentKey}`,
+            );
+          }
 
           if (workflowId) {
             await subscriber.removeStreamsFromRegistration(

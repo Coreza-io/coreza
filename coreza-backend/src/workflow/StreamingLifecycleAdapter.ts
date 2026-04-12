@@ -133,6 +133,8 @@ export class StreamingLifecycleAdapter {
     const marketStreamTypes = streamTypes.filter(
       (streamType) => streamType !== "order_update",
     );
+    const subscriptionScope: "workflow" | "global" =
+      nodeValues.scope === "global" ? "global" : "workflow";
 
     // --- Subscribe FIRST, then wait for readiness, then register ---
 
@@ -152,7 +154,7 @@ export class StreamingLifecycleAdapter {
         streamTypes: ["order_update"],
         environment: nodeValues.environment,
         assetType: nodeValues.asset_type,
-        scope: nodeValues.scope || "workflow",
+        scope: subscriptionScope,
         targetWorkflowId: workflowId,
       });
 
@@ -160,7 +162,7 @@ export class StreamingLifecycleAdapter {
       const tradingReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
         source: tradingSource,
-        scope: nodeValues.scope || "workflow",
+        scope: subscriptionScope,
         workflowId,
       });
       if (!tradingReady) {
@@ -180,7 +182,7 @@ export class StreamingLifecycleAdapter {
       symbols.length > 0 &&
       (marketStreamTypes.length > 0 || !hasOrderUpdate)
     ) {
-      await SubscriptionService.subscribe({
+      const marketSubscribeParams = {
         source: sourceId,
         userId,
         workflowId,
@@ -194,21 +196,45 @@ export class StreamingLifecycleAdapter {
         assetType: nodeValues.asset_type,
         interval: nodeValues.interval,
         depth_levels: nodeValues.depth_levels,
-        scope: nodeValues.scope || "workflow",
+        scope: subscriptionScope,
         targetWorkflowId: workflowId,
-      });
+      };
+
+      await SubscriptionService.subscribe(marketSubscribeParams);
 
       // Wait for market subscription readiness
       const marketReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
         source: sourceId,
-        scope: nodeValues.scope || "workflow",
+        scope: subscriptionScope,
         workflowId,
+        timeoutMs: 15000,
       });
       if (!marketReady) {
-        throw new Error(
-          `Market subscription readiness timed out for source ${sourceId}`,
+        logger.warn(
+          {
+            userId,
+            workflowId,
+            source: sourceId,
+          },
+          "Market subscription readiness timed out on first attempt; retrying subscribe once",
         );
+
+        await SubscriptionService.subscribe(marketSubscribeParams);
+        const marketRetryReady =
+          await SubscriptionService.waitForSubscriptionReady({
+            userId,
+            source: sourceId,
+            scope: subscriptionScope,
+            workflowId,
+            timeoutMs: 10000,
+          });
+
+        if (!marketRetryReady) {
+          throw new Error(
+            `Activation failed: Market subscription readiness timed out for source ${sourceId}. The broker gateway may be slow to connect. Please try again.`,
+          );
+        }
       }
     }
 
@@ -218,7 +244,7 @@ export class StreamingLifecycleAdapter {
       workflowId,
       nodeId: triggerNode.id,
       source: sourceId,
-      scope: nodeValues.scope || "workflow",
+      scope: subscriptionScope,
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
       isLive: true,
     });

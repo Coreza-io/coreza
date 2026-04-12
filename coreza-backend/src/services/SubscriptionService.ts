@@ -58,7 +58,7 @@ export interface SubscriptionResult {
 
 /** Default timeout for waiting on subscription readiness (ms) */
 const SUBSCRIPTION_READY_TIMEOUT_MS = parseInt(
-  process.env.SUBSCRIPTION_READY_TIMEOUT_MS || "8000",
+  process.env.SUBSCRIPTION_READY_TIMEOUT_MS || "15000",
   10,
 );
 /** Polling interval when checking subscription readiness (ms) */

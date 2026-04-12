@@ -507,12 +507,17 @@ router.post("/:source/register", async (req, res) => {
         }
 
         // Wait for trading subscription readiness
-        await SubscriptionService.waitForSubscriptionReady({
+        const tradingReady = await SubscriptionService.waitForSubscriptionReady({
           userId,
           source: tradingSource,
           scope,
           workflowId,
         });
+        if (!tradingReady) {
+          console.warn(
+            `⚠️ [ExecuteStreamNode] Trading subscription readiness timed out for ${tradingSource}; continuing in market-only mode`,
+          );
+        }
       }
 
       // Subscribe to market streams (excluding order_update)
@@ -548,12 +553,23 @@ router.post("/:source/register", async (req, res) => {
         }
 
         // Wait for market subscription readiness
-        await SubscriptionService.waitForSubscriptionReady({
+        const marketReady = await SubscriptionService.waitForSubscriptionReady({
           userId,
           source: sourceId,
           scope,
           workflowId,
         });
+        if (!marketReady) {
+          console.error(
+            `❌ [ExecuteStreamNode] Market subscription readiness timed out for ${sourceId}`,
+          );
+          return res.status(504).json({
+            success: false,
+            status: "error",
+            error:
+              "Market data subscription timed out before readiness. Please retry.",
+          } as StreamExecutionResponse);
+        }
       }
 
       console.log(

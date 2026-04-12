@@ -324,8 +324,8 @@ export class MarketControlHandler {
 
     try {
       // Use pattern matching to find ALL subscription keys for this user
-      const key = `md:user:${userId}:subscription:scope:global:${source}:streams`;
-      const streams = await this.redisPub.smembers(key);
+      const streamKey = `md:user:${userId}:subscription:scope:global:${source}:streams`;
+      const streams = await this.redisPub.smembers(streamKey);
       streams.forEach((s) => allStream.add(s));
 
       // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
@@ -385,26 +385,31 @@ export class MarketControlHandler {
             `⚠️ [MarketControl] Target workflow ${targetWorkflowId} not found in memory; applying workflow-scope fallback for user ${userId}`,
           );
           for (const workflowId of fallbackWorkflowIds) {
-            await subscriber.addStreamsToRegistration(workflowId, newStreamNames);
+            await subscriber.addStreamsToRegistration(
+              workflowId,
+              newStreamNames,
+            );
           }
         }
 
         // Also update any test listeners for this workflow (handles race condition)
-        const ListenerPattern = `md:user:${userId}:stream:${targetWorkflowId}:*`;
+        const workflowStreamListenerKey = `md:user:${userId}:stream:${targetWorkflowId}:*`;
         try {
-          const ListenerKeys = await this.redisPub.keys(ListenerPattern);
-          if (ListenerKeys.length > 0) {
+          const workflowStreamListeners = await this.redisPub.keys(
+            workflowStreamListenerKey,
+          );
+          if (workflowStreamListeners.length > 0) {
             console.log(
-              `🧪 [MarketControl] Found ${ListenerKeys.length} test listener(s) for workflow ${targetWorkflowId}`,
+              `🧪 [MarketControl] Found ${workflowStreamListeners.length} test listener(s) for workflow ${targetWorkflowId}`,
             );
-            for (const listener of ListenerKeys) {
-              const workflowId = listener.split(":")[4];
+            for (const workflowStreamListener of workflowStreamListeners) {
+              const workflowId = workflowStreamListener.split(":")[4];
               await subscriber.addStreamsToRegistration(
                 workflowId,
                 newStreamNames,
               );
               console.log(
-                `🧪 [MarketControl] Updated test listener ${listener} with ${newStreamNames.length} streams`,
+                `🧪 [MarketControl] Updated test listener ${workflowStreamListener} with ${newStreamNames.length} streams`,
               );
             }
           }
@@ -422,20 +427,20 @@ export class MarketControlHandler {
       }
 
       // Global scope: update all active workflows for this user
-      const activeWorkflowsKey = `md:user:${userId}:active_streaming_workflows`;
-      const activeWorkflowIds = new Set(
-        await this.redisPub.smembers(activeWorkflowsKey),
+      const activeStreamingWorkflowsKey = `md:user:${userId}:active_streaming_workflows`;
+      const activeStreamingWorkflows = new Set(
+        await this.redisPub.smembers(activeStreamingWorkflowsKey),
       );
 
       // Fallback: include in-memory registrations so subscribe can patch workflows
       // even if scope/targetWorkflowId metadata was missing in control message.
-      const inMemoryWorkflowIds =
+      const inMemoryactiveStreamingWorkflows =
         subscriber.getRegisteredWorkflowIdsForUser(userId);
-      inMemoryWorkflowIds.forEach((workflowId) =>
-        activeWorkflowIds.add(workflowId),
+      inMemoryactiveStreamingWorkflows.forEach((workflowId) =>
+        activeStreamingWorkflows.add(workflowId),
       );
 
-      if (activeWorkflowIds.size === 0) {
+      if (activeStreamingWorkflows.size === 0) {
         console.log(
           `ℹ️ [MarketControl] No active streaming workflows for user ${userId} (Redis SET and in-memory fallback empty)`,
         );
@@ -443,29 +448,27 @@ export class MarketControlHandler {
       }
 
       console.log(
-        `📡 [MarketControl] Updating ${activeWorkflowIds.size} active streaming workflows with new GLOBAL streams:`,
+        `📡 [MarketControl] Updating ${activeStreamingWorkflows.size} active streaming workflows with new GLOBAL streams:`,
         newStreamNames,
       );
 
-      for (const workflowId of activeWorkflowIds) {
+      for (const activeStreamingWorkflow of activeStreamingWorkflows) {
         try {
-          // Get workflow's filter config from Redis (stored during activation)
-          const filterKey = `md:user:${userId}:workflow:${workflowId}:stream_filter`;
-          const filterJson = await this.redisPub.get(filterKey);
-          const filterConfig = filterJson ? JSON.parse(filterJson) : {};
-
           // Apply stream filter if specified
           const streamsToAdd = newStreamNames;
 
           // Add new streams to existing registration
-          await subscriber.addStreamsToRegistration(workflowId, streamsToAdd);
+          await subscriber.addStreamsToRegistration(
+            activeStreamingWorkflow,
+            streamsToAdd,
+          );
 
           console.log(
-            `✅ [MarketControl] Added ${streamsToAdd.length} streams to workflow ${workflowId}`,
+            `✅ [MarketControl] Added ${streamsToAdd.length} streams to workflow ${activeStreamingWorkflow}`,
           );
         } catch (err) {
           console.error(
-            `❌ [MarketControl] Failed to update workflow ${workflowId}:`,
+            `❌ [MarketControl] Failed to update workflow ${activeStreamingWorkflow}:`,
             err,
           );
         }
@@ -474,21 +477,28 @@ export class MarketControlHandler {
       // Also update test listeners for global scope
       // Use user-specific SET for O(1) lookup instead of pattern scanning
       // Key pattern: user:${userId}:stream:active_listeners
-      const userListenersKey = `user:${userId}:stream:active_listeners`;
+      const activeUserStreamListenersKey = `user:${userId}:stream:active_listeners`;
       try {
-        const listenerKeys = await this.redisPub.smembers(userListenersKey);
+        const activeUserStreamListenerKeys = await this.redisPub.smembers(
+          activeUserStreamListenersKey,
+        );
 
-        if (listenerKeys.length > 0) {
+        if (activeUserStreamListenerKeys.length > 0) {
           console.log(
-            `🔍 [MarketControl] Found ${listenerKeys.length} test listener(s) for user ${userId} to update with global streams`,
+            `🔍 [MarketControl] Found ${activeUserStreamListenerKeys.length} test listener(s) for user ${userId} to update with global streams`,
           );
 
-          for (const listenerKey of listenerKeys) {
+          for (const activeUserStreamListenerKey of activeUserStreamListenerKeys) {
             try {
-              const listenerJson = await this.redisPub.get(listenerKey);
+              const listenerJson = await this.redisPub.get(
+                activeUserStreamListenerKey,
+              );
               if (!listenerJson) {
                 // Listener expired, clean up stale SET entry
-                await this.redisPub.srem(userListenersKey, listenerKey);
+                await this.redisPub.srem(
+                  activeUserStreamListenersKey,
+                  activeUserStreamListenerKey,
+                );
                 continue;
               }
 
@@ -509,22 +519,22 @@ export class MarketControlHandler {
 
                 if (streamsToAdd.length === 0) {
                   console.log(
-                    `ℹ️ [MarketControl] Test listener ${listenerKey} filters exclude new streams, skipping`,
+                    `ℹ️ [MarketControl] Test listener ${activeUserStreamListenerKey} filters exclude new streams, skipping`,
                   );
                   continue;
                 }
               }
 
               await subscriber.addStreamsToRegistration(
-                listenerKey,
+                activeUserStreamListenerKey,
                 streamsToAdd,
               );
               console.log(
-                `🧪 [MarketControl] Updated test listener ${listenerKey} with ${streamsToAdd.length} global streams`,
+                `🧪 [MarketControl] Updated test listener ${activeUserStreamListenerKey} with ${streamsToAdd.length} global streams`,
               );
             } catch (err) {
               console.warn(
-                `⚠️ [MarketControl] Failed to update test listener ${listenerKey}:`,
+                `⚠️ [MarketControl] Failed to update test listener ${activeUserStreamListenerKey}:`,
                 err,
               );
             }

@@ -93,12 +93,14 @@ interface WorkflowScopedSubscription {
   workflowName?: string;
   source: string;
   streams: string[];
+  environment?: string;
 }
 
 interface SubscriptionStatus {
   sources: SourceStatus[];
   workflows: WorkflowSubscription[];
   userSubscriptions: Record<string, string[]>; // source → streams (global scope)
+  userSubscriptionEnvironments?: Record<string, string>;
   workflowScopedSubscriptions: WorkflowScopedSubscription[]; // workflow-scoped subscriptions
   stats: SubscriptionStats;
   streamSourceMap: Record<string, string[]>;
@@ -805,6 +807,9 @@ const MarketSubscriptions = () => {
                                 stream={stream}
                                 source={source}
                                 scope="global"
+                                environment={
+                                  data?.userSubscriptionEnvironments?.[source]
+                                }
                                 onUnsubscribe={() =>
                                   confirmUnsubscribestream(stream, source)
                                 }
@@ -867,6 +872,7 @@ const MarketSubscriptions = () => {
                               stream={stream}
                               source={sub.source}
                               scope="workflow"
+                              environment={sub.environment}
                               workflowName={sub.workflowName}
                               workflowId={sub.workflowId}
                               onUnsubscribe={() =>
@@ -912,12 +918,23 @@ const MarketSubscriptions = () => {
                 filteredstreams.map((stream) => {
                   const sources = data?.streamSourceMap?.[stream] || [];
                   const primarySource = sources[0];
+                  const workflowScopedMatch =
+                    data?.workflowScopedSubscriptions?.find(
+                      (sub) =>
+                        sub.source === primarySource &&
+                        sub.streams?.includes(stream),
+                    );
+                  const environment =
+                    (primarySource &&
+                      data?.userSubscriptionEnvironments?.[primarySource]) ||
+                    workflowScopedMatch?.environment;
 
                   return (
                     <StreamBadgeWithTooltip
                       key={stream}
                       stream={stream}
                       source={primarySource || "unknown"}
+                      environment={environment}
                       onUnsubscribe={() =>
                         confirmUnsubscribestream(stream, primarySource)
                       }

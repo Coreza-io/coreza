@@ -121,6 +121,14 @@ export const REDIS_KEY_PATTERNS = {
   userWorkflowSubscriptionStreams: (userId: string) =>
     `md:user:${userId}:subscription:scope:workflow:*:*:streams`,
 
+  // All global subscription environments for a user
+  userGlobalSubscriptionEnvironments: (userId: string) =>
+    `md:user:${userId}:subscription:scope:global:*:environment`,
+
+  // All workflow-scoped subscription environments for a user
+  userWorkflowSubscriptionEnvironments: (userId: string) =>
+    `md:user:${userId}:subscription:scope:workflow:*:*:environment`,
+
   // All gateway states for a user
   userGatewayStates: (userId: string) => `md:gateway:${userId}:*:state`,
 

@@ -49,6 +49,9 @@ export interface ListenerParams {
   environment: string;
   filterSymbols?: string[];
   filterTypes?: string[];
+  assetType?: string;
+  interval?: string;
+  depth_levels?: string;
 }
 
 export interface ListenerData {
@@ -63,6 +66,9 @@ export interface ListenerData {
   environment: string;
   filterSymbols?: string[];
   filterTypes?: string[];
+  assetType?: string;
+  interval?: string;
+  depth_levels?: string;
 }
 
 export interface CleanupResult {
@@ -127,6 +133,9 @@ export class RegistrationService {
       environment,
       filterSymbols,
       filterTypes,
+      assetType,
+      interval,
+      depth_levels,
     } = params;
     const redis = getRedisCache();
 
@@ -145,6 +154,9 @@ export class RegistrationService {
       environment,
       filterSymbols,
       filterTypes,
+      assetType,
+      interval,
+      depth_levels,
     };
 
     // Store listener with TTL (auto-expire)

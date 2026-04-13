@@ -62,7 +62,7 @@
     {
       "key": "data_type",
       "type": "hidden",
-      "default": "market"
+      "default": "stream"
     },
     {
       "key": "mode",

@@ -260,13 +260,14 @@ router.post("/:source/unsubscribe", async (req, res) => {
       const tradingSource =
         source === "binance" ? "binance_trading" : "alpaca_trading";
       await SubscriptionService.unsubscribe({
-        source: tradingSource as any,
+        source: sourceId as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
         symbols: ["*"],
         streamTypes: ["order_update"],
         scope,
+        environment,
         targetWorkflowId,
       });
     }
@@ -278,23 +279,26 @@ router.post("/:source/unsubscribe", async (req, res) => {
     );
     const resolvedSymbols =
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
-
-    const result = await SubscriptionService.unsubscribe({
-      source: sourceId,
-      userId,
-      workflowId: workflowId,
-      nodeId: node_id,
-      credentialId: credential_id,
-      symbols: resolvedSymbols,
-      streamTypes: marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
-      feed,
-      environment,
-      assetType: asset_type,
-      interval,
-      depth_levels: depth_levels,
-      scope,
-      targetWorkflowId,
-    });
+    let result: any;
+    if (marketStreamTypes) {
+      result = await SubscriptionService.unsubscribe({
+        source: sourceId,
+        userId,
+        workflowId: workflowId,
+        nodeId: node_id,
+        credentialId: credential_id,
+        symbols: resolvedSymbols,
+        streamTypes:
+          marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        feed,
+        environment,
+        assetType: asset_type,
+        interval,
+        depth_levels: depth_levels,
+        scope,
+        targetWorkflowId,
+      });
+    }
 
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.error });
@@ -496,7 +500,7 @@ router.post("/:source/register", async (req, res) => {
       if (hasOrderUpdate) {
         const tradingSourceId = `${source}_trading`;
         const tradingResult = await SubscriptionService.subscribe({
-          source: tradingSourceId,
+          source: sourceId,
           userId,
           workflowId,
           nodeId: node_id,
@@ -621,7 +625,10 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       filterSymbols: parsedSymbols,
-      filterTypes: marketStreamTypes,
+      filterTypes: stream_types,
+      assetType: asset_type,
+      interval,
+      depth_levels: depth_levels,
     });
 
     // Publish registration control message to market-stream-service
@@ -694,23 +701,44 @@ router.post("/unregister", async (req, res) => {
     if (listener?.source) {
       const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
       const tradingSource = `${sourceFamily}_trading`;
+      const hasOrderUpdate =
+        listener.filterTypes?.includes("order_update") ?? false;
+      let streamTypes: string[] = [];
 
       // Only unsubscribe trading if this was a market/crypto/stream source
       // (not if source is already a trading source)
-      if (!listener.source.includes("_trading")) {
+      if (hasOrderUpdate) {
+        streamTypes =
+          listener.filterTypes?.filter((type) => type === "order_update") ?? [];
         await SubscriptionService.unsubscribe({
-          source: tradingSource as any,
+          source: listener?.source as any,
           userId,
           workflowId,
           nodeId: node_id,
           symbols: ["*"],
-          scope:
-            listener.scope === "global" || listener.scope === "workflow"
-              ? listener.scope
-              : "workflow",
+          streamTypes: streamTypes,
+          scope: listener.scope,
+          environment: listener.environment,
           targetWorkflowId: workflowId,
         });
       }
+
+      streamTypes =
+        listener.filterTypes?.filter((type) => type !== "order_update") ?? [];
+      await SubscriptionService.unsubscribe({
+        source: listener?.source as any,
+        userId,
+        workflowId,
+        nodeId: node_id,
+        symbols: listener.filterSymbols,
+        eventTypes: streamTypes,
+        //assetType: listener.assetType,
+        interval: listener.interval,
+        depthLevels: listener.depth_levels,
+        environment: listener.environment,
+        scope: listener.scope,
+        targetWorkflowId: workflowId,
+      });
     }
 
     // Delete listener through service

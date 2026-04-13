@@ -612,7 +612,7 @@ router.post("/:source/register", async (req, res) => {
       } as StreamExecutionResponse);
     }
 
-    // Create listener
+    // Create market listener
     const listenerKey = await RegistrationService.createListener({
       userId,
       workflowId,
@@ -624,6 +624,31 @@ router.post("/:source/register", async (req, res) => {
       filterSymbols: parsedSymbols,
       filterTypes: marketStreamTypes,
     });
+
+    // Create trading listener if order_update was subscribed
+    if (hasOrderUpdate) {
+      const tradingSourceId = `${source}_trading`;
+      const tradingAllowed =
+        await RegistrationService.checkAndIncrementListenerCount(userId);
+
+      if (tradingAllowed) {
+        await RegistrationService.createListener({
+          userId,
+          workflowId,
+          nodeId: `${node_id}_trading`,
+          source: tradingSourceId,
+          mode,
+          scope,
+          environment,
+          filterSymbols: ["*"],
+          filterTypes: tradingStreamTypes,
+        });
+      } else {
+        console.warn(
+          `⚠️ [ExecuteStreamNode] Skipped trading listener creation due to listener limit for user ${userId}`,
+        );
+      }
+    }
 
     // Publish registration control message to market-stream-service
     // Now runs AFTER subscriptions are confirmed ready
@@ -685,25 +710,20 @@ router.post("/unregister", async (req, res) => {
     }
 
     const listeners = await RegistrationService.getActiveListeners(userId);
-    const listener = listeners.find(
+    const matchingListeners = listeners.filter(
       (activeListener) =>
         activeListener.workflowId === workflowId &&
-        activeListener.nodeId === node_id,
+        (activeListener.nodeId === node_id ||
+          activeListener.nodeId === `${node_id}_trading`),
     );
 
-    // Derive trading companion source from source family (not hardcoded list)
-    if (listener?.source) {
-      // const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
-      // const tradingSource = `${sourceFamily}_trading`;
-
-      // Only unsubscribe trading if this was a market/crypto/stream source
-      // (not if source is already a trading source)
-      if (!listener.source.includes("_trading")) {
+    for (const listener of matchingListeners) {
+      if (listener.source) {
         await SubscriptionService.unsubscribe({
-          source: listener?.source as any,
+          source: listener.source as any,
           userId,
           workflowId,
-          nodeId: node_id,
+          nodeId: listener.nodeId,
           symbols: ["*"],
           scope:
             listener.scope === "global" || listener.scope === "workflow"
@@ -713,10 +733,14 @@ router.post("/unregister", async (req, res) => {
           targetWorkflowId: workflowId,
         });
       }
-    }
 
-    // Delete listener through service
-    await RegistrationService.deleteListener(userId, workflowId, node_id);
+      // Delete listener through service
+      await RegistrationService.deleteListener(
+        userId,
+        workflowId,
+        listener.nodeId,
+      );
+    }
 
     // Publish unregister control message to market-stream-service
     await RegistrationService.publishUnregisterWorkflow({

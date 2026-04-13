@@ -665,22 +665,6 @@ export class MarketControlHandler {
             `💾 [MarketControl] Stored ${newStreamNames.length} stream names in ${streamsKey}`,
           );
 
-          if (environment) {
-            const environmentKey =
-              scope === "workflow" && targetWorkflowId
-                ? REDIS_CHANNELS.workflowSubscriptionEnvironment(
-                    userId,
-                    targetWorkflowId,
-                    source,
-                  )
-                : REDIS_CHANNELS.globalSubscriptionEnvironment(userId, source);
-
-            await this.redisPub.set(environmentKey, environment);
-            console.log(
-              `💾 [MarketControl] Stored subscription environment ${environment} in ${environmentKey}`,
-            );
-          }
-
           // Extract symbols from new stream names for workflow notification
           // const newSymbols = [
           //   ...new Set(

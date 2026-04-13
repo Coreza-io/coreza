@@ -182,13 +182,34 @@ const MarketSubscriptions = () => {
     [user, toast],
   );
 
-  const handleUnsubscribestream = useCallback(
-    async (stream: string, source: string) => {
+  const handleUnsubscribeStream = useCallback(
+    async (stream: string, source: string, environment: string) => {
       if (!user) return;
 
       setUnsubscribing(`stream-${stream}`);
+
       try {
-        const [symbol, eventType, interval] = stream.split(/[@_]/);
+        let symbol: string;
+        let eventType: string;
+        let interval: string | undefined;
+
+        if (stream === "trade_updates") {
+          symbol = "[*]";
+          eventType = "trade_updates";
+          interval = undefined;
+        } else {
+          const [symbolPart, rest] = stream.split("@");
+          const [eventTypePart, intervalPart] = rest?.split("_") ?? [];
+
+          if (!symbolPart || !eventTypePart) {
+            throw new Error(`Invalid stream format: ${stream}`);
+          }
+
+          symbol = symbolPart;
+          eventType = eventTypePart;
+          interval = intervalPart;
+        }
+
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
           {
@@ -196,69 +217,108 @@ const MarketSubscriptions = () => {
             stream_types: [eventType],
             interval,
             scope: "global",
+            environment,
           },
           session?.access_token,
         );
 
-        if (!response.ok) throw new Error("Failed to unsubscribe");
+        if (!response.ok) {
+          throw new Error("Failed to unsubscribe");
+        }
 
         toast({
           title: "Unsubscribed",
           description: `Removed ${stream} from ${source}`,
         });
+
         fetchStatus(false);
       } catch (error) {
         toast({
           title: "Error",
-          description: "Failed to unsubscribe stream",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Failed to unsubscribe stream",
           variant: "destructive",
         });
       } finally {
         setUnsubscribing(null);
       }
     },
-    [user, toast, fetchStatus],
+    [user, toast, fetchStatus, session?.access_token],
   );
 
-  // Handler for workflow-scoped stream unsubscription (needs workflowId to target correct Redis key)
-  const handleUnsubscribeWorkflowScopedstream = useCallback(
-    async (stream: string, source: string, workflowId: string) => {
+  const handleUnsubscribeWorkflowScopedStream = useCallback(
+    async (
+      stream: string,
+      source: string,
+      workflowId: string,
+      environment: string,
+    ) => {
       if (!user) return;
 
       setUnsubscribing(`stream-${workflowId}-${stream}`);
+
       try {
-        const [symbol, eventType, interval] = stream.split(/[@_]/);
+        let symbol: string;
+        let eventType: string;
+        let interval: string | undefined;
+
+        if (stream === "trade_updates") {
+          symbol = "[*]";
+          eventType = "order_update";
+          interval = undefined;
+        } else {
+          const [symbolPart, rest] = stream.split("@");
+          const [eventTypePart, intervalPart] = rest?.split("_") ?? [];
+
+          if (!symbolPart || !eventTypePart) {
+            throw new Error(`Invalid stream format: ${stream}`);
+          }
+
+          symbol = symbolPart;
+          eventType = eventTypePart;
+          interval = intervalPart;
+        }
+
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
           {
-            workflowId, // Include workflowId for workflow-scoped removal
+            workflowId,
             targetWorkflowId: workflowId,
             symbols: [symbol],
             stream_types: [eventType],
             interval,
-            scope: "workflow", // Tell backend this is workflow-scoped
+            scope: "workflow",
+            environment,
           },
           session?.access_token,
         );
 
-        if (!response.ok) throw new Error("Failed to unsubscribe");
+        if (!response.ok) {
+          throw new Error("Failed to unsubscribe");
+        }
 
         toast({
           title: "Unsubscribed",
           description: `Removed ${stream} from workflow`,
         });
+
         fetchStatus(false);
       } catch (error) {
         toast({
           title: "Error",
-          description: "Failed to unsubscribe stream",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Failed to unsubscribe stream",
           variant: "destructive",
         });
       } finally {
         setUnsubscribing(null);
       }
     },
-    [user, toast, fetchStatus],
+    [user, toast, fetchStatus, session?.access_token],
   );
 
   const handleUnsubscribeWorkflow = useCallback(
@@ -342,6 +402,7 @@ const MarketSubscriptions = () => {
     stream: string,
     source: string,
     workflowId?: string,
+    environment?: string,
   ) => {
     setConfirmDialog({
       open: true,
@@ -352,8 +413,13 @@ const MarketSubscriptions = () => {
         : `This will stop streaming ${stream} data from ${source}. Any workflows using this stream will no longer receive updates.`,
       onConfirm: () =>
         workflowId
-          ? handleUnsubscribeWorkflowScopedstream(stream, source, workflowId)
-          : handleUnsubscribestream(stream, source),
+          ? handleUnsubscribeWorkflowScopedStream(
+              stream,
+              source,
+              workflowId,
+              environment,
+            )
+          : handleUnsubscribeStream(stream, source, environment),
     });
   };
 
@@ -809,7 +875,11 @@ const MarketSubscriptions = () => {
                                 scope="global"
                                 environment={data.environment[source]}
                                 onUnsubscribe={() =>
-                                  confirmUnsubscribestream(stream, source)
+                                  confirmUnsubscribestream(
+                                    stream,
+                                    source,
+                                    data.environment[source],
+                                  )
                                 }
                                 isUnsubscribing={
                                   unsubscribing === `stream-${stream}`
@@ -878,6 +948,7 @@ const MarketSubscriptions = () => {
                                   stream,
                                   sub.source,
                                   sub.workflowId,
+                                  sub.environment,
                                 )
                               }
                               isUnsubscribing={
@@ -933,7 +1004,11 @@ const MarketSubscriptions = () => {
                       source={primarySource || "unknown"}
                       environment={environment}
                       onUnsubscribe={() =>
-                        confirmUnsubscribestream(stream, primarySource)
+                        confirmUnsubscribestream(
+                          stream,
+                          primarySource,
+                          environment,
+                        )
                       }
                       isUnsubscribing={unsubscribing === `stream-${stream}`}
                     />

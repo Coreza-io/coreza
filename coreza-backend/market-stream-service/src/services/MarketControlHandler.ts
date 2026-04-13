@@ -611,12 +611,17 @@ export class MarketControlHandler {
           depthLevels,
         );
 
-        const requestedStreamNames = buildStreamNames(
-          source,
-          symbols,
-          processedEventTypes,
-          interval || "",
-        );
+        let requestedStreamNames: string[] = [];
+        if (!processedEventTypes.includes("order_update")) {
+          requestedStreamNames = buildStreamNames(
+            source,
+            symbols,
+            processedEventTypes,
+            interval || "",
+          );
+        } else {
+          requestedStreamNames = processedEventTypes;
+        }
 
         // Check which stream names are NEW (not already in state.streams)
         const newStreamNames = requestedStreamNames.filter(

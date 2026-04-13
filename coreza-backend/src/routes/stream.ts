@@ -267,6 +267,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
         symbols: ["*"],
         streamTypes: ["order_update"],
         scope,
+        environment,
         targetWorkflowId,
       });
     }

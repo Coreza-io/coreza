@@ -274,11 +274,9 @@ export class StatusService {
         /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):([^:]+):streams$/,
       );
       if (match) {
-        const [workflowId, source] = match;
+        const [, workflowId, source, environment] = match;
         const streamNames = await redis.smembers(key);
         if (streamNames.length > 0) {
-          const environmentKey = key.replace(/:streams$/, ":environment");
-          const environment = await redis.get(environmentKey);
           const mapKey = `${workflowId}:${source}`;
           // Extract symbols from stream names
           const extractedSymbols = new Set<string>();

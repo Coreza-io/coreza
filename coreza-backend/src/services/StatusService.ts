@@ -274,8 +274,8 @@ export class StatusService {
         /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):([^:]+):streams$/,
       );
       if (match) {
-        const [, workflowId, sourceEvent, environment] = match;
-        const source = sourceEvent.split("_")[0];
+        const [, workflowId, source, environment] = match;
+        //const source = sourceEvent.split("_")[0];
         const streamNames = await redis.smembers(key);
         if (streamNames.length > 0) {
           const mapKey = `${workflowId}:${source}`;

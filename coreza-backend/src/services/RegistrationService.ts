@@ -46,6 +46,7 @@ export interface ListenerParams {
   source: string;
   mode: string;
   scope: string;
+  environment: string;
   filterSymbols?: string[];
   filterTypes?: string[];
 }
@@ -59,6 +60,7 @@ export interface ListenerData {
   mode: string;
   scope: string;
   source: string;
+  environment: string;
   filterSymbols?: string[];
   filterTypes?: string[];
 }
@@ -122,6 +124,7 @@ export class RegistrationService {
       source,
       mode = "listen",
       scope,
+      environment,
       filterSymbols,
       filterTypes,
     } = params;
@@ -139,6 +142,7 @@ export class RegistrationService {
       mode,
       scope,
       source,
+      environment,
       filterSymbols,
       filterTypes,
     };
@@ -258,6 +262,7 @@ export class RegistrationService {
     nodeId: string;
     source: string;
     scope: string;
+    environment: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
   }): Promise<void> {
@@ -270,6 +275,7 @@ export class RegistrationService {
       nodeId: params.nodeId,
       source: params.source,
       scope: params.scope,
+      environment: params.environment,
       onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
       isLive: params.isLive ?? false,
     };

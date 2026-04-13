@@ -26,6 +26,7 @@ interface WorkflowRegistration {
   userId: string;
   streams: Set<string>;
   source: MarketSource;
+  environment: string;
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
   isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
 }
@@ -82,6 +83,7 @@ export class MarketDataSubscriber {
     userId: string,
     streams: string[],
     source: MarketSource | string,
+    environment: string,
     onlyClosedBars?: boolean,
     isLive?: boolean,
   ): Promise<void> {
@@ -98,6 +100,7 @@ export class MarketDataSubscriber {
         userId,
         streams: new Set(streams.map((s) => s)),
         source,
+        environment,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
         isLive: isLive ?? false,
       };
@@ -223,6 +226,7 @@ export class MarketDataSubscriber {
             userId: string;
             streams: string[];
             source: MarketSource;
+            environment: string;
             onlyClosedBars?: boolean;
             isLive?: boolean;
           };
@@ -247,6 +251,7 @@ export class MarketDataSubscriber {
             registration.userId,
             registration.streams,
             registration.source,
+            registration.environment,
             registration.onlyClosedBars,
             registration.isLive,
           );

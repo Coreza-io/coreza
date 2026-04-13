@@ -264,7 +264,7 @@ const MarketSubscriptions = () => {
         let eventType: string;
         let interval: string | undefined;
 
-        if (stream === "trade_updates") {
+        if (stream === "order_update") {
           symbol = "[*]";
           eventType = "order_update";
           interval = undefined;

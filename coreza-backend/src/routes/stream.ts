@@ -257,10 +257,10 @@ router.post("/:source/unsubscribe", async (req, res) => {
     );
 
     if (hasOrderUpdate) {
-      const tradingSource =
-        source === "binance" ? "binance_trading" : "alpaca_trading";
+      //const tradingSource =
+      //source === "binance" ? "binance_trading" : "alpaca_trading";
       await SubscriptionService.unsubscribe({
-        source: tradingSource as any,
+        source: sourceId as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
@@ -620,6 +620,7 @@ router.post("/:source/register", async (req, res) => {
       source: sourceId,
       mode,
       scope,
+      environment,
       filterSymbols: parsedSymbols,
       filterTypes: marketStreamTypes,
     });
@@ -632,6 +633,7 @@ router.post("/:source/register", async (req, res) => {
       nodeId: node_id,
       source: sourceId,
       scope,
+      environment,
       onlyClosedBars,
     });
 
@@ -691,14 +693,14 @@ router.post("/unregister", async (req, res) => {
 
     // Derive trading companion source from source family (not hardcoded list)
     if (listener?.source) {
-      const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
-      const tradingSource = `${sourceFamily}_trading`;
+      // const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
+      // const tradingSource = `${sourceFamily}_trading`;
 
       // Only unsubscribe trading if this was a market/crypto/stream source
       // (not if source is already a trading source)
       if (!listener.source.includes("_trading")) {
         await SubscriptionService.unsubscribe({
-          source: tradingSource as any,
+          source: listener?.source as any,
           userId,
           workflowId,
           nodeId: node_id,
@@ -707,6 +709,7 @@ router.post("/unregister", async (req, res) => {
             listener.scope === "global" || listener.scope === "workflow"
               ? listener.scope
               : "workflow",
+          environment: listener.environment,
           targetWorkflowId: workflowId,
         });
       }

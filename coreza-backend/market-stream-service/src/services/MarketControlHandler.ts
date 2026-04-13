@@ -161,6 +161,7 @@ export class MarketControlHandler {
     nodeId: string;
     source: string;
     scope: string;
+    environment: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
   }): Promise<void> {
@@ -170,6 +171,7 @@ export class MarketControlHandler {
       nodeId,
       source,
       scope,
+      environment,
       onlyClosedBars,
       isLive,
     } = msg;
@@ -186,8 +188,13 @@ export class MarketControlHandler {
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
       const streamToRegister =
         scope === "global"
-          ? await this.getUserSubscribedStreams(userId, source)
-          : await this.getWorkflowScopedStreams(userId, workflowId, source);
+          ? await this.getUserSubscribedStreams(userId, source, environment)
+          : await this.getWorkflowScopedStreams(
+              userId,
+              workflowId,
+              source,
+              environment,
+            );
 
       if (streamToRegister.length === 0) {
         console.log(
@@ -202,6 +209,7 @@ export class MarketControlHandler {
         userId,
         streamToRegister,
         source as MarketSource,
+        environment,
         onlyClosedBars,
         isLive,
       );
@@ -268,13 +276,14 @@ export class MarketControlHandler {
     userId: string,
     workflowId: string,
     source?: string,
+    environment?: string,
   ): Promise<string[]> {
     const allStreams = new Set<string>();
 
     try {
       // If source specified, only check that source
       if (source) {
-        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:streams`;
+        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:${environment}:streams`;
         console.log(
           `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
@@ -288,7 +297,7 @@ export class MarketControlHandler {
         // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
         const companionSource = this.getCompanionTradingSource(source);
         if (companionSource) {
-          const tradingKey = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${companionSource}:streams`;
+          const tradingKey = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${companionSource}:${environment}:streams`;
           console.log(
             `🔍 [MarketControl] Checking companion trading streams at key: ${tradingKey}`,
           );
@@ -319,19 +328,20 @@ export class MarketControlHandler {
   private async getUserSubscribedStreams(
     userId: string,
     source: string,
+    environment: string,
   ): Promise<string[]> {
     const allStream = new Set<string>();
 
     try {
       // Use pattern matching to find ALL subscription keys for this user
-      const streamKey = `md:user:${userId}:subscription:scope:global:${source}:streams`;
+      const streamKey = `md:user:${userId}:subscription:scope:global:${source}:${environment}streams`;
       const streams = await this.redisPub.smembers(streamKey);
       streams.forEach((s) => allStream.add(s));
 
       // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
       const companionSource = this.getCompanionTradingSource(source);
       if (companionSource) {
-        const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:streams`;
+        const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
         const tradingStreams = await this.redisPub.smembers(tradingKey);
         if (tradingStreams.length > 0) {
           console.log(
@@ -746,12 +756,24 @@ export class MarketControlHandler {
           depthLevels,
         );
 
-        const streamNamesToRemove = buildStreamNames(
-          source,
-          symbols,
-          processedEventTypes,
-          interval || "",
-        );
+        let streamNamesToRemove: string[] = [];
+
+        if (processedEventTypes.includes("order_update")) {
+          streamNamesToRemove = processedEventTypes;
+        } else {
+          streamNamesToRemove = buildStreamNames(
+            source,
+            symbols,
+            processedEventTypes,
+            interval || "",
+          );
+        }
+
+        if (streamNamesToRemove.length === 0) {
+          streamNamesToRemove = Array.from(
+            state.workflowStreams.get(workflowId) ?? new Set<string>(),
+          );
+        }
 
         console.log(
           `➖ [MarketControl] Unsubscribing from streams on ${source}:`,

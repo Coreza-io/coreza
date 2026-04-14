@@ -9,14 +9,14 @@ function getMarketType(input: any): "spot" | "futures" {
 }
 
 function getEnvironment(input: any): "live" | "testnet" {
-  return input?.environment === "testnet" ? "testnet" : "live";
+  return input?.environment === "live" ? "live" : "testnet";
 }
 
-function buildSignedParams(
+function buildSignedRequest(
   input: any,
   creds: any,
   params: Record<string, any>,
-): Record<string, any> {
+): Record<string, string> {
   const environment = getEnvironment(input);
   const marketType = getMarketType(input);
   const timestamp = getBinanceTimestamp(environment, marketType);
@@ -24,28 +24,32 @@ function buildSignedParams(
   const signed = signHmacSha256(
     {
       ...params,
-      recvWindow: 60000,
-      timestamp,
+      recvWindow: params.recvWindow ?? 5000,
+      timestamp: params.timestamp ?? timestamp,
     },
     creds.secret_key,
   );
 
-  return signed.signedParams;
+  return {
+    _signedQueryString: signed.signedQueryString,
+  };
 }
 
 export const binanceOperations: Record<string, BrokerOperation> = {
   get_account: {
+    signed: true,
     method: "get",
     path: (input: any) => {
       const marketType = getMarketType(input);
       return marketType === "futures" ? "/fapi/v3/account" : "/api/v3/account";
     },
     makeParams: (input: any, creds: any) => {
-      return buildSignedParams(input, creds, {});
+      return buildSignedRequest(input, creds, {});
     },
   },
 
   get_positions: {
+    signed: true,
     method: "get",
     path: (input: any) => {
       const marketType = getMarketType(input);
@@ -73,7 +77,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
         params.symbol = String(input.symbol).toUpperCase();
       }
 
-      return buildSignedParams(input, creds, params);
+      return buildSignedRequest(input, creds, params);
     },
     transformResult: (raw: any) => {
       return {
@@ -83,6 +87,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
   },
 
   get_orders: {
+    signed: true,
     method: "get",
     path: (input: any) => {
       const marketType = getMarketType(input);
@@ -111,7 +116,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       if (input?.endTime) params.endTime = new Date(input.endTime).getTime();
       if (input?.orderId) params.orderId = input.orderId;
 
-      return buildSignedParams(input, creds, params);
+      return buildSignedRequest(input, creds, params);
     },
     transformResult: (raw: any) => {
       return {
@@ -121,6 +126,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
   },
 
   get_trades: {
+    signed: true,
     method: "get",
     path: (input: any) => {
       const marketType = getMarketType(input);
@@ -150,7 +156,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       if (input?.fromId) params.fromId = input.fromId;
       if (input?.limit) params.limit = input.limit;
 
-      return buildSignedParams(input, creds, params);
+      return buildSignedRequest(input, creds, params);
     },
     transformResult: (raw: any) => {
       return {
@@ -160,6 +166,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
   },
 
   cancel_order: {
+    signed: true,
     method: "delete",
     path: (input: any) => {
       const marketType = getMarketType(input);
@@ -189,7 +196,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       if (input?.origClientOrderId)
         params.origClientOrderId = input.origClientOrderId;
 
-      return buildSignedParams(input, creds, params);
+      return buildSignedRequest(input, creds, params);
     },
   },
 
@@ -242,6 +249,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
   },
 
   place_order: {
+    signed: true,
     method: "post",
     path: (input: any) => {
       const marketType = getMarketType(input);
@@ -312,7 +320,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
         params.newClientOrderId = input._idempotencyKey;
       }
 
-      return buildSignedParams(input, creds, params);
+      return buildSignedRequest(input, creds, params);
     },
   },
 };

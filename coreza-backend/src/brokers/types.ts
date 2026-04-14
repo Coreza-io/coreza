@@ -9,7 +9,9 @@ export interface PaginationConfig {
 export interface BrokerOperation {
   method: 'get' | 'post' | 'put' | 'delete';
   path: string | ((input: any, creds?: any) => string);
+  signed?: boolean;
   makeParams?: (input: any, creds?: any) => Record<string, any>;
+  makeSignedQueryString?: (input: any, creds?: any) => string;
   makeBody?: (input: any, creds?: any) => any | Promise<any>;
   transformResult?: (data: any, input: any) => any;
   pagination?: PaginationConfig;

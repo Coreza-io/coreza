@@ -275,13 +275,15 @@ export class BrokerExecutor implements INodeExecutor {
         );
       } else {
         // Single request (no pagination or disabled)
+        const { requestUrl, requestParams } = this.buildRequestTarget(url, params);
+
         const response = await axios({
           method: op.method,
-          url,
+          url: requestUrl,
           headers: body
             ? { ...headers, "Content-Type": "application/json" }
             : headers,
-          params,
+          params: requestParams,
           data: body,
           timeout: 30000,
         });
@@ -355,13 +357,18 @@ export class BrokerExecutor implements INodeExecutor {
         await this.delay(RATE_LIMIT_DELAY_MS);
       }
 
+      const { requestUrl, requestParams } = this.buildRequestTarget(
+        baseUrl,
+        pageParams,
+      );
+
       const response = await axios({
         method: op.method,
-        url: baseUrl,
+        url: requestUrl,
         headers: body
           ? { ...headers, "Content-Type": "application/json" }
           : headers,
-        params: pageParams,
+        params: requestParams,
         data: body,
         timeout: 30000,
       });
@@ -409,6 +416,28 @@ export class BrokerExecutor implements INodeExecutor {
       ...transformed,
       pages_fetched: requestCount,
       pagination_complete: !pageToken,
+    };
+  }
+
+  private buildRequestTarget(
+    baseUrl: string,
+    params?: Record<string, any>,
+  ): { requestUrl: string; requestParams: Record<string, any> | undefined } {
+    if (!params || typeof params !== "object") {
+      return { requestUrl: baseUrl, requestParams: params };
+    }
+
+    const signedQueryString = params._signedQueryString;
+    if (typeof signedQueryString === "string" && signedQueryString.length > 0) {
+      return {
+        requestUrl: `${baseUrl}?${signedQueryString}`,
+        requestParams: undefined,
+      };
+    }
+
+    return {
+      requestUrl: baseUrl,
+      requestParams: params,
     };
   }
 

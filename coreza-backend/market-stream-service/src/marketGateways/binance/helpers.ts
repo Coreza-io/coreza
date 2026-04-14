@@ -4,21 +4,6 @@ import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
 
 const BINANCE_AUTH_RECV_WINDOW = 60_000;
 
-// ============ BINANCE REST API ENDPOINTS ============
-const BINANCE_REST_ENDPOINTS: Record<
-  string,
-  { spot: string; futures: string }
-> = {
-  live: {
-    spot: "https://api.binance.com",
-    futures: "https://fapi.binance.com",
-  },
-  testnet: {
-    spot: "https://testnet.binance.vision",
-    futures: "https://testnet.binancefuture.com",
-  },
-};
-
 function isFuturesMarketType(creds: any): boolean {
   const marketType = creds.marketType;
   return marketType === "futures";
@@ -80,66 +65,9 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
     : "wss://stream.binance.com:9443/ws";
 }
 
-// ============ PRE-CONNECT: Fetch listenKey for User Data Stream (futures only) ============
+// ============ PRE-CONNECT ============
 export async function preConnectBinance(creds: any): Promise<any> {
-  if (!isFuturesMarketType(creds)) {
-    // Spot trading now authenticates directly over WebSocket API.
-    return creds;
-  }
-
-  const isTestnet = creds.environment === "testnet";
-  const env = isTestnet ? "testnet" : "live";
-  const baseUrl = BINANCE_REST_ENDPOINTS[env].futures;
-
-  const endpoint = "/fapi/v1/listenKey";
-
-  const url = `${baseUrl}${endpoint}`;
-
-  // Create listenKey
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "X-MBX-APIKEY": creds.api_key,
-    },
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Failed to create Binance listenKey: ${response.status} ${body}`,
-    );
-  }
-
-  const data = (await response.json()) as { listenKey: string };
-  const listenKey = data.listenKey;
-
-  if (!listenKey) {
-    throw new Error("Binance listenKey response missing listenKey field");
-  }
-
-  // Set up 30-minute keepalive interval
-  const refreshInterval = setInterval(
-    async () => {
-      try {
-        const refreshResponse = await fetch(url, {
-          method: "PUT",
-          headers: {
-            "X-MBX-APIKEY": creds.api_key,
-          },
-        });
-        if (!refreshResponse.ok) {
-          console.error(
-            `Failed to refresh Binance listenKey: ${refreshResponse.status}`,
-          );
-        }
-      } catch (err) {
-        console.error("Error refreshing Binance listenKey:", err);
-      }
-    },
-    30 * 60 * 1000,
-  ); // 30 minutes
-
-  return { ...creds, listenKey, _listenKeyRefreshInterval: refreshInterval };
+  return creds;
 }
 
 // ============ AUTH (source-aware) ============
@@ -208,12 +136,41 @@ export function buildBinanceAuthMessage(creds: any, source?: string): any {
 
 export function isBinanceAuthSuccess(msg: any, source?: string): boolean {
   if (source !== "binance_trading") return false;
+  if (msg?.id === "session-logon") {
+    return msg?.status === 200;
+  }
   return msg?.status === 200 && msg?.result?.subscriptionId !== undefined;
 }
 
 export function isBinanceAuthError(msg: any, source?: string): boolean {
   if (source !== "binance_trading") return false;
   return typeof msg?.status === "number" && msg.status !== 200;
+}
+
+export function buildBinancePostAuthMessage(creds: any, source?: string): any {
+  if (source !== "binance_trading") return null;
+  if (!isFuturesMarketType(creds)) return null;
+  return {
+    id: "uds-start",
+    method: "userDataStream.start",
+  };
+}
+
+export function isBinancePostAuthSuccess(msg: any, source?: string): boolean {
+  if (source !== "binance_trading") return false;
+  return msg?.id === "uds-start" && msg?.status === 200;
+}
+
+export function buildBinanceKeepaliveMessage(
+  creds: any,
+  source?: string,
+): any {
+  if (source !== "binance_trading") return null;
+  if (!isFuturesMarketType(creds)) return null;
+  return {
+    id: "uds-ping",
+    method: "userDataStream.ping",
+  };
 }
 
 // ============ SUBSCRIBE/UNSUBSCRIBE (source-aware) ============

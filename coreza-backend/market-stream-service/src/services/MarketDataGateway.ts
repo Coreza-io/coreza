@@ -36,7 +36,9 @@ export class MarketDataGateway {
   private redis = getRedisQueue();
   private logger = createLogger("MarketDataGateway");
   private keepaliveInterval: NodeJS.Timeout | null = null;
+  private tradingKeepaliveInterval: NodeJS.Timeout | null = null;
   private messageSequence = 0;
+  private awaitingPostAuth = false;
 
   private constructor(config: GatewayConfig, source: string) {
     this.config = config;
@@ -95,6 +97,7 @@ export class MarketDataGateway {
         this.logger.info({ source: this.source }, "Gateway connected");
         activeGatewayConnectionsGauge.set({ source: this.source }, 1);
         this.startKeepalive();
+        this.awaitingPostAuth = false;
         const authMsg = this.config.makeAuthMessage?.(
           this.credentials,
           this.source,
@@ -127,7 +130,9 @@ export class MarketDataGateway {
           `Connection closed: ${code} - ${reasonStr}`,
         );
         this.isAuthenticated = false;
+        this.awaitingPostAuth = false;
         this.stopKeepalive();
+        this.stopTradingKeepalive();
         this.clearCredentialIntervals();
         this.handleReconnect();
       });
@@ -159,16 +164,38 @@ export class MarketDataGateway {
         // Check for auth success/error messages
         if (
           !this.isAuthenticated &&
+          !this.awaitingPostAuth &&
           this.config.isAuthSuccess &&
           this.config.isAuthSuccess(msg, this.source)
         ) {
-          this.logger.info(
-            { source: this.source },
-            "Authentication successful",
-          );
-          this.isAuthenticated = true;
-          this.resubscribeAll();
-          if (resolveConnect) resolveConnect();
+          if (this.config.postAuthHook && this.ws) {
+            this.logger.info(
+              { source: this.source },
+              "Authentication successful, running post-auth hook",
+            );
+            const postAuthStarted = this.config.postAuthHook(
+              this.ws,
+              this.credentials,
+              this.source,
+              this.logger,
+            );
+            if (postAuthStarted) {
+              this.awaitingPostAuth = true;
+            } else {
+              this.markConnectionReady(resolveConnect);
+            }
+          } else {
+            this.markConnectionReady(resolveConnect);
+          }
+          continue;
+        }
+
+        if (
+          this.awaitingPostAuth &&
+          this.config.isPostAuthSuccess &&
+          this.config.isPostAuthSuccess(msg, this.source)
+        ) {
+          this.markConnectionReady(resolveConnect);
           continue;
         }
 
@@ -385,6 +412,47 @@ export class MarketDataGateway {
     }, 30000); // Ping every 30 seconds
   }
 
+  private startTradingKeepalive(): void {
+    this.stopTradingKeepalive();
+
+    const hasKeepalive = this.config.makeTradingKeepaliveMessage?.(
+      this.credentials,
+      this.source,
+    );
+    if (!hasKeepalive) return;
+
+    this.tradingKeepaliveInterval = setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return;
+      const keepaliveMsg = this.config.makeTradingKeepaliveMessage?.(
+        this.credentials,
+        this.source,
+      );
+      if (!keepaliveMsg) return;
+
+      const payload = this.config.isBinary
+        ? this.encodeMessage(keepaliveMsg)
+        : JSON.stringify(keepaliveMsg);
+      this.ws.send(payload);
+      this.logger.debug({ source: this.source }, "Sent trading keepalive ping");
+    }, 30 * 60 * 1000);
+  }
+
+  private stopTradingKeepalive(): void {
+    if (this.tradingKeepaliveInterval) {
+      clearInterval(this.tradingKeepaliveInterval);
+      this.tradingKeepaliveInterval = null;
+    }
+  }
+
+  private markConnectionReady(resolveConnect?: () => void): void {
+    this.logger.info({ source: this.source }, "Authentication successful");
+    this.isAuthenticated = true;
+    this.awaitingPostAuth = false;
+    this.resubscribeAll();
+    this.startTradingKeepalive();
+    if (resolveConnect) resolveConnect();
+  }
+
   private stopKeepalive(): void {
     if (this.keepaliveInterval) {
       clearInterval(this.keepaliveInterval);
@@ -404,12 +472,14 @@ export class MarketDataGateway {
 
   disconnect(): void {
     this.stopKeepalive();
+    this.stopTradingKeepalive();
     this.clearCredentialIntervals();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.isAuthenticated = false;
+    this.awaitingPostAuth = false;
     this.reconnectAttempts = 0;
   }
 

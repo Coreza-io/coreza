@@ -1,11 +1,14 @@
 import { GatewayConfig } from "../types";
 import {
   buildBinanceAuthMessage,
+  buildBinanceKeepaliveMessage,
+  buildBinancePostAuthMessage,
   buildBinanceSubscribeMessage,
   buildBinanceUnsubscribeMessage,
   getBinanceWsUrl,
   handleBinanceControlMessage,
   identifyBinanceMessageType,
+  isBinancePostAuthSuccess,
   normalizeBinanceMessage,
   parseBinanceMessage,
   preConnectBinance,
@@ -20,6 +23,17 @@ export const binanceGatewayConfig: GatewayConfig = {
   makeAuthMessage: (creds, source) => buildBinanceAuthMessage(creds, source),
   isAuthSuccess: (msg, source) => isBinanceAuthSuccess(msg, source),
   isAuthError: (msg, source) => isBinanceAuthError(msg, source),
+  postAuthHook: (ws, creds, source, _logger) => {
+    const msg = buildBinancePostAuthMessage(creds, source);
+    if (msg) {
+      ws.send(JSON.stringify(msg));
+      return true;
+    }
+    return false;
+  },
+  isPostAuthSuccess: (msg, source) => isBinancePostAuthSuccess(msg, source),
+  makeTradingKeepaliveMessage: (creds, source) =>
+    buildBinanceKeepaliveMessage(creds, source),
   makeSubscribeMessage: (stream, source) =>
     buildBinanceSubscribeMessage(stream, source),
   makeUnsubscribeMessage: (stream, source) =>

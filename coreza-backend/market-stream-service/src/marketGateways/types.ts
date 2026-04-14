@@ -1,4 +1,5 @@
 import type { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
+import type WebSocket from "ws";
 
 export interface SubscribeOptions {
   klineInterval?: string;
@@ -14,6 +15,14 @@ export interface GatewayConfig {
   makeAuthHeaders?: (creds: any) => Record<string, string>;
   isAuthSuccess?: (msg: any, source?: string) => boolean;
   isAuthError?: (msg: any, source?: string) => boolean;
+  postAuthHook?: (
+    ws: WebSocket,
+    creds: any,
+    source: string,
+    logger: any,
+  ) => boolean;
+  isPostAuthSuccess?: (msg: any, source?: string) => boolean;
+  makeTradingKeepaliveMessage?: (creds: any, source?: string) => any;
 
   // Subscription management - streamNames are native broker format (btcusdt@kline_1m, bars.AAPL)
   makeSubscribeMessage: (streamNames: string[], source?: string) => any;

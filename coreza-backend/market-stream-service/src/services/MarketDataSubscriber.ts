@@ -298,9 +298,12 @@ export class MarketDataSubscriber {
           return;
         }
 
-        const stream = event.timeframe
-          ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-          : `${event.symbol.toLowerCase()}@${event.type}`;
+        const stream =
+          event.type === "order_update"
+            ? "order_update"
+            : event.timeframe
+              ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+              : `${event.symbol.toLowerCase()}@${event.type}`;
 
         // Find workflows registered for this stream
         const workflows = this.streamWorkflows.get(stream);
@@ -308,19 +311,19 @@ export class MarketDataSubscriber {
         // Handle wildcard registrations (*) — used by alpaca_trading (order_update covers all symbols)
         const wildcardWorkflows = this.streamWorkflows.get("*");
 
-        // Also check for fixed trading stream names (companion gateways)
-        const tradingStreamWorkflows =
-          event.type === "order_update"
-            ? new Set([
-                ...(this.streamWorkflows.get("trade_updates") || []),
-                //...(this.streamWorkflows.get("user_data_stream") || []),
-              ])
-            : undefined;
+        // // Also check for fixed trading stream names (companion gateways)
+        // const tradingStreamWorkflows =
+        //   event.type === "order_update"
+        //     ? new Set([
+        //         ...(this.streamWorkflows.get("trade_updates") || []),
+        //         //...(this.streamWorkflows.get("user_data_stream") || []),
+        //       ])
+        //     : undefined;
 
         const allWorkflows = new Set([
           ...(workflows || []),
           ...(wildcardWorkflows || []),
-          ...(tradingStreamWorkflows || []),
+          // ...(tradingStreamWorkflows || []),
         ]);
 
         if (allWorkflows.size === 0) return;

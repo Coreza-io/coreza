@@ -202,10 +202,13 @@ export class MarketDataGateway {
 
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
-        let stream: string;
-        stream = event.timeframe
-          ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-          : `${event.symbol.toLowerCase()}@${event.type}`;
+        const stream =
+          event.type === "order_update"
+            ? "order_update"
+            : event.timeframe
+              ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+              : `${event.symbol.toLowerCase()}@${event.type}`;
+
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
         console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);

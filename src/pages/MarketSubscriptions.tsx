@@ -190,23 +190,23 @@ const MarketSubscriptions = () => {
 
       try {
         let symbol: string;
-        let eventType: string;
+        let streamType: string;
         let interval: string | undefined;
 
-        if (stream === "trade_updates") {
+        if (stream === "order_update") {
           symbol = "[*]";
-          eventType = "trade_updates";
+          streamType = "order_update";
           interval = undefined;
         } else {
           const [symbolPart, rest] = stream.split("@");
-          const [eventTypePart, intervalPart] = rest?.split("_") ?? [];
+          const [streamTypePart, intervalPart] = rest?.split("_") ?? [];
 
-          if (!symbolPart || !eventTypePart) {
+          if (!symbolPart || !streamTypePart) {
             throw new Error(`Invalid stream format: ${stream}`);
           }
 
           symbol = symbolPart;
-          eventType = eventTypePart;
+          streamType = streamTypePart;
           interval = intervalPart;
         }
 
@@ -214,7 +214,7 @@ const MarketSubscriptions = () => {
           `/stream/${source}/unsubscribe`,
           {
             symbols: [symbol],
-            stream_types: [eventType],
+            stream_type: [streamType],
             interval,
             scope: "global",
             environment,
@@ -261,23 +261,23 @@ const MarketSubscriptions = () => {
 
       try {
         let symbol: string;
-        let eventType: string;
+        let streamType: string;
         let interval: string | undefined;
 
         if (stream === "order_update") {
           symbol = "[*]";
-          eventType = "order_update";
+          streamType = "order_update";
           interval = undefined;
         } else {
           const [symbolPart, rest] = stream.split("@");
-          const [eventTypePart, intervalPart] = rest?.split("_") ?? [];
+          const [streamTypePart, intervalPart] = rest?.split("_") ?? [];
 
-          if (!symbolPart || !eventTypePart) {
+          if (!symbolPart || !streamTypePart) {
             throw new Error(`Invalid stream format: ${stream}`);
           }
 
           symbol = symbolPart;
-          eventType = eventTypePart;
+          streamType = streamTypePart;
           interval = intervalPart;
         }
 
@@ -287,7 +287,7 @@ const MarketSubscriptions = () => {
             workflowId,
             targetWorkflowId: workflowId,
             symbols: [symbol],
-            stream_types: [eventType],
+            stream_type: [streamType],
             interval,
             scope: "workflow",
             environment,
@@ -741,7 +741,7 @@ const MarketSubscriptions = () => {
                     <TableHead>Workflow</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>streams</TableHead>
-                    <TableHead>Event Types</TableHead>
+                    <TableHead>Stream Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>

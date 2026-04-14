@@ -3,7 +3,7 @@
   "def": "Alpaca Stream Data",
   "node_type": "trigger",
   "icon": "/assets/icons/alpaca.svg",
-  "category": "Market",
+  "category": "Stream",
   "subCategory": "alpaca",
   "executionMode": "streaming",
   "action": {
@@ -60,24 +60,24 @@
   },
   "fields": [
     {
-      "key": "data_type",
-      "label": "Data Type",
+      "key": "asset_type",
+      "label": "Asset Type",
       "type": "select",
       "options": [
         {
-          "id": "market",
-          "name": "Market Data (Trades, Quotes, Bars)"
+          "id": "stock",
+          "name": "Stock"
         },
         {
           "id": "crypto",
-          "name": "Crypto (BTC/USD, ETH/USD)"
+          "name": "Crypto"
         },
         {
           "id": "news",
           "name": "News"
         }
       ],
-      "default": "market",
+      "default": "stock",
       "required": true
     },
     {
@@ -87,11 +87,11 @@
       "options": [
         {
           "id": "listen",
-          "name": "Listen (Use Pre-subscribed Symbols)"
+          "name": "Register"
         },
         {
           "id": "subscribe",
-          "name": "Subscribe & Stream (Self-contained)"
+          "name": "Subscribe & Register"
         }
       ],
       "default": "listen",
@@ -109,6 +109,27 @@
         }
       },
       "required": false
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "paper"
+        },
+        {
+          "id": "live",
+          "name": "Live"
+        }
+      ],
+      "default": "testnet",
+      "displayOptions": {
+        "show": {
+          "mode": ["subscribe"]
+        }
+      }
     },
     {
       "key": "feed",
@@ -133,7 +154,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "data_type": ["market"]
+          "asset_type": ["stock"]
         }
       },
       "showDescription": false
@@ -147,7 +168,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "data_type": ["market", "news"]
+          "asset_type": ["stock", "news"]
         }
       },
       "showDescription": false
@@ -161,7 +182,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "data_type": ["crypto"]
+          "asset_type": ["crypto"]
         }
       },
       "showDescription": false
@@ -193,14 +214,14 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "data_type": ["crypto"]
+          "asset_type": ["crypto"]
         }
       },
       "showDescription": false
     },
     {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "stream_type",
+      "label": "Stream Type",
       "type": "multiselect",
       "options": [
         {
@@ -228,7 +249,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "data_type": ["market", "crypto"]
+          "asset_type": ["stock", "crypto"]
         }
       }
     },

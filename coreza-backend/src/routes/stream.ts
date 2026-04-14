@@ -85,14 +85,15 @@ router.post("/:source/subscribe", async (req, res) => {
       credential_id,
       symbols,
       node_id,
+      category,
       workflowId,
-      stream_types,
-      data_type,
+      asset_type,
+      stream_type,
       crypto_base,
       crypto_quote,
       feed,
       environment,
-      asset_type,
+      market_type,
       interval,
       depth_levels,
       scope,
@@ -104,22 +105,22 @@ router.post("/:source/subscribe", async (req, res) => {
 
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
-    const sourceId = `${source}_${data_type}`;
+    const sourceId = `${source}_${category.toLowerCase()}`;
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
-    // Parse stream_types into array
-    const streamTypes: string[] = stream_types
-      ? typeof stream_types === "string"
-        ? stream_types.split(",").map((s: string) => s.trim())
-        : stream_types
+    // Parse stream_type into array
+    const streamType: string[] = stream_type
+      ? typeof stream_type === "string"
+        ? stream_type.split(",").map((s: string) => s.trim())
+        : stream_type
       : [];
 
     // If order_update is included, subscribe to the trading source separately
-    const hasOrderUpdate = streamTypes.includes("order_update");
-    const marketStreamTypes = streamTypes.filter(
+    const hasOrderUpdate = streamType.includes("order_update");
+    const marketstreamType = streamType.filter(
       (t: string) => t !== "order_update",
     );
 
@@ -133,9 +134,10 @@ router.post("/:source/subscribe", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id,
         symbols: ["*"],
-        streamTypes: ["order_update"],
+        streamType: ["order_update"],
         environment,
         assetType: asset_type,
+        marketType: market_type,
         scope,
         targetWorkflowId,
       });
@@ -143,7 +145,7 @@ router.post("/:source/subscribe", async (req, res) => {
 
     // Subscribe to market/crypto streams (excluding order_update)
     const normalizedSymbols = buildCryptoSymbols(
-      data_type,
+      stream_type,
       crypto_base,
       crypto_quote,
     );
@@ -151,7 +153,7 @@ router.post("/:source/subscribe", async (req, res) => {
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
     let result;
-    if (marketStreamTypes.length > 0 || !hasOrderUpdate) {
+    if (marketstreamType.length > 0 || !hasOrderUpdate) {
       result = await SubscriptionService.subscribe({
         source: sourceId,
         userId,
@@ -159,11 +161,11 @@ router.post("/:source/subscribe", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id,
         symbols: resolvedSymbols,
-        streamTypes:
-          marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
         feed,
         environment,
         assetType: asset_type,
+        marketType: market_type,
         interval,
         depth_levels: depth_levels,
         scope,
@@ -175,7 +177,7 @@ router.post("/:source/subscribe", async (req, res) => {
         data: {
           message: "Subscribed to order updates",
           symbols: ["*"],
-          streamTypes: ["order_update"],
+          streamType: ["order_update"],
         },
       };
     }
@@ -188,7 +190,7 @@ router.post("/:source/subscribe", async (req, res) => {
       success: true,
       message: result.data?.message,
       symbols: result.data?.symbols,
-      stream_types: result.data?.streamTypes,
+      stream_type: result.data?.streamType,
       sourceId,
       node_id,
       workflowId: workflowId || null,
@@ -218,14 +220,15 @@ router.post("/:source/unsubscribe", async (req, res) => {
       credential_id,
       symbols,
       node_id,
+      category,
       workflowId,
-      stream_types,
-      data_type,
+      asset_type,
+      market_type,
+      stream_type,
       crypto_base,
       crypto_quote,
       feed,
       environment,
-      asset_type,
       interval,
       depth_levels,
       scope,
@@ -233,8 +236,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
     } = req.body;
 
     let sourceId;
-    if (data_type) {
-      sourceId = `${source}_${data_type}`;
+    if (category) {
+      sourceId = `${source}_${category}`;
     } else {
       sourceId = source;
     }
@@ -243,29 +246,27 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
-    // Parse stream_types into array
-    const streamTypes: string[] = stream_types
-      ? typeof stream_types === "string"
-        ? stream_types.split(",").map((s: string) => s.trim())
-        : stream_types
+    // Parse stream_type into array
+    const streamType: string[] = stream_type
+      ? typeof stream_type === "string"
+        ? stream_type.split(",").map((s: string) => s.trim())
+        : stream_type
       : [];
 
     // If order_update is included, also unsubscribe from trading source
-    const hasOrderUpdate = streamTypes.includes("order_update");
-    const marketStreamTypes = streamTypes.filter(
+    const hasOrderUpdate = streamType.includes("order_update");
+    const marketstreamType = streamType.filter(
       (t: string) => t !== "order_update",
     );
 
     if (hasOrderUpdate) {
-      const tradingSource =
-        source === "binance" ? "binance_trading" : "alpaca_trading";
       await SubscriptionService.unsubscribe({
         source: sourceId as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
         symbols: ["*"],
-        streamTypes: ["order_update"],
+        streamType: ["order_update"],
         scope,
         environment,
         targetWorkflowId,
@@ -273,14 +274,14 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
 
     const normalizedSymbols = buildCryptoSymbols(
-      data_type,
+      stream_type,
       crypto_base,
       crypto_quote,
     );
     const resolvedSymbols =
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
     let result: any;
-    if (marketStreamTypes) {
+    if (marketstreamType) {
       result = await SubscriptionService.unsubscribe({
         source: sourceId,
         userId,
@@ -288,11 +289,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id,
         symbols: resolvedSymbols,
-        streamTypes:
-          marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
         feed,
         environment,
         assetType: asset_type,
+        market_Type: market_type,
         interval,
         depth_levels: depth_levels,
         scope,
@@ -309,7 +310,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       message: result.data?.message,
       sourceId,
       symbols: result.data?.symbols,
-      stream_types: result.data?.streamTypes,
+      stream_type: result.data?.streamType,
       targetWorkflowId: targetWorkflowId || null,
     });
   } catch (error) {
@@ -418,15 +419,16 @@ router.post("/:source/register", async (req, res) => {
       workflowId,
       node_id,
       node_type,
+      category,
       mode = "subscribe",
       symbols,
-      data_type,
+      asset_type,
       crypto_base,
       crypto_quote,
-      stream_types,
+      stream_type,
       credential_id,
       environment,
-      asset_type,
+      market_type,
       feed,
       interval,
       depth_levels,
@@ -444,7 +446,7 @@ router.post("/:source/register", async (req, res) => {
       return res.status(400).json({ error: "node_type is required" });
     }
 
-    const sourceId = `${source}_${data_type}`;
+    const sourceId = `${source}_${category.toLowerCase()}`;
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
@@ -452,34 +454,34 @@ router.post("/:source/register", async (req, res) => {
 
     // Parse symbols (crypto-aware)
     const cryptoSymbols = buildCryptoSymbols(
-      data_type,
+      stream_type,
       crypto_base,
       crypto_quote,
     );
     const parsedSymbols: string[] =
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
-    // Parse stream_types into array
-    const parsedStreamTypes: string[] = stream_types
-      ? typeof stream_types === "string"
-        ? stream_types.split(",").map((s: string) => s.trim())
-        : stream_types
+    // Parse stream_type into array
+    const parsedstreamType: string[] = stream_type
+      ? typeof stream_type === "string"
+        ? stream_type.split(",").map((s: string) => s.trim())
+        : stream_type
       : [];
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
-    const hasOrderUpdate = parsedStreamTypes.includes("order_update");
-    const { marketStreamTypes, tradingStreamTypes } = parsedStreamTypes.reduce(
+    const hasOrderUpdate = parsedstreamType.includes("order_update");
+    const { marketstreamType, tradingstreamType } = parsedstreamType.reduce(
       (acc, t: string) => {
         if (t === "order_update") {
-          acc.tradingStreamTypes.push(t);
+          acc.tradingstreamType.push(t);
         } else {
-          acc.marketStreamTypes.push(t);
+          acc.marketstreamType.push(t);
         }
         return acc;
       },
       {
-        marketStreamTypes: [] as string[],
-        tradingStreamTypes: [] as string[],
+        marketstreamType: [] as string[],
+        tradingstreamType: [] as string[],
       },
     );
 
@@ -506,9 +508,11 @@ router.post("/:source/register", async (req, res) => {
           nodeId: node_id,
           credentialId: credential_id || "",
           symbols: ["*"],
-          streamTypes: tradingStreamTypes,
+          streamType: tradingstreamType,
           environment: requiredEnvironment,
           assetType: asset_type,
+          marketType: market_type,
+          interval,
           scope,
           targetWorkflowId: workflowId,
         });
@@ -543,7 +547,7 @@ router.post("/:source/register", async (req, res) => {
       }
 
       // Subscribe to market streams (excluding order_update)
-      if (marketStreamTypes.length > 0 || !hasOrderUpdate) {
+      if (marketstreamType.length > 0 || !hasOrderUpdate) {
         const subscribeResult = await SubscriptionService.subscribe({
           source: sourceId,
           userId,
@@ -551,11 +555,12 @@ router.post("/:source/register", async (req, res) => {
           nodeId: node_id,
           credentialId: credential_id || "",
           symbols: parsedSymbols,
-          streamTypes:
-            marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+          streamType:
+            marketstreamType.length > 0 ? marketstreamType : undefined,
           feed,
           environment: requiredEnvironment,
           assetType: asset_type,
+          marketType: market_type,
           interval,
           depth_levels: depth_levels,
           scope,
@@ -625,8 +630,9 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       filterSymbols: parsedSymbols,
-      filterTypes: stream_types,
+      filterTypes: stream_type,
       assetType: asset_type,
+      marketType: market_type,
       interval,
       depth_levels: depth_levels,
     });
@@ -703,12 +709,12 @@ router.post("/unregister", async (req, res) => {
       const tradingSource = `${sourceFamily}_trading`;
       const hasOrderUpdate =
         listener.filterTypes?.includes("order_update") ?? false;
-      let streamTypes: string[] = [];
+      let streamType: string[] = [];
 
       // Only unsubscribe trading if this was a market/crypto/stream source
       // (not if source is already a trading source)
       if (hasOrderUpdate) {
-        streamTypes =
+        streamType =
           listener.filterTypes?.filter((type) => type === "order_update") ?? [];
         await SubscriptionService.unsubscribe({
           source: listener?.source as any,
@@ -716,14 +722,14 @@ router.post("/unregister", async (req, res) => {
           workflowId,
           nodeId: node_id,
           symbols: ["*"],
-          streamTypes: streamTypes,
+          streamType: streamType,
           scope: listener.scope,
           environment: listener.environment,
           targetWorkflowId: workflowId,
         });
       }
 
-      streamTypes =
+      streamType =
         listener.filterTypes?.filter((type) => type !== "order_update") ?? [];
       await SubscriptionService.unsubscribe({
         source: listener?.source as any,
@@ -731,8 +737,10 @@ router.post("/unregister", async (req, res) => {
         workflowId,
         nodeId: node_id,
         symbols: listener.filterSymbols,
-        eventTypes: streamTypes,
+        eventTypes: streamType,
         //assetType: listener.assetType,
+        assetType: listener.asset_type,
+        marketType: listener.market_type,
         interval: listener.interval,
         depthLevels: listener.depth_levels,
         environment: listener.environment,

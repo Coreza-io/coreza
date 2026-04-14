@@ -23,10 +23,11 @@ interface ControlMessage {
   symbols: string[];
   source: MarketSource;
   credentialId?: string;
-  eventTypes?: string[];
+  streamType?: string[];
   feed?: string;
   environment?: string; // For Binance: testnet/live
   assetType?: string; // For Binance: spot/futures
+  marketType?: string;
   scope: string;
   targetWorkflowId?: string;
   // Raw interval/depth for stream name building (centralized in market-stream-service)
@@ -339,18 +340,18 @@ export class MarketControlHandler {
       streams.forEach((s) => allStream.add(s));
 
       // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
-      const companionSource = this.getCompanionTradingSource(source);
-      if (companionSource) {
-        const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
-        const tradingStreams = await this.redisPub.smembers(tradingKey);
-        if (tradingStreams.length > 0) {
-          console.log(
-            `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams (global):`,
-            tradingStreams,
-          );
-          tradingStreams.forEach((s) => allStream.add(s));
-        }
-      }
+      // const companionSource = this.getCompanionTradingSource(source);
+      // if (companionSource) {
+      //   const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
+      //   const tradingStreams = await this.redisPub.smembers(tradingKey);
+      //   if (tradingStreams.length > 0) {
+      //     console.log(
+      //       `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams (global):`,
+      //       tradingStreams,
+      //     );
+      //     tradingStreams.forEach((s) => allStream.add(s));
+      //   }
+      // }
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,
@@ -577,10 +578,11 @@ export class MarketControlHandler {
       userId,
       workflowId,
       symbols,
-      eventTypes,
+      streamType,
       feed,
       environment,
       assetType,
+      marketType,
       interval,
       depthLevels,
       scope,
@@ -605,32 +607,32 @@ export class MarketControlHandler {
             source,
             userId,
             msg.credentialId,
+            marketType,
             feed,
             environment,
-            assetType,
           );
           state = this.sourceStates.get(stateKey)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
         // Build stream names FIRST (before any tracking)
-        const processedEventTypes = this.processEventTypesForStreamNames(
-          eventTypes || [],
+        const processedStreamType = this.processStreamTypesForStreamNames(
+          streamType || [],
           source,
           interval,
           depthLevels,
         );
 
         let requestedStreamNames: string[] = [];
-        if (!processedEventTypes.includes("order_update")) {
+        if (!processedStreamType.includes("order_update")) {
           requestedStreamNames = buildStreamNames(
             source,
             symbols,
-            processedEventTypes,
+            processedStreamType,
             interval || "",
           );
         } else {
-          requestedStreamNames = processedEventTypes;
+          requestedStreamNames = processedStreamType;
         }
 
         // Check which stream names are NEW (not already in state.streams)
@@ -722,8 +724,10 @@ export class MarketControlHandler {
       source,
       workflowId,
       symbols,
-      eventTypes,
+      streamType,
       interval,
+      assetType,
+      marketType,
       depthLevels,
       environment,
       scope,
@@ -749,8 +753,8 @@ export class MarketControlHandler {
 
       if (symbols.length > 0) {
         // Build stream names to remove
-        const processedEventTypes = this.processEventTypesForStreamNames(
-          eventTypes || [],
+        const processedStreamType = this.processStreamTypesForStreamNames(
+          streamType || [],
           source,
           interval,
           depthLevels,
@@ -758,13 +762,13 @@ export class MarketControlHandler {
 
         let streamNamesToRemove: string[] = [];
 
-        if (processedEventTypes.includes("order_update")) {
-          streamNamesToRemove = processedEventTypes;
+        if (processedStreamType.includes("order_update")) {
+          streamNamesToRemove = processedStreamType;
         } else {
           streamNamesToRemove = buildStreamNames(
             source,
             symbols,
-            processedEventTypes,
+            processedStreamType,
             interval || "",
           );
         }
@@ -868,17 +872,17 @@ export class MarketControlHandler {
    * Process raw event types into format expected by buildStreamNames
    * Handles kline intervals and depth levels for Binance
    */
-  private processEventTypesForStreamNames(
-    eventTypes: string[],
+  private processStreamTypesForStreamNames(
+    streamType: string[],
     source: string,
     interval?: string,
     depthLevels?: string,
   ): string[] {
     if (!source.startsWith("binance")) {
-      return eventTypes;
+      return streamType;
     }
 
-    return eventTypes.map((type) => {
+    return streamType.map((type) => {
       // Kline with interval: kline -> kline_1m
       if (type === "kline" && interval) {
         return `kline_${interval}`;
@@ -900,7 +904,7 @@ export class MarketControlHandler {
     credentialId?: string,
     feed?: string,
     environment?: string,
-    assetType?: string,
+    marketType?: string,
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
@@ -959,10 +963,10 @@ export class MarketControlHandler {
           `🌐 [MarketControl] Using ${environment} environment for ${source}`,
         );
       }
-      if (assetType) {
-        creds = { ...creds, asset_type: assetType };
+      if (marketType) {
+        creds = { ...creds, market_type: marketType };
         console.log(
-          `📊 [MarketControl] Using ${assetType} asset type for ${source}`,
+          `📊 [MarketControl] Using ${marketType} asset type for ${source}`,
         );
       }
 

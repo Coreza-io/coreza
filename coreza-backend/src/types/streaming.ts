@@ -19,7 +19,7 @@ export interface StreamExecutionRequest {
   symbols?: string[] | string;
   crypto_base?: string;
   crypto_quote?: string;
-  data_type: string;
+  stream_type: string;
   stream_types?: string[] | string;
   credential_id?: string;
   environment?: "testnet" | "live";

@@ -50,6 +50,7 @@ export interface ListenerParams {
   filterSymbols?: string[];
   filterTypes?: string[];
   assetType?: string;
+  marketType?: string;
   interval?: string;
   depth_levels?: string;
 }
@@ -67,6 +68,7 @@ export interface ListenerData {
   filterSymbols?: string[];
   filterTypes?: string[];
   assetType?: string;
+  marketType?: string;
   interval?: string;
   depth_levels?: string;
 }
@@ -134,6 +136,7 @@ export class RegistrationService {
       filterSymbols,
       filterTypes,
       assetType,
+      marketType,
       interval,
       depth_levels,
     } = params;
@@ -155,6 +158,7 @@ export class RegistrationService {
       filterSymbols,
       filterTypes,
       assetType,
+      marketType,
       interval,
       depth_levels,
     };

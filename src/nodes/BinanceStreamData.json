@@ -3,7 +3,7 @@
   "def": "Binance Stream Data",
   "node_type": "trigger",
   "icon": "/assets/icons/binance.svg",
-  "category": "Market",
+  "category": "Stream",
   "subCategory": "binance",
   "executionMode": "streaming",
   "action": {
@@ -60,9 +60,9 @@
   },
   "fields": [
     {
-      "key": "data_type",
+      "key": "asset_type",
       "type": "hidden",
-      "default": "stream"
+      "default": "crypto"
     },
     {
       "key": "mode",
@@ -71,11 +71,11 @@
       "options": [
         {
           "id": "listen",
-          "name": "Listen (Use Pre-subscribed Symbols)"
+          "name": "Register"
         },
         {
           "id": "subscribe",
-          "name": "Subscribe & Stream (Self-contained)"
+          "name": "Subscribe & Register"
         }
       ],
       "default": "listen",
@@ -105,7 +105,7 @@
         },
         {
           "id": "live",
-          "name": "Production (Live)"
+          "name": "Live"
         }
       ],
       "default": "testnet",
@@ -116,8 +116,8 @@
       }
     },
     {
-      "key": "asset_type",
-      "label": "Asset Type",
+      "key": "market_type",
+      "label": "Market Type",
       "type": "select",
       "options": [
         {
@@ -150,8 +150,8 @@
       "showDescription": false
     },
     {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "stream_type",
+      "label": "Stream Type",
       "type": "multiselect",
       "options": [
         {
@@ -264,7 +264,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "stream_types": ["kline"]
+          "stream_type": ["kline"]
         }
       }
     },
@@ -289,7 +289,7 @@
       "default": "10",
       "displayOptions": {
         "show": {
-          "stream_types": ["depth"]
+          "stream_type": ["depth"]
         }
       }
     },

@@ -29,14 +29,13 @@ export interface SubscriptionParams {
   symbols?: string | string[];
   initialInput?: { symbols?: string | string[] };
   // Stream configuration
-  streamTypes?: string[];
-  // Data type (market, news, etc.) - used to build sourceId as {subCategory}_{dataType}
-  dataType?: "market" | "news";
+  streamType?: string[];
   // Alpaca-specific
   feed?: string;
   // Binance-specific
   environment?: string;
   assetType?: string;
+  marketType?: string;
   interval?: string;
   depth_levels?: string;
   // Subscription scope
@@ -50,7 +49,7 @@ export interface SubscriptionResult {
     status: string;
     source: string;
     symbols: string[];
-    streamTypes?: string[];
+    streamType?: string[];
     message: string;
   };
   error?: string;
@@ -128,10 +127,11 @@ export class SubscriptionService {
         credentialId,
         operation,
         symbols,
-        streamTypes,
+        streamType,
         feed,
         environment,
         assetType,
+        marketType,
         interval,
         depth_levels,
         scope,
@@ -212,7 +212,9 @@ export class SubscriptionService {
         symbols: symbolArray,
         source,
         credentialId,
-        eventTypes: streamTypes || [], // RAW event types (kline, trade, etc.)
+        streamType: streamType || [], // RAW event types (kline, trade, etc.)
+        assetType,
+        marketType,
         scope,
         // Pass raw parameters for stream name building in market-stream-service
         interval,
@@ -250,7 +252,7 @@ export class SubscriptionService {
           status: operation === "subscribe" ? "subscribed" : "unsubscribed",
           source,
           symbols: symbolArray,
-          streamTypes: streamTypes || [],
+          streamType: streamType || [],
           message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
         },
       };

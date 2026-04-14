@@ -3,7 +3,7 @@
   "def": "Binance Stream Data",
   "node_type": "trigger",
   "icon": "/assets/icons/binance.svg",
-  "category": "Stream",
+  "category": "Market",
   "subCategory": "binance",
   "executionMode": "streaming",
   "action": {

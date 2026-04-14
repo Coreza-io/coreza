@@ -124,7 +124,7 @@
           "name": "Live"
         }
       ],
-      "default": "testnet",
+      "default": "paper",
       "displayOptions": {
         "show": {
           "mode": ["subscribe"]

@@ -607,8 +607,8 @@ export class MarketControlHandler {
             source,
             userId,
             msg.credentialId,
-            marketType,
             feed,
+            marketType,
             environment,
           );
           state = this.sourceStates.get(stateKey)!;
@@ -903,8 +903,8 @@ export class MarketControlHandler {
     userId: string,
     credentialId?: string,
     feed?: string,
-    environment?: string,
     marketType?: string,
+    environment?: string,
   ): Promise<void> {
     try {
       // Map source to credential service type and gateway source
@@ -1076,6 +1076,9 @@ export class MarketControlHandler {
               source as MarketSource,
               userId,
               stateData.credentialId,
+              stateData.feed,
+              stateData.marketType,
+              stateData.environment,
             );
             const state = this.sourceStates.get(
               this.getStateKey(userId, source as MarketSource),

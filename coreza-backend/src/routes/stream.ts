@@ -446,7 +446,15 @@ router.post("/:source/register", async (req, res) => {
       return res.status(400).json({ error: "node_type is required" });
     }
 
-    const sourceId = `${source}_${category.toLowerCase()}`;
+    let sourceId: string;
+
+    if (asset_type === "stock" || asset_type === "crypto") {
+      sourceId = `${source}_${category.toLowerCase()}`;
+    } else if (asset_type === "news") {
+      sourceId = `${source}_${asset_type.toLowerCase()}`;
+    } else {
+      throw new Error(`Unsupported asset_type: ${asset_type}`);
+    }
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
@@ -502,7 +510,7 @@ router.post("/:source/register", async (req, res) => {
       if (hasOrderUpdate) {
         const tradingSourceId = `${source}_trading`;
         const tradingResult = await SubscriptionService.subscribe({
-          source: sourceId,
+          source: tradingSourceId,
           userId,
           workflowId,
           nodeId: node_id,

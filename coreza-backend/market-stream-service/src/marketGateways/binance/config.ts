@@ -17,8 +17,7 @@ import {
 export const binanceGatewayConfig: GatewayConfig = {
   id: "binance",
   wsUrl: (creds, source) => getBinanceWsUrl(creds, source),
-  makeAuthMessage: (creds, source) =>
-    buildBinanceAuthMessage(creds, source),
+  makeAuthMessage: (creds, source) => buildBinanceAuthMessage(creds, source),
   isAuthSuccess: (msg, source) => isBinanceAuthSuccess(msg, source),
   isAuthError: (msg, source) => isBinanceAuthError(msg, source),
   makeSubscribeMessage: (stream, source) =>
@@ -31,9 +30,7 @@ export const binanceGatewayConfig: GatewayConfig = {
   handleControlMessage: (msg, logger, source) =>
     handleBinanceControlMessage(msg, logger, source),
   normalize: (msg, source) => normalizeBinanceMessage(msg, source),
-  requiresPreConnect: (source, creds) =>
-    source === "binance_trading" &&
-    (creds?.asset_type || creds?.assetType || "spot") === "futures",
+  requiresPreConnect: (source, creds) => false,
   preConnect: (creds, _source) => preConnectBinance(creds),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,

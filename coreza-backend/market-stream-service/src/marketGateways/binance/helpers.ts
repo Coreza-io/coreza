@@ -19,9 +19,9 @@ const BINANCE_REST_ENDPOINTS: Record<
   },
 };
 
-function isFuturesAssetType(creds: any): boolean {
-  const assetType = creds.asset_type || creds.assetType || "spot";
-  return assetType === "futures";
+function isFuturesMarketType(creds: any): boolean {
+  const marketType = creds.marketType;
+  return marketType === "futures";
 }
 
 function unwrapBinanceUserDataEnvelope(msg: any): any {
@@ -34,21 +34,33 @@ function unwrapBinanceUserDataEnvelope(msg: any): any {
 // ============ URL BUILDER (source-aware) ============
 export function getBinanceWsUrl(creds: any, source?: string): string {
   const isTestnet = creds.environment === "testnet";
-  const isFutures = isFuturesAssetType(creds);
+  const isFutures = isFuturesMarketType(creds);
 
   // Trading stream: spot uses WebSocket API, futures still uses listenKey stream
+  // if (source === "binance_trading") {
+  //   if (isFutures) {
+  //     const listenKey = creds.listenKey;
+  //     if (!listenKey) {
+  //       throw new Error(
+  //         "listenKey is required for binance_trading futures — preConnect must run first",
+  //       );
+  //     }
+
+  //     return isTestnet
+  //       ? `wss://stream.testnet.binancefuture.com/ws/${listenKey}`
+  //       : `wss://fstream.binance.com/ws/${listenKey}`;
+  //   }
+
+  //   return isTestnet
+  //     ? "wss://ws-api.testnet.binance.vision/ws-api/v3"
+  //     : "wss://ws-api.binance.com:443/ws-api/v3";
+  // }
+
   if (source === "binance_trading") {
     if (isFutures) {
-      const listenKey = creds.listenKey;
-      if (!listenKey) {
-        throw new Error(
-          "listenKey is required for binance_trading futures — preConnect must run first",
-        );
-      }
-
       return isTestnet
-        ? `wss://stream.testnet.binancefuture.com/ws/${listenKey}`
-        : `wss://fstream.binance.com/ws/${listenKey}`;
+        ? "wss://testnet.binancefuture.com/ws-fapi/v1"
+        : "wss://ws-fapi.binance.com/ws-fapi/v1";
     }
 
     return isTestnet
@@ -70,7 +82,7 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
 
 // ============ PRE-CONNECT: Fetch listenKey for User Data Stream (futures only) ============
 export async function preConnectBinance(creds: any): Promise<any> {
-  if (!isFuturesAssetType(creds)) {
+  if (!isFuturesMarketType(creds)) {
     // Spot trading now authenticates directly over WebSocket API.
     return creds;
   }
@@ -131,28 +143,57 @@ export async function preConnectBinance(creds: any): Promise<any> {
 }
 
 // ============ AUTH (source-aware) ============
+// Spot trading:
+//   - subscribe directly with userDataStream.subscribe.signature
+// Futures trading:
+//   - first authenticate the WebSocket session with session.logon
 export function buildBinanceAuthMessage(creds: any, source?: string): any {
-  const isFutures = isFuturesAssetType(creds);
-  if (source !== "binance_trading" || isFutures) {
+  if (source !== "binance_trading") {
     return null;
   }
 
-  if (!creds.secret_key) {
+  if (!creds?.api_key) {
+    throw new Error(
+      "Binance api_key is missing from credentials — cannot build auth message",
+    );
+  }
+
+  if (!creds?.secret_key) {
     throw new Error(
       "Binance secret_key is missing from credentials — cannot sign auth message",
     );
   }
 
+  const isFutures = isFuturesMarketType(creds);
+  const environment = creds.environment === "testnet" ? "testnet" : "live";
+
   const timestamp = getBinanceTimestamp(
-    creds.environment === "testnet" ? "testnet" : "live",
+    environment,
     isFutures ? "futures" : "spot",
   );
+
   const queryString = `apiKey=${creds.api_key}&recvWindow=${BINANCE_AUTH_RECV_WINDOW}&timestamp=${timestamp}`;
+
   // HMAC-SHA256 signing — for RSA/Ed25519 keys, different signing logic would be needed
   const signature = createHmac("sha256", creds.secret_key)
     .update(queryString)
     .digest("hex");
 
+  // Futures WS API: authenticate the session first
+  if (isFutures) {
+    return {
+      id: "session-logon",
+      method: "session.logon",
+      params: {
+        apiKey: creds.api_key,
+        recvWindow: BINANCE_AUTH_RECV_WINDOW,
+        timestamp,
+        signature,
+      },
+    };
+  }
+
+  // Spot WS API: directly subscribe to user data stream
   return {
     id: "uds-subscribe",
     method: "userDataStream.subscribe.signature",

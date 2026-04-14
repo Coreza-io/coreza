@@ -8,26 +8,6 @@ function getMarketType(input: any): "spot" | "futures" {
   return (input?.marketType || "spot") === "futures" ? "futures" : "spot";
 }
 
-async function sendBinanceSignedRequest(
-  method: "get" | "post" | "delete",
-  baseUrl: string,
-  path: string,
-  params: Record<string, any>,
-  apiKey: string,
-  secretKey: string,
-) {
-  const { signedQueryString } = signHmacSha256(params, secretKey);
-  const url = `${baseUrl}${path}?${signedQueryString}`;
-
-  return axios.request({
-    method,
-    url,
-    headers: {
-      "X-MBX-APIKEY": apiKey,
-    },
-  });
-}
-
 function getEnvironment(input: any): "live" | "testnet" {
   return input?.environment === "testnet" ? "testnet" : "live";
 }

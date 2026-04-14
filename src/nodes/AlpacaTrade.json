@@ -79,6 +79,17 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "id": "paper", "name": "Paper" },
+        { "id": "live", "name": "Live" }
+      ],
+      "default": "paper",
+      "required": true
+    },
+    {
       "key": "asset_type",
       "label": "Asset Type",
       "type": "select",

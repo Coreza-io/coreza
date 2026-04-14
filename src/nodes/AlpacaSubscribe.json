@@ -62,6 +62,17 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        { "id": "paper", "name": "Paper" },
+        { "id": "live", "name": "Live" }
+      ],
+      "default": "paper",
+      "required": true
+    },
+    {
       "key": "data_type",
       "label": "Data Type",
       "type": "select",

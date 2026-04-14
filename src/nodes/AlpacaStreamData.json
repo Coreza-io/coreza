@@ -3,7 +3,7 @@
   "def": "Alpaca Stream Data",
   "node_type": "trigger",
   "icon": "/assets/icons/alpaca.svg",
-  "category": "Stream",
+  "category": "Market",
   "subCategory": "alpaca",
   "executionMode": "streaming",
   "action": {

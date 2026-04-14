@@ -1,15 +1,49 @@
-import crypto from 'crypto';
+// import crypto from 'crypto';
 
-export function signHmacSha256(params: Record<string, any>, secretKey: string): Record<string, any> {
+// export function signHmacSha256(params: Record<string, any>, secretKey: string): Record<string, any> {
+//   const searchParams = new URLSearchParams();
+
+//   Object.entries(params).forEach(([key, value]) => {
+//     if (value !== undefined && value !== null) {
+//       searchParams.append(key, String(value));
+//     }
+//   });
+
+//   const signature = crypto.createHmac('sha256', secretKey).update(searchParams.toString()).digest('hex');
+
+//   return { ...params, signature };
+// }
+
+import crypto from "crypto";
+
+export function signHmacSha256(
+  params: Record<string, any>,
+  secretKey: string,
+): {
+  signedParams: Record<string, any>;
+  queryString: string;
+  signedQueryString: string;
+  signature: string;
+} {
   const searchParams = new URLSearchParams();
 
-  Object.entries(params).forEach(([key, value]) => {
+  for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null) {
       searchParams.append(key, String(value));
     }
-  });
+  }
 
-  const signature = crypto.createHmac('sha256', secretKey).update(searchParams.toString()).digest('hex');
+  const queryString = searchParams.toString();
 
-  return { ...params, signature };
+  const signature = crypto
+    .createHmac("sha256", secretKey)
+    .update(queryString)
+    .digest("hex");
+
+  return {
+    signedParams: { ...params, signature },
+    queryString,
+    signedQueryString: `${queryString}&signature=${signature}`,
+    signature,
+  };
 }

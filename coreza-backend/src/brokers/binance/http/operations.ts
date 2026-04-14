@@ -1,175 +1,238 @@
-import { interval } from "date-fns";
+import axios from "axios";
 import { getBinanceTimestamp } from "../../../utils/binanceTimeSync";
 import { signHmacSha256 } from "../../../utils/crypto";
 import { BrokerOperation, toBarSeries } from "../../types";
 import { fromBinanceBar, parseBinanceKline } from "../helpers";
 
+function getMarketType(input: any): "spot" | "futures" {
+  return (input?.marketType || "spot") === "futures" ? "futures" : "spot";
+}
+
+async function sendBinanceSignedRequest(
+  method: "get" | "post" | "delete",
+  baseUrl: string,
+  path: string,
+  params: Record<string, any>,
+  apiKey: string,
+  secretKey: string,
+) {
+  const { signedQueryString } = signHmacSha256(params, secretKey);
+  const url = `${baseUrl}${path}?${signedQueryString}`;
+
+  return axios.request({
+    method,
+    url,
+    headers: {
+      "X-MBX-APIKEY": apiKey,
+    },
+  });
+}
+
+function getEnvironment(input: any): "live" | "testnet" {
+  return input?.environment === "testnet" ? "testnet" : "live";
+}
+
+function buildSignedParams(
+  input: any,
+  creds: any,
+  params: Record<string, any>,
+): Record<string, any> {
+  const environment = getEnvironment(input);
+  const marketType = getMarketType(input);
+  const timestamp = getBinanceTimestamp(environment, marketType);
+
+  const signed = signHmacSha256(
+    {
+      ...params,
+      recvWindow: 60000,
+      timestamp,
+    },
+    creds.secret_key,
+  );
+
+  return signed.signedParams;
+}
+
 export const binanceOperations: Record<string, BrokerOperation> = {
   get_account: {
     method: "get",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures" ? "/fapi/v2/account" : "/api/v3/account";
+      const marketType = getMarketType(input);
+      return marketType === "futures" ? "/fapi/v3/account" : "/api/v3/account";
     },
     makeParams: (input: any, creds: any) => {
-      const environment = input?.environment || "live";
-      const assetType = input?.asset_type || "spot";
-      const timestamp = getBinanceTimestamp(environment, assetType);
-      const recvWindow = 5000;
-      const params = {
-        recvWindow,
-        timestamp,
-      };
-
-      return signHmacSha256(params, creds.secret_key);
+      return buildSignedParams(input, creds, {});
     },
   },
+
   get_positions: {
     method: "get",
     path: (input: any) => {
-      const assetType = input?.asset_type || "futures";
-      if (assetType !== "futures") {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
         throw new Error("get_positions is only supported for futures accounts");
       }
 
-      return "/fapi/v2/positionRisk";
+      return "/fapi/v3/positionRisk";
     },
     makeParams: (input: any, creds: any) => {
-      const environment = input?.environment || "live";
-      const assetType = input?.asset_type || "futures";
+      const environment = getEnvironment(input);
+      const marketType = getMarketType(input);
 
-      if (assetType !== "futures") {
+      if (marketType !== "futures") {
         throw new Error("get_positions is only supported for futures accounts");
       }
 
-      const timestamp = getBinanceTimestamp(environment, assetType);
-      const recvWindow = 5000;
-      const params: any = {};
+      const timestamp = getBinanceTimestamp(environment, marketType);
+      const params: Record<string, any> = {
+        recvWindow: 5000,
+        timestamp,
+      };
 
-      if (input.symbol) {
-        params.symbol = input.symbol;
+      if (input?.symbol) {
+        params.symbol = String(input.symbol).toUpperCase();
       }
 
-      params.recvWindow = recvWindow;
-      params.timestamp = timestamp;
-
-      return signHmacSha256(params, creds.secret_key);
+      return buildSignedParams(input, creds, params);
     },
-    transformResult: (raw: any, input: any) => {
+    transformResult: (raw: any) => {
       return {
         positions: raw,
       };
     },
   },
+
   get_orders: {
     method: "get",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures"
+      const marketType = getMarketType(input);
+      return marketType === "futures"
         ? "/fapi/v1/allOrders"
         : "/api/v3/allOrders";
     },
     makeParams: (input: any, creds: any) => {
-      const environment = input?.environment || "live";
-      const assetType = input?.asset_type || "spot";
-      const timestamp = getBinanceTimestamp(environment, assetType);
-      const recvWindow = 5000;
-      const params: any = { recvWindow, timestamp };
+      if (!input?.symbol) {
+        throw new Error("symbol is required for get_orders");
+      }
 
-      if (!input.symbol) throw new Error("symbol is required for get_orders");
-      params.symbol = input.symbol;
-      if (input.limit) params.limit = input.limit;
-      if (input.startTime)
+      const environment = getEnvironment(input);
+      const marketType = getMarketType(input);
+      const timestamp = getBinanceTimestamp(environment, marketType);
+
+      const params: Record<string, any> = {
+        symbol: String(input.symbol).toUpperCase(),
+        recvWindow: 5000,
+        timestamp,
+      };
+
+      if (input?.limit) params.limit = input.limit;
+      if (input?.startTime)
         params.startTime = new Date(input.startTime).getTime();
-      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input?.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input?.orderId) params.orderId = input.orderId;
 
-      return signHmacSha256(params, creds.secret_key);
+      return buildSignedParams(input, creds, params);
     },
-    transformResult: (raw: any, input: any) => {
+    transformResult: (raw: any) => {
       return {
         orders: raw,
       };
     },
   },
+
   get_trades: {
     method: "get",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures"
+      const marketType = getMarketType(input);
+      return marketType === "futures"
         ? "/fapi/v1/userTrades"
         : "/api/v3/myTrades";
     },
     makeParams: (input: any, creds: any) => {
-      if (!input.symbol) throw new Error("symbol is required for get_trades");
+      if (!input?.symbol) {
+        throw new Error("symbol is required for get_trades");
+      }
 
-      const environment = input?.environment || "live";
-      const assetType = input?.asset_type || "spot";
-      const timestamp = getBinanceTimestamp(environment, assetType);
-      const recvWindow = 5000;
-      const params: any = {
-        symbol: input.symbol,
-        recvWindow,
+      const environment = getEnvironment(input);
+      const marketType = getMarketType(input);
+      const timestamp = getBinanceTimestamp(environment, marketType);
+
+      const params: Record<string, any> = {
+        symbol: String(input.symbol).toUpperCase(),
+        recvWindow: 5000,
         timestamp,
       };
 
-      if (input.orderId) params.orderId = input.orderId;
-      if (input.startTime)
+      if (input?.orderId) params.orderId = input.orderId;
+      if (input?.startTime)
         params.startTime = new Date(input.startTime).getTime();
-      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
-      if (input.fromId) params.fromId = input.fromId;
-      if (input.limit) params.limit = input.limit;
+      if (input?.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input?.fromId) params.fromId = input.fromId;
+      if (input?.limit) params.limit = input.limit;
 
-      return signHmacSha256(params, creds.secret_key);
+      return buildSignedParams(input, creds, params);
     },
-    transformResult: (raw: any, input: any) => {
+    transformResult: (raw: any) => {
       return {
         trades: raw,
       };
     },
   },
+
   cancel_order: {
     method: "delete",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
+      const marketType = getMarketType(input);
+      return marketType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
-      if (!input.symbol) throw new Error("symbol is required for cancel_order");
-      if (!input.order_id)
-        throw new Error("order_id is required for cancel_order");
+      if (!input?.symbol) {
+        throw new Error("symbol is required for cancel_order");
+      }
+      if (!input?.order_id && !input?.origClientOrderId) {
+        throw new Error(
+          "Either order_id or origClientOrderId is required for cancel_order",
+        );
+      }
 
-      const environment = input?.environment || "live";
-      const assetType = input?.asset_type || "spot";
-      const timestamp = getBinanceTimestamp(environment, assetType);
-      const recvWindow = 5000;
-      const params: any = {
-        symbol: input.symbol,
-        orderId: input.order_id,
-        recvWindow,
+      const environment = getEnvironment(input);
+      const marketType = getMarketType(input);
+      const timestamp = getBinanceTimestamp(environment, marketType);
+
+      const params: Record<string, any> = {
+        symbol: String(input.symbol).toUpperCase(),
+        recvWindow: 5000,
         timestamp,
       };
 
-      return signHmacSha256(params, creds.secret_key);
+      if (input?.order_id) params.orderId = input.order_id;
+      if (input?.origClientOrderId)
+        params.origClientOrderId = input.origClientOrderId;
+
+      return buildSignedParams(input, creds, params);
     },
   },
+
   get_candle: {
     method: "get",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures" ? "/fapi/v1/klines" : "/api/v3/klines";
+      const marketType = getMarketType(input);
+      return marketType === "futures" ? "/fapi/v1/klines" : "/api/v3/klines";
     },
     makeParams: (input: any) => {
-      if (!input.symbol) throw new Error("symbol is required for get_candle");
+      if (!input?.symbol) {
+        throw new Error("symbol is required for get_candle");
+      }
 
-      const params: any = {
-        symbol: input.symbol,
+      const params: Record<string, any> = {
+        symbol: String(input.symbol).toUpperCase(),
         interval: input.interval || "1h",
       };
 
-      if (input.limit) params.limit = input.limit;
-      if (input.startTime)
+      if (input?.limit) params.limit = input.limit;
+      if (input?.startTime)
         params.startTime = new Date(input.startTime).getTime();
-      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input?.endTime) params.endTime = new Date(input.endTime).getTime();
 
       return params;
     },
@@ -182,25 +245,27 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       return toBarSeries(input.symbol, input.interval || "1h", bars);
     },
   },
+
   get_ticker: {
     method: "get",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures"
+      const marketType = getMarketType(input);
+      return marketType === "futures"
         ? "/fapi/v1/ticker/24hr"
         : "/api/v3/ticker/24hr";
     },
     makeParams: (input: any) => {
-      const params: any = {};
-      if (input.symbol) params.symbol = input.symbol;
+      const params: Record<string, any> = {};
+      if (input?.symbol) params.symbol = String(input.symbol).toUpperCase();
       return params;
     },
   },
+
   place_order: {
     method: "post",
     path: (input: any) => {
-      const assetType = input?.asset_type || "spot";
-      return assetType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
+      const marketType = getMarketType(input);
+      return marketType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       const {
@@ -213,40 +278,37 @@ export const binanceOperations: Record<string, BrokerOperation> = {
         timeInForce,
         icebergQty,
         newOrderRespType,
-      } = input;
+      } = input ?? {};
 
       if (!symbol) throw new Error("symbol is required for place_order");
       if (!side) throw new Error("side is required for place_order");
       if (!type) throw new Error("type is required for place_order");
-      if (!quantity) throw new Error("quantity is required for place_order");
+      if (quantity == null)
+        throw new Error("quantity is required for place_order");
 
-      const environment = input?.environment || "live";
-      const assetType = input?.asset_type || "spot";
-      const timestamp = getBinanceTimestamp(environment, assetType);
-      const recvWindow = 5000;
-      const params: any = {
-        symbol: symbol.toUpperCase(),
-        side: side.toUpperCase(),
-        type: type.toUpperCase(),
+      const environment = getEnvironment(input);
+      const marketType = getMarketType(input);
+      const timestamp = getBinanceTimestamp(environment, marketType);
+
+      const upperType = String(type).toUpperCase();
+
+      const params: Record<string, any> = {
+        symbol: String(symbol).toUpperCase(),
+        side: String(side).toUpperCase(),
+        type: upperType,
         quantity: String(quantity),
-        recvWindow,
+        recvWindow: 5000,
         timestamp,
       };
 
       if (
-        ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"].includes(
-          type.toUpperCase(),
-        )
+        ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"].includes(upperType)
       ) {
         params.timeInForce = timeInForce || "GTC";
-      }
 
-      if (
-        ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"].includes(
-          type.toUpperCase(),
-        )
-      ) {
-        if (!price) throw new Error("price is required for limit orders");
+        if (price == null) {
+          throw new Error("price is required for limit-style orders");
+        }
         params.price = String(price);
       }
 
@@ -256,27 +318,21 @@ export const binanceOperations: Record<string, BrokerOperation> = {
           "STOP_LOSS_LIMIT",
           "TAKE_PROFIT",
           "TAKE_PROFIT_LIMIT",
-        ].includes(type.toUpperCase())
+        ].includes(upperType)
       ) {
-        if (!stopPrice)
+        if (stopPrice == null) {
           throw new Error("stopPrice is required for stop orders");
+        }
         params.stopPrice = String(stopPrice);
       }
 
-      if (icebergQty) params.icebergQty = String(icebergQty);
+      if (icebergQty != null) params.icebergQty = String(icebergQty);
       if (newOrderRespType) params.newOrderRespType = newOrderRespType;
-      if (input._idempotencyKey)
+      if (input?._idempotencyKey) {
         params.newClientOrderId = input._idempotencyKey;
+      }
 
-      return signHmacSha256(params, creds.secret_key);
+      return buildSignedParams(input, creds, params);
     },
-    // transformResult: (raw: any) => ({
-    //   orderId: raw.orderId,
-    //   symbol: raw.symbol,
-    //   status: raw.status,
-    //   executedQty: raw.executedQty,
-    //   price: raw.price,
-    //   side: raw.side,
-    // }),
   },
 };

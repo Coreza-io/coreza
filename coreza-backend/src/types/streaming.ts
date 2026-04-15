@@ -17,13 +17,13 @@ export interface StreamExecutionRequest {
 
   // For subscribe mode
   symbols?: string[] | string;
-  asset_type?: "stock" | "crypto" | "news";
+  assetType?: "stock" | "crypto" | "news";
   crypto_base?: string;
   crypto_quote?: string;
   stream_type: string;
   credential_id?: string;
   environment?: "testnet" | "live" | "paper";
-  market_type?: "spot" | "futures";
+  marketType?: "spot" | "futures";
   feed?: "iex" | "sip" | "test";
   interval?: string;
   depth_levels?: string;

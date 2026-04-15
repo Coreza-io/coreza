@@ -87,13 +87,13 @@ router.post("/:source/subscribe", async (req, res) => {
       node_id,
       category,
       workflowId,
-      asset_type,
+      assetType,
       stream_type,
       crypto_base,
       crypto_quote,
       feed,
       environment,
-      market_type,
+      marketType,
       interval,
       depth_levels,
       scope,
@@ -136,8 +136,8 @@ router.post("/:source/subscribe", async (req, res) => {
         symbols: ["*"],
         streamType: ["order_update"],
         environment,
-        assetType: asset_type,
-        marketType: market_type,
+        assetType: assetType,
+        marketType: marketType,
         scope,
         targetWorkflowId,
       });
@@ -164,8 +164,8 @@ router.post("/:source/subscribe", async (req, res) => {
         streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
         feed,
         environment,
-        assetType: asset_type,
-        marketType: market_type,
+        assetType: assetType,
+        marketType: marketType,
         interval,
         depth_levels: depth_levels,
         scope,
@@ -222,8 +222,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       node_id,
       category,
       workflowId,
-      asset_type,
-      market_type,
+      assetType,
+      marketType,
       stream_type,
       crypto_base,
       crypto_quote,
@@ -292,8 +292,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
         streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
         feed,
         environment,
-        assetType: asset_type,
-        market_Type: market_type,
+        assetType: assetType,
+        marketType: marketType,
         interval,
         depth_levels: depth_levels,
         scope,
@@ -422,13 +422,13 @@ router.post("/:source/register", async (req, res) => {
       category,
       mode = "subscribe",
       symbols,
-      asset_type,
+      assetType,
       crypto_base,
       crypto_quote,
       stream_type,
       credential_id,
       environment,
-      market_type,
+      marketType,
       feed,
       interval,
       depth_levels,
@@ -448,12 +448,12 @@ router.post("/:source/register", async (req, res) => {
 
     let sourceId: string;
 
-    if (asset_type === "stock" || asset_type === "crypto") {
+    if (assetType === "stock" || assetType === "crypto") {
       sourceId = `${source}_${category.toLowerCase()}`;
-    } else if (asset_type === "news") {
-      sourceId = `${source}_${asset_type.toLowerCase()}`;
+    } else if (assetType === "news") {
+      sourceId = `${source}_${assetType.toLowerCase()}`;
     } else {
-      throw new Error(`Unsupported asset_type: ${asset_type}`);
+      throw new Error(`Unsupported assetType: ${assetType}`);
     }
 
     if (!sourceId) {
@@ -518,8 +518,8 @@ router.post("/:source/register", async (req, res) => {
           symbols: ["*"],
           streamType: tradingstreamType,
           environment: requiredEnvironment,
-          assetType: asset_type,
-          marketType: market_type,
+          assetType: assetType,
+          marketType: marketType,
           interval,
           scope,
           targetWorkflowId: workflowId,
@@ -567,8 +567,8 @@ router.post("/:source/register", async (req, res) => {
             marketstreamType.length > 0 ? marketstreamType : undefined,
           feed,
           environment: requiredEnvironment,
-          assetType: asset_type,
-          marketType: market_type,
+          assetType: assetType,
+          marketType: marketType,
           interval,
           depth_levels: depth_levels,
           scope,
@@ -639,8 +639,8 @@ router.post("/:source/register", async (req, res) => {
       environment,
       filterSymbols: parsedSymbols,
       filterTypes: stream_type,
-      assetType: asset_type,
-      marketType: market_type,
+      assetType: assetType,
+      marketType: marketType,
       interval,
       depth_levels: depth_levels,
     });
@@ -747,8 +747,8 @@ router.post("/unregister", async (req, res) => {
         symbols: listener.filterSymbols,
         eventTypes: streamType,
         //assetType: listener.assetType,
-        assetType: listener.asset_type,
-        marketType: listener.market_type,
+        assetType: listener.assetType,
+        marketType: listener.marketType,
         interval: listener.interval,
         depthLevels: listener.depth_levels,
         environment: listener.environment,

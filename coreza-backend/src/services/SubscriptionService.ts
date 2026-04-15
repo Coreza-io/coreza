@@ -230,6 +230,7 @@ export class SubscriptionService {
       if (feed) controlMessage.feed = feed;
       if (environment) controlMessage.environment = environment;
       if (assetType) controlMessage.assetType = assetType;
+      if (marketType) controlMessage.marketType = marketType;
 
       // Publish to appropriate control channel
       // NOTE: Stream name building and Redis storage is handled by MarketControlHandler

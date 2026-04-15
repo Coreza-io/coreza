@@ -9,7 +9,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures" ? "/fapi/v2/account" : "/api/v3/account";
+      return marketType === "futures" ? "/v3/account" : "/v3/account";
     },
     makeParams: (input: any, creds: any) => {
       const environment = input?.environment || "live";

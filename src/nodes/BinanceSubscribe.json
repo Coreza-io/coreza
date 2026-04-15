@@ -54,9 +54,9 @@
   },
   "fields": [
     {
-      "key": "data_type",
+      "key": "assetType",
       "type": "hidden",
-      "default": "market"
+      "default": "crypto"
     },
     {
       "key": "credential_id",
@@ -84,8 +84,8 @@
       "required": true
     },
     {
-      "key": "asset_type",
-      "label": "Asset Type",
+      "key": "marketType",
+      "label": "Market Type",
       "type": "select",
       "options": [
         {
@@ -118,8 +118,8 @@
       "required": true
     },
     {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "stream_type",
+      "label": "Stream Type",
       "type": "multiselect",
       "options": [
         {

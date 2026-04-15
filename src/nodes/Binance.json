@@ -57,7 +57,7 @@
       "required": true
     },
     {
-      "key": "asset_type",
+      "key": "marketType",
       "label": "Asset Type",
       "type": "select",
       "options": [

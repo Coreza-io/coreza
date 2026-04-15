@@ -56,14 +56,14 @@
       "required": true
     },
     {
-      "key": "market_type",
-      "label": "Market Type",
+      "key": "assetType",
+      "label": "Asset Type",
       "type": "select",
       "options": [
-        { "id": "stocks", "name": "Stocks" },
+        { "id": "stock", "name": "Stock" },
         { "id": "crypto", "name": "Crypto" }
       ],
-      "default": "stocks",
+      "default": "stock",
       "displayOptions": {
         "show": {
           "operation": ["market_movers"]

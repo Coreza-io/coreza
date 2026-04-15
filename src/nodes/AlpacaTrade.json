@@ -79,7 +79,7 @@
       "required": true
     },
     {
-      "key": "asset_type",
+      "key": "assetType",
       "label": "Asset Type",
       "type": "select",
       "options": [

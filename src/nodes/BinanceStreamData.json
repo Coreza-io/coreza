@@ -60,7 +60,7 @@
   },
   "fields": [
     {
-      "key": "asset_type",
+      "key": "assetType",
       "type": "hidden",
       "default": "crypto"
     },
@@ -116,7 +116,7 @@
       }
     },
     {
-      "key": "market_type",
+      "key": "marketType",
       "label": "Market Type",
       "type": "select",
       "options": [

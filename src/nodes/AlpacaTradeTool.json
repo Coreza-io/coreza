@@ -65,7 +65,7 @@
       "showDescription": false
     },
     {
-      "key": "asset_type",
+      "key": "assetType",
       "label": "Asset Type",
       "type": "select",
       "options": [
@@ -92,9 +92,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "stock"
-          ]
+          "asset_type": ["stock"]
         }
       },
       "showDescription": false
@@ -108,9 +106,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "crypto"
-          ]
+          "asset_type": ["crypto"]
         }
       },
       "showDescription": false
@@ -142,9 +138,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "crypto"
-          ]
+          "asset_type": ["crypto"]
         }
       },
       "showDescription": false
@@ -295,9 +289,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": [
-            "stock"
-          ]
+          "asset_type": ["stock"]
         }
       },
       "showDescription": false
@@ -321,15 +313,9 @@
       "description": "Allow execution during pre-market (4am-9:30am) and after-hours (4pm-8pm). Only for limit day orders.",
       "displayOptions": {
         "show": {
-          "type": [
-            "limit"
-          ],
-          "time_in_force": [
-            "day"
-          ],
-          "asset_type": [
-            "stock"
-          ]
+          "type": ["limit"],
+          "time_in_force": ["day"],
+          "asset_type": ["stock"]
         }
       },
       "showDescription": false

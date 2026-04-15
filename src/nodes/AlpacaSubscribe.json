@@ -62,24 +62,24 @@
       "required": true
     },
     {
-      "key": "data_type",
-      "label": "Data Type",
+      "key": "assetType",
+      "label": "Asset Type",
       "type": "select",
       "options": [
         {
-          "id": "market",
-          "name": "Market Data (Trades, Quotes, Bars)"
+          "id": "stock",
+          "name": "Stock"
         },
         {
           "id": "crypto",
-          "name": "Crypto (BTC/USD, ETH/USD)"
+          "name": "Crypto"
         },
         {
           "id": "news",
           "name": "News"
         }
       ],
-      "default": "market",
+      "default": "stock",
       "required": true
     },
     {
@@ -100,8 +100,8 @@
       "required": true
     },
     {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "stream_type",
+      "label": "Stream Type",
       "type": "multiselect",
       "options": [
         {

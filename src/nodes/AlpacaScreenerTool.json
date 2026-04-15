@@ -75,26 +75,24 @@
       "showDescription": false
     },
     {
-      "key": "market_type",
-      "label": "Market Type",
+      "key": "assetType",
+      "label": "Asset Type",
       "type": "select",
       "options": [
         {
-          "id": "stocks",
-          "name": "Stocks"
+          "id": "stock",
+          "name": "Stock"
         },
         {
           "id": "crypto",
           "name": "Crypto"
         }
       ],
-      "default": "stocks",
+      "default": "stock",
       "description": "Asset class to screen: US stocks or cryptocurrency.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "market_movers"
-          ]
+          "operation": ["market_movers"]
         }
       },
       "showDescription": false
@@ -126,9 +124,7 @@
       "description": "Ranking criteria: by dollar volume traded or by number of trades.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "most_actives"
-          ]
+          "operation": ["most_actives"]
         }
       },
       "showDescription": false

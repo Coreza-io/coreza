@@ -71,8 +71,8 @@
       "required": true
     },
     {
-      "key": "asset_type",
-      "label": "Asset Type",
+      "key": "marketType",
+      "label": "Market Type",
       "type": "select",
       "options": [
         { "name": "Spot", "id": "spot" },

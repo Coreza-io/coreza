@@ -105,10 +105,14 @@ router.post("/:source/subscribe", async (req, res) => {
 
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
-    const sourceId = `${source}_${category.toLowerCase()}`;
+    let sourceId: string;
 
-    if (!sourceId) {
-      return res.status(400).json({ error: `Unknown source: ${sourceId}` });
+    if (assetType === "stock" || assetType === "crypto") {
+      sourceId = `${source}_${category.toLowerCase()}`;
+    } else if (assetType === "news") {
+      sourceId = `${source}_${assetType.toLowerCase()}`;
+    } else {
+      throw new Error(`Unsupported assetType: ${assetType}`);
     }
 
     // Parse stream_type into array
@@ -125,10 +129,9 @@ router.post("/:source/subscribe", async (req, res) => {
     );
 
     if (hasOrderUpdate) {
-      const tradingSource =
-        source === "binance" ? "binance_trading" : "alpaca_trading";
+      const tradingSourceId = `${source}_trading`;
       await SubscriptionService.subscribe({
-        source: tradingSource as any,
+        source: tradingSourceId as any,
         userId,
         workflowId: workflowId,
         nodeId: node_id,

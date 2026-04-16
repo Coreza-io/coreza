@@ -1,7 +1,10 @@
 import { MarketSource } from "../brokers";
 import { WorkflowNode } from "../nodes/types";
 
-export const nodeNameToSourceMap: Record<string, MarketSource | `${MarketSource}_${string}`> = {
+export const nodeNameToSourceMap: Record<
+  string,
+  MarketSource | `${MarketSource}_${string}`
+> = {
   BinanceStreamData: "binance_stream",
   AlpacaStreamData: "alpaca_stream",
   AlpacaNews: "alpaca_news",
@@ -11,21 +14,15 @@ export const nodeNameToSourceMap: Record<string, MarketSource | `${MarketSource}
 export function resolveStreamSourceId(
   node: WorkflowNode,
 ): MarketSource | `${MarketSource}_${string}` | null {
-  const workflowNode = node as WorkflowNode & {
-    subCategory?: string;
-    values?: { data_type?: string };
-    data?: { values?: { data_type?: string } };
-  };
+  const baseSource = node.subCategory || nodeNameToSourceMap[node.name ?? ""];
 
-  const baseSource = workflowNode.subCategory || nodeNameToSourceMap[workflowNode.name ?? ""];
   if (!baseSource) {
     return null;
   }
 
-  const dataType =
-    workflowNode.values?.data_type ?? workflowNode.data?.values?.data_type;
+  const category = node.category;
 
-  return dataType ? `${baseSource}_${dataType}` : baseSource;
+  return category ? `${baseSource}_${category}` : baseSource;
 }
 
 export function parseSymbols(symbols: unknown): string[] {
@@ -37,7 +34,9 @@ export function parseSymbols(symbols: unknown): string[] {
   }
 
   if (Array.isArray(symbols)) {
-    return symbols.filter((symbol): symbol is string => typeof symbol === "string");
+    return symbols.filter(
+      (symbol): symbol is string => typeof symbol === "string",
+    );
   }
 
   return [];

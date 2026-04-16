@@ -620,13 +620,15 @@ export class MarketDataSubscriber {
         "Workflow delivery dequeued",
       );
 
-      try {
-        await this.publishToFrontend(registration, formattedPayload, event);
-      } catch (error) {
-        logger.error(
-          { err: error, userId: registration.userId, workflowId, queueKey },
-          "Failed to publish market data to user channel",
-        );
+      if (!registration.isLive) {
+        try {
+          await this.publishToFrontend(registration, formattedPayload, event);
+        } catch (error) {
+          logger.error(
+            { err: error, userId: registration.userId, workflowId, queueKey },
+            "Failed to publish market data to user channel",
+          );
+        }
       }
 
       // Only append to strategy stream if this is a live activation (not manual test)

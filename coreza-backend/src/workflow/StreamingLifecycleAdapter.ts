@@ -11,6 +11,7 @@ import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
 import { buildCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
+import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
@@ -74,14 +75,14 @@ export class StreamingLifecycleAdapter {
           scope?: string;
           onlyClosedBars?: boolean;
           symbols?: unknown;
-          stream_types?: string[] | string;
+          stream_type?: string[] | string;
           credential_id?: string;
           feed?: string;
           environment?: string;
-          asset_type?: string;
+          assetType?: string;
+          marketType?: string;
           interval?: string;
           depth_levels?: number;
-          data_type?: string;
           crypto_base?: string;
           crypto_quote?: string;
         };
@@ -90,14 +91,14 @@ export class StreamingLifecycleAdapter {
       scope?: string;
       onlyClosedBars?: boolean;
       symbols?: unknown;
-      stream_types?: string[] | string;
+      stream_type?: string[] | string;
       credential_id?: string;
       feed?: string;
       environment?: string;
-      asset_type?: string;
+      assetType?: string;
+      marketType?: string;
       interval?: string;
       depth_levels?: number;
-      data_type?: string;
       crypto_base?: string;
       crypto_quote?: string;
     };
@@ -114,25 +115,39 @@ export class StreamingLifecycleAdapter {
 
     // --- Resolve symbols (standard + crypto fallback) ---
     let symbols = parseSymbols(nodeValues.symbols);
-    if (symbols.length === 0 && nodeValues.data_type === "crypto") {
+    if (symbols.length === 0 && nodeValues.assetType === "crypto") {
       symbols = buildCryptoSymbols(
-        nodeValues.data_type,
+        nodeValues.assetType,
         nodeValues.crypto_base,
         nodeValues.crypto_quote,
       );
     }
 
-    const streamTypes = Array.isArray(nodeValues.stream_types)
-      ? nodeValues.stream_types
-      : typeof nodeValues.stream_types === "string"
-        ? nodeValues.stream_types
+    const streamType = Array.isArray(nodeValues.stream_type)
+      ? nodeValues.stream_type
+      : typeof nodeValues.stream_type === "string"
+        ? nodeValues.stream_type
             .split(",")
             .map((streamType) => streamType.trim())
         : [];
-    const hasOrderUpdate = streamTypes.includes("order_update");
-    const marketStreamTypes = streamTypes.filter(
-      (streamType) => streamType !== "order_update",
+
+    const hasOrderUpdate = streamType.includes("order_update");
+
+    const { marketstreamType, tradingstreamType } = streamType.reduce(
+      (acc, t: string) => {
+        if (t === "order_update") {
+          acc.tradingstreamType.push(t);
+        } else {
+          acc.marketstreamType.push(t);
+        }
+        return acc;
+      },
+      {
+        marketstreamType: [] as string[],
+        tradingstreamType: [] as string[],
+      },
     );
+
     const environment = nodeValues.environment as string;
     const subscriptionScope: "workflow" | "global" =
       nodeValues.scope === "global" ? "global" : "workflow";
@@ -141,20 +156,19 @@ export class StreamingLifecycleAdapter {
 
     // 1. Subscribe to trading source for order updates
     if (hasOrderUpdate) {
-      const baseName = triggerNode.name;
-      const tradingSource = baseName?.includes("Binance")
-        ? "binance_trading"
-        : "alpaca_trading";
+      const baseName = triggerNode.subCategory;
+      const tradingSourceId = `${baseName}_trading`;
       await SubscriptionService.subscribe({
-        source: tradingSource,
+        source: tradingSourceId,
         userId,
         workflowId,
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
         symbols: ["*"],
-        streamTypes: ["order_update"],
+        streamType: ["order_update"],
         environment,
-        assetType: nodeValues.asset_type,
+        assetType: nodeValues.assetType,
+        marketType: nodeValues.marketType,
         scope: subscriptionScope,
         targetWorkflowId: workflowId,
       });
@@ -162,7 +176,7 @@ export class StreamingLifecycleAdapter {
       // Wait for trading subscription readiness
       const tradingReady = await SubscriptionService.waitForSubscriptionReady({
         userId,
-        source: tradingSource,
+        source: tradingSourceId,
         environment,
         scope: subscriptionScope,
         workflowId,
@@ -172,7 +186,7 @@ export class StreamingLifecycleAdapter {
           {
             userId,
             workflowId,
-            source: tradingSource,
+            source: tradingSourceId,
           },
           "Trading subscription readiness timed out; continuing in market-only mode",
         );
@@ -182,7 +196,7 @@ export class StreamingLifecycleAdapter {
     // 2. Subscribe to market/crypto streams
     if (
       symbols.length > 0 &&
-      (marketStreamTypes.length > 0 || !hasOrderUpdate)
+      (marketstreamType.length > 0 || !hasOrderUpdate)
     ) {
       const marketSubscribeParams = {
         source: sourceId,
@@ -191,11 +205,11 @@ export class StreamingLifecycleAdapter {
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
         symbols,
-        streamTypes:
-          marketStreamTypes.length > 0 ? marketStreamTypes : undefined,
+        streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
         feed: nodeValues.feed,
         environment,
-        assetType: nodeValues.asset_type,
+        assetType: nodeValues.assetType,
+        marketType: nodeValues.marketType,
         interval: nodeValues.interval,
         depth_levels: nodeValues.depth_levels,
         scope: subscriptionScope,
@@ -242,6 +256,33 @@ export class StreamingLifecycleAdapter {
       }
     }
 
+    // Rate limit check for test listener
+    const allowed =
+      await RegistrationService.checkAndIncrementListenerCount(userId);
+
+    if (!allowed) {
+      throw new Error(
+        `⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_LISTENERS_PER_USER})`,
+      );
+    }
+
+    // Create listener
+    const listenerKey = await RegistrationService.createListener({
+      userId,
+      workflowId,
+      nodeId: triggerNode.id,
+      source: sourceId,
+      mode: nodeValues.mode,
+      scope: nodeValues.scope,
+      environment,
+      filterSymbols: symbols,
+      filterTypes: nodeValues.stream_type,
+      assetType: nodeValues.assetType,
+      marketType: nodeValues.marketType,
+      interval: nodeValues.interval,
+      depth_levels: nodeValues.depth_levels,
+    });
+
     // 3. NOW register the workflow (subscriptions are materialized)
     await RegistrationService.publishRegisterWorkflow({
       userId,
@@ -249,6 +290,7 @@ export class StreamingLifecycleAdapter {
       nodeId: triggerNode.id,
       source: sourceId,
       scope: subscriptionScope,
+      environment,
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
       isLive: true,
     });

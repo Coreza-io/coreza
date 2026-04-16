@@ -32,7 +32,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
         throw new Error("get_positions is only supported for futures accounts");
       }
 
-      return "/fapi/v2/positionRisk";
+      return "/v2/positionRisk";
     },
     makeParams: (input: any, creds: any) => {
       const environment = input?.environment || "live";
@@ -65,9 +65,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures"
-        ? "/fapi/v1/allOrders"
-        : "/api/v3/allOrders";
+      return marketType === "futures" ? "/v1/allOrders" : "/v3/allOrders";
     },
     makeParams: (input: any, creds: any) => {
       const environment = input?.environment || "live";
@@ -95,9 +93,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures"
-        ? "/fapi/v1/userTrades"
-        : "/api/v3/myTrades";
+      return marketType === "futures" ? "/v1/userTrades" : "/v3/myTrades";
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for get_trades");
@@ -131,7 +127,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "delete",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
+      return marketType === "futures" ? "/v1/order" : "/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for cancel_order");
@@ -156,7 +152,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures" ? "/fapi/v1/klines" : "/api/v3/klines";
+      return marketType === "futures" ? "/v1/klines" : "/v3/klines";
     },
     makeParams: (input: any) => {
       if (!input.symbol) throw new Error("symbol is required for get_candle");
@@ -186,9 +182,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures"
-        ? "/fapi/v1/ticker/24hr"
-        : "/api/v3/ticker/24hr";
+      return marketType === "futures" ? "/v1/ticker/24hr" : "/v3/ticker/24hr";
     },
     makeParams: (input: any) => {
       const params: any = {};
@@ -200,7 +194,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "post",
     path: (input: any) => {
       const marketType = input?.marketType || "spot";
-      return marketType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
+      return marketType === "futures" ? "/v3/order" : "/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       const {

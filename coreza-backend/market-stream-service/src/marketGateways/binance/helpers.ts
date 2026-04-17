@@ -234,7 +234,6 @@ export function shouldPublishBinanceMessage(
     "markPriceUpdate",
     "forceOrder",
     "continuous_kline",
-    "continuousKline",
     "indexPriceUpdate",
     "compositeIndex",
   ].includes(eventMsg.e);
@@ -569,8 +568,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       };
     }
 
-    case "continuous_kline":
-    case "continuousKline": {
+    case "continuous_kline": {
       const k = eventMsg.k || {};
       return {
         symbol: eventMsg.ps?.toUpperCase() || symbol,

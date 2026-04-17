@@ -20,7 +20,7 @@ function normalizeBinanceEventType(eventType: string): string {
     case "liquidation":
       return "forceOrder";
     case "continuous_kline":
-      return "continuousKline";
+      return "continuous_kline";
     case "markPrice":
       return "markPrice";
     case "indexPrice":
@@ -64,7 +64,7 @@ export function buildStreamName(
     : eventType;
   const normalizedContractType = contractType || "perpetual";
   const sym =
-    source.startsWith("binance") && resolvedEventType === "continuousKline"
+    source.startsWith("binance") && resolvedEventType === "continuous_kline"
       ? `${symbol.toLowerCase()}_${normalizedContractType}`
       : symbol.toLowerCase();
 
@@ -109,7 +109,7 @@ export function parseStreamName(
     if (underscoreIndex !== -1) {
       const eventType = typeWithInterval.slice(0, underscoreIndex);
       const interval = typeWithInterval.slice(underscoreIndex + 1);
-      if (eventType === "continuousKline") {
+      if (eventType === "continuous_kline") {
         const [symbolPart, ...contractParts] = rawSymbol.split("_");
         return {
           symbol: symbolPart.toUpperCase(),
@@ -197,7 +197,7 @@ export function buildStreamNames(
       if (
         underscoreIndex !== -1 &&
         source.startsWith("binance") &&
-        eventType !== "continuousKline"
+        eventType !== "continuous_kline"
       ) {
         const type = eventType.slice(0, underscoreIndex);
         const interval = eventType.slice(underscoreIndex + 1);

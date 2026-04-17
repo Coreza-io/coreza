@@ -447,7 +447,7 @@ export class MarketDataSubscriber {
         data: {
           symbol,
           type: "order_update",
-          order: event.rawOrderData,
+          order: event,
           _seq: event._seq,
           _orderingDomain: event._orderingDomain,
         },

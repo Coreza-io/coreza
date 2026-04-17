@@ -22,7 +22,7 @@ export function resolveStreamSourceId(
 
   const category = node.category;
 
-  return category ? `${baseSource}_${category}` : baseSource;
+  return category ? `${baseSource}_${category.toLowerCase()}` : baseSource;
 }
 
 export function parseSymbols(symbols: unknown): string[] {

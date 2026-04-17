@@ -302,8 +302,12 @@ export class MarketDataSubscriber {
           event.type === "order_update"
             ? "order_update"
             : event.timeframe
-              ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-              : `${event.symbol.toLowerCase()}@${event.type}`;
+              ? event.contractType
+                ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
+                : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+              : event.contractType
+                ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
+                : `${event.symbol.toLowerCase()}@${event.type}`;
 
         // Find workflows registered for this stream
         const workflows = this.streamWorkflows.get(stream);

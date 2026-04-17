@@ -5,8 +5,8 @@ import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
 const BINANCE_AUTH_RECV_WINDOW = 60_000;
 
 function isFuturesMarketType(creds: any): boolean {
-  const marketType = creds.marketType;
-  return marketType === "futures";
+  const marketType = creds?.marketType;
+  return String(marketType || "").toLowerCase() === "futures";
 }
 
 function unwrapBinanceUserDataEnvelope(msg: any): any {
@@ -56,7 +56,7 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
   // Market data stream (default)
   if (isFutures) {
     return isTestnet
-      ? "wss://stream.testnet.binancefuture.com/ws"
+      ? "wss://fstream.binancefuture.com/ws"
       : "wss://fstream.binance.com/ws";
   }
 
@@ -178,8 +178,8 @@ export function buildBinanceSubscribeMessage(
   stream: string[],
   source?: string,
 ) {
-  // Trading stream: no subscription needed — User Data Stream auto-sends all account events
   if (source === "binance_trading") {
+    console.error("[binance] Refused market SUBSCRIBE payload on trading socket");
     return null;
   }
   return { method: "SUBSCRIBE", params: stream, id: Date.now() };
@@ -189,8 +189,8 @@ export function buildBinanceUnsubscribeMessage(
   stream: string[],
   source?: string,
 ) {
-  // Trading stream: no unsubscription needed
   if (source === "binance_trading") {
+    console.error("[binance] Refused market UNSUBSCRIBE payload on trading socket");
     return null;
   }
   return { method: "UNSUBSCRIBE", params: stream, id: Date.now() };
@@ -215,7 +215,11 @@ export function shouldPublishBinanceMessage(
   if (source === "binance_trading") {
     // Spot: executionReport, Futures: ORDER_TRADE_UPDATE
     return (
-      eventMsg.e === "executionReport" || eventMsg.e === "ORDER_TRADE_UPDATE"
+      eventMsg.e === "executionReport" ||
+      eventMsg.e === "ORDER_TRADE_UPDATE" ||
+      eventMsg.e === "ACCOUNT_UPDATE" ||
+      eventMsg.e === "ACCOUNT_CONFIG_UPDATE" ||
+      eventMsg.e === "MARGIN_CALL"
     );
   }
   return [
@@ -226,6 +230,11 @@ export function shouldPublishBinanceMessage(
     "24hrTicker",
     "miniTicker",
     "depthUpdate",
+    "markPriceUpdate",
+    "forceOrder",
+    "continuous_kline",
+    "indexPriceUpdate",
+    "compositeIndex",
   ].includes(eventMsg.e);
 }
 
@@ -326,7 +335,12 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
 
         orderId: eventMsg.i != null ? String(eventMsg.i) : undefined,
         clientOrderId: eventMsg.c || undefined,
-        executionId: eventMsg.I != null ? String(eventMsg.I) : undefined,
+        executionId:
+          eventMsg.I != null
+            ? String(eventMsg.I)
+            : eventMsg.t != null
+              ? String(eventMsg.t)
+              : undefined,
         tradeId: eventMsg.t != null ? String(eventMsg.t) : undefined,
 
         side: eventMsg.S?.toLowerCase(),
@@ -384,6 +398,41 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         orderType: o.o?.toLowerCase(),
         feeAmount: parseFloat(o.n) || 0,
         feeAsset: o.N || undefined,
+        rawOrderData: eventMsg,
+      };
+    }
+
+    if (eventMsg.e === "ACCOUNT_UPDATE") {
+      return {
+        source: "binance" as const,
+        symbol: "*",
+        type: "account_update" as const,
+        t: eventMsg.E || Date.now(),
+        reason: eventMsg.a?.m,
+        balances: eventMsg.a?.B || [],
+        positions: eventMsg.a?.P || [],
+        rawOrderData: eventMsg,
+      };
+    }
+
+    if (eventMsg.e === "ACCOUNT_CONFIG_UPDATE") {
+      return {
+        source: "binance" as const,
+        symbol: "*",
+        type: "account_config_update" as const,
+        t: eventMsg.E || Date.now(),
+        config: eventMsg.ac || eventMsg.ai || {},
+        rawOrderData: eventMsg,
+      };
+    }
+
+    if (eventMsg.e === "MARGIN_CALL") {
+      return {
+        source: "binance" as const,
+        symbol: "*",
+        type: "margin_call" as const,
+        t: eventMsg.E || Date.now(),
+        positions: eventMsg.p || [],
         rawOrderData: eventMsg,
       };
     }
@@ -486,6 +535,71 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
           p: parseFloat(price),
           q: parseFloat(qty),
         })),
+        type: eventMsg.e,
+        source: "binance" as const,
+      };
+
+    case "markPriceUpdate":
+      return {
+        symbol,
+        t,
+        markPrice: parseFloat(eventMsg.p),
+        indexPrice: parseFloat(eventMsg.i),
+        fundingRate: parseFloat(eventMsg.r),
+        nextFundingTime: eventMsg.T,
+        type: eventMsg.e,
+        source: "binance" as const,
+      };
+
+    case "forceOrder": {
+      const o = eventMsg.o || {};
+      return {
+        symbol: o.s?.toUpperCase() || symbol,
+        t: o.T || t,
+        side: o.S,
+        orderType: o.o,
+        p: parseFloat(o.p),
+        q: parseFloat(o.q),
+        ap: parseFloat(o.ap),
+        status: o.X,
+        type: eventMsg.e,
+        source: "binance" as const,
+      };
+    }
+
+    case "continuous_kline": {
+      const k = eventMsg.k || {};
+      return {
+        symbol: eventMsg.ps?.toUpperCase() || symbol,
+        t: k.t || t,
+        o: parseFloat(k.o),
+        h: parseFloat(k.h),
+        l: parseFloat(k.l),
+        c: parseFloat(k.c),
+        v: parseFloat(k.v),
+        timeframe: k.i,
+        contractType: eventMsg.ct,
+        isClosed: k.x,
+        type: eventMsg.e,
+        source: "binance" as const,
+      };
+    }
+
+    case "indexPriceUpdate":
+      return {
+        symbol: eventMsg.i?.toUpperCase() || symbol,
+        t,
+        indexPrice: parseFloat(eventMsg.p),
+        type: eventMsg.e,
+        source: "binance" as const,
+      };
+
+    case "compositeIndex":
+      return {
+        symbol: eventMsg.s?.toUpperCase() || symbol,
+        t,
+        indexPrice: parseFloat(eventMsg.p),
+        constituents: eventMsg.cm || [],
         type: eventMsg.e,
         source: "binance" as const,
       };

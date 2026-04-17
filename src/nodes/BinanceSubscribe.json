@@ -153,9 +153,66 @@
         {
           "id": "order_update",
           "name": "Order Updates (Fills)"
+        },
+        {
+          "id": "markPrice",
+          "name": "Mark Price Update",
+          "displayOptions": {
+            "show": {
+              "marketType": [
+                "futures"
+              ]
+            }
+          }
+        },
+        {
+          "id": "liquidation",
+          "name": "Liquidation (forceOrder)",
+          "displayOptions": {
+            "show": {
+              "marketType": [
+                "futures"
+              ]
+            }
+          }
+        },
+        {
+          "id": "continuousKline",
+          "name": "Continuous Kline",
+          "displayOptions": {
+            "show": {
+              "marketType": [
+                "futures"
+              ]
+            }
+          }
+        },
+        {
+          "id": "indexPrice",
+          "name": "Index Price Update",
+          "displayOptions": {
+            "show": {
+              "marketType": [
+                "futures"
+              ]
+            }
+          }
+        },
+        {
+          "id": "compositeIndex",
+          "name": "Composite Index",
+          "displayOptions": {
+            "show": {
+              "marketType": [
+                "futures"
+              ]
+            }
+          }
         }
       ],
-      "default": ["kline"],
+      "default": [
+        "kline"
+      ],
       "description": "Select Binance market data stream types",
       "required": true,
       "showDescription": false
@@ -229,7 +286,9 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "stream_types": ["kline"]
+          "stream_types": [
+            "kline"
+          ]
         }
       },
       "description": "Candlestick timeframe for kline data",
@@ -256,7 +315,9 @@
       "default": "10",
       "displayOptions": {
         "show": {
-          "stream_types": ["depth"]
+          "stream_types": [
+            "depth"
+          ]
         }
       },
       "description": "Number of order book levels to receive",
@@ -304,7 +365,9 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "scope": ["workflow"]
+          "scope": [
+            "workflow"
+          ]
         }
       },
       "default": "__current__"

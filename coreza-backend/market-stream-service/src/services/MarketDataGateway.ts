@@ -106,7 +106,7 @@ export class MarketDataGateway {
           const payload = this.config.isBinary
             ? this.encodeMessage(authMsg)
             : JSON.stringify(authMsg);
-          this.ws!.send(payload);
+          if (this.assertSocketBoundary(authMsg, "send")) this.ws!.send(payload);
         } else {
           this.isAuthenticated = true;
           this.resubscribeAll();
@@ -305,7 +305,9 @@ export class MarketDataGateway {
       const msg = this.config.makeSubscribeMessage(newStreams, this.source);
       if (msg !== null && msg !== undefined) {
         const payload = this.encodeMessage(msg);
-        this.ws.send(payload);
+        if (this.assertSocketBoundary(msg, "send")) {
+          this.ws.send(payload);
+        }
       }
       this.logger.info(
         { source: this.source, streams: newStreams },
@@ -330,7 +332,9 @@ export class MarketDataGateway {
       const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
       if (msg !== null && msg !== undefined) {
         const payload = this.encodeMessage(msg);
-        this.ws.send(payload);
+        if (this.assertSocketBoundary(msg, "send")) {
+          this.ws.send(payload);
+        }
       }
       this.logger.info(
         { source: this.source, streams: existingStreams },
@@ -346,13 +350,52 @@ export class MarketDataGateway {
       const msg = this.config.makeSubscribeMessage(streams, this.source);
       if (msg !== null && msg !== undefined) {
         const payload = this.encodeMessage(msg);
-        this.ws?.send(payload);
+        if (this.assertSocketBoundary(msg, "send")) {
+          this.ws?.send(payload);
+        }
       }
       this.logger.info(
         { source: this.source, streams: streams },
         "Resubscribed to all streams",
       );
     }
+  }
+
+
+  private isTradingPayload(msg: any): boolean {
+    if (!msg || typeof msg !== "object") return false;
+    const method = typeof msg.method === "string" ? msg.method : "";
+    return (
+      method.startsWith("session.") ||
+      method.startsWith("userDataStream.") ||
+      method.startsWith("order.")
+    );
+  }
+
+  private assertSocketBoundary(msg: any, direction: "send" | "receive"): boolean {
+    if (!msg || typeof msg !== "object") return true;
+
+    const method = typeof msg.method === "string" ? msg.method : "";
+    const isSubscribePayload = method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
+    const isTradingPayload = this.isTradingPayload(msg);
+
+    if (isSubscribePayload && this.source === "binance_trading") {
+      this.logger.error(
+        { source: this.source, method, direction },
+        "Dropped market subscribe payload on Binance trading socket",
+      );
+      return false;
+    }
+
+    if (isTradingPayload && this.source !== "binance_trading") {
+      this.logger.error(
+        { source: this.source, method, direction },
+        "Dropped trading payload on Binance market socket",
+      );
+      return false;
+    }
+
+    return true;
   }
 
   private encodeMessage(msg: any): Buffer | string {
@@ -432,8 +475,10 @@ export class MarketDataGateway {
       const payload = this.config.isBinary
         ? this.encodeMessage(keepaliveMsg)
         : JSON.stringify(keepaliveMsg);
-      this.ws.send(payload);
-      this.logger.debug({ source: this.source }, "Sent trading keepalive ping");
+      if (this.assertSocketBoundary(keepaliveMsg, "send")) {
+        this.ws.send(payload);
+        this.logger.debug({ source: this.source }, "Sent trading keepalive ping");
+      }
     }, 30 * 60 * 1000);
   }
 

@@ -13,14 +13,26 @@ export interface StreamIdentifier {
   interval?: string;
 }
 
+function normalizeBinanceEventType(eventType: string): string {
+  const normalized = eventType.trim();
+  switch (normalized) {
+    case "liquidation":
+      return "forceOrder";
+    case "continuousKline":
+      return "continuous_kline";
+    case "markPrice":
+      return "markPrice";
+    case "indexPrice":
+      return "indexPrice";
+    case "compositeIndex":
+      return "compositeIndex";
+    default:
+      return normalized;
+  }
+}
+
 /**
  * Build native stream name for broker subscription
- *
- * @param source - Market source (binance_market, alpaca, etc.)
- * @param symbol - Trading symbol (BTCUSDT, AAPL)
- * @param eventType - Event type (kline, trade, bars, etc.)
- * @param interval - Optional interval (1m, 5m, 20 for depth)
- * @returns Native stream name (btcusdt@kline_1m, bars.AAPL)
  */
 function buildStreamKey(
   source: string,
@@ -29,23 +41,28 @@ function buildStreamKey(
   interval?: string,
 ): string {
   const sym = symbol.toLowerCase();
+  const resolvedEventType = source.startsWith("binance")
+    ? normalizeBinanceEventType(eventType)
+    : eventType;
 
-  // Universal format for all brokers
-  return interval ? `${sym}@${eventType}_${interval}` : `${sym}@${eventType}`;
+  return interval
+    ? `${sym}@${resolvedEventType}_${interval}`
+    : `${sym}@${resolvedEventType}`;
 }
 
-/**
- * Parse stream name back to components
- *
- * @param source - Market source (binance_market, alpaca, etc.)
- * @param streamName - Native stream name (btcusdt@kline_1m, bars.AAPL)
- * @returns Parsed stream identifier with symbol, eventType, and optional interval
- */
+export function buildStreamName(
+  source: string,
+  symbol: string,
+  eventType: string,
+  interval?: string,
+): string {
+  return buildStreamKey(source, symbol, eventType, interval);
+}
+
 export function parseStreamName(
   source: string,
   streamName: string,
 ): StreamIdentifier {
-  // Binance format: btcusdt@kline_1m, btcusdt@trade, btcusdt@depth20
   if (source.startsWith("binance")) {
     const atIndex = streamName.indexOf("@");
     if (atIndex === -1) {
@@ -55,13 +72,11 @@ export function parseStreamName(
     const sym = streamName.slice(0, atIndex).toUpperCase();
     const typeWithInterval = streamName.slice(atIndex + 1);
 
-    // Handle depth: depth20 -> eventType: depth, interval: 20
     if (typeWithInterval.startsWith("depth")) {
-      const interval = typeWithInterval.slice(5); // Remove "depth"
+      const interval = typeWithInterval.slice(5);
       return { symbol: sym, eventType: "depth", interval: interval || "20" };
     }
 
-    // Handle kline: kline_1m -> eventType: kline, interval: 1m
     const underscoreIndex = typeWithInterval.indexOf("_");
     if (underscoreIndex !== -1) {
       const eventType = typeWithInterval.slice(0, underscoreIndex);
@@ -69,11 +84,9 @@ export function parseStreamName(
       return { symbol: sym, eventType, interval };
     }
 
-    // No interval: trade, aggTrade, ticker, bookTicker
     return { symbol: sym, eventType: typeWithInterval };
   }
 
-  // Alpaca format: bars.AAPL, trades.AAPL, quotes.AAPL
   if (source === "alpaca" || source === "alpaca_market") {
     const dotIndex = streamName.indexOf(".");
     if (dotIndex === -1) {
@@ -85,7 +98,6 @@ export function parseStreamName(
     return { symbol, eventType };
   }
 
-  // Default parsing: symbol@eventType_interval
   const atIndex = streamName.indexOf("@");
   if (atIndex === -1) {
     return { symbol: streamName.toUpperCase(), eventType: "unknown" };
@@ -106,14 +118,6 @@ export function parseStreamName(
   return { symbol: sym, eventType: rest };
 }
 
-/**
- * Build multiple stream names from arrays of symbols and event types
- *
- * @param source - Market source
- * @param symbols - Array of symbols
- * @param eventTypes - Array of event types (may include interval suffix like kline_1m)
- * @returns Array of native stream names
- */
 export function buildStreamNames(
   source: string,
   symbols: string[],
@@ -122,10 +126,16 @@ export function buildStreamNames(
   const streamNames: string[] = [];
 
   for (const symbol of symbols) {
-    for (const eventType of eventTypes) {
-      // Parse event types that may already include interval (e.g., kline_1m)
+    for (const rawEventType of eventTypes) {
+      const eventType = source.startsWith("binance")
+        ? normalizeBinanceEventType(rawEventType)
+        : rawEventType;
       const underscoreIndex = eventType.indexOf("_");
-      if (underscoreIndex !== -1 && source.startsWith("binance")) {
+      if (
+        underscoreIndex !== -1 &&
+        source.startsWith("binance") &&
+        eventType !== "continuous_kline"
+      ) {
         const type = eventType.slice(0, underscoreIndex);
         const interval = eventType.slice(underscoreIndex + 1);
         streamNames.push(buildStreamName(source, symbol, type, interval));
@@ -133,7 +143,6 @@ export function buildStreamNames(
         eventType.startsWith("depth") &&
         source.startsWith("binance")
       ) {
-        // Handle depth20, depth10, etc.
         const interval = eventType.slice(5);
         streamNames.push(
           buildStreamName(source, symbol, "depth", interval || "20"),
@@ -147,13 +156,6 @@ export function buildStreamNames(
   return streamNames;
 }
 
-/**
- * Extract symbol from a stream name
- *
- * @param source - Market source
- * @param streamName - Native stream name
- * @returns Symbol in uppercase
- */
 export function extractSymbol(source: string, streamName: string): string {
   return parseStreamName(source, streamName).symbol;
 }

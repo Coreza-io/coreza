@@ -14,7 +14,18 @@ export type MarketEventType =
   | "ticker"
   | "miniTicker"
   | "depth"
-  | "order_update";
+  | "order_update"
+  | "bookTicker"
+  | "24hrTicker"
+  | "depthUpdate"
+  | "markPriceUpdate"
+  | "forceOrder"
+  | "continuous_kline"
+  | "indexPriceUpdate"
+  | "compositeIndex"
+  | "account_update"
+  | "account_config_update"
+  | "margin_call";
 
 export type MarketSource =
   keyof typeof import("../marketGateways").GATEWAY_CONFIGS;

@@ -13,6 +13,25 @@ export interface StreamIdentifier {
   interval?: string;
 }
 
+
+function normalizeBinanceEventType(eventType: string): string {
+  switch (eventType.trim()) {
+    case "liquidation":
+      return "forceOrder";
+    case "continuousKline":
+      return "continuous_kline";
+    case "markPrice":
+      return "markPrice";
+    case "indexPrice":
+      return "indexPrice";
+    case "compositeIndex":
+      return "compositeIndex";
+    default:
+      return eventType.trim();
+  }
+}
+
+
 /**
  * Build native stream name for broker subscription
  *
@@ -40,8 +59,13 @@ export function buildStreamName(
     return "trade_updates";
   }
 
-  // Universal format for all brokers
-  return interval ? `${sym}@${eventType}_${interval}` : `${sym}@${eventType}`;
+  const resolvedEventType = source.startsWith("binance")
+    ? normalizeBinanceEventType(eventType)
+    : eventType;
+
+  return interval
+    ? `${sym}@${resolvedEventType}_${interval}`
+    : `${sym}@${resolvedEventType}`;
 }
 
 /**
@@ -143,10 +167,17 @@ export function buildStreamNames(
   const streamNames: string[] = [];
 
   for (const symbol of symbols) {
-    for (const eventType of eventTypes) {
+    for (const rawEventType of eventTypes) {
+      const eventType = source.startsWith("binance")
+        ? normalizeBinanceEventType(rawEventType)
+        : rawEventType;
       // Parse event types that may already include interval (e.g., kline_1m)
       const underscoreIndex = eventType.indexOf("_");
-      if (underscoreIndex !== -1 && source.startsWith("binance")) {
+      if (
+        underscoreIndex !== -1 &&
+        source.startsWith("binance") &&
+        eventType !== "continuous_kline"
+      ) {
         const type = eventType.slice(0, underscoreIndex);
         const interval = eventType.slice(underscoreIndex + 1);
         streamNames.push(buildStreamName(source, symbol, type, interval));

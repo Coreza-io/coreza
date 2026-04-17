@@ -28,7 +28,7 @@ const getBaseUrl = (
 
   if (assetType === "futures") {
     return isTestnet
-      ? "https://testnet.binancefuture.com"
+      ? "https://demo-fapi.binance.com"
       : "https://fapi.binance.com";
   }
 
@@ -51,7 +51,7 @@ const mapTicker = (ticker: any) => ({
 export const binanceScreenerConfig: ScreenerConfig = {
   baseUrl: (_creds: any, input?: ScreenerInput) => {
     const environment = (input?.environment as Environment) || "testnet";
-    const assetType = (input?.asset_type as AssetType) || "spot";
+    const assetType = ((input?.marketType) as AssetType) || "spot";
 
     return getBaseUrl(environment, assetType);
   },
@@ -64,7 +64,7 @@ export const binanceScreenerConfig: ScreenerConfig = {
     top_gainers: {
       method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || "spot";
+        const assetType = ((input.marketType) as AssetType) || "spot";
         return assetType === "futures"
           ? "/fapi/v1/ticker/24hr"
           : "/api/v3/ticker/24hr";
@@ -96,7 +96,7 @@ export const binanceScreenerConfig: ScreenerConfig = {
     top_losers: {
       method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || "spot";
+        const assetType = ((input.marketType) as AssetType) || "spot";
         return assetType === "futures"
           ? "/fapi/v1/ticker/24hr"
           : "/api/v3/ticker/24hr";
@@ -128,7 +128,7 @@ export const binanceScreenerConfig: ScreenerConfig = {
     most_active: {
       method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || "spot";
+        const assetType = ((input.marketType) as AssetType) || "spot";
         return assetType === "futures"
           ? "/fapi/v1/ticker/24hr"
           : "/api/v3/ticker/24hr";
@@ -160,7 +160,7 @@ export const binanceScreenerConfig: ScreenerConfig = {
     new_listings: {
       method: "get",
       path: (input: ScreenerInput) => {
-        const assetType = (input.asset_type as AssetType) || "spot";
+        const assetType = ((input.marketType) as AssetType) || "spot";
         return assetType === "futures"
           ? "/fapi/v1/exchangeInfo"
           : "/api/v3/exchangeInfo";

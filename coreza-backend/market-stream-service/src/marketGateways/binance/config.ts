@@ -26,6 +26,10 @@ export const binanceGatewayConfig: GatewayConfig = {
   postAuthHook: (ws, creds, source, _logger) => {
     const msg = buildBinancePostAuthMessage(creds, source);
     if (msg) {
+      if (source !== "binance_trading") {
+        _logger.error({ source, method: msg.method }, "Dropped trading payload on Binance market socket");
+        return false;
+      }
       ws.send(JSON.stringify(msg));
       return true;
     }

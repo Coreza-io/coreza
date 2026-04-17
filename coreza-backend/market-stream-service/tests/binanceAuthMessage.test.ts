@@ -19,7 +19,7 @@ describe('buildBinanceAuthMessage', () => {
       api_key: 'api-key',
       secret_key: 'secret-key',
       environment: 'testnet',
-      asset_type: 'spot',
+      marketType: 'spot',
     };
 
     const msg = buildBinanceAuthMessage(creds, 'binance_trading');
@@ -37,18 +37,25 @@ describe('buildBinanceAuthMessage', () => {
     expect(msg?.params.signature).toBe(expectedSignature);
   });
 
-  it('returns null for futures trading auth path', () => {
+  it('builds session.logon message for futures trading auth path', () => {
     const msg = buildBinanceAuthMessage(
       {
         api_key: 'api-key',
         secret_key: 'secret-key',
         environment: 'live',
-        asset_type: 'futures',
+        marketType: 'futures',
       },
       'binance_trading',
     );
 
-    expect(msg).toBeNull();
-    expect(getBinanceTimestamp).not.toHaveBeenCalled();
+    expect(getBinanceTimestamp).toHaveBeenCalledWith("live", "futures");
+    expect(msg).toMatchObject({
+      id: "session-logon",
+      method: "session.logon",
+      params: {
+        apiKey: "api-key",
+        recvWindow: 60000,
+      },
+    });
   });
 });

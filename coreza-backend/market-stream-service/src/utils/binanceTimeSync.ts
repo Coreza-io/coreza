@@ -19,7 +19,7 @@ const TIME_ENDPOINTS: Record<TimeSyncKey, string> = {
   spot_live: 'https://api.binance.com/api/v3/time',
   spot_testnet: 'https://testnet.binance.vision/api/v3/time',
   futures_live: 'https://fapi.binance.com/fapi/v1/time',
-  futures_testnet: 'https://testnet.binancefuture.com/fapi/v1/time',
+  futures_testnet: 'https://demo-fapi.binance.com/fapi/v1/time',
 };
 
 async function syncTime(key: TimeSyncKey, url: string): Promise<void> {

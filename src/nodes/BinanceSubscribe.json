@@ -177,7 +177,7 @@
           }
         },
         {
-          "id": "continuousKline",
+          "id": "continuous_kline",
           "name": "Continuous Kline",
           "displayOptions": {
             "show": {
@@ -348,7 +348,7 @@
             "futures"
           ],
           "stream_types": [
-            "continuousKline"
+            "continuous_kline"
           ]
         }
       }

@@ -5,14 +5,14 @@ describe('Binance stream type aliases', () => {
     const streams = buildStreamNames(
       'binance_market',
       ['BTCUSDT'],
-      ['markPrice', 'liquidation', 'continuousKline', 'indexPrice', 'compositeIndex'],
+      ['markPrice', 'liquidation', 'continuous_kline', 'indexPrice', 'compositeIndex'],
       '1m',
     );
 
     expect(streams).toEqual([
       'btcusdt@markPrice_1m',
       'btcusdt@forceOrder_1m',
-      'btcusdt_perpetual@continuousKline_1m',
+      'btcusdt_perpetual@continuous_kline_1m',
       'btcusdt@indexPrice_1m',
       'btcusdt@compositeIndex_1m',
     ]);
@@ -22,7 +22,7 @@ describe('Binance stream type aliases', () => {
     const currentQuarter = buildStreamNames(
       'binance_market',
       ['BTCUSDT'],
-      ['continuousKline'],
+      ['continuous_kline'],
       '1m',
       'current_quarter',
     );
@@ -30,13 +30,13 @@ describe('Binance stream type aliases', () => {
     const nextQuarter = buildStreamNames(
       'binance_market',
       ['BTCUSDT'],
-      ['continuousKline'],
+      ['continuous_kline'],
       '1m',
       'next_quarter',
     );
 
-    expect(currentQuarter).toEqual(['btcusdt_current_quarter@continuousKline_1m']);
-    expect(nextQuarter).toEqual(['btcusdt_next_quarter@continuousKline_1m']);
+    expect(currentQuarter).toEqual(['btcusdt_current_quarter@continuous_kline_1m']);
+    expect(nextQuarter).toEqual(['btcusdt_next_quarter@continuous_kline_1m']);
   });
 
   it('maps continuousKline alias to Binance-native stream naming', () => {
@@ -48,6 +48,6 @@ describe('Binance stream type aliases', () => {
       'perpetual',
     );
 
-    expect(streams).toEqual(['btcusdt_perpetual@continuousKline_5m']);
+    expect(streams).toEqual(['btcusdt_perpetual@continuous_kline_5m']);
   });
 });

@@ -367,6 +367,39 @@
       }
     },
     {
+      "key": "contractType",
+      "label": "Contract Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "perpetual",
+          "name": "Perpetual"
+        },
+        {
+          "id": "current_quarter",
+          "name": "Current Quarter"
+        },
+        {
+          "id": "next_quarter",
+          "name": "Next Quarter"
+        }
+      ],
+      "default": "perpetual",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ],
+          "marketType": [
+            "futures"
+          ],
+          "stream_type": [
+            "continuousKline"
+          ]
+        }
+      }
+    },
+    {
       "key": "scope",
       "label": "Scope",
       "type": "select",

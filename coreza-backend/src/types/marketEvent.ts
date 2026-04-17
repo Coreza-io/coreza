@@ -103,6 +103,7 @@ export interface MarketEvent {
 
   // Metadata
   timeframe?: string;
+  contractType?: string;
   isClosed?: boolean;
 }
 

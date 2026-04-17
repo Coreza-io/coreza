@@ -101,6 +101,7 @@ export interface CorezaMarketEvent {
 
   // Metadata
   timeframe?: string;
+  contractType?: string;
   isClosed?: boolean;
   _seq?: number;
   _orderingDomain?: string;
@@ -113,4 +114,5 @@ export interface ControlMessage {
   stream: string[];
   source: MarketSource;
   timeframe?: Timeframe;
+  contractType?: "perpetual" | "current_quarter" | "next_quarter";
 }

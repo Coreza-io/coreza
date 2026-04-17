@@ -33,6 +33,7 @@ interface ControlMessage {
   // Raw interval/depth for stream name building (centralized in market-stream-service)
   interval?: string;
   depthLevels?: string;
+  contractType?: "perpetual" | "current_quarter" | "next_quarter";
 }
 
 interface SourceState {
@@ -585,6 +586,7 @@ export class MarketControlHandler {
       marketType,
       interval,
       depthLevels,
+      contractType,
       scope,
       targetWorkflowId,
     } = msg;
@@ -621,6 +623,7 @@ export class MarketControlHandler {
           source,
           interval,
           depthLevels,
+          contractType,
         );
 
         let requestedStreamNames: string[] = [];
@@ -630,6 +633,7 @@ export class MarketControlHandler {
             symbols,
             processedStreamType,
             interval || "",
+            contractType,
           );
         } else {
           requestedStreamNames = processedStreamType;
@@ -729,6 +733,7 @@ export class MarketControlHandler {
       assetType,
       marketType,
       depthLevels,
+      contractType,
       environment,
       scope,
       targetWorkflowId,
@@ -758,6 +763,7 @@ export class MarketControlHandler {
           source,
           interval,
           depthLevels,
+          contractType,
         );
 
         let streamNamesToRemove: string[] = [];
@@ -770,6 +776,7 @@ export class MarketControlHandler {
             symbols,
             processedStreamType,
             interval || "",
+            contractType,
           );
         }
 
@@ -877,6 +884,7 @@ export class MarketControlHandler {
     source: string,
     interval?: string,
     depthLevels?: string,
+    contractType?: "perpetual" | "current_quarter" | "next_quarter",
   ): string[] {
     if (!source.startsWith("binance")) {
       return streamType;

@@ -36,6 +36,7 @@ export interface SubscriptionParams {
   environment?: string;
   assetType?: string;
   marketType?: string;
+  contractType?: "perpetual" | "current_quarter" | "next_quarter";
   interval?: string;
   depth_levels?: string;
   // Subscription scope
@@ -132,6 +133,7 @@ export class SubscriptionService {
         environment,
         assetType,
         marketType,
+        contractType,
         interval,
         depth_levels,
         scope,
@@ -219,6 +221,7 @@ export class SubscriptionService {
         // Pass raw parameters for stream name building in market-stream-service
         interval,
         depthLevels: depth_levels,
+        contractType,
       };
 
       // Add target workflow ID for workflow-scoped subscriptions

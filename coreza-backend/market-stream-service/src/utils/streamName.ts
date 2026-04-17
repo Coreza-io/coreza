@@ -20,7 +20,8 @@ function normalizeBinanceEventType(eventType: string): string {
     case "liquidation":
       return "forceOrder";
     case "continuous_kline":
-      return "continuous_kline";
+    case "continuousKline":
+      return "continuousKline";
     case "markPrice":
       return "markPrice";
     case "indexPrice":
@@ -113,7 +114,7 @@ export function parseStreamName(
         const [symbolPart, ...contractParts] = rawSymbol.split("_");
         return {
           symbol: symbolPart.toUpperCase(),
-          eventType,
+          eventType: "continuousKline",
           interval,
           contractType: contractParts.length
             ? contractParts.join("_")

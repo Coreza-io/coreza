@@ -106,7 +106,8 @@ export class MarketDataGateway {
           const payload = this.config.isBinary
             ? this.encodeMessage(authMsg)
             : JSON.stringify(authMsg);
-          if (this.assertSocketBoundary(authMsg, "send")) this.ws!.send(payload);
+          if (this.assertSocketBoundary(authMsg, "send"))
+            this.ws!.send(payload);
         } else {
           this.isAuthenticated = true;
           this.resubscribeAll();
@@ -233,8 +234,12 @@ export class MarketDataGateway {
           event.type === "order_update"
             ? "order_update"
             : event.timeframe
-              ? `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-              : `${event.symbol.toLowerCase()}@${event.type}`;
+              ? event.contractType
+                ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
+                : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+              : event.contractType
+                ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
+                : `${event.symbol.toLowerCase()}@${event.type}`;
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
@@ -361,7 +366,6 @@ export class MarketDataGateway {
     }
   }
 
-
   private isTradingPayload(msg: any): boolean {
     if (!msg || typeof msg !== "object") return false;
     const method = typeof msg.method === "string" ? msg.method : "";
@@ -372,11 +376,15 @@ export class MarketDataGateway {
     );
   }
 
-  private assertSocketBoundary(msg: any, direction: "send" | "receive"): boolean {
+  private assertSocketBoundary(
+    msg: any,
+    direction: "send" | "receive",
+  ): boolean {
     if (!msg || typeof msg !== "object") return true;
 
     const method = typeof msg.method === "string" ? msg.method : "";
-    const isSubscribePayload = method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
+    const isSubscribePayload =
+      method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
     const isTradingPayload = this.isTradingPayload(msg);
 
     if (isSubscribePayload && this.source === "binance_trading") {
@@ -464,22 +472,28 @@ export class MarketDataGateway {
     );
     if (!hasKeepalive) return;
 
-    this.tradingKeepaliveInterval = setInterval(() => {
-      if (this.ws?.readyState !== WebSocket.OPEN) return;
-      const keepaliveMsg = this.config.makeTradingKeepaliveMessage?.(
-        this.credentials,
-        this.source,
-      );
-      if (!keepaliveMsg) return;
+    this.tradingKeepaliveInterval = setInterval(
+      () => {
+        if (this.ws?.readyState !== WebSocket.OPEN) return;
+        const keepaliveMsg = this.config.makeTradingKeepaliveMessage?.(
+          this.credentials,
+          this.source,
+        );
+        if (!keepaliveMsg) return;
 
-      const payload = this.config.isBinary
-        ? this.encodeMessage(keepaliveMsg)
-        : JSON.stringify(keepaliveMsg);
-      if (this.assertSocketBoundary(keepaliveMsg, "send")) {
-        this.ws.send(payload);
-        this.logger.debug({ source: this.source }, "Sent trading keepalive ping");
-      }
-    }, 30 * 60 * 1000);
+        const payload = this.config.isBinary
+          ? this.encodeMessage(keepaliveMsg)
+          : JSON.stringify(keepaliveMsg);
+        if (this.assertSocketBoundary(keepaliveMsg, "send")) {
+          this.ws.send(payload);
+          this.logger.debug(
+            { source: this.source },
+            "Sent trading keepalive ping",
+          );
+        }
+      },
+      30 * 60 * 1000,
+    );
   }
 
   private stopTradingKeepalive(): void {

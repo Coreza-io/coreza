@@ -161,10 +161,7 @@ export function isBinancePostAuthSuccess(msg: any, source?: string): boolean {
   return msg?.id === "uds-start" && msg?.status === 200;
 }
 
-export function buildBinanceKeepaliveMessage(
-  creds: any,
-  source?: string,
-): any {
+export function buildBinanceKeepaliveMessage(creds: any, source?: string): any {
   if (source !== "binance_trading") return null;
   if (!isFuturesMarketType(creds)) return null;
   return {
@@ -179,7 +176,9 @@ export function buildBinanceSubscribeMessage(
   source?: string,
 ) {
   if (source === "binance_trading") {
-    console.error("[binance] Refused market SUBSCRIBE payload on trading socket");
+    console.error(
+      "[binance] Refused market SUBSCRIBE payload on trading socket",
+    );
     return null;
   }
   return { method: "SUBSCRIBE", params: stream, id: Date.now() };
@@ -190,7 +189,9 @@ export function buildBinanceUnsubscribeMessage(
   source?: string,
 ) {
   if (source === "binance_trading") {
-    console.error("[binance] Refused market UNSUBSCRIBE payload on trading socket");
+    console.error(
+      "[binance] Refused market UNSUBSCRIBE payload on trading socket",
+    );
     return null;
   }
   return { method: "UNSUBSCRIBE", params: stream, id: Date.now() };
@@ -580,7 +581,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         c: parseFloat(k.c),
         v: parseFloat(k.v),
         timeframe: k.i,
-        contractType: eventMsg.ct,
+        contractType: eventMsg.ct.toLowerCase(),
         isClosed: k.x,
         type: eventMsg.e,
         source: "binance" as const,

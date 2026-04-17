@@ -205,7 +205,7 @@
           }
         },
         {
-          "id": "continuous_kline",
+          "id": "continuousKline",
           "name": "Continuous Kline",
           "displayOptions": {
             "show": {
@@ -309,7 +309,7 @@
       "displayOptions": {
         "show": {
           "mode": ["subscribe"],
-          "stream_type": ["kline", "continuous_kline"]
+          "stream_type": ["kline", "continuousKline"]
         }
       }
     },
@@ -361,7 +361,7 @@
         "show": {
           "mode": ["subscribe"],
           "marketType": ["futures"],
-          "stream_type": ["continuous_kline"]
+          "stream_type": ["continuousKline"]
         }
       }
     },

@@ -1,4 +1,8 @@
-import { normalizeBinanceMessage } from "../src/marketGateways/binance/helpers";
+import {
+  identifyBinanceMessageType,
+  normalizeBinanceMessage,
+  shouldPublishBinanceMessage,
+} from "../src/marketGateways/binance/helpers";
 import { MarketDataSubscriber } from "../src/services/MarketDataSubscriber";
 
 describe("Binance order_update normalization", () => {
@@ -95,5 +99,38 @@ describe("order_update payload formatting", () => {
 
     expect(payload.data.order.feeAmount).toBe(0.1);
     expect(payload.data.order.feeAsset).toBe("BNB");
+  });
+});
+
+describe("Binance continuous kline event normalization", () => {
+  it("normalizes websocket event type continuous_kline to continuousKline", () => {
+    const msg = {
+      e: "continuous_kline",
+      E: 1710000000100,
+      ps: "ethusdt",
+      ct: "PERPETUAL",
+      k: {
+        t: 1710000000000,
+        o: "2500",
+        h: "2510",
+        l: "2495",
+        c: "2505",
+        v: "123.45",
+        i: "1m",
+        x: true,
+      },
+    };
+
+    expect(identifyBinanceMessageType(msg)).toBe("continuousKline");
+    expect(shouldPublishBinanceMessage(msg, "binance_market")).toBe(true);
+
+    const event = normalizeBinanceMessage(msg, "binance_market");
+    expect(event).toMatchObject({
+      type: "continuousKline",
+      symbol: "ETHUSDT",
+      timeframe: "1m",
+      contractType: "perpetual",
+      isClosed: true,
+    });
   });
 });

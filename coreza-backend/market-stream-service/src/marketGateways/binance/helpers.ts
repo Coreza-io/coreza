@@ -16,6 +16,26 @@ function unwrapBinanceUserDataEnvelope(msg: any): any {
   return msg;
 }
 
+function normalizeBinanceIncomingEventType(eventType: string): string {
+  return eventType === "continuous_kline" ? "continuousKline" : eventType;
+}
+
+function normalizeBinanceIncomingEvent(msg: any): any {
+  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+  if (!eventMsg || typeof eventMsg !== "object") {
+    return eventMsg;
+  }
+
+  if (typeof eventMsg.e === "string") {
+    return {
+      ...eventMsg,
+      e: normalizeBinanceIncomingEventType(eventMsg.e),
+    };
+  }
+
+  return eventMsg;
+}
+
 // ============ URL BUILDER (source-aware) ============
 export function getBinanceWsUrl(creds: any, source?: string): string {
   const isTestnet = creds.environment === "testnet";
@@ -203,7 +223,7 @@ export function parseBinanceMessage(buffer: Buffer): any[] {
 }
 
 export function identifyBinanceMessageType(msg: any): string {
-  return unwrapBinanceUserDataEnvelope(msg).e;
+  return normalizeBinanceIncomingEvent(msg).e;
 }
 
 // ============ PUBLISH FILTER (source-aware) ============
@@ -211,7 +231,7 @@ export function shouldPublishBinanceMessage(
   msg: any,
   source?: string,
 ): boolean {
-  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+  const eventMsg = normalizeBinanceIncomingEvent(msg);
 
   if (source === "binance_trading") {
     // Spot: executionReport, Futures: ORDER_TRADE_UPDATE
@@ -233,7 +253,6 @@ export function shouldPublishBinanceMessage(
     "depthUpdate",
     "markPriceUpdate",
     "forceOrder",
-    "continuous_kline",
     "continuousKline",
     "indexPriceUpdate",
     "compositeIndex",
@@ -246,7 +265,7 @@ export function handleBinanceControlMessage(
   logger: any,
   source?: string,
 ) {
-  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+  const eventMsg = normalizeBinanceIncomingEvent(msg);
 
   if (source === "binance_trading") {
     if (msg?.status === 200 && msg?.result?.subscriptionId !== undefined) {
@@ -311,7 +330,7 @@ const BINANCE_EXECUTION_TYPE_MAP: Record<string, string> = {
 
 // ============ NORMALIZATION (source-aware) ============
 export function normalizeBinanceMessage(msg: any, source?: string) {
-  const eventMsg = unwrapBinanceUserDataEnvelope(msg);
+  const eventMsg = normalizeBinanceIncomingEvent(msg);
 
   // TRADING source - order updates
   if (source === "binance_trading") {
@@ -569,7 +588,6 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       };
     }
 
-    case "continuous_kline":
     case "continuousKline": {
       const k = eventMsg.k || {};
       return {

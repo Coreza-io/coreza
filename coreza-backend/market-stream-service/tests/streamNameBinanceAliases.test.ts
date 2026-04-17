@@ -39,11 +39,11 @@ describe('Binance stream type aliases', () => {
     expect(nextQuarter).toEqual(['btcusdt_next_quarter@continuousKline_1m']);
   });
 
-  it('normalizes legacy continuous_kline alias to camelCase stream naming', () => {
+  it('maps continuousKline alias to Binance-native stream naming', () => {
     const streams = buildStreamNames(
       'binance_market',
       ['BTCUSDT'],
-      ['continuous_kline'],
+      ['continuousKline'],
       '5m',
       'perpetual',
     );

@@ -20,7 +20,7 @@ export type MarketEventType =
   | "depthUpdate"
   | "markPriceUpdate"
   | "forceOrder"
-  | "continuous_kline"
+  | "continuousKline"
   | "indexPriceUpdate"
   | "compositeIndex"
   | "account_update"

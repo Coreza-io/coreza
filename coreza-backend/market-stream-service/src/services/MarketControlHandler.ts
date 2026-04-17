@@ -617,27 +617,28 @@ export class MarketControlHandler {
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
-        // Build stream names FIRST (before any tracking)
-        const processedStreamType = this.processStreamTypesForStreamNames(
-          streamType || [],
-          source,
-          interval,
-          depthLevels,
-          contractType,
-        );
+        // // Build stream names FIRST (before any tracking)
+        // const processedStreamType = this.processStreamTypesForStreamNames(
+        //   streamType || [],
+        //   source,
+        //   interval,
+        //   depthLevels,
+        //   contractType,
+        // );
 
         let requestedStreamNames: string[] = [];
-        if (!processedStreamType.includes("order_update")) {
-          requestedStreamNames = buildStreamNames(
-            source,
-            symbols,
-            processedStreamType,
-            interval || "",
-            contractType,
-          );
-        } else {
-          requestedStreamNames = processedStreamType;
-        }
+        // if (!processedStreamType.includes("order_update")) {
+        requestedStreamNames = buildStreamNames(
+          source,
+          symbols,
+          //requestedStreamNames,
+          streamType || [],
+          interval || "",
+          contractType,
+        );
+        // } else {
+        //   requestedStreamNames = processedStreamType;
+        // }
 
         // Check which stream names are NEW (not already in state.streams)
         const newStreamNames = requestedStreamNames.filter(

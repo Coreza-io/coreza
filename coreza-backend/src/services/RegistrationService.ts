@@ -51,6 +51,7 @@ export interface ListenerParams {
   filterTypes?: string[];
   assetType?: string;
   marketType?: string;
+  contractType?: "perpetual" | "current_quarter" | "next_quarter";
   interval?: string;
   depth_levels?: string;
 }
@@ -69,6 +70,7 @@ export interface ListenerData {
   filterTypes?: string[];
   assetType?: string;
   marketType?: string;
+  contractType?: "perpetual" | "current_quarter" | "next_quarter";
   interval?: string;
   depth_levels?: string;
 }
@@ -137,6 +139,7 @@ export class RegistrationService {
       filterTypes,
       assetType,
       marketType,
+      contractType,
       interval,
       depth_levels,
     } = params;
@@ -159,6 +162,7 @@ export class RegistrationService {
       filterTypes,
       assetType,
       marketType,
+      contractType,
       interval,
       depth_levels,
     };

@@ -11,6 +11,7 @@ export interface StreamIdentifier {
   symbol: string;
   eventType: string;
   interval?: string;
+  contractType?: string;
 }
 
 
@@ -18,8 +19,8 @@ function normalizeBinanceEventType(eventType: string): string {
   switch (eventType.trim()) {
     case "liquidation":
       return "forceOrder";
-    case "continuousKline":
-      return "continuous_kline";
+    case "continuous_kline":
+      return "continuousKline";
     case "markPrice":
       return "markPrice";
     case "indexPrice":
@@ -46,9 +47,8 @@ export function buildStreamName(
   symbol: string,
   eventType: string,
   interval?: string,
+  contractType?: string,
 ): string {
-  const sym = symbol.toLowerCase();
-
   // Alpaca trading: fixed stream name (trade_updates covers all symbols for the account)
   if (source === "alpaca_trading") {
     return "trade_updates";
@@ -62,6 +62,11 @@ export function buildStreamName(
   const resolvedEventType = source.startsWith("binance")
     ? normalizeBinanceEventType(eventType)
     : eventType;
+  const normalizedContractType = contractType || "perpetual";
+  const sym =
+    source.startsWith("binance") && resolvedEventType === "continuousKline"
+      ? `${symbol.toLowerCase()}_${normalizedContractType}`
+      : symbol.toLowerCase();
 
   return interval
     ? `${sym}@${resolvedEventType}_${interval}`
@@ -86,13 +91,17 @@ export function parseStreamName(
       return { symbol: streamName.toUpperCase(), eventType: "unknown" };
     }
 
-    const sym = streamName.slice(0, atIndex).toUpperCase();
+    const rawSymbol = streamName.slice(0, atIndex);
     const typeWithInterval = streamName.slice(atIndex + 1);
 
     // Handle depth: depth20 -> eventType: depth, interval: 20
     if (typeWithInterval.startsWith("depth")) {
       const interval = typeWithInterval.slice(5); // Remove "depth"
-      return { symbol: sym, eventType: "depth", interval: interval || "20" };
+      return {
+        symbol: rawSymbol.toUpperCase(),
+        eventType: "depth",
+        interval: interval || "20",
+      };
     }
 
     // Handle kline: kline_1m -> eventType: kline, interval: 1m
@@ -100,11 +109,22 @@ export function parseStreamName(
     if (underscoreIndex !== -1) {
       const eventType = typeWithInterval.slice(0, underscoreIndex);
       const interval = typeWithInterval.slice(underscoreIndex + 1);
-      return { symbol: sym, eventType, interval };
+      if (eventType === "continuousKline") {
+        const [symbolPart, ...contractParts] = rawSymbol.split("_");
+        return {
+          symbol: symbolPart.toUpperCase(),
+          eventType,
+          interval,
+          contractType: contractParts.length
+            ? contractParts.join("_")
+            : "perpetual",
+        };
+      }
+      return { symbol: rawSymbol.toUpperCase(), eventType, interval };
     }
 
     // No interval: trade, aggTrade, ticker, bookTicker
-    return { symbol: sym, eventType: typeWithInterval };
+    return { symbol: rawSymbol.toUpperCase(), eventType: typeWithInterval };
   }
 
   // Alpaca trading: fixed stream name
@@ -163,6 +183,7 @@ export function buildStreamNames(
   symbols: string[],
   eventTypes: string[],
   interval: string,
+  contractType?: string,
 ): string[] {
   const streamNames: string[] = [];
 
@@ -176,11 +197,13 @@ export function buildStreamNames(
       if (
         underscoreIndex !== -1 &&
         source.startsWith("binance") &&
-        eventType !== "continuous_kline"
+        eventType !== "continuousKline"
       ) {
         const type = eventType.slice(0, underscoreIndex);
         const interval = eventType.slice(underscoreIndex + 1);
-        streamNames.push(buildStreamName(source, symbol, type, interval));
+        streamNames.push(
+          buildStreamName(source, symbol, type, interval, contractType),
+        );
       } else if (
         eventType.startsWith("depth") &&
         source.startsWith("binance")
@@ -188,10 +211,18 @@ export function buildStreamNames(
         // Handle depth20, depth10, etc.
         const interval = eventType.slice(5);
         streamNames.push(
-          buildStreamName(source, symbol, "depth", interval || "20"),
+          buildStreamName(
+            source,
+            symbol,
+            "depth",
+            interval || "20",
+            contractType,
+          ),
         );
       } else {
-        streamNames.push(buildStreamName(source, symbol, eventType, interval));
+        streamNames.push(
+          buildStreamName(source, symbol, eventType, interval, contractType),
+        );
       }
     }
   }

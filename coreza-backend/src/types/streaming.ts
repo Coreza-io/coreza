@@ -24,6 +24,7 @@ export interface StreamExecutionRequest {
   credential_id?: string;
   environment?: "testnet" | "live" | "paper";
   marketType?: "spot" | "futures";
+  contractType?: "perpetual" | "current_quarter" | "next_quarter";
   feed?: "iex" | "sip" | "test";
   interval?: string;
   depth_levels?: string;

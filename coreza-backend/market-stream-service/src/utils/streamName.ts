@@ -14,7 +14,6 @@ export interface StreamIdentifier {
   contractType?: string;
 }
 
-
 function normalizeBinanceEventType(eventType: string): string {
   switch (eventType.trim()) {
     case "liquidation":
@@ -32,7 +31,6 @@ function normalizeBinanceEventType(eventType: string): string {
       return eventType.trim();
   }
 }
-
 
 /**
  * Build native stream name for broker subscription
@@ -198,7 +196,7 @@ export function buildStreamNames(
       if (
         underscoreIndex !== -1 &&
         source.startsWith("binance") &&
-        eventType !== "continuous_kline"
+        eventType !== "continuousKline"
       ) {
         const type = eventType.slice(0, underscoreIndex);
         const interval = eventType.slice(underscoreIndex + 1);

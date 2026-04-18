@@ -304,15 +304,29 @@ export class BrokerExecutor implements INodeExecutor {
       return toNodeResult(normalized);
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
+      let enrichedError = error;
+
+      if (axios.isAxiosError(error)) {
+        const code = error.response?.data?.code;
+        if (code === -4120) {
+          const message = error.response?.data?.msg || error.message;
+          enrichedError = new Error(
+            `${message} (hint: Conditional order types must use algoOrder endpoint)`,
+          );
+        }
+      }
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
-          error: error instanceof Error ? error.message : String(error),
+          error:
+            enrichedError instanceof Error
+              ? enrichedError.message
+              : String(enrichedError),
         });
       }
 
       const normalized = createErrorOutput(
-        error instanceof Error ? error : String(error),
+        enrichedError instanceof Error ? enrichedError : String(enrichedError),
         {
           nodeId: node.id,
           nodeName: node.name,

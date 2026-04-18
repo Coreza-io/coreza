@@ -81,6 +81,7 @@ export class StreamingLifecycleAdapter {
           environment?: string;
           assetType?: string;
           marketType?: string;
+          contractType?: string;
           interval?: string;
           depth_levels?: number;
           crypto_base?: string;
@@ -97,6 +98,7 @@ export class StreamingLifecycleAdapter {
       environment?: string;
       assetType?: string;
       marketType?: string;
+      contractType?: string;
       interval?: string;
       depth_levels?: number;
       crypto_base?: string;
@@ -169,6 +171,7 @@ export class StreamingLifecycleAdapter {
         environment,
         assetType: nodeValues.assetType,
         marketType: nodeValues.marketType,
+        contractType: nodeValues.contractType,
         scope: subscriptionScope,
         targetWorkflowId: workflowId,
       });
@@ -210,6 +213,7 @@ export class StreamingLifecycleAdapter {
         environment,
         assetType: nodeValues.assetType,
         marketType: nodeValues.marketType,
+        contractType: nodeValues.contractType,
         interval: nodeValues.interval,
         depth_levels: nodeValues.depth_levels,
         scope: subscriptionScope,
@@ -279,6 +283,7 @@ export class StreamingLifecycleAdapter {
       filterTypes: nodeValues.stream_type,
       assetType: nodeValues.assetType,
       marketType: nodeValues.marketType,
+      contractType: nodeValues.contractType,
       interval: nodeValues.interval,
       depth_levels: nodeValues.depth_levels,
     });

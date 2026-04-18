@@ -148,17 +148,22 @@ export async function preConnectBinance(
     if (creds._listenKeyRefreshInterval) {
       clearInterval(creds._listenKeyRefreshInterval);
     }
-    creds._listenKeyRefreshInterval = setInterval(async () => {
-      try {
-        await requestFuturesListenKey(creds, "PUT");
-        console.info("[binance] Refreshed futures listenKey via REST keepalive");
-      } catch (error) {
-        console.error(
-          "[binance] Failed to refresh futures listenKey via REST keepalive",
-          error,
-        );
-      }
-    }, 25 * 60 * 1000);
+    creds._listenKeyRefreshInterval = setInterval(
+      async () => {
+        try {
+          await requestFuturesListenKey(creds, "PUT");
+          console.info(
+            "[binance] Refreshed futures listenKey via REST keepalive",
+          );
+        } catch (error) {
+          console.error(
+            "[binance] Failed to refresh futures listenKey via REST keepalive",
+            error,
+          );
+        }
+      },
+      25 * 60 * 1000,
+    );
 
     creds._closeListenKey = async () => {
       try {
@@ -486,20 +491,66 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         source: "binance" as any,
         symbol: o.s?.toUpperCase() || "*",
         type: "order_update" as const,
-        t: eventMsg.E || Date.now(),
+
+        // Top-level event timing
+        t: eventMsg.T ?? eventMsg.E ?? Date.now(),
+        eventType: eventMsg.e,
+        eventTime: eventMsg.E,
+        transactionTime: eventMsg.T,
+
+        // Core order execution info
         orderEvent: BINANCE_EXECUTION_TYPE_MAP[o.x] || o.x?.toLowerCase(),
-        orderId: String(o.i),
-        clientOrderId: o.c || undefined,
-        side: o.S?.toLowerCase(),
-        filledQty: parseFloat(o.z) || 0,
-        filledAvgPrice: parseFloat(o.ap) || 0,
         orderStatus: BINANCE_ORDER_STATUS_MAP[o.X] || o.X?.toLowerCase(),
+        orderId: o.i != null ? String(o.i) : undefined,
+        clientOrderId: o.c || undefined,
+        executionId: o.t != null ? String(o.t) : undefined, // trade id
+
+        // Symbol / side / type
         orderSymbol: o.s,
-        requestedQty: parseFloat(o.q) || 0,
-        executionId: o.t ? String(o.t) : undefined,
+        side: o.S?.toLowerCase(),
         orderType: o.o?.toLowerCase(),
+        originalOrderType: o.ot?.toLowerCase(),
+        timeInForce: o.f,
+        positionSide: o.ps?.toLowerCase(),
+
+        // Quantities
+        requestedQty: parseFloat(o.q) || 0, // original order qty
+        filledQty: parseFloat(o.l) || 0, // this event fill qty
+        cumulativeFilledQty: parseFloat(o.z) || 0, // total filled qty so far
+
+        // Prices
+        requestedPrice: parseFloat(o.p) || 0, // original order price
+        stopPrice: parseFloat(o.sp) || 0, // stop price
+        lastFilledPrice: parseFloat(o.L) || 0, // this event fill price
+        filledAvgPrice: parseFloat(o.ap) || 0, // average fill price so far
+        activationPrice: parseFloat(o.AP) || 0, // trailing stop only
+        callbackRate: parseFloat(o.cr) || 0, // trailing stop only
+
+        // Fees / pnl
         feeAmount: parseFloat(o.n) || 0,
         feeAsset: o.N || undefined,
+        realizedPnl: parseFloat(o.rp) || 0,
+
+        // Flags / behavior
+        isMaker: o.m === true,
+        reduceOnly: o.R === true,
+        closeAll: o.cp === true,
+        priceProtect: o.pP === true,
+        workingType: o.wt, // MARK_PRICE / CONTRACT_PRICE
+        selfTradePreventionMode: o.V, // e.g. EXPIRE_TAKER / EXPIRE_MAKER / EXPIRE_BOTH / NONE
+        priceMatchMode: o.pm, // e.g. NONE
+        goodTillDate: Number(o.gtd) || 0, // GTD cancel time, 0 if not used
+
+        // Additional numeric fields from Binance payload
+        bidNotional: parseFloat(o.b) || 0,
+        askNotional: parseFloat(o.a) || 0,
+        orderTradeTime: Number(o.T) || 0,
+        expiryReasonCode: Number(o.er) || 0,
+
+        // Binance says ignore these, but include them since you asked not to miss any
+        si: Number(o.si) || 0,
+        ss: Number(o.ss) || 0,
+
         rawOrderData: eventMsg,
       };
     }

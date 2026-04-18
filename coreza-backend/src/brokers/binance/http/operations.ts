@@ -17,6 +17,42 @@ function signParams(creds: any, params: Record<string, any>) {
 }
 
 export const binanceOperations: Record<string, BrokerOperation> = {
+  start_user_data_stream: {
+    method: "post",
+    path: (input: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error(
+          "start_user_data_stream is only supported for futures accounts",
+        );
+      }
+      return "/fapi/v1/listenKey";
+    },
+  },
+  keepalive_user_data_stream: {
+    method: "put",
+    path: (input: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error(
+          "keepalive_user_data_stream is only supported for futures accounts",
+        );
+      }
+      return "/fapi/v1/listenKey";
+    },
+  },
+  close_user_data_stream: {
+    method: "delete",
+    path: (input: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error(
+          "close_user_data_stream is only supported for futures accounts",
+        );
+      }
+      return "/fapi/v1/listenKey";
+    },
+  },
   get_account: {
     method: "get",
     path: (input: any) => {

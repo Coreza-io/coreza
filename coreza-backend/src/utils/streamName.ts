@@ -43,6 +43,10 @@ function buildStreamKey(
   interval?: string,
   contractType?: string,
 ): string {
+  if (source === "alpaca_trading" || source === "binance_trading") {
+    return "order_update";
+  }
+
   const resolvedEventType = source.startsWith("binance")
     ? normalizeBinanceEventType(eventType)
     : eventType;
@@ -71,6 +75,10 @@ export function parseStreamName(
   source: string,
   streamName: string,
 ): StreamIdentifier {
+  if (source === "alpaca_trading" || source === "binance_trading") {
+    return { symbol: "*", eventType: "order_update" };
+  }
+
   if (source.startsWith("binance")) {
     const atIndex = streamName.indexOf("@");
     if (atIndex === -1) {

@@ -48,8 +48,10 @@ export const binanceGatewayConfig: GatewayConfig = {
   handleControlMessage: (msg, logger, source) =>
     handleBinanceControlMessage(msg, logger, source),
   normalize: (msg, source) => normalizeBinanceMessage(msg, source),
-  requiresPreConnect: (source, creds) => false,
-  preConnect: (creds, _source) => preConnectBinance(creds),
+  requiresPreConnect: (source, creds) =>
+    source === "binance_trading" &&
+    String(creds?.marketType || "").toLowerCase() === "futures",
+  preConnect: (creds, source) => preConnectBinance(creds, source),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,
 };

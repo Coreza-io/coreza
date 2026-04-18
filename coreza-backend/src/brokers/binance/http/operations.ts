@@ -16,6 +16,216 @@ function signParams(creds: any, params: Record<string, any>) {
   return signHmacSha256(params, creds.secret_key);
 }
 
+const ALGO_TYPES = new Set([
+  "STOP",
+  "TAKE_PROFIT",
+  "STOP_MARKET",
+  "TAKE_PROFIT_MARKET",
+  "TRAILING_STOP_MARKET",
+]);
+const STANDARD_FUTURES_TYPES = new Set(["LIMIT", "MARKET"]);
+
+function normalizePriceMatch(value: any) {
+  if (!value || value === "NONE") return undefined;
+  return value;
+}
+
+function assertNoConflictingFields(input: any) {
+  if (input.closePosition === true && input.quantity) {
+    throw new Error("quantity cannot be sent when closePosition=true");
+  }
+
+  if (input.closePosition === true && input.reduceOnly === true) {
+    throw new Error("reduceOnly cannot be sent when closePosition=true");
+  }
+
+  if (input.price && input.priceMatch && input.priceMatch !== "NONE") {
+    throw new Error("price cannot be sent together with priceMatch");
+  }
+}
+
+function resolveGoodTillDateTimestamp(rawValue: any) {
+  if (!rawValue) return null;
+  const parsed = new Date(rawValue).getTime();
+  if (Number.isNaN(parsed)) {
+    throw new Error("goodTillDate must be a valid datetime");
+  }
+  return parsed;
+}
+
+function validateGoodTillDate(input: any, timeInForceValue: string) {
+  if (timeInForceValue !== "GTD") {
+    if (input.goodTillDate) {
+      throw new Error("goodTillDate is only supported when timeInForce=GTD");
+    }
+    return null;
+  }
+
+  const goodTillDate = resolveGoodTillDateTimestamp(input.goodTillDate);
+  if (!goodTillDate) {
+    throw new Error("goodTillDate is required when timeInForce=GTD");
+  }
+  const now = Date.now();
+  if (goodTillDate <= now + 600_000) {
+    throw new Error("goodTillDate must be at least 600 seconds in the future");
+  }
+  return goodTillDate;
+}
+
+function buildStandardFuturesPayload(input: any, baseParams: Record<string, any>) {
+  assertNoConflictingFields(input);
+
+  const params: Record<string, any> = { ...baseParams };
+  const orderType = String(input.type).toUpperCase();
+  const priceMatch = normalizePriceMatch(input.priceMatch);
+
+  if (!STANDARD_FUTURES_TYPES.has(orderType)) {
+    throw new Error(`Unsupported futures standard order type: ${orderType}`);
+  }
+
+  if (input.closePosition === true) {
+    throw new Error("closePosition is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+  }
+
+  if (!input.quantity) {
+    throw new Error("quantity is required for place_order");
+  }
+  params.quantity = String(input.quantity);
+
+  if (orderType === "LIMIT") {
+    const tif = input.timeInForce || "GTC";
+    params.timeInForce = tif;
+    const goodTillDate = validateGoodTillDate(input, tif);
+    if (goodTillDate) params.goodTillDate = goodTillDate;
+    const hasPrice = Boolean(input.price);
+    if (!hasPrice && !priceMatch) {
+      throw new Error("price or priceMatch is required for this order type");
+    }
+    if (hasPrice) params.price = String(input.price);
+    if (priceMatch) params.priceMatch = priceMatch;
+  } else {
+    if (input.price) throw new Error("price is not supported for MARKET orders");
+    if (priceMatch) throw new Error("priceMatch is not supported for MARKET orders");
+    if (input.timeInForce) throw new Error("timeInForce is not supported for MARKET orders");
+    if (input.goodTillDate) {
+      throw new Error("goodTillDate is only supported when timeInForce=GTD");
+    }
+  }
+
+  if (input.positionSide) params.positionSide = input.positionSide;
+  if (input.reduceOnly !== undefined) params.reduceOnly = input.reduceOnly;
+  if (input.selfTradePreventionMode) params.selfTradePreventionMode = input.selfTradePreventionMode;
+
+  if (input._idempotencyKey) params.newClientOrderId = input._idempotencyKey;
+  return params;
+}
+
+function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
+  assertNoConflictingFields(input);
+
+  const params: Record<string, any> = {
+    ...baseParams,
+    algoType: "CONDITIONAL",
+  };
+  const orderType = String(input.type).toUpperCase();
+  const priceMatch = normalizePriceMatch(input.priceMatch);
+
+  if (!ALGO_TYPES.has(orderType)) {
+    throw new Error(`Unsupported futures algo order type: ${orderType}`);
+  }
+
+  if (input.positionSide) params.positionSide = input.positionSide;
+  if (input.workingType) params.workingType = input.workingType;
+  if (input.reduceOnly !== undefined) params.reduceOnly = input.reduceOnly;
+  if (input.selfTradePreventionMode) {
+    params.selfTradePreventionMode = input.selfTradePreventionMode;
+  }
+
+  if (["STOP", "TAKE_PROFIT", "STOP_MARKET", "TAKE_PROFIT_MARKET"].includes(orderType)) {
+    if (!input.stopPrice) {
+      throw new Error("stopPrice is required for this order type");
+    }
+    params.triggerPrice = String(input.stopPrice);
+  }
+
+  if (orderType === "STOP" || orderType === "TAKE_PROFIT") {
+    if (input.closePosition === true) {
+      throw new Error("closePosition is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+    }
+    if (!input.quantity) throw new Error("quantity is required for this order type");
+    params.quantity = String(input.quantity);
+
+    const hasPrice = Boolean(input.price);
+    if (hasPrice === Boolean(priceMatch)) {
+      throw new Error("Exactly one of price or priceMatch is required for this order type");
+    }
+    if (hasPrice) params.price = String(input.price);
+    if (priceMatch) params.priceMatch = priceMatch;
+
+    const tif = input.timeInForce || "GTC";
+    params.timeInForce = tif;
+    const goodTillDate = validateGoodTillDate(input, tif);
+    if (goodTillDate) params.goodTillDate = goodTillDate;
+    if (input.priceProtect !== undefined) {
+      throw new Error("priceProtect is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+    }
+  }
+
+  if (orderType === "STOP_MARKET" || orderType === "TAKE_PROFIT_MARKET") {
+    if (input.price || priceMatch) {
+      throw new Error("price and priceMatch are not supported for this order type");
+    }
+    if (input.timeInForce) {
+      throw new Error("timeInForce is not supported for this order type");
+    }
+    if (input.goodTillDate) {
+      throw new Error("goodTillDate is not supported for this order type");
+    }
+    const hasQuantity = Boolean(input.quantity);
+    const isClosePosition = input.closePosition === true;
+    if (hasQuantity === isClosePosition) {
+      throw new Error(
+        "Exactly one of quantity or closePosition=true is required for this order type",
+      );
+    }
+    if (hasQuantity) params.quantity = String(input.quantity);
+    if (isClosePosition) params.closePosition = true;
+    if (input.priceProtect !== undefined) params.priceProtect = input.priceProtect;
+  }
+
+  if (orderType === "TRAILING_STOP_MARKET") {
+    if (input.closePosition === true) {
+      throw new Error("closePosition is not supported for TRAILING_STOP_MARKET");
+    }
+    if (!input.callbackRate) {
+      throw new Error("callbackRate is required for TRAILING_STOP_MARKET");
+    }
+    if (input.stopPrice) {
+      throw new Error("stopPrice is not supported for TRAILING_STOP_MARKET");
+    }
+    if (input.price || priceMatch) {
+      throw new Error("price and priceMatch are not supported for TRAILING_STOP_MARKET");
+    }
+    if (input.timeInForce || input.goodTillDate) {
+      throw new Error("timeInForce and goodTillDate are not supported for TRAILING_STOP_MARKET");
+    }
+    if (input.priceProtect !== undefined) {
+      throw new Error("priceProtect is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+    }
+    params.callbackRate = String(input.callbackRate);
+    if (input.activationPrice) params.activatePrice = String(input.activationPrice);
+    if (input.quantity) params.quantity = String(input.quantity);
+  }
+
+  if (input.clientAlgoId) {
+    params.clientAlgoId = input.clientAlgoId;
+  } else if (input._idempotencyKey) {
+    params.clientAlgoId = input._idempotencyKey;
+  }
+
+  return params;
+}
+
 export const binanceOperations: Record<string, BrokerOperation> = {
   start_user_data_stream: {
     method: "post",
@@ -205,7 +415,11 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "post",
     path: (input: any) => {
       const marketType = getMarketType(input);
-      return marketType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
+      if (marketType === "futures") {
+        const orderType = String(input?.type || "").toUpperCase();
+        return ALGO_TYPES.has(orderType) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
+      }
+      return "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       const {
@@ -223,81 +437,58 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       if (!symbol) throw new Error("symbol is required for place_order");
       if (!side) throw new Error("side is required for place_order");
       if (!type) throw new Error("type is required for place_order");
-      if (!quantity && !input.closePosition) {
-        throw new Error("quantity is required for place_order unless closePosition=true");
-      }
 
       const marketType = getMarketType(input);
       const orderType = String(type).toUpperCase();
 
-      const params: Record<string, any> = {
+      const baseParams: Record<string, any> = {
         symbol: symbol.toUpperCase(),
         side: side.toUpperCase(),
         type: orderType,
         recvWindow: 60000,
         timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+        newOrderRespType: newOrderRespType || "ACK",
       };
 
-      if (!input.closePosition) {
-        params.quantity = String(quantity);
+      if (marketType === "futures") {
+        const params = ALGO_TYPES.has(orderType)
+          ? buildAlgoFuturesPayload(input, baseParams)
+          : buildStandardFuturesPayload(input, baseParams);
+        return signParams(creds, params);
       }
 
-      const futuresLimitLikeTypes = [
-        "LIMIT",
-        "STOP",
-        "TAKE_PROFIT",
-      ];
+      if (!quantity) throw new Error("quantity is required for place_order");
+
+      const params: Record<string, any> = {
+        ...baseParams,
+        quantity: String(quantity),
+      };
+
       const spotLimitLikeTypes = ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"];
-      const limitLikeTypes =
-        marketType === "futures" ? futuresLimitLikeTypes : spotLimitLikeTypes;
+      const limitLikeTypes = spotLimitLikeTypes;
 
       if (limitLikeTypes.includes(orderType)) {
         params.timeInForce = timeInForce || "GTC";
       }
 
       const needsPrice =
-        marketType === "futures"
-          ? ["LIMIT", "STOP", "TAKE_PROFIT"].includes(orderType)
-          : ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"].includes(orderType);
+        ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"].includes(orderType);
       if (needsPrice) {
         if (!price) throw new Error("price is required for this order type");
         params.price = String(price);
       }
 
       const needsStopPrice =
-        marketType === "futures"
-          ? ["STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET"].includes(
-              orderType,
-            )
-          : ["STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"].includes(
-              orderType,
-            );
+        ["STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"].includes(
+          orderType,
+        );
       if (needsStopPrice) {
         if (!stopPrice) throw new Error("stopPrice is required for this order type");
         params.stopPrice = String(stopPrice);
       }
 
-      if (marketType === "futures") {
-        if (input.positionSide) params.positionSide = input.positionSide;
-        if (input.reduceOnly !== undefined) params.reduceOnly = input.reduceOnly;
-        if (input.closePosition !== undefined) params.closePosition = input.closePosition;
-        if (input.workingType) params.workingType = input.workingType;
-        if (input.priceProtect !== undefined) params.priceProtect = input.priceProtect;
+      if (icebergQty) params.icebergQty = String(icebergQty);
 
-        if (orderType === "TRAILING_STOP_MARKET") {
-          if (!input.callbackRate) {
-            throw new Error("callbackRate is required for TRAILING_STOP_MARKET");
-          }
-          params.callbackRate = String(input.callbackRate);
-          if (input.activationPrice) {
-            params.activationPrice = String(input.activationPrice);
-          }
-        }
-      } else {
-        if (icebergQty) params.icebergQty = String(icebergQty);
-      }
-
-      if (newOrderRespType) params.newOrderRespType = newOrderRespType;
       if (input._idempotencyKey) params.newClientOrderId = input._idempotencyKey;
 
       return signParams(creds, params);

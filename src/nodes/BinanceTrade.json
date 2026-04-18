@@ -162,33 +162,76 @@
         {
           "name": "Take Profit Limit",
           "id": "TAKE_PROFIT_LIMIT"
+        }
+      ],
+      "default": "MARKET",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "spot"
+          ]
+        }
+      }
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        {
+          "name": "Market",
+          "id": "MARKET"
         },
         {
-          "name": "Stop (Futures)",
+          "name": "Limit",
+          "id": "LIMIT"
+        },
+        {
+          "name": "Stop",
           "id": "STOP"
         },
         {
-          "name": "Stop Market (Futures)",
+          "name": "Take Profit",
+          "id": "TAKE_PROFIT"
+        },
+        {
+          "name": "Stop Market",
           "id": "STOP_MARKET"
         },
         {
-          "name": "Take Profit Market (Futures)",
+          "name": "Take Profit Market",
           "id": "TAKE_PROFIT_MARKET"
         },
         {
-          "name": "Trailing Stop Market (Futures)",
+          "name": "Trailing Stop Market",
           "id": "TRAILING_STOP_MARKET"
         }
       ],
       "default": "MARKET",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ]
+        }
+      }
     },
     {
       "key": "quantity",
       "label": "Quantity",
       "type": "text",
       "placeholder": "Order quantity",
-      "required": true
+      "required": true,
+      "description": "Required unless Close Position is enabled for futures stop-market take-profit-market orders.",
+      "displayOptions": {
+        "hide": {
+          "closePosition": [
+            true
+          ]
+        }
+      }
     },
     {
       "key": "price",
@@ -197,6 +240,9 @@
       "placeholder": "Limit price",
       "displayOptions": {
         "show": {
+          "marketType": [
+            "spot"
+          ],
           "type": [
             "LIMIT",
             "STOP_LOSS_LIMIT",
@@ -212,6 +258,9 @@
       "placeholder": "Stop price",
       "displayOptions": {
         "show": {
+          "marketType": [
+            "spot"
+          ],
           "type": [
             "STOP_LOSS",
             "STOP_LOSS_LIMIT",
@@ -242,10 +291,189 @@
       "default": "GTC",
       "displayOptions": {
         "show": {
+          "marketType": [
+            "spot"
+          ],
           "type": [
             "LIMIT",
             "STOP_LOSS_LIMIT",
             "TAKE_PROFIT_LIMIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "price",
+      "label": "Price",
+      "type": "text",
+      "placeholder": "Order price",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "type": [
+            "LIMIT",
+            "STOP",
+            "TAKE_PROFIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "stopPrice",
+      "label": "Trigger Price",
+      "type": "text",
+      "placeholder": "Trigger price",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "type": [
+            "STOP",
+            "TAKE_PROFIT",
+            "STOP_MARKET",
+            "TAKE_PROFIT_MARKET"
+          ]
+        }
+      }
+    },
+    {
+      "key": "timeInForce",
+      "label": "Time In Force",
+      "type": "select",
+      "options": [
+        {
+          "name": "GTC (Good Till Cancel)",
+          "id": "GTC"
+        },
+        {
+          "name": "IOC (Immediate Or Cancel)",
+          "id": "IOC"
+        },
+        {
+          "name": "FOK (Fill Or Kill)",
+          "id": "FOK"
+        },
+        {
+          "name": "GTD (Good Till Date)",
+          "id": "GTD"
+        }
+      ],
+      "default": "GTC",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "type": [
+            "LIMIT",
+            "STOP",
+            "TAKE_PROFIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "goodTillDate",
+      "label": "Good Till Date",
+      "type": "text",
+      "placeholder": "YYYY-MM-DDTHH:mm:ssZ",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "timeInForce": [
+            "GTD"
+          ]
+        }
+      }
+    },
+    {
+      "key": "priceMatch",
+      "label": "Price Match",
+      "type": "select",
+      "options": [
+        {
+          "name": "NONE",
+          "id": "NONE"
+        },
+        {
+          "name": "OPPONENT",
+          "id": "OPPONENT"
+        },
+        {
+          "name": "OPPONENT_5",
+          "id": "OPPONENT_5"
+        },
+        {
+          "name": "OPPONENT_10",
+          "id": "OPPONENT_10"
+        },
+        {
+          "name": "OPPONENT_20",
+          "id": "OPPONENT_20"
+        },
+        {
+          "name": "QUEUE",
+          "id": "QUEUE"
+        },
+        {
+          "name": "QUEUE_5",
+          "id": "QUEUE_5"
+        },
+        {
+          "name": "QUEUE_10",
+          "id": "QUEUE_10"
+        },
+        {
+          "name": "QUEUE_20",
+          "id": "QUEUE_20"
+        }
+      ],
+      "default": "NONE",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "type": [
+            "LIMIT",
+            "STOP",
+            "TAKE_PROFIT"
+          ]
+        }
+      }
+    },
+    {
+      "key": "selfTradePreventionMode",
+      "label": "Self Trade Prevention",
+      "type": "select",
+      "options": [
+        {
+          "name": "NONE",
+          "id": "NONE"
+        },
+        {
+          "name": "EXPIRE_TAKER",
+          "id": "EXPIRE_TAKER"
+        },
+        {
+          "name": "EXPIRE_MAKER",
+          "id": "EXPIRE_MAKER"
+        },
+        {
+          "name": "EXPIRE_BOTH",
+          "id": "EXPIRE_BOTH"
+        }
+      ],
+      "default": "NONE",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
           ]
         }
       }
@@ -284,7 +512,27 @@
           "id": "FULL"
         }
       ],
-      "default": "RESULT"
+      "default": "ACK"
+    },
+    {
+      "key": "clientAlgoId",
+      "label": "Client Algo ID",
+      "type": "text",
+      "placeholder": "Optional client algo id",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "type": [
+            "STOP",
+            "TAKE_PROFIT",
+            "STOP_MARKET",
+            "TAKE_PROFIT_MARKET",
+            "TRAILING_STOP_MARKET"
+          ]
+        }
+      }
     },
     {
       "key": "positionSide",
@@ -335,6 +583,10 @@
         "show": {
           "marketType": [
             "futures"
+          ],
+          "type": [
+            "STOP_MARKET",
+            "TAKE_PROFIT_MARKET"
           ]
         }
       }
@@ -371,6 +623,10 @@
         "show": {
           "marketType": [
             "futures"
+          ],
+          "type": [
+            "STOP_MARKET",
+            "TAKE_PROFIT_MARKET"
           ]
         }
       }

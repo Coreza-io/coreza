@@ -228,7 +228,13 @@ export function buildStreamNames(
       //   );
       // } else {
       streamNames.push(
-        buildStreamName(source, symbol, streamType, interval, contractType),
+        buildStreamName(
+          source,
+          symbol.toLocaleLowerCase(),
+          streamType,
+          interval,
+          contractType,
+        ),
       );
       // }
     }

@@ -94,20 +94,16 @@ export class BrokerExecutor implements INodeExecutor {
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
     let isOrderOperation = false;
-    let shouldPersistRedisState = false;
+    let shouldPersistRedisState = true;
     const userId = context?.userId ?? "system";
     const workflowId = context?.workflowId ?? "manual";
 
     try {
       const operation = node.values?.operation;
-      const brokerNode = node as WorkflowNode & { subCategory?: string };
-      const broker = (
-        brokerNode.subCategory ??
-        node.name ??
-        node.node_type
-      )?.toLowerCase();
+      const brokerNode = node as WorkflowNode & { subCategory: string };
+      const broker = (brokerNode.subCategory ?? node.name).toLowerCase();
       const credential_id = node.values?.credential_id;
-      shouldPersistRedisState = context?.executionMode === "live";
+      //shouldPersistRedisState = context?.executionMode === "live";
 
       if (!credential_id) {
         return {

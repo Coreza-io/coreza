@@ -110,7 +110,6 @@ router.post("/:broker/auth", async (req, res, next) => {
 router.post("/:broker/:operation", async (req, res, next) => {
   try {
     const { broker } = req.params;
-    const brokerKey = normalizeBroker(broker);
     const {
       workflowId,
       credential_id,
@@ -119,18 +118,9 @@ router.post("/:broker/:operation", async (req, res, next) => {
       nodeName,
       operation,
       category,
+      subCategory,
     } = req.body;
     const userId = req.user?.id;
-
-    if (!brokerKey) {
-      return res.status(400).json({ error: "broker is required" });
-    }
-
-    if (!isSupportedBroker(brokerKey)) {
-      return res
-        .status(400)
-        .json({ error: `Unsupported broker: ${brokerKey}` });
-    }
 
     if (!userId || !credential_id) {
       return res.status(400).json({ error: "credential_id is required" });
@@ -153,7 +143,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       name: nodeName,
       node_type,
       category,
-      subCategory: brokerKey,
+      subCategory: subCategory,
       values: {
         operation: operation,
         ...req.body,
@@ -163,6 +153,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const result = await brokerExecutor.execute(node, req.body, {
       userId,
       workflowId,
+      executionMode: "manual",
       executionId: req.body.workflowSessionId || workflowId,
     });
 

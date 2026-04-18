@@ -454,7 +454,7 @@
       "type": "toggle",
       "default": true,
       "description": "When enabled, only forward kline events with isClosed=true. Disable to receive every tick update.",
-      "showDescription": true
+      "showDescription": false
     }
   ]
 }

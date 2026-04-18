@@ -358,7 +358,7 @@ export class MarketDataSubscriber {
           if (
             registration.onlyClosedBars !== false && // Default is true
             event.source === "binance" &&
-            event.type === "kline" &&
+            (event.type === "kline" || event.type === "continuousKline") &&
             event.isClosed !== true
           ) {
             logger.debug(

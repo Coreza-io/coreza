@@ -9,6 +9,44 @@ function isFuturesMarketType(creds: any): boolean {
   return String(marketType || "").toLowerCase() === "futures";
 }
 
+function getFuturesListenKeyHttpBase(creds: any): string {
+  const isTestnet = creds?.environment === "testnet";
+  return isTestnet
+    ? "https://demo-fapi.binance.com"
+    : "https://fapi.binance.com";
+}
+
+async function requestFuturesListenKey(
+  creds: any,
+  method: "POST" | "PUT" | "DELETE",
+): Promise<any> {
+  if (!creds?.api_key) {
+    throw new Error("Binance api_key is required for futures listenKey flow");
+  }
+
+  const baseUrl = getFuturesListenKeyHttpBase(creds);
+  const url = `${baseUrl}/fapi/v1/listenKey`;
+  const response = await fetch(url, {
+    method,
+    headers: {
+      "X-MBX-APIKEY": creds.api_key,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Binance futures listenKey ${method} failed (${response.status}): ${body}`,
+    );
+  }
+
+  if (method === "POST") {
+    return response.json();
+  }
+
+  return null;
+}
+
 function unwrapBinanceUserDataEnvelope(msg: any): any {
   if (msg && msg.subscriptionId !== undefined && msg.event) {
     return msg.event;
@@ -63,9 +101,15 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
 
   if (source === "binance_trading") {
     if (isFutures) {
-      return isTestnet
-        ? "wss://testnet.binancefuture.com/ws-fapi/v1"
-        : "wss://ws-fapi.binance.com/ws-fapi/v1";
+      if (!creds?.listenKey) {
+        throw new Error(
+          "listenKey is required for binance_trading futures — preConnect must run first",
+        );
+      }
+      const host = isTestnet
+        ? "fstream.binancefuture.com"
+        : "fstream.binance.com";
+      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=ORDER_TRADE_UPDATE`;
     }
 
     return isTestnet
@@ -86,7 +130,51 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
 }
 
 // ============ PRE-CONNECT ============
-export async function preConnectBinance(creds: any): Promise<any> {
+export async function preConnectBinance(
+  creds: any,
+  source?: string,
+): Promise<any> {
+  if (source === "binance_trading" && isFuturesMarketType(creds)) {
+    const result = await requestFuturesListenKey(creds, "POST");
+    if (!result?.listenKey) {
+      throw new Error(
+        "Binance futures listenKey response missing listenKey field",
+      );
+    }
+
+    creds.listenKey = result.listenKey;
+    console.info("[binance] Started futures listenKey stream");
+
+    if (creds._listenKeyRefreshInterval) {
+      clearInterval(creds._listenKeyRefreshInterval);
+    }
+    creds._listenKeyRefreshInterval = setInterval(async () => {
+      try {
+        await requestFuturesListenKey(creds, "PUT");
+        console.info("[binance] Refreshed futures listenKey via REST keepalive");
+      } catch (error) {
+        console.error(
+          "[binance] Failed to refresh futures listenKey via REST keepalive",
+          error,
+        );
+      }
+    }, 25 * 60 * 1000);
+
+    creds._closeListenKey = async () => {
+      try {
+        await requestFuturesListenKey(creds, "DELETE");
+        console.info("[binance] Closed futures listenKey during teardown");
+      } catch (error) {
+        console.error(
+          "[binance] Failed to close futures listenKey during teardown",
+          error,
+        );
+      } finally {
+        creds.listenKey = undefined;
+      }
+    };
+  }
+
   return creds;
 }
 
@@ -97,6 +185,10 @@ export async function preConnectBinance(creds: any): Promise<any> {
 //   - first authenticate the WebSocket session with session.logon
 export function buildBinanceAuthMessage(creds: any, source?: string): any {
   if (source !== "binance_trading") {
+    return null;
+  }
+
+  if (isFuturesMarketType(creds)) {
     return null;
   }
 
@@ -156,6 +248,7 @@ export function buildBinanceAuthMessage(creds: any, source?: string): any {
 
 export function isBinanceAuthSuccess(msg: any, source?: string): boolean {
   if (source !== "binance_trading") return false;
+  if (msg === null || msg === undefined) return true;
   if (msg?.id === "session-logon") {
     return msg?.status === 200;
   }
@@ -169,25 +262,18 @@ export function isBinanceAuthError(msg: any, source?: string): boolean {
 
 export function buildBinancePostAuthMessage(creds: any, source?: string): any {
   if (source !== "binance_trading") return null;
-  if (!isFuturesMarketType(creds)) return null;
-  return {
-    id: "uds-start",
-    method: "userDataStream.start",
-  };
+  return null;
 }
 
 export function isBinancePostAuthSuccess(msg: any, source?: string): boolean {
   if (source !== "binance_trading") return false;
-  return msg?.id === "uds-start" && msg?.status === 200;
+  return true;
 }
 
 export function buildBinanceKeepaliveMessage(creds: any, source?: string): any {
   if (source !== "binance_trading") return null;
   if (!isFuturesMarketType(creds)) return null;
-  return {
-    id: "uds-ping",
-    method: "userDataStream.ping",
-  };
+  return null;
 }
 
 // ============ SUBSCRIBE/UNSUBSCRIBE (source-aware) ============
@@ -234,13 +320,8 @@ export function shouldPublishBinanceMessage(
   const eventMsg = normalizeBinanceIncomingEvent(msg);
 
   if (source === "binance_trading") {
-    // Spot: executionReport, Futures: ORDER_TRADE_UPDATE
     return (
-      eventMsg.e === "executionReport" ||
-      eventMsg.e === "ORDER_TRADE_UPDATE" ||
-      eventMsg.e === "ACCOUNT_UPDATE" ||
-      eventMsg.e === "ACCOUNT_CONFIG_UPDATE" ||
-      eventMsg.e === "MARGIN_CALL"
+      eventMsg.e === "ORDER_TRADE_UPDATE" || eventMsg.e === "executionReport"
     );
   }
   return [
@@ -419,41 +500,6 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         orderType: o.o?.toLowerCase(),
         feeAmount: parseFloat(o.n) || 0,
         feeAsset: o.N || undefined,
-        rawOrderData: eventMsg,
-      };
-    }
-
-    if (eventMsg.e === "ACCOUNT_UPDATE") {
-      return {
-        source: "binance" as const,
-        symbol: "*",
-        type: "account_update" as const,
-        t: eventMsg.E || Date.now(),
-        reason: eventMsg.a?.m,
-        balances: eventMsg.a?.B || [],
-        positions: eventMsg.a?.P || [],
-        rawOrderData: eventMsg,
-      };
-    }
-
-    if (eventMsg.e === "ACCOUNT_CONFIG_UPDATE") {
-      return {
-        source: "binance" as const,
-        symbol: "*",
-        type: "account_config_update" as const,
-        t: eventMsg.E || Date.now(),
-        config: eventMsg.ac || eventMsg.ai || {},
-        rawOrderData: eventMsg,
-      };
-    }
-
-    if (eventMsg.e === "MARGIN_CALL") {
-      return {
-        source: "binance" as const,
-        symbol: "*",
-        type: "margin_call" as const,
-        t: eventMsg.E || Date.now(),
-        positions: eventMsg.p || [],
         rawOrderData: eventMsg,
       };
     }

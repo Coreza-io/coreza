@@ -527,6 +527,16 @@ export class MarketDataGateway {
       clearInterval(this.credentials._listenKeyRefreshInterval);
       this.credentials._listenKeyRefreshInterval = null;
     }
+
+    if (typeof this.credentials?._closeListenKey === "function") {
+      Promise.resolve(this.credentials._closeListenKey()).catch((error) => {
+        this.logger.warn(
+          { source: this.source, error },
+          "Failed to close listenKey during teardown",
+        );
+      });
+      this.credentials._closeListenKey = null;
+    }
   }
 
   disconnect(): void {

@@ -13,7 +13,7 @@ import { RedisKeys } from "../infra/redisKeys";
 const logger = createLogger("FillEventBus");
 
 export interface FillStreamEvent {
-  event_id: string;
+  fill_id: string;
   user_id: string;
   workflow_id: string;
   execution_id?: string;
@@ -30,6 +30,7 @@ export interface FillStreamEvent {
   commission_asset?: string;
   event_time: string;
   base_currency?: string;
+  fill_status?: string;
 }
 
 const STREAM_MAX_LEN = "100000";
@@ -58,6 +59,6 @@ export class FillEventBus {
     pipeline.xadd(streamKey, "MAXLEN", "~", STREAM_MAX_LEN, "*", ...fields);
     await pipeline.exec();
 
-    logger.debug({ streamKey, eventId: event.event_id }, "fill event published");
+    logger.debug({ streamKey, fillId: event.fill_id }, "fill event published");
   }
 }

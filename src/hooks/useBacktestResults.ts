@@ -35,7 +35,7 @@ export interface TradeOrder {
   orderType?: string;
   fillPrice: number;
   quantity: number;
-  status?: string;
+  status?: "Partial" | "Filled" | "Cancelled" | "Rejected";
   exitReason?: string;
   time: string;
 }

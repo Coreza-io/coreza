@@ -180,21 +180,20 @@ export class FillSyncWorker {
           for (let i = 0; i < fieldValues.length; i += 2) {
             fields[fieldValues[i]] = fieldValues[i + 1];
           }
-          const eventId = fields.event_id;
-          if (eventId) {
-            deduped.set(eventId, { entryId, fields });
+          const fillId = fields.fill_id || fields.broker_execution_id;
+          if (fillId) {
+            deduped.set(fillId, { entryId, fields });
           }
         }
 
         const rows: LiveFillRow[] = [];
-        for (const [, { fields }] of deduped) {
+        for (const [fillId, { fields }] of deduped) {
           rows.push({
-            event_id: fields.event_id,
             user_id: fields.user_id,
             broker: fields.broker,
             credential_id: fields.credential_id || fields.user_id,
             symbol: fields.symbol,
-            trade_id: fields.event_id,
+            fill_id: fillId,
             order_id: fields.order_id || null as any,
             broker_execution_id: fields.broker_execution_id || null as any,
             side: fields.side,
@@ -206,6 +205,7 @@ export class FillSyncWorker {
             event_time: fields.event_time,
             workflow_id: fields.workflow_id || null as any,
             execution_id: fields.execution_id || null as any,
+            fill_status: fields.fill_status || null as any,
           });
         }
 

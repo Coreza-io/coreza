@@ -74,6 +74,28 @@ export interface PositionState {
   //updatedAt: string;
 }
 
+export interface PendingClosingTrade {
+  key: string;
+  tradeId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  entryOrderId: string;
+  exitOrderId: string;
+  entryPrice: number;
+  weightedExitPrice: number;
+  accumulatedQuantity: number;
+  accumulatedGrossPnl: number;
+  accumulatedCommission: number;
+  entryTime: string;
+  latestExitTime: string;
+  status: string;
+}
+
+export type ApplyTradeResult =
+  | { kind: "skipped"; reason: string }
+  | { kind: "pendingUpdate"; pending: PendingClosingTrade }
+  | { kind: "finalized"; trade: Trade };
+
 type BalanceState = {
   asset: string;
   cash: number;
@@ -183,6 +205,7 @@ export class PortfolioManager {
   private fillLedger: OrderEvent[] = [];
   private orderCumQtyMap = new Map<string, number>(); // orderId → cumulative qty applied (partial fill tracking)
   private trades: Trade[] = [];
+  private pendingClosingTrades = new Map<string, PendingClosingTrade>();
   private currentEntryMap = new Map<
     string,
     {
@@ -240,6 +263,7 @@ export class PortfolioManager {
     this.fillLedger.length = 0;
     this.orderCumQtyMap.clear();
     this.trades.length = 0;
+    this.pendingClosingTrades.clear();
     this.currentEntryMap.clear();
     this.tradeIdCounter = 0;
     this.peakEquity = 0;
@@ -447,18 +471,68 @@ export class PortfolioManager {
   applyTrade(
     input: {
       brokerOrderId: string;
-      clientOrderId: string;
+      clientOrderId?: string;
+      executionId?: string;
       symbol: string;
       side: "buy" | "sell";
       filledQty: number;
       fillPrice: number;
+      feeAmount: number;
+      status: string;
       baseCurrency: string;
     },
-    feeAmount: number,
     now: string,
-  ): Trade | null {
+  ): ApplyTradeResult {
+    if (input.executionId) {
+      if (this.executionKeysSeen.has(input.executionId)) {
+        return { kind: "skipped", reason: "duplicate_execution" };
+      }
+      this.executionKeysSeen.add(input.executionId);
+      if (this.executionKeysSeen.size > PortfolioManager.MAX_EXECUTION_KEYS) {
+        const oldest = this.executionKeysSeen.values().next().value;
+        if (oldest) this.executionKeysSeen.delete(oldest);
+      }
+    }
+
+    if (!input.brokerOrderId) {
+      return { kind: "skipped", reason: "missing_order_id" };
+    }
+
+    const key = input.brokerOrderId;
+    const existingPending = this.pendingClosingTrades.get(key);
+
+    if (
+      TERMINAL_ORDER_STATUSES.has(input.status) &&
+      (!input.filledQty || input.filledQty <= 0) &&
+      existingPending
+    ) {
+      const trade: Trade = {
+        id: existingPending.tradeId,
+        symbol: existingPending.symbol,
+        side: existingPending.side,
+        entryOrderId: existingPending.entryOrderId,
+        exitOrderId: existingPending.exitOrderId,
+        entryPrice: existingPending.entryPrice,
+        exitPrice: existingPending.weightedExitPrice,
+        quantity: existingPending.accumulatedQuantity,
+        grossPnl: existingPending.accumulatedGrossPnl,
+        commission: existingPending.accumulatedCommission,
+        slippage: 0,
+        netPnl:
+          existingPending.accumulatedGrossPnl -
+          existingPending.accumulatedCommission,
+        entryTime: existingPending.entryTime,
+        exitTime: now,
+        holdingPeriodBars: 0,
+      };
+
+      this.trades.push(trade);
+      this.pendingClosingTrades.delete(key);
+      return { kind: "finalized", trade };
+    }
+
     const existing = this.positions.get(input.symbol);
-    if (!existing) return null;
+    if (!existing) return { kind: "skipped", reason: "missing_position" };
 
     const signedQty = input.side === "buy" ? input.filledQty : -input.filledQty;
     const prevQty = existing.quantity;
@@ -467,38 +541,86 @@ export class PortfolioManager {
     const sameDirection =
       (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
 
-    if (sameDirection) return null;
+    if (sameDirection) return { kind: "skipped", reason: "same_direction_fill" };
 
     const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
-    if (closingQty <= 0) return null;
+    if (closingQty <= 0) return { kind: "skipped", reason: "no_closing_qty" };
 
     const isClosingLong = prevQty > 0;
-    const grossPnl = isClosingLong
+    const eventGrossPnl = isClosingLong
       ? (input.fillPrice - existing.avgFillPrice) * closingQty
       : (existing.avgFillPrice - input.fillPrice) * closingQty;
 
     const entry = this.currentEntryMap.get(input.symbol);
 
+    let pending: PendingClosingTrade;
+
+    if (!existingPending) {
+      pending = {
+        key,
+        tradeId: `LT-${++this.tradeIdCounter}`,
+        symbol: input.symbol,
+        side: input.side,
+        entryOrderId: entry?.fillId ?? "",
+        exitOrderId: input.brokerOrderId,
+        entryPrice: existing.avgFillPrice,
+        weightedExitPrice: input.fillPrice,
+        accumulatedQuantity: closingQty,
+        accumulatedGrossPnl: eventGrossPnl,
+        accumulatedCommission: input.feeAmount ?? 0,
+        entryTime: entry?.entryTime ?? "",
+        latestExitTime: now,
+        status: input.status,
+      };
+      this.pendingClosingTrades.set(key, pending);
+    } else {
+      const oldQty = existingPending.accumulatedQuantity;
+      const newQty = oldQty + closingQty;
+      const weightedExitPrice =
+        newQty > 0
+          ? (existingPending.weightedExitPrice * oldQty +
+              input.fillPrice * closingQty) /
+            newQty
+          : existingPending.weightedExitPrice;
+
+      pending = {
+        ...existingPending,
+        weightedExitPrice,
+        accumulatedQuantity: newQty,
+        accumulatedGrossPnl: existingPending.accumulatedGrossPnl + eventGrossPnl,
+        accumulatedCommission:
+          existingPending.accumulatedCommission + (input.feeAmount ?? 0),
+        latestExitTime: now,
+        status: input.status,
+      };
+      this.pendingClosingTrades.set(key, pending);
+    }
+
+    if (!TERMINAL_ORDER_STATUSES.has(input.status)) {
+      return { kind: "pendingUpdate", pending };
+    }
+
     const trade: Trade = {
-      id: `LT-${++this.tradeIdCounter}`,
-      symbol: input.symbol,
-      side: isClosingLong ? "buy" : "sell",
-      entryOrderId: entry?.fillId ?? "",
+      id: pending.tradeId,
+      symbol: pending.symbol,
+      side: pending.side,
+      entryOrderId: pending.entryOrderId,
       exitOrderId: input.brokerOrderId,
-      entryPrice: existing.avgFillPrice,
-      exitPrice: input.fillPrice,
-      quantity: closingQty,
-      grossPnl,
-      commission: feeAmount ?? 0,
+      entryPrice: pending.entryPrice,
+      exitPrice: pending.weightedExitPrice,
+      quantity: pending.accumulatedQuantity,
+      grossPnl: pending.accumulatedGrossPnl,
+      commission: pending.accumulatedCommission,
       slippage: 0,
-      netPnl: grossPnl - (feeAmount ?? 0),
-      entryTime: entry?.entryTime ?? "",
-      exitTime: now,
+      netPnl: pending.accumulatedGrossPnl - pending.accumulatedCommission,
+      entryTime: pending.entryTime,
+      exitTime: pending.latestExitTime,
       holdingPeriodBars: 0,
     };
 
     this.trades.push(trade);
-    return trade;
+    this.pendingClosingTrades.delete(key);
+    return { kind: "finalized", trade };
   }
 
   /**

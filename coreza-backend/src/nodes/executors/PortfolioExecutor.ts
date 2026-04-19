@@ -42,6 +42,17 @@ import { createLogger } from "../../utils/logger";
 import { BrokerExecutor } from "./BrokerExecutor";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
+const TERMINAL_ORDER_STATUSES = new Set([
+  "filled",
+  "canceled",
+  "cancelled",
+  "rejected",
+  "expired",
+  "replaced",
+  "stopped",
+  "suspended",
+  "done_for_day",
+]);
 
 // Key prefix for SimBroker cache (shared with BacktestExecutor)
 const SIM_BROKER_KEY_PREFIX = "simBroker:";
@@ -942,27 +953,66 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       // 2. Record closed trade (must run before position update which may delete the position)
-      let closedTrade:
-        | import("../../backtest/simBroker/interfaces").Trade
-        | null = null;
-      if (filledQty && avgFillPrice && params.side) {
-        closedTrade = pm.applyTrade(
+      let finalizedTrade: import("../../backtest/simBroker/interfaces").Trade | null =
+        null;
+      const normalizedStatus = String(status ?? "")
+        .trim()
+        .toLowerCase();
+      const hasFillEvent =
+        filledQty != null && filledQty > 0 && avgFillPrice != null;
+      const isTerminalStatus = TERMINAL_ORDER_STATUSES.has(normalizedStatus);
+      const shouldApplyTrade =
+        Boolean(params.side) &&
+        Boolean(brokerOrderId) &&
+        (hasFillEvent || (isTerminalStatus && (filledQty ?? 0) <= 0));
+      if (shouldApplyTrade) {
+        const tradeResult = pm.applyTrade(
           {
             brokerOrderId,
             clientOrderId,
+            executionId: params.executionId,
             symbol,
             side: params.side,
             filledQty,
             fillPrice: avgFillPrice,
+            feeAmount: feeAmount ?? 0,
+            status: normalizedStatus,
             baseCurrency,
           },
-          feeAmount ?? 0,
           new Date().toISOString(),
         );
 
+        if (tradeResult.kind === "skipped") {
+          fillLogger.debug(
+            { symbol, brokerOrderId, reason: tradeResult.reason },
+            "trade aggregation skipped",
+          );
+        } else if (tradeResult.kind === "pendingUpdate") {
+          fillLogger.debug(
+            {
+              symbol,
+              brokerOrderId,
+              accumulatedQty: tradeResult.pending.accumulatedQuantity,
+              status: tradeResult.pending.status,
+            },
+            "trade aggregation pending update",
+          );
+        } else {
+          finalizedTrade = tradeResult.trade;
+          fillLogger.info(
+            {
+              symbol,
+              brokerOrderId,
+              quantity: tradeResult.trade.quantity,
+              status,
+            },
+            "trade aggregation finalized",
+          );
+        }
+
         // Persist closed trade to live_trades table
         if (
-          closedTrade &&
+          finalizedTrade &&
           context?.executionMode === "live" &&
           context?.userId &&
           context?.workflowId
@@ -971,23 +1021,23 @@ export class PortfolioExecutor implements INodeExecutor {
             user_id: context.userId,
             workflow_id: context.workflowId,
             execution_id: context.executionId,
-            symbol: closedTrade.symbol,
-            action: closedTrade.side,
-            quantity: closedTrade.quantity,
-            entryPrice: closedTrade.entryPrice,
-            entryTime: closedTrade.entryTime,
-            exitPrice: closedTrade.exitPrice,
-            exitTime: closedTrade.exitTime,
-            commission: closedTrade.commission,
-            slippage: closedTrade.slippage,
-            net_pnl: closedTrade.netPnl,
-            gross_pnl: closedTrade.grossPnl,
-            entry_order_id: closedTrade.entryOrderId,
-            exit_order_id: closedTrade.exitOrderId,
-            holding_period_bars: closedTrade.holdingPeriodBars,
+            symbol: finalizedTrade.symbol,
+            action: finalizedTrade.side,
+            quantity: finalizedTrade.quantity,
+            entryPrice: finalizedTrade.entryPrice,
+            entryTime: finalizedTrade.entryTime,
+            exitPrice: finalizedTrade.exitPrice,
+            exitTime: finalizedTrade.exitTime,
+            commission: finalizedTrade.commission,
+            slippage: finalizedTrade.slippage,
+            net_pnl: finalizedTrade.netPnl,
+            gross_pnl: finalizedTrade.grossPnl,
+            entry_order_id: finalizedTrade.entryOrderId,
+            exit_order_id: finalizedTrade.exitOrderId,
+            holding_period_bars: finalizedTrade.holdingPeriodBars,
           }).catch((err) =>
             fillLogger.warn(
-              { err, symbol: closedTrade!.symbol },
+              { err, symbol: finalizedTrade!.symbol },
               "live trade persist failed",
             ),
           );

@@ -541,12 +541,14 @@ export class PortfolioManager {
     const sameDirection =
       (prevQty >= 0 && signedQty >= 0) || (prevQty <= 0 && signedQty <= 0);
 
-    if (sameDirection) return { kind: "skipped", reason: "same_direction_fill" };
+    if (sameDirection)
+      return { kind: "skipped", reason: "same_direction_fill" };
 
     const closingQty = Math.min(Math.abs(prevQty), Math.abs(signedQty));
     if (closingQty <= 0) return { kind: "skipped", reason: "no_closing_qty" };
 
     const isClosingLong = prevQty > 0;
+    const tradeSide: "buy" | "sell" = isClosingLong ? "buy" : "sell";
     const eventGrossPnl = isClosingLong
       ? (input.fillPrice - existing.avgFillPrice) * closingQty
       : (existing.avgFillPrice - input.fillPrice) * closingQty;
@@ -560,7 +562,7 @@ export class PortfolioManager {
         key,
         tradeId: `LT-${++this.tradeIdCounter}`,
         symbol: input.symbol,
-        side: input.side,
+        side: tradeSide,
         entryOrderId: entry?.fillId ?? "",
         exitOrderId: input.brokerOrderId,
         entryPrice: existing.avgFillPrice,
@@ -587,7 +589,8 @@ export class PortfolioManager {
         ...existingPending,
         weightedExitPrice,
         accumulatedQuantity: newQty,
-        accumulatedGrossPnl: existingPending.accumulatedGrossPnl + eventGrossPnl,
+        accumulatedGrossPnl:
+          existingPending.accumulatedGrossPnl + eventGrossPnl,
         accumulatedCommission:
           existingPending.accumulatedCommission + (input.feeAmount ?? 0),
         latestExitTime: now,

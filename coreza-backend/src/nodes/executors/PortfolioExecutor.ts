@@ -811,8 +811,9 @@ export class PortfolioExecutor implements INodeExecutor {
     side: string;
     orderId?: string;
     executionId?: string;
-    fillDeltaQty: number;
+    filledQty: number;
     fillPrice: number;
+    orderStatus: string;
     feeAmount?: number;
     feeAsset?: string;
     baseCurrency?: string;
@@ -824,7 +825,7 @@ export class PortfolioExecutor implements INodeExecutor {
         broker: opts.params.broker || "binance",
         symbol: opts.symbol,
         order_id: opts.orderId,
-        fill_qty_delta: opts.fillDeltaQty,
+        fill_qty_delta: opts.filledQty,
         fill_price: opts.fillPrice,
         event_time: new Date().toISOString(),
       });
@@ -840,9 +841,9 @@ export class PortfolioExecutor implements INodeExecutor {
       side: opts.side as "buy" | "sell",
       order_id: opts.orderId,
       broker_execution_id: opts.executionId,
-      fill_qty_delta: opts.fillDeltaQty,
+      fill_qty_delta: opts.filledQty,
       fill_price: opts.fillPrice,
-      quote_qty: opts.fillDeltaQty * opts.fillPrice,
+      quote_qty: opts.filledQty * opts.fillPrice,
       commission: opts.feeAmount,
       commission_asset: opts.feeAsset,
       event_time: new Date().toISOString(),
@@ -953,8 +954,9 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       // 2. Record closed trade (must run before position update which may delete the position)
-      let finalizedTrade: import("../../backtest/simBroker/interfaces").Trade | null =
-        null;
+      let finalizedTrade:
+        | import("../../backtest/simBroker/interfaces").Trade
+        | null = null;
       const normalizedStatus = String(status ?? "")
         .trim()
         .toLowerCase();
@@ -1069,10 +1071,11 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // 5. Buffer fill for async DB persistence (fire-and-forget)
       if (filledQty && avgFillPrice && brokerOrderId) {
-        const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
+        //const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
 
         if (
-          fillDeltaQty > 0 &&
+          //fillDeltaQty > 0 &&
+          filledQty > 0 &&
           context?.executionMode === "live" &&
           context?.userId &&
           context?.workflowId
@@ -1084,8 +1087,10 @@ export class PortfolioExecutor implements INodeExecutor {
             side: params.side,
             orderId: brokerOrderId,
             executionId: params.executionId,
-            fillDeltaQty,
+            //fillDeltaQty,
+            filledQty,
             fillPrice: avgFillPrice,
+            orderStatus: params.status,
             feeAmount,
             feeAsset,
             baseCurrency,

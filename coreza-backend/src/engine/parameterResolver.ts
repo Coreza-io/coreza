@@ -4,7 +4,7 @@ import {
   CompiledNodeParams,
   preCompileAllNodes,
 } from "../utils/templateCompiler";
-import { loadNodeDefinition } from "../nodes/nodeDefinitions";
+//import { loadNodeDefinition } from "../nodes/nodeDefinitions";
 
 export class ParameterResolver {
   private compiledParams: Map<string, CompiledNodeParams>;
@@ -14,20 +14,20 @@ export class ParameterResolver {
     // Backend safety net: merge any missing definition defaults into node
     // values so live execution never fails due to fields added after the
     // workflow was last saved.
-    for (const node of nodes) {
-      const def = loadNodeDefinition(node.name || "");
-      if (def?.fields && node.values) {
-        for (const field of def.fields) {
-          if (
-            field.key &&
-            field.default !== undefined &&
-            node.values[field.key] === undefined
-          ) {
-            node.values[field.key] = field.default;
-          }
-        }
-      }
-    }
+    // for (const node of nodes) {
+    //   const def = loadNodeDefinition(node.name || "");
+    //   if (def?.fields && node.values) {
+    //     for (const field of def.fields) {
+    //       if (
+    //         field.key &&
+    //         field.default !== undefined &&
+    //         node.values[field.key] === undefined
+    //       ) {
+    //         node.values[field.key] = field.default;
+    //       }
+    //     }
+    //   }
+    // }
 
     this.compiledParams = preCompileAllNodes(nodes);
   }

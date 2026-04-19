@@ -102,10 +102,6 @@
         {
           "name": "Futures",
           "id": "futures"
-        },
-        {
-          "name": "Margin",
-          "id": "margin"
         }
       ],
       "default": "spot",
@@ -168,9 +164,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "marketType": [
-            "spot"
-          ]
+          "marketType": ["spot"]
         }
       }
     },
@@ -212,9 +206,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ]
+          "marketType": ["futures"]
         }
       }
     },
@@ -227,9 +219,7 @@
       "description": "Required unless Close Position is enabled for futures stop-market take-profit-market orders.",
       "displayOptions": {
         "hide": {
-          "closePosition": [
-            true
-          ]
+          "closePosition": [true]
         }
       }
     },
@@ -240,14 +230,8 @@
       "placeholder": "Limit price",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "spot"
-          ],
-          "type": [
-            "LIMIT",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "marketType": ["spot"],
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -258,9 +242,7 @@
       "placeholder": "Stop price",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "spot"
-          ],
+          "marketType": ["spot"],
           "type": [
             "STOP_LOSS",
             "STOP_LOSS_LIMIT",
@@ -291,14 +273,8 @@
       "default": "GTC",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "spot"
-          ],
-          "type": [
-            "LIMIT",
-            "STOP_LOSS_LIMIT",
-            "TAKE_PROFIT_LIMIT"
-          ]
+          "marketType": ["spot", "futures"],
+          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
         }
       }
     },
@@ -309,14 +285,8 @@
       "placeholder": "Order price",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "LIMIT",
-            "STOP",
-            "TAKE_PROFIT"
-          ]
+          "marketType": ["futures"],
+          "type": ["LIMIT", "STOP", "TAKE_PROFIT"]
         }
       }
     },
@@ -327,15 +297,8 @@
       "placeholder": "Trigger price",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "STOP",
-            "TAKE_PROFIT",
-            "STOP_MARKET",
-            "TAKE_PROFIT_MARKET"
-          ]
+          "marketType": ["futures"],
+          "type": ["STOP", "TAKE_PROFIT", "STOP_MARKET", "TAKE_PROFIT_MARKET"]
         }
       }
     },
@@ -364,14 +327,8 @@
       "default": "GTC",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "LIMIT",
-            "STOP",
-            "TAKE_PROFIT"
-          ]
+          "marketType": ["futures"],
+          "type": ["LIMIT", "STOP", "TAKE_PROFIT"]
         }
       }
     },
@@ -382,12 +339,8 @@
       "placeholder": "YYYY-MM-DDTHH:mm:ssZ",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "timeInForce": [
-            "GTD"
-          ]
+          "marketType": ["futures"],
+          "timeInForce": ["GTD"]
         }
       }
     },
@@ -436,45 +389,8 @@
       "default": "NONE",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "LIMIT",
-            "STOP",
-            "TAKE_PROFIT"
-          ]
-        }
-      }
-    },
-    {
-      "key": "selfTradePreventionMode",
-      "label": "Self Trade Prevention",
-      "type": "select",
-      "options": [
-        {
-          "name": "NONE",
-          "id": "NONE"
-        },
-        {
-          "name": "EXPIRE_TAKER",
-          "id": "EXPIRE_TAKER"
-        },
-        {
-          "name": "EXPIRE_MAKER",
-          "id": "EXPIRE_MAKER"
-        },
-        {
-          "name": "EXPIRE_BOTH",
-          "id": "EXPIRE_BOTH"
-        }
-      ],
-      "default": "NONE",
-      "displayOptions": {
-        "show": {
-          "marketType": [
-            "futures"
-          ]
+          "marketType": ["futures"],
+          "type": ["LIMIT", "STOP", "TAKE_PROFIT"]
         }
       }
     },
@@ -485,12 +401,8 @@
       "placeholder": "Optional iceberg quantity",
       "displayOptions": {
         "show": {
-          "type": [
-            "LIMIT"
-          ],
-          "marketType": [
-            "spot"
-          ]
+          "type": ["LIMIT"],
+          "marketType": ["spot"]
         }
       }
     },
@@ -521,9 +433,7 @@
       "placeholder": "Optional client algo id",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
+          "marketType": ["futures"],
           "type": [
             "STOP",
             "TAKE_PROFIT",
@@ -555,22 +465,18 @@
       "default": "BOTH",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ]
+          "marketType": ["futures"]
         }
       }
     },
     {
       "key": "reduceOnly",
       "label": "Reduce Only",
-      "type": "boolean",
+      "type": "toggle",
       "default": false,
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ]
+          "marketType": ["futures"]
         }
       }
     },
@@ -581,13 +487,8 @@
       "default": false,
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "STOP_MARKET",
-            "TAKE_PROFIT_MARKET"
-          ]
+          "marketType": ["futures"],
+          "type": ["STOP_MARKET", "TAKE_PROFIT_MARKET"]
         }
       }
     },
@@ -608,9 +509,7 @@
       "default": "CONTRACT_PRICE",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ]
+          "marketType": ["futures"]
         }
       }
     },
@@ -621,13 +520,8 @@
       "default": false,
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "STOP_MARKET",
-            "TAKE_PROFIT_MARKET"
-          ]
+          "marketType": ["futures"],
+          "type": ["STOP_MARKET", "TAKE_PROFIT_MARKET"]
         }
       }
     },
@@ -638,12 +532,8 @@
       "placeholder": "Optional activation price",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "TRAILING_STOP_MARKET"
-          ]
+          "marketType": ["futures"],
+          "type": ["TRAILING_STOP_MARKET"]
         }
       }
     },
@@ -654,12 +544,8 @@
       "placeholder": "e.g. 0.1 - 10",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "type": [
-            "TRAILING_STOP_MARKET"
-          ]
+          "marketType": ["futures"],
+          "type": ["TRAILING_STOP_MARKET"]
         }
       }
     }

@@ -546,11 +546,6 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         askNotional: parseFloat(o.a) || 0,
         orderTradeTime: Number(o.T) || 0,
         expiryReasonCode: Number(o.er) || 0,
-
-        // Binance says ignore these, but include them since you asked not to miss any
-        si: Number(o.si) || 0,
-        ss: Number(o.ss) || 0,
-
         rawOrderData: eventMsg,
       };
     }

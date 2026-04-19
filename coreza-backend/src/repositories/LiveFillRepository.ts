@@ -12,12 +12,11 @@ import { createLogger } from "../utils/logger";
 const logger = createLogger("LiveFillRepository");
 
 export interface LiveFillRow {
-  event_id: string;
   user_id: string;
   broker: string;
   credential_id: string;
   symbol: string;
-  trade_id: string;
+  fill_id: string;
   order_id?: string;
   broker_execution_id?: string;
   side: string;
@@ -29,18 +28,19 @@ export interface LiveFillRow {
   event_time: string;
   workflow_id?: string;
   execution_id?: string;
+  fill_status?: string;
 }
 
 export class LiveFillRepository {
   /**
-   * Batch upsert fills using deterministic event_id for idempotency.
+   * Batch upsert fills using deterministic fill_id for idempotency.
    */
   static async batchUpsert(rows: LiveFillRow[]): Promise<void> {
     if (rows.length === 0) return;
 
     const { error } = await supabase
       .from("live_fills")
-      .upsert(rows, { onConflict: "user_id,broker,event_id" });
+      .upsert(rows, { onConflict: "user_id,broker,symbol,fill_id" });
 
     if (error) {
       logger.error({ error: error.message, count: rows.length }, "batch upsert failed");

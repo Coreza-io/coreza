@@ -813,25 +813,31 @@ export class PortfolioExecutor implements INodeExecutor {
     executionId?: string;
     filledQty: number;
     fillPrice: number;
-    orderStatus: string;
+    fillStatus?: string;
     feeAmount?: number;
     feeAsset?: string;
     baseCurrency?: string;
   }): FillStreamEvent {
-    const eventId =
+    const eventTime =
+      opts.params.event_time ||
+      opts.params.eventTime ||
+      new Date().toISOString();
+
+    const fillId =
       opts.executionId ||
       this.buildDeterministicEventId({
         user_id: opts.context.userId,
         broker: opts.params.broker || "binance",
         symbol: opts.symbol,
         order_id: opts.orderId,
+        side: opts.side,
         fill_qty_delta: opts.filledQty,
         fill_price: opts.fillPrice,
-        event_time: new Date().toISOString(),
+        event_time: eventTime,
       });
 
     return {
-      event_id: eventId,
+      fill_id: fillId,
       user_id: opts.context.userId,
       workflow_id: opts.context.workflowId,
       execution_id: opts.context.executionId,
@@ -846,8 +852,9 @@ export class PortfolioExecutor implements INodeExecutor {
       quote_qty: opts.filledQty * opts.fillPrice,
       commission: opts.feeAmount,
       commission_asset: opts.feeAsset,
-      event_time: new Date().toISOString(),
+      event_time: eventTime,
       base_currency: opts.baseCurrency,
+      fill_status: opts.fillStatus,
     };
   }
 
@@ -1090,7 +1097,7 @@ export class PortfolioExecutor implements INodeExecutor {
             //fillDeltaQty,
             filledQty,
             fillPrice: avgFillPrice,
-            orderStatus: params.status,
+            fillStatus: params.status,
             feeAmount,
             feeAsset,
             baseCurrency,
@@ -1098,7 +1105,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
           void FillEventBus.publish(event).catch((err) =>
             fillLogger.warn(
-              { err, eventId: event.event_id },
+              { err, fillId: event.fill_id },
               "fill event append failed",
             ),
           );

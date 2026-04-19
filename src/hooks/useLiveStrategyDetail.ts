@@ -9,6 +9,15 @@ import {
 } from "./useBacktestResults";
 import { buildLiveMetrics } from "@/lib/liveMetrics";
 
+const mapFillStatusToOrderStatus = (fillStatus?: string | null): "Partial" | "Filled" | "Cancelled" | "Rejected" => {
+  const normalized = String(fillStatus ?? "").trim().toLowerCase();
+  if (normalized === "partially_filled") return "Partial";
+  if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
+  if (normalized === "rejected") return "Rejected";
+  if (normalized === "filled" || normalized === "") return "Filled";
+  return "Filled";
+};
+
 const mapLiveTradeToBacktestTrade = (
   row: any,
   workflowId: string,
@@ -30,7 +39,7 @@ const mapLiveTradeToBacktestTrade = (
         orderType: "Market",
         fillPrice: f.price,
         quantity: f.qty,
-        status: "Filled",
+        status: mapFillStatusToOrderStatus(f.fill_status),
         exitReason:
           f.order_id === exitOrderId ? (row.exit_reason ?? undefined) : undefined,
         time: f.event_time,

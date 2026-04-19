@@ -22,6 +22,19 @@ const formatCurrency = (value?: number | null) =>
 const formatTime = (time?: string | null) =>
   time ? new Date(time).toLocaleString() : "—";
 
+const getOrderStatusBadgeClass = (status?: TradeOrder["status"]) => {
+  switch (status) {
+    case "Partial":
+      return "bg-amber-500/15 text-amber-600 border-amber-500/30 text-xs";
+    case "Cancelled":
+    case "Rejected":
+      return "bg-red-500/15 text-red-600 border-red-500/30 text-xs";
+    case "Filled":
+    default:
+      return "bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-xs";
+  }
+};
+
 const OrderSubRow = ({ order }: { order: TradeOrder }) => (
   <TableRow className="bg-muted/30 text-xs">
     <TableCell />
@@ -45,7 +58,7 @@ const OrderSubRow = ({ order }: { order: TradeOrder }) => (
     <TableCell>
       <Badge
         variant="outline"
-        className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-xs"
+        className={getOrderStatusBadgeClass(order.status)}
       >
         {order.status ?? "Filled"}
       </Badge>

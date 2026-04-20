@@ -904,6 +904,13 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
+    // Algo lifecycle (Binance ALGO_UPDATE) — single upserted row in live_fills via
+    // the existing FillEventBus path (fill_kind="algo"). Algo events carry no fill
+    // qty and no position update — they describe the conditional order's lifecycle
+    // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
+    if (params?.type === "algo_update") {
+      return this.brokerSyncAlgoUpdate(params, context);
+    }
     try {
       const baseCurrency = params.base_currency || "USDT";
       const symbol = params.symbol;

@@ -25,7 +25,9 @@ export type MarketEventType =
   | "compositeIndex"
   | "account_update"
   | "account_config_update"
-  | "margin_call";
+  | "margin_call"
+  | "algo_update"
+  | "listen_key_expired";
 
 export type MarketSource =
   keyof typeof import("../marketGateways").GATEWAY_CONFIGS;

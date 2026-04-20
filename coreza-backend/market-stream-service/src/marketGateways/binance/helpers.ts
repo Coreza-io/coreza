@@ -109,7 +109,7 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
       const host = isTestnet
         ? "fstream.binancefuture.com"
         : "fstream.binance.com";
-      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=ORDER_TRADE_UPDATE`;
+      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=ORDER_TRADE_UPDATE,ALGO_UPDATE,listenKeyExpired,ACCOUNT_UPDATE`;
     }
 
     return isTestnet
@@ -326,7 +326,10 @@ export function shouldPublishBinanceMessage(
 
   if (source === "binance_trading") {
     return (
-      eventMsg.e === "ORDER_TRADE_UPDATE" || eventMsg.e === "executionReport"
+      eventMsg.e === "ORDER_TRADE_UPDATE" ||
+      eventMsg.e === "executionReport" ||
+      eventMsg.e === "ALGO_UPDATE" ||
+      eventMsg.e === "listenKeyExpired"
     );
   }
   return [

@@ -354,19 +354,76 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "delete",
     path: (input: any) => {
       const marketType = getMarketType(input);
-      return marketType === "futures" ? "/fapi/v1/order" : "/api/v3/order";
+      if (marketType === "futures") {
+        const orderType = String(input?.orderType || input?.type || "").toUpperCase();
+        if (input.isAlgo === true || ALGO_TYPES.has(orderType)) {
+          return "/fapi/v1/algoOrder";
+        }
+        return "/fapi/v1/order";
+      }
+      return "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for cancel_order");
       if (!input.order_id) throw new Error("order_id is required for cancel_order");
 
-      return signParams(creds, {
+      const marketType = getMarketType(input);
+      const orderType = String(input?.orderType || input?.type || "").toUpperCase();
+      const isAlgo =
+        marketType === "futures" &&
+        (input.isAlgo === true || ALGO_TYPES.has(orderType));
+
+      const baseParams: Record<string, any> = {
         symbol: input.symbol,
-        orderId: input.order_id,
         recvWindow: 60000,
-        timestamp: getBinanceTimestamp(getEnvironment(input), getMarketType(input)),
-      });
+        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+      };
+
+      if (isAlgo) {
+        baseParams.algoId = input.order_id;
+      } else {
+        baseParams.orderId = input.order_id;
+      }
+
+      return signParams(creds, baseParams);
     },
+  },
+  get_open_algo_orders: {
+    method: "get",
+    path: () => "/fapi/v1/openAlgoOrders",
+    makeParams: (input: any, creds: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error("get_open_algo_orders is only supported for futures accounts");
+      }
+      const params: Record<string, any> = {
+        recvWindow: 60000,
+        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+      };
+      if (input.symbol) params.symbol = input.symbol;
+      return signParams(creds, params);
+    },
+    transformResult: (raw: any) => ({ algoOrders: raw }),
+  },
+  get_all_algo_orders: {
+    method: "get",
+    path: () => "/fapi/v1/allAlgoOrders",
+    makeParams: (input: any, creds: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error("get_all_algo_orders is only supported for futures accounts");
+      }
+      const params: Record<string, any> = {
+        recvWindow: 60000,
+        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+      };
+      if (input.symbol) params.symbol = input.symbol;
+      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input.limit) params.limit = input.limit;
+      return signParams(creds, params);
+    },
+    transformResult: (raw: any) => ({ algoOrders: raw }),
   },
   get_candle: {
     method: "get",

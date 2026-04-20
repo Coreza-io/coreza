@@ -248,13 +248,19 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       if (fillsErr) throw fillsErr;
       if (snapshotsErr) throw snapshotsErr;
 
-      const rawFills = fillsData ?? [];
+      const rawFillsAll = (fillsData ?? []) as any[];
+      const rawFills = rawFillsAll.filter(
+        (f: any) => (f.fill_kind ?? "fill") !== "algo",
+      );
+      const algoFills = rawFillsAll.filter(
+        (f: any) => f.fill_kind === "algo",
+      );
       const filteredSnapshots = snapshotsData ?? [];
       const closedTrades = (liveTradesData ?? []) as any[];
 
       // Map trades from live_trades table
       const mappedTrades = closedTrades.map((trade: any) =>
-        mapLiveTradeToBacktestTrade(trade, workflowId, rawFills),
+        mapLiveTradeToBacktestTrade(trade, workflowId, rawFills, algoFills),
       );
       setTrades(mappedTrades);
 

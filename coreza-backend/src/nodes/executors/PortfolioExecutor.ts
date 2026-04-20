@@ -494,13 +494,98 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
+        const openOrder = pm.getOpenOrders().find(
+          (o) =>
+            o.brokerOrderId === cancelOrderId ||
+            (o.clientOrderId && o.clientOrderId === cancelOrderId),
+        );
+        const orderType = String(
+          openOrder?.orderType || params.orderType || "",
+        ).toUpperCase();
+        const isAlgoOrder = [
+          "STOP",
+          "STOP_MARKET",
+          "TAKE_PROFIT",
+          "TAKE_PROFIT_MARKET",
+          "TRAILING_STOP_MARKET",
+        ].includes(orderType);
+
+        if (params.broker === "binance" && params.credential_id) {
+          await this.callBrokerOperation(
+            "cancel_order",
+            {
+              credential_id: params.credential_id,
+              environment: params.environment || "testnet",
+              marketType: params.marketType || "futures",
+              symbol: params.symbol || openOrder?.symbol,
+              order_id: cancelOrderId,
+              orderType,
+              isAlgo: params.isAlgo === true || isAlgoOrder,
+            },
+            "binance",
+            context,
+          );
+        }
+
         const cancelResult = pm.cancelOrder(cancelOrderId);
         return toNodeResult(
           createSuccessOutput({
             removed: cancelResult.removed,
             cancelledOrder: cancelResult.order || null,
+            isAlgo: params.isAlgo === true || isAlgoOrder,
           }),
         );
+      }
+      case "get_open_algo_orders": {
+        if (params.broker !== "binance") {
+          return toNodeResult(
+            createErrorOutput(
+              "get_open_algo_orders currently supports broker=binance only",
+            ),
+          );
+        }
+
+        const result = await this.callBrokerOperation(
+          "get_open_algo_orders",
+          {
+            credential_id: params.credential_id,
+            environment: params.environment || "testnet",
+            marketType: params.marketType || "futures",
+            symbol: params.symbol,
+            algoType: params.algoType,
+          },
+          "binance",
+          context,
+        );
+
+        return toNodeResult(createSuccessOutput(result || {}));
+      }
+      case "get_all_algo_orders": {
+        if (params.broker !== "binance") {
+          return toNodeResult(
+            createErrorOutput(
+              "get_all_algo_orders currently supports broker=binance only",
+            ),
+          );
+        }
+
+        const result = await this.callBrokerOperation(
+          "get_all_algo_orders",
+          {
+            credential_id: params.credential_id,
+            environment: params.environment || "testnet",
+            marketType: params.marketType || "futures",
+            symbol: params.symbol,
+            algoType: params.algoType,
+            startTime: params.startTime,
+            endTime: params.endTime,
+            limit: params.limit,
+          },
+          "binance",
+          context,
+        );
+
+        return toNodeResult(createSuccessOutput(result || {}));
       }
       case "get_open_orders": {
         const openOrders = pm.getOpenOrders();
@@ -525,14 +610,15 @@ export class PortfolioExecutor implements INodeExecutor {
   private async callBrokerOperation(
     operation: string,
     params: Record<string, any>,
+    broker: string = "alpaca",
     context?: NodeExecutionContext,
   ): Promise<any> {
     const result = await this.brokerExecutor.execute(
       {
         id: `portfolio-sync-${operation}`,
-        name: "alpaca",
-        node_type: "alpaca",
-        subCategory: "alpaca",
+        name: broker,
+        node_type: broker,
+        subCategory: broker,
         values: {
           operation,
           ...params,
@@ -579,12 +665,14 @@ export class PortfolioExecutor implements INodeExecutor {
       const account = (await this.callBrokerOperation(
         "get_account",
         brokerParams,
+        "alpaca",
         context,
       )) as AlpacaAccountResponse;
 
       const positionsResult = (await this.callBrokerOperation(
         "get_positions",
         brokerParams,
+        "alpaca",
         context,
       )) as { positions?: AlpacaPosition[] };
       const positions = Array.isArray(positionsResult.positions)
@@ -597,6 +685,7 @@ export class PortfolioExecutor implements INodeExecutor {
           ...brokerParams,
           status: "open",
         },
+        "alpaca",
         context,
       )) as { orders?: AlpacaOrder[] };
       const allOrders = Array.isArray(ordersResult.orders)
@@ -817,6 +906,8 @@ export class PortfolioExecutor implements INodeExecutor {
     feeAmount?: number;
     feeAsset?: string;
     baseCurrency?: string;
+    fillKind?: "fill" | "algo";
+    rejectReason?: string;
   }): FillStreamEvent {
     const eventTime =
       opts.params.event_time ||
@@ -855,6 +946,8 @@ export class PortfolioExecutor implements INodeExecutor {
       event_time: eventTime,
       base_currency: opts.baseCurrency,
       fill_status: opts.fillStatus,
+      fill_kind: opts.fillKind ?? "fill",
+      reject_reason: opts.rejectReason,
     };
   }
 
@@ -905,6 +998,98 @@ export class PortfolioExecutor implements INodeExecutor {
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     try {
+      if (params.type === "listen_key_expired") {
+        fillLogger.warn(
+          {
+            broker: params.broker || "binance",
+            credential_id: params.credential_id,
+            workflow_id: context?.workflowId,
+          },
+          "binance listen key expired event received",
+        );
+        let reconciliation: any = null;
+        if (params.broker === "binance" && params.credential_id) {
+          try {
+            reconciliation = await this.callBrokerOperation(
+              "get_open_algo_orders",
+              {
+                credential_id: params.credential_id,
+                environment: params.environment || "testnet",
+                marketType: params.marketType || "futures",
+                symbol: params.symbol,
+              },
+              "binance",
+              context,
+            );
+          } catch (error: any) {
+            fillLogger.warn(
+              { error: error?.message },
+              "listen key expiry reconciliation failed",
+            );
+          }
+        }
+        return toNodeResult(
+          createSuccessOutput({
+            acknowledged: true,
+            reconciliation,
+          }),
+        );
+      }
+
+      if (params.type === "algo_update") {
+        const algoStatus = String(params.algoStatus ?? params.status ?? "")
+          .trim()
+          .toLowerCase();
+        const algoId = params.algoId ?? params.fill_id ?? params.aid;
+        const algoSymbol = params.symbol;
+        const side = String(params.side ?? "sell").toLowerCase();
+        const triggerPrice = toNumber(params.triggerPrice ?? params.tp) ?? 0;
+        const engineOrderId = params.engineOrderId ?? params.orderId ?? params.ai;
+        const eventTime =
+          params.event_time ||
+          params.eventTime ||
+          (params.t ? new Date(params.t).toISOString() : new Date().toISOString());
+
+        if (
+          context?.executionMode === "live" &&
+          context?.userId &&
+          context?.workflowId &&
+          algoId &&
+          algoSymbol
+        ) {
+          const event = this.buildFillStreamEvent({
+            context,
+            params: { ...params, event_time: eventTime },
+            symbol: algoSymbol,
+            side,
+            orderId: engineOrderId ? String(engineOrderId) : undefined,
+            executionId: String(algoId),
+            filledQty: 0,
+            fillPrice: triggerPrice,
+            fillStatus: algoStatus || "untriggered",
+            feeAmount: 0,
+            feeAsset: params.rejectReason ? String(params.rejectReason) : undefined,
+            fillKind: "algo",
+            rejectReason: params.rejectReason,
+          });
+          void FillEventBus.publish(event).catch((err) =>
+            fillLogger.warn(
+              { err, fillId: event.fill_id },
+              "algo lifecycle event append failed",
+            ),
+          );
+        }
+
+        return toNodeResult(
+          createSuccessOutput({
+            event: "algo_update",
+            status: algoStatus,
+            algo_id: algoId,
+            order_id: engineOrderId,
+          }),
+        );
+      }
+
       const baseCurrency = params.base_currency || "USDT";
       const symbol = params.symbol;
       const brokerOrderId = params.brokerOrderId;

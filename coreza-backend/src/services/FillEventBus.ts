@@ -31,6 +31,8 @@ export interface FillStreamEvent {
   event_time: string;
   base_currency?: string;
   fill_status?: string;
+  fill_kind?: "fill" | "algo";
+  reject_reason?: string;
 }
 
 const STREAM_MAX_LEN = "100000";

@@ -298,10 +298,14 @@ export class MarketDataSubscriber {
           return;
         }
 
-        const stream =
-          event.type === "order_update"
-            ? "order_update"
-            : event.timeframe
+        const isTradingLifecycleEvent =
+          event.type === "order_update" ||
+          event.type === "algo_update" ||
+          event.type === "listen_key_expired";
+
+        const stream = isTradingLifecycleEvent
+          ? "order_update"
+          : event.timeframe
               ? event.contractType
                 ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
                 : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
@@ -445,12 +449,16 @@ export class MarketDataSubscriber {
       };
     }
 
-    // Order update events (from trading WebSocket)
-    if (type === "order_update") {
+    // Trading lifecycle events (from trading WebSocket)
+    if (
+      type === "order_update" ||
+      type === "algo_update" ||
+      type === "listen_key_expired"
+    ) {
       return {
         data: {
           symbol,
-          type: "order_update",
+          type,
           order: event,
           _seq: event._seq,
           _orderingDomain: event._orderingDomain,

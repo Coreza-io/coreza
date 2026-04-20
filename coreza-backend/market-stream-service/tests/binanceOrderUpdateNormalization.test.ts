@@ -100,6 +100,21 @@ describe("order_update payload formatting", () => {
     expect(payload.data.order.feeAmount).toBe(0.1);
     expect(payload.data.order.feeAsset).toBe("BNB");
   });
+
+  it("routes algo_update through order_update delivery stream payload shape", () => {
+    const subscriber = MarketDataSubscriber.getInstance() as any;
+    const payload = subscriber.formatMarketEventPayload({
+      source: "binance",
+      symbol: "BTCUSDT",
+      type: "algo_update",
+      t: 1710000000001,
+      algoId: "algo-1",
+      orderStatus: "triggering",
+    });
+
+    expect(payload.data.type).toBe("algo_update");
+    expect(payload.data.order.algoId).toBe("algo-1");
+  });
 });
 
 describe("Binance continuous kline event normalization", () => {

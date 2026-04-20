@@ -201,11 +201,12 @@ export class FillSyncWorker {
             qty: parseFloat(fields.fill_qty_delta) || 0,
             quote_qty: fields.quote_qty ? parseFloat(fields.quote_qty) : undefined,
             commission: parseFloat(fields.commission) || 0,
-            commission_asset: fields.commission_asset || null as any,
+            commission_asset: fields.reject_reason || fields.commission_asset || null as any,
             event_time: fields.event_time,
             workflow_id: fields.workflow_id || null as any,
             execution_id: fields.execution_id || null as any,
             fill_status: fields.fill_status || null as any,
+            fill_kind: (fields.fill_kind as "fill" | "algo" | undefined) || "fill",
           });
         }
 

@@ -360,6 +360,9 @@ export type Database = {
           quote_qty: number | null
           side: string
           symbol: string
+          fill_id: string
+          fill_kind: string
+          fill_status: string | null
           user_id: string
           workflow_id: string | null
         }
@@ -382,6 +385,9 @@ export type Database = {
           quote_qty?: number | null
           side: string
           symbol: string
+          fill_id: string
+          fill_kind?: string
+          fill_status?: string | null
           user_id: string
           workflow_id?: string | null
         }
@@ -404,6 +410,9 @@ export type Database = {
           quote_qty?: number | null
           side?: string
           symbol?: string
+          fill_id?: string
+          fill_kind?: string
+          fill_status?: string | null
           user_id?: string
           workflow_id?: string | null
         }

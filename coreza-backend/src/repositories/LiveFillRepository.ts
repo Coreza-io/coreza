@@ -29,7 +29,6 @@ export interface LiveFillRow {
   workflow_id?: string;
   execution_id?: string;
   fill_status?: string;
-  /** "fill" (default — broker execution) or "algo" (Binance conditional lifecycle marker) */
   fill_kind?: "fill" | "algo";
 }
 

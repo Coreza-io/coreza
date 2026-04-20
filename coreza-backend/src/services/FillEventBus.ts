@@ -31,9 +31,7 @@ export interface FillStreamEvent {
   event_time: string;
   base_currency?: string;
   fill_status?: string;
-  /** "fill" (default) for broker executions, "algo" for Binance conditional order lifecycle markers */
   fill_kind?: "fill" | "algo";
-  /** Optional algo reject reason (Binance ALGO_UPDATE `rm`) */
   reject_reason?: string;
 }
 

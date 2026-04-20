@@ -30,6 +30,12 @@ function normalizePriceMatch(value: any) {
   return value;
 }
 
+function isAlgoCancel(input: any): boolean {
+  if (input?.isAlgo === true) return true;
+  const orderType = String(input?.orderType ?? input?.type ?? "").toUpperCase();
+  return ALGO_TYPES.has(orderType);
+}
+
 function assertNoConflictingFields(input: any) {
   if (input.closePosition === true && input.quantity) {
     throw new Error("quantity cannot be sent when closePosition=true");
@@ -323,6 +329,44 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       orders: raw,
     }),
   },
+  get_open_algo_orders: {
+    method: "get",
+    path: () => "/fapi/v1/openAlgoOrders",
+    makeParams: (input: any, creds: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error("get_open_algo_orders is only supported for futures accounts");
+      }
+      const params: Record<string, any> = {
+        recvWindow: 60000,
+        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+      };
+      if (input.symbol) params.symbol = input.symbol;
+      if (input.algoType) params.algoType = input.algoType;
+      return signParams(creds, params);
+    },
+  },
+  get_all_algo_orders: {
+    method: "get",
+    path: () => "/fapi/v1/allAlgoOrders",
+    makeParams: (input: any, creds: any) => {
+      const marketType = getMarketType(input);
+      if (marketType !== "futures") {
+        throw new Error("get_all_algo_orders is only supported for futures accounts");
+      }
+      if (!input.symbol) throw new Error("symbol is required for get_all_algo_orders");
+      const params: Record<string, any> = {
+        symbol: input.symbol,
+        recvWindow: 60000,
+        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+      };
+      if (input.algoType) params.algoType = input.algoType;
+      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+      if (input.limit) params.limit = input.limit;
+      return signParams(creds, params);
+    },
+  },
   get_trades: {
     method: "get",
     path: (input: any) => {
@@ -355,17 +399,19 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     path: (input: any) => {
       const marketType = getMarketType(input);
       if (marketType === "futures") {
-        const orderType = String(input?.orderType || input?.type || "").toUpperCase();
-        if (input.isAlgo === true || ALGO_TYPES.has(orderType)) {
-          return "/fapi/v1/algoOrder";
-        }
-        return "/fapi/v1/order";
+        return isAlgoCancel(input) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
       }
       return "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for cancel_order");
-      if (!input.order_id) throw new Error("order_id is required for cancel_order");
+      const useAlgoEndpoint = getMarketType(input) === "futures" && isAlgoCancel(input);
+      if (useAlgoEndpoint && !input.algo_id && !input.order_id) {
+        throw new Error("algo_id (or order_id as algoId) is required for cancel_order");
+      }
+      if (!useAlgoEndpoint && !input.order_id) {
+        throw new Error("order_id is required for cancel_order");
+      }
 
       const marketType = getMarketType(input);
       const orderType = String(input?.orderType || input?.type || "").toUpperCase();
@@ -375,6 +421,9 @@ export const binanceOperations: Record<string, BrokerOperation> = {
 
       const baseParams: Record<string, any> = {
         symbol: input.symbol,
+        ...(useAlgoEndpoint
+          ? { algoId: input.algo_id ?? input.order_id }
+          : { orderId: input.order_id }),
         recvWindow: 60000,
         timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
       };

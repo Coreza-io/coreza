@@ -44,7 +44,16 @@ export interface TradeOrder {
   orderType?: string;
   fillPrice: number;
   quantity: number;
-  status?: "Partial" | "Filled" | "Cancelled" | "Rejected";
+  status?:
+    | "Partial"
+    | "Filled"
+    | "Cancelled"
+    | "Rejected"
+    | "Untriggered"
+    | "Triggering"
+    | "Triggered"
+    | "Finished"
+    | "Expired";
   exitReason?: string;
   time: string;
 }

@@ -9,11 +9,18 @@ import {
 } from "./useBacktestResults";
 import { buildLiveMetrics } from "@/lib/liveMetrics";
 
-const mapFillStatusToOrderStatus = (fillStatus?: string | null): "Partial" | "Filled" | "Cancelled" | "Rejected" => {
+const mapFillStatusToOrderStatus = (
+  fillStatus?: string | null,
+): "Partial" | "Filled" | "Cancelled" | "Rejected" | "Untriggered" | "Triggering" | "Triggered" | "Finished" | "Expired" => {
   const normalized = String(fillStatus ?? "").trim().toLowerCase();
   if (normalized === "partially_filled") return "Partial";
   if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
   if (normalized === "rejected") return "Rejected";
+  if (normalized === "untriggered" || normalized === "new") return "Untriggered";
+  if (normalized === "triggering") return "Triggering";
+  if (normalized === "triggered") return "Triggered";
+  if (normalized === "finished") return "Finished";
+  if (normalized === "expired") return "Expired";
   if (normalized === "filled" || normalized === "") return "Filled";
   return "Filled";
 };
@@ -52,7 +59,14 @@ const mapLiveTradeToBacktestTrade = (
   let orders: BacktestTrade["orders"];
   if (fills && fills.length > 0 && (entryOrderId || exitOrderId)) {
     const matchedFills = fills.filter(
-      (f: any) => f.order_id === entryOrderId || f.order_id === exitOrderId,
+      (f: any) =>
+        f.fill_kind !== "algo" &&
+        (f.order_id === entryOrderId || f.order_id === exitOrderId),
+    );
+    const matchedAlgo = fills.find(
+      (f: any) =>
+        f.fill_kind === "algo" &&
+        (f.order_id === entryOrderId || f.order_id === exitOrderId),
     );
     if (matchedFills.length > 0) {
       orders = matchedFills.map((f: any) => ({
@@ -67,6 +81,19 @@ const mapLiveTradeToBacktestTrade = (
           f.order_id === exitOrderId ? (row.exit_reason ?? undefined) : undefined,
         time: f.event_time,
       }));
+      if (matchedAlgo) {
+        orders.unshift({
+          id: `algo-${matchedAlgo.id ?? matchedAlgo.fill_id}`,
+          symbol: matchedAlgo.symbol,
+          side: matchedAlgo.side,
+          orderType: "Algo Parent",
+          fillPrice: matchedAlgo.price,
+          quantity: 0,
+          status: mapFillStatusToOrderStatus(matchedAlgo.fill_status),
+          exitReason: matchedAlgo.commission_asset ?? undefined,
+          time: matchedAlgo.event_time,
+        });
+      }
     }
   }
 

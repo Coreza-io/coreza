@@ -117,7 +117,30 @@ const TradeRow = ({
         <TableCell className="text-muted-foreground whitespace-nowrap">
           {formatTime(trade.entryTime)}
         </TableCell>
-        <TableCell className="font-medium">{trade.symbol}</TableCell>
+        <TableCell className="font-medium">
+          {trade.symbol}
+          {trade.algo && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className={getAlgoBadgeClass(trade.algo.status)}>
+                    {trade.algo.status}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="text-xs">
+                    {trade.algo.triggerPrice != null && (
+                      <div>Trigger: ${Number(trade.algo.triggerPrice).toFixed(2)}</div>
+                    )}
+                    {trade.algo.rejectReason && (
+                      <div>Reason: {trade.algo.rejectReason}</div>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </TableCell>
         <TableCell className="text-muted-foreground whitespace-nowrap">
           {formatTime(trade.exitTime)}
         </TableCell>

@@ -992,11 +992,119 @@ export class PortfolioExecutor implements INodeExecutor {
     };
   }
 
+  /**
+   * Persist a Binance algo (conditional) order lifecycle event to live_fills.
+   * Reuses the FillEventBus → FillSyncWorker → LiveFillRepository path. The
+   * existing unique constraint (user_id, broker, symbol, fill_id) naturally
+   * upserts the same algoId across NEW → TRIGGERING → TRIGGERED → FINISHED.
+   */
+  private async brokerSyncAlgoUpdate(
+    params: any,
+    context?: NodeExecutionContext,
+  ): Promise<NodeResult> {
+    try {
+      const algoId = params.algoId ? String(params.algoId) : undefined;
+      if (!algoId) {
+        return toNodeResult(
+          createSuccessOutput({ skipped: true, reason: "missing_algo_id" }),
+        );
+      }
+
+      const symbol = String(params.symbol || "*").toUpperCase();
+      const algoStatus = String(params.algoStatus || "").toLowerCase();
+      const engineOrderId = params.engineOrderId
+        ? String(params.engineOrderId)
+        : undefined;
+      const triggerPrice = toNumber(params.triggerPrice) ?? 0;
+      const requestedQty = toNumber(params.requestedQty) ?? 0;
+      const eventTime =
+        params.event_time ||
+        params.eventTime ||
+        new Date().toISOString();
+
+      // Stuff reject reason into commission_asset for algo rows (no new column).
+      const rejectReason = params.rejectReason
+        ? String(params.rejectReason)
+        : undefined;
+
+      // Persist only when running live with workflow context.
+      if (
+        context?.executionMode !== "live" ||
+        !context?.userId ||
+        !context?.workflowId
+      ) {
+        return toNodeResult(
+          createSuccessOutput({
+            algo: true,
+            algoId,
+            algoStatus,
+            engineOrderId: engineOrderId ?? null,
+            persisted: false,
+          }),
+        );
+      }
+
+      const event: FillStreamEvent = {
+        fill_id: algoId,
+        user_id: context.userId,
+        workflow_id: context.workflowId,
+        execution_id: context.executionId,
+        broker: params.broker || "binance",
+        credential_id: params.credential_id,
+        symbol,
+        side: (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
+        order_id: engineOrderId,
+        broker_execution_id: engineOrderId,
+        fill_qty_delta: 0,
+        fill_price: triggerPrice,
+        quote_qty: 0,
+        commission: 0,
+        commission_asset: rejectReason,
+        event_time: eventTime,
+        fill_status: algoStatus,
+        fill_kind: "algo",
+        reject_reason: rejectReason,
+      };
+
+      void FillEventBus.publish(event).catch((err) =>
+        fillLogger.warn(
+          { err, fillId: event.fill_id, algoStatus },
+          "algo fill event append failed",
+        ),
+      );
+
+      return toNodeResult(
+        createSuccessOutput({
+          algo: true,
+          algoId,
+          algoStatus,
+          engineOrderId: engineOrderId ?? null,
+          requestedQty,
+          triggerPrice,
+          rejectReason: rejectReason ?? null,
+          persisted: true,
+        }),
+      );
+    } catch (err: any) {
+      fillLogger.warn({ err }, "brokerSyncAlgoUpdate failed");
+      return toNodeResult(
+        createErrorOutput(err?.message || "algo_update sync failed"),
+      );
+    }
+  }
+
   private async brokerSyncOrderEvent(
     pm: PortfolioManager,
     params: any,
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
+    // Algo lifecycle (Binance ALGO_UPDATE) — single upserted row in live_fills via
+    // the existing FillEventBus path (fill_kind="algo"). Algo events carry no fill
+    // qty and no position update — they describe the conditional order's lifecycle
+    // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
+    if (params?.type === "algo_update") {
+      return this.brokerSyncAlgoUpdate(params, context);
+    }
     try {
       if (params.type === "listen_key_expired") {
         fillLogger.warn(

@@ -93,6 +93,27 @@ export interface CorezaMarketEvent {
   feeAsset?: string; // Asset/currency used to charge the commission
   rawOrderData?: Record<string, any>; // Full broker payload for downstream consumers
 
+  // Algo (Binance conditional) order lifecycle fields
+  algoId?: string;
+  clientAlgoId?: string;
+  algoType?: string;
+  algoStatus?: string;
+  actualOrderType?: string;
+  triggerPrice?: number;
+  requestedPrice?: number;
+  workingType?: string;
+  priceMatchMode?: string;
+  stpMode?: string;
+  closeAll?: boolean;
+  priceProtect?: boolean;
+  reduceOnly?: boolean;
+  engineOrderId?: string;
+  engineAvgFillPrice?: number;
+  engineExecutedQty?: number;
+  triggerTime?: number;
+  goodTillDate?: number;
+  rejectReason?: string;
+
   // News data
   headline?: string;
   summary?: string;

@@ -25,10 +25,33 @@ const mapFillStatusToOrderStatus = (
   return "Filled";
 };
 
+const mapAlgoStatus = (
+  s?: string | null,
+):
+  | "Untriggered"
+  | "Triggering"
+  | "Triggered"
+  | "Finished"
+  | "Rejected"
+  | "Expired"
+  | "Canceled"
+  | null => {
+  const n = String(s ?? "").trim().toLowerCase();
+  if (n === "new" || n === "untriggered") return "Untriggered";
+  if (n === "triggering") return "Triggering";
+  if (n === "triggered") return "Triggered";
+  if (n === "finished") return "Finished";
+  if (n === "rejected") return "Rejected";
+  if (n === "expired") return "Expired";
+  if (n === "canceled" || n === "cancelled") return "Canceled";
+  return null;
+};
+
 const mapLiveTradeToBacktestTrade = (
   row: any,
   workflowId: string,
   fills?: any[],
+  algoFills?: any[],
 ): BacktestTrade => {
   const entryOrderId = row.entry_order_id;
   const exitOrderId = row.exit_order_id;
@@ -74,6 +97,27 @@ const mapLiveTradeToBacktestTrade = (
     }
   }
 
+  // Attach algo lifecycle info if any algo row's order_id (engineOrderId) matches this trade
+  let algo: BacktestTrade["algo"];
+  if (algoFills && algoFills.length > 0 && (entryOrderId || exitOrderId)) {
+    const matchedAlgo = algoFills.find(
+      (a: any) =>
+        a.order_id && (a.order_id === entryOrderId || a.order_id === exitOrderId),
+    );
+    if (matchedAlgo) {
+      const status = mapAlgoStatus(matchedAlgo.fill_status);
+      if (status) {
+        algo = {
+          status,
+          triggerPrice:
+            matchedAlgo.price != null ? Number(matchedAlgo.price) : null,
+          // reject_reason was stuffed into commission_asset for algo rows
+          rejectReason: matchedAlgo.commission_asset ?? null,
+        };
+      }
+    }
+  }
+
   const netPnl = row.net_pnl != null ? Number(row.net_pnl) : null;
 
   return {
@@ -93,6 +137,7 @@ const mapLiveTradeToBacktestTrade = (
     fees: row.commission != null ? Number(row.commission) : null,
     result: netPnl != null ? (netPnl >= 0 ? "Win" : "Loss") : null,
     orders,
+    algo,
   };
 };
 
@@ -230,13 +275,19 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       if (fillsErr) throw fillsErr;
       if (snapshotsErr) throw snapshotsErr;
 
-      const rawFills = fillsData ?? [];
+      const rawFillsAll = (fillsData ?? []) as any[];
+      const rawFills = rawFillsAll.filter(
+        (f: any) => (f.fill_kind ?? "fill") !== "algo",
+      );
+      const algoFills = rawFillsAll.filter(
+        (f: any) => f.fill_kind === "algo",
+      );
       const filteredSnapshots = snapshotsData ?? [];
       const closedTrades = (liveTradesData ?? []) as any[];
 
       // Map trades from live_trades table
       const mappedTrades = closedTrades.map((trade: any) =>
-        mapLiveTradeToBacktestTrade(trade, workflowId, rawFills),
+        mapLiveTradeToBacktestTrade(trade, workflowId, rawFills, algoFills),
       );
       setTrades(mappedTrades);
 

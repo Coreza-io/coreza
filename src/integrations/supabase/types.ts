@@ -350,6 +350,9 @@ export type Database = {
           credential_id: string
           event_time: string
           execution_id: string | null
+          fill_id: string
+          fill_kind: string
+          fill_status: string | null
           id: string
           order_id: string | null
           price: number
@@ -372,6 +375,9 @@ export type Database = {
           credential_id: string
           event_time: string
           execution_id?: string | null
+          fill_id: string
+          fill_kind?: string
+          fill_status?: string | null
           id?: string
           order_id?: string | null
           price: number
@@ -394,6 +400,9 @@ export type Database = {
           credential_id?: string
           event_time?: string
           execution_id?: string | null
+          fill_id?: string
+          fill_kind?: string
+          fill_status?: string | null
           id?: string
           order_id?: string | null
           price?: number

@@ -8,9 +8,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { BacktestTrade, TradeOrder } from "@/hooks/useBacktestResults";
+import { BacktestTrade, TradeOrder, AlgoLifecycleStatus } from "@/hooks/useBacktestResults";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChevronDown, ChevronRight } from "lucide-react";
+
+const getAlgoBadgeClass = (status: AlgoLifecycleStatus) => {
+  switch (status) {
+    case "Untriggered":
+      return "bg-muted text-muted-foreground border-border text-xs ml-2";
+    case "Triggering":
+      return "bg-blue-500/15 text-blue-600 border-blue-500/30 text-xs ml-2";
+    case "Triggered":
+      return "bg-cyan-500/15 text-cyan-600 border-cyan-500/30 text-xs ml-2";
+    case "Finished":
+      return "bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-xs ml-2";
+    case "Rejected":
+      return "bg-red-500/15 text-red-600 border-red-500/30 text-xs ml-2";
+    case "Expired":
+      return "bg-amber-500/15 text-amber-600 border-amber-500/30 text-xs ml-2";
+    case "Canceled":
+      return "bg-muted text-muted-foreground border-border text-xs ml-2";
+  }
+};
 
 interface TradesTableProps {
   trades: BacktestTrade[];
@@ -97,7 +117,30 @@ const TradeRow = ({
         <TableCell className="text-muted-foreground whitespace-nowrap">
           {formatTime(trade.entryTime)}
         </TableCell>
-        <TableCell className="font-medium">{trade.symbol}</TableCell>
+        <TableCell className="font-medium">
+          {trade.symbol}
+          {trade.algo && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className={getAlgoBadgeClass(trade.algo.status)}>
+                    {trade.algo.status}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="text-xs">
+                    {trade.algo.triggerPrice != null && (
+                      <div>Trigger: ${Number(trade.algo.triggerPrice).toFixed(2)}</div>
+                    )}
+                    {trade.algo.rejectReason && (
+                      <div>Reason: {trade.algo.rejectReason}</div>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </TableCell>
         <TableCell className="text-muted-foreground whitespace-nowrap">
           {formatTime(trade.exitTime)}
         </TableCell>

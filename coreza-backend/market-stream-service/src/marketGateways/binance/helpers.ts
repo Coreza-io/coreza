@@ -109,7 +109,7 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
       const host = isTestnet
         ? "fstream.binancefuture.com"
         : "fstream.binance.com";
-      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=ORDER_TRADE_UPDATE`;
+      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=ORDER_TRADE_UPDATE,ALGO_UPDATE,listenKeyExpired,ACCOUNT_UPDATE`;
     }
 
     return isTestnet
@@ -326,7 +326,10 @@ export function shouldPublishBinanceMessage(
 
   if (source === "binance_trading") {
     return (
-      eventMsg.e === "ORDER_TRADE_UPDATE" || eventMsg.e === "executionReport"
+      eventMsg.e === "ORDER_TRADE_UPDATE" ||
+      eventMsg.e === "executionReport" ||
+      eventMsg.e === "ALGO_UPDATE" ||
+      eventMsg.e === "listenKeyExpired"
     );
   }
   return [
@@ -546,6 +549,64 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         askNotional: parseFloat(o.a) || 0,
         orderTradeTime: Number(o.T) || 0,
         expiryReasonCode: Number(o.er) || 0,
+        rawOrderData: eventMsg,
+      };
+    }
+
+    // Futures: ALGO_UPDATE (conditional / stop / take_profit lifecycle)
+    if (eventMsg.e === "ALGO_UPDATE") {
+      const o = eventMsg.o || {};
+      return {
+        source: "binance" as any,
+        symbol: o.s?.toUpperCase() || "*",
+        type: "algo_update" as const,
+        t: eventMsg.T ?? eventMsg.E ?? Date.now(),
+        eventType: "ALGO_UPDATE",
+        eventTime: eventMsg.E,
+        transactionTime: eventMsg.T,
+
+        algoId: o.aid != null ? String(o.aid) : undefined,
+        clientAlgoId: o.caid || undefined,
+        algoType: o.at,
+        algoStatus: o.X,
+        orderType: o.o,
+        actualOrderType: o.act,
+        side: o.S?.toLowerCase(),
+        positionSide: o.ps?.toLowerCase(),
+        timeInForce: o.f,
+        requestedQty: parseFloat(o.q) || 0,
+
+        triggerPrice: parseFloat(o.tp) || 0,
+        requestedPrice: parseFloat(o.p) || 0,
+        workingType: o.wt,
+        priceMatchMode: o.pm,
+        stpMode: o.V,
+        closeAll: o.cp === true,
+        priceProtect: o.pP === true,
+        reduceOnly: o.R === true,
+
+        // Engine linkage (only after TRIGGERED)
+        engineOrderId: o.ai != null ? String(o.ai) : undefined,
+        engineAvgFillPrice: parseFloat(o.ap) || 0,
+        engineExecutedQty: parseFloat(o.aq) || 0,
+
+        triggerTime: o.tt ?? undefined,
+        goodTillDate: Number(o.gtd) || 0,
+        rejectReason: o.rm || undefined,
+
+        rawOrderData: eventMsg,
+      };
+    }
+
+    // listenKeyExpired notification (passthrough so consumers can reconcile)
+    if (eventMsg.e === "listenKeyExpired") {
+      return {
+        source: "binance" as any,
+        symbol: "*",
+        type: "listen_key_expired" as const,
+        t: eventMsg.E ?? Date.now(),
+        eventType: "listenKeyExpired",
+        eventTime: eventMsg.E,
         rawOrderData: eventMsg,
       };
     }

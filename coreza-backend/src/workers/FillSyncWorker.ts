@@ -206,6 +206,7 @@ export class FillSyncWorker {
             workflow_id: fields.workflow_id || null as any,
             execution_id: fields.execution_id || null as any,
             fill_status: fields.fill_status || null as any,
+            fill_kind: (fields.fill_kind as "fill" | "algo") || "fill",
           });
         }
 

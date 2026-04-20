@@ -1000,6 +1000,7 @@ export class PortfolioExecutor implements INodeExecutor {
     }
   }
 
+  private async brokerSyncOrderEvent(
     pm: PortfolioManager,
     params: any,
     context?: NodeExecutionContext,

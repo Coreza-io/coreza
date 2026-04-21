@@ -494,11 +494,13 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
-        const openOrder = pm.getOpenOrders().find(
-          (o) =>
-            o.brokerOrderId === cancelOrderId ||
-            (o.clientOrderId && o.clientOrderId === cancelOrderId),
-        );
+        const openOrder = pm
+          .getOpenOrders()
+          .find(
+            (o) =>
+              o.brokerOrderId === cancelOrderId ||
+              (o.clientOrderId && o.clientOrderId === cancelOrderId),
+          );
         const orderType = String(
           openOrder?.orderType || params.orderType || "",
         ).toUpperCase();
@@ -1018,9 +1020,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const triggerPrice = toNumber(params.triggerPrice) ?? 0;
       const requestedQty = toNumber(params.requestedQty) ?? 0;
       const eventTime =
-        params.event_time ||
-        params.eventTime ||
-        new Date().toISOString();
+        params.event_time || params.eventTime || new Date().toISOString();
 
       // Stuff reject reason into commission_asset for algo rows (no new column).
       const rejectReason = params.rejectReason
@@ -1052,7 +1052,8 @@ export class PortfolioExecutor implements INodeExecutor {
         broker: params.broker || "binance",
         credential_id: params.credential_id,
         symbol,
-        side: (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
+        side:
+          (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
         order_id: engineOrderId,
         broker_execution_id: engineOrderId,
         fill_qty_delta: 0,
@@ -1140,60 +1141,6 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             acknowledged: true,
             reconciliation,
-          }),
-        );
-      }
-
-      if (params.type === "algo_update") {
-        const algoStatus = String(params.algoStatus ?? params.status ?? "")
-          .trim()
-          .toLowerCase();
-        const algoId = params.algoId ?? params.fill_id ?? params.aid;
-        const algoSymbol = params.symbol;
-        const side = String(params.side ?? "sell").toLowerCase();
-        const triggerPrice = toNumber(params.triggerPrice ?? params.tp) ?? 0;
-        const engineOrderId = params.engineOrderId ?? params.orderId ?? params.ai;
-        const eventTime =
-          params.event_time ||
-          params.eventTime ||
-          (params.t ? new Date(params.t).toISOString() : new Date().toISOString());
-
-        if (
-          context?.executionMode === "live" &&
-          context?.userId &&
-          context?.workflowId &&
-          algoId &&
-          algoSymbol
-        ) {
-          const event = this.buildFillStreamEvent({
-            context,
-            params: { ...params, event_time: eventTime },
-            symbol: algoSymbol,
-            side,
-            orderId: engineOrderId ? String(engineOrderId) : undefined,
-            executionId: String(algoId),
-            filledQty: 0,
-            fillPrice: triggerPrice,
-            fillStatus: algoStatus || "untriggered",
-            feeAmount: 0,
-            feeAsset: params.rejectReason ? String(params.rejectReason) : undefined,
-            fillKind: "algo",
-            rejectReason: params.rejectReason,
-          });
-          void FillEventBus.publish(event).catch((err) =>
-            fillLogger.warn(
-              { err, fillId: event.fill_id },
-              "algo lifecycle event append failed",
-            ),
-          );
-        }
-
-        return toNodeResult(
-          createSuccessOutput({
-            event: "algo_update",
-            status: algoStatus,
-            algo_id: algoId,
-            order_id: engineOrderId,
           }),
         );
       }

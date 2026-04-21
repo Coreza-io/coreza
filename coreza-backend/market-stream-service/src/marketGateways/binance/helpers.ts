@@ -109,7 +109,16 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
       const host = isTestnet
         ? "fstream.binancefuture.com"
         : "fstream.binance.com";
-      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=ORDER_TRADE_UPDATE,ALGO_UPDATE,listenKeyExpired,ACCOUNT_UPDATE`;
+
+      const events = [
+        "ORDER_TRADE_UPDATE",
+        "ALGO_UPDATE",
+        "ACCOUNT_UPDATE",
+        // verify exact expiry event token from current event page / live test
+        "listenKeyExpired",
+      ].join("/");
+
+      return `wss://${host}/private/ws?listenKey=${creds.listenKey}&events=${events}`;
     }
 
     return isTestnet

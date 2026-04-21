@@ -44,6 +44,7 @@ import { BrokerExecutor } from "./BrokerExecutor";
 const fillLogger = createLogger("PortfolioExecutor:fills");
 const TERMINAL_ORDER_STATUSES = new Set([
   "filled",
+  "finished",
   "canceled",
   "cancelled",
   "rejected",
@@ -255,9 +256,9 @@ export class PortfolioExecutor implements INodeExecutor {
       if (mode === "backtest") {
         return this.executeBacktestMode(params, context);
       } else if (mode === "broker") {
-        if (node.values?.credential_id) {
-          params.credential_id = node.values.credential_id;
-        }
+        // if (node.values?.credential_id) {
+        //   params.credential_id = node.values.credential_id;
+        // }
         return this.executeBrokerMode(params, context);
       }
 
@@ -824,6 +825,7 @@ export class PortfolioExecutor implements INodeExecutor {
     try {
       const brokerOrderId = params.brokerOrderId;
       const clientOrderId = params.clientOrderId;
+      const algoId = params.algoId;
       const symbol = params.symbol;
       const side = params.side;
       const orderType = params.orderType;
@@ -837,6 +839,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const result = pm.registerOrderIntent({
         brokerOrderId,
         clientOrderId,
+        algoId,
         symbol,
         side,
         origQty,
@@ -1014,9 +1017,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       const symbol = String(params.symbol || "*").toUpperCase();
       const algoStatus = String(params.algoStatus || "").toLowerCase();
-      const engineOrderId = params.engineOrderId
-        ? String(params.engineOrderId)
-        : undefined;
+      const orderId = params.orderId ? String(params.orderId) : undefined;
       const triggerPrice = toNumber(params.triggerPrice) ?? 0;
       const requestedQty = toNumber(params.requestedQty) ?? 0;
       const eventTime =
@@ -1038,7 +1039,7 @@ export class PortfolioExecutor implements INodeExecutor {
             algo: true,
             algoId,
             algoStatus,
-            engineOrderId: engineOrderId ?? null,
+            orderId: orderId ?? null,
             persisted: false,
           }),
         );
@@ -1055,8 +1056,8 @@ export class PortfolioExecutor implements INodeExecutor {
         symbol,
         side:
           (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
-        order_id: engineOrderId,
-        broker_execution_id: engineOrderId,
+        order_id: orderId,
+        broker_execution_id: orderId,
         fill_qty_delta: 0,
         fill_price: triggerPrice,
         quote_qty: 0,
@@ -1079,7 +1080,7 @@ export class PortfolioExecutor implements INodeExecutor {
           algo: true,
           algoId,
           algoStatus,
-          engineOrderId: engineOrderId ?? null,
+          orderId: orderId ?? null,
           requestedQty,
           triggerPrice,
           rejectReason: rejectReason ?? null,
@@ -1103,9 +1104,9 @@ export class PortfolioExecutor implements INodeExecutor {
     // the existing FillEventBus path (algo_id set). Algo events carry no fill
     // qty and no position update — they describe the conditional order's lifecycle
     // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
-    if (params?.algoId) {
-      return this.brokerSyncAlgoUpdate(params, context);
-    }
+    // if (params?.algoId) {
+    //   return this.brokerSyncAlgoUpdate(params, context);
+    // }
     try {
       if (params.type === "listen_key_expired") {
         fillLogger.warn(
@@ -1149,6 +1150,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const symbol = params.symbol;
       const brokerOrderId = params.brokerOrderId;
       const clientOrderId = params.clientOrderId;
+      const algoId = params.algoId;
       const status = params.status;
 
       const filledQty = toNumber(params.filledQty);
@@ -1159,10 +1161,23 @@ export class PortfolioExecutor implements INodeExecutor {
 
       const feeAsset = params.feeAsset;
 
+      const normalizedBrokerId =
+        algoId != null && algoId !== ""
+          ? String(algoId)
+          : brokerOrderId != null && brokerOrderId !== ""
+            ? String(brokerOrderId)
+            : undefined;
+
+      if (!normalizedBrokerId) {
+        throw new Error(
+          "Missing brokerOrderId and algoId for sync_order_event",
+        );
+      }
+
       const { ours } = await this.brokerEnsureOwnedOrder(
         context?.userId ?? "system",
         context?.workflowId ?? "manual",
-        brokerOrderId,
+        normalizedBrokerId,
         clientOrderId,
       );
       if (!ours) {
@@ -1170,7 +1185,7 @@ export class PortfolioExecutor implements INodeExecutor {
           createSuccessOutput({
             skipped: true,
             reason: "unknown_order",
-            brokerOrderId,
+            normalizedBrokerId,
             clientOrderId,
           }),
         );
@@ -1179,7 +1194,8 @@ export class PortfolioExecutor implements INodeExecutor {
       // 1. Order update (if status provided)
       if (status) {
         const resolvedBrokerOrderId =
-          brokerOrderId ?? pm.resolveOrderIdByClientId(clientOrderId ?? "");
+          normalizedBrokerId ??
+          pm.resolveOrderIdByClientId(clientOrderId ?? "");
 
         if (!resolvedBrokerOrderId) {
           console.warn(
@@ -1212,12 +1228,12 @@ export class PortfolioExecutor implements INodeExecutor {
       const isTerminalStatus = TERMINAL_ORDER_STATUSES.has(normalizedStatus);
       const shouldApplyTrade =
         Boolean(params.side) &&
-        Boolean(brokerOrderId) &&
+        Boolean(normalizedBrokerId) &&
         (hasFillEvent || (isTerminalStatus && (filledQty ?? 0) <= 0));
       if (shouldApplyTrade) {
         const tradeResult = pm.applyTrade(
           {
-            brokerOrderId,
+            normalizedBrokerId,
             clientOrderId,
             executionId: params.executionId,
             symbol,
@@ -1240,7 +1256,7 @@ export class PortfolioExecutor implements INodeExecutor {
           fillLogger.debug(
             {
               symbol,
-              brokerOrderId,
+              normalizedBrokerId,
               accumulatedQty: tradeResult.pending.accumulatedQuantity,
               status: tradeResult.pending.status,
             },
@@ -1251,7 +1267,7 @@ export class PortfolioExecutor implements INodeExecutor {
           fillLogger.info(
             {
               symbol,
-              brokerOrderId,
+              normalizedBrokerId,
               quantity: tradeResult.trade.quantity,
               status,
             },
@@ -1296,11 +1312,11 @@ export class PortfolioExecutor implements INodeExecutor {
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
 
       pm.applyPositionUpdate({
-        brokerOrderId,
         symbol,
         filledQty,
         avgFillPrice,
         side: params.side,
+        normalizedBrokerId,
         positionQty,
         currentPrice: avgFillPrice,
       });
@@ -1332,7 +1348,7 @@ export class PortfolioExecutor implements INodeExecutor {
             params,
             symbol,
             side: params.side,
-            orderId: brokerOrderId,
+            orderId: normalizedBrokerId,
             executionId: params.executionId,
             //fillDeltaQty,
             filledQty,

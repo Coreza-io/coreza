@@ -14,6 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
   Order,
@@ -28,8 +29,9 @@ import {
 // ============== NEW INTERFACES (v2 state model) ==============
 
 export interface OrderState {
-  brokerOrderId: string;
+  brokerOrderId?: string;
   clientOrderId?: string;
+  algoId?: string;
   symbol: string;
   side: "buy" | "sell";
   orderType?: string;
@@ -132,11 +134,13 @@ const ORDER_STATUS_RANK: Record<string, number> = {
   pending_new: 10,
   accepted: 15,
   new: 20,
+  New: 20,
   replaced: 25,
   pending_replace: 25,
   partially_filled: 30,
   pending_cancel: 35,
   filled: 40,
+  finished: 40,
   canceled: 50,
   cancelled: 50,
   expired: 50,
@@ -144,6 +148,7 @@ const ORDER_STATUS_RANK: Record<string, number> = {
 };
 
 const OPEN_ORDER_STATUSES = new Set([
+  "NEW",
   "new",
   "pending_new",
   "accepted",
@@ -331,6 +336,7 @@ export class PortfolioManager {
   registerOrderIntent(input: {
     brokerOrderId: string;
     clientOrderId?: string;
+    algoId?: string;
     symbol: string;
     side: "buy" | "sell";
     origQty?: number;
@@ -346,6 +352,7 @@ export class PortfolioManager {
     const order: OrderState = {
       brokerOrderId: input.brokerOrderId,
       clientOrderId: input.clientOrderId,
+      algoId: input.algoId,
       symbol: input.symbol,
       side: input.side,
       orderType: input.orderType,
@@ -360,14 +367,23 @@ export class PortfolioManager {
       updatedAt: now,
     };
 
-    const normalizedBrokerId = String(input.brokerOrderId);
+    const normalizedBrokerId =
+      input.brokerOrderId != null && input.brokerOrderId !== ""
+        ? String(input.brokerOrderId)
+        : input.algoId != null && input.algoId !== ""
+          ? String(input.algoId)
+          : undefined;
+
+    if (!normalizedBrokerId) {
+      throw new Error("Missing brokerOrderId and algoId for sync_order_event");
+    }
 
     this.orders.set(normalizedBrokerId, order);
     if (input.clientOrderId) {
-      this.clientOrderIdIndex.set(input.clientOrderId, input.brokerOrderId);
+      this.clientOrderIdIndex.set(input.clientOrderId, normalizedBrokerId);
     }
     console.log(
-      `[PortfolioManager] Registered order intent: ${input.side} ${input.origQty} ${input.symbol} (${input.brokerOrderId})`,
+      `[PortfolioManager] Registered order intent: ${input.side} ${input.origQty} ${input.symbol} (${normalizedBrokerId})`,
     );
     return { order };
   }
@@ -636,7 +652,7 @@ export class PortfolioManager {
     filledQty?: number;
     avgFillPrice?: number; // Alpaca: order.filled_avg_price or raw price
     side: "buy" | "sell";
-    brokerOrderId?: string;
+    normalizedBrokerId?: string;
     executionId?: string;
     positionQty?: number; // broker-truth resulting position qty
     currentPrice?: number;
@@ -806,13 +822,17 @@ export class PortfolioManager {
       if (previousQty === 0 || isFlip(previousQty, nextQty)) {
         this.currentEntryMap.set(input.symbol, {
           fillId:
-            input.executionId ?? input.brokerOrderId ?? `entry-${Date.now()}`,
+            input.executionId ??
+            input.normalizedBrokerId ??
+            `entry-${Date.now()}`,
           entryTime: now,
         });
       } else if (!this.currentEntryMap.has(input.symbol)) {
         this.currentEntryMap.set(input.symbol, {
           fillId:
-            input.executionId ?? input.brokerOrderId ?? `entry-${Date.now()}`,
+            input.executionId ??
+            input.normalizedBrokerId ??
+            `entry-${Date.now()}`,
           entryTime: now,
         });
       }
@@ -852,7 +872,8 @@ export class PortfolioManager {
 
     this.positions.set(input.symbol, position);
     this.currentEntryMap.set(input.symbol, {
-      fillId: input.executionId ?? input.brokerOrderId ?? `entry-${Date.now()}`,
+      fillId:
+        input.executionId ?? input.normalizedBrokerId ?? `entry-${Date.now()}`,
       entryTime: now,
     });
 

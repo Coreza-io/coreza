@@ -559,6 +559,25 @@
       }
     },
     {
+      "key": "algoId",
+      "label": "Broker Algo ID",
+      "type": "text",
+      "placeholder": "e.g. broker algo id",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "apply_execution",
+            "cancel_order",
+            "sync_order_event",
+            "apply_order_update",
+            "register_order_intent"
+          ],
+          "broker": ["binance_futures"]
+        }
+      }
+    },
+    {
       "key": "origQty",
       "label": "Original Quantity",
       "type": "text",

@@ -58,7 +58,7 @@ describe("PortfolioExecutor algo lifecycle", () => {
     const lastPayload = publishSpy.mock.calls[publishSpy.mock.calls.length - 1][0];
     expect(lastPayload).toMatchObject({
       fill_id: "algo-1",
-      fill_kind: "algo",
+      algo_id: "algo-1",
       fill_status: "finished",
       order_id: "ord-10",
       fill_qty_delta: 0,

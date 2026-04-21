@@ -908,7 +908,7 @@ export class PortfolioExecutor implements INodeExecutor {
     feeAmount?: number;
     feeAsset?: string;
     baseCurrency?: string;
-    fillKind?: "fill" | "algo";
+    algoId?: string;
     rejectReason?: string;
   }): FillStreamEvent {
     const eventTime =
@@ -948,7 +948,7 @@ export class PortfolioExecutor implements INodeExecutor {
       event_time: eventTime,
       base_currency: opts.baseCurrency,
       fill_status: opts.fillStatus,
-      fill_kind: opts.fillKind ?? "fill",
+      algo_id: opts.algoId,
       reject_reason: opts.rejectReason,
     };
   }
@@ -1046,6 +1046,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       const event: FillStreamEvent = {
         fill_id: algoId,
+        algo_id: algoId,
         user_id: context.userId,
         workflow_id: context.workflowId,
         execution_id: context.executionId,
@@ -1063,7 +1064,6 @@ export class PortfolioExecutor implements INodeExecutor {
         commission_asset: rejectReason,
         event_time: eventTime,
         fill_status: algoStatus,
-        fill_kind: "algo",
         reject_reason: rejectReason,
       };
 
@@ -1100,10 +1100,10 @@ export class PortfolioExecutor implements INodeExecutor {
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     // Algo lifecycle (Binance ALGO_UPDATE) — single upserted row in live_fills via
-    // the existing FillEventBus path (fill_kind="algo"). Algo events carry no fill
+    // the existing FillEventBus path (algo_id set). Algo events carry no fill
     // qty and no position update — they describe the conditional order's lifecycle
     // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
-    if (params?.type === "algo_update") {
+    if (params?.algoId) {
       return this.brokerSyncAlgoUpdate(params, context);
     }
     try {

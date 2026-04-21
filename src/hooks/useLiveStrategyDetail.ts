@@ -60,12 +60,12 @@ const mapLiveTradeToBacktestTrade = (
   if (fills && fills.length > 0 && (entryOrderId || exitOrderId)) {
     const matchedFills = fills.filter(
       (f: any) =>
-        f.fill_kind !== "algo" &&
+        !f.algo_id &&
         (f.order_id === entryOrderId || f.order_id === exitOrderId),
     );
     const matchedAlgo = fills.find(
       (f: any) =>
-        f.fill_kind === "algo" &&
+        !!f.algo_id &&
         (f.order_id === entryOrderId || f.order_id === exitOrderId),
     );
     if (matchedFills.length > 0) {
@@ -277,10 +277,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       const rawFillsAll = (fillsData ?? []) as any[];
       const rawFills = rawFillsAll.filter(
-        (f: any) => (f.fill_kind ?? "fill") !== "algo",
+        (f: any) => !f.algo_id,
       );
       const algoFills = rawFillsAll.filter(
-        (f: any) => f.fill_kind === "algo",
+        (f: any) => !!f.algo_id,
       );
       const filteredSnapshots = snapshotsData ?? [];
       const closedTrades = (liveTradesData ?? []) as any[];

@@ -31,7 +31,7 @@ export interface FillStreamEvent {
   event_time: string;
   base_currency?: string;
   fill_status?: string;
-  fill_kind?: "fill" | "algo";
+  algo_id?: string;
   reject_reason?: string;
 }
 

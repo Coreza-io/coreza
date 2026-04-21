@@ -29,7 +29,7 @@ export interface LiveFillRow {
   workflow_id?: string;
   execution_id?: string;
   fill_status?: string;
-  fill_kind?: "fill" | "algo";
+  algo_id?: string;
 }
 
 export class LiveFillRepository {

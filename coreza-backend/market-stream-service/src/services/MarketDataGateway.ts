@@ -230,10 +230,14 @@ export class MarketDataGateway {
 
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
-        const stream =
-          event.type === "order_update"
-            ? "order_update"
-            : event.timeframe
+        const isTradingLifecycleEvent =
+          event.type === "order_update" ||
+          event.type === "algo_update" ||
+          event.type === "listen_key_expired";
+
+        const stream = isTradingLifecycleEvent
+          ? "order_update"
+          : event.timeframe
               ? event.contractType
                 ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
                 : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`

@@ -913,6 +913,10 @@ export class PortfolioExecutor implements INodeExecutor {
     baseCurrency?: string;
     algoId?: string;
     rejectReason?: string;
+    orderType?: string;
+    limitPrice?: number;
+    stopPrice?: number;
+    tag?: string;
   }): FillStreamEvent {
     const eventTime =
       opts.params.event_time ||
@@ -953,6 +957,10 @@ export class PortfolioExecutor implements INodeExecutor {
       fill_status: opts.fillStatus,
       algo_id: opts.algoId,
       reject_reason: opts.rejectReason,
+      order_type: opts.orderType,
+      limit_price: opts.limitPrice,
+      stop_price: opts.stopPrice,
+      tag: opts.tag,
     };
   }
 
@@ -1366,6 +1374,10 @@ export class PortfolioExecutor implements INodeExecutor {
             feeAmount,
             feeAsset,
             baseCurrency,
+            orderType: params.orderType,
+            limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
+            stopPrice: toNumber(params.stopPrice),
+            tag: params.tag || context.nodeId,
           });
 
           void FillEventBus.publish(event).catch((err) =>

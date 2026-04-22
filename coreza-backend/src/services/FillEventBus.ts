@@ -33,6 +33,10 @@ export interface FillStreamEvent {
   fill_status?: string;
   algo_id?: string;
   reject_reason?: string;
+  order_type?: string;
+  limit_price?: number;
+  stop_price?: number;
+  tag?: string;
 }
 
 const STREAM_MAX_LEN = "100000";

@@ -354,12 +354,16 @@ export type Database = {
           algo_id: string | null
           fill_status: string | null
           id: string
+          limit_price: number | null
           order_id: string | null
+          order_type: string | null
           price: number
           qty: number
           quote_qty: number | null
           side: string
+          stop_price: number | null
           symbol: string
+          tag: string | null
           user_id: string
           workflow_id: string | null
         }
@@ -376,12 +380,16 @@ export type Database = {
           algo_id?: string | null
           fill_status?: string | null
           id?: string
+          limit_price?: number | null
           order_id?: string | null
+          order_type?: string | null
           price: number
           qty: number
           quote_qty?: number | null
           side: string
+          stop_price?: number | null
           symbol: string
+          tag?: string | null
           user_id: string
           workflow_id?: string | null
         }
@@ -398,12 +406,16 @@ export type Database = {
           algo_id?: string | null
           fill_status?: string | null
           id?: string
+          limit_price?: number | null
           order_id?: string | null
+          order_type?: string | null
           price?: number
           qty?: number
           quote_qty?: number | null
           side?: string
+          stop_price?: number | null
           symbol?: string
+          tag?: string | null
           user_id?: string
           workflow_id?: string | null
         }

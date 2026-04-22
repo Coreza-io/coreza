@@ -297,6 +297,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
             onStopListening: renderProps.handleStopListening,
             isStreamPaused: renderProps.isStreamPaused,
             onTogglePause: renderProps.handleTogglePause,
+            streamEventHistory: renderProps.streamEventHistory,
           }}
           icon={(() => {
             if (!definition.icon) {

@@ -10,6 +10,7 @@ import { getRedisCache } from "../config/redis";
 import { RedisKeys } from "../infra/redisKeys";
 
 const SNAPSHOT_TTL = 86400; // 24 hours
+const MANUAL_SNAPSHOT_TTL = 3600; // 1 hour
 
 export interface LatestSnapshotState {
   user_id: string;
@@ -33,13 +34,31 @@ export class SnapshotCache {
    * Only the most recent state per workflow is kept.
    * Fire-and-forget — caller should NOT await this.
    */
-  static async upsertLatest(snapshot: LatestSnapshotState): Promise<void> {
+  static async upsertLatest(
+    snapshot: LatestSnapshotState,
+    options?: { manual?: boolean },
+  ): Promise<void> {
+    const isManual = options?.manual === true;
+    if (isManual && process.env.ENABLE_MANUAL_STREAM_REDIS !== "true") {
+      return;
+    }
+
     const redis = getRedisCache();
-    const key = RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id);
+    const key = isManual
+      ? RedisKeys.manualPortfolioSnapshotLatest(
+          snapshot.user_id,
+          snapshot.workflow_id,
+        )
+      : RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id);
     const activeKeysSet = RedisKeys.userActiveSnapshotKeys(snapshot.user_id);
 
     const pipeline = redis.pipeline();
-    pipeline.set(key, JSON.stringify(snapshot), "EX", SNAPSHOT_TTL);
+    pipeline.set(
+      key,
+      JSON.stringify(snapshot),
+      "EX",
+      isManual ? MANUAL_SNAPSHOT_TTL : SNAPSHOT_TTL,
+    );
     pipeline.sadd(activeKeysSet, key);
     pipeline.sadd(RedisKeys.registrySnapshotsActive(), snapshot.user_id);
     await pipeline.exec();

@@ -89,6 +89,7 @@ export function LoopNode({ id, data, selected }: NodeProps) {
               onStopListening: renderProps.handleStopListening,
               isStreamPaused: renderProps.isStreamPaused,
               onTogglePause: renderProps.handleTogglePause,
+              streamEventHistory: renderProps.streamEventHistory,
             }}
             icon={icon}
             label={renderProps.displayName}

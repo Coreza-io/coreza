@@ -49,6 +49,14 @@ export interface NodeExecutionData {
   testListenNodeId?: string;                 // node ID for test listener
   streamDataReceived?: boolean;              // true when stream data just arrived (for flash animation)
   isStreamPaused?: boolean;                  // client-side pause: skip UI updates while stream stays alive
+  manualStreamDelayMs?: number;              // per-listener delay for order_update playback
+  streamEventHistory?: Array<{
+    type?: string;
+    status?: string;
+    time: string;
+    data: any;
+    seq?: number;
+  }>;
 }
 
 export class ExecutionContext {

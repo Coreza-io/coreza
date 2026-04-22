@@ -95,6 +95,13 @@ export interface BaseNodeRenderProps {
   handleTogglePause: () => void;
   isTestListening: boolean;
   isStreamPaused: boolean;
+  streamEventHistory: Array<{
+    type?: string;
+    status?: string;
+    time: string;
+    data: any;
+    seq?: number;
+  }>;
   fetchCredentials: (fieldKey: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants
@@ -237,6 +244,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     return nodeData?.isStreamPaused === true;
   }, [nodeId, executionStore, storeVersion]);
 
+  const streamEventHistory = useMemo(() => {
+    const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
+    return nodeData?.streamEventHistory || [];
+  }, [nodeId, executionStore, storeVersion]);
+
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {
     if (!workflowId || !nodeId || readOnly) return;
@@ -349,6 +361,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     handleTogglePause,
     isTestListening,
     isStreamPaused,
+    streamEventHistory,
     fetchCredentials: credentialsHook.fetchCredentials,
     fetchDependentOptions: credentialsHook.fetchDependentOptions,
     // Style constants

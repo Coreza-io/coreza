@@ -112,6 +112,9 @@ function toBoolean(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
+const isManualRedisPersistenceEnabled = (): boolean =>
+  process.env.ENABLE_MANUAL_STREAM_REDIS === "true";
+
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -917,6 +920,7 @@ export class PortfolioExecutor implements INodeExecutor {
     limitPrice?: number;
     stopPrice?: number;
     tag?: string;
+    streamScope?: "live" | "manual";
   }): FillStreamEvent {
     const eventTime =
       opts.params.event_time ||
@@ -961,6 +965,7 @@ export class PortfolioExecutor implements INodeExecutor {
       limit_price: opts.limitPrice,
       stop_price: opts.stopPrice,
       tag: opts.tag,
+      stream_scope: opts.streamScope,
     };
   }
 
@@ -1032,10 +1037,24 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // Persist only when running live with workflow context.
       if (
-        context?.executionMode !== "live" ||
         !context?.userId ||
         !context?.workflowId
       ) {
+        return toNodeResult(
+          createSuccessOutput({
+            algo: true,
+            algoId,
+            algoStatus,
+            orderId: orderId ?? null,
+            persisted: false,
+          }),
+        );
+      }
+
+      const isLiveExecution = context?.executionMode === "live";
+      const shouldPersistManual =
+        !isLiveExecution && isManualRedisPersistenceEnabled();
+      if (!isLiveExecution && !shouldPersistManual) {
         return toNodeResult(
           createSuccessOutput({
             algo: true,
@@ -1068,6 +1087,7 @@ export class PortfolioExecutor implements INodeExecutor {
         event_time: eventTime,
         fill_status: algoStatus,
         reject_reason: rejectReason,
+        stream_scope: isLiveExecution ? "live" : "manual",
       };
 
       void FillEventBus.publish(event).catch((err) =>
@@ -1353,12 +1373,15 @@ export class PortfolioExecutor implements INodeExecutor {
       if (filledQty && avgFillPrice && brokerOrderId) {
         //const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
 
+        const isLiveExecution = context?.executionMode === "live";
+        const shouldPersistManual =
+          !isLiveExecution && isManualRedisPersistenceEnabled();
         if (
           //fillDeltaQty > 0 &&
           filledQty > 0 &&
-          context?.executionMode === "live" &&
           context?.userId &&
-          context?.workflowId
+          context?.workflowId &&
+          (isLiveExecution || shouldPersistManual)
         ) {
           const event = this.buildFillStreamEvent({
             context,
@@ -1378,6 +1401,7 @@ export class PortfolioExecutor implements INodeExecutor {
             limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
             stopPrice: toNumber(params.stopPrice),
             tag: params.tag || context.nodeId,
+            streamScope: isLiveExecution ? "live" : "manual",
           });
 
           void FillEventBus.publish(event).catch((err) =>
@@ -1396,7 +1420,9 @@ export class PortfolioExecutor implements INodeExecutor {
             credentialId: params.credential_id,
             baseCurrency,
           });
-          void SnapshotCache.upsertLatest(snapshot).catch((err) =>
+          void SnapshotCache.upsertLatest(snapshot, {
+            manual: !isLiveExecution,
+          }).catch((err) =>
             fillLogger.warn({ err }, "snapshot cache update failed"),
           );
         }

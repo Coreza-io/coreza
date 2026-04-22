@@ -24,9 +24,13 @@ export const RedisKeys = {
 
   portfolioFillsStream: (userId: string, workflowId: string): string =>
     `userId:${userId}:workflowId:${workflowId}:portfolio:fills:stream`,
+  manualPortfolioFillsStream: (userId: string, workflowId: string): string =>
+    `manual:userId:${userId}:workflowId:${workflowId}:portfolio:fills:stream`,
 
   portfolioSnapshotLatest: (userId: string, workflowId: string): string =>
     `userId:${userId}:workflowId:${workflowId}:portfolio:snapshot:latest`,
+  manualPortfolioSnapshotLatest: (userId: string, workflowId: string): string =>
+    `manual:userId:${userId}:workflowId:${workflowId}:portfolio:snapshot:latest`,
 
   order: (userId: string, workflowId: string, idempotencyKey: string): string =>
     `userId:${userId}:workflowId:${workflowId}:order:${idempotencyKey}`,

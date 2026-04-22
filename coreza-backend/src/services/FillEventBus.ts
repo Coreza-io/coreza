@@ -37,9 +37,11 @@ export interface FillStreamEvent {
   limit_price?: number;
   stop_price?: number;
   tag?: string;
+  stream_scope?: "live" | "manual";
 }
 
 const STREAM_MAX_LEN = "100000";
+const MANUAL_STREAM_TTL_SECONDS = 3600;
 
 export class FillEventBus {
   /**
@@ -47,8 +49,16 @@ export class FillEventBus {
    * Fire-and-forget — caller should NOT await this.
    */
   static async publish(event: FillStreamEvent): Promise<void> {
+    const allowManual = process.env.ENABLE_MANUAL_STREAM_REDIS === "true";
+    const isManualStream = event.stream_scope === "manual";
+    if (isManualStream && !allowManual) {
+      return;
+    }
+
     const redis = getRedisCache();
-    const streamKey = RedisKeys.portfolioFillsStream(event.user_id, event.workflow_id);
+    const streamKey = isManualStream
+      ? RedisKeys.manualPortfolioFillsStream(event.user_id, event.workflow_id)
+      : RedisKeys.portfolioFillsStream(event.user_id, event.workflow_id);
     const activeStreamsKey = RedisKeys.userActiveFillStreams(event.user_id);
 
     // Flatten event to string key-value pairs for XADD
@@ -63,6 +73,9 @@ export class FillEventBus {
     pipeline.sadd(activeStreamsKey, streamKey);
     pipeline.sadd(RedisKeys.registryFillsActive(), event.user_id);
     pipeline.xadd(streamKey, "MAXLEN", "~", STREAM_MAX_LEN, "*", ...fields);
+    if (isManualStream) {
+      pipeline.expire(streamKey, MANUAL_STREAM_TTL_SECONDS);
+    }
     await pipeline.exec();
 
     logger.debug({ streamKey, fillId: event.fill_id }, "fill event published");

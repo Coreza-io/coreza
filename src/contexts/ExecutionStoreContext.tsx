@@ -27,18 +27,116 @@ const ExecutionStoreContext = createContext<{
 } | null>(null);
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
+const MANUAL_STREAM_DELAY_MS = Number(import.meta.env.VITE_MANUAL_STREAM_DELAY_MS ?? 800);
+const MAX_STREAM_HISTORY = 50;
+const ORDER_UPDATE_EVENT_TYPE = 'order_update';
+
+type StreamQueueItem = {
+  output: Record<string, any>;
+  historyEntry: {
+    type?: string;
+    status?: string;
+    time: string;
+    data: any;
+    seq?: number;
+  };
+};
 
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();
   const wsRef = useRef<WebSocket | null>(null);
   const keepaliveRef = useRef<NodeJS.Timeout | null>(null);
   const shouldReconnectRef = useRef(true);
+  const streamQueueRef = useRef<Map<string, { queue: StreamQueueItem[]; timer: NodeJS.Timeout | null }>>(new Map());
   const { user } = useAuth();
   const [updateVersion, setUpdateVersion] = useState(0);
   
   if (!storeRef.current) {
     storeRef.current = new ExecutionContext();
   }
+
+  const appendStreamHistory = (nodeId: string, entry: StreamQueueItem['historyEntry']) => {
+    if (!storeRef.current) return;
+    const existingData = storeRef.current.getNodeData(nodeId);
+    const history = existingData?.streamEventHistory || [];
+    const nextHistory = [...history, entry].slice(-MAX_STREAM_HISTORY);
+    storeRef.current.setNodeData(nodeId, { streamEventHistory: nextHistory });
+  };
+
+  const applyStreamOutput = (nodeId: string, item: StreamQueueItem) => {
+    if (!storeRef.current) return;
+    appendStreamHistory(nodeId, item.historyEntry);
+    storeRef.current.setNodeData(nodeId, {
+      output: item.output,
+      streamDataReceived: true,
+    });
+    setUpdateVersion(v => v + 1);
+  };
+
+  const clearNodeQueue = (nodeId: string) => {
+    const state = streamQueueRef.current.get(nodeId);
+    if (!state) return;
+    if (state.timer) {
+      clearTimeout(state.timer);
+    }
+    streamQueueRef.current.delete(nodeId);
+  };
+
+  const drainNodeQueue = (nodeId: string) => {
+    const state = streamQueueRef.current.get(nodeId);
+    if (!state || state.queue.length === 0) {
+      clearNodeQueue(nodeId);
+      return;
+    }
+
+    const nextItem = state.queue.shift();
+    if (!nextItem) {
+      clearNodeQueue(nodeId);
+      return;
+    }
+
+    applyStreamOutput(nodeId, nextItem);
+
+    if (state.queue.length === 0) {
+      clearNodeQueue(nodeId);
+      return;
+    }
+
+    const nodeData = storeRef.current?.getNodeData(nodeId);
+    const nodeDelay = Number(nodeData?.manualStreamDelayMs ?? MANUAL_STREAM_DELAY_MS);
+    state.timer = setTimeout(
+      () => drainNodeQueue(nodeId),
+      Number.isFinite(nodeDelay) ? Math.max(0, nodeDelay) : MANUAL_STREAM_DELAY_MS,
+    );
+  };
+
+  const enqueueOrderUpdate = (nodeId: string, item: StreamQueueItem) => {
+    const existing = streamQueueRef.current.get(nodeId);
+    if (existing) {
+      existing.queue.push(item);
+      if (!existing.timer) {
+        drainNodeQueue(nodeId);
+      }
+      return;
+    }
+    streamQueueRef.current.set(nodeId, { queue: [item], timer: null });
+    drainNodeQueue(nodeId);
+  };
+
+  const flushAllQueues = () => {
+    for (const [nodeId, state] of streamQueueRef.current.entries()) {
+      if (state.timer) {
+        clearTimeout(state.timer);
+      }
+      while (state.queue.length > 0) {
+        const nextItem = state.queue.shift();
+        if (nextItem) {
+          applyStreamOutput(nodeId, nextItem);
+        }
+      }
+      streamQueueRef.current.delete(nodeId);
+    }
+  };
 
   // WebSocket listener for streaming market data
   useEffect(() => {
@@ -124,17 +222,31 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 if (existingData?.isTestListening) {
                   // Skip UI update if stream is paused (stream stays alive on backend)
                   if (existingData?.isStreamPaused) {
+                    appendStreamHistory(nodeId, {
+                      type: data?.type || 'market_data',
+                      status: data?.status,
+                      time: data?.event_time || new Date().toISOString(),
+                      data,
+                      seq: data?._seq,
+                    });
                     console.log('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
                     return;
                   }
-                  storeRef.current.setNodeData(nodeId, {
-                    output: {
+                  clearNodeQueue(nodeId);
+                  const output = {
                       status: 'streaming',
                       data,
                       lastUpdate: new Date().toISOString()
-                    }
+                    };
+                  appendStreamHistory(nodeId, {
+                    type: data?.type || 'market_data',
+                    status: data?.status,
+                    time: output.lastUpdate,
+                    data,
+                    seq: data?._seq,
                   });
-                  setUpdateVersion(v => v + 1); // Trigger React re-render
+                  storeRef.current.setNodeData(nodeId, { output, streamDataReceived: true });
+                  setUpdateVersion(v => v + 1);
                   console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
                 } else {
                   console.log('⚠️ [ExecutionStore] Ignoring market_data for non-listening node:', nodeId);
@@ -151,6 +263,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 // Skip UI update if stream is paused
                 const existingData2 = storeRef.current.getNodeData(nodeId);
                 if (existingData2?.isStreamPaused) {
+                  appendStreamHistory(nodeId, {
+                    type: data.type,
+                    status: data.data?.status || data.status,
+                    time: data.event_time || data.receivedAt || new Date().toISOString(),
+                    data: data.data,
+                    seq: data._seq,
+                  });
                   console.log('⏸️ [ExecutionStore] Stream paused, skipping test_data for:', nodeId);
                   return;
                 }
@@ -162,16 +281,31 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   data: data.data,
                   receivedAt: data.receivedAt,
                   source: data.source,
+                  event_time: data.event_time,
+                  _seq: data._seq,
                   [data.type]: data.data?.[data.type] || data.data,
                 };
-                
-                // Keep isTestListening: true so user can continue receiving data and stop manually
-                storeRef.current.setNodeData(nodeId, {
-                  output: receivedOutput,
-                  streamDataReceived: true,
-                  // Do NOT set isTestListening: false - keep streaming active
-                });
-                setUpdateVersion(v => v + 1); // Trigger React re-render
+
+                const historyEntry = {
+                  type: data.type,
+                  status: data.data?.status || data.status,
+                  time: data.event_time || data.receivedAt || new Date().toISOString(),
+                  data: data.data,
+                  seq: data._seq,
+                };
+
+                if (data.type === ORDER_UPDATE_EVENT_TYPE) {
+                  enqueueOrderUpdate(nodeId, {
+                    output: receivedOutput,
+                    historyEntry,
+                  });
+                } else {
+                  clearNodeQueue(nodeId);
+                  applyStreamOutput(nodeId, {
+                    output: receivedOutput,
+                    historyEntry,
+                  });
+                }
                 console.log('🎯 [ExecutionStore] Test data received via WebSocket for node:', nodeId);
               }
             }
@@ -234,6 +368,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
     return () => {
       shouldReconnectRef.current = false;
+      flushAllQueues();
       
       // Clear keepalive interval
       if (keepaliveRef.current) {
@@ -249,6 +384,27 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
       }
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!storeRef.current) return;
+    for (const nodeId of streamQueueRef.current.keys()) {
+      const nodeData = storeRef.current.getNodeData(nodeId);
+      if (nodeData?.isTestListening === false) {
+        const queueState = streamQueueRef.current.get(nodeId);
+        if (!queueState) continue;
+        if (queueState.timer) {
+          clearTimeout(queueState.timer);
+        }
+        while (queueState.queue.length > 0) {
+          const nextItem = queueState.queue.shift();
+          if (nextItem) {
+            applyStreamOutput(nodeId, nextItem);
+          }
+        }
+        streamQueueRef.current.delete(nodeId);
+      }
+    }
+  }, [updateVersion]);
 
   const notifyUpdate = () => setUpdateVersion(v => v + 1);
 

@@ -20,6 +20,8 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { RegistrationService } from "../services/RegistrationService";
 import { StatusService } from "../services/StatusService";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
+import { REDIS_CHANNELS } from "../config/redisChannels";
+import { getRedisCache } from "../config/redis";
 import { supabase } from "../config/supabase";
 import { bullMqJobQueue } from "../infra/jobQueue/jobQueueManager";
 import {
@@ -692,6 +694,68 @@ router.post("/:source/register", async (req, res) => {
           ? error.message
           : "Failed to execute stream node",
     } as StreamExecutionResponse);
+  }
+});
+
+/**
+ * Poll test listener results for recovery/replay.
+ * GET /stream/stream-test-result/:workflowId/:nodeId?cursor=0&limit=50
+ */
+router.get("/stream-test-result/:workflowId/:nodeId", async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId, nodeId } = req.params;
+    const cursor = Math.max(Number(req.query.cursor ?? 0), 0);
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 200);
+    const redis = getRedisCache();
+    const listenerKey = REDIS_CHANNELS.Listener(userId, workflowId, nodeId);
+
+    const exists = await redis.exists(listenerKey);
+    if (!exists) {
+      return res.json({ status: "expired" });
+    }
+
+    const resultEventsKey = REDIS_CHANNELS.ListenerResultEvents(
+      userId,
+      workflowId,
+      nodeId,
+    );
+    const stop = cursor + limit - 1;
+    const rawEvents = await redis.lrange(resultEventsKey, cursor, stop);
+    const total = await redis.llen(resultEventsKey);
+
+    const events = rawEvents
+      .map((entry) => {
+        try {
+          return JSON.parse(entry);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    return res.json({
+      status: "listening",
+      enable_manual_stream_redis:
+        process.env.ENABLE_MANUAL_STREAM_REDIS === "true",
+      cursor,
+      next_cursor: Math.min(cursor + rawEvents.length, total),
+      total_events: total,
+      events,
+    });
+  } catch (error) {
+    console.error("Error fetching stream test result:", error);
+    return res.status(500).json({
+      status: "error",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch stream test result",
+    });
   }
 });
 

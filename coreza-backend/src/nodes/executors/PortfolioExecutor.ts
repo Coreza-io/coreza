@@ -1146,11 +1146,20 @@ export class PortfolioExecutor implements INodeExecutor {
       const clientOrderId = params.clientOrderId;
       //const algoId = params.algoId;
       const status = params.status;
+      const side =
+        params.side != null && params.side !== ""
+          ? normalizeSide(params.side)
+          : undefined;
 
       const filledQty = toNumber(params.filledQty);
+      const origQty = toNumber(params.origQty);
       const positionQty = toNumber(params.positionQty);
       const avgFillPrice = toNumber(params.avgFillPrice);
       const feeAmount = toNumber(params.feeAmount);
+      const limitPrice = toNumber(params.limitPrice);
+      const stopPrice = toNumber(params.stopPrice);
+      const trailPercent = toNumber(params.trailPercent);
+      const trailPrice = toNumber(params.trailPrice);
       const seq = toNumber(params._seq);
 
       const feeAsset = params.feeAsset;
@@ -1198,6 +1207,14 @@ export class PortfolioExecutor implements INodeExecutor {
             brokerOrderId: resolvedBrokerOrderId,
             clientOrderId,
             symbol,
+            side,
+            origQty,
+            orderType: params.orderType,
+            timeInForce: params.timeInForce,
+            limitPrice,
+            stopPrice,
+            trailPercent,
+            trailPrice,
             status,
             filledQty,
             avgFillPrice,

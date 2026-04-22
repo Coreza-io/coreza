@@ -101,6 +101,7 @@ const portfolioRequestSchema = z.object({
   avg_entry_price: z.union([z.string(), z.number()]).optional(),
   realized_pnl: z.union([z.string(), z.number()]).optional(),
   orderType: z.string().optional(),
+  timeInForce: z.string().optional(),
   limitPrice: z.union([z.string(), z.number()]).optional(),
   stopPrice: z.union([z.string(), z.number()]).optional(),
   trailPercent: z.union([z.string(), z.number()]).optional(),

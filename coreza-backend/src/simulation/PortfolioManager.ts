@@ -391,6 +391,14 @@ export class PortfolioManager {
     brokerOrderId: string;
     clientOrderId?: string;
     symbol: string;
+    side?: "buy" | "sell";
+    origQty?: number;
+    orderType?: string;
+    timeInForce?: string;
+    limitPrice?: number;
+    stopPrice?: number;
+    trailPercent?: number;
+    trailPrice?: number;
     status: string;
     filledQty?: number;
     avgFillPrice?: number;
@@ -401,11 +409,29 @@ export class PortfolioManager {
     const now = new Date().toISOString();
 
     const normalizedBrokerId = String(input.brokerOrderId);
-    const order = this.orders.get(normalizedBrokerId);
+    let order = this.orders.get(normalizedBrokerId);
     if (!order) {
-      throw new Error(
-        `[PortfolioManager] applyOrderUpdate: order not found for brokerOrderId=${input.brokerOrderId}`,
-      );
+      if (!input.side) {
+        throw new Error(
+          `[PortfolioManager] applyOrderUpdate: side is required to create missing order for brokerOrderId=${input.brokerOrderId}`,
+        );
+      }
+
+      const { order: createdOrder } = this.registerOrderIntent({
+        brokerOrderId: normalizedBrokerId,
+        clientOrderId: input.clientOrderId,
+        symbol: input.symbol,
+        side: input.side,
+        origQty: input.origQty,
+        orderType: input.orderType,
+        timeInForce: input.timeInForce,
+        limitPrice: input.limitPrice,
+        stopPrice: input.stopPrice,
+        trailPercent: input.trailPercent,
+        trailPrice: input.trailPrice,
+        status: input.status,
+      });
+      order = createdOrder;
     }
 
     // Safety check: avoid silently mutating the wrong order

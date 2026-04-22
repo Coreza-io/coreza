@@ -476,7 +476,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order_intent"]
+          "operation": ["register_order_intent", "sync_order_event"]
         }
       }
     },
@@ -488,7 +488,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order_intent"]
+          "operation": ["register_order_intent", "sync_order_event"]
         }
       }
     },
@@ -684,7 +684,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order_intent"]
+          "operation": ["register_order_intent", "sync_order_event"]
         }
       }
     },
@@ -696,7 +696,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order_intent"]
+          "operation": ["register_order_intent", "sync_order_event"]
         }
       }
     },
@@ -708,7 +708,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order_intent"]
+          "operation": ["register_order_intent", "sync_order_event"]
         }
       }
     },
@@ -720,7 +720,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["register_order_intent"]
+          "operation": ["register_order_intent", "sync_order_event"]
         }
       }
     },

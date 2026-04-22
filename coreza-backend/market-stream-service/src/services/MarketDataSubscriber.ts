@@ -15,6 +15,8 @@ import logger from "../utils/logger";
 import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 
+const ORDER_UPDATE_DELAY_MS = 500; // ms between order lifecycle events
+
 /**
  * Workflow registration metadata for receiving market data
  * This is NOT a broker subscription - it registers a workflow to receive data
@@ -507,6 +509,14 @@ export class MarketDataSubscriber {
 
     const prev = this.deliveryQueues.get(queueKey) ?? Promise.resolve();
     const next = prev.then(async () => {
+      if (
+        !registration.isLive &&
+        (event.type === "order_update" || event.type === "algo_update")
+      ) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, ORDER_UPDATE_DELAY_MS),
+        );
+      }
       await this.deliverWorkflowEvent(
         workflowId,
         registration,

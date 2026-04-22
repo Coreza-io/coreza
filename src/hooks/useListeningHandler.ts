@@ -33,11 +33,14 @@ export interface ListeningConfig<TOutput = any> {
   receivedFlag?: string;
   recoveryPolling?: {
     endpoint: string;
+    getEndpoint?: () => string;
     interval: number;
     processResult: (result: any) => {
       done: boolean;
       output?: TOutput;
       expired?: boolean;
+      nextCursor?: number;
+      replayEvents?: any[];
     };
   };
 }
@@ -233,14 +236,46 @@ export function createListeningHandler<TOutput = any>(
       }, pollInterval);
 
       if (recoveryPolling) {
-        const { endpoint, interval, processResult } = recoveryPolling;
+        const { endpoint, getEndpoint, interval, processResult } = recoveryPolling;
         const runRecoveryPolling = async () => {
           while (!resolved && !abortController.signal.aborted) {
             try {
-              const response = await api.get(endpoint, accessToken);
+              const response = await api.get(
+                getEndpoint ? getEndpoint() : endpoint,
+                accessToken,
+              );
               if (response.ok) {
                 const result = await response.json();
                 const processed = processResult(result);
+                if (Array.isArray(processed.replayEvents) && processed.replayEvents.length > 0) {
+                  const latest = processed.replayEvents[processed.replayEvents.length - 1];
+                  const currentNodeData = executionStore.getNodeData(nodeId);
+                  const priorHistory = currentNodeData?.streamEventHistory || [];
+                  const replayHistory = processed.replayEvents.map((event) => ({
+                    type: event?.type,
+                    status: event?.data?.status || event?.status,
+                    time: event?.event_time || event?.receivedAt || new Date().toISOString(),
+                    data: event?.data,
+                    seq: event?._seq,
+                  }));
+
+                  updateNodeData({
+                    output: latest
+                      ? {
+                          status: "streaming",
+                          symbol: latest.symbol,
+                          type: latest.type,
+                          data: latest.data,
+                          receivedAt: latest.receivedAt,
+                          source: latest.source,
+                          event_time: latest.event_time,
+                          _seq: latest._seq,
+                          [latest.type]: latest.data?.[latest.type] || latest.data,
+                        }
+                      : currentNodeData?.output,
+                    streamEventHistory: [...priorHistory, ...replayHistory].slice(-50),
+                  });
+                }
                 if (processed.done) {
                   const output =
                     processed.output ?? buildTimeoutOutput(listeningOutput);

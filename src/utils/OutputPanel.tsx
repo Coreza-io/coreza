@@ -44,6 +44,14 @@ export type OutputPanelProps = {
   isStreamPaused?: boolean;
   /** Callback to toggle pause/resume */
   onTogglePause?: () => void;
+  /** Recent stream events for manual mode */
+  streamEventHistory?: Array<{
+    type?: string;
+    status?: string;
+    time: string;
+    data: any;
+    seq?: number;
+  }>;
 };
 
 // Status badge component for StandardNodeOutput
@@ -326,6 +334,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   onStopListening,
   isStreamPaused = false,
   onTogglePause,
+  streamEventHistory = [],
 }) => {
   const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);
@@ -425,6 +434,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
 
   // Determine if we should show the streaming footer
   const showStreamingFooter = isTestListening && onStopListening;
+  const recentStreamEvents = streamEventHistory.slice(-10).reverse();
 
   return (
     <div
@@ -528,6 +538,34 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
             ) : (
               renderData(displayData, "")
             )}
+          </div>
+        )}
+        {recentStreamEvents.length > 0 && !isEditing && (
+          <div className="mt-4 border-t border-border/50 pt-3">
+            <div className="text-xs font-semibold text-primary mb-2">Event Log</div>
+            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+              {recentStreamEvents.map((event, index) => (
+                <div
+                  key={`${event.seq ?? "na"}-${event.time}-${index}`}
+                  className="rounded-md border border-border/40 bg-muted/20 p-2"
+                >
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span>{event.type || "event"}</span>
+                    <span>{new Date(event.time).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="text-xs mt-1">
+                    {event.status ? (
+                      <span className="font-medium">{event.status}</span>
+                    ) : (
+                      <span className="text-muted-foreground">No status</span>
+                    )}
+                    {event.seq != null && (
+                      <span className="text-muted-foreground ml-2">#{event.seq}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

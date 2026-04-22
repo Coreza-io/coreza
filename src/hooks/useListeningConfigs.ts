@@ -88,12 +88,17 @@ export const buildStreamingTriggerListeningConfig = ({
   const timeout = streamingConfig.timeout ?? DEFAULT_STREAMING_TIMEOUT;
   const recoveryTemplate =
     streamingConfig.recoveryPolling?.endpoint ??
-    "/market/stream-test-result/{{workflowId}}/{{node_id}}";
+    "/stream/stream-test-result/{{workflowId}}/{{node_id}}";
+  const normalizedRecoveryTemplate = recoveryTemplate.replace(
+    "/market/stream-test-result",
+    "/stream/stream-test-result",
+  );
   const recoveryEndpoint = renderRecoveryEndpoint(
-    recoveryTemplate,
+    normalizedRecoveryTemplate,
     workflowId,
     nodeId,
   );
+  let recoveryCursor = 0;
   const recoveryInterval =
     streamingConfig.recoveryPolling?.interval ?? DEFAULT_RECOVERY_INTERVAL;
 
@@ -104,6 +109,7 @@ export const buildStreamingTriggerListeningConfig = ({
       startedAt: new Date().toISOString(),
       mode: fieldState.mode || "listen",
       source: res.source,
+      manualRedisEnabled: Boolean(res.enable_manual_stream_redis),
       nodeId,
       filterSymbols: res.symbols || [],
       filterTypes: fieldState.filter_types || fieldState.stream_types || [],
@@ -112,6 +118,12 @@ export const buildStreamingTriggerListeningConfig = ({
     buildListeningNodeData: () => ({
       testListenWorkflowId: workflowId,
       testListenNodeId: nodeId,
+      manualStreamDelayMs: Number(
+        streamingConfig.manualStreamDelayMs ??
+          fieldState.manual_stream_delay_ms ??
+          import.meta.env.VITE_MANUAL_STREAM_DELAY_MS ??
+          800,
+      ),
     }),
     isDataReceived: () => false,
     shouldStop: (nodeData) => nodeData?.isTestListening === false,
@@ -125,6 +137,8 @@ export const buildStreamingTriggerListeningConfig = ({
     receivedFlag: "streamDataReceived",
     recoveryPolling: {
       endpoint: recoveryEndpoint,
+      getEndpoint: () =>
+        `${recoveryEndpoint}?cursor=${recoveryCursor}&limit=50`,
       interval: recoveryInterval,
       processResult: (result) => {
         if (result.status === "expired") {
@@ -136,6 +150,12 @@ export const buildStreamingTriggerListeningConfig = ({
             },
             expired: true,
           };
+        }
+        if (Array.isArray(result.events) && result.events.length > 0) {
+          if (typeof result.next_cursor === "number") {
+            recoveryCursor = result.next_cursor;
+          }
+          return { done: false, replayEvents: result.events };
         }
         // Data received via recovery — don't resolve, WebSocket handles continuous updates
         return { done: false };

@@ -59,6 +59,7 @@ export class WebSocketManager {
 
   // Redis pub/sub for receiving market data from market-stream-service
   private redisSub: Redis | null = null;
+  private listenerSequence = new Map<string, number>();
 
   private constructor() {
     // Initialize JWKS for JWT verification with extended timeout and caching
@@ -691,15 +692,35 @@ export class WebSocketManager {
 
         // Match found! Use atomic Lua script to prevent race conditions
         const resultKey = `${testKey}:result`;
+        const nowIso = new Date().toISOString();
+        const normalizedSeq = Number(eventData?._seq);
+        const derivedSeq = Number.isFinite(normalizedSeq)
+          ? normalizedSeq
+          : (this.listenerSequence.get(testKey) ?? 0) + 1;
+        this.listenerSequence.set(testKey, derivedSeq);
         const resultData = {
           symbol: eventSymbol,
           type: eventType,
           data: eventData,
-          receivedAt: new Date().toISOString(),
+          receivedAt: nowIso,
+          event_time: eventData?.event_time || nowIso,
+          _seq: derivedSeq,
           source: listener.source,
         };
 
         try {
+          const resultEventsKey = REDIS_CHANNELS.ListenerResultEvents(
+            userId,
+            listener.workflowId,
+            listener.nodeId,
+          );
+          await redis
+            .multi()
+            .rpush(resultEventsKey, JSON.stringify(resultData))
+            .ltrim(resultEventsKey, -200, -1)
+            .expire(resultEventsKey, LISTENER_TTL_SECONDS)
+            .exec();
+
           // Use circuit breaker for EVAL - returns null on failure
           const result = await redisEvalBreaker.fire(
             redis,

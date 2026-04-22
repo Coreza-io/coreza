@@ -148,6 +148,9 @@ export class FillSyncWorker {
       }
 
       for (const streamKey of activeStreams) {
+        if (streamKey.startsWith("manual:")) {
+          continue;
+        }
         await this.ensureConsumerGroup(redis, streamKey);
 
         let results: any;

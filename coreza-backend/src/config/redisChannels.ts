@@ -111,6 +111,8 @@ export const REDIS_CHANNELS = {
   // listener result (stores captured market event)
   ListenerResult: (userId: string, workflowId: string, nodeId: string) =>
     `md:user:${userId}:stream:${workflowId}:${nodeId}:result`,
+  ListenerResultEvents: (userId: string, workflowId: string, nodeId: string) =>
+    `md:user:${userId}:stream:${workflowId}:${nodeId}:events`,
 
   // User's active test listeners SET (for efficient per-user queries)
   userActiveListeners: (userId: string) =>

@@ -198,11 +198,17 @@ export class RegistrationService {
 
     const listenerKey = REDIS_CHANNELS.Listener(userId, workflowId, nodeId);
     const resultKey = REDIS_CHANNELS.ListenerResult(userId, workflowId, nodeId);
+    const resultEventsKey = REDIS_CHANNELS.ListenerResultEvents(
+      userId,
+      workflowId,
+      nodeId,
+    );
     const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
 
     // Delete listener and result keys
     await redis.del(listenerKey);
     await redis.del(resultKey);
+    await redis.del(resultEventsKey);
 
     // Remove from user's active listeners SET
     await redis.srem(userListenersKey, listenerKey);

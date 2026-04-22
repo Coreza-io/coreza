@@ -1009,12 +1009,6 @@ export class PortfolioExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       const algoId = params.algoId ? String(params.algoId) : undefined;
-      if (!algoId) {
-        return toNodeResult(
-          createSuccessOutput({ skipped: true, reason: "missing_algo_id" }),
-        );
-      }
-
       const symbol = String(params.symbol || "*").toUpperCase();
       const algoStatus = String(params.algoStatus || "").toLowerCase();
       const orderId = params.orderId ? String(params.orderId) : undefined;
@@ -1046,7 +1040,7 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       const event: FillStreamEvent = {
-        fill_id: algoId,
+        fill_id: "",
         algo_id: algoId,
         user_id: context.userId,
         workflow_id: context.workflowId,
@@ -1104,9 +1098,9 @@ export class PortfolioExecutor implements INodeExecutor {
     // the existing FillEventBus path (algo_id set). Algo events carry no fill
     // qty and no position update — they describe the conditional order's lifecycle
     // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
-    // if (params?.algoId) {
-    //   return this.brokerSyncAlgoUpdate(params, context);
-    // }
+    if (params?.algoId) {
+      return this.brokerSyncAlgoUpdate(params, context);
+    }
     try {
       if (params.type === "listen_key_expired") {
         fillLogger.warn(
@@ -1150,7 +1144,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const symbol = params.symbol;
       const brokerOrderId = params.brokerOrderId;
       const clientOrderId = params.clientOrderId;
-      const algoId = params.algoId;
+      //const algoId = params.algoId;
       const status = params.status;
 
       const filledQty = toNumber(params.filledQty);
@@ -1162,11 +1156,9 @@ export class PortfolioExecutor implements INodeExecutor {
       const feeAsset = params.feeAsset;
 
       const normalizedBrokerId =
-        algoId != null && algoId !== ""
-          ? String(algoId)
-          : brokerOrderId != null && brokerOrderId !== ""
-            ? String(brokerOrderId)
-            : undefined;
+        brokerOrderId != null && brokerOrderId !== ""
+          ? String(brokerOrderId)
+          : undefined;
 
       if (!normalizedBrokerId) {
         throw new Error(

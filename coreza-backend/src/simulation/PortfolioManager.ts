@@ -31,7 +31,6 @@ import {
 export interface OrderState {
   brokerOrderId?: string;
   clientOrderId?: string;
-  algoId?: string;
   symbol: string;
   side: "buy" | "sell";
   orderType?: string;
@@ -336,7 +335,6 @@ export class PortfolioManager {
   registerOrderIntent(input: {
     brokerOrderId: string;
     clientOrderId?: string;
-    algoId?: string;
     symbol: string;
     side: "buy" | "sell";
     origQty?: number;
@@ -352,7 +350,6 @@ export class PortfolioManager {
     const order: OrderState = {
       brokerOrderId: input.brokerOrderId,
       clientOrderId: input.clientOrderId,
-      algoId: input.algoId,
       symbol: input.symbol,
       side: input.side,
       orderType: input.orderType,
@@ -370,12 +367,10 @@ export class PortfolioManager {
     const normalizedBrokerId =
       input.brokerOrderId != null && input.brokerOrderId !== ""
         ? String(input.brokerOrderId)
-        : input.algoId != null && input.algoId !== ""
-          ? String(input.algoId)
-          : undefined;
+        : undefined;
 
     if (!normalizedBrokerId) {
-      throw new Error("Missing brokerOrderId and algoId for sync_order_event");
+      throw new Error("Missing brokerOrderId for sync_order_event");
     }
 
     this.orders.set(normalizedBrokerId, order);

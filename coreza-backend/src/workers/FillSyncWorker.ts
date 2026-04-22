@@ -207,6 +207,10 @@ export class FillSyncWorker {
             execution_id: fields.execution_id || null as any,
             fill_status: fields.fill_status || null as any,
             algo_id: fields.algo_id || null as any,
+            order_type: fields.order_type || null,
+            limit_price: fields.limit_price ? parseFloat(fields.limit_price) : null,
+            stop_price: fields.stop_price ? parseFloat(fields.stop_price) : null,
+            tag: fields.tag || null,
           });
         }
 

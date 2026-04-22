@@ -163,6 +163,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [backtest, setBacktest] = useState<BacktestWithRelations | null>(null);
   const [metrics, setMetrics] = useState<BacktestResultMetrics | null>(null);
   const [trades, setTrades] = useState<BacktestTrade[]>([]);
+  const [rawFills, setRawFills] = useState<any[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const activeSessionRunIdRef = useRef<string | null>(null);
   const pendingSessionRunIdRef = useRef<string | null>(null);
@@ -174,6 +175,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setBacktest(null);
       setMetrics(null);
       setTrades([]);
+      setRawFills([]);
       setSnapshots([]);
       activeSessionRunIdRef.current = null;
       pendingSessionRunIdRef.current = null;
@@ -233,6 +235,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       // No session means no scoped live data; return empty state to prevent cross-session mixing.
       if (!sessionRunId) {
         setTrades([]);
+        setRawFills([]);
         setSnapshots([]);
         setMetrics(
           buildLiveMetrics(undefined, [], []) as BacktestResultMetrics,
@@ -276,7 +279,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       if (snapshotsErr) throw snapshotsErr;
 
       const rawFillsAll = (fillsData ?? []) as any[];
-      const rawFills = rawFillsAll.filter(
+      setRawFills(rawFillsAll);
+      const matchedTradeFills = rawFillsAll.filter(
         (f: any) => !f.algo_id,
       );
       const algoFills = rawFillsAll.filter(
@@ -287,7 +291,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       // Map trades from live_trades table
       const mappedTrades = closedTrades.map((trade: any) =>
-        mapLiveTradeToBacktestTrade(trade, workflowId, rawFills, algoFills),
+        mapLiveTradeToBacktestTrade(trade, workflowId, matchedTradeFills, algoFills),
       );
       setTrades(mappedTrades);
 
@@ -343,6 +347,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       setBacktest(null);
       setMetrics(null);
       setTrades([]);
+      setRawFills([]);
       setSnapshots([]);
       activeSessionRunIdRef.current = null;
       pendingSessionRunIdRef.current = null;
@@ -457,6 +462,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
               localStorage.setItem(`live_session_${workflowId}`, newSessionId);
             }
             setTrades([]);
+            setRawFills([]);
             setSnapshots([]);
             setMetrics(
               buildLiveMetrics(undefined, [], []) as BacktestResultMetrics,
@@ -486,6 +492,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       pendingSessionRunIdRef.current = customEvent.detail.sessionId;
       activeSessionRunIdRef.current = customEvent.detail.sessionId;
       setTrades([]);
+      setRawFills([]);
       setSnapshots([]);
       setMetrics(buildLiveMetrics(undefined, [], []) as BacktestResultMetrics);
       void loadData();
@@ -504,6 +511,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     backtest,
     metrics,
     trades,
+    rawFills,
     snapshots,
     loading,
     error,

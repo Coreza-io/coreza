@@ -12,8 +12,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EquityCurveChart } from "@/components/backtest/EquityCurveChart";
 import { PerformanceMetricsCard } from "@/components/backtest/PerformanceMetricsCard";
 import { TradesTable } from "@/components/backtest/TradesTable";
+import { OrdersTable } from "@/components/backtest/OrdersTable";
 import { useBacktestResults } from "@/hooks/useBacktestResults";
 import { useLiveStrategyDetail } from "@/hooks/useLiveStrategyDetail";
+import { aggregateFillsToOrders } from "@/hooks/useLiveOrders";
 import {
   ArrowLeft,
   Download,
@@ -49,6 +51,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   const { backtest, metrics, trades, snapshots, loading } = isLive
     ? liveData
     : backtestData;
+  const liveOrders = isLive ? aggregateFillsToOrders(liveData.rawFills ?? []) : [];
 
   const backPath = isLive ? "/dashboard/live" : "/dashboard/backtests";
   const pageLabel = isLive ? "Live Strategy" : "Backtest";
@@ -173,9 +176,8 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
       <Tabs defaultValue="performance" className="space-y-4">
         <TabsList>
           <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="trades">
-            {isLive ? "Trades" : "Trades"}
-          </TabsTrigger>
+          <TabsTrigger value="trades">Trades</TabsTrigger>
+          {isLive && <TabsTrigger value="orders">Orders</TabsTrigger>}
           {!isLive && <TabsTrigger value="settings">Settings</TabsTrigger>}
         </TabsList>
 
@@ -186,6 +188,11 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         <TabsContent value="trades">
           <TradesTable trades={trades} />
         </TabsContent>
+        {isLive && (
+          <TabsContent value="orders">
+            <OrdersTable orders={liveOrders} />
+          </TabsContent>
+        )}
 
         {!isLive && (
           <TabsContent value="settings">

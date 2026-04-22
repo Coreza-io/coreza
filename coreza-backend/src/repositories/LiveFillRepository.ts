@@ -30,6 +30,10 @@ export interface LiveFillRow {
   execution_id?: string;
   fill_status?: string;
   algo_id?: string;
+  order_type?: string;
+  limit_price?: number | null;
+  stop_price?: number | null;
+  tag?: string;
 }
 
 export class LiveFillRepository {

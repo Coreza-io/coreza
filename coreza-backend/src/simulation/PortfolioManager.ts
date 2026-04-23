@@ -46,6 +46,21 @@ export interface OrderState {
   updatedAt: string;
 }
 
+export interface AlgoOrderState {
+  algoId: string;
+  orderId?: string;
+  symbol: string;
+  side: "buy" | "sell";
+  orderType?: string;
+  status: string;
+  triggerPrice: number;
+  requestedQty: number;
+  rejectReason?: string;
+  lastSeq?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ExecutionRecord {
   executionId: string;
   brokerOrderId?: string;
@@ -146,6 +161,19 @@ const ORDER_STATUS_RANK: Record<string, number> = {
   rejected: 50,
 };
 
+const ALGO_STATUS_RANK: Record<string, number> = {
+  untriggered: 0,
+  new: 1,
+  triggering: 2,
+  triggered: 3,
+  partially_filled: 4,
+  filled: 5,
+  finished: 5,
+  canceled: 6,
+  rejected: 6,
+  expired: 6,
+};
+
 const OPEN_ORDER_STATUSES = new Set([
   "NEW",
   "new",
@@ -155,6 +183,14 @@ const OPEN_ORDER_STATUSES = new Set([
   "partially_filled",
   "pending_cancel",
   "pending_replace",
+]);
+
+const OPEN_ALGO_ORDER_STATUSES = new Set([
+  "untriggered",
+  "new",
+  "triggering",
+  "triggered",
+  "partially_filled",
 ]);
 
 const TERMINAL_ORDER_STATUSES = new Set([
@@ -196,6 +232,7 @@ export class PortfolioManager {
 
   // ============== v2 STATE MAPS ==============
   private orders = new Map<string, OrderState>();
+  private algoOrders = new Map<string, AlgoOrderState>();
   private executions = new Map<string, ExecutionRecord>();
   private balances = new Map<string, BalanceState>();
   private positions = new Map<string, PositionState>();
@@ -255,6 +292,7 @@ export class PortfolioManager {
   destroy(): void {
     // v2 state
     this.orders.clear();
+    this.algoOrders.clear();
     this.executions.clear();
     this.balances.clear();
     this.positions.clear();
@@ -347,6 +385,7 @@ export class PortfolioManager {
     status?: string;
   }): { order: OrderState } {
     const now = new Date().toISOString();
+    const origQty = input.origQty ?? 0;
     const order: OrderState = {
       brokerOrderId: input.brokerOrderId,
       clientOrderId: input.clientOrderId,
@@ -355,9 +394,9 @@ export class PortfolioManager {
       orderType: input.orderType,
       timeInForce: input.timeInForce,
       status: input.status ?? "new",
-      origQty: input.origQty,
+      origQty,
       filledQty: 0,
-      remainingQty: input.origQty,
+      remainingQty: origQty,
       avgFillPrice: undefined,
       totalFees: 0,
       createdAt: now,
@@ -503,6 +542,97 @@ export class PortfolioManager {
     console.log(
       `[PortfolioManager] Order update: ${input.brokerOrderId} -> status=${order.status}, cumFilled=${order.filledQty}, remaining=${order.remainingQty}`,
     );
+  }
+
+  registerAlgoOrder(input: {
+    algoId: string;
+    orderId?: string;
+    symbol: string;
+    side: "buy" | "sell";
+    orderType?: string;
+    status: string;
+    triggerPrice: number;
+    requestedQty: number;
+    rejectReason?: string;
+  }): { algoOrder: AlgoOrderState } {
+    const now = new Date().toISOString();
+    const algoOrder: AlgoOrderState = {
+      algoId: input.algoId,
+      orderId: input.orderId,
+      symbol: input.symbol,
+      side: input.side,
+      orderType: input.orderType,
+      status: input.status,
+      triggerPrice: input.triggerPrice,
+      requestedQty: input.requestedQty,
+      rejectReason: input.rejectReason,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.algoOrders.set(input.algoId, algoOrder);
+    return { algoOrder };
+  }
+
+  applyAlgoUpdate(input: {
+    algoId: string;
+    orderId?: string;
+    symbol: string;
+    side: "buy" | "sell";
+    orderType?: string;
+    status: string;
+    triggerPrice: number;
+    requestedQty: number;
+    rejectReason?: string;
+    _seq?: number;
+  }): void {
+    const now = new Date().toISOString();
+    let algoOrder = this.algoOrders.get(input.algoId);
+
+    if (!algoOrder) {
+      const { algoOrder: createdAlgoOrder } = this.registerAlgoOrder(input);
+      algoOrder = createdAlgoOrder;
+    }
+
+    if (algoOrder.symbol !== input.symbol) {
+      throw new Error(
+        `[PortfolioManager] applyAlgoUpdate: symbol mismatch for algoId=${input.algoId}. existing=${algoOrder.symbol}, incoming=${input.symbol}`,
+      );
+    }
+
+    const incomingSeq = input._seq ?? 0;
+    if (
+      algoOrder.lastSeq !== undefined &&
+      incomingSeq > 0 &&
+      incomingSeq <= algoOrder.lastSeq
+    ) {
+      console.warn(
+        `[PortfolioManager] Stale algo seq ignored: ${input.algoId} lastSeq=${algoOrder.lastSeq} incomingSeq=${incomingSeq}`,
+      );
+      return;
+    }
+
+    const incomingRank = ALGO_STATUS_RANK[input.status] ?? 0;
+    const currentRank = ALGO_STATUS_RANK[algoOrder.status] ?? 0;
+    if (
+      incomingRank < currentRank ||
+      (incomingRank === currentRank && input.status !== algoOrder.status)
+    ) {
+      console.warn(
+        `[PortfolioManager] Stale algo update ignored: ${input.algoId} current=${algoOrder.status}(${currentRank}) incoming=${input.status}(${incomingRank})`,
+      );
+      return;
+    }
+
+    if (incomingSeq > 0) {
+      algoOrder.lastSeq = incomingSeq;
+    }
+
+    algoOrder.orderId = input.orderId ?? algoOrder.orderId;
+    algoOrder.status = input.status;
+    algoOrder.triggerPrice = input.triggerPrice;
+    algoOrder.requestedQty = input.requestedQty;
+    algoOrder.rejectReason = input.rejectReason;
+    algoOrder.updatedAt = now;
   }
 
   applyTrade(
@@ -1100,6 +1230,16 @@ export class PortfolioManager {
     );
   }
 
+  getAlgoOrder(algoId: string): AlgoOrderState | undefined {
+    return this.algoOrders.get(algoId);
+  }
+
+  getOpenAlgoOrders(): AlgoOrderState[] {
+    return Array.from(this.algoOrders.values()).filter((o) =>
+      OPEN_ALGO_ORDER_STATUSES.has(o.status),
+    );
+  }
+
   /**
    * Get all v2 positions.
    */
@@ -1143,6 +1283,7 @@ export class PortfolioManager {
     peakEquity: number;
     startingEquity: number | null;
     pendingOrders: OrderState[];
+    algoOrders: AlgoOrderState[];
   } {
     const positionStates = this.getPositions();
 
@@ -1187,6 +1328,7 @@ export class PortfolioManager {
       peakEquity: this.peakEquity,
       startingEquity: this.startingEquity,
       pendingOrders: this.getOpenOrders(),
+      algoOrders: this.getOpenAlgoOrders(),
     };
   }
 

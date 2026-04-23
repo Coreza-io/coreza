@@ -1012,6 +1012,7 @@ export class PortfolioExecutor implements INodeExecutor {
    * upserts the same algoId across NEW → TRIGGERING → TRIGGERED → FINISHED.
    */
   private async brokerSyncAlgoUpdate(
+    pm: PortfolioManager,
     params: any,
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
@@ -1029,6 +1030,20 @@ export class PortfolioExecutor implements INodeExecutor {
       const rejectReason = params.rejectReason
         ? String(params.rejectReason)
         : undefined;
+
+      pm.applyAlgoUpdate({
+        algoId: algoId || "",
+        orderId,
+        symbol,
+        side:
+          (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
+        orderType: params.orderType,
+        status: algoStatus,
+        triggerPrice,
+        requestedQty,
+        rejectReason,
+        _seq: toNumber(params._seq),
+      });
 
       // Persist only when running live with workflow context.
       if (
@@ -1107,7 +1122,7 @@ export class PortfolioExecutor implements INodeExecutor {
     // qty and no position update — they describe the conditional order's lifecycle
     // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
     if (params?.algoId) {
-      return this.brokerSyncAlgoUpdate(params, context);
+      return this.brokerSyncAlgoUpdate(pm, params, context);
     }
     try {
       if (params.type === "listen_key_expired") {

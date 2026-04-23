@@ -577,19 +577,31 @@ export class MarketDataSubscriber {
     queueKey: string,
     streamKey: string,
     payload: string,
-  ): Promise<void> {
+  ): Promise<string> {
     const redis = getRedisCache();
-    await redis.xadd(streamKey, "MAXLEN", "~", "1000", "*", "event", payload);
+    const entryId = await redis.xadd(
+      streamKey,
+      "MAXLEN",
+      "~",
+      "1000",
+      "*",
+      "event",
+      payload,
+    );
+    if (!entryId) {
+      throw new Error("Redis xadd did not return a stream entry ID");
+    }
     logger.debug(
-      { queueKey, streamKey },
+      { queueKey, streamKey, entryId },
       "Appended market event to strategy stream",
     );
+    return entryId;
   }
 
   /**
    * Deliver market event for one workflow in strict queue order:
-   * 1) publish frontend update
-   * 2) append to backend strategy stream
+   * 1) append to backend strategy stream
+   * 2) publish frontend update with Redis stream entry cursor
    */
   private async deliverWorkflowEvent(
     workflowId: string,
@@ -642,9 +654,22 @@ export class MarketDataSubscriber {
         "Workflow delivery dequeued",
       );
 
+      const entryId = await this.appendToWorkflowStream(
+        queueKey,
+        streamKey,
+        payloadStr,
+      );
+      const payloadWithEntryId = {
+        ...formattedPayload,
+        data: {
+          ...formattedPayload.data,
+          _entryId: entryId,
+        },
+      };
+
       if (!registration.isLive) {
         try {
-          await this.publishToFrontend(registration, formattedPayload, event);
+          await this.publishToFrontend(registration, payloadWithEntryId, event);
         } catch (error) {
           logger.error(
             { err: error, userId: registration.userId, workflowId, queueKey },
@@ -652,11 +677,6 @@ export class MarketDataSubscriber {
           );
         }
       }
-
-      // Only append to strategy stream if this is a live activation (not manual test)
-      // if (registration.isLive) {
-      await this.appendToWorkflowStream(queueKey, streamKey, payloadStr);
-      // }
 
       logger.debug(
         {

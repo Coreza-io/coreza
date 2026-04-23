@@ -300,14 +300,77 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   ]);
 
   // Toggle pause/resume for streaming
-  const handleTogglePause = useCallback(() => {
-    if (!nodeId) return;
+  const handleTogglePause = useCallback(async () => {
+    if (!nodeId || readOnly) return;
     const current = executionStore.getNodeData(nodeId);
+    const wasPaused = current.isStreamPaused === true;
+
+    if (wasPaused) {
+      if (
+        current.lastStreamEntryId &&
+        (current.testListenWorkflowId || workflowId)
+      ) {
+        try {
+          let replayCursor: string | null = current.lastStreamEntryId;
+          const maxReplayPasses = 5;
+
+          for (let i = 0; i < maxReplayPasses && replayCursor; i += 1) {
+            const replayResponse = await apiClient.post(
+              "/stream/replay",
+              {
+                workflowId: current.testListenWorkflowId || workflowId,
+                nodeId,
+                afterEntryId: replayCursor,
+              },
+              session?.access_token,
+            );
+
+            if (!replayResponse.ok) {
+              break;
+            }
+
+            const replayBody = await replayResponse
+              .json()
+              .catch(() => ({ replayed: 0, lastEntryId: null }));
+            const replayed =
+              typeof replayBody?.replayed === "number"
+                ? replayBody.replayed
+                : 0;
+            const lastEntryId =
+              typeof replayBody?.lastEntryId === "string"
+                ? replayBody.lastEntryId
+                : null;
+
+            if (!lastEntryId || replayed === 0) {
+              break;
+            }
+
+            replayCursor = lastEntryId;
+          }
+        } catch (error) {
+          console.error("Failed to replay paused stream events:", error);
+        }
+      }
+
+      executionStore.setNodeData(nodeId, {
+        isStreamPaused: false,
+      });
+      notifyStoreUpdate();
+      return;
+    }
+
     executionStore.setNodeData(nodeId, {
-      isStreamPaused: !current.isStreamPaused,
+      isStreamPaused: true,
     });
     notifyStoreUpdate();
-  }, [nodeId, executionStore, notifyStoreUpdate]);
+  }, [
+    nodeId,
+    readOnly,
+    executionStore,
+    notifyStoreUpdate,
+    workflowId,
+    session?.access_token,
+  ]);
 
   const renderProps: BaseNodeRenderProps = {
     definition,

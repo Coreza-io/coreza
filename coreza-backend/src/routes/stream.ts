@@ -60,16 +60,20 @@ router.post("/replay", async (req, res) => {
 
     const streamKey = RedisKeys.strategyStream(userId, workflowId);
     const redis = getRedisCache();
-    const events = await redis.xrange(
-      streamKey,
-      `(${afterEntryId}`,
-      "+",
+
+    const result = await redis.xread(
       "COUNT",
       1000,
+      "STREAMS",
+      streamKey,
+      afterEntryId,
     );
 
+    const events = result?.[0]?.[1] ?? [];
+
     let replayed = 0;
-    let lastEntryId: string | null = null;
+    let lastEntryId: string | null = afterEntryId;
+
     for (const [entryId, fields] of events) {
       const eventIndex = fields.findIndex((field) => field === "event");
       if (eventIndex < 0 || eventIndex + 1 >= fields.length) {
@@ -77,15 +81,18 @@ router.post("/replay", async (req, res) => {
       }
 
       try {
-        const payload = JSON.parse(fields[eventIndex + 1]);
+        const rawEvent = fields[eventIndex + 1];
+        const payload = JSON.parse(rawEvent);
+
         const enriched = {
           ...payload,
           data: {
-            ...payload.data,
+            ...(payload?.data ?? {}),
             _entryId: entryId,
             _replay: true,
           },
         };
+
         await redis.publish(
           `ws:user:${userId}`,
           JSON.stringify({
@@ -96,9 +103,11 @@ router.post("/replay", async (req, res) => {
             },
           }),
         );
+
         replayed += 1;
         lastEntryId = entryId;
-        await sleep(200);
+
+        await sleep(5000);
       } catch (error) {
         console.error("Failed to replay stream event:", {
           error,

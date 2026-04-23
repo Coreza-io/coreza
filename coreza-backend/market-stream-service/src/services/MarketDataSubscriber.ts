@@ -15,7 +15,7 @@ import logger from "../utils/logger";
 import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 
-const ORDER_UPDATE_DELAY_MS = 500; // ms between order lifecycle events
+const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
 
 /**
  * Workflow registration metadata for receiving market data

@@ -304,7 +304,7 @@ export class BrokerExecutor implements INodeExecutor {
       return toNodeResult(normalized);
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
-      let enrichedError = error;
+      let enrichedError = error.response.data;
 
       if (axios.isAxiosError(error)) {
         const code = error.response?.data?.code;

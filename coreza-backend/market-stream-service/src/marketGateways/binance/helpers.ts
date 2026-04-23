@@ -112,8 +112,8 @@ export function getBinanceWsUrl(creds: any, source?: string): string {
 
       const events = [
         "ORDER_TRADE_UPDATE",
-        // "ALGO_UPDATE",
-        // "ACCOUNT_UPDATE",
+        "ALGO_UPDATE",
+        "ACCOUNT_UPDATE",
         // verify exact expiry event token from current event page / live test
         "listenKeyExpired",
       ].join("/");

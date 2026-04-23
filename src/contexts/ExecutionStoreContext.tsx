@@ -122,8 +122,8 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
-                  // Skip live UI updates while paused, but allow paced replay events through
-                  if (existingData?.isStreamPaused && !data?._replay) {
+                  // Skip UI updates while stream is paused
+                  if (existingData?.isStreamPaused) {
                     console.log('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
                     return;
                   }

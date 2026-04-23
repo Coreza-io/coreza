@@ -122,6 +122,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   // Track upstream nodes with stable reference
   const previousNodesRef = useRef<Node[]>([]);
+  const replaySessionRef = useRef(0);
 
   const definition = data.definition;
 
@@ -306,15 +307,32 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     const wasPaused = current.isStreamPaused === true;
 
     if (wasPaused) {
+      // Resume immediately for responsive UI; replay catch-up runs in background.
+      executionStore.setNodeData(nodeId, {
+        isStreamPaused: false,
+      });
+      notifyStoreUpdate();
+
       if (
         current.lastStreamEntryId &&
         (current.testListenWorkflowId || workflowId)
       ) {
         try {
+          const replaySessionId = replaySessionRef.current + 1;
+          replaySessionRef.current = replaySessionId;
           let replayCursor: string | null = current.lastStreamEntryId;
           const maxReplayPasses = 5;
 
           for (let i = 0; i < maxReplayPasses && replayCursor; i += 1) {
+            if (replaySessionRef.current !== replaySessionId) {
+              break;
+            }
+
+            const latestNodeData = executionStore.getNodeData(nodeId);
+            if (latestNodeData.isStreamPaused) {
+              break;
+            }
+
             const replayResponse = await apiClient.post(
               "/stream/replay",
               {
@@ -351,14 +369,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({
           console.error("Failed to replay paused stream events:", error);
         }
       }
-
-      executionStore.setNodeData(nodeId, {
-        isStreamPaused: false,
-      });
-      notifyStoreUpdate();
       return;
     }
 
+    // User paused stream; cancel any in-flight replay sequence.
+    replaySessionRef.current += 1;
     executionStore.setNodeData(nodeId, {
       isStreamPaused: true,
     });

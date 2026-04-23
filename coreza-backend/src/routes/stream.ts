@@ -22,6 +22,8 @@ import { StatusService } from "../services/StatusService";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { supabase } from "../config/supabase";
 import { bullMqJobQueue } from "../infra/jobQueue/jobQueueManager";
+import { getRedisCache } from "../config/redis";
+import { RedisKeys } from "../infra/redisKeys";
 import {
   StreamExecutionRequest,
   StreamExecutionResponse,
@@ -35,6 +37,86 @@ const router = express.Router();
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Replay paused stream events from Redis stream cursor.
+ * POST /stream/replay
+ */
+router.post("/replay", async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { workflowId, nodeId, afterEntryId } = req.body;
+    if (!workflowId || !nodeId || !afterEntryId) {
+      return res
+        .status(400)
+        .json({ error: "workflowId, nodeId, and afterEntryId are required" });
+    }
+
+    const streamKey = RedisKeys.strategyStream(userId, workflowId);
+    const redis = getRedisCache();
+    const events = await redis.xrange(
+      streamKey,
+      `(${afterEntryId}`,
+      "+",
+      "COUNT",
+      1000,
+    );
+
+    let replayed = 0;
+    let lastEntryId: string | null = null;
+    for (const [entryId, fields] of events) {
+      const eventIndex = fields.findIndex((field) => field === "event");
+      if (eventIndex < 0 || eventIndex + 1 >= fields.length) {
+        continue;
+      }
+
+      try {
+        const payload = JSON.parse(fields[eventIndex + 1]);
+        const enriched = {
+          ...payload,
+          data: {
+            ...payload.data,
+            _entryId: entryId,
+            _replay: true,
+          },
+        };
+        await redis.publish(
+          `ws:user:${userId}`,
+          JSON.stringify({
+            type: "market_data",
+            payload: {
+              nodeId,
+              data: enriched.data,
+            },
+          }),
+        );
+        replayed += 1;
+        lastEntryId = entryId;
+        await sleep(200);
+      } catch (error) {
+        console.error("Failed to replay stream event:", {
+          error,
+          userId,
+          workflowId,
+          entryId,
+        });
+      }
+    }
+
+    return res.json({ replayed, lastEntryId });
+  } catch (error) {
+    console.error("Replay stream error:", error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to replay stream",
+    });
+  }
+});
 
 // ============================================
 // MARKET DATA SUBSCRIPTION STATUS

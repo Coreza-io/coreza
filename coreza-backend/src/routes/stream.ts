@@ -51,25 +51,43 @@ router.post("/replay", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { workflowId, nodeId, afterEntryId } = req.body;
+    const { workflowId, nodeId, afterEntryId, mode = "continue" } = req.body;
     if (!workflowId || !nodeId || !afterEntryId) {
       return res
         .status(400)
         .json({ error: "workflowId, nodeId, and afterEntryId are required" });
     }
 
+    if (!["continue", "next", "prev"].includes(mode)) {
+      return res.status(400).json({
+        error: "Invalid mode. Expected one of: continue, next, prev",
+      });
+    }
+
     const streamKey = RedisKeys.strategyStream(userId, workflowId);
     const redis = getRedisCache();
 
-    const result = await redis.xread(
-      "COUNT",
-      1000,
-      "STREAMS",
-      streamKey,
-      afterEntryId,
-    );
-
-    const events = result?.[0]?.[1] ?? [];
+    let events: Array<[string, string[]]> = [];
+    if (mode === "continue") {
+      const result = await redis.xread(
+        "COUNT",
+        1000,
+        "STREAMS",
+        streamKey,
+        afterEntryId,
+      );
+      events = result?.[0]?.[1] ?? [];
+    } else if (mode === "next") {
+      events = await redis.xrange(streamKey, `(${afterEntryId}`, "+", "COUNT", 1);
+    } else {
+      events = await redis.xrevrange(
+        streamKey,
+        `(${afterEntryId}`,
+        "-",
+        "COUNT",
+        1,
+      );
+    }
 
     let replayed = 0;
     let lastEntryId: string | null = afterEntryId;
@@ -107,7 +125,9 @@ router.post("/replay", async (req, res) => {
         replayed += 1;
         lastEntryId = entryId;
 
-        await sleep(5000);
+        if (mode === "continue") {
+          await sleep(5000);
+        }
       } catch (error) {
         console.error("Failed to replay stream event:", {
           error,
@@ -118,7 +138,34 @@ router.post("/replay", async (req, res) => {
       }
     }
 
-    return res.json({ replayed, lastEntryId });
+    if (mode === "continue") {
+      return res.json({ replayed, lastEntryId });
+    }
+
+    let hasMore = false;
+    if (lastEntryId) {
+      if (mode === "next") {
+        const nextEvents = await redis.xrange(
+          streamKey,
+          `(${lastEntryId}`,
+          "+",
+          "COUNT",
+          1,
+        );
+        hasMore = nextEvents.length > 0;
+      } else {
+        const prevEvents = await redis.xrevrange(
+          streamKey,
+          `(${lastEntryId}`,
+          "-",
+          "COUNT",
+          1,
+        );
+        hasMore = prevEvents.length > 0;
+      }
+    }
+
+    return res.json({ replayed, lastEntryId, hasMore });
   } catch (error) {
     console.error("Replay stream error:", error);
     return res.status(500).json({

@@ -93,8 +93,13 @@ export interface BaseNodeRenderProps {
   handlePanelPinToggle: () => void;
   handleStopListening: () => void;
   handleTogglePause: () => void;
+  handleStepNext: () => void;
+  handleStepPrevious: () => void;
   isTestListening: boolean;
   isStreamPaused: boolean;
+  hasStreamCursor: boolean;
+  canStepNext: boolean;
+  canStepPrevious: boolean;
   fetchCredentials: (fieldKey: string) => void;
   fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants
@@ -153,6 +158,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // State for selected previous node and auth modal
   const [showAuth, setShowAuth] = useState(false);
   const [selectedPrevNodeId, setSelectedPrevNodeId] = useState<string>("");
+  const [canStepNext, setCanStepNext] = useState(true);
+  const [canStepPrevious, setCanStepPrevious] = useState(true);
 
   // Initialize selectedPrevNodeId when previousNodes change
   useEffect(() => {
@@ -238,6 +245,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     return nodeData?.isStreamPaused === true;
   }, [nodeId, executionStore, storeVersion]);
 
+  const hasStreamCursor = useMemo(() => {
+    const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
+    return typeof nodeData?.lastStreamEntryId === "string";
+  }, [nodeId, executionStore, storeVersion]);
+
+  useEffect(() => {
+    if (!hasStreamCursor) {
+      setCanStepNext(true);
+      setCanStepPrevious(true);
+    }
+  }, [hasStreamCursor]);
+
   // Handle stop listening - calls the stop-listen-stream endpoint
   const handleStopListening = useCallback(async () => {
     if (!workflowId || !nodeId || readOnly) return;
@@ -304,12 +323,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const handleTogglePause = useCallback(async () => {
     if (!nodeId || readOnly) return;
     const current = executionStore.getNodeData(nodeId);
-    const wasPaused = current.isStreamPaused === true;
+    const wasUserPaused =
+      current.isStreamPaused === true && current.isStreamStepping !== true;
 
-    if (wasPaused) {
+    if (wasUserPaused) {
       // Resume immediately for responsive UI; replay catch-up runs in background.
       executionStore.setNodeData(nodeId, {
         isStreamPaused: false,
+        isStreamStepping: false,
       });
       notifyStoreUpdate();
 
@@ -376,6 +397,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     replaySessionRef.current += 1;
     executionStore.setNodeData(nodeId, {
       isStreamPaused: true,
+      isStreamStepping: false,
     });
     notifyStoreUpdate();
   }, [
@@ -386,6 +408,79 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     workflowId,
     session?.access_token,
   ]);
+
+  const handleStepStream = useCallback(
+    async (mode: "next" | "prev") => {
+      if (!nodeId || readOnly) return;
+      const current = executionStore.getNodeData(nodeId);
+      if (!current.lastStreamEntryId) return;
+      const activeWorkflowId = current.testListenWorkflowId || workflowId;
+      if (!activeWorkflowId) return;
+
+      if (!current.isStreamPaused) {
+        replaySessionRef.current += 1;
+        executionStore.setNodeData(nodeId, {
+          isStreamPaused: true,
+          isStreamStepping: true,
+        });
+        notifyStoreUpdate();
+      } else {
+        executionStore.setNodeData(nodeId, { isStreamStepping: true });
+        notifyStoreUpdate();
+      }
+
+      const stepResponse = await apiClient.post(
+        "/stream/replay",
+        {
+          workflowId: activeWorkflowId,
+          nodeId,
+          afterEntryId: current.lastStreamEntryId,
+          mode,
+        },
+        session?.access_token,
+      );
+
+      if (!stepResponse.ok) {
+        return;
+      }
+
+      const stepBody = await stepResponse
+        .json()
+        .catch(() => ({ replayed: 0, hasMore: false }));
+      const replayed =
+        typeof stepBody?.replayed === "number" ? stepBody.replayed : 0;
+      const hasMore =
+        typeof stepBody?.hasMore === "boolean" ? stepBody.hasMore : false;
+
+      if (mode === "next") {
+        setCanStepNext(hasMore);
+        if (replayed > 0) {
+          setCanStepPrevious(true);
+        }
+      } else {
+        setCanStepPrevious(hasMore);
+        if (replayed > 0) {
+          setCanStepNext(true);
+        }
+      }
+    },
+    [
+      nodeId,
+      readOnly,
+      executionStore,
+      notifyStoreUpdate,
+      workflowId,
+      session?.access_token,
+    ],
+  );
+
+  const handleStepNext = useCallback(async () => {
+    await handleStepStream("next");
+  }, [handleStepStream]);
+
+  const handleStepPrevious = useCallback(async () => {
+    await handleStepStream("prev");
+  }, [handleStepStream]);
 
   const renderProps: BaseNodeRenderProps = {
     definition,
@@ -425,8 +520,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     handlePanelPinToggle: outputHook.handlePanelPinToggle,
     handleStopListening,
     handleTogglePause,
+    handleStepNext,
+    handleStepPrevious,
     isTestListening,
     isStreamPaused,
+    hasStreamCursor,
+    canStepNext,
+    canStepPrevious,
     fetchCredentials: credentialsHook.fetchCredentials,
     fetchDependentOptions: credentialsHook.fetchDependentOptions,
     // Style constants

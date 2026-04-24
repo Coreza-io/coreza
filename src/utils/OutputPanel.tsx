@@ -443,6 +443,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
 
   return (
     <div
+      onDoubleClick={(e) => e.stopPropagation()}
       className={`absolute ${
         position === "right"
           ? "left-full top-0 ml-2"

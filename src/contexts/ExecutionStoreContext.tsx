@@ -27,6 +27,7 @@ const ExecutionStoreContext = createContext<{
 } | null>(null);
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
+const STREAM_PAUSE_DEBUG = false;
 
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();
@@ -89,6 +90,14 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
         ws.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);
+            const extractReplayFlag = (d: any): boolean =>
+              d?._replay === true ||
+              d?.data?._replay === true ||
+              d?.data?.data?._replay === true;
+            const extractEntryId = (d: any): string | undefined =>
+              d?._entryId ||
+              d?.data?._entryId ||
+              d?.data?.data?._entryId;
 
             // Ignore pong messages (keepalive response)
             if (message.type === 'pong') {
@@ -123,7 +132,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
                   // Skip live updates while paused, but allow replayed events through.
-                  const isReplay = data?._replay === true;
+                  const isReplay = extractReplayFlag(data);
+                  if (STREAM_PAUSE_DEBUG && existingData?.isStreamPaused) {
+                    console.log(
+                      `[ExecutionStore] ${isReplay ? "ACCEPT(replay)" : "DROP(paused)"}`,
+                      { nodeId, type: message.type, entryId: extractEntryId(data) },
+                    );
+                  }
                   if (existingData?.isStreamPaused && !isReplay) {
                     console.log('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
                     return;
@@ -134,7 +149,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                       data,
                       lastUpdate: new Date().toISOString()
                     },
-                    ...(data?._entryId ? { lastStreamEntryId: data._entryId } : {}),
+                    ...(extractEntryId(data) ? { lastStreamEntryId: extractEntryId(data) } : {}),
                   });
                   setUpdateVersion(v => v + 1); // Trigger React re-render
                   console.log(
@@ -156,7 +171,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
               if (nodeId && storeRef.current) {
                 const existingData2 = storeRef.current.getNodeData(nodeId);
-                const isReplay = data?._replay === true || data?.data?._replay === true;
+                const isReplay = extractReplayFlag(data);
+                if (STREAM_PAUSE_DEBUG && existingData2?.isStreamPaused) {
+                  console.log(
+                    `[ExecutionStore] ${isReplay ? "ACCEPT(replay)" : "DROP(paused)"}`,
+                    { nodeId, type: message.type, entryId: extractEntryId(data) },
+                  );
+                }
                 if (existingData2?.isStreamPaused && !isReplay) {
                   console.log('⏸️ [ExecutionStore] Stream paused, skipping test_data for:', nodeId);
                   return;
@@ -176,8 +197,8 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 storeRef.current.setNodeData(nodeId, {
                   output: receivedOutput,
                   streamDataReceived: true,
-                  ...(data?._entryId || data?.data?._entryId
-                    ? { lastStreamEntryId: data?._entryId || data?.data?._entryId }
+                  ...(extractEntryId(data)
+                    ? { lastStreamEntryId: extractEntryId(data) }
                     : {}),
                   // Do NOT set isTestListening: false - keep streaming active
                 });

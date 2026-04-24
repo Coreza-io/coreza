@@ -323,12 +323,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const handleTogglePause = useCallback(async () => {
     if (!nodeId || readOnly) return;
     const current = executionStore.getNodeData(nodeId);
-    const wasPaused = current.isStreamPaused === true;
+    const wasUserPaused =
+      current.isStreamPaused === true && current.isStreamStepping !== true;
 
-    if (wasPaused) {
+    if (wasUserPaused) {
       // Resume immediately for responsive UI; replay catch-up runs in background.
       executionStore.setNodeData(nodeId, {
         isStreamPaused: false,
+        isStreamStepping: false,
       });
       notifyStoreUpdate();
 
@@ -395,6 +397,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     replaySessionRef.current += 1;
     executionStore.setNodeData(nodeId, {
       isStreamPaused: true,
+      isStreamStepping: false,
     });
     notifyStoreUpdate();
   }, [
@@ -416,7 +419,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
       if (!current.isStreamPaused) {
         replaySessionRef.current += 1;
-        executionStore.setNodeData(nodeId, { isStreamPaused: true });
+        executionStore.setNodeData(nodeId, {
+          isStreamPaused: true,
+          isStreamStepping: true,
+        });
+        notifyStoreUpdate();
+      } else {
+        executionStore.setNodeData(nodeId, { isStreamStepping: true });
         notifyStoreUpdate();
       }
 

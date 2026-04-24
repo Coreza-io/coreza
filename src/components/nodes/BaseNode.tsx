@@ -449,8 +449,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         .catch(() => ({ replayed: 0, hasMore: false }));
       const replayed =
         typeof stepBody?.replayed === "number" ? stepBody.replayed : 0;
+      const hasDirectionalMore =
+        mode === "prev"
+          ? (typeof stepBody?.hasPrevious === "boolean"
+              ? stepBody.hasPrevious
+              : undefined)
+          : (typeof stepBody?.hasNext === "boolean" ? stepBody.hasNext : undefined);
       const hasMore =
-        typeof stepBody?.hasMore === "boolean" ? stepBody.hasMore : false;
+        typeof hasDirectionalMore === "boolean"
+          ? hasDirectionalMore
+          : typeof stepBody?.hasMore === "boolean"
+            ? stepBody.hasMore
+            : false;
 
       if (mode === "next") {
         setCanStepNext(hasMore);

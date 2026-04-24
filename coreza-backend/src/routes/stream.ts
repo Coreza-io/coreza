@@ -88,6 +88,12 @@ router.post("/replay", async (req, res) => {
       });
     }
 
+    if (!["continue", "next", "prev"].includes(mode)) {
+      return res.status(400).json({
+        error: "Invalid mode. Expected one of: continue, next, prev",
+      });
+    }
+
     const streamKey = RedisKeys.strategyStream(userId, workflowId);
     const redis = getRedisCache();
 

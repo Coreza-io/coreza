@@ -1265,7 +1265,7 @@ export class PortfolioExecutor implements INodeExecutor {
       if (shouldApplyTrade) {
         const tradeResult = pm.applyTrade(
           {
-            normalizedBrokerId,
+            brokerOrderId: normalizedBrokerId,
             clientOrderId,
             executionId: params.executionId,
             symbol,

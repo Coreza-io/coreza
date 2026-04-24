@@ -462,6 +462,9 @@ export class PortfolioManager {
         symbol: input.symbol,
         side: input.side,
         origQty: input.origQty,
+        filledQty: input.filledQty,
+        remainingQty: input.origQty,
+        avgFillPrice: input.avgFillPrice,
         orderType: input.orderType,
         timeInForce: input.timeInForce,
         limitPrice: input.limitPrice,
@@ -471,6 +474,7 @@ export class PortfolioManager {
         status: input.status,
       });
       order = createdOrder;
+      return;
     }
 
     // Safety check: avoid silently mutating the wrong order
@@ -507,19 +511,29 @@ export class PortfolioManager {
       return;
     }
 
-    const previousFilledQty = order.filledQty;
-
     if (incomingSeq > 0) {
       order.lastSeq = incomingSeq;
     }
 
     // Apply broker lifecycle status first (only after freshness guards pass)
     order.status = input.status;
-    const incomingFilled = input.filledQty || 0;
-    order.filledQty = Math.max(order.filledQty, incomingFilled);
-    order.avgFillPrice = input.avgFillPrice;
+    const incomingFilledQty = input.filledQty ?? 0; // this event fill qty
+    const incomingFillPrice = input.avgFillPrice ?? 0; // this event fill price
 
-    // Derive remaining quantity from cumulative filled quantity
+    const previousFilledQty = order.filledQty ?? 0;
+    const previousAvgFillPrice = order.avgFillPrice ?? 0;
+
+    const newFilledQty = previousFilledQty + incomingFilledQty;
+
+    if (incomingFilledQty > 0 && newFilledQty > 0) {
+      order.avgFillPrice =
+        (previousAvgFillPrice * previousFilledQty +
+          incomingFillPrice * incomingFilledQty) /
+        newFilledQty;
+    }
+
+    order.filledQty = newFilledQty;
+
     order.remainingQty = Math.max(0, order.origQty - order.filledQty);
 
     // Auto-normalize to filled when cumulative fill reaches origQty,

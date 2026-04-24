@@ -132,11 +132,14 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
                   // Skip live updates while paused, but allow replayed events through.
-                  const isReplay = extractReplayFlag(data);
+                  const eventEntryId =
+                    extractEntryId(data) || extractEntryId(message.payload);
+                  const isReplay =
+                    extractReplayFlag(data) || extractReplayFlag(message.payload);
                   if (STREAM_PAUSE_DEBUG && existingData?.isStreamPaused) {
                     console.log(
                       `[ExecutionStore] ${isReplay ? "ACCEPT(replay)" : "DROP(paused)"}`,
-                      { nodeId, type: message.type, entryId: extractEntryId(data) },
+                      { nodeId, type: message.type, entryId: eventEntryId },
                     );
                   }
                   if (existingData?.isStreamPaused && !isReplay) {
@@ -149,7 +152,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                       data,
                       lastUpdate: new Date().toISOString()
                     },
-                    ...(extractEntryId(data) ? { lastStreamEntryId: extractEntryId(data) } : {}),
+                    ...(eventEntryId ? { lastStreamEntryId: eventEntryId } : {}),
                   });
                   setUpdateVersion(v => v + 1); // Trigger React re-render
                   console.log(
@@ -171,11 +174,14 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
               if (nodeId && storeRef.current) {
                 const existingData2 = storeRef.current.getNodeData(nodeId);
-                const isReplay = extractReplayFlag(data);
+                const eventEntryId =
+                  extractEntryId(data) || extractEntryId(message.payload);
+                const isReplay =
+                  extractReplayFlag(data) || extractReplayFlag(message.payload);
                 if (STREAM_PAUSE_DEBUG && existingData2?.isStreamPaused) {
                   console.log(
                     `[ExecutionStore] ${isReplay ? "ACCEPT(replay)" : "DROP(paused)"}`,
-                    { nodeId, type: message.type, entryId: extractEntryId(data) },
+                    { nodeId, type: message.type, entryId: eventEntryId },
                   );
                 }
                 if (existingData2?.isStreamPaused && !isReplay) {
@@ -197,8 +203,8 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 storeRef.current.setNodeData(nodeId, {
                   output: receivedOutput,
                   streamDataReceived: true,
-                  ...(extractEntryId(data)
-                    ? { lastStreamEntryId: extractEntryId(data) }
+                  ...(eventEntryId
+                    ? { lastStreamEntryId: eventEntryId }
                     : {}),
                   // Do NOT set isTestListening: false - keep streaming active
                 });

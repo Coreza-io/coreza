@@ -122,8 +122,9 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
-                  // Skip UI updates while stream is paused
-                  if (existingData?.isStreamPaused) {
+                  // Skip live updates while paused, but allow replayed events through.
+                  const isReplay = data?._replay === true;
+                  if (existingData?.isStreamPaused && !isReplay) {
                     console.log('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
                     return;
                   }
@@ -133,10 +134,15 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                       data,
                       lastUpdate: new Date().toISOString()
                     },
-                    lastStreamEntryId: data?._entryId,
+                    ...(data?._entryId ? { lastStreamEntryId: data._entryId } : {}),
                   });
                   setUpdateVersion(v => v + 1); // Trigger React re-render
-                  console.log('✅ [ExecutionStore] Updated node data for:', nodeId);
+                  console.log(
+                    isReplay
+                      ? '🔁 [ExecutionStore] Replayed event for:'
+                      : '✅ [ExecutionStore] Updated node data for:',
+                    nodeId,
+                  );
                 } else {
                   console.log('⚠️ [ExecutionStore] Ignoring market_data for non-listening node:', nodeId);
                 }
@@ -149,9 +155,9 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               const { nodeId, data } = message.payload;
 
               if (nodeId && storeRef.current) {
-                // Skip UI update if stream is paused
                 const existingData2 = storeRef.current.getNodeData(nodeId);
-                if (existingData2?.isStreamPaused) {
+                const isReplay = data?._replay === true || data?.data?._replay === true;
+                if (existingData2?.isStreamPaused && !isReplay) {
                   console.log('⏸️ [ExecutionStore] Stream paused, skipping test_data for:', nodeId);
                   return;
                 }
@@ -170,7 +176,9 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 storeRef.current.setNodeData(nodeId, {
                   output: receivedOutput,
                   streamDataReceived: true,
-                  lastStreamEntryId: data?._entryId,
+                  ...(data?._entryId || data?.data?._entryId
+                    ? { lastStreamEntryId: data?._entryId || data?.data?._entryId }
+                    : {}),
                   // Do NOT set isTestListening: false - keep streaming active
                 });
                 setUpdateVersion(v => v + 1); // Trigger React re-render

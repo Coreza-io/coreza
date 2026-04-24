@@ -592,14 +592,19 @@ export class PortfolioExecutor implements INodeExecutor {
       }
       case "get_open_orders": {
         const openOrders = pm.getOpenOrders();
+        const openAlgoOrders = pm.getOpenAlgoOrders();
         const filterSymbol = params.symbol?.trim().toUpperCase();
         const filteredOpenOrders = filterSymbol
           ? openOrders.filter((o) => o.symbol === filterSymbol)
           : openOrders;
+        const filteredAlgoOrders = filterSymbol
+          ? openAlgoOrders.filter((o) => o.symbol === filterSymbol)
+          : openAlgoOrders;
 
         return toNodeResult(
           createSuccessOutput({
             openOrders: filteredOpenOrders,
+            algoOrders: filteredAlgoOrders,
           }),
         );
       }

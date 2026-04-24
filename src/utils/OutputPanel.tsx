@@ -16,7 +16,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3, List, Pause, Play } from "lucide-react";
+import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, ChevronDown, ChevronRight, BarChart3, List, Pause, Play, ChevronLeft } from "lucide-react";
 import { isStandardNodeOutput } from "@/types/nodeOutput";
 import type { StandardNodeOutput } from "@/types/nodeOutput";
 import { truncateForDisplay } from "./outputTruncation";
@@ -42,8 +42,18 @@ export type OutputPanelProps = {
   onStopListening?: () => void;
   /** Whether the stream is paused (UI updates skipped) */
   isStreamPaused?: boolean;
+  /** Whether there is an active stream cursor to step from */
+  hasStreamCursor?: boolean;
+  /** Whether a next step exists from the current cursor */
+  canStepNext?: boolean;
+  /** Whether a previous step exists from the current cursor */
+  canStepPrevious?: boolean;
   /** Callback to toggle pause/resume */
   onTogglePause?: () => void;
+  /** Callback to step to next stream event */
+  onStepNext?: () => void;
+  /** Callback to step to previous stream event */
+  onStepPrevious?: () => void;
 };
 
 // Status badge component for StandardNodeOutput
@@ -325,7 +335,12 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   isTestListening = false,
   onStopListening,
   isStreamPaused = false,
+  hasStreamCursor = false,
+  canStepNext = true,
+  canStepPrevious = true,
   onTogglePause,
+  onStepNext,
+  onStepPrevious,
 }) => {
   const [internalData, setInternalData] = useState<any>(data);
   const [isEditing, setIsEditing] = useState(false);
@@ -432,7 +447,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
         position === "right"
           ? "left-full top-0 ml-2"
           : "right-full top-0 mr-2"
-      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden flex flex-col`}
+      } w-80 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden flex flex-col`}
     >
       {/* Virtualized array browser overlay */}
       {browsingArray ? (
@@ -484,7 +499,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
       </div>
       
       {/* Main content area - scrollable, accounts for footer height when streaming */}
-      <div className={`p-3 flex-1 overflow-auto ${showStreamingFooter ? 'pb-16' : ''}`}>
+      <div className={`p-3 flex-1 overflow-auto ${showStreamingFooter ? 'pb-20' : ''}`}>
         {isEditing ? (
           <div className="space-y-3">
             <textarea
@@ -534,34 +549,52 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
 
       {/* Fixed streaming control footer - always visible while streaming */}
       {showStreamingFooter && (
-        <div className="absolute bottom-0 left-0 right-0 p-3 bg-card border-t border-cyan-500/30 bg-gradient-to-t from-cyan-500/10 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-2 bg-card border-t border-cyan-500/30 bg-gradient-to-t from-cyan-500/10 to-transparent">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-cyan-500">
               <Radio className={`w-3 h-3 ${isStreamPaused ? '' : 'animate-pulse'}`} />
-              <span className="text-xs font-medium">
-                {isStreamPaused ? 'Paused' : 'Streaming...'}
-              </span>
             </div>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
+                onClick={onStepPrevious}
+                disabled={!onStepPrevious || !hasStreamCursor || !canStepPrevious}
+                className="h-6 w-6 p-0 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10 disabled:opacity-50"
+                title="Previous event"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onStepNext}
+                disabled={!onStepNext || !hasStreamCursor || !canStepNext}
+                className="h-6 w-6 p-0 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10 disabled:opacity-50"
+                title="Next event"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={onTogglePause}
-                className="h-6 text-xs px-2.5 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10"
+                className="h-6 w-6 p-0 border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10"
+                title={isStreamPaused ? "Resume stream" : "Pause stream"}
               >
                 {isStreamPaused ? (
-                  <><Play className="w-2.5 h-2.5 mr-1 fill-current" />Resume</>
+                  <Play className="w-3 h-3 fill-current" />
                 ) : (
-                  <><Pause className="w-2.5 h-2.5 mr-1" />Pause</>
+                  <Pause className="w-3 h-3" />
                 )}
               </Button>
               <Button
                 variant="destructive"
                 size="sm"
                 onClick={onStopListening}
-                className="h-6 text-xs px-2.5"
+                className="h-6 text-xs px-2"
               >
-                <Square className="w-2 h-2 mr-1 fill-current" />
+              <Square className="w-2 h-2 mr-1 fill-current" />
                 Stop
               </Button>
             </div>

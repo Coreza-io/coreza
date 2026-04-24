@@ -88,7 +88,12 @@ export function LoopNode({ id, data, selected }: NodeProps) {
               isTestListening: renderProps.isTestListening,
               onStopListening: renderProps.handleStopListening,
               isStreamPaused: renderProps.isStreamPaused,
+              hasStreamCursor: renderProps.hasStreamCursor,
+              canStepNext: renderProps.canStepNext,
+              canStepPrevious: renderProps.canStepPrevious,
               onTogglePause: renderProps.handleTogglePause,
+              onStepNext: renderProps.handleStepNext,
+              onStepPrevious: renderProps.handleStepPrevious,
             }}
             icon={icon}
             label={renderProps.displayName}

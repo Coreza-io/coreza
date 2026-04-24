@@ -47,15 +47,45 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 router.post("/replay", async (req, res) => {
   try {
     const userId = req.user?.id;
+
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { workflowId, nodeId, afterEntryId, mode = "continue" } = req.body;
+    const {
+      workflowId,
+      nodeId,
+      afterEntryId,
+      mode = "continue",
+    } = req.body as {
+      workflowId?: string;
+      nodeId?: string;
+      afterEntryId?: string;
+      mode?: "continue" | "next" | "prev";
+    };
+
     if (!workflowId || !nodeId || !afterEntryId) {
-      return res
-        .status(400)
-        .json({ error: "workflowId, nodeId, and afterEntryId are required" });
+      return res.status(400).json({
+        error: "workflowId, nodeId, and afterEntryId are required",
+      });
+    }
+
+    if (!["continue", "next", "prev"].includes(mode)) {
+      return res.status(400).json({
+        error: "Invalid mode. Expected one of: continue, next, prev",
+      });
+    }
+
+    if (!["continue", "next", "prev"].includes(mode)) {
+      return res.status(400).json({
+        error: "Invalid mode. Expected one of: continue, next, prev",
+      });
+    }
+
+    if (!["continue", "next", "prev"].includes(mode)) {
+      return res.status(400).json({
+        error: "Invalid mode. Expected one of: continue, next, prev",
+      });
     }
 
     if (!["continue", "next", "prev"].includes(mode)) {
@@ -68,6 +98,19 @@ router.post("/replay", async (req, res) => {
     const redis = getRedisCache();
 
     let events: Array<[string, string[]]> = [];
+
+    /**
+     * continue:
+     * XREAD naturally returns entries AFTER afterEntryId.
+     *
+     * next:
+     * XRANGE is inclusive, so it may return afterEntryId itself.
+     * Fetch 2 and skip afterEntryId manually.
+     *
+     * prev:
+     * XREVRANGE is also inclusive, so it may return afterEntryId itself.
+     * Fetch 2 and skip afterEntryId manually.
+     */
     if (mode === "continue") {
       const result = await redis.xread(
         "COUNT",
@@ -76,17 +119,34 @@ router.post("/replay", async (req, res) => {
         streamKey,
         afterEntryId,
       );
+
       events = result?.[0]?.[1] ?? [];
     } else if (mode === "next") {
-      events = await redis.xrange(streamKey, `(${afterEntryId}`, "+", "COUNT", 1);
-    } else {
-      events = await redis.xrevrange(
+      const rawEvents = await redis.xrange(
         streamKey,
-        `(${afterEntryId}`,
+        afterEntryId,
+        "+",
+        "COUNT",
+        2,
+      );
+
+      const nextEvent = rawEvents.find(([entryId]) => entryId !== afterEntryId);
+
+      events = nextEvent ? [nextEvent] : [];
+    } else {
+      const rawEvents = await redis.xrevrange(
+        streamKey,
+        afterEntryId,
         "-",
         "COUNT",
-        1,
+        2,
       );
+
+      const previousEvent = rawEvents.find(
+        ([entryId]) => entryId !== afterEntryId,
+      );
+
+      events = previousEvent ? [previousEvent] : [];
     }
 
     let replayed = 0;
@@ -94,6 +154,7 @@ router.post("/replay", async (req, res) => {
 
     for (const [entryId, fields] of events) {
       const eventIndex = fields.findIndex((field) => field === "event");
+
       if (eventIndex < 0 || eventIndex + 1 >= fields.length) {
         continue;
       }
@@ -125,6 +186,8 @@ router.post("/replay", async (req, res) => {
         replayed += 1;
         lastEntryId = entryId;
 
+        // Only batch replay should be delayed.
+        // Single-step next/prev should be instant.
         if (mode === "continue") {
           await sleep(5000);
         }
@@ -139,35 +202,64 @@ router.post("/replay", async (req, res) => {
     }
 
     if (mode === "continue") {
-      return res.json({ replayed, lastEntryId });
+      return res.json({
+        replayed,
+        lastEntryId,
+        mode,
+      });
     }
 
+    /**
+     * For step modes, check whether another neighbor exists
+     * after the new cursor.
+     *
+     * We again avoid exclusive Redis IDs.
+     * So we fetch 2 and skip the current lastEntryId manually.
+     */
     let hasMore = false;
+
     if (lastEntryId) {
       if (mode === "next") {
-        const nextEvents = await redis.xrange(
+        const rawNextEvents = await redis.xrange(
           streamKey,
-          `(${lastEntryId}`,
+          lastEntryId,
           "+",
           "COUNT",
-          1,
+          2,
         );
-        hasMore = nextEvents.length > 0;
+
+        const nextEvent = rawNextEvents.find(
+          ([entryId]) => entryId !== lastEntryId,
+        );
+
+        hasMore = Boolean(nextEvent);
       } else {
-        const prevEvents = await redis.xrevrange(
+        const rawPreviousEvents = await redis.xrevrange(
           streamKey,
-          `(${lastEntryId}`,
+          lastEntryId,
           "-",
           "COUNT",
-          1,
+          2,
         );
-        hasMore = prevEvents.length > 0;
+
+        const previousEvent = rawPreviousEvents.find(
+          ([entryId]) => entryId !== lastEntryId,
+        );
+
+        hasMore = Boolean(previousEvent);
       }
     }
 
-    return res.json({ replayed, lastEntryId, hasMore });
+    return res.json({
+      replayed,
+      lastEntryId,
+      mode,
+      hasNext: mode === "next" ? hasMore : undefined,
+      hasPrevious: mode === "prev" ? hasMore : undefined,
+    });
   } catch (error) {
     console.error("Replay stream error:", error);
+
     return res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to replay stream",
     });

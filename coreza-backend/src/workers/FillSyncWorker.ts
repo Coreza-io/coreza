@@ -180,9 +180,11 @@ export class FillSyncWorker {
           for (let i = 0; i < fieldValues.length; i += 2) {
             fields[fieldValues[i]] = fieldValues[i + 1];
           }
-          const fillId = fields.fill_id || fields.broker_execution_id;
-          if (fillId) {
-            deduped.set(fillId, { entryId, fields });
+          const dedupeKey = fields.algo_id
+            ? `algo:${fields.algo_id}`
+            : (fields.fill_id || fields.broker_execution_id);
+          if (dedupeKey) {
+            deduped.set(dedupeKey, { entryId, fields });
           }
         }
 
@@ -201,7 +203,7 @@ export class FillSyncWorker {
             qty: parseFloat(fields.fill_qty_delta) || 0,
             quote_qty: fields.quote_qty ? parseFloat(fields.quote_qty) : undefined,
             commission: parseFloat(fields.commission) || 0,
-            commission_asset: fields.reject_reason || fields.commission_asset || null as any,
+            commission_asset: fields.commission_asset || null as any,
             event_time: fields.event_time,
             workflow_id: fields.workflow_id || null as any,
             execution_id: fields.execution_id || null as any,

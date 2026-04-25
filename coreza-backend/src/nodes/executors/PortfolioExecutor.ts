@@ -1068,7 +1068,7 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       const event: FillStreamEvent = {
-        fill_id: "",
+        fill_id: algoId ? `algo:${algoId}` : "",
         algo_id: algoId,
         user_id: context.userId,
         workflow_id: context.workflowId,
@@ -1079,12 +1079,16 @@ export class PortfolioExecutor implements INodeExecutor {
         side:
           (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
         order_id: orderId,
-        broker_execution_id: orderId,
+        broker_execution_id: undefined,
         fill_qty_delta: 0,
-        fill_price: triggerPrice,
+        fill_price: 0,
         quote_qty: 0,
         commission: 0,
-        commission_asset: rejectReason,
+        commission_asset: undefined,
+        limit_price: triggerPrice,
+        stop_price: toNumber(params.stopPrice) || undefined,
+        order_type: params.orderType,
+        tag: rejectReason ? `algo:${rejectReason}` : "algoUpdate",
         event_time: eventTime,
         fill_status: algoStatus,
         reject_reason: rejectReason,

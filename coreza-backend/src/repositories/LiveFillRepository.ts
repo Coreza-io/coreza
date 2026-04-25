@@ -33,8 +33,8 @@ export interface LiveFillRow {
   order_type?: string;
   limit_price?: number | null;
   stop_price?: number | null;
-  trail_Percent?: number | null;
-  trail_Price?: number | null;
+  trail_percent?: number | null;
+  trail_price?: number | null;
   timeInForce?: string | null;
   tag?: string;
 }
@@ -51,7 +51,10 @@ export class LiveFillRepository {
       .upsert(rows, { onConflict: "user_id,broker,symbol,fill_id" });
 
     if (error) {
-      logger.error({ error: error.message, count: rows.length }, "batch upsert failed");
+      logger.error(
+        { error: error.message, count: rows.length },
+        "batch upsert failed",
+      );
       throw error;
     }
 

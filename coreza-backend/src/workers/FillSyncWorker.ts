@@ -6,10 +6,19 @@
  * (at your option) any later version.
  */
 
-import { createDedicatedStreamConnection, getRedisCache } from "../config/redis";
+import {
+  createDedicatedStreamConnection,
+  getRedisCache,
+} from "../config/redis";
 import { createLogger } from "../utils/logger";
-import { LiveFillRepository, LiveFillRow } from "../repositories/LiveFillRepository";
-import { CashSnapshotRepository, CashSnapshotRow } from "../repositories/CashSnapshotRepository";
+import {
+  LiveFillRepository,
+  LiveFillRow,
+} from "../repositories/LiveFillRepository";
+import {
+  CashSnapshotRepository,
+  CashSnapshotRow,
+} from "../repositories/CashSnapshotRepository";
 import { LatestSnapshotState, SnapshotCache } from "../services/SnapshotCache";
 import Redis from "ioredis";
 import { RedisKeys } from "../infra/redisKeys";
@@ -153,10 +162,16 @@ export class FillSyncWorker {
         let results: any;
         try {
           results = await streamConn.xreadgroup(
-            "GROUP", CONSUMER_GROUP, CONSUMER_NAME,
-            "COUNT", BATCH_SIZE,
-            "BLOCK", BLOCK_TIMEOUT_MS,
-            "STREAMS", streamKey, ">",
+            "GROUP",
+            CONSUMER_GROUP,
+            CONSUMER_NAME,
+            "COUNT",
+            BATCH_SIZE,
+            "BLOCK",
+            BLOCK_TIMEOUT_MS,
+            "STREAMS",
+            streamKey,
+            ">",
           );
         } catch (err: any) {
           if (err.message?.includes("NOGROUP")) {
@@ -171,7 +186,10 @@ export class FillSyncWorker {
         const [, entries] = results[0];
         if (!entries || entries.length === 0) continue;
 
-        const deduped = new Map<string, { entryId: string; fields: Record<string, string> }>();
+        const deduped = new Map<
+          string,
+          { entryId: string; fields: Record<string, string> }
+        >();
         const entryIds: string[] = [];
 
         for (const [entryId, fieldValues] of entries) {
@@ -182,7 +200,7 @@ export class FillSyncWorker {
           }
           const dedupeKey = fields.algo_id
             ? `algo:${fields.algo_id}`
-            : (fields.fill_id || fields.broker_execution_id);
+            : fields.fill_id || fields.broker_execution_id;
           if (dedupeKey) {
             deduped.set(dedupeKey, { entryId, fields });
           }
@@ -196,34 +214,41 @@ export class FillSyncWorker {
             credential_id: fields.credential_id || fields.user_id,
             symbol: fields.symbol,
             fill_id: fillId,
-            order_id: fields.order_id || null as any,
-            broker_execution_id: fields.broker_execution_id || null as any,
+            order_id: fields.order_id || (null as any),
+            broker_execution_id: fields.broker_execution_id || (null as any),
             side: fields.side,
             price: parseFloat(fields.fill_price) || 0,
             qty: parseFloat(fields.fill_qty_delta) || 0,
-            quote_qty: fields.quote_qty ? parseFloat(fields.quote_qty) : undefined,
+            quote_qty: fields.quote_qty
+              ? parseFloat(fields.quote_qty)
+              : undefined,
             commission: parseFloat(fields.commission) || 0,
-            commission_asset: fields.commission_asset || null as any,
+            commission_asset: fields.commission_asset || (null as any),
             event_time: fields.event_time,
-            workflow_id: fields.workflow_id || null as any,
-            execution_id: fields.execution_id || null as any,
-            fill_status: fields.fill_status || null as any,
-            algo_id: fields.algo_id || null as any,
-            order_type: fields.order_type || null as any,
-            limit_price: fields.limit_price ? parseFloat(fields.limit_price) : null,
-            stop_price: fields.stop_price ? parseFloat(fields.stop_price) : null,
-            trail_Percent: fields.trail_Percent
-              ? parseFloat(fields.trail_Percent)
+            workflow_id: fields.workflow_id || (null as any),
+            execution_id: fields.execution_id || (null as any),
+            fill_status: fields.fill_status || (null as any),
+            algo_id: fields.algo_id || (null as any),
+            order_type: fields.order_type || (null as any),
+            limit_price: fields.limit_price
+              ? parseFloat(fields.limit_price)
+              : null,
+            stop_price: fields.stop_price
+              ? parseFloat(fields.stop_price)
+              : null,
+            trail_percent: fields.trail_percent
+              ? parseFloat(fields.trail_percent)
               : fields.trail_percent
                 ? parseFloat(fields.trail_percent)
                 : null,
-            trail_Price: fields.trail_Price
-              ? parseFloat(fields.trail_Price)
+            trail_price: fields.trail_price
+              ? parseFloat(fields.trail_price)
               : fields.trail_price
                 ? parseFloat(fields.trail_price)
                 : null,
-            timeInForce: fields.timeInForce || fields.time_in_force || null as any,
-            tag: fields.tag || null as any,
+            timeInForce:
+              fields.timeInForce || fields.time_in_force || (null as any),
+            tag: fields.tag || (null as any),
           });
         }
 
@@ -238,14 +263,20 @@ export class FillSyncWorker {
             this.retryCounters.delete(id);
           }
 
-          logger.debug({ stream: streamKey, count: rows.length }, "fills synced");
+          logger.debug(
+            { stream: streamKey, count: rows.length },
+            "fills synced",
+          );
         } catch (err) {
           for (const entryId of entryIds) {
             const count = (this.retryCounters.get(entryId) || 0) + 1;
             this.retryCounters.set(entryId, count);
 
             if (count >= MAX_RETRIES) {
-              logger.warn({ entryId, stream: streamKey }, "moving poison message to DLQ");
+              logger.warn(
+                { entryId, stream: streamKey },
+                "moving poison message to DLQ",
+              );
               try {
                 const entry = entries.find(([id]: any) => id === entryId);
                 if (entry) {
@@ -284,7 +315,9 @@ export class FillSyncWorker {
 
   private async flushSnapshots(): Promise<void> {
     const redis = getRedisCache();
-    const activeUsers = await redis.smembers(RedisKeys.registrySnapshotsActive());
+    const activeUsers = await redis.smembers(
+      RedisKeys.registrySnapshotsActive(),
+    );
     if (activeUsers.length === 0) return;
 
     for (const userId of activeUsers) {
@@ -346,8 +379,8 @@ export class FillSyncWorker {
             snapshot_at: snapshot.snapshot_at,
             balances,
             total_value_usdt: equity,
-            workflow_id: snapshot.workflow_id || null as any,
-            execution_id: snapshot.execution_id || null as any,
+            workflow_id: snapshot.workflow_id || (null as any),
+            execution_id: snapshot.execution_id || (null as any),
             base_currency: snapshot.base_currency,
             cash,
             equity,
@@ -357,7 +390,10 @@ export class FillSyncWorker {
           });
           processedKeys.push(key);
         } catch (parseErr) {
-          logger.warn({ err: parseErr, key }, "snapshot parse failed, removing");
+          logger.warn(
+            { err: parseErr, key },
+            "snapshot parse failed, removing",
+          );
           await redis.srem(activeKeysSet, key);
         }
       }
@@ -382,7 +418,10 @@ export class FillSyncWorker {
 
           logger.debug({ count: rows.length }, "snapshots flushed");
         } catch (err) {
-          logger.error({ err, count: rows.length }, "snapshot flush to DB failed");
+          logger.error(
+            { err, count: rows.length },
+            "snapshot flush to DB failed",
+          );
         }
       }
 
@@ -395,7 +434,10 @@ export class FillSyncWorker {
 
   // ─── Helpers ───────────────────────────────────────────
 
-  private async ensureConsumerGroup(redis: Redis, streamKey: string): Promise<void> {
+  private async ensureConsumerGroup(
+    redis: Redis,
+    streamKey: string,
+  ): Promise<void> {
     try {
       await redis.xgroup("CREATE", streamKey, CONSUMER_GROUP, "0", "MKSTREAM");
     } catch (err: any) {

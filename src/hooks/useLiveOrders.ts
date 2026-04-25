@@ -54,10 +54,8 @@ type RawFill = {
   limit_price?: number | null;
   stop_price?: number | null;
   trail_price?: number | null;
-  trail_Price?: number | null;
   trail_percent?: number | null;
-  trail_Percent?: number | null;
-  time_in_force?: string | null;
+  //time_in_force?: string | null;
   timeInForce?: string | null;
   tag?: string | null;
   algo_id?: string | null;
@@ -84,7 +82,9 @@ const STATUS_PROGRESS: Record<string, number> = {
 };
 
 const getQuoteAsset = (symbol?: string): string | undefined => {
-  const normalized = String(symbol ?? "").trim().toUpperCase();
+  const normalized = String(symbol ?? "")
+    .trim()
+    .toUpperCase();
   if (!normalized) return undefined;
 
   if (normalized.includes("/")) {
@@ -121,12 +121,19 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const normalizeStatus = (status?: string | null, isAlgoEvent = false): string => {
-  const normalized = String(status ?? "").trim().toLowerCase();
+const normalizeStatus = (
+  status?: string | null,
+  isAlgoEvent = false,
+): string => {
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
   if (normalized === "partially_filled") return "Partial";
-  if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
+  if (normalized === "cancelled" || normalized === "canceled")
+    return "Cancelled";
   if (normalized === "rejected") return "Rejected";
-  if (normalized === "submitted" || normalized === "pending_new") return "Submitted";
+  if (normalized === "submitted" || normalized === "pending_new")
+    return "Submitted";
   if (normalized === "untriggered") return "Untriggered";
   if (normalized === "new") return isAlgoEvent ? "Untriggered" : "Submitted";
   if (normalized === "triggering") return "Triggering";
@@ -138,7 +145,9 @@ const normalizeStatus = (status?: string | null, isAlgoEvent = false): string =>
 };
 
 const statusRank = (status?: string | null, isAlgoEvent = false): number => {
-  const normalized = String(status ?? "").trim().toLowerCase();
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
   if (normalized === "new" && !isAlgoEvent) {
     return STATUS_PROGRESS.submitted;
   }
@@ -147,19 +156,19 @@ const statusRank = (status?: string | null, isAlgoEvent = false): number => {
 
 const resolveTrailPrice = (row?: RawFill): number | undefined => {
   if (!row) return undefined;
-  const candidate = row.trail_Price ?? row.trail_price;
+  const candidate = row.trail_price;
   return candidate == null ? undefined : toNumber(candidate);
 };
 
 const resolveTrailPercent = (row?: RawFill): number | undefined => {
   if (!row) return undefined;
-  const candidate = row.trail_Percent ?? row.trail_percent;
+  const candidate = row.trail_percent;
   return candidate == null ? undefined : toNumber(candidate);
 };
 
 const resolveTimeInForce = (row?: RawFill): string | undefined => {
   if (!row) return undefined;
-  const candidate = row.timeInForce ?? row.time_in_force;
+  const candidate = row.timeInForce;
   return candidate ? String(candidate) : undefined;
 };
 
@@ -209,7 +218,9 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
 
   const orders = Array.from(grouped.values()).map((group) => {
     const sorted = [...group].sort(
-      (a, b) => new Date(a.event_time ?? 0).getTime() - new Date(b.event_time ?? 0).getTime(),
+      (a, b) =>
+        new Date(a.event_time ?? 0).getTime() -
+        new Date(b.event_time ?? 0).getTime(),
     );
 
     const first = sorted[0];
@@ -232,7 +243,9 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
       0,
     );
 
-    const algoRowWithOrderId = algoRows.find((row) => !!String(row.order_id ?? "").trim());
+    const algoRowWithOrderId = algoRows.find(
+      (row) => !!String(row.order_id ?? "").trim(),
+    );
     const firstFillRow = fillRows[0];
 
     const events: LiveOrderEvent[] = sorted.map((row, index) => {
@@ -259,7 +272,10 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
         undefined,
       symbol: String(representative?.symbol ?? "").toUpperCase(),
       side: String(representative?.side ?? ""),
-      orderType: normalizeOrderType(representative?.side, representative?.order_type),
+      orderType: normalizeOrderType(
+        representative?.side,
+        representative?.order_type,
+      ),
       time: first?.event_time ?? "",
       quantity: totalQty,
       avgFillPrice: totalQty > 0 ? weightedNotional / totalQty : 0,
@@ -274,7 +290,10 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
         !!String(statusLeader?.algo_id ?? "").trim(),
       ),
       tag: latestRow?.tag ?? undefined,
-      totalCommission: fillRows.reduce((sum, row) => sum + toNumber(row.commission), 0),
+      totalCommission: fillRows.reduce(
+        (sum, row) => sum + toNumber(row.commission),
+        0,
+      ),
       commissionAsset: firstFillRow?.commission_asset ?? undefined,
       quoteAsset: getQuoteAsset(representative?.symbol),
       events,
@@ -282,6 +301,8 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
   });
 
   return {
-    orders: orders.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()),
+    orders: orders.sort(
+      (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+    ),
   };
 };

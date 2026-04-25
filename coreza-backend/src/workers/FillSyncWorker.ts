@@ -209,10 +209,21 @@ export class FillSyncWorker {
             execution_id: fields.execution_id || null as any,
             fill_status: fields.fill_status || null as any,
             algo_id: fields.algo_id || null as any,
-            order_type: fields.order_type || null,
+            order_type: fields.order_type || null as any,
             limit_price: fields.limit_price ? parseFloat(fields.limit_price) : null,
             stop_price: fields.stop_price ? parseFloat(fields.stop_price) : null,
-            tag: fields.tag || null,
+            trail_Percent: fields.trail_Percent
+              ? parseFloat(fields.trail_Percent)
+              : fields.trail_percent
+                ? parseFloat(fields.trail_percent)
+                : null,
+            trail_Price: fields.trail_Price
+              ? parseFloat(fields.trail_Price)
+              : fields.trail_price
+                ? parseFloat(fields.trail_price)
+                : null,
+            timeInForce: fields.timeInForce || fields.time_in_force || null as any,
+            tag: fields.tag || null as any,
           });
         }
 

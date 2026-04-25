@@ -33,6 +33,9 @@ export interface LiveFillRow {
   order_type?: string;
   limit_price?: number | null;
   stop_price?: number | null;
+  trail_Percent?: number | null;
+  trail_Price?: number | null;
+  timeInForce?: string | null;
   tag?: string;
 }
 

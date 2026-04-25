@@ -36,11 +36,15 @@ export interface OrderState {
   orderType?: string;
   timeInForce?: string;
   status: string;
-  origQty: number;
+  origQty: number | undefined;
   filledQty: number;
-  remainingQty?: number;
-  avgFillPrice?: number;
+  remainingQty?: number | undefined;
+  avgFillPrice?: number | undefined;
   totalFees: number;
+  stopPrice?: number | undefined;
+  limitPrice?: number | undefined;
+  trailPercent?: number | undefined;
+  trailPrice?: number | undefined;
   lastSeq?: number;
   createdAt: string;
   updatedAt: string;
@@ -51,11 +55,15 @@ export interface AlgoOrderState {
   orderId?: string;
   symbol: string;
   side: "buy" | "sell";
-  orderType?: string;
+  orderType: string;
   status: string;
-  triggerPrice: number;
-  requestedQty: number;
+  stopPrice?: number | undefined;
+  limitPrice?: number | undefined;
+  trailPercent?: number | undefined;
+  trailPrice?: number | undefined;
+  origQty: number | undefined;
   rejectReason?: string;
+  timeInForce: string;
   lastSeq?: number;
   createdAt: string;
   updatedAt: string;
@@ -375,17 +383,17 @@ export class PortfolioManager {
     clientOrderId?: string;
     symbol: string;
     side: "buy" | "sell";
-    origQty?: number;
-    orderType?: string;
-    timeInForce?: string;
+    origQty: number | undefined;
+    orderType: string;
+    timeInForce: string;
     limitPrice?: number;
     stopPrice?: number;
     trailPercent?: number;
     trailPrice?: number;
-    status?: string;
+    status: string;
   }): { order: OrderState } {
     const now = new Date().toISOString();
-    const origQty = input.origQty ?? 0;
+    const origQty = input.origQty ?? undefined;
     const order: OrderState = {
       brokerOrderId: input.brokerOrderId,
       clientOrderId: input.clientOrderId,
@@ -399,6 +407,10 @@ export class PortfolioManager {
       remainingQty: origQty,
       avgFillPrice: undefined,
       totalFees: 0,
+      stopPrice: input.stopPrice,
+      limitPrice: input.limitPrice,
+      trailPercent: input.trailPercent,
+      trailPrice: input.trailPrice,
       createdAt: now,
       updatedAt: now,
     };
@@ -563,11 +575,15 @@ export class PortfolioManager {
     orderId?: string;
     symbol: string;
     side: "buy" | "sell";
-    orderType?: string;
+    orderType: string;
+    origQty: number | undefined;
     status: string;
-    triggerPrice: number;
-    requestedQty: number;
+    stopPrice?: number;
+    limitPrice?: number;
+    trailPercent?: number;
+    trailPrice?: number;
     rejectReason?: string;
+    timeInForce: string;
   }): { algoOrder: AlgoOrderState } {
     const now = new Date().toISOString();
     const algoOrder: AlgoOrderState = {
@@ -577,9 +593,13 @@ export class PortfolioManager {
       side: input.side,
       orderType: input.orderType,
       status: input.status,
-      triggerPrice: input.triggerPrice,
-      requestedQty: input.requestedQty,
+      stopPrice: input.stopPrice,
+      limitPrice: input.limitPrice,
+      trailPercent: input.trailPercent,
+      trailPrice: input.trailPrice,
+      origQty: input.origQty,
       rejectReason: input.rejectReason,
+      timeInForce: input.timeInForce,
       createdAt: now,
       updatedAt: now,
     };
@@ -593,10 +613,14 @@ export class PortfolioManager {
     symbol: string;
     side: "buy" | "sell";
     orderType?: string;
+    origQty: number | undefined;
     status: string;
-    triggerPrice: number;
-    requestedQty: number;
+    stopPrice?: number;
+    limitPrice?: number;
+    trailPercent?: number;
+    trailPrice?: number;
     rejectReason?: string;
+    timeInForce: string;
     _seq?: number;
   }): void {
     const now = new Date().toISOString();
@@ -643,9 +667,13 @@ export class PortfolioManager {
 
     algoOrder.orderId = input.orderId ?? algoOrder.orderId;
     algoOrder.status = input.status;
-    algoOrder.triggerPrice = input.triggerPrice;
-    algoOrder.requestedQty = input.requestedQty;
+    algoOrder.stopPrice = input.stopPrice;
+    algoOrder.limitPrice = input.limitPrice;
+    algoOrder.trailPercent = input.trailPercent;
+    algoOrder.trailPrice = input.trailPrice;
+    algoOrder.origQty = input.origQty;
     algoOrder.rejectReason = input.rejectReason;
+    algoOrder.timeInForce = input.timeInForce;
     algoOrder.updatedAt = now;
   }
 

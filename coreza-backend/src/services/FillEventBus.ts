@@ -22,7 +22,6 @@ export interface FillStreamEvent {
   symbol: string;
   side: "buy" | "sell";
   order_id?: string;
-  broker_execution_id?: string;
   fill_qty_delta: number;
   fill_price: number;
   quote_qty?: number;
@@ -36,6 +35,9 @@ export interface FillStreamEvent {
   order_type?: string;
   limit_price?: number;
   stop_price?: number;
+  trail_Percent?: number;
+  trail_Price?: number;
+  timeInForce: number;
   tag?: string;
 }
 
@@ -48,7 +50,10 @@ export class FillEventBus {
    */
   static async publish(event: FillStreamEvent): Promise<void> {
     const redis = getRedisCache();
-    const streamKey = RedisKeys.portfolioFillsStream(event.user_id, event.workflow_id);
+    const streamKey = RedisKeys.portfolioFillsStream(
+      event.user_id,
+      event.workflow_id,
+    );
     const activeStreamsKey = RedisKeys.userActiveFillStreams(event.user_id);
 
     // Flatten event to string key-value pairs for XADD

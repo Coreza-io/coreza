@@ -844,8 +844,8 @@ export class PortfolioExecutor implements INodeExecutor {
       const result = pm.registerOrderIntent({
         brokerOrderId,
         clientOrderId,
-        algoId,
         symbol,
+        algoId,
         side,
         origQty,
         orderType,
@@ -921,6 +921,8 @@ export class PortfolioExecutor implements INodeExecutor {
     orderType?: string;
     limitPrice?: number;
     stopPrice?: number;
+    trailPercent?: number;
+    trailPrice?: number;
     tag?: string;
   }): FillStreamEvent {
     const eventTime =
@@ -951,7 +953,6 @@ export class PortfolioExecutor implements INodeExecutor {
       symbol: opts.symbol,
       side: opts.side as "buy" | "sell",
       order_id: opts.orderId,
-      broker_execution_id: opts.executionId,
       fill_qty_delta: opts.filledQty,
       fill_price: opts.fillPrice,
       quote_qty: opts.filledQty * opts.fillPrice,
@@ -965,6 +966,8 @@ export class PortfolioExecutor implements INodeExecutor {
       order_type: opts.orderType,
       limit_price: opts.limitPrice,
       stop_price: opts.stopPrice,
+      trailPercent: opts.trailPercent,
+      trailPrice: opts.trailPrice,
       tag: opts.tag,
     };
   }
@@ -1022,12 +1025,19 @@ export class PortfolioExecutor implements INodeExecutor {
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     try {
-      const algoId = params.algoId ? String(params.algoId) : undefined;
+      const algoId = String(params.algoId);
       const symbol = String(params.symbol || "*").toUpperCase();
       const algoStatus = String(params.status || "").toLowerCase();
-      const orderId = params.orderId ? String(params.orderId) : undefined;
-      const triggerPrice = toNumber(params.triggerPrice) ?? 0;
-      const requestedQty = toNumber(params.requestedQty) ?? 0;
+      const orderId = params.brokerOrderId
+        ? String(params.brokerOrderId)
+        : undefined;
+      const origQty = toNumber(params.origQty);
+      const stopPrice = toNumber(params.stopPrice);
+      const limitPrice = toNumber(params.limitPrice);
+      const trailPercent = toNumber(params.trailPercent);
+      const trailPrice = toNumber(params.trailPrice);
+      const timeInForce = params.timeInForce;
+
       const eventTime =
         params.event_time || params.eventTime || new Date().toISOString();
 
@@ -1037,17 +1047,21 @@ export class PortfolioExecutor implements INodeExecutor {
         : undefined;
 
       pm.applyAlgoUpdate({
-        algoId: algoId || "",
+        algoId: algoId,
         orderId,
         symbol,
         side:
           (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
         orderType: params.orderType,
+        origQty,
         status: algoStatus,
-        triggerPrice,
-        requestedQty,
+        stopPrice,
+        limitPrice,
+        trailPercent,
+        trailPrice,
         rejectReason,
-        _seq: toNumber(params._seq),
+        timeInForce,
+        //_seq: toNumber(params._seq),
       });
 
       // Persist only when running live with workflow context.
@@ -1073,23 +1087,25 @@ export class PortfolioExecutor implements INodeExecutor {
         user_id: context.userId,
         workflow_id: context.workflowId,
         execution_id: context.executionId,
-        broker: params.broker || "binance",
+        broker: params.broker,
         credential_id: params.credential_id,
         symbol,
         side:
           (String(params.side || "").toLowerCase() as "buy" | "sell") || "buy",
         order_id: orderId,
-        broker_execution_id: undefined,
         fill_qty_delta: 0,
         fill_price: 0,
         quote_qty: 0,
         commission: 0,
         commission_asset: undefined,
-        limit_price: triggerPrice,
-        stop_price: toNumber(params.stopPrice) || undefined,
+        limit_price: limitPrice,
+        stop_price: stopPrice,
+        trail_Percent: trailPercent,
+        trail_Price: trailPrice,
         order_type: params.orderType,
         tag: rejectReason ? `algo:${rejectReason}` : "algoUpdate",
         event_time: eventTime,
+        timeInForce,
         fill_status: algoStatus,
         reject_reason: rejectReason,
       };
@@ -1107,8 +1123,11 @@ export class PortfolioExecutor implements INodeExecutor {
           algoId,
           algoStatus,
           orderId: orderId ?? null,
-          requestedQty,
-          triggerPrice,
+          origQty,
+          stopPrice,
+          limitPrice,
+          trailPercent,
+          trailPrice,
           rejectReason: rejectReason ?? null,
           persisted: true,
         }),

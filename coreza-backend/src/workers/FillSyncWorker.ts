@@ -200,7 +200,7 @@ export class FillSyncWorker {
           }
           const dedupeKey = fields.algo_id
             ? `algo:${fields.algo_id}`
-            : fields.fill_id || fields.broker_execution_id;
+            : fields.fill_id;
           if (dedupeKey) {
             deduped.set(dedupeKey, { entryId, fields });
           }
@@ -215,7 +215,6 @@ export class FillSyncWorker {
             symbol: fields.symbol,
             fill_id: fillId,
             order_id: fields.order_id || (null as any),
-            broker_execution_id: fields.broker_execution_id || (null as any),
             side: fields.side,
             price: parseFloat(fields.fill_price) || 0,
             qty: parseFloat(fields.fill_qty_delta) || 0,

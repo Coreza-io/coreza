@@ -102,17 +102,21 @@ const mapLiveTradeToBacktestTrade = (
   if (algoFills && algoFills.length > 0 && (entryOrderId || exitOrderId)) {
     const matchedAlgo = algoFills.find(
       (a: any) =>
-        a.order_id && (a.order_id === entryOrderId || a.order_id === exitOrderId),
+        a.order_id &&
+        (a.order_id === entryOrderId || a.order_id === exitOrderId),
     );
     if (matchedAlgo) {
       const status = mapAlgoStatus(matchedAlgo.fill_status);
       if (status) {
+        const tag = String(matchedAlgo.tag ?? "");
+        const rejectReason = tag.startsWith("algo:")
+          ? tag.slice("algo:".length)
+          : null;
         algo = {
           status,
           triggerPrice:
-            matchedAlgo.price != null ? Number(matchedAlgo.price) : null,
-          // reject_reason was stuffed into commission_asset for algo rows
-          rejectReason: matchedAlgo.commission_asset ?? null,
+            matchedAlgo.limit_price != null ? Number(matchedAlgo.limit_price) : null,
+          rejectReason,
         };
       }
     }

@@ -22,10 +22,28 @@ export interface LiveOrder {
   totalCommission: number;
   commissionAsset?: string;
   quoteAsset?: string;
-  algoId?: string;
-  algoStatus?: string;
-  algoRejectReason?: string;
   fills: LiveOrderFill[];
+}
+
+export interface LiveAlgoOrder {
+  algoId: string;
+  orderId?: string;
+  symbol: string;
+  side: string;
+  orderType: string;
+  time: string;
+  updatedAt: string;
+  triggerPrice?: number;
+  stopPrice?: number;
+  status: string;
+  rejectReason?: string;
+  tag?: string;
+  quoteAsset?: string;
+}
+
+export interface LiveOrdersResult {
+  orders: LiveOrder[];
+  algoOrders: LiveAlgoOrder[];
 }
 
 type RawFill = {
@@ -45,6 +63,7 @@ type RawFill = {
   stop_price?: number | null;
   tag?: string | null;
   algo_id?: string | null;
+  reject_reason?: string | null;
 };
 
 const KNOWN_QUOTES = ["USDT", "USDC", "USD", "BTC", "ETH", "BNB", "EUR"];
@@ -102,10 +121,12 @@ const normalizeStatus = (status?: string | null): string => {
   return titleCase(status) || "Filled";
 };
 
-export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrder[] => {
+export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
+  const normalRows = (fills ?? []).filter((fill) => !fill.algo_id);
+  const algoRows = (fills ?? []).filter((fill) => !!fill.algo_id);
   const grouped = new Map<string, RawFill[]>();
 
-  for (const fill of fills ?? []) {
+  for (const fill of normalRows) {
     const orderId = String(fill.order_id ?? "").trim() || String(fill.fill_id ?? fill.id ?? "").trim();
     if (!orderId) continue;
 
@@ -123,11 +144,9 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrder[] => {
       return ta - tb;
     });
 
-    const normalFills = sorted.filter((fill) => !fill.algo_id);
-    const algoFill = sorted.find((fill) => !!fill.algo_id);
-    const selected = normalFills;
-    const first = selected[0] ?? sorted[0];
-    const last = selected[selected.length - 1] ?? sorted[sorted.length - 1];
+    const selected = sorted;
+    const first = selected[0];
+    const last = selected[selected.length - 1];
 
     const totalQty = selected.reduce((sum, fill) => sum + toNumber(fill.qty), 0);
     const weightedNotional = selected.reduce(
@@ -159,14 +178,60 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrder[] => {
       totalCommission: selected.reduce((sum, fill) => sum + toNumber(fill.commission), 0),
       commissionAsset: first?.commission_asset ?? undefined,
       quoteAsset: getQuoteAsset(first?.symbol),
-      algoId: algoFill?.algo_id ?? undefined,
-      algoStatus: algoFill?.fill_status ? normalizeStatus(algoFill.fill_status) : undefined,
-      algoRejectReason: algoFill?.commission_asset ?? undefined,
       fills: fillRows,
     });
   }
 
-  return orders.sort(
+  const sortedOrders = orders.sort(
     (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
   );
+
+  const algoById = new Map<string, { first: RawFill; latest: RawFill }>();
+  for (const row of algoRows) {
+    const algoId = String(row.algo_id ?? "").trim();
+    if (!algoId) continue;
+    const existing = algoById.get(algoId);
+    if (!existing) {
+      algoById.set(algoId, { first: row, latest: row });
+      continue;
+    }
+    const firstTime = new Date(existing.first.event_time ?? 0).getTime();
+    const latestTime = new Date(existing.latest.event_time ?? 0).getTime();
+    const nextTime = new Date(row.event_time ?? 0).getTime();
+    if (nextTime <= firstTime) {
+      existing.first = row;
+    }
+    if (nextTime >= latestTime) {
+      existing.latest = row;
+    }
+  }
+
+  const algoOrders: LiveAlgoOrder[] = Array.from(algoById.entries())
+    .map(([algoId, grouped]) => {
+      const latest = grouped.latest;
+      const first = grouped.first;
+      const tag = latest.tag ?? undefined;
+      const rejectReason =
+        typeof tag === "string" && tag.startsWith("algo:")
+          ? tag.slice("algo:".length)
+          : latest.reject_reason ?? undefined;
+      return {
+        algoId,
+        orderId: latest.order_id ?? undefined,
+        symbol: String(latest.symbol ?? "").toUpperCase(),
+        side: String(latest.side ?? ""),
+        orderType: normalizeOrderType(latest.side, latest.order_type),
+        time: first.event_time ?? latest.event_time ?? "",
+        updatedAt: latest.event_time ?? first.event_time ?? "",
+        triggerPrice: latest.limit_price ?? undefined,
+        stopPrice: latest.stop_price ?? undefined,
+        status: normalizeStatus(latest.fill_status),
+        rejectReason,
+        tag,
+        quoteAsset: getQuoteAsset(latest.symbol),
+      };
+    })
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+  return { orders: sortedOrders, algoOrders };
 };

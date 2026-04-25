@@ -923,6 +923,7 @@ export class PortfolioExecutor implements INodeExecutor {
     stopPrice?: number;
     trailPercent?: number;
     trailPrice?: number;
+    timeInForce?: string;
     tag?: string;
   }): FillStreamEvent {
     const eventTime =
@@ -966,8 +967,9 @@ export class PortfolioExecutor implements INodeExecutor {
       order_type: opts.orderType,
       limit_price: opts.limitPrice,
       stop_price: opts.stopPrice,
-      trailPercent: opts.trailPercent,
-      trailPrice: opts.trailPrice,
+      trail_percent: opts.trailPercent,
+      trail_price: opts.trailPrice,
+      timeInForce: opts.timeInForce,
       tag: opts.tag,
     };
   }
@@ -1100,8 +1102,8 @@ export class PortfolioExecutor implements INodeExecutor {
         commission_asset: undefined,
         limit_price: limitPrice,
         stop_price: stopPrice,
-        trail_Percent: trailPercent,
-        trail_Price: trailPrice,
+        trail_percent: trailPercent,
+        trail_price: trailPrice,
         order_type: params.orderType,
         tag: rejectReason ? `algo:${rejectReason}` : "algoUpdate",
         event_time: eventTime,
@@ -1420,6 +1422,9 @@ export class PortfolioExecutor implements INodeExecutor {
             orderType: params.orderType,
             limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
             stopPrice: toNumber(params.stopPrice),
+            trailPercent: toNumber(params.trailPercent),
+            trailPrice: toNumber(params.trailPrice),
+            timeInForce: params.timeInForce,
             tag: params.tag || context.nodeId,
           });
 

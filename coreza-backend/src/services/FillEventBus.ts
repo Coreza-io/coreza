@@ -35,8 +35,8 @@ export interface FillStreamEvent {
   order_type?: string;
   limit_price?: number;
   stop_price?: number;
-  trail_Percent?: number;
-  trail_Price?: number;
+  trail_percent?: number;
+  trail_price?: number;
   timeInForce: number;
   tag?: string;
 }

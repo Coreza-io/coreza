@@ -1024,7 +1024,7 @@ export class PortfolioExecutor implements INodeExecutor {
     try {
       const algoId = params.algoId ? String(params.algoId) : undefined;
       const symbol = String(params.symbol || "*").toUpperCase();
-      const algoStatus = String(params.algoStatus || "").toLowerCase();
+      const algoStatus = String(params.status || "").toLowerCase();
       const orderId = params.orderId ? String(params.orderId) : undefined;
       const triggerPrice = toNumber(params.triggerPrice) ?? 0;
       const requestedQty = toNumber(params.requestedQty) ?? 0;

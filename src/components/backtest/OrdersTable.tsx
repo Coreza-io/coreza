@@ -11,17 +11,12 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
-import { LiveAlgoOrder, LiveOrder } from "@/hooks/useLiveOrders";
+import { LiveOrder } from "@/hooks/useLiveOrders";
 import { getOrderStatusBadgeClass } from "./orderStatus";
 
 interface OrdersTableProps {
   orders: LiveOrder[];
-  algoOrders: LiveAlgoOrder[];
 }
-
-type DisplayRow =
-  | { type: "order"; id: string; time: string; order: LiveOrder }
-  | { type: "algo"; id: string; time: string; algoOrder: LiveAlgoOrder };
 
 const formatTime = (time?: string | null) =>
   time ? new Date(time).toLocaleString() : "—";
@@ -40,49 +35,13 @@ const csvEscape = (value: unknown) => {
   return text;
 };
 
-const getAlgoBadgeClass = (status?: string) => {
-  switch (status) {
-    case "Untriggered":
-      return "bg-muted text-muted-foreground border-border text-xs ml-2";
-    case "Triggering":
-      return "bg-blue-500/15 text-blue-600 border-blue-500/30 text-xs ml-2";
-    case "Triggered":
-      return "bg-cyan-500/15 text-cyan-600 border-cyan-500/30 text-xs ml-2";
-    case "Finished":
-      return "bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-xs ml-2";
-    case "Rejected":
-      return "bg-red-500/15 text-red-600 border-red-500/30 text-xs ml-2";
-    case "Expired":
-      return "bg-amber-500/15 text-amber-600 border-amber-500/30 text-xs ml-2";
-    case "Canceled":
-    case "Cancelled":
-      return "bg-muted text-muted-foreground border-border text-xs ml-2";
-    default:
-      return "bg-muted text-muted-foreground border-border text-xs ml-2";
-  }
-};
-
-export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
+export const OrdersTable = ({ orders }: OrdersTableProps) => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const mergedRows = useMemo<DisplayRow[]>(() => {
-    const orderRows: DisplayRow[] = orders.map((order) => ({
-      type: "order",
-      id: `order:${order.orderId}`,
-      time: order.time,
-      order,
-    }));
-    const algoRows: DisplayRow[] = algoOrders.map((algoOrder) => ({
-      type: "algo",
-      id: `algo:${algoOrder.algoId}`,
-      time: algoOrder.time,
-      algoOrder,
-    }));
-
-    return [...orderRows, ...algoRows].sort(
-      (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
-    );
-  }, [orders, algoOrders]);
+  const sortedOrders = useMemo(
+    () => [...orders].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()),
+    [orders],
+  );
 
   const toggleExpand = (rowId: string) => {
     setExpandedIds((prev) => {
@@ -96,14 +55,16 @@ export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
   const downloadCsv = () => {
     const headers = [
       "Date Time",
-      "Row Type",
       "Order ID",
       "Algo ID",
       "Symbol",
       "Type",
+      "Time In Force",
       "Price",
       "Stop Price",
       "Limit/Trigger Price",
+      "Trail Price",
+      "Trail Percent",
       "Quantity",
       "Status",
       "Tag",
@@ -112,45 +73,25 @@ export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
       "Reject Reason",
     ];
 
-    const orderRows = orders.map((order) => [
+    const rows = sortedOrders.map((order) => [
       order.time,
-      "order",
-      order.orderId,
-      "",
+      order.orderId ?? "",
+      order.algoId ?? "",
       order.symbol,
       order.orderType,
+      order.timeInForce ?? "",
       order.avgFillPrice,
       order.stopPrice ?? "",
       order.limitPrice ?? "",
+      order.trailPrice ?? "",
+      order.trailPercent ?? "",
       order.quantity,
       order.status,
       order.tag ?? "",
       order.totalCommission,
       order.commissionAsset ?? "",
-      "",
-    ]);
-
-    const algoRows = algoOrders.map((order) => [
-      order.time,
-      "algo",
-      order.orderId ?? "",
-      order.algoId,
-      order.symbol,
-      `${order.orderType} (Algo)`,
-      order.triggerPrice ?? "",
-      order.stopPrice ?? "",
-      order.triggerPrice ?? "",
-      "",
-      order.status,
-      order.tag ?? "",
-      "",
-      "",
       order.rejectReason ?? "",
     ]);
-
-    const rows = [...orderRows, ...algoRows].sort(
-      (a, b) => new Date(String(a[0] ?? "")).getTime() - new Date(String(b[0] ?? "")).getTime(),
-    );
 
     const csv = [headers, ...rows]
       .map((row) => row.map(csvEscape).join(","))
@@ -167,10 +108,7 @@ export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
     URL.revokeObjectURL(url);
   };
 
-  const summaryText = useMemo(
-    () => `${orders.length} orders + ${algoOrders.length} algo orders`,
-    [orders.length, algoOrders.length],
-  );
+  const summaryText = useMemo(() => `${orders.length} orders`, [orders.length]);
 
   return (
     <Card>
@@ -202,79 +140,22 @@ export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mergedRows.length === 0 ? (
+              {sortedOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No orders yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                mergedRows.map((row) => {
-                  const expanded = expandedIds.has(row.id);
+                sortedOrders.map((order, index) => {
+                  const rowId = order.algoId ?? order.orderId ?? `row-${index}`;
+                  const expanded = expandedIds.has(rowId);
 
-                  if (row.type === "algo") {
-                    const order = row.algoOrder;
-                    return (
-                      <Fragment key={row.id}>
-                        <TableRow
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => toggleExpand(row.id)}
-                        >
-                          <TableCell className="w-8 px-2">
-                            {expanded ? (
-                              <span className="font-medium text-muted-foreground">−</span>
-                            ) : (
-                              <span className="font-medium text-muted-foreground">+</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground whitespace-nowrap">
-                            {formatTime(order.time)}
-                          </TableCell>
-                          <TableCell>{order.symbol || "—"}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <div className="font-medium">{order.orderType || "-"}</div>
-                              <Badge variant="outline" className="w-fit text-xs">Algo</Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-0.5 text-xs">
-                              <div>Trigger: {formatPrice(order.triggerPrice, order.quoteAsset)}</div>
-                              {order.stopPrice != null && <div>Stop: {formatPrice(order.stopPrice, order.quoteAsset)}</div>}
-                            </div>
-                          </TableCell>
-                          <TableCell>—</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={getAlgoBadgeClass(order.status)}>
-                              {order.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{order.tag || "-"}</TableCell>
-                        </TableRow>
-
-                        {expanded && (
-                          <TableRow className="bg-muted/30 text-xs">
-                            <TableCell />
-                            <TableCell colSpan={7}>
-                              <div className="flex flex-wrap gap-4">
-                                <span>Algo ID: {order.algoId}</span>
-                                {order.orderId ? <span>Parent Order: {order.orderId}</span> : null}
-                                {order.rejectReason ? <span>Reject Reason: {order.rejectReason}</span> : null}
-                                <span>Updated: {formatTime(order.updatedAt)}</span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  }
-
-                  const order = row.order;
                   return (
-                    <Fragment key={row.id}>
+                    <Fragment key={rowId}>
                       <TableRow
                         className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => toggleExpand(row.id)}
+                        onClick={() => toggleExpand(rowId)}
                       >
                         <TableCell className="w-8 px-2">
                           {expanded ? (
@@ -288,7 +169,14 @@ export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
                         </TableCell>
                         <TableCell>{order.symbol || "—"}</TableCell>
                         <TableCell>
-                          <div className="font-medium">{order.orderType || "-"}</div>
+                          <div className="flex flex-col gap-1">
+                            <div className="font-medium">{order.orderType || "-"}</div>
+                            {order.algoId ? (
+                              <Badge variant="outline" className="w-fit text-xs">
+                                Algo
+                              </Badge>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-0.5 text-xs">
@@ -306,25 +194,50 @@ export const OrdersTable = ({ orders, algoOrders }: OrdersTableProps) => {
                         <TableCell>{order.tag || "-"}</TableCell>
                       </TableRow>
 
-                      {expanded &&
-                        order.fills.map((fill) => (
-                          <TableRow key={fill.id} className="bg-muted/30 text-xs">
+                      {expanded && (
+                        <>
+                          <TableRow className="bg-muted/20 text-xs">
                             <TableCell />
-                            <TableCell className="text-muted-foreground whitespace-nowrap">
-                              {formatTime(fill.time)}
+                            <TableCell colSpan={7}>
+                              <div className="flex flex-wrap gap-4">
+                                {order.algoId ? <span>Algo ID: {order.algoId}</span> : null}
+                                {order.orderId ? <span>Order ID: {order.orderId}</span> : null}
+                                {order.timeInForce ? <span>TIF: {order.timeInForce}</span> : null}
+                                {order.trailPrice != null ? (
+                                  <span>Trail Price: {formatPrice(order.trailPrice, order.quoteAsset)}</span>
+                                ) : null}
+                                {order.trailPercent != null ? (
+                                  <span>Trail %: {formatNumber(order.trailPercent)}</span>
+                                ) : null}
+                                {order.rejectReason ? <span>Reject Reason: {order.rejectReason}</span> : null}
+                              </div>
                             </TableCell>
-                            <TableCell>{order.symbol}</TableCell>
-                            <TableCell>Fill</TableCell>
-                            <TableCell>{formatPrice(fill.price, order.quoteAsset)}</TableCell>
-                            <TableCell>{formatNumber(fill.quantity)}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={getOrderStatusBadgeClass(fill.status)}>
-                                {fill.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{order.tag || "-"}</TableCell>
                           </TableRow>
-                        ))}
+
+                          {order.events.map((event) => (
+                            <TableRow key={event.id} className="bg-muted/30 text-xs">
+                              <TableCell />
+                              <TableCell className="text-muted-foreground whitespace-nowrap">
+                                {formatTime(event.time)}
+                              </TableCell>
+                              <TableCell>{order.symbol || "—"}</TableCell>
+                              <TableCell>{event.kind === "algo" ? "Algo" : "Order"}</TableCell>
+                              <TableCell>
+                                {event.price != null ? formatPrice(event.price, order.quoteAsset) : "—"}
+                              </TableCell>
+                              <TableCell>
+                                {event.quantity != null ? formatNumber(event.quantity) : "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={getOrderStatusBadgeClass(event.status)}>
+                                  {event.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{event.rejectReason || order.tag || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </>
+                      )}
                     </Fragment>
                   );
                 })

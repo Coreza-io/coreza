@@ -53,7 +53,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     : backtestData;
   const liveOrdersResult = isLive
     ? aggregateFillsToOrders(liveData.rawFills ?? [])
-    : { orders: [], algoOrders: [] };
+    : { orders: [] };
 
   const backPath = isLive ? "/dashboard/live" : "/dashboard/backtests";
   const pageLabel = isLive ? "Live Strategy" : "Backtest";
@@ -194,7 +194,6 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
           <TabsContent value="orders">
             <OrdersTable
               orders={liveOrdersResult.orders}
-              algoOrders={liveOrdersResult.algoOrders}
             />
           </TabsContent>
         )}

@@ -1,14 +1,19 @@
-export interface LiveOrderFill {
+export interface LiveOrderEvent {
   id: string;
+  kind: "algo" | "fill";
   time: string;
-  price: number;
-  quantity: number;
   status: string;
-  commission: number;
+  price?: number;
+  quantity?: number;
+  rejectReason?: string;
+  trailPrice?: number;
+  trailPercent?: number;
+  timeInForce?: string;
 }
 
 export interface LiveOrder {
-  orderId: string;
+  algoId?: string;
+  orderId?: string;
   symbol: string;
   side: string;
   orderType: string;
@@ -17,33 +22,20 @@ export interface LiveOrder {
   avgFillPrice: number;
   limitPrice?: number;
   stopPrice?: number;
+  trailPrice?: number;
+  trailPercent?: number;
+  timeInForce?: string;
+  rejectReason?: string;
   status: string;
   tag?: string;
   totalCommission: number;
   commissionAsset?: string;
   quoteAsset?: string;
-  fills: LiveOrderFill[];
-}
-
-export interface LiveAlgoOrder {
-  algoId: string;
-  orderId?: string;
-  symbol: string;
-  side: string;
-  orderType: string;
-  time: string;
-  updatedAt: string;
-  triggerPrice?: number;
-  stopPrice?: number;
-  status: string;
-  rejectReason?: string;
-  tag?: string;
-  quoteAsset?: string;
+  events: LiveOrderEvent[];
 }
 
 export interface LiveOrdersResult {
   orders: LiveOrder[];
-  algoOrders: LiveAlgoOrder[];
 }
 
 type RawFill = {
@@ -61,12 +53,35 @@ type RawFill = {
   commission_asset?: string | null;
   limit_price?: number | null;
   stop_price?: number | null;
+  trail_price?: number | null;
+  trail_Price?: number | null;
+  trail_percent?: number | null;
+  trail_Percent?: number | null;
+  time_in_force?: string | null;
+  timeInForce?: string | null;
   tag?: string | null;
   algo_id?: string | null;
   reject_reason?: string | null;
 };
 
 const KNOWN_QUOTES = ["USDT", "USDC", "USD", "BTC", "ETH", "BNB", "EUR"];
+
+const STATUS_PROGRESS: Record<string, number> = {
+  untriggered: 0,
+  triggering: 1,
+  triggered: 2,
+  new: 3,
+  submitted: 4,
+  pending_new: 4,
+  partially_filled: 5,
+  partial: 5,
+  filled: 6,
+  finished: 6,
+  cancelled: 7,
+  canceled: 7,
+  rejected: 7,
+  expired: 7,
+};
 
 const getQuoteAsset = (symbol?: string): string | undefined => {
   const normalized = String(symbol ?? "").trim().toUpperCase();
@@ -106,13 +121,14 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const normalizeStatus = (status?: string | null): string => {
+const normalizeStatus = (status?: string | null, isAlgoEvent = false): string => {
   const normalized = String(status ?? "").trim().toLowerCase();
   if (normalized === "partially_filled") return "Partial";
   if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
   if (normalized === "rejected") return "Rejected";
   if (normalized === "submitted" || normalized === "pending_new") return "Submitted";
-  if (normalized === "untriggered" || normalized === "new") return "Untriggered";
+  if (normalized === "untriggered") return "Untriggered";
+  if (normalized === "new") return isAlgoEvent ? "Untriggered" : "Submitted";
   if (normalized === "triggering") return "Triggering";
   if (normalized === "triggered") return "Triggered";
   if (normalized === "finished") return "Finished";
@@ -121,117 +137,151 @@ const normalizeStatus = (status?: string | null): string => {
   return titleCase(status) || "Filled";
 };
 
+const statusRank = (status?: string | null, isAlgoEvent = false): number => {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "new" && !isAlgoEvent) {
+    return STATUS_PROGRESS.submitted;
+  }
+  return STATUS_PROGRESS[normalized] ?? 0;
+};
+
+const resolveTrailPrice = (row?: RawFill): number | undefined => {
+  if (!row) return undefined;
+  const candidate = row.trail_Price ?? row.trail_price;
+  return candidate == null ? undefined : toNumber(candidate);
+};
+
+const resolveTrailPercent = (row?: RawFill): number | undefined => {
+  if (!row) return undefined;
+  const candidate = row.trail_Percent ?? row.trail_percent;
+  return candidate == null ? undefined : toNumber(candidate);
+};
+
+const resolveTimeInForce = (row?: RawFill): string | undefined => {
+  if (!row) return undefined;
+  const candidate = row.timeInForce ?? row.time_in_force;
+  return candidate ? String(candidate) : undefined;
+};
+
+const resolveRejectReason = (row?: RawFill): string | undefined => {
+  if (!row) return undefined;
+  const tag = row.tag ?? undefined;
+  if (row.reject_reason) return row.reject_reason;
+  if (typeof tag === "string" && tag.startsWith("algo:")) {
+    return tag.slice("algo:".length);
+  }
+  return undefined;
+};
+
 export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
-  const normalRows = (fills ?? []).filter((fill) => !fill.algo_id);
-  const algoRows = (fills ?? []).filter((fill) => !!fill.algo_id);
-  const grouped = new Map<string, RawFill[]>();
+  const rows = fills ?? [];
+  const orderIdToAlgoId = new Map<string, string>();
 
-  for (const fill of normalRows) {
-    const orderId = String(fill.order_id ?? "").trim() || String(fill.fill_id ?? fill.id ?? "").trim();
-    if (!orderId) continue;
+  for (const row of rows) {
+    const algoId = String(row.algo_id ?? "").trim();
+    const orderId = String(row.order_id ?? "").trim();
 
-    const existing = grouped.get(orderId);
-    if (existing) existing.push(fill);
-    else grouped.set(orderId, [fill]);
+    if (algoId && orderId) {
+      orderIdToAlgoId.set(orderId, algoId);
+    }
   }
 
-  const orders: LiveOrder[] = [];
+  const grouped = new Map<string, RawFill[]>();
 
-  for (const [orderId, group] of grouped.entries()) {
-    const sorted = [...group].sort((a, b) => {
-      const ta = new Date(a.event_time ?? 0).getTime();
-      const tb = new Date(b.event_time ?? 0).getTime();
-      return ta - tb;
-    });
+  for (const row of rows) {
+    const algoId = String(row.algo_id ?? "").trim();
+    const orderId = String(row.order_id ?? "").trim();
+    const fillId = String(row.fill_id ?? row.id ?? "").trim();
 
-    const selected = sorted;
-    const first = selected[0];
-    const last = selected[selected.length - 1];
+    let canonicalKey = "";
+    if (algoId) canonicalKey = `algo:${algoId}`;
+    else if (orderId && orderIdToAlgoId.has(orderId)) {
+      canonicalKey = `algo:${orderIdToAlgoId.get(orderId)}`;
+    } else if (orderId) canonicalKey = `order:${orderId}`;
+    else if (fillId) canonicalKey = `fill:${fillId}`;
 
-    const totalQty = selected.reduce((sum, fill) => sum + toNumber(fill.qty), 0);
-    const weightedNotional = selected.reduce(
-      (sum, fill) => sum + toNumber(fill.qty) * toNumber(fill.price),
+    if (!canonicalKey) continue;
+
+    const existing = grouped.get(canonicalKey);
+    if (existing) existing.push(row);
+    else grouped.set(canonicalKey, [row]);
+  }
+
+  const orders = Array.from(grouped.values()).map((group) => {
+    const sorted = [...group].sort(
+      (a, b) => new Date(a.event_time ?? 0).getTime() - new Date(b.event_time ?? 0).getTime(),
+    );
+
+    const first = sorted[0];
+    const algoRows = sorted.filter((row) => !!String(row.algo_id ?? "").trim());
+    const fillRows = sorted.filter((row) => !String(row.algo_id ?? "").trim());
+    const statusLeader = sorted.reduce((best, row) => {
+      const rowIsAlgo = !!String(row.algo_id ?? "").trim();
+      const bestIsAlgo = !!String(best.algo_id ?? "").trim();
+      return statusRank(row.fill_status, rowIsAlgo) >=
+        statusRank(best.fill_status, bestIsAlgo)
+        ? row
+        : best;
+    }, sorted[0]);
+
+    const latestRow = sorted[sorted.length - 1];
+    const representative = algoRows[0] ?? fillRows[0] ?? first;
+    const totalQty = fillRows.reduce((sum, row) => sum + toNumber(row.qty), 0);
+    const weightedNotional = fillRows.reduce(
+      (sum, row) => sum + toNumber(row.qty) * toNumber(row.price),
       0,
     );
 
-    const fillRows: LiveOrderFill[] = selected.map((fill, index) => ({
-      id: String(fill.id ?? fill.fill_id ?? `${orderId}-${index}`),
-      time: fill.event_time ?? "",
-      price: toNumber(fill.price),
-      quantity: toNumber(fill.qty),
-      status: normalizeStatus(fill.fill_status),
-      commission: toNumber(fill.commission),
-    }));
+    const algoRowWithOrderId = algoRows.find((row) => !!String(row.order_id ?? "").trim());
+    const firstFillRow = fillRows[0];
 
-    orders.push({
-      orderId,
-      symbol: String(first?.symbol ?? "").toUpperCase(),
-      side: String(first?.side ?? ""),
-      orderType: normalizeOrderType(first?.side, first?.order_type),
+    const events: LiveOrderEvent[] = sorted.map((row, index) => {
+      const isAlgoEvent = !!String(row.algo_id ?? "").trim();
+      return {
+        id: String(row.id ?? row.fill_id ?? `${index}`),
+        kind: isAlgoEvent ? "algo" : "fill",
+        time: row.event_time ?? "",
+        status: normalizeStatus(row.fill_status, isAlgoEvent),
+        price: toNumber(row.price) || undefined,
+        quantity: toNumber(row.qty) || undefined,
+        rejectReason: resolveRejectReason(row),
+        trailPrice: resolveTrailPrice(row),
+        trailPercent: resolveTrailPercent(row),
+        timeInForce: resolveTimeInForce(row),
+      };
+    });
+
+    return {
+      algoId: String(algoRows[0]?.algo_id ?? "").trim() || undefined,
+      orderId:
+        String(algoRowWithOrderId?.order_id ?? "").trim() ||
+        String(firstFillRow?.order_id ?? "").trim() ||
+        undefined,
+      symbol: String(representative?.symbol ?? "").toUpperCase(),
+      side: String(representative?.side ?? ""),
+      orderType: normalizeOrderType(representative?.side, representative?.order_type),
       time: first?.event_time ?? "",
       quantity: totalQty,
       avgFillPrice: totalQty > 0 ? weightedNotional / totalQty : 0,
-      limitPrice: first?.limit_price ?? undefined,
-      stopPrice: first?.stop_price ?? undefined,
-      status: normalizeStatus(last?.fill_status),
-      tag: first?.tag ?? undefined,
-      totalCommission: selected.reduce((sum, fill) => sum + toNumber(fill.commission), 0),
-      commissionAsset: first?.commission_asset ?? undefined,
-      quoteAsset: getQuoteAsset(first?.symbol),
-      fills: fillRows,
-    });
-  }
+      limitPrice: representative?.limit_price ?? undefined,
+      stopPrice: representative?.stop_price ?? undefined,
+      trailPrice: resolveTrailPrice(representative),
+      trailPercent: resolveTrailPercent(representative),
+      timeInForce: resolveTimeInForce(representative),
+      rejectReason: resolveRejectReason(latestRow),
+      status: normalizeStatus(
+        statusLeader?.fill_status,
+        !!String(statusLeader?.algo_id ?? "").trim(),
+      ),
+      tag: latestRow?.tag ?? undefined,
+      totalCommission: fillRows.reduce((sum, row) => sum + toNumber(row.commission), 0),
+      commissionAsset: firstFillRow?.commission_asset ?? undefined,
+      quoteAsset: getQuoteAsset(representative?.symbol),
+      events,
+    };
+  });
 
-  const sortedOrders = orders.sort(
-    (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
-  );
-
-  const algoById = new Map<string, { first: RawFill; latest: RawFill }>();
-  for (const row of algoRows) {
-    const algoId = String(row.algo_id ?? "").trim();
-    if (!algoId) continue;
-    const existing = algoById.get(algoId);
-    if (!existing) {
-      algoById.set(algoId, { first: row, latest: row });
-      continue;
-    }
-    const firstTime = new Date(existing.first.event_time ?? 0).getTime();
-    const latestTime = new Date(existing.latest.event_time ?? 0).getTime();
-    const nextTime = new Date(row.event_time ?? 0).getTime();
-    if (nextTime <= firstTime) {
-      existing.first = row;
-    }
-    if (nextTime >= latestTime) {
-      existing.latest = row;
-    }
-  }
-
-  const algoOrders: LiveAlgoOrder[] = Array.from(algoById.entries())
-    .map(([algoId, grouped]) => {
-      const latest = grouped.latest;
-      const first = grouped.first;
-      const tag = latest.tag ?? undefined;
-      const rejectReason =
-        typeof tag === "string" && tag.startsWith("algo:")
-          ? tag.slice("algo:".length)
-          : latest.reject_reason ?? undefined;
-      return {
-        algoId,
-        orderId: latest.order_id ?? undefined,
-        symbol: String(latest.symbol ?? "").toUpperCase(),
-        side: String(latest.side ?? ""),
-        orderType: normalizeOrderType(latest.side, latest.order_type),
-        time: first.event_time ?? latest.event_time ?? "",
-        updatedAt: latest.event_time ?? first.event_time ?? "",
-        triggerPrice: latest.limit_price ?? undefined,
-        stopPrice: latest.stop_price ?? undefined,
-        status: normalizeStatus(latest.fill_status),
-        rejectReason,
-        tag,
-        quoteAsset: getQuoteAsset(latest.symbol),
-      };
-    })
-    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-
-  return { orders: sortedOrders, algoOrders };
+  return {
+    orders: orders.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()),
+  };
 };

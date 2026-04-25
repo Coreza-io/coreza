@@ -362,6 +362,9 @@ export type Database = {
           quote_qty: number | null
           side: string
           stop_price: number | null
+          trail_Price: number | null
+          trail_Percent: number | null
+          timeInForce: string | null
           symbol: string
           tag: string | null
           user_id: string
@@ -388,6 +391,9 @@ export type Database = {
           quote_qty?: number | null
           side: string
           stop_price?: number | null
+          trail_Price?: number | null
+          trail_Percent?: number | null
+          timeInForce?: string | null
           symbol: string
           tag?: string | null
           user_id: string
@@ -414,6 +420,9 @@ export type Database = {
           quote_qty?: number | null
           side?: string
           stop_price?: number | null
+          trail_Price?: number | null
+          trail_Percent?: number | null
+          timeInForce?: string | null
           symbol?: string
           tag?: string | null
           user_id?: string

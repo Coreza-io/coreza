@@ -56,7 +56,6 @@ export const OrdersTable = ({ orders }: OrdersTableProps) => {
     const headers = [
       "Date Time",
       "Order ID",
-      "Algo ID",
       "Symbol",
       "Type",
       "Time In Force",
@@ -76,7 +75,6 @@ export const OrdersTable = ({ orders }: OrdersTableProps) => {
     const rows = sortedOrders.map((order) => [
       order.time,
       order.orderId ?? "",
-      order.algoId ?? "",
       order.symbol,
       order.orderType,
       order.timeInForce ?? "",
@@ -148,7 +146,7 @@ export const OrdersTable = ({ orders }: OrdersTableProps) => {
                 </TableRow>
               ) : (
                 sortedOrders.map((order, index) => {
-                  const rowId = order.algoId ?? order.orderId ?? `row-${index}`;
+                  const rowId = order.orderId ?? `row-${index}`;
                   const expanded = expandedIds.has(rowId);
 
                   return (
@@ -169,14 +167,7 @@ export const OrdersTable = ({ orders }: OrdersTableProps) => {
                         </TableCell>
                         <TableCell>{order.symbol || "—"}</TableCell>
                         <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <div className="font-medium">{order.orderType || "-"}</div>
-                            {order.algoId ? (
-                              <Badge variant="outline" className="w-fit text-xs">
-                                Algo
-                              </Badge>
-                            ) : null}
-                          </div>
+                          <div className="font-medium">{order.orderType || "-"}</div>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-0.5 text-xs">
@@ -200,7 +191,6 @@ export const OrdersTable = ({ orders }: OrdersTableProps) => {
                             <TableCell />
                             <TableCell colSpan={7}>
                               <div className="flex flex-wrap gap-4">
-                                {order.algoId ? <span>Algo ID: {order.algoId}</span> : null}
                                 {order.orderId ? <span>Order ID: {order.orderId}</span> : null}
                                 {order.timeInForce ? <span>TIF: {order.timeInForce}</span> : null}
                                 {order.trailPrice != null ? (
@@ -221,7 +211,7 @@ export const OrdersTable = ({ orders }: OrdersTableProps) => {
                                 {formatTime(event.time)}
                               </TableCell>
                               <TableCell>{order.symbol || "—"}</TableCell>
-                              <TableCell>{event.kind === "algo" ? "Algo" : "Order"}</TableCell>
+                              <TableCell>Order</TableCell>
                               <TableCell>
                                 {event.price != null ? formatPrice(event.price, order.quoteAsset) : "—"}
                               </TableCell>

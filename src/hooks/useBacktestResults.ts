@@ -28,15 +28,6 @@ export interface BacktestResultMetrics {
   avg_holding_period?: number;
 }
 
-export type AlgoLifecycleStatus =
-  | "Untriggered"
-  | "Triggering"
-  | "Triggered"
-  | "Finished"
-  | "Rejected"
-  | "Expired"
-  | "Canceled";
-
 export interface TradeOrder {
   id: string;
   symbol: string;
@@ -49,19 +40,9 @@ export interface TradeOrder {
     | "Filled"
     | "Cancelled"
     | "Rejected"
-    | "Untriggered"
-    | "Triggering"
-    | "Triggered"
-    | "Finished"
     | "Expired";
   exitReason?: string;
   time: string;
-}
-
-export interface AlgoParentInfo {
-  status: AlgoLifecycleStatus;
-  triggerPrice?: number | null;
-  rejectReason?: string | null;
 }
 
 export interface BacktestTrade {
@@ -86,7 +67,6 @@ export interface BacktestTrade {
   fees?: number | null;
   result?: "Win" | "Loss" | null;
   orders?: TradeOrder[];
-  algo?: AlgoParentInfo;
 }
 
 export interface PortfolioSnapshot {

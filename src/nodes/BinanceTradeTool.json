@@ -44,7 +44,7 @@
     }
   ],
   "action": {
-    "url": "/broker/binance/place_order",
+    "url": "/broker/binance/{{operation}}",
     "method": "POST"
   },
   "fields": [
@@ -101,12 +101,90 @@
       "showDescription": false
     },
     {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "name": "Place Order",
+          "id": "place_order"
+        },
+        {
+          "name": "Cancel Order",
+          "id": "cancel_order"
+        }
+      ],
+      "default": "place_order",
+      "required": true,
+      "showDescription": false
+    },
+    {
       "key": "symbol",
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. BTCUSDT",
       "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT).",
       "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "orderId",
+      "label": "Order ID",
+      "type": "text",
+      "placeholder": "Binance orderId",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "cancel_order"
+          ]
+        }
+      },
+      "description": "Cancel normal order by Binance numeric orderId.",
+      "showDescription": false
+    },
+    {
+      "key": "origClientOrderId",
+      "label": "Client Order ID",
+      "type": "text",
+      "placeholder": "Your origClientOrderId",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "cancel_order"
+          ]
+        }
+      },
+      "description": "Cancel normal order by your client order id.",
+      "showDescription": false
+    },
+    {
+      "key": "algoId",
+      "label": "Algo ID",
+      "type": "text",
+      "placeholder": "Binance algoId",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "cancel_order"
+          ]
+        }
+      },
+      "description": "If set, cancel uses futures algo endpoint (/fapi/v1/algoOrder).",
+      "showDescription": false
+    },
+    {
+      "key": "clientAlgoId",
+      "label": "Client Algo ID",
+      "type": "text",
+      "placeholder": "Your clientAlgoId",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "cancel_order"
+          ]
+        }
+      },
+      "description": "If set, cancel uses futures algo endpoint (/fapi/v1/algoOrder).",
       "showDescription": false
     },
     {
@@ -125,7 +203,14 @@
       ],
       "description": "BUY to open long/add, SELL to close/short.",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "type",
@@ -160,7 +245,14 @@
       "default": "MARKET",
       "description": "Order type: Market executes immediately, Limit at specified price, Stop/TP for conditional orders.",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "quantity",
@@ -169,7 +261,14 @@
       "placeholder": "Order quantity",
       "description": "Amount of base asset to trade (e.g., 0.01 BTC for BTCUSDT).",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "price",
@@ -179,7 +278,14 @@
       "description": "Execution price for limit orders.",
       "displayOptions": {
         "show": {
-          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
+          "type": [
+            "LIMIT",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT_LIMIT"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -197,6 +303,9 @@
             "STOP_LOSS_LIMIT",
             "TAKE_PROFIT",
             "TAKE_PROFIT_LIMIT"
+          ],
+          "operation": [
+            "place_order"
           ]
         }
       },
@@ -224,7 +333,14 @@
       "description": "GTC stays until filled/cancelled, IOC fills partially then cancels, FOK requires full fill or cancel.",
       "displayOptions": {
         "show": {
-          "type": ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"]
+          "type": [
+            "LIMIT",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT_LIMIT"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -237,7 +353,12 @@
       "description": "Visible portion of a large order. Hides true order size.",
       "displayOptions": {
         "show": {
-          "type": ["LIMIT"]
+          "type": [
+            "LIMIT"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -262,7 +383,14 @@
       ],
       "default": "RESULT",
       "description": "Response detail level: ACK (minimal), RESULT (order info), FULL (includes fills).",
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     }
   ]
 }

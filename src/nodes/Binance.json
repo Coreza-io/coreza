@@ -76,7 +76,6 @@
         { "name": "Get Positions", "id": "get_positions" },
         { "name": "Get Orders", "id": "get_orders" },
         { "name": "Get Trades", "id": "get_trades" },
-        { "name": "Cancel Order", "id": "cancel_order" },
         { "name": "Get Candle", "id": "get_candle" },
         { "name": "Get Ticker", "id": "get_ticker" }
       ],
@@ -94,24 +93,11 @@
             "get_candle",
             "get_latest_bar",
             "get_ticker",
-            "cancel_order",
             "get_orders",
             "get_trades"
           ]
         }
       }
-    },
-    {
-      "key": "order_id",
-      "label": "Order ID",
-      "type": "text",
-      "placeholder": "Order ID to cancel",
-      "displayOptions": {
-        "show": {
-          "operation": ["cancel_order"]
-        }
-      },
-      "required": true
     },
     {
       "key": "orderId",

@@ -36,6 +36,16 @@ function isAlgoCancel(input: any): boolean {
   return ALGO_TYPES.has(orderType);
 }
 
+function isAlgoCancelTarget(input: any): boolean {
+  if (input?.algoId != null && input?.algoId !== "") return true;
+  if (input?.clientAlgoId != null && input?.clientAlgoId !== "") return true;
+  if (input?.algo_id != null && input?.algo_id !== "") return true;
+  if (input?.client_algo_id != null && input?.client_algo_id !== "") return true;
+  if (input?.isAlgo === true) return true;
+  const orderType = String(input?.orderType ?? input?.type ?? "").toUpperCase();
+  return ALGO_TYPES.has(orderType);
+}
+
 function assertNoConflictingFields(input: any) {
   if (input.closePosition === true && input.quantity) {
     throw new Error("quantity cannot be sent when closePosition=true");
@@ -444,52 +454,65 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       trades: raw,
     }),
   },
+  // Real normal order exists
+  // DELETE /fapi/v1/order
+  // required: symbol + timestamp + signature
+  // identity: orderId OR origClientOrderId
+  //
+  // Algo order still pending trigger
+  // DELETE /fapi/v1/algoOrder
+  // required: timestamp + signature
+  // identity: algoId OR clientAlgoId
   cancel_order: {
     method: "delete",
     path: (input: any) => {
       const marketType = getMarketType(input);
       if (marketType === "futures") {
-        return isAlgoCancel(input) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
+        return isAlgoCancelTarget(input) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
       }
+      // Spot only supports normal cancel
       return "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
-      if (!input.symbol) throw new Error("symbol is required for cancel_order");
-      const useAlgoEndpoint =
-        getMarketType(input) === "futures" && isAlgoCancel(input);
-      if (useAlgoEndpoint && !input.algo_id && !input.order_id) {
-        throw new Error(
-          "algo_id (or order_id as algoId) is required for cancel_order",
-        );
-      }
-      if (!useAlgoEndpoint && !input.order_id) {
-        throw new Error("order_id is required for cancel_order");
-      }
-
       const marketType = getMarketType(input);
-      const orderType = String(
-        input?.orderType || input?.type || "",
-      ).toUpperCase();
-      const isAlgo =
-        marketType === "futures" &&
-        (input.isAlgo === true || ALGO_TYPES.has(orderType));
+      const algo = marketType === "futures" && isAlgoCancelTarget(input);
 
-      const baseParams: Record<string, any> = {
-        symbol: input.symbol,
-        ...(useAlgoEndpoint
-          ? { algoId: input.algo_id ?? input.order_id }
-          : { orderId: input.order_id }),
+      const params: Record<string, any> = {
         recvWindow: 60000,
         timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
       };
 
-      if (isAlgo) {
-        baseParams.algoId = input.order_id;
+      // symbol: required for normal cancel, optional/ignored for algo cancel
+      if (!algo) {
+        if (!input.symbol) throw new Error("symbol is required for cancel_order");
+        params.symbol = input.symbol;
+      } else if (input.symbol) {
+        params.symbol = input.symbol;
+      }
+      const algoId = String(input?.algoId ?? input?.algo_id ?? "").trim();
+      const clientAlgoId = String(
+        input?.clientAlgoId ?? input?.client_algo_id ?? "",
+      ).trim();
+      const orderId = String(input?.orderId ?? input?.order_id ?? "").trim();
+      const origClientOrderId = String(
+        input?.origClientOrderId ?? input?.orig_client_order_id ?? "",
+      ).trim();
+
+      if (algo) {
+        if (algoId) params.algoId = algoId;
+        if (clientAlgoId) params.clientAlgoId = clientAlgoId;
+        if (!params.algoId && !params.clientAlgoId) {
+          throw new Error("algoId or clientAlgoId is required for algo cancel_order");
+        }
       } else {
-        baseParams.orderId = input.order_id;
+        if (orderId) params.orderId = orderId;
+        if (origClientOrderId) params.origClientOrderId = origClientOrderId;
+        if (!params.orderId && !params.origClientOrderId) {
+          throw new Error("orderId or origClientOrderId is required for cancel_order");
+        }
       }
 
-      return signParams(creds, baseParams);
+      return signParams(creds, params);
     },
   },
   // get_open_algo_orders: {

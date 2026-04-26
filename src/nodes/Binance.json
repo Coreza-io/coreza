@@ -57,8 +57,13 @@
       "required": true
     },
     {
+      "key": "assetType",
+      "type": "hidden",
+      "default": "crypto"
+    },
+    {
       "key": "marketType",
-      "label": "Asset Type",
+      "label": "Market Type",
       "type": "select",
       "options": [
         { "name": "Spot", "id": "spot" },

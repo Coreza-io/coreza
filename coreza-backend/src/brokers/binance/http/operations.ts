@@ -31,19 +31,10 @@ function normalizePriceMatch(value: any) {
 }
 
 function isAlgoCancel(input: any): boolean {
-  if (input?.isAlgo === true) return true;
-  const orderType = String(input?.orderType ?? input?.type ?? "").toUpperCase();
-  return ALGO_TYPES.has(orderType);
-}
-
-function isAlgoCancelTarget(input: any): boolean {
-  if (input?.algoId != null && input?.algoId !== "") return true;
-  if (input?.clientAlgoId != null && input?.clientAlgoId !== "") return true;
-  if (input?.algo_id != null && input?.algo_id !== "") return true;
-  if (input?.client_algo_id != null && input?.client_algo_id !== "") return true;
-  if (input?.isAlgo === true) return true;
-  const orderType = String(input?.orderType ?? input?.type ?? "").toUpperCase();
-  return ALGO_TYPES.has(orderType);
+  return Boolean(
+    String(input?.algoId ?? "").trim() ||
+    String(input?.clientAlgoId ?? "").trim(),
+  );
 }
 
 function assertNoConflictingFields(input: any) {
@@ -468,14 +459,14 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     path: (input: any) => {
       const marketType = getMarketType(input);
       if (marketType === "futures") {
-        return isAlgoCancelTarget(input) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
+        return isAlgoCancel(input) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
       }
       // Spot only supports normal cancel
       return "/api/v3/order";
     },
     makeParams: (input: any, creds: any) => {
       const marketType = getMarketType(input);
-      const algo = marketType === "futures" && isAlgoCancelTarget(input);
+      const algo = marketType === "futures" && isAlgoCancel(input);
 
       const params: Record<string, any> = {
         recvWindow: 60000,
@@ -484,7 +475,8 @@ export const binanceOperations: Record<string, BrokerOperation> = {
 
       // symbol: required for normal cancel, optional/ignored for algo cancel
       if (!algo) {
-        if (!input.symbol) throw new Error("symbol is required for cancel_order");
+        if (!input.symbol)
+          throw new Error("symbol is required for cancel_order");
         params.symbol = input.symbol;
       } else if (input.symbol) {
         params.symbol = input.symbol;
@@ -502,13 +494,17 @@ export const binanceOperations: Record<string, BrokerOperation> = {
         if (algoId) params.algoId = algoId;
         if (clientAlgoId) params.clientAlgoId = clientAlgoId;
         if (!params.algoId && !params.clientAlgoId) {
-          throw new Error("algoId or clientAlgoId is required for algo cancel_order");
+          throw new Error(
+            "algoId or clientAlgoId is required for algo cancel_order",
+          );
         }
       } else {
         if (orderId) params.orderId = orderId;
         if (origClientOrderId) params.origClientOrderId = origClientOrderId;
         if (!params.orderId && !params.origClientOrderId) {
-          throw new Error("orderId or origClientOrderId is required for cancel_order");
+          throw new Error(
+            "orderId or origClientOrderId is required for cancel_order",
+          );
         }
       }
 

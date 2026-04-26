@@ -11,47 +11,20 @@ import { buildLiveMetrics } from "@/lib/liveMetrics";
 
 const mapFillStatusToOrderStatus = (
   fillStatus?: string | null,
-): "Partial" | "Filled" | "Cancelled" | "Rejected" | "Untriggered" | "Triggering" | "Triggered" | "Finished" | "Expired" => {
+): "Partial" | "Filled" | "Cancelled" | "Rejected" | "Expired" => {
   const normalized = String(fillStatus ?? "").trim().toLowerCase();
   if (normalized === "partially_filled") return "Partial";
   if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
   if (normalized === "rejected") return "Rejected";
-  if (normalized === "untriggered" || normalized === "new") return "Untriggered";
-  if (normalized === "triggering") return "Triggering";
-  if (normalized === "triggered") return "Triggered";
-  if (normalized === "finished") return "Finished";
   if (normalized === "expired") return "Expired";
   if (normalized === "filled" || normalized === "") return "Filled";
   return "Filled";
-};
-
-const mapAlgoStatus = (
-  s?: string | null,
-):
-  | "Untriggered"
-  | "Triggering"
-  | "Triggered"
-  | "Finished"
-  | "Rejected"
-  | "Expired"
-  | "Canceled"
-  | null => {
-  const n = String(s ?? "").trim().toLowerCase();
-  if (n === "new" || n === "untriggered") return "Untriggered";
-  if (n === "triggering") return "Triggering";
-  if (n === "triggered") return "Triggered";
-  if (n === "finished") return "Finished";
-  if (n === "rejected") return "Rejected";
-  if (n === "expired") return "Expired";
-  if (n === "canceled" || n === "cancelled") return "Canceled";
-  return null;
 };
 
 const mapLiveTradeToBacktestTrade = (
   row: any,
   workflowId: string,
   fills?: any[],
-  algoFills?: any[],
 ): BacktestTrade => {
   const entryOrderId = row.entry_order_id;
   const exitOrderId = row.exit_order_id;
@@ -60,12 +33,6 @@ const mapLiveTradeToBacktestTrade = (
   if (fills && fills.length > 0 && (entryOrderId || exitOrderId)) {
     const matchedFills = fills.filter(
       (f: any) =>
-        !f.algo_id &&
-        (f.order_id === entryOrderId || f.order_id === exitOrderId),
-    );
-    const matchedAlgo = fills.find(
-      (f: any) =>
-        !!f.algo_id &&
         (f.order_id === entryOrderId || f.order_id === exitOrderId),
     );
     if (matchedFills.length > 0) {
@@ -81,44 +48,6 @@ const mapLiveTradeToBacktestTrade = (
           f.order_id === exitOrderId ? (row.exit_reason ?? undefined) : undefined,
         time: f.event_time,
       }));
-      if (matchedAlgo) {
-        orders.unshift({
-          id: `algo-${matchedAlgo.id ?? matchedAlgo.fill_id}`,
-          symbol: matchedAlgo.symbol,
-          side: matchedAlgo.side,
-          orderType: "Algo Parent",
-          fillPrice: matchedAlgo.price,
-          quantity: 0,
-          status: mapFillStatusToOrderStatus(matchedAlgo.fill_status),
-          exitReason: matchedAlgo.commission_asset ?? undefined,
-          time: matchedAlgo.event_time,
-        });
-      }
-    }
-  }
-
-  // Attach algo lifecycle info if any algo row's order_id (engineOrderId) matches this trade
-  let algo: BacktestTrade["algo"];
-  if (algoFills && algoFills.length > 0 && (entryOrderId || exitOrderId)) {
-    const matchedAlgo = algoFills.find(
-      (a: any) =>
-        a.order_id &&
-        (a.order_id === entryOrderId || a.order_id === exitOrderId),
-    );
-    if (matchedAlgo) {
-      const status = mapAlgoStatus(matchedAlgo.fill_status);
-      if (status) {
-        const tag = String(matchedAlgo.tag ?? "");
-        const rejectReason = tag.startsWith("algo:")
-          ? tag.slice("algo:".length)
-          : null;
-        algo = {
-          status,
-          triggerPrice:
-            matchedAlgo.limit_price != null ? Number(matchedAlgo.limit_price) : null,
-          rejectReason,
-        };
-      }
     }
   }
 
@@ -141,7 +70,6 @@ const mapLiveTradeToBacktestTrade = (
     fees: row.commission != null ? Number(row.commission) : null,
     result: netPnl != null ? (netPnl >= 0 ? "Win" : "Loss") : null,
     orders,
-    algo,
   };
 };
 
@@ -287,15 +215,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       const matchedTradeFills = rawFillsAll.filter(
         (f: any) => !f.algo_id,
       );
-      const algoFills = rawFillsAll.filter(
-        (f: any) => !!f.algo_id,
-      );
       const filteredSnapshots = snapshotsData ?? [];
       const closedTrades = (liveTradesData ?? []) as any[];
 
       // Map trades from live_trades table
       const mappedTrades = closedTrades.map((trade: any) =>
-        mapLiveTradeToBacktestTrade(trade, workflowId, matchedTradeFills, algoFills),
+        mapLiveTradeToBacktestTrade(trade, workflowId, matchedTradeFills),
       );
       setTrades(mappedTrades);
 

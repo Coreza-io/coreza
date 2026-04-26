@@ -78,7 +78,10 @@ function validateGoodTillDate(input: any, timeInForceValue: string) {
   return goodTillDate;
 }
 
-function buildStandardFuturesPayload(input: any, baseParams: Record<string, any>) {
+function buildStandardFuturesPayload(
+  input: any,
+  baseParams: Record<string, any>,
+) {
   assertNoConflictingFields(input);
 
   const params: Record<string, any> = { ...baseParams };
@@ -90,7 +93,9 @@ function buildStandardFuturesPayload(input: any, baseParams: Record<string, any>
   }
 
   if (input.closePosition === true) {
-    throw new Error("closePosition is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+    throw new Error(
+      "closePosition is only supported for STOP_MARKET/TAKE_PROFIT_MARKET",
+    );
   }
 
   if (!input.quantity) {
@@ -110,9 +115,12 @@ function buildStandardFuturesPayload(input: any, baseParams: Record<string, any>
     if (hasPrice) params.price = String(input.price);
     if (priceMatch) params.priceMatch = priceMatch;
   } else {
-    if (input.price) throw new Error("price is not supported for MARKET orders");
-    if (priceMatch) throw new Error("priceMatch is not supported for MARKET orders");
-    if (input.timeInForce) throw new Error("timeInForce is not supported for MARKET orders");
+    if (input.price)
+      throw new Error("price is not supported for MARKET orders");
+    if (priceMatch)
+      throw new Error("priceMatch is not supported for MARKET orders");
+    if (input.timeInForce)
+      throw new Error("timeInForce is not supported for MARKET orders");
     if (input.goodTillDate) {
       throw new Error("goodTillDate is only supported when timeInForce=GTD");
     }
@@ -120,7 +128,8 @@ function buildStandardFuturesPayload(input: any, baseParams: Record<string, any>
 
   if (input.positionSide) params.positionSide = input.positionSide;
   if (input.reduceOnly !== undefined) params.reduceOnly = input.reduceOnly;
-  if (input.selfTradePreventionMode) params.selfTradePreventionMode = input.selfTradePreventionMode;
+  if (input.selfTradePreventionMode)
+    params.selfTradePreventionMode = input.selfTradePreventionMode;
 
   if (input._idempotencyKey) params.newClientOrderId = input._idempotencyKey;
   return params;
@@ -147,7 +156,11 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
     params.selfTradePreventionMode = input.selfTradePreventionMode;
   }
 
-  if (["STOP", "TAKE_PROFIT", "STOP_MARKET", "TAKE_PROFIT_MARKET"].includes(orderType)) {
+  if (
+    ["STOP", "TAKE_PROFIT", "STOP_MARKET", "TAKE_PROFIT_MARKET"].includes(
+      orderType,
+    )
+  ) {
     if (!input.stopPrice) {
       throw new Error("stopPrice is required for this order type");
     }
@@ -156,14 +169,19 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
 
   if (orderType === "STOP" || orderType === "TAKE_PROFIT") {
     if (input.closePosition === true) {
-      throw new Error("closePosition is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+      throw new Error(
+        "closePosition is only supported for STOP_MARKET/TAKE_PROFIT_MARKET",
+      );
     }
-    if (!input.quantity) throw new Error("quantity is required for this order type");
+    if (!input.quantity)
+      throw new Error("quantity is required for this order type");
     params.quantity = String(input.quantity);
 
     const hasPrice = Boolean(input.price);
     if (hasPrice === Boolean(priceMatch)) {
-      throw new Error("Exactly one of price or priceMatch is required for this order type");
+      throw new Error(
+        "Exactly one of price or priceMatch is required for this order type",
+      );
     }
     if (hasPrice) params.price = String(input.price);
     if (priceMatch) params.priceMatch = priceMatch;
@@ -173,13 +191,17 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
     const goodTillDate = validateGoodTillDate(input, tif);
     if (goodTillDate) params.goodTillDate = goodTillDate;
     if (input.priceProtect !== undefined) {
-      throw new Error("priceProtect is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+      throw new Error(
+        "priceProtect is only supported for STOP_MARKET/TAKE_PROFIT_MARKET",
+      );
     }
   }
 
   if (orderType === "STOP_MARKET" || orderType === "TAKE_PROFIT_MARKET") {
     if (input.price || priceMatch) {
-      throw new Error("price and priceMatch are not supported for this order type");
+      throw new Error(
+        "price and priceMatch are not supported for this order type",
+      );
     }
     if (input.timeInForce) {
       throw new Error("timeInForce is not supported for this order type");
@@ -196,12 +218,15 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
     }
     if (hasQuantity) params.quantity = String(input.quantity);
     if (isClosePosition) params.closePosition = true;
-    if (input.priceProtect !== undefined) params.priceProtect = input.priceProtect;
+    if (input.priceProtect !== undefined)
+      params.priceProtect = input.priceProtect;
   }
 
   if (orderType === "TRAILING_STOP_MARKET") {
     if (input.closePosition === true) {
-      throw new Error("closePosition is not supported for TRAILING_STOP_MARKET");
+      throw new Error(
+        "closePosition is not supported for TRAILING_STOP_MARKET",
+      );
     }
     if (!input.callbackRate) {
       throw new Error("callbackRate is required for TRAILING_STOP_MARKET");
@@ -210,16 +235,23 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
       throw new Error("stopPrice is not supported for TRAILING_STOP_MARKET");
     }
     if (input.price || priceMatch) {
-      throw new Error("price and priceMatch are not supported for TRAILING_STOP_MARKET");
+      throw new Error(
+        "price and priceMatch are not supported for TRAILING_STOP_MARKET",
+      );
     }
     if (input.timeInForce || input.goodTillDate) {
-      throw new Error("timeInForce and goodTillDate are not supported for TRAILING_STOP_MARKET");
+      throw new Error(
+        "timeInForce and goodTillDate are not supported for TRAILING_STOP_MARKET",
+      );
     }
     if (input.priceProtect !== undefined) {
-      throw new Error("priceProtect is only supported for STOP_MARKET/TAKE_PROFIT_MARKET");
+      throw new Error(
+        "priceProtect is only supported for STOP_MARKET/TAKE_PROFIT_MARKET",
+      );
     }
     params.callbackRate = String(input.callbackRate);
-    if (input.activationPrice) params.activatePrice = String(input.activationPrice);
+    if (input.activationPrice)
+      params.activatePrice = String(input.activationPrice);
     if (input.quantity) params.quantity = String(input.quantity);
   }
 
@@ -308,7 +340,9 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = getMarketType(input);
-      return marketType === "futures" ? "/fapi/v1/allOrders" : "/api/v3/allOrders";
+      return marketType === "futures"
+        ? "/fapi/v1/allOrders"
+        : "/api/v3/allOrders";
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for get_orders");
@@ -316,11 +350,15 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       const params: Record<string, any> = {
         symbol: input.symbol,
         recvWindow: 60000,
-        timestamp: getBinanceTimestamp(getEnvironment(input), getMarketType(input)),
+        timestamp: getBinanceTimestamp(
+          getEnvironment(input),
+          getMarketType(input),
+        ),
       };
 
       if (input.limit) params.limit = input.limit;
-      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.startTime)
+        params.startTime = new Date(input.startTime).getTime();
       if (input.endTime) params.endTime = new Date(input.endTime).getTime();
 
       return signParams(creds, params);
@@ -335,7 +373,9 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     makeParams: (input: any, creds: any) => {
       const marketType = getMarketType(input);
       if (marketType !== "futures") {
-        throw new Error("get_open_algo_orders is only supported for futures accounts");
+        throw new Error(
+          "get_open_algo_orders is only supported for futures accounts",
+        );
       }
       const params: Record<string, any> = {
         recvWindow: 60000,
@@ -352,16 +392,20 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     makeParams: (input: any, creds: any) => {
       const marketType = getMarketType(input);
       if (marketType !== "futures") {
-        throw new Error("get_all_algo_orders is only supported for futures accounts");
+        throw new Error(
+          "get_all_algo_orders is only supported for futures accounts",
+        );
       }
-      if (!input.symbol) throw new Error("symbol is required for get_all_algo_orders");
+      if (!input.symbol)
+        throw new Error("symbol is required for get_all_algo_orders");
       const params: Record<string, any> = {
         symbol: input.symbol,
         recvWindow: 60000,
         timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
       };
       if (input.algoType) params.algoType = input.algoType;
-      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.startTime)
+        params.startTime = new Date(input.startTime).getTime();
       if (input.endTime) params.endTime = new Date(input.endTime).getTime();
       if (input.limit) params.limit = input.limit;
       return signParams(creds, params);
@@ -371,7 +415,9 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     method: "get",
     path: (input: any) => {
       const marketType = getMarketType(input);
-      return marketType === "futures" ? "/fapi/v1/userTrades" : "/api/v3/myTrades";
+      return marketType === "futures"
+        ? "/fapi/v1/userTrades"
+        : "/api/v3/myTrades";
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for get_trades");
@@ -379,11 +425,15 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       const params: Record<string, any> = {
         symbol: input.symbol,
         recvWindow: 60000,
-        timestamp: getBinanceTimestamp(getEnvironment(input), getMarketType(input)),
+        timestamp: getBinanceTimestamp(
+          getEnvironment(input),
+          getMarketType(input),
+        ),
       };
 
       if (input.orderId) params.orderId = input.orderId;
-      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.startTime)
+        params.startTime = new Date(input.startTime).getTime();
       if (input.endTime) params.endTime = new Date(input.endTime).getTime();
       if (input.fromId) params.fromId = input.fromId;
       if (input.limit) params.limit = input.limit;
@@ -405,16 +455,21 @@ export const binanceOperations: Record<string, BrokerOperation> = {
     },
     makeParams: (input: any, creds: any) => {
       if (!input.symbol) throw new Error("symbol is required for cancel_order");
-      const useAlgoEndpoint = getMarketType(input) === "futures" && isAlgoCancel(input);
+      const useAlgoEndpoint =
+        getMarketType(input) === "futures" && isAlgoCancel(input);
       if (useAlgoEndpoint && !input.algo_id && !input.order_id) {
-        throw new Error("algo_id (or order_id as algoId) is required for cancel_order");
+        throw new Error(
+          "algo_id (or order_id as algoId) is required for cancel_order",
+        );
       }
       if (!useAlgoEndpoint && !input.order_id) {
         throw new Error("order_id is required for cancel_order");
       }
 
       const marketType = getMarketType(input);
-      const orderType = String(input?.orderType || input?.type || "").toUpperCase();
+      const orderType = String(
+        input?.orderType || input?.type || "",
+      ).toUpperCase();
       const isAlgo =
         marketType === "futures" &&
         (input.isAlgo === true || ALGO_TYPES.has(orderType));
@@ -437,43 +492,43 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       return signParams(creds, baseParams);
     },
   },
-  get_open_algo_orders: {
-    method: "get",
-    path: () => "/fapi/v1/openAlgoOrders",
-    makeParams: (input: any, creds: any) => {
-      const marketType = getMarketType(input);
-      if (marketType !== "futures") {
-        throw new Error("get_open_algo_orders is only supported for futures accounts");
-      }
-      const params: Record<string, any> = {
-        recvWindow: 60000,
-        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
-      };
-      if (input.symbol) params.symbol = input.symbol;
-      return signParams(creds, params);
-    },
-    transformResult: (raw: any) => ({ algoOrders: raw }),
-  },
-  get_all_algo_orders: {
-    method: "get",
-    path: () => "/fapi/v1/allAlgoOrders",
-    makeParams: (input: any, creds: any) => {
-      const marketType = getMarketType(input);
-      if (marketType !== "futures") {
-        throw new Error("get_all_algo_orders is only supported for futures accounts");
-      }
-      const params: Record<string, any> = {
-        recvWindow: 60000,
-        timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
-      };
-      if (input.symbol) params.symbol = input.symbol;
-      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
-      if (input.endTime) params.endTime = new Date(input.endTime).getTime();
-      if (input.limit) params.limit = input.limit;
-      return signParams(creds, params);
-    },
-    transformResult: (raw: any) => ({ algoOrders: raw }),
-  },
+  // get_open_algo_orders: {
+  //   method: "get",
+  //   path: () => "/fapi/v1/openAlgoOrders",
+  //   makeParams: (input: any, creds: any) => {
+  //     const marketType = getMarketType(input);
+  //     if (marketType !== "futures") {
+  //       throw new Error("get_open_algo_orders is only supported for futures accounts");
+  //     }
+  //     const params: Record<string, any> = {
+  //       recvWindow: 60000,
+  //       timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+  //     };
+  //     if (input.symbol) params.symbol = input.symbol;
+  //     return signParams(creds, params);
+  //   },
+  //   transformResult: (raw: any) => ({ algoOrders: raw }),
+  // },
+  // get_all_algo_orders: {
+  //   method: "get",
+  //   path: () => "/fapi/v1/allAlgoOrders",
+  //   makeParams: (input: any, creds: any) => {
+  //     const marketType = getMarketType(input);
+  //     if (marketType !== "futures") {
+  //       throw new Error("get_all_algo_orders is only supported for futures accounts");
+  //     }
+  //     const params: Record<string, any> = {
+  //       recvWindow: 60000,
+  //       timestamp: getBinanceTimestamp(getEnvironment(input), marketType),
+  //     };
+  //     if (input.symbol) params.symbol = input.symbol;
+  //     if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+  //     if (input.endTime) params.endTime = new Date(input.endTime).getTime();
+  //     if (input.limit) params.limit = input.limit;
+  //     return signParams(creds, params);
+  //   },
+  //   transformResult: (raw: any) => ({ algoOrders: raw }),
+  // },
   get_candle: {
     method: "get",
     path: (input: any) => {
@@ -489,7 +544,8 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       };
 
       if (input.limit) params.limit = input.limit;
-      if (input.startTime) params.startTime = new Date(input.startTime).getTime();
+      if (input.startTime)
+        params.startTime = new Date(input.startTime).getTime();
       if (input.endTime) params.endTime = new Date(input.endTime).getTime();
 
       return params;
@@ -523,7 +579,9 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       const marketType = getMarketType(input);
       if (marketType === "futures") {
         const orderType = String(input?.type || "").toUpperCase();
-        return ALGO_TYPES.has(orderType) ? "/fapi/v1/algoOrder" : "/fapi/v1/order";
+        return ALGO_TYPES.has(orderType)
+          ? "/fapi/v1/algoOrder"
+          : "/fapi/v1/order";
       }
       return "/api/v3/order";
     },
@@ -570,32 +628,43 @@ export const binanceOperations: Record<string, BrokerOperation> = {
         quantity: String(quantity),
       };
 
-      const spotLimitLikeTypes = ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"];
+      const spotLimitLikeTypes = [
+        "LIMIT",
+        "STOP_LOSS_LIMIT",
+        "TAKE_PROFIT_LIMIT",
+      ];
       const limitLikeTypes = spotLimitLikeTypes;
 
       if (limitLikeTypes.includes(orderType)) {
         params.timeInForce = timeInForce || "GTC";
       }
 
-      const needsPrice =
-        ["LIMIT", "STOP_LOSS_LIMIT", "TAKE_PROFIT_LIMIT"].includes(orderType);
+      const needsPrice = [
+        "LIMIT",
+        "STOP_LOSS_LIMIT",
+        "TAKE_PROFIT_LIMIT",
+      ].includes(orderType);
       if (needsPrice) {
         if (!price) throw new Error("price is required for this order type");
         params.price = String(price);
       }
 
-      const needsStopPrice =
-        ["STOP_LOSS", "STOP_LOSS_LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_LIMIT"].includes(
-          orderType,
-        );
+      const needsStopPrice = [
+        "STOP_LOSS",
+        "STOP_LOSS_LIMIT",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_LIMIT",
+      ].includes(orderType);
       if (needsStopPrice) {
-        if (!stopPrice) throw new Error("stopPrice is required for this order type");
+        if (!stopPrice)
+          throw new Error("stopPrice is required for this order type");
         params.stopPrice = String(stopPrice);
       }
 
       if (icebergQty) params.icebergQty = String(icebergQty);
 
-      if (input._idempotencyKey) params.newClientOrderId = input._idempotencyKey;
+      if (input._idempotencyKey)
+        params.newClientOrderId = input._idempotencyKey;
 
       return signParams(creds, params);
     },

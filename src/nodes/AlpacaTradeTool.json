@@ -44,15 +44,41 @@
     "method": "POST"
   },
   "action": {
-    "url": "/broker/alpaca/place_order",
+    "url": "/broker/alpaca/{{operation}}",
     "method": "POST"
   },
   "fields": [
     {
       "key": "operation",
       "label": "Operation",
-      "type": "hidden",
-      "default": "place_order"
+      "type": "select",
+      "options": [
+        {
+          "id": "place_order",
+          "name": "Place Order"
+        },
+        {
+          "id": "cancel_order",
+          "name": "Cancel Order"
+        }
+      ],
+      "default": "place_order",
+      "required": true
+    },
+    {
+      "key": "order_id",
+      "label": "Order ID",
+      "type": "text",
+      "placeholder": "Order UUID",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "cancel_order"
+          ]
+        }
+      },
+      "showDescription": false
     },
     {
       "key": "credential_id",
@@ -61,6 +87,24 @@
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
       "description": "Your saved Alpaca API credential.",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "default": "paper",
       "required": true,
       "showDescription": false
     },
@@ -92,7 +136,12 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["stock"]
+          "assetType": [
+            "stock"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -106,7 +155,12 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["crypto"]
+          "assetType": [
+            "crypto"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -138,7 +192,12 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["crypto"]
+          "assetType": [
+            "crypto"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -160,7 +219,14 @@
       "default": "buy",
       "description": "Buy to open/add position, Sell to close/reduce position.",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "qty",
@@ -169,7 +235,14 @@
       "placeholder": "e.g. 1",
       "description": "Number of shares/units to trade. Supports fractional for crypto.",
       "required": false,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "type",
@@ -196,7 +269,14 @@
       "default": "market",
       "description": "Market executes immediately, Limit at specified price, Stop triggers at price, Trailing Stop follows price.",
       "required": true,
-      "showDescription": false
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "limit_price",
@@ -207,7 +287,10 @@
       "description": "Price for limit order. Order fills at this price or better.",
       "displayOptions": {
         "show": {
-          "type": "limit"
+          "type": "limit",
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -221,7 +304,10 @@
       "description": "Trigger price for stop order. Order activates when price reaches this level.",
       "displayOptions": {
         "show": {
-          "type": "stop"
+          "type": "stop",
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -235,7 +321,10 @@
       "description": "Dollar amount to trail below/above market. Required if trail_percent not provided.",
       "displayOptions": {
         "show": {
-          "type": "trailing_stop"
+          "type": "trailing_stop",
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -249,7 +338,10 @@
       "description": "Percentage to trail (e.g., 1.5 for 1.5%). Required if trail_price not provided.",
       "displayOptions": {
         "show": {
-          "type": "trailing_stop"
+          "type": "trailing_stop",
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -289,7 +381,12 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "asset_type": ["stock"]
+          "assetType": [
+            "stock"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false
@@ -313,9 +410,18 @@
       "description": "Allow execution during pre-market (4am-9:30am) and after-hours (4pm-8pm). Only for limit day orders.",
       "displayOptions": {
         "show": {
-          "type": ["limit"],
-          "time_in_force": ["day"],
-          "asset_type": ["stock"]
+          "type": [
+            "limit"
+          ],
+          "time_in_force": [
+            "day"
+          ],
+          "assetType": [
+            "stock"
+          ],
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "showDescription": false

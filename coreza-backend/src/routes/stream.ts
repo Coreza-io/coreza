@@ -32,6 +32,7 @@ import {
   buildCryptoSymbols,
   normalizeSymbolList,
 } from "../utils/symbolHelpers";
+import { resolveStreamSourceId } from "./helpers/streamSource";
 
 const router = express.Router();
 
@@ -336,15 +337,7 @@ router.post("/:source/subscribe", async (req, res) => {
 
     if (!node_id) return res.status(400).json({ error: "node_id is required" });
 
-    let sourceId: string;
-
-    if (assetType === "stock" || assetType === "crypto") {
-      sourceId = `${source}_${category.toLowerCase()}`;
-    } else if (assetType === "news") {
-      sourceId = `${source}_${assetType.toLowerCase()}`;
-    } else {
-      throw new Error(`Unsupported assetType: ${assetType}`);
-    }
+    const sourceId = resolveStreamSourceId(source, category, assetType);
 
     // Parse stream_type into array
     const streamType: string[] = stream_type
@@ -472,12 +465,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       targetWorkflowId,
     } = req.body;
 
-    let sourceId;
-    if (category) {
-      sourceId = `${source}_${category}`;
-    } else {
-      sourceId = source;
-    }
+    const sourceId = resolveStreamSourceId(source, category, assetType);
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
@@ -497,8 +485,9 @@ router.post("/:source/unsubscribe", async (req, res) => {
     );
 
     if (hasOrderUpdate) {
+      const tradingSourceId = `${source}_trading`;
       await SubscriptionService.unsubscribe({
-        source: sourceId as any,
+        source: tradingSourceId as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
@@ -685,15 +674,7 @@ router.post("/:source/register", async (req, res) => {
       return res.status(400).json({ error: "node_type is required" });
     }
 
-    let sourceId: string;
-
-    if (assetType === "stock" || assetType === "crypto") {
-      sourceId = `${source}_${category.toLowerCase()}`;
-    } else if (assetType === "news") {
-      sourceId = `${source}_${assetType.toLowerCase()}`;
-    } else {
-      throw new Error(`Unsupported assetType: ${assetType}`);
-    }
+    const sourceId = resolveStreamSourceId(source, category, assetType);
 
     if (!sourceId) {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });

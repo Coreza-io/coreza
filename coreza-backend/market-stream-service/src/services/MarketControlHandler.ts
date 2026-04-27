@@ -965,9 +965,15 @@ export class MarketControlHandler {
         );
       }
 
-      // Add environment and asset type for Binance
+      // Add environment for broker WS routing (Binance + Alpaca)
       if (environment) {
-        creds = { ...creds, environment };
+        creds = {
+          ...creds,
+          environment,
+          ...(source.startsWith("alpaca")
+            ? { is_paper: environment !== "live" }
+            : {}),
+        };
         console.log(
           `🌐 [MarketControl] Using ${environment} environment for ${source}`,
         );

@@ -3,6 +3,13 @@ import { BrokerOperation } from "../../types";
 import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
+const getAssetType = (input: any) => input?.assetType ?? input?.asset_type;
+const buildCryptoSymbolFromParts = (input: any): string | undefined => {
+  const base = input?.crypto_base?.toString().trim().toUpperCase();
+  const quote = input?.crypto_quote?.toString().trim().toUpperCase();
+  if (!base || !quote) return undefined;
+  return `${base}/${quote}`;
+};
 
 function toCanonicalCryptoSymbol(symbol: string): string {
   const fallbackSymbol = symbol;
@@ -70,7 +77,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       const result = {
         positions: raw,
       };
-      return input.asset_type === "crypto"
+      return getAssetType(input) === "crypto"
         ? normalizeCryptoSymbolsInPayload(result)
         : result;
     },
@@ -86,19 +93,60 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       const result = {
         orders: raw,
       };
-      return input.asset_type === "crypto"
+      return getAssetType(input) === "crypto"
         ? normalizeCryptoSymbolsInPayload(result)
         : result;
     },
+  },
+  get_order: {
+    method: "get",
+    path: (input: any) => {
+      if (!input.order_id) throw new Error("order_id is required for get_order");
+      return `/v2/orders/${encodeURIComponent(String(input.order_id))}`;
+    },
+    transformResult: (raw: any, input: any) =>
+      getAssetType(input) === "crypto"
+        ? normalizeCryptoSymbolsInPayload(raw)
+        : raw,
   },
   cancel_orders: {
     method: "delete",
     path: "/v2/orders",
   },
+  cancel_all_orders: {
+    method: "delete",
+    path: "/v2/orders",
+  },
+  cancel_order: {
+    method: "delete",
+    path: (input: any) => {
+      if (!input.order_id) {
+        throw new Error(
+          "order_id is required for cancel_order. Alpaca cancel by client_order_id is not supported directly.",
+        );
+      }
+      return `/v2/orders/${encodeURIComponent(String(input.order_id))}`;
+    },
+  },
+  get_trades: {
+    method: "get",
+    path: "/v2/account/activities/FILL",
+    makeParams: (input: any) => {
+      const params: Record<string, any> = {};
+      if (input.date) params.date = input.date;
+      if (input.page_size) params.page_size = input.page_size;
+      if (input.page_token) params.page_token = input.page_token;
+      if (input.direction) params.direction = input.direction;
+      return params;
+    },
+    transformResult: (raw: any) => ({
+      trades: Array.isArray(raw) ? raw : [],
+    }),
+  },
   get_candle: {
     method: "get",
     path: (input: any) =>
-      input.asset_type === "crypto"
+      getAssetType(input) === "crypto"
         ? "/v1beta3/crypto/us/bars"
         : "/v2/stocks/bars",
     makeParams: (input: any) => {
@@ -138,7 +186,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
 
           return {
             symbol:
-              input.asset_type === "crypto"
+              getAssetType(input) === "crypto"
                 ? toCanonicalCryptoSymbol(symbol)
                 : symbol,
             interval: input.interval,
@@ -157,14 +205,14 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
   get_latest_bar: {
     method: "get",
     path: (input: any) =>
-      input.asset_type === "crypto"
+      getAssetType(input) === "crypto"
         ? "/v1beta3/crypto/us/latest/bars"
         : "/v2/stocks/bars/latest",
     makeParams: (input: any) => {
       if (!input.symbol)
         throw new Error("Symbol is required for get_latest_bar operation");
       const params: any = { symbols: input.symbol };
-      if (input.asset_type !== "crypto" && input.feed) params.feed = input.feed;
+      if (getAssetType(input) !== "crypto" && input.feed) params.feed = input.feed;
       if (input.currency) params.currency = input.currency;
       return params;
     },
@@ -181,7 +229,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
 
           return {
             symbol:
-              input.asset_type === "crypto"
+              getAssetType(input) === "crypto"
                 ? toCanonicalCryptoSymbol(symbol)
                 : symbol,
             interval: input.interval || "1m",
@@ -270,11 +318,17 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         extended_hours,
       } = input;
 
-      if (!symbol) throw new Error("Symbol is required for place_order");
+      const resolvedSymbol =
+        symbol ||
+        (getAssetType(input) === "crypto"
+          ? buildCryptoSymbolFromParts(input)
+          : undefined);
+
+      if (!resolvedSymbol) throw new Error("Symbol is required for place_order");
       if (!qty && !notional)
         throw new Error("Either qty or notional must be provided");
 
-      const body: any = { symbol, side, type, time_in_force };
+      const body: any = { symbol: resolvedSymbol, side, type, time_in_force };
 
       if (type === "limit") {
         if (!limit_price) throw new Error("Limit orders require a limit_price");
@@ -314,7 +368,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       return body;
     },
     transformResult: (raw: any, input: any) =>
-      input.asset_type === "crypto"
+      getAssetType(input) === "crypto"
         ? normalizeCryptoSymbolsInPayload(raw)
         : raw,
   },
@@ -322,11 +376,16 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     method: "delete",
 
     path: (input: any) => {
-      if (!input.symbol) {
+      const resolvedSymbol =
+        input.symbol ||
+        (getAssetType(input) === "crypto"
+          ? buildCryptoSymbolFromParts(input)
+          : undefined);
+      if (!resolvedSymbol) {
         throw new Error("close_position requires input.symbol");
       }
 
-      const normalized = String(input.symbol).replace("/", "");
+      const normalized = String(resolvedSymbol).replace("/", "");
       return `/v2/positions/${encodeURIComponent(normalized)}`;
     },
 
@@ -348,7 +407,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     },
 
     transformResult: (raw: any, input: any) =>
-      input.asset_type === "crypto"
+      getAssetType(input) === "crypto"
         ? normalizeCryptoSymbolsInPayload(raw)
         : raw,
   },

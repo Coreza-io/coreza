@@ -62,6 +62,23 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "default": "paper",
+      "required": true
+    },
+    {
       "key": "assetType",
       "label": "Asset Type",
       "type": "select",
@@ -125,13 +142,18 @@
           "name": "Order Updates (Fills)"
         }
       ],
-      "default": ["trade"],
+      "default": [
+        "trade"
+      ],
       "description": "Select data stream types to subscribe to",
       "required": true,
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "data_type": ["market", "crypto"]
+          "assetType": [
+            "stock",
+            "crypto"
+          ]
         }
       }
     },
@@ -145,7 +167,10 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "data_type": ["market", "news"]
+          "assetType": [
+            "stock",
+            "news"
+          ]
         }
       }
     },
@@ -159,7 +184,9 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "data_type": ["crypto"]
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -191,7 +218,9 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "data_type": ["crypto"]
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -219,12 +248,16 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "data_type": ["market"]
+          "assetType": [
+            "stock"
+          ]
         }
       },
       "hideOptions": {
         "show": {
-          "data_type": ["crypto"]
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -261,7 +294,9 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "subscriptionScope": ["workflow"]
+          "scope": [
+            "workflow"
+          ]
         }
       },
       "default": "__current__"

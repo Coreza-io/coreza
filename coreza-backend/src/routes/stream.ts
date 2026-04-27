@@ -682,7 +682,7 @@ router.post("/:source/register", async (req, res) => {
 
     // Parse symbols (crypto-aware)
     const cryptoSymbols = buildCryptoSymbols(
-      stream_type,
+      assetType,
       crypto_base,
       crypto_quote,
     );

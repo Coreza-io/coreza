@@ -20,11 +20,9 @@ export function getAlpacaWsUrl(creds: any, source?: string): string {
   if (source === "alpaca_trading") {
     // Trading updates WebSocket (order fills, cancellations, etc.)
     // Paper trading uses paper-api endpoint, live uses api endpoint
-    const isPaper =
-      (creds.environment
-        ? String(creds.environment).toLowerCase() !== "live"
-        : undefined) ??
-      (creds.is_paper !== false); // Backward-compatible fallback, default to paper
+    const isPaper = creds.environment
+      ? String(creds.environment).toLowerCase() !== "live"
+      : undefined;
     return isPaper
       ? "wss://paper-api.alpaca.markets/stream"
       : "wss://api.alpaca.markets/stream";

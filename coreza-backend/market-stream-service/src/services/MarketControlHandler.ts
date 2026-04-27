@@ -970,9 +970,6 @@ export class MarketControlHandler {
         creds = {
           ...creds,
           environment,
-          ...(source.startsWith("alpaca")
-            ? { is_paper: environment !== "live" }
-            : {}),
         };
         console.log(
           `🌐 [MarketControl] Using ${environment} environment for ${source}`,

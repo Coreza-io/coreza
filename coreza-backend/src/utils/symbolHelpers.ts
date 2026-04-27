@@ -8,11 +8,11 @@
  * Returns empty array if data_type is not 'crypto' or crypto_base is missing.
  */
 export function buildCryptoSymbols(
-  dataType: unknown,
+  assetType: unknown,
   cryptoBase: unknown,
   cryptoQuote: unknown,
 ): string[] {
-  if (dataType !== "crypto" || !cryptoBase) {
+  if (assetType !== "crypto" || !cryptoBase) {
     return [];
   }
 
@@ -32,9 +32,7 @@ export function buildCryptoSymbols(
  */
 export function normalizeSymbolList(symbols: unknown): string[] {
   if (Array.isArray(symbols)) {
-    return symbols
-      .map((s) => String(s).trim().toUpperCase())
-      .filter(Boolean);
+    return symbols.map((s) => String(s).trim().toUpperCase()).filter(Boolean);
   }
 
   if (typeof symbols === "string") {

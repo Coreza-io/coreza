@@ -140,7 +140,7 @@ export class BrokerExecutor implements INodeExecutor {
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`,
       );
 
-      if (broker === "alpaca" && resolvedParams.asset_type === "crypto") {
+      if (broker === "alpaca" && resolvedParams.assetType === "crypto") {
         normalizeAlpacaCryptoSymbol(resolvedParams);
       }
 

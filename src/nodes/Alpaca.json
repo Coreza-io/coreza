@@ -6,10 +6,21 @@
   "category": "Broker",
   "description": "Execute trades and get market data from Alpaca Markets",
   "color": "text-green-600",
-  "size": { "width": 340, "height": 360 },
+  "size": {
+    "width": 340,
+    "height": 360
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
@@ -32,7 +43,10 @@
       "placeholder": "Your Alpaca Secret Key"
     }
   ],
-  "authAction": { "url": "/broker/alpaca/auth", "method": "POST" },
+  "authAction": {
+    "url": "/broker/alpaca/auth",
+    "method": "POST"
+  },
   "action": {
     "url": "/broker/alpaca/{{operation}}",
     "method": "{{method}}"
@@ -51,8 +65,14 @@
       "label": "Environment",
       "type": "select",
       "options": [
-        { "id": "paper", "name": "Paper Trading (Sandbox)" },
-        { "id": "live", "name": "Live Trading (Production)" }
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
       ],
       "default": "paper",
       "required": true,
@@ -62,8 +82,10 @@
             "get_account",
             "get_positions",
             "get_orders",
+            "get_order",
+            "get_trades",
             "cancel_order",
-            "place_order"
+            "cancel_all_orders"
           ]
         }
       }
@@ -73,8 +95,14 @@
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "id": "stock", "name": "Stock" },
-        { "id": "crypto", "name": "Crypto" }
+        {
+          "id": "stock",
+          "name": "Stock"
+        },
+        {
+          "id": "crypto",
+          "name": "Crypto"
+        }
       ],
       "default": "stock",
       "required": true
@@ -84,15 +112,69 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "get_account", "name": "Get Account", "method": "POST" },
-        { "id": "get_positions", "name": "Get Positions", "method": "POST" },
-        { "id": "get_orders", "name": "Get Orders", "method": "POST" },
-        { "id": "cancel_order", "name": "Cancel Orders", "method": "POST" },
-        { "id": "get_candle", "name": "Get Historical Bars", "method": "POST" },
-        { "id": "get_latest_bar", "name": "Get Latest Bar", "method": "POST" }
+        {
+          "id": "get_account",
+          "name": "Get Account",
+          "method": "POST"
+        },
+        {
+          "id": "get_positions",
+          "name": "Get Positions",
+          "method": "POST"
+        },
+        {
+          "id": "get_orders",
+          "name": "Get Orders",
+          "method": "POST"
+        },
+        {
+          "id": "get_order",
+          "name": "Get Order",
+          "method": "POST"
+        },
+        {
+          "id": "get_trades",
+          "name": "Get Trades",
+          "method": "POST"
+        },
+        {
+          "id": "cancel_order",
+          "name": "Cancel Order",
+          "method": "POST"
+        },
+        {
+          "id": "cancel_all_orders",
+          "name": "Cancel All Orders",
+          "method": "POST"
+        },
+        {
+          "id": "get_candle",
+          "name": "Get Historical Bars",
+          "method": "POST"
+        },
+        {
+          "id": "get_latest_bar",
+          "name": "Get Latest Bar",
+          "method": "POST"
+        }
       ],
       "placeholder": "Select operation",
       "required": true
+    },
+    {
+      "key": "order_id",
+      "label": "Order ID",
+      "type": "text",
+      "placeholder": "Order UUID",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "cancel_order",
+            "get_order"
+          ]
+        }
+      }
     },
     {
       "key": "symbol",
@@ -102,8 +184,13 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar"],
-          "asset_type": ["stock"]
+          "operation": [
+            "get_candle",
+            "get_latest_bar"
+          ],
+          "assetType": [
+            "stock"
+          ]
         }
       }
     },
@@ -116,8 +203,13 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar"],
-          "asset_type": ["crypto"]
+          "operation": [
+            "get_candle",
+            "get_latest_bar"
+          ],
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -126,18 +218,35 @@
       "label": "Quote Currency",
       "type": "select",
       "options": [
-        { "id": "USD", "name": "USD" },
-        { "id": "USDT", "name": "USDT" },
-        { "id": "USDC", "name": "USDC" },
-        { "id": "BTC", "name": "BTC" }
+        {
+          "id": "USD",
+          "name": "USD"
+        },
+        {
+          "id": "USDT",
+          "name": "USDT"
+        },
+        {
+          "id": "USDC",
+          "name": "USDC"
+        },
+        {
+          "id": "BTC",
+          "name": "BTC"
+        }
       ],
       "default": "USD",
       "description": "The currency to price against.",
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "get_latest_bar"],
-          "asset_type": ["crypto"]
+          "operation": [
+            "get_candle",
+            "get_latest_bar"
+          ],
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -146,17 +255,34 @@
       "label": "Interval",
       "type": "select",
       "options": [
-        { "id": "1Min", "name": "1 min" },
-        { "id": "5Min", "name": "5 min" },
-        { "id": "15Min", "name": "15 min" },
-        { "id": "1Hour", "name": "1 hour" },
-        { "id": "1Day", "name": "1 day" }
+        {
+          "id": "1Min",
+          "name": "1 min"
+        },
+        {
+          "id": "5Min",
+          "name": "5 min"
+        },
+        {
+          "id": "15Min",
+          "name": "15 min"
+        },
+        {
+          "id": "1Hour",
+          "name": "1 hour"
+        },
+        {
+          "id": "1Day",
+          "name": "1 day"
+        }
       ],
       "placeholder": "Select interval",
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -168,7 +294,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -177,19 +305,42 @@
       "label": "Data Feed",
       "type": "select",
       "options": [
-        { "id": "sip", "name": "SIP - All US Exchanges" },
-        { "id": "iex", "name": "IEX - Investors Exchange" },
-        { "id": "delayed_sip", "name": "Delayed SIP (15 min)" },
-        { "id": "otc", "name": "OTC - Over-the-counter" },
-        { "id": "boats", "name": "BOATS - Blue Ocean" },
-        { "id": "overnight", "name": "Overnight Data" }
+        {
+          "id": "sip",
+          "name": "SIP - All US Exchanges"
+        },
+        {
+          "id": "iex",
+          "name": "IEX - Investors Exchange"
+        },
+        {
+          "id": "delayed_sip",
+          "name": "Delayed SIP (15 min)"
+        },
+        {
+          "id": "otc",
+          "name": "OTC - Over-the-counter"
+        },
+        {
+          "id": "boats",
+          "name": "BOATS - Blue Ocean"
+        },
+        {
+          "id": "overnight",
+          "name": "Overnight Data"
+        }
       ],
       "default": "sip",
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_latest_bar", "get_candle"],
-          "asset_type": ["stock"]
+          "operation": [
+            "get_latest_bar",
+            "get_candle"
+          ],
+          "assetType": [
+            "stock"
+          ]
         }
       }
     },
@@ -202,7 +353,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_latest_bar"]
+          "operation": [
+            "get_latest_bar"
+          ]
         }
       }
     },
@@ -211,14 +364,22 @@
       "label": "Sort",
       "type": "select",
       "options": [
-        { "id": "asc", "name": "asc" },
-        { "id": "desc", "name": "desc" }
+        {
+          "id": "asc",
+          "name": "asc"
+        },
+        {
+          "id": "desc",
+          "name": "desc"
+        }
       ],
       "default": "asc",
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -230,7 +391,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -242,7 +405,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     }

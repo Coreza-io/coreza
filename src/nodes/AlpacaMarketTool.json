@@ -88,7 +88,7 @@
       "showDescription": false
     },
     {
-      "key": "asset_type",
+      "key": "assetType",
       "label": "Asset Type",
       "type": "select",
       "options": [
@@ -127,8 +127,23 @@
           "method": "POST"
         },
         {
+          "id": "get_order",
+          "name": "Get Order",
+          "method": "POST"
+        },
+        {
+          "id": "get_trades",
+          "name": "Get Trades",
+          "method": "POST"
+        },
+        {
           "id": "cancel_order",
-          "name": "Cancel Orders",
+          "name": "Cancel Order",
+          "method": "POST"
+        },
+        {
+          "id": "cancel_all_orders",
+          "name": "Cancel All Orders",
           "method": "POST"
         },
         {
@@ -148,6 +163,23 @@
       "showDescription": false
     },
     {
+      "key": "order_id",
+      "label": "Order ID",
+      "type": "text",
+      "placeholder": "Order UUID",
+      "description": "Order UUID for single-order lookup/cancel operations.",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_order",
+            "cancel_order"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
       "key": "symbol",
       "label": "Stock Symbol",
       "type": "text",
@@ -160,7 +192,7 @@
             "get_candle",
             "get_latest_bar"
           ],
-          "asset_type": [
+          "assetType": [
             "stock"
           ]
         }
@@ -180,7 +212,7 @@
             "get_candle",
             "get_latest_bar"
           ],
-          "asset_type": [
+          "assetType": [
             "crypto"
           ]
         }
@@ -218,7 +250,7 @@
             "get_candle",
             "get_latest_bar"
           ],
-          "asset_type": [
+          "assetType": [
             "crypto"
           ]
         }
@@ -318,7 +350,7 @@
             "get_latest_bar",
             "get_candle"
           ],
-          "asset_type": [
+          "assetType": [
             "stock"
           ]
         }

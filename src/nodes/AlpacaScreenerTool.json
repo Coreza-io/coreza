@@ -56,6 +56,23 @@
       "showDescription": false
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "default": "paper",
+      "required": true
+    },
+    {
       "key": "operation",
       "label": "Screener Type",
       "type": "select",
@@ -92,7 +109,9 @@
       "description": "Asset class to screen: US stocks or cryptocurrency.",
       "displayOptions": {
         "show": {
-          "operation": ["market_movers"]
+          "operation": [
+            "market_movers"
+          ]
         }
       },
       "showDescription": false
@@ -124,7 +143,9 @@
       "description": "Ranking criteria: by dollar volume traded or by number of trades.",
       "displayOptions": {
         "show": {
-          "operation": ["most_actives"]
+          "operation": [
+            "most_actives"
+          ]
         }
       },
       "showDescription": false

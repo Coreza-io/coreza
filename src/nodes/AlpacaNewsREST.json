@@ -62,6 +62,23 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper Trading (Sandbox)"
+        },
+        {
+          "id": "live",
+          "name": "Live Trading (Production)"
+        }
+      ],
+      "default": "paper",
+      "required": true
+    },
+    {
       "key": "symbols",
       "label": "Symbols",
       "type": "text",

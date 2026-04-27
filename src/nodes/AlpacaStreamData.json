@@ -105,7 +105,9 @@
       "optionsSource": "credentialsApi",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"]
+          "mode": [
+            "subscribe"
+          ]
         }
       },
       "required": false
@@ -127,7 +129,9 @@
       "default": "paper",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"]
+          "mode": [
+            "subscribe"
+          ]
         }
       }
     },
@@ -153,8 +157,12 @@
       "description": "IEX is free but regular hours only. SIP includes pre/post market.",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"],
-          "asset_type": ["stock"]
+          "mode": [
+            "subscribe"
+          ],
+          "assetType": [
+            "stock"
+          ]
         }
       },
       "showDescription": false
@@ -167,8 +175,13 @@
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"],
-          "asset_type": ["stock", "news"]
+          "mode": [
+            "subscribe"
+          ],
+          "assetType": [
+            "stock",
+            "news"
+          ]
         }
       },
       "showDescription": false
@@ -181,8 +194,12 @@
       "description": "Comma-separated crypto bases to subscribe (e.g. BTC, ETH, DOGE).",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"],
-          "asset_type": ["crypto"]
+          "mode": [
+            "subscribe"
+          ],
+          "assetType": [
+            "crypto"
+          ]
         }
       },
       "showDescription": false
@@ -213,8 +230,12 @@
       "description": "The currency to price against.",
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"],
-          "asset_type": ["crypto"]
+          "mode": [
+            "subscribe"
+          ],
+          "assetType": [
+            "crypto"
+          ]
         }
       },
       "showDescription": false
@@ -245,11 +266,18 @@
           "name": "Order Updates (Fills)"
         }
       ],
-      "default": ["trade"],
+      "default": [
+        "trade"
+      ],
       "displayOptions": {
         "show": {
-          "mode": ["subscribe"],
-          "asset_type": ["stock", "crypto"]
+          "mode": [
+            "subscribe"
+          ],
+          "assetType": [
+            "stock",
+            "crypto"
+          ]
         }
       }
     },
@@ -271,7 +299,9 @@
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": ["listen"]
+          "mode": [
+            "listen"
+          ]
         }
       },
       "showDescription": false
@@ -284,7 +314,9 @@
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
       "displayOptions": {
         "show": {
-          "mode": ["listen"]
+          "mode": [
+            "listen"
+          ]
         }
       },
       "showDescription": false
@@ -322,7 +354,9 @@
       "description": "Filter specific event types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
-          "mode": ["listen"]
+          "mode": [
+            "listen"
+          ]
         }
       },
       "showDescription": false

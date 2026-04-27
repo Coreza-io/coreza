@@ -193,13 +193,7 @@ const OPEN_ORDER_STATUSES = new Set([
   "pending_replace",
 ]);
 
-const OPEN_ALGO_ORDER_STATUSES = new Set([
-  "untriggered",
-  "new",
-  "triggering",
-  "triggered",
-  "partially_filled",
-]);
+const OPEN_ALGO_ORDER_STATUSES = new Set(["new", "triggering"]);
 
 const TERMINAL_ORDER_STATUSES = new Set([
   "filled",

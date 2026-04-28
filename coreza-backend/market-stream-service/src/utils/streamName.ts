@@ -28,10 +28,7 @@ export const NATIVE_TRADING_STREAM_NAMES = new Set([
   "order_update", // backwards-compatible alias during rollout
 ]);
 
-export function tradingRoutingKey(
-  source: string,
-  eventType: string,
-): string {
+export function tradingRoutingKey(source: string, eventType: string): string {
   if (source === "alpaca_trading") {
     return "trade_updates";
   }
@@ -47,9 +44,8 @@ function normalizeBinancestreamType(streamType: string): string {
   switch (streamType.trim()) {
     case "liquidation":
       return "forceOrder";
-    case "continuous_kline":
     case "continuousKline":
-      return "continuous_kline";
+      return "continuousKline";
     case "markPrice":
       return "markPrice";
     case "indexPrice":
@@ -84,7 +80,7 @@ export function buildStreamName(
 
   // Binance futures continuous kline:
   // <pair>_<contractType>@continuousKline_<interval>
-  if (streamType === "continuous_kline") {
+  if (streamType === "continuousKline") {
     if (!interval) {
       throw new Error("interval is required for continuousKline stream names");
     }
@@ -143,7 +139,7 @@ export function parseStreamName(
     if (underscoreIndex !== -1) {
       const streamType = typeWithInterval.slice(0, underscoreIndex);
       const interval = typeWithInterval.slice(underscoreIndex + 1);
-      if (streamType === "continuous_kline") {
+      if (streamType === "continuousKline") {
         const [symbolPart, ...contractParts] = rawSymbol.split("_");
         return {
           symbol: symbolPart.toUpperCase(),
@@ -212,53 +208,17 @@ export function buildStreamNames(
   const streamNames: string[] = [];
 
   for (const symbol of symbols) {
-    for (const rawStreamType of streamTypes) {
-      const streamType = source.startsWith("binance")
-        ? normalizeBinancestreamType(rawStreamType)
-        : rawStreamType;
-      const underscoreIndex = streamType.indexOf("_");
-
-      if (
-        underscoreIndex !== -1 &&
-        source.startsWith("binance") &&
-        streamType !== "continuous_kline"
-      ) {
-        const type = streamType.slice(0, underscoreIndex);
-        const streamInterval = streamType.slice(underscoreIndex + 1);
-        streamNames.push(
-          buildStreamName(
-            source,
-            symbol.toLocaleLowerCase(),
-            type,
-            streamInterval,
-            contractType,
-          ),
-        );
-      } else if (
-        streamType.startsWith("depth") &&
-        source.startsWith("binance")
-      ) {
-        const streamInterval = streamType.slice(5);
-        streamNames.push(
-          buildStreamName(
-            source,
-            symbol.toLocaleLowerCase(),
-            "depth",
-            streamInterval || "20",
-            contractType,
-          ),
-        );
-      } else {
-        streamNames.push(
-          buildStreamName(
-            source,
+    for (const streamType of streamTypes) {
+      streamNames.push(
+        buildStreamName(
+          source,
           symbol.toLocaleLowerCase(),
           streamType,
           interval,
-            contractType,
-          ),
-        );
-      }
+          contractType,
+        ),
+      );
+      // }
     }
   }
 

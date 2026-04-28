@@ -183,8 +183,8 @@
           "name": "Depth (Order Book)"
         },
         {
-          "id": "order_update",
-          "name": "Order Updates (Fills)"
+          "id": "ORDER_TRADE_UPDATE",
+          "name": "Tarde Updates (Fills)"
         },
         {
           "id": "markPrice",
@@ -435,8 +435,8 @@
           "name": "Depth (Order Book)"
         },
         {
-          "id": "order_update",
-          "name": "Order Updates (Fills)"
+          "id": "ORDER_TRADE_UPDATE",
+          "name": "Trade Updates (Fills)"
         }
       ],
       "default": [],

@@ -722,10 +722,10 @@ router.post("/:source/register", async (req, res) => {
       : [];
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
-    const hasOrderUpdate = parsedstreamType.includes("order_update");
+    const hasOrderUpdate = parsedstreamType.includes("ORDER_TRADE_UPDATE");
     const { marketstreamType, tradingstreamType } = parsedstreamType.reduce(
       (acc, t: string) => {
-        if (t === "order_update") {
+        if (t === "ORDER_TRADE_UPDATE") {
           acc.tradingstreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
@@ -765,8 +765,8 @@ router.post("/:source/register", async (req, res) => {
           environment: requiredEnvironment,
           assetType: assetType,
           marketType: marketType,
-          contractType,
-          interval,
+          contractType: undefined,
+          interval: undefined,
           scope,
           targetWorkflowId: workflowId,
         });

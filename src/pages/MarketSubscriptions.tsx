@@ -120,6 +120,64 @@ const sourceIcons: Record<string, string> = {
   schwab: "💼",
 };
 
+type ParsedStreamName = {
+  symbol: string;
+  streamType: string;
+  interval?: string;
+  contractType?: string;
+};
+
+const KNOWN_CONTRACT_TYPES = new Set([
+  "perpetual",
+  "current_quarter",
+  "next_quarter",
+  "current_month",
+  "next_month",
+]);
+
+const parseSubscribedStream = (stream: string): ParsedStreamName => {
+  if (stream === "ORDER_TRADE_UPDATE") {
+    return {
+      symbol: "[*]",
+      streamType: stream,
+      interval: undefined,
+    };
+  }
+
+  const [left, right] = stream.split("@");
+
+  if (!left || !right) {
+    throw new Error(`Invalid stream format: ${stream}`);
+  }
+
+  const rightParts = right.split("_");
+  const streamType = rightParts[0];
+  const interval =
+    rightParts.length > 1 ? rightParts.slice(1).join("_") : undefined;
+
+  if (!streamType) {
+    throw new Error(`Invalid stream type in stream: ${stream}`);
+  }
+
+  const leftParts = left.split("_");
+  const possibleContractType = leftParts[leftParts.length - 1];
+
+  let symbol = left;
+  let contractType: string | undefined;
+
+  if (KNOWN_CONTRACT_TYPES.has(possibleContractType)) {
+    contractType = possibleContractType;
+    symbol = leftParts.slice(0, -1).join("_");
+  }
+
+  return {
+    symbol,
+    streamType,
+    interval,
+    contractType,
+  };
+};
+
 const MarketSubscriptions = () => {
   const { user, session } = useAuth();
   const { toast } = useToast();
@@ -189,26 +247,8 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${stream}`);
 
       try {
-        let symbol: string;
-        let streamType: string;
-        let interval: string | undefined;
-
-        if (stream === "order_update") {
-          symbol = "[*]";
-          streamType = "order_update";
-          interval = undefined;
-        } else {
-          const [symbolPart, rest] = stream.split("@");
-          const [streamTypePart, intervalPart] = rest?.split("_") ?? [];
-
-          if (!symbolPart || !streamTypePart) {
-            throw new Error(`Invalid stream format: ${stream}`);
-          }
-
-          symbol = symbolPart;
-          streamType = streamTypePart;
-          interval = intervalPart;
-        }
+        const { symbol, streamType, interval, contractType } =
+          parseSubscribedStream(stream);
 
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
@@ -216,6 +256,7 @@ const MarketSubscriptions = () => {
             symbols: [symbol],
             stream_type: [streamType],
             interval,
+            contract_type: contractType,
             scope: "global",
             environment,
           },
@@ -260,26 +301,8 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${workflowId}-${stream}`);
 
       try {
-        let symbol: string;
-        let streamType: string;
-        let interval: string | undefined;
-
-        if (stream === "order_update") {
-          symbol = "[*]";
-          streamType = "order_update";
-          interval = undefined;
-        } else {
-          const [symbolPart, rest] = stream.split("@");
-          const [streamTypePart, intervalPart] = rest?.split("_") ?? [];
-
-          if (!symbolPart || !streamTypePart) {
-            throw new Error(`Invalid stream format: ${stream}`);
-          }
-
-          symbol = symbolPart;
-          streamType = streamTypePart;
-          interval = intervalPart;
-        }
+        const { symbol, streamType, interval, contractType } =
+          parseSubscribedStream(stream);
 
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
@@ -289,6 +312,7 @@ const MarketSubscriptions = () => {
             symbols: [symbol],
             stream_type: [streamType],
             interval,
+            contract_type: contractType,
             scope: "workflow",
             environment,
           },
@@ -401,8 +425,8 @@ const MarketSubscriptions = () => {
   const confirmUnsubscribestream = (
     stream: string,
     source: string,
-    workflowId?: string,
     environment?: string,
+    workflowId?: string,
   ) => {
     setConfirmDialog({
       open: true,
@@ -947,8 +971,8 @@ const MarketSubscriptions = () => {
                                 confirmUnsubscribestream(
                                   stream,
                                   sub.source,
-                                  sub.workflowId,
                                   sub.environment,
+                                  sub.workflowId,
                                 )
                               }
                               isUnsubscribing={

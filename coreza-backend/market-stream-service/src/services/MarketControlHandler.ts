@@ -47,6 +47,39 @@ interface SourceState {
   workflowStreams: Map<string, Set<string>>; // workflowId → streams (for reference counting)
 }
 
+function isTradingSource(source: MarketSource): boolean {
+  return source === "alpaca_trading" || source === "binance_trading";
+}
+
+function computeTradingNativeStreams(
+  source: MarketSource,
+  marketType?: string,
+): string[] {
+  if (source === "alpaca_trading") {
+    return ["trade_updates"];
+  }
+
+  if (source === "binance_trading") {
+    return marketType === "spot"
+      ? [
+          "executionReport",
+          "outboundAccountPosition",
+          "balanceUpdate",
+          "listenKeyExpired",
+        ]
+      : [
+          "ORDER_TRADE_UPDATE",
+          "ALGO_UPDATE",
+          "ACCOUNT_UPDATE",
+          "ACCOUNT_CONFIG_UPDATE",
+          "MARGIN_CALL",
+          "listenKeyExpired",
+        ];
+  }
+
+  return [];
+}
+
 export class MarketControlHandler {
   private static instance: MarketControlHandler;
   private redisSub: Redis;
@@ -653,19 +686,20 @@ export class MarketControlHandler {
         //   contractType,
         // );
 
-        let requestedStreamNames: string[] = [];
-        // if (!processedStreamType.includes("order_update")) {
-        requestedStreamNames = buildStreamNames(
-          source,
-          symbols,
-          //requestedStreamNames,
-          streamType || [],
-          interval || "",
-          contractType,
-        );
-        // } else {
-        //   requestedStreamNames = processedStreamType;
-        // }
+        const tradingSource = isTradingSource(source);
+        const computedTradingNativeStreams = tradingSource
+          ? computeTradingNativeStreams(source, marketType)
+          : [];
+
+        const requestedStreamNames = tradingSource
+          ? computedTradingNativeStreams
+          : buildStreamNames(
+              source,
+              symbols,
+              streamType || [],
+              interval || "",
+              contractType,
+            );
 
         // Check which stream names are NEW (not already in state.streams)
         const newStreamNames = requestedStreamNames.filter(
@@ -683,9 +717,8 @@ export class MarketControlHandler {
           newStreamNames.forEach((name) => state.streams.add(name));
 
           // Track workflow streams (for reference counting only, NOT for data routing)
-          const currentStream =
-            state.workflowStreams.get(workflowId) || new Set();
-          newStreamNames.forEach((s) => currentStream.add(s));
+          const currentStream = state.workflowStreams.get(workflowId) || new Set();
+          requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
 
           // Subscribe gateway with stream names directly
@@ -728,13 +761,31 @@ export class MarketControlHandler {
             symbols,
             scope,
             targetWorkflowId,
-            tradingNativeStreams,
+            tradingSource
+              ? computedTradingNativeStreams
+              : tradingNativeStreams,
           );
 
           console.log(
             `✅ [MarketControl] Subscribed to ${newStreamNames.length} stream(s) on ${source}`,
           );
         } else {
+          const currentStream =
+            state.workflowStreams.get(workflowId) || new Set<string>();
+          requestedStreamNames.forEach((s) => currentStream.add(s));
+          state.workflowStreams.set(workflowId, currentStream);
+
+          await this.updateActiveStreamingWorkflows(
+            userId,
+            requestedStreamNames,
+            symbols,
+            scope,
+            targetWorkflowId,
+            tradingSource
+              ? computedTradingNativeStreams
+              : tradingNativeStreams,
+          );
+
           console.log(
             `ℹ️ [MarketControl] All streams already subscribed on ${source}`,
           );
@@ -785,8 +836,12 @@ export class MarketControlHandler {
       }
 
       const subscriber = MarketDataSubscriber.getInstance();
+      const tradingSource = isTradingSource(source);
+      const computedTradingNativeStreams = tradingSource
+        ? computeTradingNativeStreams(source, marketType)
+        : [];
 
-      if (symbols.length > 0) {
+      if (symbols.length > 0 || tradingSource) {
         // Build stream names to remove
         const processedStreamType = this.processStreamTypesForStreamNames(
           streamType || [],
@@ -796,19 +851,15 @@ export class MarketControlHandler {
           contractType,
         );
 
-        let streamNamesToRemove: string[] = [];
-
-        if (processedStreamType.includes("order_update")) {
-          streamNamesToRemove = processedStreamType;
-        } else {
-          streamNamesToRemove = buildStreamNames(
-            source,
-            symbols,
-            processedStreamType,
-            interval || "",
-            contractType,
-          );
-        }
+        let streamNamesToRemove: string[] = tradingSource
+          ? computedTradingNativeStreams
+          : buildStreamNames(
+              source,
+              symbols,
+              processedStreamType,
+              interval || "",
+              contractType,
+            );
 
         if (streamNamesToRemove.length === 0) {
           streamNamesToRemove = Array.from(
@@ -822,13 +873,29 @@ export class MarketControlHandler {
             (streamNamesToRemove.length > 5 ? "..." : ""),
         );
 
-        // Remove from tracking
-        streamNamesToRemove.forEach((name) => state.streams.delete(name));
+        const workflowStreams = state.workflowStreams.get(workflowId) ?? new Set<string>();
+        streamNamesToRemove.forEach((name) => workflowStreams.delete(name));
+        if (workflowStreams.size === 0) {
+          state.workflowStreams.delete(workflowId);
+        } else {
+          state.workflowStreams.set(workflowId, workflowStreams);
+        }
 
-        // Unsubscribe gateway with stream names directly
-        state.gateway.unsubscribeStreams(streamNamesToRemove);
+        const hasTradingClaimRemaining = tradingSource
+          ? Array.from(state.workflowStreams.values()).some((wfStreams) =>
+              streamNamesToRemove.some((stream) => wfStreams.has(stream)),
+            )
+          : false;
 
-        if (streamNamesToRemove.length > 0) {
+        const shouldRemoveGatewayStreams =
+          !tradingSource || !hasTradingClaimRemaining;
+
+        if (shouldRemoveGatewayStreams) {
+          streamNamesToRemove.forEach((name) => state.streams.delete(name));
+          state.gateway.unsubscribeStreams(streamNamesToRemove);
+        }
+
+        if (streamNamesToRemove.length > 0 && (!tradingSource || shouldRemoveGatewayStreams)) {
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -857,13 +924,27 @@ export class MarketControlHandler {
           }
 
           if (workflowId) {
-            await subscriber.removeStreamsFromRegistration(
-              userId,
-              workflowId,
-              streamNamesToRemove,
-            );
+            if (tradingSource) {
+              await subscriber.removeAllowedSymbolsFromRegistration(
+                workflowId,
+                symbols,
+              );
+              if (shouldRemoveGatewayStreams) {
+                await subscriber.removeStreamsFromRegistration(
+                  userId,
+                  workflowId,
+                  streamNamesToRemove,
+                );
+              }
+            } else {
+              await subscriber.removeStreamsFromRegistration(
+                userId,
+                workflowId,
+                streamNamesToRemove,
+              );
+            }
             console.log(
-              `✅ [MarketControl] Removed ${streamNamesToRemove.length} stream(s) from workflow ${workflowId} registration`,
+              `✅ [MarketControl] Updated workflow ${workflowId} registration for unsubscribe`,
             );
           }
         }
@@ -876,14 +957,14 @@ export class MarketControlHandler {
 
       // If this unsubscribe was workflow-level without specific symbols,
       // treat as full workflow deregistration.
-      if (workflowId && symbols.length === 0) {
+      if (workflowId && symbols.length === 0 && !tradingSource) {
         await subscriber.unregisterWorkflow(userId, workflowId);
         console.log(
           `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
         );
       }
 
-      if (workflowId) {
+      if (workflowId && !tradingSource) {
         state.workflowStreams.delete(workflowId);
       }
 
@@ -1145,9 +1226,7 @@ export class MarketControlHandler {
                   ? wf.streams
                   : [];
 
-                persistedStreams.forEach((s: string) =>
-                  streams.add(String(s).toLowerCase()),
-                );
+                persistedStreams.forEach((s: string) => streams.add(String(s)));
 
                 state.workflowStreams.set(wf.workflowId, streams);
               });

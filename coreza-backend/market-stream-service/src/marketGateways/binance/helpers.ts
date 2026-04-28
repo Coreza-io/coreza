@@ -296,8 +296,8 @@ export function buildBinanceSubscribeMessage(
   source?: string,
 ) {
   if (source === "binance_trading") {
-    console.error(
-      "[binance] Refused market SUBSCRIBE payload on trading socket",
+    console.info(
+      "[binance] Trading stream subscribe handled by user-data session; skipping market SUBSCRIBE payload",
     );
     return null;
   }
@@ -309,8 +309,8 @@ export function buildBinanceUnsubscribeMessage(
   source?: string,
 ) {
   if (source === "binance_trading") {
-    console.error(
-      "[binance] Refused market UNSUBSCRIBE payload on trading socket",
+    console.info(
+      "[binance] Trading stream unsubscribe handled by listenKey lifecycle; skipping market UNSUBSCRIBE payload",
     );
     return null;
   }

@@ -3,6 +3,10 @@ jest.mock("../src/utils/binanceTimeSync", () => ({
 }));
 
 const { binanceOperations } = require("../src/brokers/binance/http/operations");
+const {
+  StreamingLifecycleAdapter,
+} = require("../src/workflow/StreamingLifecycleAdapter");
+const { SubscriptionService } = require("../src/services/SubscriptionService");
 
 describe("binance cancel routing", () => {
   const creds = { secret_key: "test-secret" };
@@ -130,5 +134,35 @@ describe("binance cancel routing", () => {
         creds,
       ),
     ).not.toThrow();
+  });
+});
+
+describe("streaming lifecycle trading unsubscribe routing", () => {
+  it("releases trading workflow claim without per-symbol payload", async () => {
+    const unsubscribeSpy = jest
+      .spyOn(SubscriptionService, "unsubscribe")
+      .mockResolvedValue({ success: true, data: undefined });
+
+    const adapter = new StreamingLifecycleAdapter();
+    await adapter.unsubscribeStreamingNodes("user-1", "wf-1", [
+      {
+        id: "node-1",
+        subCategory: "binance",
+        values: {
+          symbols: ["BTCUSDT", "ETHUSDT"],
+          stream_type: ["kline", "order_update"],
+          environment: "live",
+          marketType: "futures",
+          scope: "workflow",
+        },
+      },
+    ]);
+
+    const tradingCall = unsubscribeSpy.mock.calls.find(
+      ([params]) => params.source === "binance_trading",
+    )?.[0];
+    expect(tradingCall).toBeDefined();
+    expect(tradingCall.symbols).toEqual([]);
+    expect(tradingCall.streamType).toEqual(["order_update"]);
   });
 });

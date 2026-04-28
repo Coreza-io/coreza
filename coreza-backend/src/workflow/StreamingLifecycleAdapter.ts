@@ -52,6 +52,10 @@ function getTradingNativeStreams(
   return [];
 }
 
+function isTradingSource(source: string): boolean {
+  return source === "alpaca_trading" || source === "binance_trading";
+}
+
 export class StreamingLifecycleAdapter {
   private async deleteByPattern(pattern: string): Promise<void> {
     const redis = getRedisCache();
@@ -384,12 +388,37 @@ export class StreamingLifecycleAdapter {
         continue;
       }
 
+      const streamTypes = Array.isArray(nodeValues.stream_type)
+        ? nodeValues.stream_type
+        : typeof nodeValues.stream_type === "string"
+          ? nodeValues.stream_type
+              .split(",")
+              .map((streamType: string) => streamType.trim())
+          : [];
+      const hasOrderUpdate = streamTypes.includes("order_update");
+
       await SubscriptionService.unsubscribe({
         source: sourceId,
         userId,
         workflowId,
         symbols: symbolArray,
       });
+
+      if (hasOrderUpdate) {
+        await SubscriptionService.unsubscribe({
+          source: `${node.subCategory}_trading` as MarketSource,
+          userId,
+          workflowId,
+          symbols: [],
+          streamType: ["order_update"],
+          environment: nodeValues.environment as string,
+          marketType: nodeValues.marketType as string,
+          scope: (nodeValues.scope === "global" ? "global" : "workflow") as
+            | "global"
+            | "workflow",
+          targetWorkflowId: workflowId,
+        });
+      }
     }
   }
 
@@ -407,11 +436,12 @@ export class StreamingLifecycleAdapter {
     workflowId: string,
   ): Promise<void> {
     const redis = getRedisCache();
-    const pattern = `md:user:${userId}:subscription:scope:workflow:${workflowId}:*:symbols`;
+    const pattern = `md:user:${userId}:subscription:scope:workflow:${workflowId}:*:streams`;
 
     // Key structure: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:symbols
     //                 0    1     2         3        4       5          6          7        8
     const SOURCE_INDEX = 7;
+    const ENV_INDEX = 8;
 
     let cursor = "0";
 
@@ -426,14 +456,34 @@ export class StreamingLifecycleAdapter {
       cursor = nextCursor;
 
       for (const key of keys) {
-        const symbols = await redis.smembers(key);
+        const streams = await redis.smembers(key);
+        const sourceToken = key.split(":")[SOURCE_INDEX];
+        const environment = key.split(":")[ENV_INDEX];
         const source = toMarketSource(
-          key.split(":")[SOURCE_INDEX] as
+          sourceToken as
             | MarketSource
             | `${MarketSource}_${string}`,
         );
 
-        if (symbols.length > 0 && source) {
+        if (source && isTradingSource(sourceToken)) {
+          await SubscriptionService.unsubscribe({
+            source: source as MarketSource,
+            userId,
+            workflowId,
+            symbols: [],
+            streamType: ["order_update"],
+            marketType: streams.some((s) => s === "executionReport")
+              ? "spot"
+              : "futures",
+            environment,
+            scope: "workflow",
+            targetWorkflowId: workflowId,
+          });
+        } else if (streams.length > 0 && source) {
+          const symbols = streams
+            .filter((stream) => !stream.endsWith("@order_update"))
+            .map((stream) => stream.split("@")[0]?.toUpperCase())
+            .filter(Boolean) as string[];
           await SubscriptionService.unsubscribe({
             source,
             userId,

@@ -31,6 +31,33 @@ const KNOWN_TRADING_NATIVE_STREAMS = new Set([
   "MARGIN_CALL",
 ]);
 
+function computeTradingNativeStreams(
+  source: string,
+  marketType?: string,
+): string[] {
+  if (source === "alpaca_trading") {
+    return ["trade_updates"];
+  }
+  if (source === "binance_trading") {
+    return marketType === "spot"
+      ? [
+          "executionReport",
+          "outboundAccountPosition",
+          "balanceUpdate",
+          "listenKeyExpired",
+        ]
+      : [
+          "ORDER_TRADE_UPDATE",
+          "ALGO_UPDATE",
+          "ACCOUNT_UPDATE",
+          "ACCOUNT_CONFIG_UPDATE",
+          "MARGIN_CALL",
+          "listenKeyExpired",
+        ];
+  }
+  return [];
+}
+
 /**
  * Workflow registration metadata for receiving market data
  * This is NOT a broker subscription - it registers a workflow to receive data
@@ -62,6 +89,7 @@ interface PersistedRegistration {
   filterSymbols?: string[];
   symbolMatchMode?: "exact" | "wildcard";
   tradingNativeStreams?: string[];
+  marketType?: string;
 }
 
 export class MarketDataSubscriber {
@@ -260,6 +288,7 @@ export class MarketDataSubscriber {
       );
 
       const { pub } = this.ensureRedisConnections();
+      await this.cleanupLegacyTradingStreamEntries(pub);
       // Use user-scoped pattern: md:user:{userId}:wf:reg:{workflowId}
       const pattern = "md:user:*:wf:reg:*";
       const keys = await pub.keys(pattern);
@@ -271,6 +300,28 @@ export class MarketDataSubscriber {
           if (!data) continue;
 
           const registration = JSON.parse(data) as PersistedRegistration;
+          const inferredTradingNativeStreams = computeTradingNativeStreams(
+            String(registration.source),
+            registration.marketType ||
+              ((registration.streams || []).includes("executionReport")
+                ? "spot"
+                : undefined),
+          );
+
+          const cleanedStreams = Array.from(
+            new Set(
+              (registration.streams || [])
+                .filter((stream) => !String(stream).endsWith("@order_update"))
+                .concat(inferredTradingNativeStreams),
+            ),
+          );
+          const cleanedTradingNativeStreams = Array.from(
+            new Set(
+              (registration.tradingNativeStreams || []).concat(
+                inferredTradingNativeStreams,
+              ),
+            ),
+          );
 
           // Verify workflow is still active (use cache)
           const workflow = await this.getWorkflowCache().getWorkflow(
@@ -290,14 +341,14 @@ export class MarketDataSubscriber {
             registration.workflowId,
             registration.nodeId,
             registration.userId,
-            registration.streams,
+            cleanedStreams,
             registration.source,
             registration.environment,
             registration.onlyClosedBars,
             registration.isLive,
             registration.filterSymbols || [],
             registration.symbolMatchMode || "exact",
-            registration.tradingNativeStreams || [],
+            cleanedTradingNativeStreams,
           );
 
           restored++;
@@ -311,6 +362,38 @@ export class MarketDataSubscriber {
       );
     } catch (error) {
       console.error(`❌ [MarketDataSubscriber] Restore error:`, error);
+    }
+  }
+
+  private async cleanupLegacyTradingStreamEntries(pub: Redis): Promise<void> {
+    const patterns = [
+      "md:user:*:subscription:scope:workflow:*:*:*:streams",
+      "md:user:*:subscription:scope:global:*:*:streams",
+    ];
+
+    for (const pattern of patterns) {
+      const keys = await pub.keys(pattern);
+      for (const key of keys) {
+        const entries = await pub.smembers(key);
+        const legacyEntries = entries.filter((entry) =>
+          entry.endsWith("@order_update"),
+        );
+        if (legacyEntries.length === 0) {
+          continue;
+        }
+
+        await pub.srem(key, ...legacyEntries);
+
+        const segments = key.split(":");
+        const source = segments[segments.length - 3];
+        const nativeTradingStreams = computeTradingNativeStreams(
+          source,
+          entries.includes("executionReport") ? "spot" : undefined,
+        );
+        if (nativeTradingStreams.length > 0) {
+          await pub.sadd(key, ...nativeTradingStreams);
+        }
+      }
     }
   }
 

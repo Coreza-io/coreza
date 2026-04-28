@@ -18,6 +18,18 @@ import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
+const KNOWN_TRADING_NATIVE_STREAMS = new Set([
+  "trade_updates",
+  "executionReport",
+  "outboundAccountPosition",
+  "balanceUpdate",
+  "listenKeyExpired",
+  "ORDER_TRADE_UPDATE",
+  "ALGO_UPDATE",
+  "ACCOUNT_UPDATE",
+  "ACCOUNT_CONFIG_UPDATE",
+  "MARGIN_CALL",
+]);
 
 /**
  * Workflow registration metadata for receiving market data
@@ -29,12 +41,27 @@ interface WorkflowRegistration {
   nodeId: string;
   userId: string;
   streams: Set<string>;
+  tradingNativeStreams: Set<string>;
   source: MarketSource;
   environment: string;
   allowedSymbols: Set<string>;
   symbolMatchMode: "exact" | "wildcard";
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
   isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
+}
+
+interface PersistedRegistration {
+  workflowId: string;
+  nodeId: string;
+  userId: string;
+  streams: string[];
+  source: MarketSource;
+  environment: string;
+  onlyClosedBars?: boolean;
+  isLive?: boolean;
+  filterSymbols?: string[];
+  symbolMatchMode?: "exact" | "wildcard";
+  tradingNativeStreams?: string[];
 }
 
 export class MarketDataSubscriber {
@@ -115,6 +142,7 @@ export class MarketDataSubscriber {
         nodeId,
         userId,
         streams: new Set(streams.map((s) => s)),
+        tradingNativeStreams: new Set(tradingNativeStreams),
         source,
         environment,
         allowedSymbols: new Set(normalizedSymbols),
@@ -123,7 +151,7 @@ export class MarketDataSubscriber {
         isLive: isLive ?? false,
       };
 
-      for (const nativeStream of tradingNativeStreams) {
+      for (const nativeStream of registration.tradingNativeStreams) {
         registration.streams.add(nativeStream);
       }
 
@@ -242,19 +270,7 @@ export class MarketDataSubscriber {
           const data = await pub.get(key);
           if (!data) continue;
 
-          const registration = JSON.parse(data) as {
-            workflowId: string;
-            nodeId: string;
-            userId: string;
-            streams: string[];
-            source: MarketSource;
-            environment: string;
-            onlyClosedBars?: boolean;
-            isLive?: boolean;
-            filterSymbols?: string[];
-            symbolMatchMode?: "exact" | "wildcard";
-            tradingNativeStreams?: string[];
-          };
+          const registration = JSON.parse(data) as PersistedRegistration;
 
           // Verify workflow is still active (use cache)
           const workflow = await this.getWorkflowCache().getWorkflow(
@@ -776,6 +792,7 @@ export class MarketDataSubscriber {
   async addStreamsToRegistration(
     workflowId: string,
     newStreams: string[],
+    newTradingNativeStreams: string[] = [],
   ): Promise<void> {
     const registration = this.registrations.get(workflowId);
 
@@ -813,7 +830,15 @@ export class MarketDataSubscriber {
         );
       }
       this.streamWorkflows.get(stream)!.add(workflowId);
+
+      if (KNOWN_TRADING_NATIVE_STREAMS.has(stream)) {
+        registration.tradingNativeStreams.add(stream);
+      }
     }
+
+    newTradingNativeStreams.forEach((stream) =>
+      registration.tradingNativeStreams.add(stream),
+    );
 
     // Persist updated registration to Redis
     await this.persistRegistration(registration);
@@ -882,6 +907,7 @@ export class MarketDataSubscriber {
       }
 
       registration.streams.delete(stream);
+      registration.tradingNativeStreams.delete(stream);
 
       const workflows = this.streamWorkflows.get(stream);
       if (workflows) {
@@ -928,9 +954,7 @@ export class MarketDataSubscriber {
       source: registration.source,
       filterSymbols: Array.from(registration.allowedSymbols),
       symbolMatchMode: registration.symbolMatchMode,
-      tradingNativeStreams: Array.from(registration.streams).filter(
-        (stream) => !stream.includes("@") && stream !== "order_update",
-      ),
+      tradingNativeStreams: Array.from(registration.tradingNativeStreams),
       onlyClosedBars: registration.onlyClosedBars,
       isLive: registration.isLive,
     });

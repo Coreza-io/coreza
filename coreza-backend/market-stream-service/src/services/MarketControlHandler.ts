@@ -30,6 +30,7 @@ interface ControlMessage {
   marketType?: string;
   scope: string;
   targetWorkflowId?: string;
+  tradingNativeStreams?: string[];
   // Raw interval/depth for stream name building (centralized in market-stream-service)
   interval?: string;
   depthLevels?: string;
@@ -386,6 +387,7 @@ export class MarketControlHandler {
     newSymbols: string[],
     scope: string,
     targetWorkflowId?: string,
+    tradingNativeStreams: string[] = [],
   ): Promise<void> {
     try {
       const subscriber = MarketDataSubscriber.getInstance();
@@ -398,6 +400,7 @@ export class MarketControlHandler {
         await subscriber.addStreamsToRegistration(
           targetWorkflowId,
           newStreamNames,
+          tradingNativeStreams,
         );
         await subscriber.addAllowedSymbolsToRegistration(
           targetWorkflowId,
@@ -408,18 +411,8 @@ export class MarketControlHandler {
           subscriber.getRegisteredWorkflowIdsForUser(userId);
         if (!fallbackWorkflowIds.includes(targetWorkflowId)) {
           console.warn(
-            `⚠️ [MarketControl] Target workflow ${targetWorkflowId} not found in memory; applying workflow-scope fallback for user ${userId}`,
+            `⚠️ [MarketControl] Target workflow ${targetWorkflowId} not found in memory; skipping workflow-scoped update for user ${userId}`,
           );
-          for (const workflowId of fallbackWorkflowIds) {
-            await subscriber.addStreamsToRegistration(
-              workflowId,
-              newStreamNames,
-            );
-            await subscriber.addAllowedSymbolsToRegistration(
-              workflowId,
-              newSymbols,
-            );
-          }
         }
 
         // Also update any test listeners for this workflow (handles race condition)
@@ -437,6 +430,7 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 workflowId,
                 newStreamNames,
+                tradingNativeStreams,
               );
               await subscriber.addAllowedSymbolsToRegistration(
                 workflowId,
@@ -495,6 +489,7 @@ export class MarketControlHandler {
           await subscriber.addStreamsToRegistration(
             activeStreamingWorkflow,
             streamsToAdd,
+            tradingNativeStreams,
           );
           await subscriber.addAllowedSymbolsToRegistration(
             activeStreamingWorkflow,
@@ -566,6 +561,7 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 activeUserStreamListenerKey,
                 streamsToAdd,
+                tradingNativeStreams,
               );
               await subscriber.addAllowedSymbolsToRegistration(
                 activeUserStreamListenerKey,
@@ -619,6 +615,7 @@ export class MarketControlHandler {
       contractType,
       scope,
       targetWorkflowId,
+      tradingNativeStreams = [],
     } = msg;
 
     try {
@@ -731,6 +728,7 @@ export class MarketControlHandler {
             symbols,
             scope,
             targetWorkflowId,
+            tradingNativeStreams,
           );
 
           console.log(

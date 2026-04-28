@@ -166,6 +166,9 @@ export class MarketControlHandler {
     environment: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
+    filterSymbols?: string[];
+    symbolMatchMode?: "exact" | "wildcard";
+    tradingNativeStreams?: string[];
   }): Promise<void> {
     const {
       userId,
@@ -176,6 +179,9 @@ export class MarketControlHandler {
       environment,
       onlyClosedBars,
       isLive,
+      filterSymbols = [],
+      symbolMatchMode = "exact",
+      tradingNativeStreams = [],
     } = msg;
 
     try {
@@ -214,6 +220,9 @@ export class MarketControlHandler {
         environment,
         onlyClosedBars,
         isLive,
+        filterSymbols,
+        symbolMatchMode,
+        tradingNativeStreams,
       );
 
       console.log(
@@ -374,6 +383,7 @@ export class MarketControlHandler {
   private async updateActiveStreamingWorkflows(
     userId: string,
     newStreamNames: string[],
+    newSymbols: string[],
     scope: string,
     targetWorkflowId?: string,
   ): Promise<void> {
@@ -389,6 +399,10 @@ export class MarketControlHandler {
           targetWorkflowId,
           newStreamNames,
         );
+        await subscriber.addAllowedSymbolsToRegistration(
+          targetWorkflowId,
+          newSymbols,
+        );
 
         const fallbackWorkflowIds =
           subscriber.getRegisteredWorkflowIdsForUser(userId);
@@ -400,6 +414,10 @@ export class MarketControlHandler {
             await subscriber.addStreamsToRegistration(
               workflowId,
               newStreamNames,
+            );
+            await subscriber.addAllowedSymbolsToRegistration(
+              workflowId,
+              newSymbols,
             );
           }
         }
@@ -419,6 +437,10 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 workflowId,
                 newStreamNames,
+              );
+              await subscriber.addAllowedSymbolsToRegistration(
+                workflowId,
+                newSymbols,
               );
               console.log(
                 `🧪 [MarketControl] Updated test listener ${workflowStreamListener} with ${newStreamNames.length} streams`,
@@ -473,6 +495,10 @@ export class MarketControlHandler {
           await subscriber.addStreamsToRegistration(
             activeStreamingWorkflow,
             streamsToAdd,
+          );
+          await subscriber.addAllowedSymbolsToRegistration(
+            activeStreamingWorkflow,
+            newSymbols,
           );
 
           console.log(
@@ -540,6 +566,10 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 activeUserStreamListenerKey,
                 streamsToAdd,
+              );
+              await subscriber.addAllowedSymbolsToRegistration(
+                activeUserStreamListenerKey,
+                newSymbols,
               );
               console.log(
                 `🧪 [MarketControl] Updated test listener ${activeUserStreamListenerKey} with ${streamsToAdd.length} global streams`,
@@ -698,6 +728,7 @@ export class MarketControlHandler {
           await this.updateActiveStreamingWorkflows(
             userId,
             newStreamNames,
+            symbols,
             scope,
             targetWorkflowId,
           );

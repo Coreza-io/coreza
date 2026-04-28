@@ -27,7 +27,16 @@ export interface ParsedStream {
  */
 export const KNOWN_TRADING_STREAMS = new Set([
   "trade_updates",
-  "user_data_stream",
+  "order_update",
+  "ORDER_TRADE_UPDATE".toLowerCase(),
+  "ALGO_UPDATE".toLowerCase(),
+  "ACCOUNT_UPDATE".toLowerCase(),
+  "ACCOUNT_CONFIG_UPDATE".toLowerCase(),
+  "MARGIN_CALL".toLowerCase(),
+  "listenKeyExpired".toLowerCase(),
+  "executionReport".toLowerCase(),
+  "outboundAccountPosition".toLowerCase(),
+  "balanceUpdate".toLowerCase(),
 ]);
 
 export function parseStreamName(

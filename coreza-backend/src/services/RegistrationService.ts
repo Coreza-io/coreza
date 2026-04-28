@@ -285,6 +285,9 @@ export class RegistrationService {
     environment: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
+    filterSymbols?: string[];
+    symbolMatchMode?: "exact" | "wildcard";
+    tradingNativeStreams?: string[];
   }): Promise<void> {
     const redis = getRedisCache();
 
@@ -298,6 +301,9 @@ export class RegistrationService {
       environment: params.environment,
       onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
       isLive: params.isLive ?? false,
+      filterSymbols: params.filterSymbols ?? [],
+      symbolMatchMode: params.symbolMatchMode ?? "exact",
+      tradingNativeStreams: params.tradingNativeStreams ?? [],
     };
 
     await redis.publish(

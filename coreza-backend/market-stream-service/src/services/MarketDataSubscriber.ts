@@ -14,6 +14,8 @@ import {
 import logger from "../utils/logger";
 import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
+import { normalizeOrderSymbol } from "../utils/symbolNormalize";
+import { tradingRoutingKey } from "../utils/streamName";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
 
@@ -29,6 +31,8 @@ interface WorkflowRegistration {
   streams: Set<string>;
   source: MarketSource;
   environment: string;
+  allowedSymbols: Set<string>;
+  symbolMatchMode: "exact" | "wildcard";
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
   isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
 }
@@ -88,6 +92,9 @@ export class MarketDataSubscriber {
     environment: string,
     onlyClosedBars?: boolean,
     isLive?: boolean,
+    filterSymbols: string[] = [],
+    symbolMatchMode: "exact" | "wildcard" = "exact",
+    tradingNativeStreams: string[] = [],
   ): Promise<void> {
     try {
       console.log(
@@ -95,6 +102,13 @@ export class MarketDataSubscriber {
         streams,
       );
 
+      if (!String(source || "").trim()) {
+        throw new Error("registerWorkflow requires non-empty source");
+      }
+
+      const normalizedSymbols = filterSymbols.map((symbol) =>
+        normalizeOrderSymbol(symbol, String(source).split("_")[0]),
+      );
       // Create registration object
       const registration: WorkflowRegistration = {
         workflowId,
@@ -103,9 +117,15 @@ export class MarketDataSubscriber {
         streams: new Set(streams.map((s) => s)),
         source,
         environment,
+        allowedSymbols: new Set(normalizedSymbols),
+        symbolMatchMode,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
         isLive: isLive ?? false,
       };
+
+      for (const nativeStream of tradingNativeStreams) {
+        registration.streams.add(nativeStream);
+      }
 
       // Store in memory
       this.registrations.set(workflowId, registration);
@@ -231,6 +251,9 @@ export class MarketDataSubscriber {
             environment: string;
             onlyClosedBars?: boolean;
             isLive?: boolean;
+            filterSymbols?: string[];
+            symbolMatchMode?: "exact" | "wildcard";
+            tradingNativeStreams?: string[];
           };
 
           // Verify workflow is still active (use cache)
@@ -256,6 +279,9 @@ export class MarketDataSubscriber {
             registration.environment,
             registration.onlyClosedBars,
             registration.isLive,
+            registration.filterSymbols || [],
+            registration.symbolMatchMode || "exact",
+            registration.tradingNativeStreams || [],
           );
 
           restored++;
@@ -306,7 +332,7 @@ export class MarketDataSubscriber {
           event.type === "listen_key_expired";
 
         const stream = isTradingLifecycleEvent
-          ? "order_update"
+          ? this.resolveTradingRoutingKey(event)
           : event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
@@ -318,23 +344,7 @@ export class MarketDataSubscriber {
         // Find workflows registered for this stream
         const workflows = this.streamWorkflows.get(stream);
 
-        // Handle wildcard registrations (*) — used by alpaca_trading (order_update covers all symbols)
-        const wildcardWorkflows = this.streamWorkflows.get("*");
-
-        // // Also check for fixed trading stream names (companion gateways)
-        // const tradingStreamWorkflows =
-        //   event.type === "order_update"
-        //     ? new Set([
-        //         ...(this.streamWorkflows.get("trade_updates") || []),
-        //         //...(this.streamWorkflows.get("user_data_stream") || []),
-        //       ])
-        //     : undefined;
-
-        const allWorkflows = new Set([
-          ...(workflows || []),
-          ...(wildcardWorkflows || []),
-          // ...(tradingStreamWorkflows || []),
-        ]);
+        const allWorkflows = new Set([...(workflows || [])]);
 
         if (allWorkflows.size === 0) return;
 
@@ -352,11 +362,41 @@ export class MarketDataSubscriber {
           if (!registration) continue;
 
           // Filter by source if specified
-          if (
-            registration.source &&
-            registration.source.split("_")[0] !== event.source
-          )
+          const regBroker = String(registration.source ?? "")
+            .split("_")[0]
+            .toLowerCase();
+          const evtBroker = String(event.source ?? "").toLowerCase();
+          if (!regBroker || !evtBroker || regBroker !== evtBroker) {
+            logger.warn(
+              {
+                workflowId,
+                stream,
+                registrationSource: registration.source,
+                eventSource: event.source,
+              },
+              "Skipping market event due to broker mismatch",
+            );
             continue;
+          }
+
+          if (
+            isTradingLifecycleEvent &&
+            registration.symbolMatchMode === "exact"
+          ) {
+            const normalizedSymbol = normalizeOrderSymbol(event.symbol, evtBroker);
+            if (!registration.allowedSymbols.has(normalizedSymbol)) {
+              logger.warn(
+                {
+                  workflowId,
+                  eventSymbol: event.symbol,
+                  normalizedSymbol,
+                  allowedSymbols: Array.from(registration.allowedSymbols),
+                },
+                "Skipping trading event due to symbol filter mismatch",
+              );
+              continue;
+            }
+          }
 
           // Filter unclosed bars for Binance when onlyClosedBars is enabled
           // Binance klines stream continuously with isClosed=false until the candle closes
@@ -479,6 +519,26 @@ export class MarketDataSubscriber {
         [dataKey]: cleanEventData,
       },
     };
+  }
+
+  private resolveTradingRoutingKey(event: CorezaMarketEvent): string {
+    const tradingSource = `${event.source}_trading`;
+    if (tradingSource === "alpaca_trading") {
+      return tradingRoutingKey(tradingSource, "trade_updates");
+    }
+
+    if (tradingSource === "binance_trading") {
+      const nativeEventType =
+        event.rawOrderData?.e ||
+        (event.type === "algo_update"
+          ? "ALGO_UPDATE"
+          : event.type === "listen_key_expired"
+            ? "listenKeyExpired"
+            : "ORDER_TRADE_UPDATE");
+      return tradingRoutingKey(tradingSource, nativeEventType);
+    }
+
+    throw new Error(`Unknown trading event source: ${event.source}`);
   }
 
   private enqueueWorkflowDelivery(
@@ -763,6 +823,36 @@ export class MarketDataSubscriber {
     );
   }
 
+  async addAllowedSymbolsToRegistration(
+    workflowId: string,
+    symbols: string[],
+  ): Promise<void> {
+    const registration = this.registrations.get(workflowId);
+    if (!registration) return;
+
+    const broker = String(registration.source).split("_")[0];
+    symbols
+      .map((symbol) => normalizeOrderSymbol(symbol, broker))
+      .forEach((symbol) => registration.allowedSymbols.add(symbol));
+
+    await this.persistRegistration(registration);
+  }
+
+  async removeAllowedSymbolsFromRegistration(
+    workflowId: string,
+    symbols: string[],
+  ): Promise<void> {
+    const registration = this.registrations.get(workflowId);
+    if (!registration) return;
+
+    const broker = String(registration.source).split("_")[0];
+    symbols
+      .map((symbol) => normalizeOrderSymbol(symbol, broker))
+      .forEach((symbol) => registration.allowedSymbols.delete(symbol));
+
+    await this.persistRegistration(registration);
+  }
+
   /**
    * Remove specific streams from an existing workflow registration.
    * If no streams remain after removal, the workflow registration is removed entirely.
@@ -836,6 +926,11 @@ export class MarketDataSubscriber {
       userId: registration.userId,
       streams: Array.from(registration.streams),
       source: registration.source,
+      filterSymbols: Array.from(registration.allowedSymbols),
+      symbolMatchMode: registration.symbolMatchMode,
+      tradingNativeStreams: Array.from(registration.streams).filter(
+        (stream) => !stream.includes("@") && stream !== "order_update",
+      ),
       onlyClosedBars: registration.onlyClosedBars,
       isLive: registration.isLive,
     });

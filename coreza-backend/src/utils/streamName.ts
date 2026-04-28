@@ -14,6 +14,32 @@ export interface StreamIdentifier {
   contractType?: string;
 }
 
+export const NATIVE_TRADING_STREAM_NAMES = new Set([
+  "trade_updates",
+  "ORDER_TRADE_UPDATE",
+  "ALGO_UPDATE",
+  "ACCOUNT_UPDATE",
+  "ACCOUNT_CONFIG_UPDATE",
+  "MARGIN_CALL",
+  "listenKeyExpired",
+  "executionReport",
+  "outboundAccountPosition",
+  "balanceUpdate",
+  "order_update", // backwards-compatible alias during rollout
+]);
+
+export function tradingRoutingKey(source: string, eventType: string): string {
+  if (source === "alpaca_trading") {
+    return "trade_updates";
+  }
+
+  if (source === "binance_trading") {
+    return eventType;
+  }
+
+  throw new Error(`Unsupported trading source for routing key: ${source}`);
+}
+
 function normalizeBinanceEventType(eventType: string): string {
   const normalized = eventType.trim();
   switch (normalized) {
@@ -21,7 +47,7 @@ function normalizeBinanceEventType(eventType: string): string {
       return "forceOrder";
     case "continuous_kline":
     case "continuousKline":
-      return "continuousKline";
+      return "continuous_kline";
     case "markPrice":
       return "markPrice";
     case "indexPrice":
@@ -44,7 +70,7 @@ function buildStreamKey(
   contractType?: string,
 ): string {
   if (source === "alpaca_trading" || source === "binance_trading") {
-    return "order_update";
+    return tradingRoutingKey(source, eventType);
   }
 
   const resolvedEventType = source.startsWith("binance")
@@ -75,8 +101,8 @@ export function parseStreamName(
   source: string,
   streamName: string,
 ): StreamIdentifier {
-  if (source === "alpaca_trading" || source === "binance_trading") {
-    return { symbol: "*", eventType: "order_update" };
+  if (NATIVE_TRADING_STREAM_NAMES.has(streamName)) {
+    return { symbol: "*", eventType: streamName };
   }
 
   if (source.startsWith("binance")) {

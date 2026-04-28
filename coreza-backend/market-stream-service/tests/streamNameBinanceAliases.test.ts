@@ -1,4 +1,4 @@
-import { buildStreamNames } from '../src/utils/streamName';
+import { buildStreamNames, parseStreamName } from '../src/utils/streamName';
 
 describe('Binance stream type aliases', () => {
   it('maps futures UI aliases to Binance-native stream names', () => {
@@ -49,5 +49,12 @@ describe('Binance stream type aliases', () => {
     );
 
     expect(streams).toEqual(['btcusdt_perpetual@continuous_kline_5m']);
+  });
+
+  it("keeps native trading stream names parseable", () => {
+    expect(parseStreamName("binance_trading", "ORDER_TRADE_UPDATE")).toEqual({
+      symbol: "*",
+      streamType: "ORDER_TRADE_UPDATE",
+    });
   });
 });

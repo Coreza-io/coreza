@@ -19,7 +19,11 @@ import {
   alertGatewayDisconnected,
   alertMaxReconnectAttempts,
 } from "../utils/alerting";
-import { parseStreamName, extractSymbol } from "../utils/streamName";
+import {
+  parseStreamName,
+  extractSymbol,
+  tradingRoutingKey,
+} from "../utils/streamName";
 
 export class MarketDataGateway {
   // Key: full source_id (e.g., 'alpaca_news', 'alpaca_stream') for unique instances
@@ -236,7 +240,7 @@ export class MarketDataGateway {
           event.type === "listen_key_expired";
 
         const stream = isTradingLifecycleEvent
-          ? "order_update"
+          ? this.resolveTradingRoutingKey(event)
           : event.timeframe
               ? event.contractType
                 ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
@@ -270,6 +274,25 @@ export class MarketDataGateway {
     } catch (error) {
       this.logger.error({ source: this.source, error }, "Message parse error");
     }
+  }
+
+  private resolveTradingRoutingKey(event: CorezaMarketEvent): string {
+    if (this.source === "alpaca_trading") {
+      return tradingRoutingKey(this.source, "trade_updates");
+    }
+
+    if (this.source === "binance_trading") {
+      const nativeEventType =
+        event.rawOrderData?.e ||
+        (event.type === "algo_update"
+          ? "ALGO_UPDATE"
+          : event.type === "listen_key_expired"
+            ? "listenKeyExpired"
+            : "ORDER_TRADE_UPDATE");
+      return tradingRoutingKey(this.source, nativeEventType);
+    }
+
+    throw new Error(`Unknown trading gateway source: ${this.source}`);
   }
 
   /**

@@ -23,6 +23,35 @@ function toMarketSource(
   return getSourceMapping(source).gatewaySource;
 }
 
+function getTradingNativeStreams(
+  source: string,
+  marketType?: string,
+): string[] {
+  if (source === "alpaca_trading") {
+    return ["trade_updates"];
+  }
+
+  if (source === "binance_trading") {
+    return marketType === "spot"
+      ? [
+          "executionReport",
+          "outboundAccountPosition",
+          "balanceUpdate",
+          "listenKeyExpired",
+        ]
+      : [
+          "ORDER_TRADE_UPDATE",
+          "ALGO_UPDATE",
+          "ACCOUNT_UPDATE",
+          "ACCOUNT_CONFIG_UPDATE",
+          "MARGIN_CALL",
+          "listenKeyExpired",
+        ];
+  }
+
+  return [];
+}
+
 export class StreamingLifecycleAdapter {
   private async deleteByPattern(pattern: string): Promise<void> {
     const redis = getRedisCache();
@@ -166,7 +195,7 @@ export class StreamingLifecycleAdapter {
         workflowId,
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
-        symbols: ["*"],
+        symbols,
         streamType: ["order_update"],
         environment,
         assetType: nodeValues.assetType,
@@ -298,6 +327,14 @@ export class StreamingLifecycleAdapter {
       environment,
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
       isLive: true,
+      filterSymbols: symbols,
+      symbolMatchMode: "exact",
+      tradingNativeStreams: hasOrderUpdate
+        ? getTradingNativeStreams(
+            `${triggerNode.subCategory}_trading`,
+            nodeValues.marketType,
+          )
+        : [],
     });
 
     await this.clearSessionData(userId, workflowId);

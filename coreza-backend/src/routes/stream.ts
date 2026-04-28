@@ -41,6 +41,31 @@ router.use(requireAuth);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function getTradingNativeStreams(
+  source: string,
+  marketType?: string,
+): string[] {
+  if (source === "alpaca_trading") return ["trade_updates"];
+  if (source === "binance_trading") {
+    return marketType === "spot"
+      ? [
+          "executionReport",
+          "outboundAccountPosition",
+          "balanceUpdate",
+          "listenKeyExpired",
+        ]
+      : [
+          "ORDER_TRADE_UPDATE",
+          "ALGO_UPDATE",
+          "ACCOUNT_UPDATE",
+          "ACCOUNT_CONFIG_UPDATE",
+          "MARGIN_CALL",
+          "listenKeyExpired",
+        ];
+  }
+  return [];
+}
+
 /**
  * Replay paused stream events from Redis stream cursor.
  * POST /stream/replay
@@ -352,6 +377,13 @@ router.post("/:source/subscribe", async (req, res) => {
       (t: string) => t !== "order_update",
     );
 
+    const normalizedSymbols = buildCryptoSymbols(
+      stream_type,
+      crypto_base,
+      crypto_quote,
+    );
+    const resolvedSymbols =
+      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
     if (hasOrderUpdate) {
       const tradingSourceId = `${source}_trading`;
       await SubscriptionService.subscribe({
@@ -360,7 +392,7 @@ router.post("/:source/subscribe", async (req, res) => {
         workflowId: workflowId,
         nodeId: node_id,
         credentialId: credential_id,
-        symbols: ["*"],
+        symbols: resolvedSymbols,
         streamType: ["order_update"],
         environment,
         assetType: assetType,
@@ -372,13 +404,6 @@ router.post("/:source/subscribe", async (req, res) => {
     }
 
     // Subscribe to market/crypto streams (excluding order_update)
-    const normalizedSymbols = buildCryptoSymbols(
-      stream_type,
-      crypto_base,
-      crypto_quote,
-    );
-    const resolvedSymbols =
-      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
     let result;
     if (marketstreamType.length > 0 || !hasOrderUpdate) {
@@ -405,7 +430,7 @@ router.post("/:source/subscribe", async (req, res) => {
         success: true,
         data: {
           message: "Subscribed to order updates",
-          symbols: ["*"],
+          symbols: resolvedSymbols,
           streamType: ["order_update"],
         },
       };
@@ -483,6 +508,13 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const marketstreamType = streamType.filter(
       (t: string) => t !== "order_update",
     );
+    const normalizedSymbols = buildCryptoSymbols(
+      stream_type,
+      crypto_base,
+      crypto_quote,
+    );
+    const resolvedSymbols =
+      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
     if (hasOrderUpdate) {
       const tradingSourceId = `${source}_trading`;
@@ -491,7 +523,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
-        symbols: ["*"],
+        symbols: resolvedSymbols,
         streamType: ["order_update"],
         scope,
         environment,
@@ -499,13 +531,6 @@ router.post("/:source/unsubscribe", async (req, res) => {
       });
     }
 
-    const normalizedSymbols = buildCryptoSymbols(
-      stream_type,
-      crypto_base,
-      crypto_quote,
-    );
-    const resolvedSymbols =
-      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
     let result: any;
     if (marketstreamType) {
       result = await SubscriptionService.unsubscribe({
@@ -735,7 +760,7 @@ router.post("/:source/register", async (req, res) => {
           workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
-          symbols: ["*"],
+          symbols: parsedSymbols,
           streamType: tradingstreamType,
           environment: requiredEnvironment,
           assetType: assetType,
@@ -878,6 +903,11 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       onlyClosedBars,
+      filterSymbols: parsedSymbols,
+      symbolMatchMode: "exact",
+      tradingNativeStreams: hasOrderUpdate
+        ? getTradingNativeStreams(`${source}_trading`, marketType)
+        : [],
     });
 
     console.log(
@@ -952,7 +982,7 @@ router.post("/unregister", async (req, res) => {
           userId,
           workflowId,
           nodeId: node_id,
-          symbols: ["*"],
+          symbols: listener.filterSymbols || [],
           streamType: streamType,
           scope: listener.scope,
           environment: listener.environment,

@@ -246,7 +246,7 @@ export function normalizeAlpacaMessage(
     return {
       source: "alpaca" as any,
       symbol: order.symbol?.toUpperCase() || "*",
-      type: "order_update" as const,
+      type: msg.stream,
       t: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
       orderEvent: data.event,
       orderId: order.id,

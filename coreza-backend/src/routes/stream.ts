@@ -41,6 +41,10 @@ router.use(requireAuth);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function isTradingSource(source: string): boolean {
+  return source === "alpaca_trading" || source === "binance_trading";
+}
+
 function getTradingNativeStreams(
   source: string,
   marketType?: string,
@@ -372,6 +376,11 @@ router.post("/:source/subscribe", async (req, res) => {
       : [];
 
     // If order_update is included, subscribe to the trading source separately
+    const ORDER_UPDATE_MARKERS = new Set([
+      "trade_updates",
+      "ORDER_TRADE_UPDATE",
+      "ALGO_UPDATE",
+    ]);
     const hasOrderUpdate = streamType.includes("order_update");
     const marketstreamType = streamType.filter(
       (t: string) => t !== "order_update",
@@ -504,9 +513,28 @@ router.post("/:source/unsubscribe", async (req, res) => {
       : [];
 
     // If order_update is included, also unsubscribe from trading source
-    const hasOrderUpdate = streamType.includes("order_update");
-    const marketstreamType = streamType.filter(
-      (t: string) => t !== "order_update",
+    const ORDER_UPDATE_MARKERS = new Set([
+      "trade_updates",
+      "ORDER_TRADE_UPDATE",
+      "executionReport",
+    ]);
+    // Split trading lifecycle marker from market stream types
+    const hasOrderUpdate = streamType.some((streamName) =>
+      ORDER_UPDATE_MARKERS.has(streamName),
+    );
+    const { marketstreamType, tradingstreamType } = streamType.reduce(
+      (acc, t: string) => {
+        if (ORDER_UPDATE_MARKERS.has(t)) {
+          acc.tradingstreamType.push(t);
+        } else {
+          acc.marketstreamType.push(t);
+        }
+        return acc;
+      },
+      {
+        marketstreamType: [] as string[],
+        tradingstreamType: [] as string[],
+      },
     );
     const normalizedSymbols = buildCryptoSymbols(
       stream_type,
@@ -517,14 +545,14 @@ router.post("/:source/unsubscribe", async (req, res) => {
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
     if (hasOrderUpdate) {
-      const tradingSourceId = `${source}_trading`;
+      //const tradingSourceId = `${source}_trading`;
       await SubscriptionService.unsubscribe({
-        source: tradingSourceId as any,
+        source: sourceId as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
         symbols: resolvedSymbols,
-        streamType: ["order_update"],
+        streamType: tradingstreamType,
         scope,
         environment,
         targetWorkflowId,
@@ -722,10 +750,19 @@ router.post("/:source/register", async (req, res) => {
       : [];
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
-    const hasOrderUpdate = parsedstreamType.includes("ORDER_TRADE_UPDATE");
+    //const hasOrderUpdate = parsedstreamType.includes("ORDER_TRADE_UPDATE");
+    const ORDER_UPDATE_MARKERS = new Set([
+      "trade_updates",
+      "ORDER_TRADE_UPDATE",
+      "executionReport",
+    ]);
+    // Split trading lifecycle marker from market stream types
+    const hasOrderUpdate = parsedstreamType.some((streamName) =>
+      ORDER_UPDATE_MARKERS.has(streamName),
+    );
     const { marketstreamType, tradingstreamType } = parsedstreamType.reduce(
       (acc, t: string) => {
-        if (t === "ORDER_TRADE_UPDATE") {
+        if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
@@ -760,7 +797,7 @@ router.post("/:source/register", async (req, res) => {
           workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
-          symbols: parsedSymbols,
+          symbols: ["*"],
           streamType: tradingstreamType,
           environment: requiredEnvironment,
           assetType: assetType,
@@ -968,22 +1005,41 @@ router.post("/unregister", async (req, res) => {
     if (listener?.source) {
       const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
       const tradingSource = `${sourceFamily}_trading`;
-      const hasOrderUpdate =
-        listener.filterTypes?.includes("order_update") ?? false;
-      let streamType: string[] = [];
+      const ORDER_UPDATE_MARKERS = new Set([
+        "trade_updates",
+        "ORDER_TRADE_UPDATE",
+        "executionReport",
+      ]);
+      // Split trading lifecycle marker from market stream types
+      const hasOrderUpdate = listener.filterTypes.some((streamName) =>
+        ORDER_UPDATE_MARKERS.has(streamName),
+      );
+      const { marketstreamType, tradingstreamType } =
+        listener.filterTypes.reduce(
+          (acc, t: string) => {
+            if (ORDER_UPDATE_MARKERS.has(t)) {
+              acc.tradingstreamType.push(t);
+            } else {
+              acc.marketstreamType.push(t);
+            }
+            return acc;
+          },
+          {
+            marketstreamType: [] as string[],
+            tradingstreamType: [] as string[],
+          },
+        );
 
       // Only unsubscribe trading if this was a market/crypto/stream source
       // (not if source is already a trading source)
       if (hasOrderUpdate) {
-        streamType =
-          listener.filterTypes?.filter((type) => type === "order_update") ?? [];
         await SubscriptionService.unsubscribe({
           source: tradingSource as any,
           userId,
           workflowId,
           nodeId: node_id,
           symbols: [],
-          streamType: streamType,
+          streamType: tradingstreamType,
           marketType: listener.marketType,
           scope: listener.scope,
           environment: listener.environment,
@@ -991,15 +1047,13 @@ router.post("/unregister", async (req, res) => {
         });
       }
 
-      streamType =
-        listener.filterTypes?.filter((type) => type !== "order_update") ?? [];
       await SubscriptionService.unsubscribe({
         source: listener?.source as any,
         userId,
         workflowId,
         nodeId: node_id,
         symbols: listener.filterSymbols,
-        streamType: streamType,
+        streamType: marketstreamType,
         //assetType: listener.assetType,
         assetType: listener.assetType,
         marketType: listener.marketType,

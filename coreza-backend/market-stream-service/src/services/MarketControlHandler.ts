@@ -687,12 +687,9 @@ export class MarketControlHandler {
         // );
 
         const tradingSource = isTradingSource(source);
-        const computedTradingNativeStreams = tradingSource
-          ? computeTradingNativeStreams(source, marketType)
-          : [];
 
         const requestedStreamNames = tradingSource
-          ? computedTradingNativeStreams
+          ? (streamType ?? [])
           : buildStreamNames(
               source,
               symbols,
@@ -717,7 +714,8 @@ export class MarketControlHandler {
           newStreamNames.forEach((name) => state.streams.add(name));
 
           // Track workflow streams (for reference counting only, NOT for data routing)
-          const currentStream = state.workflowStreams.get(workflowId) || new Set();
+          const currentStream =
+            state.workflowStreams.get(workflowId) || new Set();
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
 
@@ -761,9 +759,7 @@ export class MarketControlHandler {
             symbols,
             scope,
             targetWorkflowId,
-            tradingSource
-              ? computedTradingNativeStreams
-              : tradingNativeStreams,
+            tradingSource ? streamType : tradingNativeStreams,
           );
 
           console.log(
@@ -781,9 +777,7 @@ export class MarketControlHandler {
             symbols,
             scope,
             targetWorkflowId,
-            tradingSource
-              ? computedTradingNativeStreams
-              : tradingNativeStreams,
+            tradingSource ? streamType : tradingNativeStreams,
           );
 
           console.log(
@@ -837,7 +831,7 @@ export class MarketControlHandler {
 
       const subscriber = MarketDataSubscriber.getInstance();
       const tradingSource = isTradingSource(source);
-      const computedTradingNativeStreams = tradingSource
+      const streamType = tradingSource
         ? computeTradingNativeStreams(source, marketType)
         : [];
 
@@ -852,7 +846,7 @@ export class MarketControlHandler {
         );
 
         let streamNamesToRemove: string[] = tradingSource
-          ? computedTradingNativeStreams
+          ? streamType
           : buildStreamNames(
               source,
               symbols,
@@ -873,7 +867,8 @@ export class MarketControlHandler {
             (streamNamesToRemove.length > 5 ? "..." : ""),
         );
 
-        const workflowStreams = state.workflowStreams.get(workflowId) ?? new Set<string>();
+        const workflowStreams =
+          state.workflowStreams.get(workflowId) ?? new Set<string>();
         streamNamesToRemove.forEach((name) => workflowStreams.delete(name));
         if (workflowStreams.size === 0) {
           state.workflowStreams.delete(workflowId);
@@ -895,7 +890,10 @@ export class MarketControlHandler {
           state.gateway.unsubscribeStreams(streamNamesToRemove);
         }
 
-        if (streamNamesToRemove.length > 0 && (!tradingSource || shouldRemoveGatewayStreams)) {
+        if (
+          streamNamesToRemove.length > 0 &&
+          (!tradingSource || shouldRemoveGatewayStreams)
+        ) {
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(

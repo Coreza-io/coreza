@@ -18,17 +18,13 @@ import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
-const KNOWN_TRADING_NATIVE_STREAMS = new Set([
+const TRADING_LIFECYCLE_EVENTS = new Set([
+  "order_update",
+  "algo_update",
   "trade_updates",
-  "executionReport",
-  "outboundAccountPosition",
-  "balanceUpdate",
-  "listenKeyExpired",
   "ORDER_TRADE_UPDATE",
-  "ALGO_UPDATE",
-  "ACCOUNT_UPDATE",
-  "ACCOUNT_CONFIG_UPDATE",
-  "MARGIN_CALL",
+  "executionReport",
+  "listen_key_expired",
 ]);
 
 function computeTradingNativeStreams(
@@ -426,9 +422,8 @@ export class MarketDataSubscriber {
         }
 
         const isTradingLifecycleEvent =
-          event.type === "order_update" ||
-          event.type === "algo_update" ||
-          event.type === "listen_key_expired";
+          typeof event.type === "string" &&
+          TRADING_LIFECYCLE_EVENTS.has(event.type);
 
         const stream = isTradingLifecycleEvent
           ? this.resolveTradingRoutingKey(event)
@@ -482,7 +477,10 @@ export class MarketDataSubscriber {
             isTradingLifecycleEvent &&
             registration.symbolMatchMode === "exact"
           ) {
-            const normalizedSymbol = normalizeOrderSymbol(event.symbol, evtBroker);
+            const normalizedSymbol = normalizeOrderSymbol(
+              event.symbol,
+              evtBroker,
+            );
             if (!registration.allowedSymbols.has(normalizedSymbol)) {
               logger.warn(
                 {
@@ -914,7 +912,7 @@ export class MarketDataSubscriber {
       }
       this.streamWorkflows.get(stream)!.add(workflowId);
 
-      if (KNOWN_TRADING_NATIVE_STREAMS.has(stream)) {
+      if (TRADING_LIFECYCLE_EVENTS.has(stream)) {
         registration.tradingNativeStreams.add(stream);
       }
     }

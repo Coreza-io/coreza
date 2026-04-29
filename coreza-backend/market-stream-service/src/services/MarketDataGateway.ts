@@ -25,6 +25,15 @@ import {
   tradingRoutingKey,
 } from "../utils/streamName";
 
+const TRADING_LIFECYCLE_EVENTS = new Set([
+  "order_update",
+  "algo_update",
+  "trade_updates",
+  "ORDER_TRADE_UPDATE",
+  "executionReport",
+  "listen_key_expired",
+]);
+
 export class MarketDataGateway {
   // Key: full source_id (e.g., 'alpaca_news', 'alpaca_stream') for unique instances
   private static instances = new Map<string, MarketDataGateway>();
@@ -234,20 +243,20 @@ export class MarketDataGateway {
 
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
+
         const isTradingLifecycleEvent =
-          event.type === "order_update" ||
-          event.type === "algo_update" ||
-          event.type === "listen_key_expired";
+          typeof event.type === "string" &&
+          TRADING_LIFECYCLE_EVENTS.has(event.type);
 
         const stream = isTradingLifecycleEvent
           ? this.resolveTradingRoutingKey(event)
           : event.timeframe
-              ? event.contractType
-                ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
-                : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-              : event.contractType
-                ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
-                : `${event.symbol.toLowerCase()}@${event.type}`;
+            ? event.contractType
+              ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
+              : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+            : event.contractType
+              ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
+              : `${event.symbol.toLowerCase()}@${event.type}`;
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));

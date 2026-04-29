@@ -64,6 +64,12 @@ import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
 
+const TRADE_UPDATE_STREAMS = new Set([
+  "trade_updates",
+  "ORDER_TRADE_UPDATE",
+  "executionReport",
+]);
+
 interface SourceStatus {
   source: string;
   connected: boolean;
@@ -136,7 +142,7 @@ const KNOWN_CONTRACT_TYPES = new Set([
 ]);
 
 const parseSubscribedStream = (stream: string): ParsedStreamName => {
-  if (stream === "ORDER_TRADE_UPDATE") {
+  if (TRADE_UPDATE_STREAMS.has(stream)) {
     return {
       symbol: "[*]",
       streamType: stream,

@@ -429,12 +429,12 @@ export class MarketDataSubscriber {
         }
 
         const stream = event.timeframe
-            ? event.contractType
-              ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
-              : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-            : event.contractType
-              ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
-              : `${event.symbol.toLowerCase()}@${event.type}`;
+          ? event.contractType
+            ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
+            : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+          : event.contractType
+            ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
+            : `${event.symbol.toLowerCase()}@${event.type}`;
 
         // Find workflows registered for this stream
         const workflows = this.streamWorkflows.get(stream);
@@ -513,7 +513,9 @@ export class MarketDataSubscriber {
     console.log(`🟡 [SUBSCRIBER] redisSub.status: ${sub.status}`);
   }
 
-  private async findTradingEventOwner(event: CorezaMarketEvent): Promise<any | null> {
+  private async findTradingEventOwner(
+    event: CorezaMarketEvent,
+  ): Promise<any | null> {
     return OrderOwnerRegistry.findOwner(
       `${event.source}_trading`,
       OrderOwnerRegistry.deriveCandidateIds(event),
@@ -529,7 +531,9 @@ export class MarketDataSubscriber {
     }
   }
 
-  private async routeTradingLifecycleEvent(event: CorezaMarketEvent): Promise<void> {
+  private async routeTradingLifecycleEvent(
+    event: CorezaMarketEvent,
+  ): Promise<void> {
     if (event.type === "listen_key_expired") {
       this.broadcastAccountEvent(event);
       return;
@@ -537,7 +541,10 @@ export class MarketDataSubscriber {
 
     const owner = await this.findTradingEventOwner(event);
     if (!owner?.workflowId) {
-      logger.warn({ eventType: event.type, source: event.source }, "Dropping trading lifecycle event with no owner mapping");
+      logger.warn(
+        { eventType: event.type, source: event.source },
+        "Dropping trading lifecycle event with no owner mapping",
+      );
       return;
     }
     const registration = this.registrations.get(owner.workflowId);
@@ -923,7 +930,7 @@ export class MarketDataSubscriber {
       }
       this.streamWorkflows.get(stream)!.add(workflowId);
 
-      if (TRADING_LIFECYCLE_EVENTS.has(stream)) {
+      if (TRADING_LIFECYCLE_EVENT_TYPES.has(stream)) {
         registration.tradingNativeStreams.add(stream);
       }
     }

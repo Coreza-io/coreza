@@ -27,6 +27,7 @@ const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
   "executionReport",
   "listen_key_expired",
 ]);
+const ORDER_OWNER_PREFIX = "order_owner";
 
 function computeTradingNativeStreams(
   source: string,

@@ -18,7 +18,7 @@ import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
-const TRADING_LIFECYCLE_EVENTS = new Set([
+const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
   "order_update",
   "algo_update",
   "trade_updates",
@@ -26,6 +26,7 @@ const TRADING_LIFECYCLE_EVENTS = new Set([
   "executionReport",
   "listen_key_expired",
 ]);
+const ORDER_OWNER_PREFIX = "order_owner";
 
 function computeTradingNativeStreams(
   source: string,
@@ -423,11 +424,14 @@ export class MarketDataSubscriber {
 
         const isTradingLifecycleEvent =
           typeof event.type === "string" &&
-          TRADING_LIFECYCLE_EVENTS.has(event.type);
+          TRADING_LIFECYCLE_EVENT_TYPES.has(event.type);
 
-        const stream = isTradingLifecycleEvent
-          ? this.resolveTradingRoutingKey(event)
-          : event.timeframe
+        if (isTradingLifecycleEvent) {
+          await this.routeTradingLifecycleEvent(event);
+          return;
+        }
+
+        const stream = event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
               : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
@@ -473,28 +477,6 @@ export class MarketDataSubscriber {
             continue;
           }
 
-          if (
-            isTradingLifecycleEvent &&
-            registration.symbolMatchMode === "exact"
-          ) {
-            const normalizedSymbol = normalizeOrderSymbol(
-              event.symbol,
-              evtBroker,
-            );
-            if (!registration.allowedSymbols.has(normalizedSymbol)) {
-              logger.warn(
-                {
-                  workflowId,
-                  eventSymbol: event.symbol,
-                  normalizedSymbol,
-                  allowedSymbols: Array.from(registration.allowedSymbols),
-                },
-                "Skipping trading event due to symbol filter mismatch",
-              );
-              continue;
-            }
-          }
-
           // Filter unclosed bars for Binance when onlyClosedBars is enabled
           // Binance klines stream continuously with isClosed=false until the candle closes
           // Other sources (Alpaca) only emit bars when closed, so no filter needed
@@ -532,6 +514,52 @@ export class MarketDataSubscriber {
 
     console.log(`🟡 [SUBSCRIBER] Handler attached to redisSub`);
     console.log(`🟡 [SUBSCRIBER] redisSub.status: ${sub.status}`);
+  }
+
+  private getTradingEventOwnerKeys(event: CorezaMarketEvent): string[] {
+    const source = `${event.source}_trading`;
+    const raw = event.rawOrderData ?? {};
+    const nestedOrder = raw.o ?? {};
+    const ids: Array<[string, string | undefined]> = [
+      ["clientOrderId", event.clientOrderId ?? raw.client_order_id ?? raw.c ?? nestedOrder.c],
+      ["brokerOrderId", (event as any).brokerOrderId ?? event.orderId ?? raw.id ?? raw.i ?? nestedOrder.i],
+      ["clientAlgoId", event.clientAlgoId ?? raw.caid ?? nestedOrder.caid],
+      ["algoId", event.algoId ?? raw.aid ?? nestedOrder.aid],
+    ];
+    return ids
+      .map(([idType, value]) => [idType, String(value ?? "").trim()] as const)
+      .filter(([, value]) => value.length > 0)
+      .map(([idType, value]) => `${ORDER_OWNER_PREFIX}:${source}:${idType}:${value}`);
+  }
+
+  private async findTradingEventOwner(event: CorezaMarketEvent): Promise<any | null> {
+    const keys = this.getTradingEventOwnerKeys(event);
+    if (keys.length === 0) return null;
+    const { pub } = this.ensureRedisConnections();
+    const hits = await pub.mget(...keys);
+    const hit = hits.find((item) => !!item);
+    return hit ? JSON.parse(hit) : null;
+  }
+
+  private async routeTradingLifecycleEvent(event: CorezaMarketEvent): Promise<void> {
+    if (event.type === "listen_key_expired") {
+      const stream = this.resolveTradingRoutingKey(event);
+      const workflows = this.streamWorkflows.get(stream) || new Set<string>();
+      for (const workflowId of workflows) {
+        const registration = this.registrations.get(workflowId);
+        if (registration) this.enqueueWorkflowDelivery(workflowId, registration, event);
+      }
+      return;
+    }
+
+    const owner = await this.findTradingEventOwner(event);
+    if (!owner?.workflowId) {
+      logger.warn({ eventType: event.type, source: event.source }, "Dropping trading lifecycle event with no owner mapping");
+      return;
+    }
+    const registration = this.registrations.get(owner.workflowId);
+    if (!registration) return;
+    this.enqueueWorkflowDelivery(owner.workflowId, registration, event);
   }
 
   /**

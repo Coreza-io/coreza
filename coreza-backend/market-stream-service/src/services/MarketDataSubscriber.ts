@@ -16,9 +16,10 @@ import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
+import { OrderOwnerRegistry } from "./OrderOwnerRegistry";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
-const TRADING_LIFECYCLE_EVENTS = new Set([
+const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
   "order_update",
   "algo_update",
   "trade_updates",
@@ -174,10 +175,6 @@ export class MarketDataSubscriber {
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
         isLive: isLive ?? false,
       };
-
-      for (const nativeStream of registration.tradingNativeStreams) {
-        registration.streams.add(nativeStream);
-      }
 
       // Store in memory
       this.registrations.set(workflowId, registration);
@@ -423,11 +420,14 @@ export class MarketDataSubscriber {
 
         const isTradingLifecycleEvent =
           typeof event.type === "string" &&
-          TRADING_LIFECYCLE_EVENTS.has(event.type);
+          TRADING_LIFECYCLE_EVENT_TYPES.has(event.type);
 
-        const stream = isTradingLifecycleEvent
-          ? this.resolveTradingRoutingKey(event)
-          : event.timeframe
+        if (isTradingLifecycleEvent) {
+          await this.routeTradingLifecycleEvent(event);
+          return;
+        }
+
+        const stream = event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
               : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
@@ -473,28 +473,6 @@ export class MarketDataSubscriber {
             continue;
           }
 
-          if (
-            isTradingLifecycleEvent &&
-            registration.symbolMatchMode === "exact"
-          ) {
-            const normalizedSymbol = normalizeOrderSymbol(
-              event.symbol,
-              evtBroker,
-            );
-            if (!registration.allowedSymbols.has(normalizedSymbol)) {
-              logger.warn(
-                {
-                  workflowId,
-                  eventSymbol: event.symbol,
-                  normalizedSymbol,
-                  allowedSymbols: Array.from(registration.allowedSymbols),
-                },
-                "Skipping trading event due to symbol filter mismatch",
-              );
-              continue;
-            }
-          }
-
           // Filter unclosed bars for Binance when onlyClosedBars is enabled
           // Binance klines stream continuously with isClosed=false until the candle closes
           // Other sources (Alpaca) only emit bars when closed, so no filter needed
@@ -532,6 +510,38 @@ export class MarketDataSubscriber {
 
     console.log(`🟡 [SUBSCRIBER] Handler attached to redisSub`);
     console.log(`🟡 [SUBSCRIBER] redisSub.status: ${sub.status}`);
+  }
+
+  private async findTradingEventOwner(event: CorezaMarketEvent): Promise<any | null> {
+    return OrderOwnerRegistry.findOwner(
+      `${event.source}_trading`,
+      OrderOwnerRegistry.deriveCandidateIds(event),
+    );
+  }
+
+  private broadcastAccountEvent(event: CorezaMarketEvent): void {
+    for (const [workflowId, registration] of this.registrations.entries()) {
+      const regBroker = String(registration.source || "").split("_")[0];
+      if (regBroker === event.source) {
+        this.enqueueWorkflowDelivery(workflowId, registration, event);
+      }
+    }
+  }
+
+  private async routeTradingLifecycleEvent(event: CorezaMarketEvent): Promise<void> {
+    if (event.type === "listen_key_expired") {
+      this.broadcastAccountEvent(event);
+      return;
+    }
+
+    const owner = await this.findTradingEventOwner(event);
+    if (!owner?.workflowId) {
+      logger.warn({ eventType: event.type, source: event.source }, "Dropping trading lifecycle event with no owner mapping");
+      return;
+    }
+    const registration = this.registrations.get(owner.workflowId);
+    if (!registration) return;
+    this.enqueueWorkflowDelivery(owner.workflowId, registration, event);
   }
 
   /**

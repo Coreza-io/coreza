@@ -35,6 +35,9 @@ import {
   createErrorOutput,
   toNodeResult,
 } from "../../utils/normalizeOutput";
+import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
+import { extractAlpacaOrderOwnerIds } from "../../brokers/alpaca/orderOwnerExtract";
+import { extractBinanceOrderOwnerIds } from "../../brokers/binance/orderOwnerExtract";
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
@@ -288,6 +291,27 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
+
+      if (operation === "place_order" && (broker === "alpaca" || broker === "binance")) {
+        try {
+          const ids =
+            broker === "alpaca"
+              ? extractAlpacaOrderOwnerIds(data)
+              : extractBinanceOrderOwnerIds(data);
+          await OrderOwnerRegistry.saveOwner({
+            source: `${broker}_trading`,
+            userId,
+            workflowId,
+            nodeId: node.id,
+            runId: context?.runId,
+            symbol: String(resolvedParams?.symbol || ""),
+            createdAt: new Date().toISOString(),
+            ...ids,
+          });
+        } catch (err) {
+          console.warn("Failed to save order-owner mapping", err);
+        }
+      }
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         await updateOrderCache(

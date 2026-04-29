@@ -16,6 +16,7 @@ import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
+import { OrderOwnerRegistry } from "./OrderOwnerRegistry";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
 const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
@@ -175,10 +176,6 @@ export class MarketDataSubscriber {
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
         isLive: isLive ?? false,
       };
-
-      for (const nativeStream of registration.tradingNativeStreams) {
-        registration.streams.add(nativeStream);
-      }
 
       // Store in memory
       this.registrations.set(workflowId, registration);
@@ -516,39 +513,25 @@ export class MarketDataSubscriber {
     console.log(`🟡 [SUBSCRIBER] redisSub.status: ${sub.status}`);
   }
 
-  private getTradingEventOwnerKeys(event: CorezaMarketEvent): string[] {
-    const source = `${event.source}_trading`;
-    const raw = event.rawOrderData ?? {};
-    const nestedOrder = raw.o ?? {};
-    const ids: Array<[string, string | undefined]> = [
-      ["clientOrderId", event.clientOrderId ?? raw.client_order_id ?? raw.c ?? nestedOrder.c],
-      ["brokerOrderId", (event as any).brokerOrderId ?? event.orderId ?? raw.id ?? raw.i ?? nestedOrder.i],
-      ["clientAlgoId", event.clientAlgoId ?? raw.caid ?? nestedOrder.caid],
-      ["algoId", event.algoId ?? raw.aid ?? nestedOrder.aid],
-    ];
-    return ids
-      .map(([idType, value]) => [idType, String(value ?? "").trim()] as const)
-      .filter(([, value]) => value.length > 0)
-      .map(([idType, value]) => `${ORDER_OWNER_PREFIX}:${source}:${idType}:${value}`);
+  private async findTradingEventOwner(event: CorezaMarketEvent): Promise<any | null> {
+    return OrderOwnerRegistry.findOwner(
+      `${event.source}_trading`,
+      OrderOwnerRegistry.deriveCandidateIds(event),
+    );
   }
 
-  private async findTradingEventOwner(event: CorezaMarketEvent): Promise<any | null> {
-    const keys = this.getTradingEventOwnerKeys(event);
-    if (keys.length === 0) return null;
-    const { pub } = this.ensureRedisConnections();
-    const hits = await pub.mget(...keys);
-    const hit = hits.find((item) => !!item);
-    return hit ? JSON.parse(hit) : null;
+  private broadcastAccountEvent(event: CorezaMarketEvent): void {
+    for (const [workflowId, registration] of this.registrations.entries()) {
+      const regBroker = String(registration.source || "").split("_")[0];
+      if (regBroker === event.source) {
+        this.enqueueWorkflowDelivery(workflowId, registration, event);
+      }
+    }
   }
 
   private async routeTradingLifecycleEvent(event: CorezaMarketEvent): Promise<void> {
     if (event.type === "listen_key_expired") {
-      const stream = this.resolveTradingRoutingKey(event);
-      const workflows = this.streamWorkflows.get(stream) || new Set<string>();
-      for (const workflowId of workflows) {
-        const registration = this.registrations.get(workflowId);
-        if (registration) this.enqueueWorkflowDelivery(workflowId, registration, event);
-      }
+      this.broadcastAccountEvent(event);
       return;
     }
 

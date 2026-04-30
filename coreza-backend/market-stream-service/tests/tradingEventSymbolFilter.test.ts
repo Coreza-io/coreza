@@ -1,6 +1,7 @@
+export {};
 const { MarketDataSubscriber } = require("../src/services/MarketDataSubscriber");
 
-const onHandlers = {};
+const onHandlers: Record<string, any> = {};
 
 jest.mock("../src/config/redis", () => ({
   createRedisPubSub: () => ({
@@ -26,12 +27,14 @@ jest.mock("../src/config/redis", () => ({
   }),
 }));
 
+const { OrderOwnerRegistry } = require("../src/services/OrderOwnerRegistry");
+
 describe("trading symbol filter", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("drops unmatched symbols and allows newly added symbols", async () => {
+  it("routes owner-mapped trading events regardless of symbol filter", async () => {
     const subscriber = MarketDataSubscriber.getInstance();
     jest.spyOn(subscriber, "persistRegistration").mockResolvedValue(undefined);
 
@@ -60,13 +63,11 @@ describe("trading symbol filter", () => {
       source: "binance",
       symbol: "ETHUSDT",
       type: "order_update",
-      rawOrderData: { e: "ORDER_TRADE_UPDATE" },
+      rawOrderData: { e: "ORDER_TRADE_UPDATE", o: { i: 1001 } },
     };
 
-    await messageHandler("md:symbol:ORDER_TRADE_UPDATE", JSON.stringify(ethEvent));
-    expect(enqueueSpy).toHaveBeenCalledTimes(0);
+    jest.spyOn(OrderOwnerRegistry, "findOwner").mockResolvedValue({ workflowId: "wf-filter" });
 
-    await subscriber.addAllowedSymbolsToRegistration("wf-filter", ["ETHUSDT"]);
     await messageHandler("md:symbol:ORDER_TRADE_UPDATE", JSON.stringify(ethEvent));
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
   });

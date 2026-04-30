@@ -114,6 +114,7 @@ export class MarketDataSubscriber {
   private ensureRedisConnections(): { pub: Redis; sub: Redis } {
     if (!this.redisSub || !this.redisPub) {
       const { pub, sub } = createRedisPubSub();
+      // Order-owner keys are shared via queue Redis: backend writes, subscriber resolves via OrderOwnerRegistry/getRedisQueue.
       this.redisSub = sub;
       this.redisPub = pub;
     }

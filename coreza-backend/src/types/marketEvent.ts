@@ -92,6 +92,8 @@ export interface MarketEvent {
   orderId?: string;
   clientOrderId?: string;
   brokerOrderId?: string;
+  clientAlgoId?: string;
+  algoId?: string;
   side?: string;
   filledQty?: number;
   filledAvgPrice?: number;

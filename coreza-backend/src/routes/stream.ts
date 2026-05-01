@@ -522,7 +522,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
-        symbols: resolvedSymbols,
+        symbols: ["*"],
         streamType: tradingstreamType,
         scope,
         environment,

@@ -41,35 +41,6 @@ router.use(requireAuth);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function isTradingSource(source: string): boolean {
-  return source === "alpaca_trading" || source === "binance_trading";
-}
-
-function getTradingNativeStreams(
-  source: string,
-  marketType?: string,
-): string[] {
-  if (source === "alpaca_trading") return ["trade_updates"];
-  if (source === "binance_trading") {
-    return marketType === "spot"
-      ? [
-          "executionReport",
-          "outboundAccountPosition",
-          "balanceUpdate",
-          "listenKeyExpired",
-        ]
-      : [
-          "ORDER_TRADE_UPDATE",
-          "ALGO_UPDATE",
-          "ACCOUNT_UPDATE",
-          "ACCOUNT_CONFIG_UPDATE",
-          "MARGIN_CALL",
-          "listenKeyExpired",
-        ];
-  }
-  return [];
-}
-
 /**
  * Replay paused stream events from Redis stream cursor.
  * POST /stream/replay
@@ -506,7 +477,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
 
     // Parse stream_type into array
-    const streamType: string[] = stream_type
+    const streamTypes: string[] = stream_type
       ? typeof stream_type === "string"
         ? stream_type.split(",").map((s: string) => s.trim())
         : stream_type
@@ -519,10 +490,10 @@ router.post("/:source/unsubscribe", async (req, res) => {
       "executionReport",
     ]);
     // Split trading lifecycle marker from market stream types
-    const hasOrderUpdate = streamType.some((streamName) =>
+    const hasOrderUpdate = streamTypes.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
     );
-    const { marketstreamType, tradingstreamType } = streamType.reduce(
+    const { marketstreamType, tradingstreamType } = streamTypes.reduce(
       (acc, t: string) => {
         if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);

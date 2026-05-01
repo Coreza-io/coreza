@@ -165,12 +165,19 @@ export class StreamingLifecycleAdapter {
             .split(",")
             .map((streamType) => streamType.trim())
         : [];
-
-    const hasOrderUpdate = streamType.includes("order_update");
+    const ORDER_UPDATE_MARKERS = new Set([
+      "trade_updates",
+      "ORDER_TRADE_UPDATE",
+      "executionReport",
+    ]);
+    // Split trading lifecycle marker from market stream types
+    const hasOrderUpdate = streamType.some((streamName) =>
+      ORDER_UPDATE_MARKERS.has(streamName),
+    );
 
     const { marketstreamType, tradingstreamType } = streamType.reduce(
       (acc, t: string) => {
-        if (t === "order_update") {
+        if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
@@ -199,8 +206,8 @@ export class StreamingLifecycleAdapter {
         workflowId,
         nodeId: triggerNode.id,
         credentialId: nodeValues.credential_id || "",
-        symbols,
-        streamType: ["order_update"],
+        symbols: ["*"],
+        streamType: tradingstreamType,
         environment,
         assetType: nodeValues.assetType,
         marketType: nodeValues.marketType,
@@ -312,8 +319,8 @@ export class StreamingLifecycleAdapter {
       mode: nodeValues.mode,
       scope: nodeValues.scope,
       environment,
-      filterSymbols: symbols,
-      filterTypes: nodeValues.stream_type,
+      symbols: symbols,
+      streamTypes: nodeValues.stream_type,
       assetType: nodeValues.assetType,
       marketType: nodeValues.marketType,
       contractType: nodeValues.contractType,
@@ -331,14 +338,8 @@ export class StreamingLifecycleAdapter {
       environment,
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
       isLive: true,
-      filterSymbols: symbols,
-      symbolMatchMode: "exact",
-      tradingNativeStreams: hasOrderUpdate
-        ? getTradingNativeStreams(
-            `${triggerNode.subCategory}_trading`,
-            nodeValues.marketType,
-          )
-        : [],
+      symbols: symbols,
+      streamTypes: nodeValues.stream_type,
     });
 
     await this.clearSessionData(userId, workflowId);
@@ -395,28 +396,88 @@ export class StreamingLifecycleAdapter {
               .split(",")
               .map((streamType: string) => streamType.trim())
           : [];
-      const hasOrderUpdate = streamTypes.includes("order_update");
+      // If order_update is included, also unsubscribe from trading source
+      const ORDER_UPDATE_MARKERS = new Set([
+        "trade_updates",
+        "ORDER_TRADE_UPDATE",
+        "executionReport",
+      ]);
+      // Split trading lifecycle marker from market stream types
+      const hasOrderUpdate = streamTypes.some((streamName) =>
+        ORDER_UPDATE_MARKERS.has(streamName),
+      );
+      const { marketstreamType, tradingstreamType } = streamTypes.reduce(
+        (acc, t: string) => {
+          if (ORDER_UPDATE_MARKERS.has(t)) {
+            acc.tradingstreamType.push(t);
+          } else {
+            acc.marketstreamType.push(t);
+          }
+          return acc;
+        },
+        {
+          marketstreamType: [] as string[],
+          tradingstreamType: [] as string[],
+        },
+      );
 
-      await SubscriptionService.unsubscribe({
-        source: sourceId,
-        userId,
-        workflowId,
-        symbols: symbolArray,
-      });
+      // await SubscriptionService.unsubscribe({
+      //   source: sourceId,
+      //   userId,
+      //   workflowId,
+      //   symbols: symbolArray,
+      // });
 
+      // if (hasOrderUpdate) {
+      //   await SubscriptionService.unsubscribe({
+      //     source: `${node.subCategory}_trading` as MarketSource,
+      //     userId,
+      //     workflowId,
+      //     symbols: [],
+      //     streamType: ["order_update"],
+      //     environment: nodeValues.environment as string,
+      //     marketType: nodeValues.marketType as string,
+      //     scope: (nodeValues.scope === "global" ? "global" : "workflow") as
+      //       | "global"
+      //       | "workflow",
+      //     targetWorkflowId: workflowId,
+      //   });
+      // }
       if (hasOrderUpdate) {
+        //const tradingSourceId = `${source}_trading`;
         await SubscriptionService.unsubscribe({
-          source: `${node.subCategory}_trading` as MarketSource,
+          source: sourceId as any,
           userId,
-          workflowId,
-          symbols: [],
-          streamType: ["order_update"],
-          environment: nodeValues.environment as string,
-          marketType: nodeValues.marketType as string,
-          scope: (nodeValues.scope === "global" ? "global" : "workflow") as
-            | "global"
-            | "workflow",
-          targetWorkflowId: workflowId,
+          workflowId: workflowId,
+          credentialId: credential_id,
+          symbols: resolvedSymbols,
+          streamType: tradingstreamType,
+          scope,
+          environment,
+          targetWorkflowId,
+        });
+      }
+
+      let result: any;
+      if (marketstreamType) {
+        result = await SubscriptionService.unsubscribe({
+          source: sourceId,
+          userId,
+          workflowId: workflowId,
+          nodeId: node_id,
+          credentialId: credential_id,
+          symbols: resolvedSymbols,
+          streamType:
+            marketstreamType.length > 0 ? marketstreamType : undefined,
+          feed,
+          environment,
+          assetType: assetType,
+          marketType: marketType,
+          contractType,
+          interval,
+          depth_levels: depth_levels,
+          scope,
+          targetWorkflowId,
         });
       }
     }
@@ -460,9 +521,7 @@ export class StreamingLifecycleAdapter {
         const sourceToken = key.split(":")[SOURCE_INDEX];
         const environment = key.split(":")[ENV_INDEX];
         const source = toMarketSource(
-          sourceToken as
-            | MarketSource
-            | `${MarketSource}_${string}`,
+          sourceToken as MarketSource | `${MarketSource}_${string}`,
         );
 
         if (source && isTradingSource(sourceToken)) {

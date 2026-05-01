@@ -483,7 +483,7 @@ export class StreamingLifecycleAdapter {
     const redis = getRedisCache();
     const pattern = `md:user:${userId}:subscription:scope:workflow:${workflowId}:*:streams`;
 
-    // Key structure: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:symbols
+    // Key structure: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:{environment}:streams
     //                 0    1     2         3        4       5          6          7        8
     const SOURCE_INDEX = 7;
     const ENV_INDEX = 8;
@@ -518,7 +518,7 @@ export class StreamingLifecycleAdapter {
             userId,
             workflowId,
             symbols: ["*"],
-            streamType: ["order_update"],
+            streamType: streams,
             marketType: streams.some((s) => s === "executionReport")
               ? "spot"
               : "futures",
@@ -527,15 +527,12 @@ export class StreamingLifecycleAdapter {
             targetWorkflowId: workflowId,
           });
         } else {
-          const symbols = streams
-            .filter((stream) => !stream.endsWith("@order_update"))
-            .map((stream) => stream.split("@")[0]?.toUpperCase())
-            .filter(Boolean) as string[];
           await SubscriptionService.unsubscribe({
             source,
             userId,
             workflowId,
-            symbols,
+            symbols: ["*"],
+            environment,
             scope: "workflow",
             targetWorkflowId: workflowId,
           });

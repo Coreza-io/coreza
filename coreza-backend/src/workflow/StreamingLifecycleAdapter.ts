@@ -13,6 +13,12 @@ import { buildCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 
+const ORDER_UPDATE_MARKERS = new Set([
+  "trade_updates",
+  "ORDER_TRADE_UPDATE",
+  "executionReport",
+]);
+
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
 ): MarketSource | null {
@@ -421,63 +427,41 @@ export class StreamingLifecycleAdapter {
         },
       );
 
-      // await SubscriptionService.unsubscribe({
-      //   source: sourceId,
-      //   userId,
-      //   workflowId,
-      //   symbols: symbolArray,
-      // });
-
-      // if (hasOrderUpdate) {
-      //   await SubscriptionService.unsubscribe({
-      //     source: `${node.subCategory}_trading` as MarketSource,
-      //     userId,
-      //     workflowId,
-      //     symbols: [],
-      //     streamType: ["order_update"],
-      //     environment: nodeValues.environment as string,
-      //     marketType: nodeValues.marketType as string,
-      //     scope: (nodeValues.scope === "global" ? "global" : "workflow") as
-      //       | "global"
-      //       | "workflow",
-      //     targetWorkflowId: workflowId,
-      //   });
-      // }
       if (hasOrderUpdate) {
         //const tradingSourceId = `${source}_trading`;
         await SubscriptionService.unsubscribe({
           source: sourceId as any,
           userId,
           workflowId: workflowId,
-          credentialId: credential_id,
-          symbols: resolvedSymbols,
+          credentialId: nodeValues.credential_id,
+          symbols: symbolArray,
           streamType: tradingstreamType,
-          scope,
-          environment,
-          targetWorkflowId,
+          scope: nodeValues.scope,
+          environment: nodeValues.environment,
+          targetWorkflowId: workflowId,
         });
       }
 
       let result: any;
-      if (marketstreamType) {
-        result = await SubscriptionService.unsubscribe({
+      // Market unsubscribe
+      if (marketstreamType.length > 0) {
+        await SubscriptionService.unsubscribe({
           source: sourceId,
           userId,
-          workflowId: workflowId,
-          nodeId: node_id,
-          credentialId: credential_id,
-          symbols: resolvedSymbols,
-          streamType:
-            marketstreamType.length > 0 ? marketstreamType : undefined,
-          feed,
-          environment,
-          assetType: assetType,
-          marketType: marketType,
-          contractType,
-          interval,
-          depth_levels: depth_levels,
-          scope,
-          targetWorkflowId,
+          workflowId,
+          nodeId: node.id,
+          credentialId: nodeValues.credential_id as string,
+          symbols: symbolArray,
+          streamType: marketstreamType,
+          feed: nodeValues.feed as string,
+          environment: nodeValues.environment as string,
+          assetType: nodeValues.assetType as string,
+          marketType: nodeValues.marketType as string,
+          contractType: nodeValues.contractType as string,
+          interval: nodeValues.interval as string,
+          depth_levels: nodeValues.depth_levels as string,
+          scope: nodeValues.scope,
+          targetWorkflowId: workflowId,
         });
       }
     }
@@ -518,18 +502,22 @@ export class StreamingLifecycleAdapter {
 
       for (const key of keys) {
         const streams = await redis.smembers(key);
-        const sourceToken = key.split(":")[SOURCE_INDEX];
+        const sourceId = key.split(":")[SOURCE_INDEX];
         const environment = key.split(":")[ENV_INDEX];
-        const source = toMarketSource(
-          sourceToken as MarketSource | `${MarketSource}_${string}`,
+        const source = sourceId.split("_")[0];
+
+        // Split trading lifecycle marker from market stream types
+        const isOrderUpdate = streams.some((streamName) =>
+          ORDER_UPDATE_MARKERS.has(streamName),
         );
 
-        if (source && isTradingSource(sourceToken)) {
+        if (isOrderUpdate) {
+          const tradingSource = `${source}_trading`;
           await SubscriptionService.unsubscribe({
-            source: source as MarketSource,
+            source: tradingSource,
             userId,
             workflowId,
-            symbols: [],
+            symbols: ["*"],
             streamType: ["order_update"],
             marketType: streams.some((s) => s === "executionReport")
               ? "spot"
@@ -538,7 +526,7 @@ export class StreamingLifecycleAdapter {
             scope: "workflow",
             targetWorkflowId: workflowId,
           });
-        } else if (streams.length > 0 && source) {
+        } else {
           const symbols = streams
             .filter((stream) => !stream.endsWith("@order_update"))
             .map((stream) => stream.split("@")[0]?.toUpperCase())

@@ -367,6 +367,7 @@ export class StreamingLifecycleAdapter {
       workflowId,
     );
     await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
+    await this.cleanupWorkflowListeners(userId, workflowId);
     await RegistrationService.publishUnregisterWorkflow({
       userId,
       workflowId,
@@ -474,6 +475,29 @@ export class StreamingLifecycleAdapter {
     await RegistrationService.publishUnregisterWorkflow({ userId, workflowId });
     await jobQueue.stopWorkflowRunner(workflowId);
     await this.clearSessionData(userId, workflowId);
+  }
+
+  private async cleanupWorkflowListeners(
+    userId: string,
+    workflowId: string,
+  ): Promise<void> {
+    const redis = getRedisCache();
+    const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
+    const listenerKeys = await redis.smembers(userListenersKey);
+    const workflowPrefix = `md:user:${userId}:stream:${workflowId}:`;
+
+    const workflowListenerKeys = listenerKeys.filter((key) => {
+      return key.startsWith(workflowPrefix) && !key.endsWith(":result");
+    });
+
+    for (const listenerKey of workflowListenerKeys) {
+      const nodeId = listenerKey.split(":").pop();
+      if (!nodeId) {
+        continue;
+      }
+
+      await RegistrationService.deleteListener(userId, workflowId, nodeId);
+    }
   }
 
   async cleanupWorkflowSubscriptions(
@@ -613,6 +637,8 @@ export class StreamingLifecycleAdapter {
         sessionDataCleared = true;
       }
     }
+
+    await this.cleanupWorkflowListeners(userId, workflowId);
 
     if (!options?.skipSubscriptionCleanup) {
       await this.cleanupWorkflowSubscriptions(userId, workflowId);

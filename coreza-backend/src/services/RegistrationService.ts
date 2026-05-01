@@ -46,9 +46,9 @@ export interface ListenerParams {
   source: string;
   mode: string;
   scope: string;
-  environment: string;
-  filterSymbols?: string[];
-  filterTypes?: string[];
+  environment?: string;
+  symbols?: string[];
+  streamTypes?: string[];
   assetType?: string;
   marketType?: string;
   contractType?: "perpetual" | "current_quarter" | "next_quarter";
@@ -65,9 +65,9 @@ export interface ListenerData {
   mode: string;
   scope: string;
   source: string;
-  environment: string;
-  filterSymbols?: string[];
-  filterTypes?: string[];
+  environment?: string;
+  symbols?: string[];
+  streamTypes?: string[];
   assetType?: string;
   marketType?: string;
   contractType?: "perpetual" | "current_quarter" | "next_quarter";
@@ -135,8 +135,8 @@ export class RegistrationService {
       mode = "listen",
       scope,
       environment,
-      filterSymbols,
-      filterTypes,
+      symbols,
+      streamTypes,
       assetType,
       marketType,
       contractType,
@@ -158,8 +158,8 @@ export class RegistrationService {
       scope,
       source,
       environment,
-      filterSymbols,
-      filterTypes,
+      symbols,
+      streamTypes,
       assetType,
       marketType,
       contractType,
@@ -282,12 +282,13 @@ export class RegistrationService {
     nodeId: string;
     source: string;
     scope: string;
-    environment: string;
+    environment?: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
-    filterSymbols?: string[];
-    symbolMatchMode?: "exact" | "wildcard";
-    tradingNativeStreams?: string[];
+    symbols?: string[];
+    streamTypes?: string[];
+    // symbolMatchMode?: "exact" | "wildcard";
+    // tradingNativeStreams?: string[];
   }): Promise<void> {
     const redis = getRedisCache();
 
@@ -301,9 +302,10 @@ export class RegistrationService {
       environment: params.environment,
       onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
       isLive: params.isLive ?? false,
-      filterSymbols: params.filterSymbols ?? [],
-      symbolMatchMode: params.symbolMatchMode ?? "exact",
-      tradingNativeStreams: params.tradingNativeStreams ?? [],
+      // symbols: params.symbols ?? [],
+      // streamTypes: params.streamTypes ?? [],
+      // symbolMatchMode: params.symbolMatchMode ?? "exact",
+      // tradingNativeStreams: params.tradingNativeStreams ?? [],
     };
 
     await redis.publish(

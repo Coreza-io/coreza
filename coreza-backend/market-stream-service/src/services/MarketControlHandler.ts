@@ -200,6 +200,8 @@ export class MarketControlHandler {
     environment: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
+    // symbols?: string[];
+    // streamTypes?: string[];
     // filterSymbols?: string[];
     // symbolMatchMode?: "exact" | "wildcard";
     //tradingNativeStreams?: string[];
@@ -213,6 +215,8 @@ export class MarketControlHandler {
       environment,
       onlyClosedBars,
       isLive,
+      // symbols,
+      // streamTypes,
       // filterSymbols = [],
       //symbolMatchMode = "exact",
       //tradingNativeStreams = [],
@@ -830,27 +834,29 @@ export class MarketControlHandler {
       }
 
       const subscriber = MarketDataSubscriber.getInstance();
-      const tradingSource = isTradingSource(source);
-      const streamType = tradingSource
-        ? computeTradingNativeStreams(source, marketType)
-        : [];
+      // const tradingSource = isTradingSource(source);
+      // const streamType = tradingSource
+      //   ? computeTradingNativeStreams(source, marketType)
+      //   : [];
 
-      if (symbols.length > 0 || tradingSource) {
+      if (symbols.length > 0) {
         // Build stream names to remove
-        const processedStreamType = this.processStreamTypesForStreamNames(
-          streamType || [],
-          source,
-          interval,
-          depthLevels,
-          contractType,
-        );
+        // const processedStreamType = this.processStreamTypesForStreamNames(
+        //   streamType || [],
+        //   source,
+        //   interval,
+        //   depthLevels,
+        //   contractType,
+        // );
 
-        let streamNamesToRemove: string[] = tradingSource
-          ? streamType
+        const tradingSource = isTradingSource(source);
+
+        let streamNamesToRemove = tradingSource
+          ? (streamType ?? [])
           : buildStreamNames(
               source,
               symbols,
-              processedStreamType,
+              streamType || [],
               interval || "",
               contractType,
             );
@@ -984,34 +990,6 @@ export class MarketControlHandler {
         error,
       );
     }
-  }
-
-  /**
-   * Process raw event types into format expected by buildStreamNames
-   * Handles kline intervals and depth levels for Binance
-   */
-  private processStreamTypesForStreamNames(
-    streamType: string[],
-    source: string,
-    interval?: string,
-    depthLevels?: string,
-    contractType?: "perpetual" | "current_quarter" | "next_quarter",
-  ): string[] {
-    if (!source.startsWith("binance")) {
-      return streamType;
-    }
-
-    return streamType.map((type) => {
-      // Kline with interval: kline -> kline_1m
-      if (type === "kline" && interval) {
-        return `kline_${interval}`;
-      }
-      // Depth with levels: depth_levels -> depth20
-      if ((type === "depth" || type === "depth_levels") && depthLevels) {
-        return `depth${depthLevels}`;
-      }
-      return type;
-    });
   }
 
   /**

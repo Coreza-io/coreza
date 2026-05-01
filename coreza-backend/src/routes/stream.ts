@@ -743,7 +743,7 @@ router.post("/:source/register", async (req, res) => {
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
     // Parse stream_type into array
-    const parsedstreamType: string[] = stream_type
+    const streamType: string[] = stream_type
       ? typeof stream_type === "string"
         ? stream_type.split(",").map((s: string) => s.trim())
         : stream_type
@@ -757,10 +757,10 @@ router.post("/:source/register", async (req, res) => {
       "executionReport",
     ]);
     // Split trading lifecycle marker from market stream types
-    const hasOrderUpdate = parsedstreamType.some((streamName) =>
+    const hasOrderUpdate = streamType.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
     );
-    const { marketstreamType, tradingstreamType } = parsedstreamType.reduce(
+    const { marketstreamType, tradingstreamType } = streamType.reduce(
       (acc, t: string) => {
         if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
@@ -921,8 +921,8 @@ router.post("/:source/register", async (req, res) => {
       mode,
       scope,
       environment,
-      // filterSymbols: parsedSymbols,
-      filterTypes: stream_type,
+      symbols: parsedSymbols,
+      streamTypes: streamType,
       assetType: assetType,
       marketType: marketType,
       contractType,
@@ -940,7 +940,8 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       onlyClosedBars,
-      // filterSymbols: parsedSymbols,
+      // symbols: parsedSymbols,
+      // streamTypes: streamType,
       // symbolMatchMode: "exact",
       // tradingNativeStreams: hasOrderUpdate
       //   ? getTradingNativeStreams(`${source}_trading`, marketType)
@@ -1011,11 +1012,11 @@ router.post("/unregister", async (req, res) => {
         "executionReport",
       ]);
       // Split trading lifecycle marker from market stream types
-      const hasOrderUpdate = listener.filterTypes.some((streamName) =>
+      const hasOrderUpdate = listener.streamTypes.some((streamName) =>
         ORDER_UPDATE_MARKERS.has(streamName),
       );
       const { marketstreamType, tradingstreamType } =
-        listener.filterTypes.reduce(
+        listener.streamTypes.reduce(
           (acc, t: string) => {
             if (ORDER_UPDATE_MARKERS.has(t)) {
               acc.tradingstreamType.push(t);
@@ -1038,7 +1039,7 @@ router.post("/unregister", async (req, res) => {
           userId,
           workflowId,
           nodeId: node_id,
-          symbols: [],
+          symbols: ["*"],
           streamType: tradingstreamType,
           marketType: listener.marketType,
           scope: listener.scope,
@@ -1052,7 +1053,7 @@ router.post("/unregister", async (req, res) => {
         userId,
         workflowId,
         nodeId: node_id,
-        symbols: listener.filterSymbols,
+        symbols: listener.symbols,
         streamType: marketstreamType,
         //assetType: listener.assetType,
         assetType: listener.assetType,

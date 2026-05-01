@@ -85,6 +85,21 @@ export interface CleanupResult {
 // ============================================
 
 export class RegistrationService {
+
+  /**
+   * Delete user active listeners SET key when empty.
+   */
+  private static async deleteActiveListenersSetIfEmpty(
+    userListenersKey: string,
+  ): Promise<void> {
+    const redis = getRedisCache();
+    const remaining = await redis.scard(userListenersKey);
+
+    if (remaining === 0) {
+      await redis.del(userListenersKey);
+    }
+  }
+
   /**
    * Check and increment listener count (rate limiting)
    * Returns true if allowed, false if limit exceeded
@@ -206,6 +221,7 @@ export class RegistrationService {
 
     // Remove from user's active listeners SET
     await redis.srem(userListenersKey, listenerKey);
+    await this.deleteActiveListenersSetIfEmpty(userListenersKey);
 
     // Decrement count
     await this.decrementListenerCount(userId);
@@ -240,6 +256,8 @@ export class RegistrationService {
         await redis.srem(userListenersKey, key);
       }
     }
+
+    await this.deleteActiveListenersSetIfEmpty(userListenersKey);
 
     return listeners;
   }
@@ -389,6 +407,8 @@ export class RegistrationService {
         );
       }
     }
+
+    await this.deleteActiveListenersSetIfEmpty(userListenersKey);
 
     // Reset user's listener count
     const countKey = REDIS_CHANNELS.userListenerCount(userId);

@@ -79,7 +79,6 @@ export interface CorezaMarketEvent {
   orderEvent?: string; // fill, partial_fill, canceled, rejected, etc.
   orderId?: string;
   clientOrderId?: string; // Broker client order ID for idempotency/ownership checks
-  brokerOrderId?: string;
   side?: string; // buy, sell
   filledQty?: number;
   filledAvgPrice?: number;

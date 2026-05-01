@@ -12,7 +12,7 @@ export interface OrderOwner {
 
 type OrderOwnerIds = {
   clientOrderId?: string;
-  brokerOrderId?: string;
+  orderId?: string;
   clientAlgoId?: string;
   algoId?: string;
 };
@@ -41,7 +41,14 @@ export async function saveOrderOwner(
     const raw = ids[idType];
     const idValue = String(raw ?? "").trim();
     if (!idValue) return;
-    writes.push(redis.set(orderOwnerKey(source, idType, idValue), payload, "EX", ttlSeconds));
+    writes.push(
+      redis.set(
+        orderOwnerKey(source, idType, idValue),
+        payload,
+        "EX",
+        ttlSeconds,
+      ),
+    );
   });
 
   await Promise.all(writes);
@@ -53,12 +60,16 @@ export async function extendOrderOwner(
   ids: OrderOwnerIds,
   ttlSeconds = 86400,
 ): Promise<void> {
-  const allIds = Object.entries(ids).filter(([, value]) => String(value || "").trim());
+  const allIds = Object.entries(ids).filter(([, value]) =>
+    String(value || "").trim(),
+  );
   if (allIds.length < 2) return;
 
   let ownerPayload: string | null = null;
   for (const [idType, idValue] of allIds) {
-    const existing = await redis.get(orderOwnerKey(source, idType as keyof OrderOwnerIds, String(idValue)));
+    const existing = await redis.get(
+      orderOwnerKey(source, idType as keyof OrderOwnerIds, String(idValue)),
+    );
     if (existing) {
       ownerPayload = existing;
       break;

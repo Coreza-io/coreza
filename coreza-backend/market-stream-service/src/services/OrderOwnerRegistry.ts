@@ -14,7 +14,7 @@ export interface OrderOwner {
 
 export interface OrderOwnerIds {
   clientOrderId?: string;
-  brokerOrderId?: string;
+  orderId?: string;
   clientAlgoId?: string;
   algoId?: string;
 }
@@ -24,9 +24,14 @@ export class OrderOwnerRegistry {
     return `${PREFIX}:${source}:${idType}:${id}`;
   }
 
-  static async findOwner(source: string, ids: OrderOwnerIds): Promise<OrderOwner | null> {
+  static async findOwner(
+    source: string,
+    ids: OrderOwnerIds,
+  ): Promise<OrderOwner | null> {
     const redis = getRedisQueue();
-    const keys = (["clientOrderId", "brokerOrderId", "clientAlgoId", "algoId"] as const)
+    const keys = (
+      ["clientOrderId", "orderId", "clientAlgoId", "algoId"] as const
+    )
       .map((k) => [k, String(ids[k] || "").trim()] as const)
       .filter(([, v]) => v.length > 0)
       .map(([k, v]) => this.key(source, k, v));
@@ -39,7 +44,6 @@ export class OrderOwnerRegistry {
   static deriveCandidateIds(event: {
     clientOrderId?: string;
     orderId?: string;
-    brokerOrderId?: string;
     clientAlgoId?: string;
     algoId?: string;
     rawOrderData?: Record<string, any>;
@@ -47,22 +51,17 @@ export class OrderOwnerRegistry {
     const raw = event.rawOrderData ?? {};
     const nested = raw.o ?? {};
     return {
-      clientOrderId:
-        event.clientOrderId ??
-        raw.client_order_id ??
-        raw.c ??
-        nested.c ??
-        raw.clientOrderId,
-      brokerOrderId:
-        event.brokerOrderId ??
-        event.orderId ??
-        raw.id ??
-        raw.i ??
-        nested.i ??
-        raw.orderId,
-      clientAlgoId:
-        event.clientAlgoId ?? raw.caid ?? nested.caid ?? raw.clientAlgoId,
-      algoId: event.algoId ?? raw.aid ?? nested.aid ?? raw.algoId,
+      clientOrderId: event.clientOrderId,
+      // raw.client_order_id ??
+      // raw.c ??
+      // nested.c ??
+      // raw.clientOrderId,
+      orderId:
+        //event.brokerOrderId ??
+        event.orderId,
+      //
+      clientAlgoId: event.clientAlgoId,
+      algoId: event.algoId,
     };
   }
 }

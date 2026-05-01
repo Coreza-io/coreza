@@ -511,7 +511,7 @@
       }
     },
     {
-      "key": "brokerOrderId",
+      "key": "orderId",
       "label": "Broker Order ID",
       "type": "text",
       "placeholder": "e.g. broker order id",

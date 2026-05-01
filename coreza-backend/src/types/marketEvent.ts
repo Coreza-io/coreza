@@ -17,33 +17,32 @@
 // Unified market event format - all sources normalize to this
 // Uses short field names to match REST API format (t, o, h, l, c, v)
 export type MarketEventType =
-  | 'trade'
-  | 'aggTrade'
-  | 'quote'
-  | 'bar'
-  | 'daily_bar'
-  | 'news'
-  | 'ticker'
-  | 'miniTicker'
-  | 'depth'
-  | 'order_update'
-  | 'bookTicker'
-  | '24hrTicker'
-  | 'depthUpdate'
-  | 'markPriceUpdate'
-  | 'forceOrder'
-  | 'continuousKline'
-  | 'indexPriceUpdate'
-  | 'compositeIndex'
-  | 'account_update'
-  | 'account_config_update'
-  | 'margin_call'
-  | 'algo_update'
-  | 'listen_key_expired';
+  | "trade"
+  | "aggTrade"
+  | "quote"
+  | "bar"
+  | "daily_bar"
+  | "news"
+  | "ticker"
+  | "miniTicker"
+  | "depth"
+  | "order_update"
+  | "bookTicker"
+  | "24hrTicker"
+  | "depthUpdate"
+  | "markPriceUpdate"
+  | "forceOrder"
+  | "continuousKline"
+  | "indexPriceUpdate"
+  | "compositeIndex"
+  | "account_update"
+  | "account_config_update"
+  | "margin_call"
+  | "algo_update"
+  | "listen_key_expired";
 
-export type MarketSource =
-  keyof typeof import('../brokers').GATEWAY_CONFIGS;
-export type Timeframe = 'tick' | '1m' | '5m' | '15m' | '1h' | '1d';
+export type MarketSource = keyof typeof import("../brokers").GATEWAY_CONFIGS;
+export type Timeframe = "tick" | "1m" | "5m" | "15m" | "1h" | "1d";
 
 export interface MarketEvent {
   // Identification
@@ -91,7 +90,7 @@ export interface MarketEvent {
   orderEvent?: string;
   orderId?: string;
   clientOrderId?: string;
-  brokerOrderId?: string;
+  // brokerOrderId?: string;
   clientAlgoId?: string;
   algoId?: string;
   side?: string;
@@ -113,7 +112,7 @@ export interface MarketEvent {
 }
 
 export interface ControlMessage {
-  action: 'subscribe' | 'unsubscribe';
+  action: "subscribe" | "unsubscribe";
   userId: string;
   sessionId?: string;
   symbols: string[];

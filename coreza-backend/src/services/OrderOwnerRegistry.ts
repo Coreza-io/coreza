@@ -15,7 +15,7 @@ export interface OrderOwner {
 
 export interface OrderOwnerIds {
   clientOrderId?: string;
-  brokerOrderId?: string;
+  orderId?: string;
   clientAlgoId?: string;
   algoId?: string;
 }
@@ -39,7 +39,7 @@ export class OrderOwnerRegistry {
     const payload = JSON.stringify(owner);
     const ids: OrderOwnerIds = {
       clientOrderId: input.clientOrderId,
-      brokerOrderId: input.brokerOrderId,
+      orderId: input.orderId,
       clientAlgoId: input.clientAlgoId,
       algoId: input.algoId,
     };
@@ -62,7 +62,9 @@ export class OrderOwnerRegistry {
     ids: OrderOwnerIds,
   ): Promise<OrderOwner | null> {
     const redis = getRedisQueue();
-    const keys = (["clientOrderId", "brokerOrderId", "clientAlgoId", "algoId"] as const)
+    const keys = (
+      ["clientOrderId", "orderId", "clientAlgoId", "algoId"] as const
+    )
       .map((k) => [k, String(ids[k] || "").trim()] as const)
       .filter(([, v]) => v)
       .map(([k, v]) => this.key(source, k, v));

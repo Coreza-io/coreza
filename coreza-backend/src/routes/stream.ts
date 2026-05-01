@@ -921,7 +921,7 @@ router.post("/:source/register", async (req, res) => {
       mode,
       scope,
       environment,
-      filterSymbols: parsedSymbols,
+      // filterSymbols: parsedSymbols,
       filterTypes: stream_type,
       assetType: assetType,
       marketType: marketType,
@@ -940,11 +940,11 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       onlyClosedBars,
-      filterSymbols: parsedSymbols,
-      symbolMatchMode: "exact",
-      tradingNativeStreams: hasOrderUpdate
-        ? getTradingNativeStreams(`${source}_trading`, marketType)
-        : [],
+      // filterSymbols: parsedSymbols,
+      // symbolMatchMode: "exact",
+      // tradingNativeStreams: hasOrderUpdate
+      //   ? getTradingNativeStreams(`${source}_trading`, marketType)
+      //   : [],
     });
 
     console.log(

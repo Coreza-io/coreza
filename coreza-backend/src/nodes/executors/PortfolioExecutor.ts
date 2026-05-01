@@ -499,7 +499,7 @@ export class PortfolioExecutor implements INodeExecutor {
           .getOpenOrders()
           .find(
             (o) =>
-              o.brokerOrderId === cancelOrderId ||
+              o.orderId === cancelOrderId ||
               (o.clientOrderId && o.clientOrderId === cancelOrderId),
           );
         const orderType = String(
@@ -767,7 +767,7 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       const syncedOrders: Array<{
-        brokerOrderId: string;
+        orderId: string;
         clientOrderId?: string;
         symbol: string;
         side: string;
@@ -776,15 +776,15 @@ export class PortfolioExecutor implements INodeExecutor {
       }> = [];
 
       for (const order of openOrders) {
-        const brokerOrderId = order.id || order.client_order_id;
+        const orderId = order.id || order.client_order_id;
         const symbol = order.symbol;
-        if (!brokerOrderId || !symbol || !order.side) continue;
+        if (!orderId || !symbol || !order.side) continue;
         const normalizedSymbol = normalizeSymbol(symbol);
         const side = normalizeSide(order.side);
         const orderQty = Math.abs(toNumber(order.qty) ?? 0);
 
         pm.registerOrderIntent({
-          brokerOrderId,
+          orderId,
           clientOrderId: order.client_order_id,
           symbol: normalizedSymbol,
           side,
@@ -794,7 +794,7 @@ export class PortfolioExecutor implements INodeExecutor {
         });
 
         syncedOrders.push({
-          brokerOrderId,
+          orderId,
           clientOrderId: order.client_order_id,
           symbol: normalizedSymbol,
           side,
@@ -828,7 +828,7 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
   ): NodeResult {
     try {
-      const brokerOrderId = params.brokerOrderId;
+      const orderId = params.orderId;
       const clientOrderId = params.clientOrderId;
       const algoId = params.algoId;
       const symbol = params.symbol;
@@ -842,7 +842,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const trailPrice = toNumber(params.trailPrice);
       const status = params.status;
       const result = pm.registerOrderIntent({
-        brokerOrderId,
+        orderId,
         clientOrderId,
         symbol,
         algoId,
@@ -871,16 +871,15 @@ export class PortfolioExecutor implements INodeExecutor {
   private async brokerEnsureOwnedOrder(
     userId: string,
     workflowId: string,
-    brokerOrderId?: string,
+    orderId?: string,
     clientOrderId?: string,
   ): Promise<{ ours: boolean }> {
-    if (!brokerOrderId && !clientOrderId) {
+    if (!orderId && !clientOrderId) {
       return { ours: true };
     }
 
     const isOurs =
-      (brokerOrderId &&
-        (await this.checkOwnership(userId, workflowId, brokerOrderId))) ||
+      (orderId && (await this.checkOwnership(userId, workflowId, orderId))) ||
       (clientOrderId &&
         (await this.checkOwnership(userId, workflowId, clientOrderId)));
 
@@ -1030,9 +1029,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const algoId = String(params.algoId);
       const symbol = String(params.symbol || "*").toUpperCase();
       const algoStatus = String(params.status || "").toLowerCase();
-      const orderId = params.brokerOrderId
-        ? String(params.brokerOrderId)
-        : undefined;
+      const orderId = params.orderId ? String(params.orderId) : undefined;
       const origQty = toNumber(params.origQty);
       const stopPrice = toNumber(params.stopPrice);
       const limitPrice = toNumber(params.limitPrice);
@@ -1195,7 +1192,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       const baseCurrency = params.base_currency || "USDT";
       const symbol = params.symbol;
-      const brokerOrderId = params.brokerOrderId;
+      const orderId = params.orderId;
       const clientOrderId = params.clientOrderId;
       //const algoId = params.algoId;
       const status = params.status;
@@ -1218,14 +1215,10 @@ export class PortfolioExecutor implements INodeExecutor {
       const feeAsset = params.feeAsset;
 
       const normalizedBrokerId =
-        brokerOrderId != null && brokerOrderId !== ""
-          ? String(brokerOrderId)
-          : undefined;
+        orderId != null && orderId !== "" ? String(orderId) : undefined;
 
       if (!normalizedBrokerId) {
-        throw new Error(
-          "Missing brokerOrderId and algoId for sync_order_event",
-        );
+        throw new Error("Missing orderId and algoId for sync_order_event");
       }
 
       const { ours } = await this.brokerEnsureOwnedOrder(
@@ -1247,17 +1240,17 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // 1. Order update (if status provided)
       if (status) {
-        const resolvedBrokerOrderId =
+        const resolvedorderId =
           normalizedBrokerId ??
           pm.resolveOrderIdByClientId(clientOrderId ?? "");
 
-        if (!resolvedBrokerOrderId) {
+        if (!resolvedorderId) {
           console.warn(
             `[PortfolioExecutor] sync_order_event: order update skipped due to missing broker_order_id and unresolved client_order_id=${clientOrderId}`,
           );
         } else {
           pm.applyOrderUpdate({
-            brokerOrderId: resolvedBrokerOrderId,
+            orderId: resolvedorderId,
             clientOrderId,
             symbol,
             side,
@@ -1295,7 +1288,7 @@ export class PortfolioExecutor implements INodeExecutor {
       if (shouldApplyTrade) {
         const tradeResult = pm.applyTrade(
           {
-            brokerOrderId: normalizedBrokerId,
+            orderId: normalizedBrokerId,
             clientOrderId,
             executionId: params.executionId,
             symbol,
@@ -1311,7 +1304,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
         if (tradeResult.kind === "skipped") {
           fillLogger.debug(
-            { symbol, brokerOrderId, reason: tradeResult.reason },
+            { symbol, orderId, reason: tradeResult.reason },
             "trade aggregation skipped",
           );
         } else if (tradeResult.kind === "pendingUpdate") {
@@ -1395,8 +1388,8 @@ export class PortfolioExecutor implements INodeExecutor {
       });
 
       // 5. Buffer fill for async DB persistence (fire-and-forget)
-      if (filledQty && avgFillPrice && brokerOrderId) {
-        //const fillDeltaQty = this.computeFillDelta(brokerOrderId, filledQty);
+      if (filledQty && avgFillPrice && orderId) {
+        //const fillDeltaQty = this.computeFillDelta(orderId, filledQty);
 
         if (
           //fillDeltaQty > 0 &&

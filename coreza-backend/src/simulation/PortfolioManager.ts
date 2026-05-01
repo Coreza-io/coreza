@@ -29,7 +29,7 @@ import {
 // ============== NEW INTERFACES (v2 state model) ==============
 
 export interface OrderState {
-  brokerOrderId?: string;
+  orderId?: string;
   clientOrderId?: string;
   symbol: string;
   side: "buy" | "sell";
@@ -71,7 +71,7 @@ export interface AlgoOrderState {
 
 export interface ExecutionRecord {
   executionId: string;
-  brokerOrderId?: string;
+  orderId?: string;
   clientOrderId?: string;
   symbol: string;
   side: "buy" | "sell";
@@ -240,7 +240,7 @@ export class PortfolioManager {
   private positions = new Map<string, PositionState>();
   private executionKeysSeen = new Set<string>();
   private static readonly MAX_EXECUTION_KEYS = 50_000;
-  private clientOrderIdIndex = new Map<string, string>(); // clientOrderId → brokerOrderId
+  private clientOrderIdIndex = new Map<string, string>(); // clientOrderId → orderId
 
   // ============== LEGACY STATE (kept for migration) ==============
   private cashBook = new Map<string, number>(); // asset -> total balance
@@ -373,7 +373,7 @@ export class PortfolioManager {
    * No cash/position mutation.
    */
   registerOrderIntent(input: {
-    brokerOrderId: string;
+    orderId: string;
     clientOrderId?: string;
     symbol: string;
     side: "buy" | "sell";
@@ -389,7 +389,7 @@ export class PortfolioManager {
     const now = new Date().toISOString();
     const origQty = input.origQty ?? undefined;
     const order: OrderState = {
-      brokerOrderId: input.brokerOrderId,
+      orderId: input.orderId,
       clientOrderId: input.clientOrderId,
       symbol: input.symbol,
       side: input.side,
@@ -410,12 +410,12 @@ export class PortfolioManager {
     };
 
     const normalizedBrokerId =
-      input.brokerOrderId != null && input.brokerOrderId !== ""
-        ? String(input.brokerOrderId)
+      input.orderId != null && input.orderId !== ""
+        ? String(input.orderId)
         : undefined;
 
     if (!normalizedBrokerId) {
-      throw new Error("Missing brokerOrderId for sync_order_event");
+      throw new Error("Missing orderId for sync_order_event");
     }
 
     this.orders.set(normalizedBrokerId, order);
@@ -433,7 +433,7 @@ export class PortfolioManager {
    * No cash/position mutation.
    */
   applyOrderUpdate(input: {
-    brokerOrderId: string;
+    orderId: string;
     clientOrderId?: string;
     symbol: string;
     side?: "buy" | "sell";
@@ -453,17 +453,17 @@ export class PortfolioManager {
   }): void {
     const now = new Date().toISOString();
 
-    const normalizedBrokerId = String(input.brokerOrderId);
+    const normalizedBrokerId = String(input.orderId);
     let order = this.orders.get(normalizedBrokerId);
     if (!order) {
       if (!input.side) {
         throw new Error(
-          `[PortfolioManager] applyOrderUpdate: side is required to create missing order for brokerOrderId=${input.brokerOrderId}`,
+          `[PortfolioManager] applyOrderUpdate: side is required to create missing order for orderId=${input.orderId}`,
         );
       }
 
       const { order: createdOrder } = this.registerOrderIntent({
-        brokerOrderId: normalizedBrokerId,
+        orderId: normalizedBrokerId,
         clientOrderId: input.clientOrderId,
         symbol: input.symbol,
         side: input.side,
@@ -486,7 +486,7 @@ export class PortfolioManager {
     // Safety check: avoid silently mutating the wrong order
     if (order.symbol !== input.symbol) {
       throw new Error(
-        `[PortfolioManager] applyOrderUpdate: symbol mismatch for brokerOrderId=${input.brokerOrderId}. existing=${order.symbol}, incoming=${input.symbol}`,
+        `[PortfolioManager] applyOrderUpdate: symbol mismatch for orderId=${input.orderId}. existing=${order.symbol}, incoming=${input.symbol}`,
       );
     }
 
@@ -498,7 +498,7 @@ export class PortfolioManager {
       incomingSeq <= order.lastSeq
     ) {
       console.warn(
-        `[PortfolioManager] Stale seq ignored: ${input.brokerOrderId} lastSeq=${order.lastSeq} incomingSeq=${incomingSeq}`,
+        `[PortfolioManager] Stale seq ignored: ${input.orderId} lastSeq=${order.lastSeq} incomingSeq=${incomingSeq}`,
       );
       return;
     }
@@ -512,7 +512,7 @@ export class PortfolioManager {
       (incomingRank === currentRank && input.status !== order.status)
     ) {
       console.warn(
-        `[PortfolioManager] Stale order update ignored: ${input.brokerOrderId} current=${order.status}(${currentRank}) incoming=${input.status}(${incomingRank})`,
+        `[PortfolioManager] Stale order update ignored: ${input.orderId} current=${order.status}(${currentRank}) incoming=${input.status}(${incomingRank})`,
       );
       return;
     }
@@ -560,7 +560,7 @@ export class PortfolioManager {
     order.updatedAt = now;
 
     console.log(
-      `[PortfolioManager] Order update: ${input.brokerOrderId} -> status=${order.status}, cumFilled=${order.filledQty}, remaining=${order.remainingQty}`,
+      `[PortfolioManager] Order update: ${input.orderId} -> status=${order.status}, cumFilled=${order.filledQty}, remaining=${order.remainingQty}`,
     );
   }
 
@@ -673,7 +673,7 @@ export class PortfolioManager {
 
   applyTrade(
     input: {
-      brokerOrderId: string;
+      orderId: string;
       clientOrderId?: string;
       executionId?: string;
       symbol: string;
@@ -697,11 +697,11 @@ export class PortfolioManager {
       }
     }
 
-    if (!input.brokerOrderId) {
+    if (!input.orderId) {
       return { kind: "skipped", reason: "missing_order_id" };
     }
 
-    const key = input.brokerOrderId;
+    const key = input.orderId;
     const existingPending = this.pendingClosingTrades.get(key);
 
     if (
@@ -767,7 +767,7 @@ export class PortfolioManager {
         symbol: input.symbol,
         side: tradeSide,
         entryOrderId: entry?.fillId ?? "",
-        exitOrderId: input.brokerOrderId,
+        exitOrderId: input.orderId,
         entryPrice: existing.avgFillPrice,
         weightedExitPrice: input.fillPrice,
         accumulatedQuantity: closingQty,
@@ -811,7 +811,7 @@ export class PortfolioManager {
       symbol: pending.symbol,
       side: pending.side,
       entryOrderId: pending.entryOrderId,
-      exitOrderId: input.brokerOrderId,
+      exitOrderId: input.orderId,
       entryPrice: pending.entryPrice,
       exitPrice: pending.weightedExitPrice,
       quantity: pending.accumulatedQuantity,
@@ -1118,8 +1118,8 @@ export class PortfolioManager {
   }
 
   private findOrderByClientId(clientOrderId: string): OrderState | undefined {
-    const brokerOrderId = this.clientOrderIdIndex.get(clientOrderId);
-    if (brokerOrderId) return this.orders.get(brokerOrderId);
+    const orderId = this.clientOrderIdIndex.get(clientOrderId);
+    if (orderId) return this.orders.get(orderId);
     return undefined;
   }
 
@@ -1132,8 +1132,8 @@ export class PortfolioManager {
    * Get the current cumulative filled quantity for an order.
    * Returns 0 if the order is not found.
    */
-  getOrderfilledQty(brokerOrderId: string): number {
-    const order = this.orders.get(brokerOrderId);
+  getOrderfilledQty(orderId: string): number {
+    const order = this.orders.get(orderId);
     return order?.filledQty ?? 0;
   }
 
@@ -1293,8 +1293,8 @@ export class PortfolioManager {
   /**
    * Get a single v2 order by broker order ID.
    */
-  getOrder(brokerOrderId: string): OrderState | undefined {
-    return this.orders.get(brokerOrderId);
+  getOrder(orderId: string): OrderState | undefined {
+    return this.orders.get(orderId);
   }
 
   // ============== PEAK EQUITY ==============

@@ -30,7 +30,7 @@ interface ControlMessage {
   marketType?: string;
   scope: string;
   targetWorkflowId?: string;
-  tradingNativeStreams?: string[];
+  //tradingNativeStreams?: string[];
   // Raw interval/depth for stream name building (centralized in market-stream-service)
   interval?: string;
   depthLevels?: string;
@@ -200,9 +200,9 @@ export class MarketControlHandler {
     environment: string;
     onlyClosedBars?: boolean;
     isLive?: boolean;
-    filterSymbols?: string[];
-    symbolMatchMode?: "exact" | "wildcard";
-    tradingNativeStreams?: string[];
+    // filterSymbols?: string[];
+    // symbolMatchMode?: "exact" | "wildcard";
+    //tradingNativeStreams?: string[];
   }): Promise<void> {
     const {
       userId,
@@ -213,9 +213,9 @@ export class MarketControlHandler {
       environment,
       onlyClosedBars,
       isLive,
-      filterSymbols = [],
-      symbolMatchMode = "exact",
-      tradingNativeStreams = [],
+      // filterSymbols = [],
+      //symbolMatchMode = "exact",
+      //tradingNativeStreams = [],
     } = msg;
 
     try {
@@ -254,9 +254,9 @@ export class MarketControlHandler {
         environment,
         onlyClosedBars,
         isLive,
-        filterSymbols,
-        symbolMatchMode,
-        tradingNativeStreams,
+        // filterSymbols,
+        // symbolMatchMode,
+        // tradingNativeStreams,
       );
 
       console.log(
@@ -417,10 +417,10 @@ export class MarketControlHandler {
   private async updateActiveStreamingWorkflows(
     userId: string,
     newStreamNames: string[],
-    newSymbols: string[],
+    // newSymbols: string[],
     scope: string,
     targetWorkflowId?: string,
-    tradingNativeStreams: string[] = [],
+    // tradingNativeStreams: string[] = [],
   ): Promise<void> {
     try {
       const subscriber = MarketDataSubscriber.getInstance();
@@ -433,12 +433,12 @@ export class MarketControlHandler {
         await subscriber.addStreamsToRegistration(
           targetWorkflowId,
           newStreamNames,
-          tradingNativeStreams,
+          // tradingNativeStreams,
         );
-        await subscriber.addAllowedSymbolsToRegistration(
-          targetWorkflowId,
-          newSymbols,
-        );
+        // await subscriber.addAllowedSymbolsToRegistration(
+        //   targetWorkflowId,
+        //   newSymbols,
+        // );
 
         const fallbackWorkflowIds =
           subscriber.getRegisteredWorkflowIdsForUser(userId);
@@ -463,12 +463,12 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 workflowId,
                 newStreamNames,
-                tradingNativeStreams,
+                // tradingNativeStreams,
               );
-              await subscriber.addAllowedSymbolsToRegistration(
-                workflowId,
-                newSymbols,
-              );
+              // await subscriber.addAllowedSymbolsToRegistration(
+              //   workflowId,
+              //   newSymbols,
+              // );
               console.log(
                 `🧪 [MarketControl] Updated test listener ${workflowStreamListener} with ${newStreamNames.length} streams`,
               );
@@ -522,12 +522,12 @@ export class MarketControlHandler {
           await subscriber.addStreamsToRegistration(
             activeStreamingWorkflow,
             streamsToAdd,
-            tradingNativeStreams,
+            // tradingNativeStreams,
           );
-          await subscriber.addAllowedSymbolsToRegistration(
-            activeStreamingWorkflow,
-            newSymbols,
-          );
+          // await subscriber.addAllowedSymbolsToRegistration(
+          //   activeStreamingWorkflow,
+          //   newSymbols,
+          // );
 
           console.log(
             `✅ [MarketControl] Added ${streamsToAdd.length} streams to workflow ${activeStreamingWorkflow}`,
@@ -585,7 +585,7 @@ export class MarketControlHandler {
 
                 if (streamsToAdd.length === 0) {
                   console.log(
-                    `ℹ️ [MarketControl] Test listener ${activeUserStreamListenerKey} filters exclude new streams, skipping`,
+                    `ℹ️ [MarketControl] Test listener ${activeUserStreamListenerKey} filters exclude new symbols, skipping`,
                   );
                   continue;
                 }
@@ -594,12 +594,12 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 activeUserStreamListenerKey,
                 streamsToAdd,
-                tradingNativeStreams,
+                // tradingNativeStreams,
               );
-              await subscriber.addAllowedSymbolsToRegistration(
-                activeUserStreamListenerKey,
-                newSymbols,
-              );
+              // await subscriber.addAllowedSymbolsToRegistration(
+              //   activeUserStreamListenerKey,
+              //   newSymbols,
+              // );
               console.log(
                 `🧪 [MarketControl] Updated test listener ${activeUserStreamListenerKey} with ${streamsToAdd.length} global streams`,
               );
@@ -648,7 +648,7 @@ export class MarketControlHandler {
       contractType,
       scope,
       targetWorkflowId,
-      tradingNativeStreams = [],
+      // tradingNativeStreams = [],
     } = msg;
 
     try {
@@ -756,10 +756,10 @@ export class MarketControlHandler {
           await this.updateActiveStreamingWorkflows(
             userId,
             newStreamNames,
-            symbols,
+            // symbols,
             scope,
             targetWorkflowId,
-            tradingSource ? streamType : tradingNativeStreams,
+            // tradingSource ? streamType : tradingNativeStreams,
           );
 
           console.log(
@@ -774,10 +774,10 @@ export class MarketControlHandler {
           await this.updateActiveStreamingWorkflows(
             userId,
             requestedStreamNames,
-            symbols,
+            // symbols,
             scope,
             targetWorkflowId,
-            tradingSource ? streamType : tradingNativeStreams,
+            // tradingSource ? streamType : tradingNativeStreams,
           );
 
           console.log(
@@ -922,25 +922,25 @@ export class MarketControlHandler {
           }
 
           if (workflowId) {
-            if (tradingSource) {
-              await subscriber.removeAllowedSymbolsFromRegistration(
-                workflowId,
-                symbols,
-              );
-              if (shouldRemoveGatewayStreams) {
-                await subscriber.removeStreamsFromRegistration(
-                  userId,
-                  workflowId,
-                  streamNamesToRemove,
-                );
-              }
-            } else {
-              await subscriber.removeStreamsFromRegistration(
-                userId,
-                workflowId,
-                streamNamesToRemove,
-              );
-            }
+            // if (tradingSource) {
+            //   await subscriber.removeAllowedSymbolsFromRegistration(
+            //     workflowId,
+            //     symbols,
+            //   );
+            //   if (shouldRemoveGatewayStreams) {
+            //     await subscriber.removeStreamsFromRegistration(
+            //       userId,
+            //       workflowId,
+            //       streamNamesToRemove,
+            //     );
+            //   }
+            // } else {
+            await subscriber.removeStreamsFromRegistration(
+              userId,
+              workflowId,
+              streamNamesToRemove,
+            );
+            // }
             console.log(
               `✅ [MarketControl] Updated workflow ${workflowId} registration for unsubscribe`,
             );
@@ -955,14 +955,16 @@ export class MarketControlHandler {
 
       // If this unsubscribe was workflow-level without specific symbols,
       // treat as full workflow deregistration.
-      if (workflowId && symbols.length === 0 && !tradingSource) {
+      // if (workflowId && symbols.length === 0 && !tradingSource) {
+      if (workflowId && symbols.length === 0) {
         await subscriber.unregisterWorkflow(userId, workflowId);
         console.log(
           `✅ [MarketControl] Unregistered workflow ${workflowId} from MarketDataSubscriber`,
         );
       }
 
-      if (workflowId && !tradingSource) {
+      // if (workflowId && !tradingSource) {
+      if (workflowId) {
         state.workflowStreams.delete(workflowId);
       }
 

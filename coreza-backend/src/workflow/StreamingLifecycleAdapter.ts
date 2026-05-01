@@ -511,6 +511,40 @@ export class StreamingLifecycleAdapter {
           ORDER_UPDATE_MARKERS.has(streamName),
         );
 
+        let symbols: string[] = [];
+        let streamTypes: string[] = [];
+        let contractType: string | undefined;
+        let interval: string | undefined;
+
+        if (!isOrderUpdate) {
+          const parsedStreams = streams.map((stream) => {
+            const [symbolPart, streamPart] = stream.split("@");
+
+            // btcusdt_perpetual => btcusdt, perpetual
+            const [rawSymbol, parsedContractType] = symbolPart.split("_");
+
+            // continuousKline_1m => continuousKline, 1m
+            const [parsedStreamType, parsedInterval] = streamPart.split("_");
+
+            return {
+              symbol: rawSymbol.toUpperCase(),
+              contractType: parsedContractType,
+              streamType: parsedStreamType,
+              interval: parsedInterval,
+            };
+          });
+
+          symbols = [...new Set(parsedStreams.map((item) => item.symbol))];
+          streamTypes = [
+            ...new Set(parsedStreams.map((item) => item.streamType)),
+          ];
+
+          contractType = parsedStreams.find(
+            (item) => item.contractType,
+          )?.contractType;
+          interval = parsedStreams.find((item) => item.interval)?.interval;
+        }
+
         if (isOrderUpdate) {
           const tradingSource = `${source}_trading`;
           await SubscriptionService.unsubscribe({
@@ -519,20 +553,31 @@ export class StreamingLifecycleAdapter {
             workflowId,
             symbols: ["*"],
             streamType: streams,
-            marketType: streams.some((s) => s === "executionReport")
-              ? "spot"
-              : "futures",
+            ...(source === "binance" && {
+              marketType: streams.some((s) => s === "executionReport")
+                ? "spot"
+                : "futures",
+            }),
             environment,
             scope: "workflow",
             targetWorkflowId: workflowId,
           });
         } else {
           await SubscriptionService.unsubscribe({
-            source,
+            source: sourceId,
             userId,
             workflowId,
-            symbols: ["*"],
+            symbols: symbols,
+            streamType: streamTypes,
             environment,
+            assetType: undefined,
+            ...(source === "binance" && {
+              marketType: streams.some((s) => s === "executionReport")
+                ? "spot"
+                : "futures",
+            }),
+            contractType,
+            interval,
             scope: "workflow",
             targetWorkflowId: workflowId,
           });

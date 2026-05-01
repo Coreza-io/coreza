@@ -16,8 +16,8 @@ export const REDIS_CHANNELS = {
   // PUB/SUB CHANNELS (Real-time messaging)
   // ============================================
 
-  // Symbol-level market data (fanout) - published by MarketDataGateway
-  streamData: (stream: string) => `md:symbol:${stream}`,
+  // stream-level market data (fanout) - published by MarketDataGateway
+  streamData: (stream: string) => `md:stream:${stream}`,
 
   // Control channels for SUBSCRIPTION management (broker connections)
   controlSubscribe: "md:control:subscribe",
@@ -59,7 +59,8 @@ export const REDIS_CHANNELS = {
     userId: string,
     source: string,
     environment: string,
-  ) => `md:user:${userId}:subscription:scope:global:${source}:${environment}:streams`,
+  ) =>
+    `md:user:${userId}:subscription:scope:global:${source}:${environment}:streams`,
 
   // Workflow-scoped subscription streams (isolated to specific workflow)
   // Stores native stream names: btcusdt@kline_1m, bars.AAPL

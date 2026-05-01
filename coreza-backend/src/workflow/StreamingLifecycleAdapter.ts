@@ -571,11 +571,7 @@ export class StreamingLifecycleAdapter {
             streamType: streamTypes,
             environment,
             assetType: undefined,
-            ...(source === "binance" && {
-              marketType: streams.some((s) => s === "executionReport")
-                ? "spot"
-                : "futures",
-            }),
+            marketType: undefined,
             contractType,
             interval,
             scope: "workflow",

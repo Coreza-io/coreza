@@ -125,12 +125,26 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
             // Handle streaming market data updates (new Redis Pub/Sub format)
             if (message.type === 'market_data' && message.payload) {
-              const { nodeId, data } = message.payload;
+              const { nodeId, source: eventSource, data } = message.payload;
 
               if (nodeId && storeRef.current) {
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
+                  const listenerSource = existingData.testListenSource;
+                  if (listenerSource && eventSource) {
+                    const listenerBroker = String(listenerSource).split('_')[0].toLowerCase();
+                    const eventBroker = String(eventSource).split('_')[0].toLowerCase();
+                    if (listenerBroker !== eventBroker) {
+                      console.log('🚫 [ExecutionStore] Source mismatch, ignoring:', {
+                        nodeId,
+                        listenerSource,
+                        eventSource,
+                      });
+                      return;
+                    }
+                  }
+
                   // Skip live updates while paused, but allow replayed events through.
                   const eventEntryId =
                     extractEntryId(data) || extractEntryId(message.payload);

@@ -179,6 +179,7 @@ router.post("/replay", async (req, res) => {
             type: "market_data",
             payload: {
               nodeId,
+              source: registration.source,
               data: enriched.data,
             },
           }),

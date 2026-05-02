@@ -73,4 +73,47 @@ export class OrderOwnerRegistry {
     const first = hits.find(Boolean);
     return first ? (JSON.parse(first) as OrderOwner) : null;
   }
+
+  static async cleanupByWorkflow(workflowId: string): Promise<number> {
+    const redis = getRedisQueue();
+    let cursor = "0";
+    let cleaned = 0;
+
+    do {
+      const [nextCursor, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        `${PREFIX}:*`,
+        "COUNT",
+        200,
+      );
+      cursor = nextCursor;
+
+      if (keys.length === 0) {
+        continue;
+      }
+
+      const values = await redis.mget(...keys);
+      const keysToDelete = keys.filter((key, index) => {
+        const value = values[index];
+        if (!value) {
+          return false;
+        }
+
+        try {
+          const owner = JSON.parse(value) as OrderOwner;
+          return owner.workflowId === workflowId;
+        } catch {
+          return false;
+        }
+      });
+
+      if (keysToDelete.length > 0) {
+        await redis.del(...keysToDelete);
+        cleaned += keysToDelete.length;
+      }
+    } while (cursor !== "0");
+
+    return cleaned;
+  }
 }

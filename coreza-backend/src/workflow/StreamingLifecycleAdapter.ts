@@ -12,6 +12,7 @@ import { RedisKeys } from "../infra/redisKeys";
 import { buildCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
+import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
 
 const ORDER_UPDATE_MARKERS = new Set([
   "trade_updates",
@@ -88,15 +89,38 @@ export class StreamingLifecycleAdapter {
     workflowId: string,
   ): Promise<void> {
     const redis = getRedisCache();
+    const fillStreamKey = RedisKeys.portfolioFillsStream(userId, workflowId);
+    const snapshotKey = RedisKeys.portfolioSnapshotLatest(userId, workflowId);
     const keysToDelete = [
       RedisKeys.strategyStream(userId, workflowId),
-      RedisKeys.portfolioFillsStream(userId, workflowId),
-      RedisKeys.portfolioSnapshotLatest(userId, workflowId),
+      fillStreamKey,
+      snapshotKey,
     ];
 
     await redis.del(...keysToDelete);
     await this.deleteByPattern(RedisKeys.order(userId, workflowId, "*"));
     await this.deleteByPattern(RedisKeys.orderReverse(userId, workflowId, "*"));
+
+    const activeStreamsKey = RedisKeys.userActiveFillStreams(userId);
+    const activeSnapshotKeysKey = RedisKeys.userActiveSnapshotKeys(userId);
+
+    await redis.srem(activeStreamsKey, fillStreamKey);
+    await redis.srem(activeSnapshotKeysKey, snapshotKey);
+
+    const [remainingStreams, remainingSnapshots] = await Promise.all([
+      redis.scard(activeStreamsKey),
+      redis.scard(activeSnapshotKeysKey),
+    ]);
+
+    if (remainingStreams === 0) {
+      await redis.del(activeStreamsKey);
+      await redis.srem(RedisKeys.registryFillsActive(), userId);
+    }
+
+    if (remainingSnapshots === 0) {
+      await redis.del(activeSnapshotKeysKey);
+      await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
+    }
   }
 
   async activateStreaming(
@@ -367,6 +391,7 @@ export class StreamingLifecycleAdapter {
       workflowId,
     );
     await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
+    await OrderOwnerRegistry.cleanupByWorkflow(workflowId);
     await this.cleanupWorkflowListeners(userId, workflowId);
     await RegistrationService.publishUnregisterWorkflow({
       userId,
@@ -484,14 +509,14 @@ export class StreamingLifecycleAdapter {
     const redis = getRedisCache();
     const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
     const listenerKeys = await redis.smembers(userListenersKey);
-    const workflowPrefix = `md:user:${userId}:stream:${workflowId}:`;
+    const workflowPrefix = REDIS_CHANNELS.Listener(userId, workflowId, "");
 
-    const workflowListenerKeys = listenerKeys.filter((key) => {
-      return key.startsWith(workflowPrefix) && !key.endsWith(":result");
-    });
+    const workflowListenerKeys = listenerKeys.filter((key) =>
+      key.startsWith(workflowPrefix),
+    );
 
     for (const listenerKey of workflowListenerKeys) {
-      const nodeId = listenerKey.split(":").pop();
+      const nodeId = listenerKey.slice(workflowPrefix.length);
       if (!nodeId) {
         continue;
       }
@@ -637,6 +662,8 @@ export class StreamingLifecycleAdapter {
         sessionDataCleared = true;
       }
     }
+
+    await OrderOwnerRegistry.cleanupByWorkflow(workflowId);
 
     await this.cleanupWorkflowListeners(userId, workflowId);
 

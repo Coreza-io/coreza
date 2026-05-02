@@ -584,8 +584,6 @@ export class WebSocketManager {
           // Parse message payload
           const payload = JSON.parse(message);
 
-          // Check for test listeners and route first matching data
-          await this.checkTestListeners(userId, payload, pub);
 
           // Forward to all connected WebSocket clients for this user
           const userClients = this.clients.get(userId);

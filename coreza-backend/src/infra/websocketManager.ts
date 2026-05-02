@@ -81,11 +81,11 @@ export class WebSocketManager {
     } else {
       if (!supabaseUrl)
         console.warn(
-          "⚠️ SUPABASE_URL not set - JWT verification will be disabled"
+          "⚠️ SUPABASE_URL not set - JWT verification will be disabled",
         );
       if (!supabaseAnonKey)
         console.warn(
-          "⚠️ SUPABASE_ANON_KEY not set - JWT verification will be disabled"
+          "⚠️ SUPABASE_ANON_KEY not set - JWT verification will be disabled",
         );
     }
   }
@@ -134,12 +134,12 @@ export class WebSocketManager {
         console.log(
           `✅ JWKS endpoint reachable - ${
             data.keys?.length || 0
-          } keys available`
+          } keys available`,
         );
         return true;
       } else {
         console.error(
-          `❌ JWKS endpoint returned ${response.status}: ${response.statusText}`
+          `❌ JWKS endpoint returned ${response.status}: ${response.statusText}`,
         );
         const body = await response.text();
         console.error(`   Response: ${body}`);
@@ -151,7 +151,7 @@ export class WebSocketManager {
       } else {
         console.error(
           `❌ JWKS endpoint unreachable:`,
-          error instanceof Error ? error.message : error
+          error instanceof Error ? error.message : error,
         );
       }
       return false;
@@ -163,7 +163,7 @@ export class WebSocketManager {
     const jwksAvailable = await this.testJwksEndpoint();
     if (!jwksAvailable) {
       console.warn(
-        "⚠️ JWKS endpoint not available - WebSocket auth may fail. Continuing anyway..."
+        "⚠️ JWKS endpoint not available - WebSocket auth may fail. Continuing anyway...",
       );
     }
 
@@ -174,7 +174,7 @@ export class WebSocketManager {
       console.error(`❌ Port ${port} is already in use`);
       console.log(`💡 Solutions:`);
       console.log(
-        `   1. Kill existing process: netstat -ano | findstr :${port}`
+        `   1. Kill existing process: netstat -ano | findstr :${port}`,
       );
       console.log(`   2. Change WEBSOCKET_PORT in .env`);
       console.log(`   3. Run: taskkill /PID <PID> /F`);
@@ -228,12 +228,12 @@ export class WebSocketManager {
       secure: boolean;
       req: IncomingMessage;
     },
-    done: (result: boolean, code?: number, message?: string) => void
+    done: (result: boolean, code?: number, message?: string) => void,
   ): Promise<void> {
     try {
       const url = new URL(
         info.req.url || "",
-        `http://${info.req.headers.host}`
+        `http://${info.req.headers.host}`,
       );
       const token = url.searchParams.get("token");
 
@@ -268,10 +268,10 @@ export class WebSocketManager {
     try {
       if (!this.jwks) {
         console.error(
-          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_ANON_KEY"
+          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_ANON_KEY",
         );
         throw new Error(
-          "JWKS not initialized - SUPABASE_URL and SUPABASE_ANON_KEY required"
+          "JWKS not initialized - SUPABASE_URL and SUPABASE_ANON_KEY required",
         );
       }
 
@@ -304,20 +304,20 @@ export class WebSocketManager {
       // Provide specific guidance based on error type
       if (errorCode === "ERR_JWKS_TIMEOUT" || message.includes("timed out")) {
         console.error(
-          `   → Network timeout fetching JWKS. Check connectivity to Supabase.`
+          `   → Network timeout fetching JWKS. Check connectivity to Supabase.`,
         );
         console.error(
-          `   → Try: curl ${process.env.SUPABASE_URL}/auth/v1/jwks`
+          `   → Try: curl ${process.env.SUPABASE_URL}/auth/v1/jwks`,
         );
         console.error(
-          `   → Or check if Supabase URL is correct: ${process.env.SUPABASE_URL}`
+          `   → Or check if Supabase URL is correct: ${process.env.SUPABASE_URL}`,
         );
       } else if (message.includes("Expected 200 OK")) {
         console.error(
-          `   → JWKS endpoint not returning 200. Supabase may be down or unreachable.`
+          `   → JWKS endpoint not returning 200. Supabase may be down or unreachable.`,
         );
         console.error(
-          `   → Verify SUPABASE_URL in .env: ${process.env.SUPABASE_URL}`
+          `   → Verify SUPABASE_URL in .env: ${process.env.SUPABASE_URL}`,
         );
       }
 
@@ -327,7 +327,7 @@ export class WebSocketManager {
 
   private handleConnection(
     ws: AuthenticatedWebSocket,
-    req: IncomingMessage
+    req: IncomingMessage,
   ): void {
     const userId = (req as any).userId;
     if (!userId) {
@@ -340,11 +340,11 @@ export class WebSocketManager {
     const existingClients = this.clients.get(userId);
     if (existingClients && existingClients.size >= MAX_CONNECTIONS_PER_USER) {
       console.warn(
-        `⚠️ User ${userId} exceeded max connections (${MAX_CONNECTIONS_PER_USER}), rejecting`
+        `⚠️ User ${userId} exceeded max connections (${MAX_CONNECTIONS_PER_USER}), rejecting`,
       );
       ws.close(
         1013,
-        `Maximum connections (${MAX_CONNECTIONS_PER_USER}) exceeded`
+        `Maximum connections (${MAX_CONNECTIONS_PER_USER}) exceeded`,
       );
       return;
     }
@@ -352,7 +352,7 @@ export class WebSocketManager {
     const sessionId = this.generateSessionId();
 
     console.log(
-      `🔌 New WebSocket connection - userId: ${userId}, sessionId: ${sessionId}`
+      `🔌 New WebSocket connection - userId: ${userId}, sessionId: ${sessionId}`,
     );
 
     ws.userId = userId;
@@ -371,7 +371,7 @@ export class WebSocketManager {
     console.log(
       `📊 Total clients for user ${userId}: ${
         this.clients.get(userId)?.size
-      }/${MAX_CONNECTIONS_PER_USER}`
+      }/${MAX_CONNECTIONS_PER_USER}`,
     );
     console.log(`📊 Total connected users: ${this.clients.size}`);
 
@@ -403,7 +403,7 @@ export class WebSocketManager {
 
   private handleMessage(
     ws: AuthenticatedWebSocket,
-    data: WebSocket.Data
+    data: WebSocket.Data,
   ): void {
     try {
       const message = JSON.parse(data.toString()) as WebSocketMessage;
@@ -460,7 +460,7 @@ export class WebSocketManager {
 
   private handleWorkflowSubscription(
     ws: AuthenticatedWebSocket,
-    payload: any
+    payload: any,
   ): void {
     console.log(`User ${ws.userId} subscribed to workflow updates`);
 
@@ -481,10 +481,10 @@ export class WebSocketManager {
 
   private handleBrokerSubscription(
     ws: AuthenticatedWebSocket,
-    payload: any
+    payload: any,
   ): void {
     console.log(
-      `User ${ws.userId} subscribed to broker ${payload.broker} events`
+      `User ${ws.userId} subscribed to broker ${payload.broker} events`,
     );
 
     this.sendMessage(ws, {
@@ -502,12 +502,12 @@ export class WebSocketManager {
    */
   private async handleWebSocketStream(
     ws: AuthenticatedWebSocket,
-    payload: any
+    payload: any,
   ): Promise<void> {
     const { source, action } = payload || {};
 
     console.warn(
-      `⚠️ [WebSocketManager] Received legacy WebSocket subscription message. Use HTTP POST /websocket/:source/subscribe instead.`
+      `⚠️ [WebSocketManager] Received legacy WebSocket subscription message. Use HTTP POST /websocket/:source/subscribe instead.`,
     );
 
     this.sendMessage(ws, {
@@ -522,7 +522,7 @@ export class WebSocketManager {
   private handleDisconnection(ws: AuthenticatedWebSocket): void {
     if (ws.userId && ws.sessionId) {
       console.log(
-        `👋 User ${ws.userId} disconnected (session: ${ws.sessionId})`
+        `👋 User ${ws.userId} disconnected (session: ${ws.sessionId})`,
       );
 
       // Remove from clients
@@ -541,7 +541,7 @@ export class WebSocketManager {
 
   private sendMessage(
     ws: AuthenticatedWebSocket,
-    message: WebSocketMessage
+    message: WebSocketMessage,
   ): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
@@ -564,7 +564,7 @@ export class WebSocketManager {
         console.error("❌ Failed to subscribe to ws:user:* pattern:", err);
       } else {
         console.log(
-          `✅ Subscribed to ws:user:* pattern (${count} patterns active)`
+          `✅ Subscribed to ws:user:* pattern (${count} patterns active)`,
         );
       }
     });
@@ -602,7 +602,7 @@ export class WebSocketManager {
             });
 
             console.log(
-              `📤 Forwarded market data to ${userClients.size} client(s) for user ${userId}`
+              `📤 Forwarded market data to ${userClients.size} client(s) for user ${userId}`,
             );
           } else {
             console.log(`⚠️ No connected clients for user ${userId}, skipping`);
@@ -610,7 +610,7 @@ export class WebSocketManager {
         } catch (error) {
           console.error("❌ Error processing Redis message:", error);
         }
-      }
+      },
     );
   }
 
@@ -623,14 +623,14 @@ export class WebSocketManager {
   private async checkTestListeners(
     userId: string,
     payload: any,
-    redis: Redis
+    redis: Redis,
   ): Promise<void> {
     try {
       // Read from the PER-USER active listeners SET (same key RegistrationService writes to)
       const userActiveListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
       const activeTestKeys = (await redisSMembersBreaker.fire(
         redis,
-        userActiveListenersKey
+        userActiveListenersKey,
       )) as string[];
 
       if (!activeTestKeys || activeTestKeys.length === 0) return;
@@ -648,11 +648,7 @@ export class WebSocketManager {
 
         // Key expired or circuit breaker fallback - clean up stale entry
         if (!listenerStr) {
-          await redisSRemBreaker.fire(
-            redis,
-            userActiveListenersKey,
-            testKey
-          );
+          await redisSRemBreaker.fire(redis, userActiveListenersKey, testKey);
           continue;
         }
 
@@ -660,11 +656,7 @@ export class WebSocketManager {
         try {
           listener = JSON.parse(listenerStr);
         } catch {
-          await redisSRemBreaker.fire(
-            redis,
-            userActiveListenersKey,
-            testKey
-          );
+          await redisSRemBreaker.fire(redis, userActiveListenersKey, testKey);
           continue;
         }
 
@@ -678,12 +670,12 @@ export class WebSocketManager {
         // RegistrationService stores filterSymbols/filterTypes when available.
         // Fall back to accepting all events for this listener if no filters set
         // (mode=listen captures first matching event regardless of symbol/type).
-        const hasFilters = listener.filterSymbols || listener.filterTypes;
+        const hasFilters = listener.symbols || listener.streamTypes;
         if (
           hasFilters &&
           !matchesEventFilters(eventSymbol, eventType, {
-            filterSymbols: listener.filterSymbols,
-            filterTypes: listener.filterTypes,
+            symbols: listener.symbols,
+            streamTypes: listener.streamTypes,
           })
         ) {
           continue; // Doesn't match filters
@@ -710,7 +702,7 @@ export class WebSocketManager {
             userId,
             JSON.stringify(resultData),
             String(TEST_RESULT_TTL_SECONDS),
-            String(LISTENER_TTL_SECONDS)
+            String(LISTENER_TTL_SECONDS),
           );
 
           if (result) {
@@ -726,7 +718,7 @@ export class WebSocketManager {
             });
 
             console.log(
-              `🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`
+              `🎯 [Test Listen] Data matched and pushed via WebSocket for ${testKey}: ${eventSymbol} (${eventType})`,
             );
           }
           // If result is null, listener was not eligible anymore OR circuit breaker fired
@@ -734,7 +726,7 @@ export class WebSocketManager {
           // Fallback - still try to push via WebSocket even if Redis failed
           console.warn(
             `⚠️ Test listener processing failed for ${testKey}:`,
-            luaError
+            luaError,
           );
 
           // Attempt to push the data anyway - better to notify user than lose the event
@@ -749,7 +741,7 @@ export class WebSocketManager {
           });
 
           console.log(
-            `🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`
+            `🎯 [Test Listen] Data pushed via WebSocket (fallback) for ${testKey}: ${eventSymbol} (${eventType})`,
           );
         }
       }
@@ -782,7 +774,7 @@ export class WebSocketManager {
   // Public static methods for sending messages
   static sendToUser(
     userId: string,
-    message: Omit<WebSocketMessage, "timestamp">
+    message: Omit<WebSocketMessage, "timestamp">,
   ): void {
     const instance = WebSocketManager.getInstance();
     const userClients = instance.clients.get(userId);
@@ -791,7 +783,7 @@ export class WebSocketManager {
     console.log(`📊 Current clients map:`, Array.from(instance.clients.keys()));
     console.log(
       `👥 User clients found:`,
-      userClients ? userClients.size : "undefined"
+      userClients ? userClients.size : "undefined",
     );
 
     if (userClients && userClients.size > 0) {
@@ -805,7 +797,7 @@ export class WebSocketManager {
       });
 
       console.log(
-        `📤 Sent message to user ${userId} (${userClients.size} clients)`
+        `📤 Sent message to user ${userId} (${userClients.size} clients)`,
       );
     } else {
       console.warn(`⚠️ No clients found for user ${userId}`);
@@ -814,7 +806,7 @@ export class WebSocketManager {
 
   static sendToSession(
     sessionId: string,
-    message: Omit<WebSocketMessage, "timestamp">
+    message: Omit<WebSocketMessage, "timestamp">,
   ): void {
     const instance = WebSocketManager.getInstance();
     const ws = instance.sessions.get(sessionId);
@@ -844,7 +836,7 @@ export class WebSocketManager {
       });
 
       console.log(
-        `📢 Broadcast message to ${instance.wss.clients.size} clients`
+        `📢 Broadcast message to ${instance.wss.clients.size} clients`,
       );
     }
   }
@@ -860,7 +852,7 @@ export class WebSocketManager {
         ([userId, clients]) => ({
           userId,
           connections: clients.size,
-        })
+        }),
       ),
     };
   }

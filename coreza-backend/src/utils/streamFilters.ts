@@ -10,12 +10,12 @@ export interface SymbolFilterConfig {
   workflowId?: string;
   source: string;
   scope: "global" | "workflow";
-  filterSymbols?: string[];
+  symbols?: string[];
 }
 
 export interface EventFilterConfig {
-  filterSymbols?: string[];
-  filterTypes?: string[];
+  symbols?: string[];
+  streamTypes?: string[];
 }
 
 /**
@@ -26,7 +26,7 @@ export async function getAllowedSymbols(
   redis: Redis,
   config: SymbolFilterConfig,
 ): Promise<string[]> {
-  const { userId, workflowId, source, scope, filterSymbols } = config;
+  const { userId, workflowId, source, scope, symbols } = config;
 
   let subscribedSymbols: string[] = [];
 
@@ -38,7 +38,7 @@ export async function getAllowedSymbols(
   } else {
     // Workflow-scoped symbols
     if (!workflowId) {
-      return filterSymbols?.map((s) => s.toUpperCase()) || [];
+      return symbols?.map((s) => s.toUpperCase()) || [];
     }
     subscribedSymbols = await redis.smembers(
       `workflow:${workflowId}:subscribed_symbols:${source}`,
@@ -49,8 +49,8 @@ export async function getAllowedSymbols(
   const normalizedSubscribed = subscribedSymbols.map((s) => s.toUpperCase());
 
   // If filter_symbols specified, intersect with subscribed
-  if (filterSymbols && filterSymbols.length > 0) {
-    const normalizedFilter = filterSymbols.map((s) => s.toUpperCase());
+  if (symbols && symbols.length > 0) {
+    const normalizedFilter = symbols.map((s) => s.toUpperCase());
     return normalizedSubscribed.filter((s) => normalizedFilter.includes(s));
   }
 
@@ -100,16 +100,16 @@ export function matchesEventFilters(
   eventType: string | undefined,
   config: EventFilterConfig,
 ): boolean {
-  const { filterSymbols, filterTypes } = config;
+  const { symbols, streamTypes } = config;
 
   // Normalize filter symbols to uppercase
-  const normalizedSymbols = filterSymbols?.map((s) => s.toUpperCase()) || [];
+  const normalizedSymbols = symbols?.map((s) => s.toUpperCase()) || [];
 
   if (!matchesSymbolFilter(eventSymbol, normalizedSymbols)) {
     return false;
   }
 
-  if (!matchesTypeFilter(eventType, filterTypes || [])) {
+  if (!matchesTypeFilter(eventType, streamTypes || [])) {
     return false;
   }
 

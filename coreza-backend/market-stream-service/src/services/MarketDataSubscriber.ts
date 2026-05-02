@@ -734,6 +734,8 @@ export class MarketDataSubscriber {
       type: "market_data",
       payload: {
         nodeId: registration.nodeId,
+        source: registration.source,
+        workflowId: registration.workflowId,
         data: formattedPayload.data,
       },
     });
@@ -750,6 +752,10 @@ export class MarketDataSubscriber {
       },
       "Published market data to user channel",
     );
+  }
+
+  getRegistration(workflowId: string): WorkflowRegistration | undefined {
+    return this.registrations.get(workflowId);
   }
 
   private async appendToWorkflowStream(

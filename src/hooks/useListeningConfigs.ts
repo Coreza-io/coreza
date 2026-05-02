@@ -112,6 +112,7 @@ export const buildStreamingTriggerListeningConfig = ({
     buildListeningNodeData: () => ({
       testListenWorkflowId: workflowId,
       testListenNodeId: nodeId,
+      testListenSource: fieldState.source || definition?.subCategory,
     }),
     isDataReceived: () => false,
     shouldStop: (nodeData) => nodeData?.isTestListening === false,

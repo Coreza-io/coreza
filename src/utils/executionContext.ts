@@ -47,6 +47,7 @@ export interface NodeExecutionData {
   isTestListening?: boolean;                 // test listening mode (webhook-like)
   testListenWorkflowId?: string;             // workflow ID for test listener
   testListenNodeId?: string;                 // node ID for test listener
+  testListenSource?: string;                 // broker source for stream filtering
   streamDataReceived?: boolean;              // true when stream data just arrived (for flash animation)
   isStreamPaused?: boolean;                  // client-side pause: skip UI updates while stream stays alive
   isStreamStepping?: boolean;                // true while user is stepping event-by-event

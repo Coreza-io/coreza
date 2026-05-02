@@ -572,7 +572,12 @@ export class MarketDataSubscriber {
     };
     const dataKey = typeKeyMap[type] || type;
 
-    if (type === "kline" || type === "bar" || type === "daily_bar") {
+    if (
+      type === "kline" ||
+      type === "bar" ||
+      type === "daily_bar" ||
+      type === "continuousKline"
+    ) {
       return {
         data: {
           type,
@@ -601,6 +606,8 @@ export class MarketDataSubscriber {
                   vwap: event.vw,
                 },
               ],
+              ...(event.contractType && { contractType: event.contractType }),
+              ...(event.isClosed !== undefined && { isClosed: event.isClosed }),
             },
           ],
         },
@@ -608,11 +615,7 @@ export class MarketDataSubscriber {
     }
 
     // Trading lifecycle events (from trading WebSocket)
-    if (
-      type === "order_update" ||
-      type === "algo_update" ||
-      type === "listen_key_expired"
-    ) {
+    if (TRADING_LIFECYCLE_EVENT_TYPES.has(event.type)) {
       return {
         data: {
           symbol,

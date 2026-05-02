@@ -125,12 +125,25 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
             // Handle streaming market data updates (new Redis Pub/Sub format)
             if (message.type === 'market_data' && message.payload) {
-              const { nodeId, source: eventSource, data } = message.payload;
+              const { workflowId, nodeId, source: eventSource, data } = message.payload;
 
               if (nodeId && storeRef.current) {
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
+                  if (
+                    workflowId &&
+                    existingData.testListenWorkflowId &&
+                    workflowId !== existingData.testListenWorkflowId
+                  ) {
+                    console.log('🚫 [ExecutionStore] WorkflowId mismatch, ignoring:', {
+                      nodeId,
+                      expected: existingData.testListenWorkflowId,
+                      received: workflowId,
+                    });
+                    return;
+                  }
+
                   const listenerSource = existingData.testListenSource;
                   if (listenerSource && eventSource) {
                     const listenerBroker = String(listenerSource).split('_')[0].toLowerCase();

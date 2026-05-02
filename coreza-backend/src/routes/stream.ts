@@ -178,8 +178,9 @@ router.post("/replay", async (req, res) => {
           JSON.stringify({
             type: "market_data",
             payload: {
+              workflowId,
               nodeId,
-              source: registration.source,
+              source: payload?.source,
               data: enriched.data,
             },
           }),

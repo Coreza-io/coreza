@@ -628,16 +628,17 @@ export class WebSocketManager {
     try {
       // Read from the PER-USER active listeners SET (same key RegistrationService writes to)
       const userActiveListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
-      const activeTestKeys = (await redisSMembersBreaker.fire(
-        redis,
-        userActiveListenersKey,
-      )) as string[];
+      const activeTestKeys = await redis.smembers(userActiveListenersKey);
+      // const activeTestKeys = (await redisSMembersBreaker.fire(
+      //   redis,
+      //   userActiveListenersKey,
+      // )) as string[];
 
       if (!activeTestKeys || activeTestKeys.length === 0) return;
 
       // Extract event data from payload
-      const eventData = payload.payload || payload;
-      const eventSymbol = eventData.symbol?.toUpperCase();
+      const eventData = payload.payload.data;
+      const eventSymbol = eventData.BarSeries[0].symbol?.toUpperCase();
       const eventType = eventData.type;
 
       for (const testKey of activeTestKeys) {

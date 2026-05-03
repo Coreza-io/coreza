@@ -145,6 +145,8 @@ export function createListeningHandler<TOutput = any>(
 
     setNodeOutput(listeningOutput, {
       [listeningFlag]: true,
+      isStreamPaused: false,
+      isStreamStepping: false,
       ...listeningNodeData,
     });
 

@@ -563,12 +563,54 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         const selectedValues = Array.isArray(fieldValue) ? fieldValue : field.default || [];
         const availableOptions = selectOptions[field.key] || field.options || [];
 
+        // Helper: resolve the actual value for an option based on valueMap
+        const resolveOptionId = (opt: any): string => {
+          const baseId = opt.id || opt.value;
+          if (opt.valueMap?.field && opt.valueMap?.values) {
+            const depValue = fieldState[opt.valueMap.field];
+            if (depValue && opt.valueMap.values[depValue]) {
+              return opt.valueMap.values[depValue];
+            }
+          }
+          return baseId;
+        };
+
+        // Helper: get all possible mapped values for an option (for removal)
+        const getAllMappedValues = (opt: any): string[] => {
+          const baseId = opt.id || opt.value;
+          if (opt.valueMap?.values) {
+            return [baseId, ...Object.values(opt.valueMap.values)] as string[];
+          }
+          return [baseId];
+        };
+
+        // Helper: check if option is selected (check all mapped values)
+        const isOptionSelected = (opt: any): boolean => {
+          const allValues = getAllMappedValues(opt);
+          return allValues.some((v) => selectedValues.includes(v));
+        };
+
+        // Filter options by per-option displayOptions
+        const visibleOptions = availableOptions.filter((opt: any) => {
+          if (!opt.displayOptions?.show) return true;
+          return Object.entries(opt.displayOptions.show).every(
+            ([depKey, rawAllowed]: [string, any]) => {
+              const current = fieldState[depKey];
+              const allowed = Array.isArray(rawAllowed) ? rawAllowed : [rawAllowed];
+              if (Array.isArray(current)) {
+                return current.some((v: any) => allowed.includes(v));
+              }
+              return allowed.includes(current);
+            },
+          );
+        });
+
         return (
           <div className="space-y-3">
-            {availableOptions.map((opt: any) => {
+            {visibleOptions.map((opt: any) => {
               const optionId = opt.id || opt.value;
               const optionLabel = opt.name || opt.label || opt.id || opt.value;
-              const isSelected = selectedValues.includes(optionId);
+              const isSelected = isOptionSelected(opt);
 
               return (
                 <div key={optionId} className="flex items-center justify-between">
@@ -577,10 +619,18 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                     checked={isSelected}
                     onCheckedChange={(checked) => {
                       const currentValues = Array.isArray(fieldValue) ? fieldValue : field.default || [];
-                      const newValues = checked
-                        ? [...currentValues, optionId]
-                        : currentValues.filter((v: string) => v !== optionId);
-                      onChange(field.key, newValues);
+                      if (checked) {
+                        const resolvedId = resolveOptionId(opt);
+                        // Remove any stale mapped values first, then add resolved
+                        const allMapped = getAllMappedValues(opt);
+                        const cleaned = currentValues.filter((v: string) => !allMapped.includes(v));
+                        onChange(field.key, [...cleaned, resolvedId]);
+                      } else {
+                        // Remove all possible mapped values
+                        const allMapped = getAllMappedValues(opt);
+                        const newValues = currentValues.filter((v: string) => !allMapped.includes(v));
+                        onChange(field.key, newValues);
+                      }
                     }}
                     disabled={readOnly}
                   />

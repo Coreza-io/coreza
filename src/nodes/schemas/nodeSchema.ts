@@ -6,6 +6,11 @@ export const HandleSchema = z.object({
   id: z.string().min(1),
 });
 
+export const ValueMapSchema = z.object({
+  field: z.string(),
+  values: z.record(z.string(), z.string()),
+});
+
 export const OptionSchema = z
   .object({
     id: z.string().optional(),
@@ -13,6 +18,8 @@ export const OptionSchema = z
     method: z.string().optional(),
     label: z.string().optional(),
     value: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    displayOptions: DisplayOptionsSchema.optional(),
+    valueMap: ValueMapSchema.optional(),
   })
   .refine((data) => data.id || data.value !== undefined || data.label || data.name, {
     message: "Option must have at least id, value, label, or name",

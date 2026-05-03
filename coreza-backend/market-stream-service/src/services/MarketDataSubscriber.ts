@@ -20,7 +20,6 @@ import { OrderOwnerRegistry } from "./OrderOwnerRegistry";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
 const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
-  "order_update",
   "algo_update",
   "trade_updates",
   "ORDER_TRADE_UPDATE",
@@ -690,7 +689,7 @@ export class MarketDataSubscriber {
     const next = prev.then(async () => {
       if (
         !registration.isLive &&
-        (event.type === "order_update" || event.type === "algo_update")
+        TRADING_LIFECYCLE_EVENT_TYPES.has(event.type)
       ) {
         await new Promise((resolve) =>
           setTimeout(resolve, ORDER_UPDATE_DELAY_MS),

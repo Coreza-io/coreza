@@ -444,7 +444,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       return {
         source: "binance" as const,
         symbol: eventMsg.s?.toUpperCase() || "*",
-        type: "order_update" as const,
+        type: eventMsg.e,
         t: eventMsg.T || eventMsg.E || Date.now(),
 
         orderEvent:
@@ -502,7 +502,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       return {
         source: "binance" as any,
         symbol: o.s?.toUpperCase() || "*",
-        type: "order_update" as const,
+        type: eventMsg.e,
 
         // Top-level event timing
         t: eventMsg.T ?? eventMsg.E ?? Date.now(),
@@ -568,7 +568,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       return {
         source: "binance" as any,
         symbol: o.s?.toUpperCase() || "*",
-        type: "algo_update" as const,
+        type: eventMsg.e,
         t: eventMsg.T,
         eventType: eventMsg.e,
         eventTime: eventMsg.E,
@@ -599,7 +599,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       return {
         source: "binance" as any,
         symbol: "*",
-        type: "listen_key_expired" as const,
+        type: eventMsg.e,
         t: eventMsg.E ?? Date.now(),
         rawOrderData: eventMsg,
       };

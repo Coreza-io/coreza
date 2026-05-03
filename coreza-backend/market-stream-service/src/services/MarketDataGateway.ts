@@ -26,7 +26,6 @@ import {
 } from "../utils/streamName";
 
 const TRADING_LIFECYCLE_EVENTS = new Set([
-  "order_update",
   "algo_update",
   "trade_updates",
   "ORDER_TRADE_UPDATE",
@@ -249,7 +248,7 @@ export class MarketDataGateway {
           TRADING_LIFECYCLE_EVENTS.has(event.type);
 
         const stream = isTradingLifecycleEvent
-          ? this.resolveTradingRoutingKey(event)
+          ? event.type
           : event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`

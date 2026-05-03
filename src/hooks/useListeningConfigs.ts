@@ -3,7 +3,7 @@ import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
 type NodeDefinition = Pick<
   NodeConfig,
-  "name" | "provider" | "streamingConfig"
+  "name" | "provider" | "streamingConfig" | "subCategory"
 > & {
   listeningConfig?: {
     waitField?: string;

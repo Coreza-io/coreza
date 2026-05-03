@@ -184,7 +184,14 @@
         },
         {
           "id": "ORDER_TRADE_UPDATE",
-          "name": "Tarde Updates (Fills)"
+          "name": "Trade Updates (Fills)",
+          "valueMap": {
+            "field": "marketType",
+            "values": {
+              "spot": "executionReport",
+              "futures": "ORDER_TRADE_UPDATE"
+            }
+          }
         },
         {
           "id": "markPrice",
@@ -436,7 +443,14 @@
         },
         {
           "id": "ORDER_TRADE_UPDATE",
-          "name": "Trade Updates (Fills)"
+          "name": "Trade Updates (Fills)",
+          "valueMap": {
+            "field": "marketType",
+            "values": {
+              "spot": "executionReport",
+              "futures": "ORDER_TRADE_UPDATE"
+            }
+          }
         }
       ],
       "default": [],

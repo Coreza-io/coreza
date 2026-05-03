@@ -18,7 +18,10 @@ export const OptionSchema = z
     method: z.string().optional(),
     label: z.string().optional(),
     value: z.union([z.string(), z.number(), z.boolean()]).optional(),
-    displayOptions: DisplayOptionsSchema.optional(),
+    displayOptions: z.object({
+      show: z.record(z.string(), z.any()).optional(),
+      hide: z.record(z.string(), z.any()).optional(),
+    }).optional(),
     valueMap: ValueMapSchema.optional(),
   })
   .refine((data) => data.id || data.value !== undefined || data.label || data.name, {

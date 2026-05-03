@@ -96,6 +96,52 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const previewCardRef = React.useRef<HTMLDivElement | null>(null);
   const activeElementRef = React.useRef<HTMLElement | null>(null);
   const shouldShowDescription = field.showDescription !== false;
+  const multiselectValueMapDeps = React.useMemo(() => {
+    if (field.type !== "multiselect") return "";
+    const options = selectOptions[field.key] || field.options || [];
+    const deps = options
+      .filter((opt: any) => opt.valueMap?.field)
+      .map((opt: any) => ({
+        field: opt.valueMap.field,
+        depValue: fieldState[opt.valueMap.field],
+        optionId: opt.id || opt.value,
+      }));
+    return JSON.stringify(deps);
+  }, [field.type, field.key, field.options, selectOptions, fieldState]);
+
+  React.useEffect(() => {
+    if (field.type !== "multiselect") return;
+    const options = selectOptions[field.key] || field.options || [];
+    const valueMappedOpts = options.filter((opt: any) => opt.valueMap?.field && opt.valueMap?.values);
+    if (valueMappedOpts.length === 0) return;
+
+    const currentValues: string[] = Array.isArray(fieldValue)
+      ? fieldValue
+      : Array.isArray(field.default)
+        ? field.default
+        : [];
+    if (currentValues.length === 0) return;
+
+    let changed = false;
+    let newValues = [...currentValues];
+
+    for (const opt of valueMappedOpts) {
+      const depValue = fieldState[opt.valueMap.field];
+      if (!depValue) continue;
+      const resolvedId = opt.valueMap.values[depValue] || (opt.id || opt.value);
+      const allMapped = [opt.id || opt.value, ...Object.values(opt.valueMap.values)] as string[];
+      const currentlySelected = allMapped.filter((v) => newValues.includes(v));
+      if (currentlySelected.length > 0 && !currentlySelected.includes(resolvedId)) {
+        newValues = newValues.filter((v) => !allMapped.includes(v));
+        newValues.push(resolvedId);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      onChange(field.key, newValues);
+    }
+  }, [field.type, field.key, field.options, field.default, fieldValue, selectOptions, fieldState, onChange, multiselectValueMapDeps]);
 
   const handleDropWrapper = (e: React.DragEvent) => {
     if (!onDrop) return;

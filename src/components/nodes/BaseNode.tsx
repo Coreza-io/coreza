@@ -287,6 +287,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         executionStore.setNodeData(nodeId, {
           output: stoppedOutput,
           isTestListening: false,
+          isStreamPaused: false,
+          isStreamStepping: false,
         });
         notifyStoreUpdate(); // Trigger re-render to hide streaming footer
         setNodes((nds) =>
@@ -298,6 +300,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
                     ...n.data,
                     output: stoppedOutput,
                     isTestListening: false,
+                    isStreamPaused: false,
+                    isStreamStepping: false,
                   },
                 }
               : n,

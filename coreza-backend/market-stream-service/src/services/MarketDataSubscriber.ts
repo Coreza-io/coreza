@@ -403,21 +403,20 @@ export class MarketDataSubscriber {
     }
 
     // Create new handler
-    this.messageHandler = async (_channel: string, message: string) => {
+    this.messageHandler = async (channel: string, message: string) => {
       try {
         // Parse market event
         const event: CorezaMarketEvent = JSON.parse(message);
 
         // Validate that this is a proper market event, not a Redis control message
-        if (
-          !event ||
-          typeof event !== "object" ||
-          !event.symbol ||
-          !event.type
-        ) {
+        if (!event || typeof event !== "object" || !event.type) {
           // Not a valid CorezaMarketEvent, skip (could be subscription confirmation)
           return;
         }
+
+        // News fan-out events should already have a symbol set by the gateway.
+        // Fallback to channel-derived stream only if symbol is absent for safety.
+        if (!event.symbol && event.type !== "news") return;
 
         const isTradingLifecycleEvent =
           typeof event.type === "string" &&
@@ -428,13 +427,19 @@ export class MarketDataSubscriber {
           return;
         }
 
-        const stream = event.timeframe
-          ? event.contractType
-            ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
-            : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
-          : event.contractType
-            ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
-            : `${event.symbol.toLowerCase()}@${event.type}`;
+        const streamPrefix = REDIS_CHANNELS.streamData("");
+        const fallbackStream = channel.startsWith(streamPrefix)
+          ? channel.slice(streamPrefix.length)
+          : channel;
+        const stream = event.symbol
+          ? event.timeframe
+            ? event.contractType
+              ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
+              : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+            : event.contractType
+              ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
+              : `${event.symbol.toLowerCase()}@${event.type}`
+          : fallbackStream;
 
         // Find workflows registered for this stream
         const workflows = this.streamWorkflows.get(stream);
@@ -460,7 +465,9 @@ export class MarketDataSubscriber {
           const regBroker = String(registration.source ?? "")
             .split("_")[0]
             .toLowerCase();
-          const evtBroker = String(event.source ?? "").toLowerCase();
+          const evtBroker = String(event.source ?? "")
+            .split("_")[0]
+            .toLowerCase();
           if (!regBroker || !evtBroker || regBroker !== evtBroker) {
             logger.warn(
               {

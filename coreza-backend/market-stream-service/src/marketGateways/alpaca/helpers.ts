@@ -186,18 +186,17 @@ export function buildAlpacaUnsubscribeMessage(
 }
 
 function toAlpacaNewsTicker(symbol: string): string {
-  const upper = String(symbol || "")
+  return String(symbol || "")
     .trim()
-    .toUpperCase();
-  return upper.includes("/") ? upper.replace(/\//g, "") : upper;
+    .toUpperCase()
+    .replace(/\//g, "");
 }
 
-function fromAlpacaNewsTicker(symbol: string, assetType?: string): string {
-  const upper = String(symbol || "")
+function fromAlpacaNewsTicker(ticker: string, isCrypto: boolean): string {
+  const upper = String(ticker || "")
     .trim()
     .toUpperCase();
-  if (upper.includes("/")) return upper;
-  if (assetType !== "crypto" || upper.length <= 3) return upper;
+  if (!isCrypto || upper.includes("/") || upper.length <= 3) return upper;
   return `${upper.slice(0, -3)}/${upper.slice(-3)}`;
 }
 
@@ -290,10 +289,13 @@ export function normalizeAlpacaMessage(
   // NEWS source
   if (source === "alpaca_news") {
     if (msg.T !== "n") return null;
-    const newsAssetType = msg.assetType || msg.asset_type;
+    const isCryptoNews =
+      String(msg.assetType || msg.asset_type || "")
+        .toLowerCase()
+        .trim() === "crypto";
     const mappedSymbols = Array.isArray(msg.symbols)
       ? msg.symbols.map((symbol: string) =>
-          fromAlpacaNewsTicker(symbol, newsAssetType),
+          fromAlpacaNewsTicker(symbol, isCryptoNews),
         )
       : msg.symbols;
 
@@ -305,7 +307,8 @@ export function normalizeAlpacaMessage(
       summary: msg.summary,
       author: msg.author,
       url: msg.url,
-      symbol: mappedSymbols,
+      symbol: Array.isArray(mappedSymbols) ? mappedSymbols[0] : mappedSymbols,
+      symbols: mappedSymbols,
       newsSource: msg.source,
     } as CorezaMarketEvent;
   }

@@ -240,6 +240,36 @@ export class MarketDataGateway {
         // not normalized event.source. Example: alpaca_trading -> *_trading domain.
         event._orderingDomain = `${this.source}:${event.type}`;
 
+        if (event.type === "news") {
+          const eventSymbols = Array.isArray(event.symbols)
+            ? event.symbols.map((s: string) => String(s).toUpperCase())
+            : [];
+
+          for (const subscribedStream of this.subscribedStreams) {
+            if (!subscribedStream.endsWith("@news")) continue;
+
+            const subscribedSymbol = subscribedStream
+              .split("@")[0]
+              .toUpperCase();
+            const subscribedNormalized = subscribedSymbol.replace(/\//g, "");
+            if (!eventSymbols.includes(subscribedNormalized)) continue;
+
+            const channel = REDIS_CHANNELS.streamData(subscribedStream);
+            const publishEvent = {
+              ...event,
+              symbol: subscribedSymbol,
+            };
+            await this.publishToRedis(channel, JSON.stringify(publishEvent));
+
+            marketMessagesCounter.inc({
+              source: this.source,
+              stream: subscribedStream,
+            });
+          }
+
+          continue;
+        }
+
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
 

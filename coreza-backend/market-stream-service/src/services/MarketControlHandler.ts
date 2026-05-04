@@ -314,7 +314,8 @@ export class MarketControlHandler {
   private getCompanionTradingSource(source: string): string | null {
     if (source === "alpaca_market" || source === "alpaca_crypto")
       return "alpaca_trading";
-    if (source === "binance_market") return "binance_trading";
+    if (source === "binance_market" || source === "binance_crypto")
+      return "binance_trading";
     return null;
   }
 
@@ -387,19 +388,19 @@ export class MarketControlHandler {
       const streams = await this.redisPub.smembers(streamKey);
       streams.forEach((s) => allStream.add(s));
 
-      // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
-      // const companionSource = this.getCompanionTradingSource(source);
-      // if (companionSource) {
-      //   const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
-      //   const tradingStreams = await this.redisPub.smembers(tradingKey);
-      //   if (tradingStreams.length > 0) {
-      //     console.log(
-      //       `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams (global):`,
-      //       tradingStreams,
-      //     );
-      //     tradingStreams.forEach((s) => allStream.add(s));
-      //   }
-      // }
+      // Also check companion trading source (e.g., *_trading alongside *_market/*_crypto)
+      const companionSource = this.getCompanionTradingSource(source);
+      if (companionSource) {
+        const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
+        const tradingStreams = await this.redisPub.smembers(tradingKey);
+        if (tradingStreams.length > 0) {
+          console.log(
+            `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams (global):`,
+            tradingStreams,
+          );
+          tradingStreams.forEach((s) => allStream.add(s));
+        }
+      }
     } catch (err) {
       console.error(
         `❌ [MarketControl] Failed to get user subscribed symbols:`,

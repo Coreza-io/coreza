@@ -20,6 +20,8 @@ const ORDER_UPDATE_MARKERS = new Set([
   "executionReport",
 ]);
 
+const NEWS_MARKERS = new Set(["news"]);
+
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
 ): MarketSource | null {
@@ -199,11 +201,14 @@ export class StreamingLifecycleAdapter {
     const hasOrderUpdate = streamType.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
     );
+    const hasNews = streamType.some((streamName) => NEWS_MARKERS.has(streamName));
 
-    const { marketstreamType, tradingstreamType } = streamType.reduce(
+    const { marketstreamType, tradingstreamType, newsStreamType } = streamType.reduce(
       (acc, t: string) => {
         if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
+        } else if (NEWS_MARKERS.has(t)) {
+          acc.newsStreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
         }
@@ -212,6 +217,7 @@ export class StreamingLifecycleAdapter {
       {
         marketstreamType: [] as string[],
         tradingstreamType: [] as string[],
+        newsStreamType: [] as string[],
       },
     );
 
@@ -261,10 +267,53 @@ export class StreamingLifecycleAdapter {
       }
     }
 
+
+
+    // 1b. Subscribe to dedicated news source when selected
+    if (hasNews) {
+      const baseName = triggerNode.subCategory;
+      const newsSourceId = `${baseName}_news`;
+      await SubscriptionService.subscribe({
+        source: newsSourceId,
+        userId,
+        workflowId,
+        nodeId: triggerNode.id,
+        credentialId: nodeValues.credential_id || "",
+        symbols,
+        streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
+        feed: nodeValues.feed,
+        environment,
+        assetType: nodeValues.assetType,
+        marketType: nodeValues.marketType,
+        contractType: nodeValues.contractType,
+        scope: subscriptionScope,
+        targetWorkflowId: workflowId,
+      });
+
+      const newsReady = await SubscriptionService.waitForSubscriptionReady({
+        userId,
+        source: newsSourceId,
+        environment,
+        scope: subscriptionScope,
+        workflowId,
+      });
+
+      if (!newsReady) {
+        logger.warn(
+          {
+            userId,
+            workflowId,
+            source: newsSourceId,
+          },
+          "News subscription readiness timed out; continuing without news stream",
+        );
+      }
+    }
+
     // 2. Subscribe to market/crypto streams
     if (
       symbols.length > 0 &&
-      (marketstreamType.length > 0 || !hasOrderUpdate)
+      (marketstreamType.length > 0 || (!hasOrderUpdate && !hasNews))
     ) {
       const marketSubscribeParams = {
         source: sourceId,

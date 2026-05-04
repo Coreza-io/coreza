@@ -75,7 +75,7 @@ export function parseStreamName(
     return { symbol: sym, eventType: typeWithInterval };
   }
 
-  if (source === "alpaca" || source === "alpaca_market") {
+  if (source === "alpaca" || source === "alpaca_market" || source === "alpaca_news") {
     const dotIndex = streamName.indexOf(".");
     if (dotIndex === -1) {
       return { symbol: streamName.toUpperCase(), eventType: "unknown" };

@@ -307,16 +307,21 @@ export class MarketControlHandler {
   }
 
   /**
-   * Get the companion trading source for a market source.
-   * Trading updates are account-wide, so when registering for market data,
-   * we also need to discover any trading streams the user subscribed to.
+   * Get companion sources for a market source.
+   * Account-wide streams (trading/news) are discovered alongside market subscriptions.
    */
-  private getCompanionTradingSource(source: string): string | null {
-    if (source === "alpaca_market" || source === "alpaca_crypto")
-      return "alpaca_trading";
-    if (source === "binance_market" || source === "binance_crypto")
-      return "binance_trading";
-    return null;
+  private getCompanionSources(source: string): string[] {
+    const companions: string[] = [];
+
+    if (source === "alpaca_market" || source === "alpaca_crypto") {
+      companions.push("alpaca_trading", "alpaca_news");
+    }
+
+    if (source === "binance_market" || source === "binance_crypto") {
+      companions.push("binance_trading");
+    }
+
+    return companions;
   }
 
   /**
@@ -344,20 +349,20 @@ export class MarketControlHandler {
         );
         streams.forEach((s) => allStreams.add(s));
 
-        // Also check companion trading source (e.g., alpaca_trading alongside alpaca_market)
-        const companionSource = this.getCompanionTradingSource(source);
-        if (companionSource) {
-          const tradingKey = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${companionSource}:${environment}:streams`;
+        // Also check companion sources (e.g., trading/news alongside market)
+        const companionSources = this.getCompanionSources(source);
+        for (const companionSource of companionSources) {
+          const companionKey = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${companionSource}:${environment}:streams`;
           console.log(
-            `🔍 [MarketControl] Checking companion trading streams at key: ${tradingKey}`,
+            `🔍 [MarketControl] Checking companion streams at key: ${companionKey}`,
           );
-          const tradingStreams = await this.redisPub.smembers(tradingKey);
-          if (tradingStreams.length > 0) {
+          const companionStreams = await this.redisPub.smembers(companionKey);
+          if (companionStreams.length > 0) {
             console.log(
-              `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams:`,
-              tradingStreams,
+              `🔍 [MarketControl] Found ${companionStreams.length} companion streams:`,
+              companionStreams,
             );
-            tradingStreams.forEach((s) => allStreams.add(s));
+            companionStreams.forEach((s) => allStreams.add(s));
           }
         }
       }
@@ -388,17 +393,17 @@ export class MarketControlHandler {
       const streams = await this.redisPub.smembers(streamKey);
       streams.forEach((s) => allStream.add(s));
 
-      // Also check companion trading source (e.g., *_trading alongside *_market/*_crypto)
-      const companionSource = this.getCompanionTradingSource(source);
-      if (companionSource) {
-        const tradingKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
-        const tradingStreams = await this.redisPub.smembers(tradingKey);
-        if (tradingStreams.length > 0) {
+      // Also check companion sources (e.g., trading/news alongside market/crypto)
+      const companionSources = this.getCompanionSources(source);
+      for (const companionSource of companionSources) {
+        const companionKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
+        const companionStreams = await this.redisPub.smembers(companionKey);
+        if (companionStreams.length > 0) {
           console.log(
-            `🔍 [MarketControl] Found ${tradingStreams.length} companion trading streams (global):`,
-            tradingStreams,
+            `🔍 [MarketControl] Found ${companionStreams.length} companion streams (global):`,
+            companionStreams,
           );
-          tradingStreams.forEach((s) => allStream.add(s));
+          companionStreams.forEach((s) => allStream.add(s));
         }
       }
     } catch (err) {

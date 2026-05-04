@@ -158,7 +158,7 @@ export function parseStreamName(
   }
 
   // Alpaca format: bars.AAPL, trades.AAPL, quotes.AAPL
-  if (source === "alpaca" || source === "alpaca_market") {
+  if (source === "alpaca" || source === "alpaca_market" || source === "alpaca_news") {
     const dotIndex = streamName.indexOf(".");
     if (dotIndex === -1) {
       return { symbol: streamName.toUpperCase(), streamType: "unknown" };

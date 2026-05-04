@@ -41,6 +41,15 @@ router.use(requireAuth);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const ORDER_UPDATE_MARKERS = new Set([
+  "trade_updates",
+  "ORDER_TRADE_UPDATE",
+  "ALGO_UPDATE",
+  "executionReport",
+]);
+
+const NEWS_MARKERS = new Set(["news"]);
+
 /**
  * Replay paused stream events from Redis stream cursor.
  * POST /stream/replay
@@ -348,15 +357,26 @@ router.post("/:source/subscribe", async (req, res) => {
         : stream_type
       : [];
 
-    // If order_update is included, subscribe to the trading source separately
-    const ORDER_UPDATE_MARKERS = new Set([
-      "trade_updates",
-      "ORDER_TRADE_UPDATE",
-      "ALGO_UPDATE",
-    ]);
-    const hasOrderUpdate = streamType.includes("order_update");
-    const marketstreamType = streamType.filter(
-      (t: string) => t !== "order_update",
+    const hasOrderUpdate = streamType.some((streamName) =>
+      ORDER_UPDATE_MARKERS.has(streamName),
+    );
+    const hasNews = streamType.some((streamName) => NEWS_MARKERS.has(streamName));
+    const { marketstreamType, tradingstreamType, newsStreamType } = streamType.reduce(
+      (acc, t: string) => {
+        if (ORDER_UPDATE_MARKERS.has(t)) {
+          acc.tradingstreamType.push(t);
+        } else if (NEWS_MARKERS.has(t)) {
+          acc.newsStreamType.push(t);
+        } else {
+          acc.marketstreamType.push(t);
+        }
+        return acc;
+      },
+      {
+        marketstreamType: [] as string[],
+        tradingstreamType: [] as string[],
+        newsStreamType: [] as string[],
+      },
     );
 
     const normalizedSymbols = buildCryptoSymbols(
@@ -375,7 +395,25 @@ router.post("/:source/subscribe", async (req, res) => {
         nodeId: node_id,
         credentialId: credential_id,
         symbols: resolvedSymbols,
-        streamType: ["order_update"],
+        streamType: tradingstreamType,
+        environment,
+        assetType: assetType,
+        marketType: marketType,
+        contractType,
+        scope,
+        targetWorkflowId,
+      });
+    }
+    if (hasNews) {
+      const newsSourceId = `${source}_news`;
+      await SubscriptionService.subscribe({
+        source: newsSourceId as any,
+        userId,
+        workflowId: workflowId,
+        nodeId: node_id,
+        credentialId: credential_id,
+        symbols: resolvedSymbols,
+        streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
         environment,
         assetType: assetType,
         marketType: marketType,
@@ -385,7 +423,7 @@ router.post("/:source/subscribe", async (req, res) => {
       });
     }
 
-    // Subscribe to market/crypto streams (excluding order_update)
+    // Subscribe to market/crypto streams (excluding trading/news streams)
 
     let result;
     if (marketstreamType.length > 0 || !hasOrderUpdate) {
@@ -413,7 +451,7 @@ router.post("/:source/subscribe", async (req, res) => {
         data: {
           message: "Subscribed to order updates",
           symbols: resolvedSymbols,
-          streamType: ["order_update"],
+          streamType: tradingstreamType,
         },
       };
     }
@@ -495,10 +533,13 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const hasOrderUpdate = streamTypes.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
     );
-    const { marketstreamType, tradingstreamType } = streamTypes.reduce(
+    const hasNews = streamTypes.some((streamName) => NEWS_MARKERS.has(streamName));
+    const { marketstreamType, tradingstreamType, newsStreamType } = streamTypes.reduce(
       (acc, t: string) => {
         if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
+        } else if (NEWS_MARKERS.has(t)) {
+          acc.newsStreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
         }
@@ -507,6 +548,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       {
         marketstreamType: [] as string[],
         tradingstreamType: [] as string[],
+        newsStreamType: [] as string[],
       },
     );
     const normalizedSymbols = buildCryptoSymbols(
@@ -520,7 +562,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     if (hasOrderUpdate) {
       //const tradingSourceId = `${source}_trading`;
       await SubscriptionService.unsubscribe({
-        source: sourceId as any,
+        source: `${source}_trading` as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
@@ -532,6 +574,20 @@ router.post("/:source/unsubscribe", async (req, res) => {
       });
     }
 
+
+    if (hasNews) {
+      await SubscriptionService.unsubscribe({
+        source: `${source}_news` as any,
+        userId,
+        workflowId: workflowId,
+        credentialId: credential_id,
+        symbols: resolvedSymbols,
+        streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
+        scope,
+        environment,
+        targetWorkflowId,
+      });
+    }
     let result: any;
     if (marketstreamType) {
       result = await SubscriptionService.unsubscribe({
@@ -733,10 +789,13 @@ router.post("/:source/register", async (req, res) => {
     const hasOrderUpdate = streamType.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
     );
-    const { marketstreamType, tradingstreamType } = streamType.reduce(
+    const hasNews = streamType.some((streamName) => NEWS_MARKERS.has(streamName));
+    const { marketstreamType, tradingstreamType, newsStreamType } = streamType.reduce(
       (acc, t: string) => {
         if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
+        } else if (NEWS_MARKERS.has(t)) {
+          acc.newsStreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
         }
@@ -745,6 +804,7 @@ router.post("/:source/register", async (req, res) => {
       {
         marketstreamType: [] as string[],
         tradingstreamType: [] as string[],
+        newsStreamType: [] as string[],
       },
     );
 
@@ -808,6 +868,38 @@ router.post("/:source/register", async (req, res) => {
             `⚠️ [ExecuteStreamNode] Trading subscription readiness timed out for ${tradingSourceId}; continuing in market-only mode`,
           );
         }
+      }
+
+      if (hasNews) {
+        const newsSourceId = `${source}_news`;
+        const newsResult = await SubscriptionService.subscribe({
+          source: newsSourceId,
+          userId,
+          workflowId,
+          nodeId: node_id,
+          credentialId: credential_id || "",
+          symbols: parsedSymbols,
+          streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
+          environment: requiredEnvironment,
+          assetType: assetType,
+          marketType: marketType,
+          contractType: undefined,
+          interval: undefined,
+          scope,
+          targetWorkflowId: workflowId,
+        });
+
+        if (!newsResult.success) {
+          return res.status(400).json({ success: false, status: "error", error: newsResult.error } as StreamExecutionResponse);
+        }
+
+        await SubscriptionService.waitForSubscriptionReady({
+          userId,
+          source: newsSourceId,
+          environment: requiredEnvironment,
+          scope,
+          workflowId,
+        });
       }
 
       // Subscribe to market streams (excluding order_update)

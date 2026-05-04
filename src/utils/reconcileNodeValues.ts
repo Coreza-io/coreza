@@ -14,6 +14,34 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+
+function migrateAlpacaStreamDataValues(
+  definition: any,
+  merged: Record<string, any>,
+): void {
+  if (definition?.name !== "AlpacaStreamData") return;
+
+  if (merged.assetType === "news") {
+    merged.assetType = "stock";
+
+    const current = merged.stream_type;
+    const normalized = Array.isArray(current)
+      ? [...current]
+      : typeof current === "string"
+        ? current
+            .split(",")
+            .map((v: string) => v.trim())
+            .filter(Boolean)
+        : [];
+
+    if (!normalized.includes("news")) {
+      normalized.push("news");
+    }
+
+    merged.stream_type = normalized.length > 0 ? normalized : ["news"];
+  }
+}
+
 /**
  * Reconcile persisted node values against the current JSON definition.
  *
@@ -60,6 +88,8 @@ export function reconcileNodeValues(
       merged[key] = field.default ?? null;
     }
   }
+
+  migrateAlpacaStreamDataValues(definition, merged);
 
   return { merged, hadMissingKeys };
 }

@@ -20,9 +20,11 @@ export function resolveStreamSourceId(
     return null;
   }
 
-  const category = node.category;
+  const assetType = node.values?.assetType;
 
-  return category ? `${baseSource}_${category.toLowerCase()}` : baseSource;
+  return assetType
+    ? `${baseSource}_${assetType.toLowerCase()}`
+    : `${baseSource}_market`;
 }
 
 export function parseSymbols(symbols: unknown): string[] {

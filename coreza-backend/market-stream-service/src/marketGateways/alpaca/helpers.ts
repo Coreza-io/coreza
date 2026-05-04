@@ -186,12 +186,16 @@ export function buildAlpacaUnsubscribeMessage(
 }
 
 function toAlpacaNewsTicker(symbol: string): string {
-  const upper = String(symbol || "").trim().toUpperCase();
+  const upper = String(symbol || "")
+    .trim()
+    .toUpperCase();
   return upper.includes("/") ? upper.replace(/\//g, "") : upper;
 }
 
 function fromAlpacaNewsTicker(symbol: string, assetType?: string): string {
-  const upper = String(symbol || "").trim().toUpperCase();
+  const upper = String(symbol || "")
+    .trim()
+    .toUpperCase();
   if (upper.includes("/")) return upper;
   if (assetType !== "crypto" || upper.length <= 3) return upper;
   return `${upper.slice(0, -3)}/${upper.slice(-3)}`;
@@ -295,7 +299,6 @@ export function normalizeAlpacaMessage(
 
     return {
       source: "alpaca_news" as any,
-      symbol: mappedSymbols?.[0]?.toUpperCase() || "*",
       type: "news" as const,
       t: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
       headline: msg.headline,

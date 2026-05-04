@@ -252,14 +252,19 @@ export class MarketDataGateway {
               .split("@")[0]
               .toUpperCase();
             const subscribedNormalized = subscribedSymbol.replace(/\//g, "");
-            if (!eventSymbols.includes(subscribedNormalized)) continue;
+            if (
+              subscribedNormalized !== "*" &&
+              !eventSymbols.includes(subscribedNormalized)
+            ) {
+              continue;
+            }
 
             const channel = REDIS_CHANNELS.streamData(subscribedStream);
             const publishEvent = {
               ...event,
               symbol: subscribedSymbol,
             };
-            await this.publishToRedis(channel, JSON.stringify(publishEvent));
+            await this.publishToRedis(channel, JSON.stringify(event));
 
             marketMessagesCounter.inc({
               source: this.source,

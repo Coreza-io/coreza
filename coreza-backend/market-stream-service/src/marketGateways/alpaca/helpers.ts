@@ -143,7 +143,10 @@ export function buildAlpacaSubscribeMessage(
   // NEWS source: subscribe to news stream
   if (source === "alpaca_news") {
     const { symbols } = parseAlpacaStreamNames(streamNames);
-    return { action: "subscribe", news: symbols };
+    return {
+      action: "subscribe",
+      news: symbols.map(toAlpacaNewsTicker),
+    };
   }
 
   // STREAM source (default): parse stream names and build message
@@ -167,7 +170,10 @@ export function buildAlpacaUnsubscribeMessage(
 
   if (source === "alpaca_news") {
     const { symbols } = parseAlpacaStreamNames(streamNames);
-    return { action: "unsubscribe", news: symbols };
+    return {
+      action: "unsubscribe",
+      news: symbols.map(toAlpacaNewsTicker),
+    };
   }
 
   const { symbols, types } = parseAlpacaStreamNames(streamNames);
@@ -177,6 +183,11 @@ export function buildAlpacaUnsubscribeMessage(
     msg[key] = symbols;
   });
   return msg;
+}
+
+function toAlpacaNewsTicker(symbol: string): string {
+  const upper = String(symbol || "").trim().toUpperCase();
+  return upper.includes("/") ? upper.replace(/\//g, "") : upper;
 }
 
 // ============ MESSAGE PARSING (shared) ============

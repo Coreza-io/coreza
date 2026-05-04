@@ -886,8 +886,8 @@ router.post("/:source/register", async (req, res) => {
           workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
-          //symbols: parsedSymbols,
-          symbols: ["*"],
+          symbols: parsedSymbols,
+          //symbols: ["*"],
           streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
           environment: requiredEnvironment,
           assetType: assetType,
@@ -899,13 +899,11 @@ router.post("/:source/register", async (req, res) => {
         });
 
         if (!newsResult.success) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-              status: "error",
-              error: newsResult.error,
-            } as StreamExecutionResponse);
+          return res.status(400).json({
+            success: false,
+            status: "error",
+            error: newsResult.error,
+          } as StreamExecutionResponse);
         }
 
         await SubscriptionService.waitForSubscriptionReady({
@@ -918,7 +916,7 @@ router.post("/:source/register", async (req, res) => {
       }
 
       // Subscribe to market streams (excluding order_update)
-      if (marketstreamType.length > 0 || !hasOrderUpdate) {
+      if (marketstreamType.length > 0) {
         const subscribeResult = await SubscriptionService.subscribe({
           source: sourceId,
           userId,
@@ -1002,6 +1000,7 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       symbols: parsedSymbols,
+      //symbols: ["*"],
       streamTypes: streamType,
       assetType: assetType,
       marketType: marketType,

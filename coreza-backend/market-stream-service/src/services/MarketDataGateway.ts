@@ -264,7 +264,9 @@ export class MarketDataGateway {
               ...event,
               symbol: subscribedSymbol,
             };
-            await this.publishToRedis(channel, JSON.stringify(event));
+            await this.publishToRedis(channel, JSON.stringify(publishEvent));
+            console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
+            console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
 
             marketMessagesCounter.inc({
               source: this.source,

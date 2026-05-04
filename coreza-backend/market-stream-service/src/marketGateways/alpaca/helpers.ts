@@ -190,6 +190,13 @@ function toAlpacaNewsTicker(symbol: string): string {
   return upper.includes("/") ? upper.replace(/\//g, "") : upper;
 }
 
+function fromAlpacaNewsTicker(symbol: string, assetType?: string): string {
+  const upper = String(symbol || "").trim().toUpperCase();
+  if (upper.includes("/")) return upper;
+  if (assetType !== "crypto" || upper.length <= 3) return upper;
+  return `${upper.slice(0, -3)}/${upper.slice(-3)}`;
+}
+
 // ============ MESSAGE PARSING (shared) ============
 export function parseAlpacaMessage(buffer: Buffer): any[] {
   const parsed = JSON.parse(buffer.toString());
@@ -279,16 +286,23 @@ export function normalizeAlpacaMessage(
   // NEWS source
   if (source === "alpaca_news") {
     if (msg.T !== "n") return null;
+    const newsAssetType = msg.assetType || msg.asset_type;
+    const mappedSymbols = Array.isArray(msg.symbols)
+      ? msg.symbols.map((symbol: string) =>
+          fromAlpacaNewsTicker(symbol, newsAssetType),
+        )
+      : msg.symbols;
+
     return {
       source: "alpaca_news" as any,
-      symbol: msg.symbols?.[0]?.toUpperCase() || "*",
+      symbol: mappedSymbols?.[0]?.toUpperCase() || "*",
       type: "news" as const,
       t: msg.created_at ? new Date(msg.created_at).getTime() : Date.now(),
       headline: msg.headline,
       summary: msg.summary,
       author: msg.author,
       url: msg.url,
-      symbols: msg.symbols,
+      symbols: mappedSymbols,
       newsSource: msg.source,
     } as CorezaMarketEvent;
   }

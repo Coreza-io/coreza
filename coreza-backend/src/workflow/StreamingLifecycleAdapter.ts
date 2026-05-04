@@ -20,6 +20,13 @@ const ORDER_UPDATE_MARKERS = new Set([
   "executionReport",
 ]);
 
+function isOrderUpdateMarker(streamName: string): boolean {
+  return (
+    ORDER_UPDATE_MARKERS.has(streamName) ||
+    ORDER_UPDATE_MARKERS.has(streamName.toLowerCase())
+  );
+}
+
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
 ): MarketSource | null {
@@ -195,19 +202,14 @@ export class StreamingLifecycleAdapter {
             .split(",")
             .map((streamType) => streamType.trim())
         : [];
-    const ORDER_UPDATE_MARKERS = new Set([
-      "trade_updates",
-      "ORDER_TRADE_UPDATE",
-      "executionReport",
-    ]);
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamType.some((streamName) =>
-      ORDER_UPDATE_MARKERS.has(streamName),
+      isOrderUpdateMarker(streamName),
     );
 
     const { marketstreamType, tradingstreamType } = streamType.reduce(
       (acc, t: string) => {
-        if (ORDER_UPDATE_MARKERS.has(t)) {
+        if (isOrderUpdateMarker(t)) {
           acc.tradingstreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
@@ -429,18 +431,13 @@ export class StreamingLifecycleAdapter {
               .map((streamType: string) => streamType.trim())
           : [];
       // If order_update is included, also unsubscribe from trading source
-      const ORDER_UPDATE_MARKERS = new Set([
-        "trade_updates",
-        "ORDER_TRADE_UPDATE",
-        "executionReport",
-      ]);
       // Split trading lifecycle marker from market stream types
       const hasOrderUpdate = streamTypes.some((streamName) =>
-        ORDER_UPDATE_MARKERS.has(streamName),
+        isOrderUpdateMarker(streamName),
       );
       const { marketstreamType, tradingstreamType } = streamTypes.reduce(
         (acc, t: string) => {
-          if (ORDER_UPDATE_MARKERS.has(t)) {
+          if (isOrderUpdateMarker(t)) {
             acc.tradingstreamType.push(t);
           } else {
             acc.marketstreamType.push(t);

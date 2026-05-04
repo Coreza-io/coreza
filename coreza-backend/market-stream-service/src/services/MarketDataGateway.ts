@@ -234,7 +234,7 @@ export class MarketDataGateway {
 
         // Normalize message - pass source for proper event formatting
         const event = this.config.normalize(msg, this.source);
-        if (!event || !event.symbol) continue;
+        if (!event || !event.symbol || !event.symbols) continue;
         event._seq = ++this.messageSequence;
         // Keep ordering domain bound to gateway source identifier (this.source),
         // not normalized event.source. Example: alpaca_trading -> *_trading domain.

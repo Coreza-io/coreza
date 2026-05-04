@@ -305,7 +305,7 @@ export function normalizeAlpacaMessage(
       summary: msg.summary,
       author: msg.author,
       url: msg.url,
-      symbols: mappedSymbols,
+      symbol: mappedSymbols,
       newsSource: msg.source,
     } as CorezaMarketEvent;
   }

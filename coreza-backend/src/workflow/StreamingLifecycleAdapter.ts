@@ -20,13 +20,6 @@ const ORDER_UPDATE_MARKERS = new Set([
   "executionReport",
 ]);
 
-function isOrderUpdateMarker(streamName: string): boolean {
-  return (
-    ORDER_UPDATE_MARKERS.has(streamName) ||
-    ORDER_UPDATE_MARKERS.has(streamName.toLowerCase())
-  );
-}
-
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
 ): MarketSource | null {
@@ -204,12 +197,12 @@ export class StreamingLifecycleAdapter {
         : [];
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamType.some((streamName) =>
-      isOrderUpdateMarker(streamName),
+      ORDER_UPDATE_MARKERS.has(streamName),
     );
 
     const { marketstreamType, tradingstreamType } = streamType.reduce(
       (acc, t: string) => {
-        if (isOrderUpdateMarker(t)) {
+        if (ORDER_UPDATE_MARKERS.has(t)) {
           acc.tradingstreamType.push(t);
         } else {
           acc.marketstreamType.push(t);
@@ -404,7 +397,7 @@ export class StreamingLifecycleAdapter {
     // Stop the in-memory WorkflowRunner so it doesn't keep persisting
     // data under the old runnerInstanceId after deactivation.
     await jobQueue.stopWorkflowRunner(workflowId);
-    await this.clearSessionData(userId, workflowId);
+    //await this.clearSessionData(userId, workflowId);
   }
 
   async unsubscribeStreamingNodes(
@@ -433,11 +426,11 @@ export class StreamingLifecycleAdapter {
       // If order_update is included, also unsubscribe from trading source
       // Split trading lifecycle marker from market stream types
       const hasOrderUpdate = streamTypes.some((streamName) =>
-        isOrderUpdateMarker(streamName),
+        ORDER_UPDATE_MARKERS.has(streamName),
       );
       const { marketstreamType, tradingstreamType } = streamTypes.reduce(
         (acc, t: string) => {
-          if (isOrderUpdateMarker(t)) {
+          if (ORDER_UPDATE_MARKERS.has(t)) {
             acc.tradingstreamType.push(t);
           } else {
             acc.marketstreamType.push(t);

@@ -88,9 +88,7 @@ export function matchesTypeFilter(
   if (!eventType) {
     return false; // No type in event but filter exists
   }
-  const normalizedEventType = eventType.toLowerCase();
-  const normalizedAllowedTypes = allowedTypes.map((type) => type.toLowerCase());
-  return normalizedAllowedTypes.includes(normalizedEventType);
+  return allowedTypes.includes(eventType);
 }
 
 /**

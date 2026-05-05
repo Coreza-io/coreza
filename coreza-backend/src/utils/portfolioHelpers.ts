@@ -19,7 +19,7 @@ export interface FormattedPosition extends Position {
  * Does NOT overwrite the original unrealizedPnl / realizedPnl (keeps them as currency values).
  */
 export function formatPositionWithPnlPercent(position: Position): FormattedPosition {
-  const costBasis = Math.abs(position.avgEntryPrice * position.quantity);
+  const costBasis = Math.abs(position.avgFillPrice * position.quantity);
   return {
     ...position,
     unrealizedPnlPct: toPercent(position.unrealizedPnl, costBasis),

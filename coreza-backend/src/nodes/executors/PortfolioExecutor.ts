@@ -1472,6 +1472,12 @@ export class PortfolioExecutor implements INodeExecutor {
 
     const initialCapital = simBroker.getConfig().initialCapital;
     const pendingOrders = simBroker.getOpenOrders();
+    const totalEquity = state.cash + positionsValue;
+    const drawdownPct =
+      state.peakEquity > 0
+        ? ((state.peakEquity - totalEquity) / state.peakEquity) * 100
+        : 0;
+    const tradeStats = this.calculateTradeAnalytics(state.trades, initialCapital);
 
     return leanSuccess({
       cash: state.cash,
@@ -1483,11 +1489,27 @@ export class PortfolioExecutor implements INodeExecutor {
       unrealized_pnl: unrealizedPnlValue,
       realized_pnl_pct: toPercent(realizedPnlValue, initialCapital),
       realized_pnl: realizedPnlValue,
-      total_equity: state.cash + positionsValue,
+      total_equity: totalEquity,
+      peak_equity: state.peakEquity,
+      drawdown_pct: drawdownPct,
+      net_profit: tradeStats.netProfit,
+      trades_count: tradeStats.totalTrades,
+      total_trades: tradeStats.totalTrades,
+      profitable_trades: tradeStats.profitableTrades,
+      losing_trades: tradeStats.losingTrades,
+      win_rate: tradeStats.winRate,
+      profit_factor: Number.isFinite(tradeStats.profitFactor)
+        ? tradeStats.profitFactor
+        : null,
+      avg_win: tradeStats.avgWin,
+      avg_loss: tradeStats.avgLoss,
+      largest_win: tradeStats.largestWin,
+      largest_loss: tradeStats.largestLoss,
+      average_trade_return: tradeStats.averageTradeReturn,
+      expectancy: tradeStats.expectancy,
       pending_orders: pendingOrders,
       pending_orders_count: pendingOrders.length,
       trades: state.trades,
-      trades_count: state.trades.length,
     });
   }
 

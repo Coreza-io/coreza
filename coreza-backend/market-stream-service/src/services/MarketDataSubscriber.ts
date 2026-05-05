@@ -546,12 +546,24 @@ export class MarketDataSubscriber {
       return;
     }
 
-    const owner = await this.findTradingEventOwner(event);
+    let owner: any | null = null;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 200;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      owner = await this.findTradingEventOwner(event);
+      if (owner?.workflowId) break;
+      if (attempt < MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      }
+    }
+
     if (!owner?.workflowId) {
       logger.warn(
         { eventType: event.type, source: event.source },
-        "Dropping trading lifecycle event with no owner mapping",
+        "No owner mapping found after retries; falling back to account-level broadcast",
       );
+      this.broadcastAccountEvent(event);
       return;
     }
     const registration = this.registrations.get(owner.workflowId);

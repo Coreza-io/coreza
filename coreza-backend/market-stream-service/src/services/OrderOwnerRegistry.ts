@@ -48,18 +48,9 @@ export class OrderOwnerRegistry {
     algoId?: string;
     rawOrderData?: Record<string, any>;
   }): OrderOwnerIds {
-    const raw = event.rawOrderData ?? {};
-    const nested = raw.o ?? {};
     return {
       clientOrderId: event.clientOrderId,
-      // raw.client_order_id ??
-      // raw.c ??
-      // nested.c ??
-      // raw.clientOrderId,
-      orderId:
-        //event.brokerOrderId ??
-        event.orderId,
-      //
+      orderId: event.orderId,
       clientAlgoId: event.clientAlgoId,
       algoId: event.algoId,
     };

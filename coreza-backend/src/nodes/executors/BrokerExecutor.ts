@@ -101,6 +101,7 @@ export class BrokerExecutor implements INodeExecutor {
     const userId = context?.userId ?? "system";
     const workflowId = context?.workflowId ?? "manual";
 
+    let preRegisteredClientOrderId: string | null = null;
     try {
       const operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory: string };
@@ -248,6 +249,28 @@ export class BrokerExecutor implements INodeExecutor {
       const body = op.makeBody
         ? await op.makeBody(resolvedParams, workingCreds)
         : undefined;
+      const shouldPreRegisterOrderOwner =
+        operation === "place_order" &&
+        typeof resolvedParams?._idempotencyKey === "string" &&
+        resolvedParams._idempotencyKey.trim().length > 0;
+
+      if (shouldPreRegisterOrderOwner) {
+        preRegisteredClientOrderId = resolvedParams._idempotencyKey.trim();
+        try {
+          await OrderOwnerRegistry.saveOwner({
+            source: `${broker}_trading`,
+            userId,
+            workflowId,
+            nodeId: node.id,
+            runId: context?.runId,
+            symbol: String(resolvedParams?.symbol || ""),
+            createdAt: new Date().toISOString(),
+            clientOrderId: preRegisteredClientOrderId,
+          });
+        } catch (err) {
+          console.warn("Failed to pre-save order-owner mapping", err);
+        }
+      }
 
       console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
 
@@ -292,22 +315,47 @@ export class BrokerExecutor implements INodeExecutor {
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
-      if (operation === "place_order" && (broker === "alpaca" || broker === "binance")) {
+      if (operation === "place_order") {
         try {
           const ids =
             broker === "alpaca"
               ? extractAlpacaOrderOwnerIds(data)
-              : extractBinanceOrderOwnerIds(data);
-          await OrderOwnerRegistry.saveOwner({
-            source: `${broker}_trading`,
-            userId,
-            workflowId,
-            nodeId: node.id,
-            runId: context?.runId,
-            symbol: String(resolvedParams?.symbol || ""),
-            createdAt: new Date().toISOString(),
-            ...ids,
-          });
+              : broker === "binance"
+                ? extractBinanceOrderOwnerIds(data)
+                : {
+                    clientOrderId: String(
+                      data?.client_order_id ?? data?.clientOrderId ?? "",
+                    ).trim() || undefined,
+                    orderId: String(data?.order_id ?? data?.orderId ?? data?.id ?? "").trim() || undefined,
+                    clientAlgoId: String(
+                      data?.client_algo_id ?? data?.clientAlgoId ?? "",
+                    ).trim() || undefined,
+                    algoId: String(data?.algo_id ?? data?.algoId ?? "").trim() || undefined,
+                  };
+          const hasResponseIdsBeyondClientOrderId = Boolean(
+            String(ids.orderId || "").trim() ||
+              String(ids.algoId || "").trim() ||
+              String(ids.clientAlgoId || "").trim(),
+          );
+
+          // Keep this post-response save:
+          // - pre-save (before request) protects early WS fills via clientOrderId
+          // - post-save enriches mapping with broker-assigned IDs (orderId/algoId),
+          //   which later lifecycle events may reference instead of clientOrderId.
+          // This is broker-agnostic: any broker may emit later lifecycle events with
+          // broker-native IDs rather than clientOrderId.
+          if (hasResponseIdsBeyondClientOrderId || !preRegisteredClientOrderId) {
+            await OrderOwnerRegistry.saveOwner({
+              source: `${broker}_trading`,
+              userId,
+              workflowId,
+              nodeId: node.id,
+              runId: context?.runId,
+              symbol: String(resolvedParams?.symbol || ""),
+              createdAt: new Date().toISOString(),
+              ...ids,
+            });
+          }
         } catch (err) {
           console.warn("Failed to save order-owner mapping", err);
         }
@@ -347,6 +395,16 @@ export class BrokerExecutor implements INodeExecutor {
               ? enrichedError.message
               : String(enrichedError),
         });
+      }
+
+      if (preRegisteredClientOrderId && operation === "place_order") {
+        try {
+          await OrderOwnerRegistry.deleteOwnerIds(`${broker}_trading`, {
+            clientOrderId: preRegisteredClientOrderId,
+          });
+        } catch (cleanupErr) {
+          console.warn("Failed to cleanup pre-saved order-owner mapping", cleanupErr);
+        }
       }
 
       const normalized = createErrorOutput(

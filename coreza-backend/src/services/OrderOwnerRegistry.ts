@@ -57,6 +57,21 @@ export class OrderOwnerRegistry {
     );
   }
 
+  static async deleteOwnerIds(
+    source: string,
+    ids: OrderOwnerIds,
+  ): Promise<number> {
+    const redis = getRedisQueue();
+    const keys = (
+      ["clientOrderId", "orderId", "clientAlgoId", "algoId"] as const
+    )
+      .map((k) => [k, String(ids[k] || "").trim()] as const)
+      .filter(([, v]) => v)
+      .map(([k, v]) => this.key(source, k, v));
+    if (keys.length === 0) return 0;
+    return redis.del(...keys);
+  }
+
   static async findOwner(
     source: string,
     ids: OrderOwnerIds,

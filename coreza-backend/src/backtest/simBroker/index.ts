@@ -497,7 +497,7 @@ export class SimBroker {
       this.untrackPendingTicket(order.symbol, order.id);
     }
 
-    this.updatePositionMTM(order.symbol, bar.close);
+    //this.updatePositionMTM(order.symbol, bar.close);
 
     return event;
   }

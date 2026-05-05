@@ -31,6 +31,7 @@ router.post("/init", async (req: Request, res: Response) => {
 
     const {
       workflowId,
+      workflowSessionId,
       node_id,
       nodeName,
       node_type,
@@ -85,7 +86,7 @@ router.post("/init", async (req: Request, res: Response) => {
         },
       } as any,
       {},
-      { userId, workflowId: workflowId, nodes, edges },
+      { userId, workflowSessionId, workflowId, nodes, edges },
     );
 
     if (!result.success) {

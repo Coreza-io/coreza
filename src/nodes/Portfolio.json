@@ -45,7 +45,7 @@
       ]
     },
     {
-      "key": "backtest_id",
+      "key": "backtestId",
       "label": "Backtest ID",
       "type": "text",
       "placeholder": "{{ $('BacktestInit').json.backtest_id }}",

@@ -1477,7 +1477,10 @@ export class PortfolioExecutor implements INodeExecutor {
       state.peakEquity > 0
         ? ((state.peakEquity - totalEquity) / state.peakEquity) * 100
         : 0;
-    const tradeStats = this.calculateTradeAnalytics(state.trades, initialCapital);
+    const tradeStats = this.calculateTradeAnalytics(
+      state.trades,
+      initialCapital,
+    );
 
     return leanSuccess({
       cash: state.cash,
@@ -1523,16 +1526,16 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
     const position = simBroker.getPosition(symbol);
-    const formattedPosition = position
-      ? formatPositionWithPnlPercent(position)
-      : null;
-    const positionCostBasis = position
-      ? Math.abs(position.avgFillPrice * position.quantity)
-      : 0;
+    // const formattedPosition = position
+    //   ? formatPositionWithPnlPercent(position)
+    //   : null;
+    // const positionCostBasis = position
+    //   ? Math.abs(position.avgFillPrice * position.quantity)
+    //   : 0;
 
     return leanSuccess({
       has_position: !!position,
-      position: formattedPosition,
+      position: position,
       symbol,
       quantity: position?.quantity || 0,
       side: position?.side || null,
@@ -1540,12 +1543,12 @@ export class PortfolioExecutor implements INodeExecutor {
       current_price: position?.currentPrice || 0,
       unrealized_pnl_pct: toPercent(
         position?.unrealizedPnl || 0,
-        positionCostBasis,
+        position?.openCostBasis || 0,
       ),
       unrealized_pnl: position?.unrealizedPnl || 0,
       realized_pnl_pct: toPercent(
         position?.realizedPnl || 0,
-        positionCostBasis,
+        position?.openCostBasis || 0,
       ),
       realized_pnl: position?.realizedPnl || 0,
       market_value: position?.marketValue || 0,

@@ -242,7 +242,8 @@ export class BacktestExecutor implements INodeExecutor {
 
       const userId = context?.userId;
       const workflowId = context?.workflowId;
-      const runId = context?.runId || workflowId;
+      const runId = context.runId || context.workflowSessionId || workflowId;
+      //const runId = context?.runId || workflowId;
 
       if (!userId || !workflowId) {
         return toNodeResult(
@@ -588,7 +589,10 @@ export class BacktestExecutor implements INodeExecutor {
           {
             userId: context?.userId,
             workflowId: context?.workflowId || "backtest-init",
-            runId: context?.runId || `backtest-${Date.now()}`,
+            runId:
+              context?.runId ||
+              context?.workflowSessionId ||
+              `backtest-${Date.now()}`,
           },
         );
 

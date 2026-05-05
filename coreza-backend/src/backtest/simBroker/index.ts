@@ -525,11 +525,12 @@ export class SimBroker {
         symbol: order.symbol,
         side: signedQuantity >= 0 ? "long" : "short",
         quantity: signedQuantity,
-        avgEntryPrice: price,
+        avgFillPrice: price,
         currentPrice: price,
         unrealizedPnl: 0,
         realizedPnl: 0,
         marketValue,
+        openCostBasis: Math.abs(signedQuantity) * price,
       };
       this.positionsValue += marketValue;
       this.currentEntryMap.set(order.symbol, {
@@ -549,14 +550,15 @@ export class SimBroker {
     if (sameDirection) {
       const totalQty = existingQty + signedQuantity;
       const totalCostBasis =
-        existing.avgEntryPrice * Math.abs(existingQty) +
+        existing.avgFillPrice * Math.abs(existingQty) +
         price * Math.abs(signedQuantity);
-      existing.avgEntryPrice = totalCostBasis / Math.abs(totalQty);
+      existing.avgFillPrice = totalCostBasis / Math.abs(totalQty);
       existing.quantity = totalQty;
       existing.side = totalQty >= 0 ? "long" : "short";
       existing.currentPrice = price;
       existing.marketValue = totalQty * price;
-      existing.unrealizedPnl = (price - existing.avgEntryPrice) * totalQty;
+      existing.openCostBasis = Math.abs(totalQty) * existing.avgFillPrice;
+      existing.unrealizedPnl = (price - existing.avgFillPrice) * totalQty;
       this.positionsValue += existing.marketValue - oldMarketValue;
       return;
     }
@@ -567,8 +569,8 @@ export class SimBroker {
     );
     const isClosingLong = existingQty > 0;
     const grossPnl = isClosingLong
-      ? (price - existing.avgEntryPrice) * closingQty
-      : (existing.avgEntryPrice - price) * closingQty;
+      ? (price - existing.avgFillPrice) * closingQty
+      : (existing.avgFillPrice - price) * closingQty;
     const commissionForClose =
       commission * (closingQty / Math.abs(signedQuantity));
     const netPnl = grossPnl - commissionForClose;
@@ -589,7 +591,7 @@ export class SimBroker {
       side: isClosingLong ? "buy" : "sell",
       entryOrderId,
       exitOrderId: order.id,
-      entryPrice: existing.avgEntryPrice,
+      entryPrice: existing.avgFillPrice,
       exitPrice: price,
       quantity: closingQty,
       grossPnl,
@@ -615,7 +617,8 @@ export class SimBroker {
       existing.side = newQty >= 0 ? "long" : "short";
       existing.currentPrice = price;
       existing.marketValue = newQty * price;
-      existing.unrealizedPnl = (price - existing.avgEntryPrice) * newQty;
+      existing.openCostBasis = Math.abs(newQty) * existing.avgFillPrice;
+      existing.unrealizedPnl = (price - existing.avgFillPrice) * newQty;
       this.positionsValue += existing.marketValue - oldMarketValue;
       return;
     }
@@ -623,9 +626,10 @@ export class SimBroker {
     // Position flipped direction on this fill; reset cost basis at fill price
     existing.quantity = newQty;
     existing.side = newQty >= 0 ? "long" : "short";
-    existing.avgEntryPrice = price;
+    existing.avgFillPrice = price;
     existing.currentPrice = price;
     existing.marketValue = newQty * price;
+    existing.openCostBasis = Math.abs(newQty) * existing.avgFillPrice;
     existing.unrealizedPnl = 0;
     this.positionsValue += existing.marketValue - oldMarketValue;
     this.currentEntryMap.set(order.symbol, {
@@ -641,8 +645,10 @@ export class SimBroker {
       const oldMarketValue = position.marketValue;
       position.currentPrice = currentPrice;
       position.marketValue = position.quantity * currentPrice;
+      position.openCostBasis =
+        Math.abs(position.quantity) * position.avgFillPrice;
       position.unrealizedPnl =
-        (currentPrice - position.avgEntryPrice) * position.quantity;
+        (currentPrice - position.avgFillPrice) * position.quantity;
       this.positionsValue += position.marketValue - oldMarketValue;
     }
   }

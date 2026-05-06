@@ -281,9 +281,10 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Create tool wrapper for this node
+      const isToggled = (toolNode as any).__isTool === true;
       const tool = this.createToolFromNode(toolNode, context);
       tools.push(tool);
-      console.log(`✅ [AIAgent] Added tool: ${tool.name}`);
+      console.log(`✅ [AIAgent] Added tool: ${tool.name}${isToggled ? ' (toggled)' : ''}`);
     }
 
     return tools;

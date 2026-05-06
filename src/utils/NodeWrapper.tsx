@@ -22,7 +22,7 @@ import { Handle, Position, useReactFlow } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, Edit2, Trash2, Loader2 } from "lucide-react";
+import { X, Edit2, Trash2, Loader2, Wrench } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import {
   FemalePlugIcon,

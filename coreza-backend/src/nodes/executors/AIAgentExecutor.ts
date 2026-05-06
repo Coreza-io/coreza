@@ -37,7 +37,7 @@ import {
   toNodeResult,
   NormalizeContext,
 } from "../../utils/normalizeOutput";
-import { getLLM } from "../../config/llmProviders";
+import { getLLM, LLMConfig } from "../../config/llmProviders";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -169,7 +169,7 @@ export class AIAgentExecutor implements INodeExecutor {
         "You are a helpful AI assistant. Use the available tools to help answer the user's questions.";
       const userPrompt = resolvedParams.userPrompt;
       const maxIterations = resolvedParams.maxIterations ?? 10;
-      const temperature = resolvedParams.temperature ?? 0.7;
+      //const temperature = resolvedParams.temperature ?? 1;
 
       if (!userPrompt) {
         const errOutput = createErrorOutput(
@@ -179,16 +179,29 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      // Create LLM using provider factory (handles model-specific config)
-      const llm = getLLM(providerId, {
+      const isSearchModel = chatModelNode.values?.isSearchModel === true;
+      const isReasoningModel = chatModelNode.values?.supportsReasoning === true;
+
+      const llmConfig: LLMConfig = {
         apiKey,
         model,
-        temperature: Number(temperature),
         maxTokens: chatModelNode.values?.maxTokens
           ? Number(chatModelNode.values.maxTokens)
           : undefined,
-        isSearchModel: chatModelNode.values?.isSearchModel,
-      });
+        isSearchModel,
+        isReasoningModel,
+      };
+
+      if (!isSearchModel && !isReasoningModel) {
+        llmConfig.temperature = Number(resolvedParams.temperature);
+      }
+
+      if (isReasoningModel) {
+        llmConfig.reasoningEffort =
+          chatModelNode.values?.reasoningEffort ?? "medium";
+      }
+
+      const llm = getLLM(providerId, llmConfig);
 
       console.log(
         `🤖 [AIAgent] Created ${providerId} LLM with model: ${model}`,
@@ -607,39 +620,130 @@ export class AIAgentExecutor implements INodeExecutor {
 
   private getAgentOutput(result: any): string {
     const messages = result?.messages;
+
     if (!Array.isArray(messages) || messages.length === 0) {
       if (typeof result?.output === "string") {
         return result.output;
       }
+
+      if (typeof result?.content === "string") {
+        return result.content;
+      }
+
       return result ? JSON.stringify(result) : "";
     }
 
-    const lastAssistantMessage = [...messages].reverse().find((message) => {
-      const role = (message as any)?.role ?? (message as any)?.type;
-      return role === "assistant" || role === "ai";
+    const getMessageType = (message: any): string => {
+      if (!message) return "";
+
+      if (typeof message._getType === "function") {
+        return message._getType();
+      }
+
+      return (
+        message.role ??
+        message.type ??
+        message.lc_kwargs?.type ??
+        message.kwargs?.type ??
+        message.constructor?.name ??
+        ""
+      )
+        .toString()
+        .toLowerCase();
+    };
+
+    const getMessageContent = (message: any): any => {
+      return (
+        message?.content ??
+        message?.lc_kwargs?.content ??
+        message?.kwargs?.content ??
+        message?.additional_kwargs?.content
+      );
+    };
+
+    const isAIMessage = (message: any): boolean => {
+      const type = getMessageType(message);
+
+      return (
+        type === "ai" ||
+        type === "assistant" ||
+        type === "aimessage" ||
+        type.includes("aimessage") ||
+        type.includes("ai_message")
+      );
+    };
+
+    const formatContent = (content: any): string => {
+      if (typeof content === "string") {
+        return content;
+      }
+
+      if (Array.isArray(content)) {
+        return content
+          .map((block) => {
+            if (typeof block === "string") {
+              return block;
+            }
+
+            if (block?.type === "text" && typeof block.text === "string") {
+              return block.text;
+            }
+
+            if (typeof block?.text === "string") {
+              return block.text;
+            }
+
+            if (typeof block?.content === "string") {
+              return block.content;
+            }
+
+            return JSON.stringify(block);
+          })
+          .join("");
+      }
+
+      if (content && typeof content === "object") {
+        return JSON.stringify(content);
+      }
+
+      return "";
+    };
+
+    // Prefer the last AI/assistant message with non-empty content
+    const lastAIMessageWithContent = [...messages].reverse().find((message) => {
+      if (!isAIMessage(message)) return false;
+
+      const content = getMessageContent(message);
+      const formatted = formatContent(content).trim();
+
+      return formatted.length > 0;
     });
 
-    const message = lastAssistantMessage ?? messages[messages.length - 1];
-    const content = (message as any)?.content;
-
-    if (typeof content === "string") {
-      return content;
+    if (lastAIMessageWithContent) {
+      return formatContent(getMessageContent(lastAIMessageWithContent));
     }
 
-    if (Array.isArray(content)) {
-      return content
-        .map((block) => {
-          if (typeof block === "string") {
-            return block;
-          }
-          if (block?.type === "text" && typeof block.text === "string") {
-            return block.text;
-          }
-          return JSON.stringify(block);
-        })
-        .join("");
+    // Fallback: last message with any non-empty content, but skip ToolMessage if possible
+    const lastMessageWithContent = [...messages].reverse().find((message) => {
+      const type = getMessageType(message);
+      if (type === "tool" || type === "toolmessage") return false;
+
+      const content = getMessageContent(message);
+      return formatContent(content).trim().length > 0;
+    });
+
+    if (lastMessageWithContent) {
+      return formatContent(getMessageContent(lastMessageWithContent));
     }
 
-    return content ? JSON.stringify(content) : "";
+    // Last fallback: stringify final message safely
+    const lastMessage = messages[messages.length - 1];
+    const fallbackContent = getMessageContent(lastMessage);
+
+    if (fallbackContent) {
+      return formatContent(fallbackContent);
+    }
+
+    return JSON.stringify(result);
   }
 }

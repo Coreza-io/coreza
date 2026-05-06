@@ -137,8 +137,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     data.values?.cases,
   ]);
 
-  // Memoize dynamic handles for Switch nodes to prevent infinite re-renders
+  // Memoize dynamic handles - swap to tool handle when isTool is active
   const dynamicHandles = useMemo(() => {
+    // Tool mode: only expose the top "tool" source handle
+    if (isTool) return TOOL_HANDLE;
+
     if (definition.name !== "Switch") {
       return definition.handles || [];
     }

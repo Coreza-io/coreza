@@ -336,6 +336,7 @@ export class AIAgentExecutor implements INodeExecutor {
             name: node.name?.endsWith("Tool")
               ? node.name.replace(/Tool$/, "")
               : node.name,
+            values: { ...node.values, ...unwrappedInput },
           };
 
           // Get the executor for this node category

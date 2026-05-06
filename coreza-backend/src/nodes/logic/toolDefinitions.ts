@@ -24,19 +24,19 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   },
   Alpaca: {
     description: "Request historical or real-time market data from Alpaca.",
-    category: "Market",
+    category: "Broker",
   },
   Binance: {
     description: "Get crypto market data from Binance including kline candles.",
-    category: "Market",
+    category: "Broker",
   },
   Schwab: {
     description: "Access equity market data from Charles Schwab.",
-    category: "Market",
+    category: "Broker",
   },
   Dhan: {
     description: "Fetch market data from Dhan for Indian markets.",
-    category: "Market",
+    category: "Broker",
   },
   Market: {
     description: "Generic market data fetcher supporting broker data sources.",

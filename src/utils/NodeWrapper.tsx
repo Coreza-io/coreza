@@ -152,6 +152,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   executionStatus,
   executionDuration,
   itemCount,
+  // Tool mode
+  isTool = false,
+  onToggleTool,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);

@@ -5,7 +5,7 @@
   "icon": "/assets/icons/macd.svg",
   "category": "Indicators",
   "subcategory": "Trend Indicators",
-  "description": "MACD (Moving Average Convergence Divergence) indicator to measure momentum and trend strength",
+  "description": "MACD (Moving Average Convergence Divergence) - momentum and trend strength indicator using fast/slow EMA crossovers and histogram divergence.",
   "color": "text-purple-500",
   "size": {
     "width": 320,
@@ -39,14 +39,16 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT)."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "text",
       "placeholder": "e.g. 1d",
-      "required": true
+      "required": true,
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d)."
     },
     {
       "key": "fastPeriod",
@@ -54,7 +56,8 @@
       "type": "text",
       "placeholder": "e.g. 12",
       "default": "12",
-      "required": true
+      "required": true,
+      "description": "Period for fast EMA."
     },
     {
       "key": "slowPeriod",
@@ -62,7 +65,8 @@
       "type": "text",
       "placeholder": "e.g. 26",
       "default": "26",
-      "required": true
+      "required": true,
+      "description": "Period for slow EMA. Must be greater than fast period."
     },
     {
       "key": "signalPeriod",
@@ -70,7 +74,8 @@
       "type": "text",
       "placeholder": "e.g. 9",
       "default": "9",
-      "required": true
+      "required": true,
+      "description": "Period for signal line."
     }
   ]
 }

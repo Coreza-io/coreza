@@ -218,7 +218,9 @@ export function useNodeExecution({
           .filter(
             (n) =>
               attachedNodeIds.has(n.id) &&
-              (n.data?.definition as any)?.node_type === "sub",
+              ((n.data?.definition as any)?.node_type === "sub" ||
+                (n.data as any)?.values?.__isTool === true ||
+                (n.data as any)?.fieldState?.__isTool === true),
           )
           .map((n) => n.id),
       );
@@ -226,16 +228,24 @@ export function useNodeExecution({
       // Serialize only nodes and edges attached to this AIAgent
       payload.support_nodes = nodes
         .filter((n) => supportNodeIds.has(n.id))
-        .map((n) => ({
-          id: n.id,
-          name: (n.data?.definition as any)?.name,
-          node_type: (n.data?.definition as any)?.node_type,
-          category: (n.data?.definition as any)?.category,
-          subCategory: (n.data?.definition as any)?.subCategory,
-          provider: (n.data?.definition as any)?.provider,
-          values: n.data?.values || {},
-          position: n.position,
-        }));
+        .map((n) => {
+          const def = n.data?.definition as any;
+          const isToolToggled = (n.data as any)?.values?.__isTool === true ||
+            (n.data as any)?.fieldState?.__isTool === true;
+          return {
+            id: n.id,
+            name: def?.name,
+            description: def?.description,
+            node_type: isToolToggled ? "sub" : def?.node_type,
+            category: def?.category,
+            subCategory: def?.subCategory,
+            provider: def?.provider,
+            values: n.data?.values || {},
+            fields: def?.fields,
+            position: n.position,
+            __isTool: isToolToggled,
+          };
+        });
       payload.edges = attachedEdges
         .filter(
           (e) =>

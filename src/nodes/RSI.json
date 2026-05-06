@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/rsi.svg",
   "category": "Indicators",
-  "description": "Relative Strength Index indicator",
+  "description": "Relative Strength Index - momentum oscillator measuring speed and magnitude of price changes. Values above 70 indicate overbought, below 30 oversold.",
   "color": "text-blue-500",
   "size": {
     "width": 300,
@@ -38,14 +38,16 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT)."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "text",
       "placeholder": "e.g. 1d",
-      "required": true
+      "required": true,
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d)."
     },
     {
       "key": "window",
@@ -53,7 +55,8 @@
       "type": "text",
       "placeholder": "e.g. 20",
       "default": "20",
-      "required": true
+      "required": true,
+      "description": "Number of periods for RSI calculation. For volatile stocks, use longer periods to reduce noise."
     }
   ]
 }

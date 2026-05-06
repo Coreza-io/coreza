@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/bollinger.svg",
   "category": "Indicators",
-  "description": "Bollinger Bands to detect volatility, price envelopes, and breakout signals",
+  "description": "Bollinger Bands - volatility indicator with upper/lower bands based on standard deviations. Price touching bands may indicate overbought/oversold conditions or breakouts.",
   "color": "text-sky-500",
   "size": {
     "width": 340,
@@ -38,14 +38,16 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT)."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "text",
       "placeholder": "e.g. 1d",
-      "required": true
+      "required": true,
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d)."
     },
     {
       "key": "period",
@@ -53,7 +55,8 @@
       "type": "text",
       "default": "20",
       "placeholder": "e.g. 20",
-      "required": true
+      "required": true,
+      "description": "Period for middle band SMA."
     },
     {
       "key": "std_dev_multiplier",
@@ -61,7 +64,8 @@
       "type": "text",
       "default": "2",
       "placeholder": "e.g. 2",
-      "required": true
+      "required": true,
+      "description": "Standard deviations for bands.5 for low volatility stocks, 2.0 for standard, 2.5-3.0 for highly volatile stocks to avoid false breakout signals."
     }
   ]
 }

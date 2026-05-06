@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/volume-oscillator.svg",
   "category": "Indicators",
-  "description": "Volume Oscillator showing difference between two volume moving averages",
+  "description": "Volume Oscillator - shows difference between two volume moving averages to identify volume trends and divergences.",
   "color": "text-purple-500",
   "size": {
     "width": 300,
@@ -38,14 +38,16 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT)."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "text",
       "placeholder": "e.g. 1d",
-      "required": true
+      "required": true,
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d)."
     },
     {
       "key": "short_period",
@@ -53,7 +55,8 @@
       "type": "text",
       "placeholder": "e.g. 12",
       "default": "12",
-      "required": true
+      "required": true,
+      "description": "Period for short-term volume MA."
     },
     {
       "key": "long_period",
@@ -61,7 +64,8 @@
       "type": "text",
       "placeholder": "e.g. 26",
       "default": "26",
-      "required": true
+      "required": true,
+      "description": "Period for long-term volume MA. Must be greater than short period."
     },
     {
       "key": "type",
@@ -78,7 +82,8 @@
         }
       ],
       "default": "percentage",
-      "required": true
+      "required": true,
+      "description": "Output format: 'percentage' for comparing across stocks, 'absolute' for raw volume difference analysis."
     }
   ]
 }

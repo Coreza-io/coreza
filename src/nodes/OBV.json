@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/obv.svg",
   "category": "Indicators",
-  "description": "On-Balance Volume indicator to detect volume-driven momentum trends",
+  "description": "On-Balance Volume - cumulative volume indicator that adds volume on up days and subtracts on down days to confirm price trends.",
   "color": "text-orange-500",
   "size": {
     "width": 300,
@@ -38,14 +38,16 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT)."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "text",
       "placeholder": "e.g. 1d",
-      "required": true
+      "required": true,
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d)."
     }
   ]
 }

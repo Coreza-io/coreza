@@ -14,12 +14,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { memo, useMemo, useState, useEffect, useRef } from "react";
+import React, { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layout/BasicNodeLayout";
 import RepeaterNodeLayout from "./layout/RepeaterNodeLayout";
-import { useNodeId } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
@@ -30,12 +30,37 @@ interface NodeRouterProps {
   selected: boolean;
 }
 
+// Tool handle used when node is toggled to tool mode
+const TOOL_HANDLE = [{ type: "source" as const, position: "top" as const, id: "tool" }];
+
 const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodeId = useNodeId();
   const { getNodes, getEdges } = useStableNodes();
+  const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
 
   const definition = data.definition;
+
+  // Tool mode toggle: read from fieldState first, then persisted values
+  const isTool = data.fieldState?.__isTool ?? data.values?.__isTool ?? false;
+
+  const handleToggleTool = useCallback(() => {
+    if (!nodeId) return;
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                values: { ...((n.data as any).values || {}), __isTool: !isTool },
+                fieldState: { ...((n.data as any).fieldState || {}), __isTool: !isTool },
+              },
+            }
+          : n,
+      ),
+    );
+  }, [nodeId, isTool, setNodes]);
 
   const fallbackEnabled = useMemo(() => {
     if (definition.name !== "Switch") return false;
@@ -112,8 +137,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     data.values?.cases,
   ]);
 
-  // Memoize dynamic handles for Switch nodes to prevent infinite re-renders
+  // Memoize dynamic handles - swap to tool handle when isTool is active
   const dynamicHandles = useMemo(() => {
+    // Tool mode: only expose the top "tool" source handle
+    if (isTool) return TOOL_HANDLE;
+
     if (definition.name !== "Switch") {
       return definition.handles || [];
     }
@@ -178,6 +206,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
     return handles;
   }, [
+    isTool,
     definition.name,
     definition.handles,
     definition.fields,
@@ -353,6 +382,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           finishEditing={renderProps.finishEditing}
           setEditingName={renderProps.setEditingName}
           isExecuting={data.isExecuting}
+          isTool={isTool}
+          onToggleTool={handleToggleTool}
         >
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />

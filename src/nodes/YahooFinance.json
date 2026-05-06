@@ -4,10 +4,21 @@
   "node_type": "main",
   "category": "Data",
   "icon": "/assets/icons/YahooFinance.svg",
-  "size": { "width": 340, "height": 420 },
+  "size": {
+    "width": 340,
+    "height": 420
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/datasource/yahoofinance/:operation",
@@ -18,7 +29,12 @@
       "key": "operation",
       "label": "Operation",
       "type": "select",
-      "options": [{ "id": "get_history", "name": "Get Candle" }],
+      "options": [
+        {
+          "id": "get_history",
+          "name": "Get Candle"
+        }
+      ],
       "default": "get_history",
       "required": true
     },
@@ -27,32 +43,56 @@
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "Stock ticker symbol (e.g., AAPL for Apple, TSLA for Tesla, MSFT for Microsoft)."
     },
     {
       "key": "interval",
       "label": "Interval",
       "type": "select",
       "options": [
-        { "id": "1m", "name": "1 min" },
-        { "id": "5m", "name": "5 min" },
-        { "id": "15m", "name": "15 min" },
-        { "id": "60m", "name": "1 hour" },
-        { "id": "1d", "name": "1 day" }
+        {
+          "id": "1m",
+          "name": "1 min"
+        },
+        {
+          "id": "5m",
+          "name": "5 min"
+        },
+        {
+          "id": "15m",
+          "name": "15 min"
+        },
+        {
+          "id": "60m",
+          "name": "1 hour"
+        },
+        {
+          "id": "1d",
+          "name": "1 day"
+        }
       ],
       "placeholder": "Select interval",
-      "required": true
+      "required": true,
+      "description": "Time interval between data points. Use 1d for daily analysis, shorter intervals for intraday."
     },
     {
       "key": "date_mode",
       "label": "Date Mode",
       "type": "select",
       "options": [
-        { "id": "lookback", "name": "Lookback (Bars)" },
-        { "id": "range", "name": "Date Range" }
+        {
+          "id": "lookback",
+          "name": "Lookback (Bars)"
+        },
+        {
+          "id": "range",
+          "name": "Date Range"
+        }
       ],
       "default": "lookback",
-      "required": true
+      "required": true,
+      "description": "How to specify date range. Use 'lookback' (RECOMMENDED) to get most recent N bars from today. Use 'range' only for specific historical periods like backtesting."
     },
     {
       "key": "lookback",
@@ -62,9 +102,12 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": ["lookback"]
+          "date_mode": [
+            "lookback"
+          ]
         }
-      }
+      },
+      "description": "Number of bars/periods to fetch backwards from today. For example, 90 with interval '1d' gets the last 90 days of daily data."
     },
     {
       "key": "start_date",
@@ -74,9 +117,12 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": ["range"]
+          "date_mode": [
+            "range"
+          ]
         }
-      }
+      },
+      "description": "Start date for historical data range. Format: YYYY-MM-DD. Only used when date_mode is 'range'."
     },
     {
       "key": "end_date",
@@ -86,9 +132,12 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "date_mode": ["range"]
+          "date_mode": [
+            "range"
+          ]
         }
-      }
+      },
+      "description": "End date for historical data range. Format: YYYY-MM-DD. Defaults to today if not specified."
     }
   ]
 }

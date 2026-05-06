@@ -18,14 +18,31 @@
       "placeholder": "Your Polygon.io API key"
     }
   ],
-  "authAction": { "url": "/datasource/polygon/auth", "method": "POST" },
+  "authAction": {
+    "url": "/datasource/polygon/auth",
+    "method": "POST"
+  },
   "icon": "/assets/icons/polygon.svg",
-  "size": { "width": 340, "height": 420 },
+  "size": {
+    "width": 340,
+    "height": 420
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
-  "action": { "url": "/datasource/polygon/:operation", "method": "POST" },
+  "action": {
+    "url": "/datasource/polygon/:operation",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "credential_id",
@@ -33,41 +50,78 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "description": "Your saved Polygon.io API credential."
     },
     {
       "key": "operation",
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "ticker_details", "name": "Ticker Details" },
-        { "id": "financials", "name": "Financials (Income/Balance/Cash Flow)" },
-        { "id": "dividends", "name": "Dividends" },
-        { "id": "splits", "name": "Stock Splits" },
-        { "id": "news", "name": "Ticker News" },
-        { "id": "related_companies", "name": "Related Companies" }
+        {
+          "id": "ticker_details",
+          "name": "Ticker Details"
+        },
+        {
+          "id": "financials",
+          "name": "Financials (Income/Balance/Cash Flow)"
+        },
+        {
+          "id": "dividends",
+          "name": "Dividends"
+        },
+        {
+          "id": "splits",
+          "name": "Stock Splits"
+        },
+        {
+          "id": "news",
+          "name": "Ticker News"
+        },
+        {
+          "id": "related_companies",
+          "name": "Related Companies"
+        }
       ],
       "default": "ticker_details",
-      "required": true
+      "required": true,
+      "description": "Type of data to fetch: company details, financial statements, dividend history, split history, news, or related tickers."
     },
     {
       "key": "ticker",
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "Stock ticker symbol to fetch data for."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "select",
       "options": [
-        { "id": "quarterly", "name": "Quarterly" },
-        { "id": "annual", "name": "Annual" },
-        { "id": "ttm", "name": "TTM (Trailing 12 Months)" }
+        {
+          "id": "quarterly",
+          "name": "Quarterly"
+        },
+        {
+          "id": "annual",
+          "name": "Annual"
+        },
+        {
+          "id": "ttm",
+          "name": "TTM (Trailing 12 Months)"
+        }
       ],
       "default": "annual",
-      "displayOptions": { "show": { "operation": ["financials"] } }
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "financials"
+          ]
+        }
+      },
+      "description": "Reporting period for financial data."
     },
     {
       "key": "limit",
@@ -76,8 +130,16 @@
       "placeholder": "10",
       "default": "10",
       "displayOptions": {
-        "show": { "operation": ["news", "dividends", "splits", "financials"] }
-      }
+        "show": {
+          "operation": [
+            "news",
+            "dividends",
+            "splits",
+            "financials"
+          ]
+        }
+      },
+      "description": "Maximum number of results to return."
     }
   ]
 }

@@ -22,7 +22,7 @@ import { Handle, Position, useReactFlow } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, Edit2, Trash2, Loader2 } from "lucide-react";
+import { X, Edit2, Trash2, Loader2, Wrench } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import {
   FemalePlugIcon,
@@ -112,6 +112,9 @@ interface NodeWrapperProps {
   executionStatus?: "success" | "failed" | "pending" | "running" | "skipped";
   executionDuration?: number;
   itemCount?: number;
+  // Tool mode toggle
+  isTool?: boolean;
+  onToggleTool?: () => void;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -149,6 +152,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   executionStatus,
   executionDuration,
   itemCount,
+  // Tool mode
+  isTool = false,
+  onToggleTool,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -528,6 +534,29 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             {readOnly && itemCount !== undefined && itemCount > 0 && (
               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
                 {itemCount} item{itemCount !== 1 ? "s" : ""}
+              </div>
+            )}
+            {/* Tool mode toggle - only in editor mode */}
+            {!readOnly && onToggleTool && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleTool();
+                }}
+                title={isTool ? "Switch to normal node" : "Switch to AI tool mode"}
+                className={`absolute bottom-1 right-1 z-10 h-5 w-5 flex items-center justify-center rounded transition-colors nodrag ${
+                  isTool
+                    ? "bg-primary/20 text-primary"
+                    : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50 opacity-0 group-hover:opacity-100"
+                }`}
+              >
+                <Wrench className="h-3 w-3" />
+              </button>
+            )}
+            {/* Tool mode badge indicator */}
+            {isTool && (
+              <div className="absolute top-1 left-1 z-10 text-[9px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                TOOL
               </div>
             )}
           </div>

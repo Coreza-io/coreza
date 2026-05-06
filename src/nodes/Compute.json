@@ -36,9 +36,12 @@
       "required": true,
       "displayOptions": {
         "hide": {
-          "operator": ["now"]
+          "operator": [
+            "now"
+          ]
         }
-      }
+      },
+      "description": "The value to transform. For date operations like 'now' and 'today', this can be empty."
     },
     {
       "key": "operator",
@@ -153,7 +156,7 @@
         },
         "datetime": {
           "label": "Date & Time",
-          "icon": "📅",
+          "icon": "\ud83d\udcc5",
           "options": [
             {
               "label": "Now",
@@ -219,7 +222,7 @@
         },
         "array": {
           "label": "Array",
-          "icon": "≡",
+          "icon": "\u2261",
           "options": [
             {
               "label": "Length",
@@ -329,7 +332,7 @@
         },
         "object": {
           "label": "Object",
-          "icon": "⊕",
+          "icon": "\u2295",
           "options": [
             {
               "label": "Get Keys",
@@ -377,7 +380,8 @@
             }
           ]
         }
-      }
+      },
+      "description": "The transformation operation to perform."
     },
     {
       "key": "arg1",
@@ -458,7 +462,8 @@
           "find": "Property Name",
           "filter": "Property Name"
         }
-      }
+      },
+      "description": "Primary argument for the operation (e.g., format string, amount, search string)."
     },
     {
       "key": "unit",
@@ -506,7 +511,8 @@
             "extract"
           ]
         }
-      }
+      },
+      "description": "Time unit for date operations."
     },
     {
       "key": "date2",
@@ -515,9 +521,15 @@
       "placeholder": "Date to compare",
       "displayOptions": {
         "show": {
-          "operator": ["difference", "isBefore", "isAfter", "isSameDay"]
+          "operator": [
+            "difference",
+            "isBefore",
+            "isAfter",
+            "isSameDay"
+          ]
         }
-      }
+      },
+      "description": "Second date for comparison or difference calculations."
     },
     {
       "key": "timezone",
@@ -632,9 +644,13 @@
       "default": "UTC",
       "displayOptions": {
         "show": {
-          "operator": ["now", "convertTimezone"]
+          "operator": [
+            "now",
+            "convertTimezone"
+          ]
         }
-      }
+      },
+      "description": "IANA timezone identifier (e.g., America/New_York, Europe/London, Asia/Tokyo)."
     },
     {
       "key": "targetDay",
@@ -673,9 +689,12 @@
       "default": "1",
       "displayOptions": {
         "show": {
-          "operator": ["isDayOfWeek"]
+          "operator": [
+            "isDayOfWeek"
+          ]
         }
-      }
+      },
+      "description": "Day of week to check (0=Sunday, 6=Saturday)."
     },
     {
       "key": "filterOperator",
@@ -738,9 +757,13 @@
       "default": "===",
       "displayOptions": {
         "show": {
-          "operator": ["find", "filter"]
+          "operator": [
+            "find",
+            "filter"
+          ]
         }
-      }
+      },
+      "description": "Comparison operator for find/filter operations."
     },
     {
       "key": "mapSubOperation",
@@ -798,7 +821,9 @@
       ],
       "displayOptions": {
         "show": {
-          "operator": ["map"]
+          "operator": [
+            "map"
+          ]
         }
       }
     },
@@ -809,7 +834,9 @@
       "placeholder": "0",
       "displayOptions": {
         "show": {
-          "operator": ["map"]
+          "operator": [
+            "map"
+          ]
         }
       }
     },
@@ -855,7 +882,9 @@
       "description": "Format of the incoming date value.",
       "displayOptions": {
         "show": {
-          "operator": ["formatDate"]
+          "operator": [
+            "formatDate"
+          ]
         }
       }
     },
@@ -905,7 +934,9 @@
       "description": "Desired output format for the date.",
       "displayOptions": {
         "show": {
-          "operator": ["formatDate"]
+          "operator": [
+            "formatDate"
+          ]
         }
       }
     },
@@ -917,7 +948,9 @@
       "description": "Custom date format pattern using YYYY, MM, DD, HH, mm, ss tokens.",
       "displayOptions": {
         "show": {
-          "outputFormat": ["custom"]
+          "outputFormat": [
+            "custom"
+          ]
         }
       }
     },
@@ -951,7 +984,8 @@
           "filter": "Match Value",
           "formatDate": "Output Format (e.g. YYYY-MM-DD)"
         }
-      }
+      },
+      "description": "Secondary argument (e.g., replacement string, end index, match value)."
     }
   ]
 }

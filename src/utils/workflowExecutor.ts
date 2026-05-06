@@ -89,7 +89,8 @@ export class WorkflowExecutor {
   private isSubNode(id: string) {
     const n = this.context.nodes.find((x) => x.id === id);
     const nodeType = (n?.data?.definition as any)?.node_type;
-    return nodeType === "sub";
+    const isTool = (n?.data as any)?.values?.__isTool === true;
+    return nodeType === "sub" || isTool;
   }
 
   private isStreamingNode(nodeId: string): boolean {

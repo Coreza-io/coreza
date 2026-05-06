@@ -230,6 +230,20 @@ export function useNodeExecution({
         .filter((n) => supportNodeIds.has(n.id))
         .map((n) => {
           const def = n.data?.definition as any;
+          const nodeValues = n.data?.values || {};
+          const allFields = def?.fields || [];
+          const visibleFields = allFields.filter((f: any) =>
+            isFieldVisible(f, nodeValues),
+          );
+          const visibleKeys = new Set(visibleFields.map((f: any) => f.key));
+          const filteredValues: Record<string, any> = {};
+
+          for (const key of Object.keys(nodeValues)) {
+            if (visibleKeys.has(key) || key === "__isTool") {
+              filteredValues[key] = nodeValues[key];
+            }
+          }
+
           const isToolToggled = (n.data as any)?.values?.__isTool === true ||
             (n.data as any)?.fieldState?.__isTool === true;
           return {
@@ -240,8 +254,8 @@ export function useNodeExecution({
             category: def?.category,
             subCategory: def?.subCategory,
             provider: def?.provider,
-            values: n.data?.values || {},
-            fields: def?.fields,
+            values: filteredValues,
+            fields: visibleFields,
             position: n.position,
             __isTool: isToolToggled,
           };

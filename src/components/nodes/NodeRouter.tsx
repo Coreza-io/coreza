@@ -30,12 +30,37 @@ interface NodeRouterProps {
   selected: boolean;
 }
 
+// Tool handle used when node is toggled to tool mode
+const TOOL_HANDLE = [{ type: "source" as const, position: "top" as const, id: "tool" }];
+
 const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodeId = useNodeId();
   const { getNodes, getEdges } = useStableNodes();
+  const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
 
   const definition = data.definition;
+
+  // Tool mode toggle: read from fieldState first, then persisted values
+  const isTool = data.fieldState?.__isTool ?? data.values?.__isTool ?? false;
+
+  const handleToggleTool = useCallback(() => {
+    if (!nodeId) return;
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                values: { ...n.data.values, __isTool: !isTool },
+                fieldState: { ...n.data.fieldState, __isTool: !isTool },
+              },
+            }
+          : n,
+      ),
+    );
+  }, [nodeId, isTool, setNodes]);
 
   const fallbackEnabled = useMemo(() => {
     if (definition.name !== "Switch") return false;

@@ -1,55 +1,29 @@
 
-# Dynamic Binance Trade Update Stream Type Based on Market Type
+## Convert Node Palette to Collapsible Category Dropdowns
 
-## Problem
-The "Trade Updates (Fills)" toggle in BinanceStreamData always sends `ORDER_TRADE_UPDATE` as the stream type, regardless of whether Spot or Futures is selected. Binance Spot uses `executionReport` while Futures uses `ORDER_TRADE_UPDATE`. The backend already handles both correctly, but the frontend needs to send the right value.
+### What Changes
 
-## Approach
-Add a new `valueMap` property to multiselect options in the node JSON schema. This allows a single toggle to resolve to different values based on another field's value. The `NodeFieldRenderer` multiselect handler will check for `valueMap` and swap the option id dynamically.
+**File: `src/components/workflow/NodePalette.tsx`**
 
-## Changes
+Currently all categories are always expanded, showing every node at once. This makes the palette long and hard to navigate.
 
-### 1. `src/nodes/BinanceStreamData.json`
-Replace the hardcoded `ORDER_TRADE_UPDATE` option with a `valueMap`-enabled option:
+The change converts each category header into a clickable accordion row with a chevron icon. Clicking a category toggles its node list open/closed.
 
-```json
-{
-  "id": "ORDER_TRADE_UPDATE",
-  "name": "Trade Updates (Fills)",
-  "valueMap": {
-    "field": "marketType",
-    "values": {
-      "spot": "executionReport",
-      "futures": "ORDER_TRADE_UPDATE"
-    }
-  }
-}
-```
+### Behavior
 
-Also fix the typo: "Tarde Updates" -> "Trade Updates" (line 188).
+1. **Default state**: All categories collapsed (just category names with node count and chevron-right icon visible).
+2. **Click a category**: It expands to reveal its nodes with a smooth animation (chevron rotates to chevron-down).
+3. **Multiple open**: Allow multiple categories open simultaneously (not mutually exclusive).
+4. **Search override**: When the user types in the search box, all matching categories auto-expand so results are visible. When search is cleared, categories return to their previous collapsed/expanded state.
+5. **Node count badge**: Show the number of nodes in each category next to the name (e.g., "Indicators (8)").
 
-Do the same for the `filter_types` section (line 438).
+### Implementation Details
 
-### 2. `src/components/nodes/layout/components/NodeFieldRenderer.tsx`
-In the multiselect renderer (line ~562-592):
+- Add `expandedCategories` state (`Set<string>`) to track which categories are open.
+- Replace the static `<h4>` category header with a clickable `<button>` containing the category name, node count, and a `ChevronRight`/`ChevronDown` icon.
+- Wrap the node list `<div>` in a conditional render based on whether the category is in the expanded set.
+- Use `framer-motion`'s `AnimatePresence` + `motion.div` with height animation for smooth expand/collapse.
+- When `searchQuery` is non-empty, render all matching categories as expanded regardless of the `expandedCategories` state.
+- Add appropriate category-specific icons (e.g., `TrendingUp` for Indicators, `DollarSign` for Broker, `GitBranch` for ControlFlow, etc.) instead of using `BarChart3` for everything.
 
-- Filter out options that have per-option `displayOptions` that don't match current field state (this already exists for some options like markPrice/liquidation but the renderer doesn't filter them).
-- When toggling an option that has a `valueMap`, resolve the actual id based on the referenced field's current value. When toggling ON, insert the resolved id. When toggling OFF, remove both possible mapped values to avoid stale entries.
-- When checking `isSelected`, check against all possible mapped values from `valueMap`.
-
-### 3. `src/nodes/schemas/nodeSchema.ts`
-Add `valueMap` to the option type definition so TypeScript is aware of the property (if the schema defines option types).
-
-## How It Works (User Experience)
-- User selects Market Type = Spot
-- User toggles "Trade Updates (Fills)" ON
-- Frontend stores `["executionReport"]` in the `stream_type` array
-- User switches Market Type to Futures
-- Frontend automatically resolves to `["ORDER_TRADE_UPDATE"]`
-- Backend receives the correct native event type
-
-## Backend Impact
-None. The backend's `ORDER_UPDATE_MARKERS` set and `computeTradingNativeStreams` already handle both `executionReport` and `ORDER_TRADE_UPDATE`. This change ensures the frontend sends the correct value upfront.
-
-## Also Fix
-- Per-option `displayOptions` filtering: the multiselect renderer currently shows all options regardless of per-option displayOptions. Add filtering using the existing `isFieldVisible` helper so futures-only options (markPrice, liquidation, etc.) are hidden when spot is selected.
+### No other files change. No backend changes.

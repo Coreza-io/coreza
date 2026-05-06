@@ -53,8 +53,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
               ...n,
               data: {
                 ...n.data,
-                values: { ...n.data.values, __isTool: !isTool },
-                fieldState: { ...n.data.fieldState, __isTool: !isTool },
+                values: { ...(n.data.values || {}), __isTool: !isTool },
+                fieldState: { ...(n.data.fieldState || {}), __isTool: !isTool },
               },
             }
           : n,

@@ -206,6 +206,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
     return handles;
   }, [
+    isTool,
     definition.name,
     definition.handles,
     definition.fields,

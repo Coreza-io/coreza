@@ -419,7 +419,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
     switch (field.type) {
       case "number":
-        zodType = z.number();
+        zodType = z.coerce.number();
         if (field.default !== undefined) {
           zodType = zodType.default(Number(field.default));
         }

@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { memo, useMemo, useState, useEffect, useRef } from "react";
+import React, { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layout/BasicNodeLayout";

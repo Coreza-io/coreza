@@ -57,8 +57,10 @@ export class AIAgentExecutor implements INodeExecutor {
 
     // Create DataContext for this agent execution
     const executionId =
-      context?.executionId || context?.runId || `agent-${node.id}-${Date.now()}`;
-    const workflowId = context?.workflow_id || "unknown";
+      context?.executionId ||
+      context?.runId ||
+      `agent-${node.id}-${Date.now()}`;
+    const workflowId = context?.workflowId || "unknown";
     const userId = context?.userId || "unknown";
 
     const dataContextManager = DataContextManager.getInstance();
@@ -284,7 +286,9 @@ export class AIAgentExecutor implements INodeExecutor {
       const isToggled = (toolNode as any).__isTool === true;
       const tool = this.createToolFromNode(toolNode, context);
       tools.push(tool);
-      console.log(`✅ [AIAgent] Added tool: ${tool.name}${isToggled ? ' (toggled)' : ''}`);
+      console.log(
+        `✅ [AIAgent] Added tool: ${tool.name}${isToggled ? " (toggled)" : ""}`,
+      );
     }
 
     return tools;
@@ -569,15 +573,16 @@ export class AIAgentExecutor implements INodeExecutor {
       : nodeName;
 
     const executorCategoryMap: Record<string, string> = {
+      //Broker
+      Alpaca: "Broker",
+      Binance: "Broker",
+      Schwab: "Broker",
+      Dhan: "Broker",
       // Market data providers
       YahooFinance: "DataSource",
       FinnHub: "DataSource",
       Polygon: "DataSource",
       Market: "Market",
-      Alpaca: "Market",
-      Binance: "Market",
-      Schwab: "Market",
-      Dhan: "Market",
 
       // Indicators
       RSI: "Indicators",
@@ -592,12 +597,6 @@ export class AIAgentExecutor implements INodeExecutor {
       VWAP: "Indicators",
       VolumeOscillator: "Indicators",
       SupportResistance: "Indicators",
-
-      // Brokers
-      AlpacaTrade: "Broker",
-      BinanceTrade: "Broker",
-      DhanTrade: "Broker",
-      SchwabTrade: "Broker",
 
       // Screeners
       AlpacaScreener: "Screener",

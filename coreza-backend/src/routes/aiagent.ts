@@ -44,7 +44,7 @@ router.post("/execute", async (req: Request, res: Response) => {
       returnIntermediateSteps,
       support_nodes: workflowNodes,
       edges: workflowEdges,
-      workflow_id,
+      workflowId,
     } = req.body;
 
     console.log("🤖 [AI AGENT ROUTE] Received execution request");
@@ -93,8 +93,8 @@ router.post("/execute", async (req: Request, res: Response) => {
       userId,
       nodes: workflowNodes,
       edges: workflowEdges,
-      workflow_id,
-      executionId: req.body.workflowSessionId || workflow_id,
+      workflowId,
+      executionId: req.body.workflowSessionId || workflowId,
       // Add a simple resolver function
       resolveNodeParameters: (node: WorkflowNode, input: any) => {
         return { ...node.values, ...input };

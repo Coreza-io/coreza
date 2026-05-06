@@ -1,9 +1,9 @@
 {
-  "name": "BinanceSubscribe",
-  "def": "Binance Subscribe",
+  "name": "BinanceStreamSubscribe",
+  "def": "Binance Stream Subscribe",
   "node_type": "main",
   "icon": "/assets/icons/binance.svg",
-  "category": "Market",
+  "category": "Stream",
   "subCategory": "binance",
   "description": "Subscribe or unsubscribe to Binance real-time market data. Subscriptions persist and can be received by any activated BinanceStreamData trigger.",
   "color": "text-yellow-500",
@@ -159,9 +159,7 @@
           "name": "Mark Price Update",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -170,9 +168,7 @@
           "name": "Liquidation (forceOrder)",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -181,9 +177,7 @@
           "name": "Continuous Kline",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -192,9 +186,7 @@
           "name": "Index Price Update",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -203,16 +195,12 @@
           "name": "Composite Index",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         }
       ],
-      "default": [
-        "kline"
-      ],
+      "default": ["kline"],
       "description": "Select Binance market data stream types",
       "required": true,
       "showDescription": false
@@ -286,9 +274,7 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "stream_types": [
-            "kline"
-          ]
+          "stream_types": ["kline"]
         }
       },
       "description": "Candlestick timeframe for kline data",
@@ -323,9 +309,7 @@
       "default": "10",
       "displayOptions": {
         "show": {
-          "stream_types": [
-            "depth"
-          ]
+          "stream_types": ["depth"]
         }
       },
       "description": "Number of order book levels to receive",
@@ -352,12 +336,8 @@
       "default": "perpetual",
       "displayOptions": {
         "show": {
-          "marketType": [
-            "futures"
-          ],
-          "stream_types": [
-            "continuous_kline"
-          ]
+          "marketType": ["futures"],
+          "stream_types": ["continuous_kline"]
         }
       }
     },
@@ -403,9 +383,7 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "scope": [
-            "workflow"
-          ]
+          "scope": ["workflow"]
         }
       },
       "default": "__current__"

@@ -100,12 +100,14 @@ export class BrokerExecutor implements INodeExecutor {
     let shouldPersistRedisState = true;
     const userId = context?.userId ?? "system";
     const workflowId = context?.workflowId ?? "manual";
+    let operation = "";
+    let broker = "";
 
     let preRegisteredClientOrderId: string | null = null;
     try {
-      const operation = node.values?.operation;
+      operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory: string };
-      const broker = (brokerNode.subCategory ?? node.name).toLowerCase();
+      broker = (brokerNode.subCategory ?? node.name).toLowerCase();
       const credential_id = node.values?.credential_id;
       //shouldPersistRedisState = context?.executionMode === "live";
 
@@ -322,21 +324,7 @@ export class BrokerExecutor implements INodeExecutor {
               ? extractAlpacaOrderOwnerIds(data)
               : broker === "binance"
                 ? extractBinanceOrderOwnerIds(data)
-                : {
-                    clientOrderId: String(
-                      data?.client_order_id ?? data?.clientOrderId ?? "",
-                    ).trim() || undefined,
-                    orderId: String(data?.order_id ?? data?.orderId ?? data?.id ?? "").trim() || undefined,
-                    clientAlgoId: String(
-                      data?.client_algo_id ?? data?.clientAlgoId ?? "",
-                    ).trim() || undefined,
-                    algoId: String(data?.algo_id ?? data?.algoId ?? "").trim() || undefined,
-                  };
-          const hasResponseIdsBeyondClientOrderId = Boolean(
-            String(ids.orderId || "").trim() ||
-              String(ids.algoId || "").trim() ||
-              String(ids.clientAlgoId || "").trim(),
-          );
+                : "";
 
           // Keep this post-response save:
           // - pre-save (before request) protects early WS fills via clientOrderId
@@ -344,18 +332,16 @@ export class BrokerExecutor implements INodeExecutor {
           //   which later lifecycle events may reference instead of clientOrderId.
           // This is broker-agnostic: any broker may emit later lifecycle events with
           // broker-native IDs rather than clientOrderId.
-          if (hasResponseIdsBeyondClientOrderId || !preRegisteredClientOrderId) {
-            await OrderOwnerRegistry.saveOwner({
-              source: `${broker}_trading`,
-              userId,
-              workflowId,
-              nodeId: node.id,
-              runId: context?.runId,
-              symbol: String(resolvedParams?.symbol || ""),
-              createdAt: new Date().toISOString(),
-              ...ids,
-            });
-          }
+          await OrderOwnerRegistry.saveOwner({
+            source: `${broker}_trading`,
+            userId,
+            workflowId,
+            nodeId: node.id,
+            runId: context?.runId,
+            symbol: String(resolvedParams?.symbol || ""),
+            createdAt: new Date().toISOString(),
+            ...ids,
+          });
         } catch (err) {
           console.warn("Failed to save order-owner mapping", err);
         }
@@ -403,7 +389,10 @@ export class BrokerExecutor implements INodeExecutor {
             clientOrderId: preRegisteredClientOrderId,
           });
         } catch (cleanupErr) {
-          console.warn("Failed to cleanup pre-saved order-owner mapping", cleanupErr);
+          console.warn(
+            "Failed to cleanup pre-saved order-owner mapping",
+            cleanupErr,
+          );
         }
       }
 

@@ -32,6 +32,11 @@ interface NodeRouterProps {
 
 // Tool handle used when node is toggled to tool mode
 const TOOL_HANDLE = [{ type: "source" as const, position: "top" as const, id: "tool" }];
+// Categories ineligible for tool toggle
+const TOOL_INELIGIBLE_CATEGORIES = new Set([
+  "Trigger", "Backtest", "AIAgent", "ChatModel", "LLM",
+  "Stream", "Scheduler", "Input", "Visualization", "webhook",
+]);
 
 const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   const nodeId = useNodeId();
@@ -43,6 +48,10 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   // Tool mode toggle: read from fieldState first, then persisted values
   const isTool = data.fieldState?.__isTool ?? data.values?.__isTool ?? false;
+
+  // Guard: only allow tool toggle on eligible nodes (not triggers, backtest, AIAgent, etc.)
+  const canToggleTool = definition.node_type === "main" &&
+    !TOOL_INELIGIBLE_CATEGORIES.has(definition.category);
 
   const handleToggleTool = useCallback(() => {
     if (!nodeId) return;
@@ -383,7 +392,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           setEditingName={renderProps.setEditingName}
           isExecuting={data.isExecuting}
           isTool={isTool}
-          onToggleTool={handleToggleTool}
+          onToggleTool={canToggleTool ? handleToggleTool : undefined}
         >
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />

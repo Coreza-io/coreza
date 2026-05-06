@@ -14,7 +14,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -86,6 +86,14 @@ const getCategoryIcon = (category: string) => {
   return map[category] || Layers;
 };
 
+// Static — nodeManifest never changes after init
+const allNodeEntries = Object.entries(nodeManifest);
+const categories = Array.from(
+  new Set(Object.values(nodeManifest).map((node) => (node as any).category).filter(Boolean))
+);
+
+const MAX_STAGGER_INDEX = 10;
+
 interface NodePaletteProps {
   onNodeClick?: (nodeType: string) => void;
 }
@@ -96,15 +104,14 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  const filteredNodes = Object.entries(nodeManifest).filter(([_, node]) =>
-    node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (node as any).description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (node as any).category?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const categories = Array.from(
-    new Set(Object.values(nodeManifest).map((node) => (node as any).category).filter(Boolean))
-  );
+  const filteredNodes = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return allNodeEntries.filter(([_, node]) =>
+      node.name.toLowerCase().includes(q) ||
+      (node as any).description?.toLowerCase().includes(q) ||
+      (node as any).category?.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
 
   const toggleCategory = useCallback((category: string) => {
     setExpandedCategories((prev) => {
@@ -118,10 +125,10 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
     });
   }, []);
 
-  const onDragStart = (event: React.DragEvent, nodeType: string) => {
+  const onDragStart = useCallback((event: React.DragEvent, nodeType: string) => {
     event.dataTransfer.setData("application/reactflow", nodeType);
     event.dataTransfer.effectAllowed = "move";
-  };
+  }, []);
 
   return (
     <div className="h-full flex flex-col">
@@ -151,8 +158,8 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
           return (
             <div key={category}>
               <button
-                onClick={() => toggleCategory(category)}
-                className="w-full flex items-center gap-2 py-2 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                onClick={() => !isSearching && toggleCategory(category)}
+                className={`w-full flex items-center gap-2 py-2 px-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors ${isSearching ? "cursor-default" : ""}`}
               >
                 {isOpen ? (
                   <ChevronDown className="h-4 w-4 shrink-0" />
@@ -182,7 +189,7 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                           key={nodeType}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.03 }}
+                          transition={{ delay: Math.min(index, MAX_STAGGER_INDEX) * 0.03 }}
                         >
                           <Card
                             className="relative cursor-grab active:cursor-grabbing hover:shadow-card transition-all bg-gradient-card border-border group"

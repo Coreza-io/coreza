@@ -44,6 +44,14 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   // Tool mode toggle: read from fieldState first, then persisted values
   const isTool = data.fieldState?.__isTool ?? data.values?.__isTool ?? false;
 
+  // Guard: only allow tool toggle on eligible nodes (not triggers, backtest, AIAgent, etc.)
+  const TOOL_INELIGIBLE_CATEGORIES = new Set([
+    "Trigger", "Backtest", "AIAgent", "ChatModel", "LLM",
+    "Stream", "Scheduler", "Input", "Visualization", "webhook",
+  ]);
+  const canToggleTool = definition.node_type === "main" &&
+    !TOOL_INELIGIBLE_CATEGORIES.has(definition.category);
+
   const handleToggleTool = useCallback(() => {
     if (!nodeId) return;
     setNodes((nds) =>

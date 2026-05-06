@@ -6,10 +6,21 @@
   "category": "Broker",
   "description": "Execute trades and get market data from Dhan Api",
   "color": "text-green-600",
-  "size": { "width": 340, "height": 360 },
+  "size": {
+    "width": 340,
+    "height": 360
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "auth": "GenericAuthModal",
   "authFields": [
@@ -32,7 +43,10 @@
       "placeholder": "Your Dhan API Key"
     }
   ],
-  "authAction": { "url": "/broker/dhan/auth", "method": "POST" },
+  "authAction": {
+    "url": "/broker/dhan/auth",
+    "method": "POST"
+  },
   "action": {
     "url": "/broker/dhan/{{operation}}",
     "method": "{{method}}"
@@ -51,11 +65,36 @@
       "label": "Operation",
       "type": "select",
       "options": [
-        { "id": "get_account", "name": "Get Account", "method": "GET" },
-        { "id": "get_positions", "name": "Get Positions", "method": "GET" },
-        { "id": "get_orders", "name": "Get Orders", "method": "GET" },
-        { "id": "cancel_order", "name": "Cancel Orders", "method": "POST" },
-        { "id": "get_candle", "name": "Get Historical Bars", "method": "POST" }
+        {
+          "id": "get_account",
+          "name": "Get Account",
+          "method": "GET"
+        },
+        {
+          "id": "get_positions",
+          "name": "Get Positions",
+          "method": "GET"
+        },
+        {
+          "id": "get_orders",
+          "name": "Get Orders",
+          "method": "GET"
+        },
+        {
+          "id": "cancel_order",
+          "name": "Cancel Orders",
+          "method": "POST"
+        },
+        {
+          "id": "get_candle",
+          "name": "Get Historical Bars",
+          "method": "POST"
+        },
+        {
+          "id": "place_order",
+          "name": "Place Order",
+          "method": "POST"
+        }
       ],
       "placeholder": "Select operation",
       "required": true
@@ -65,14 +104,24 @@
       "label": "Exchange",
       "type": "select",
       "options": [
-        { "id": "NSE_EQ", "name": "NSE" },
-        { "id": "BSE_EQ", "name": "BSE" }
+        {
+          "id": "NSE_EQ",
+          "name": "NSE"
+        },
+        {
+          "id": "BSE_EQ",
+          "name": "BSE"
+        }
       ],
       "placeholder": "Select exchange",
       "required": true,
       "default": "",
       "displayOptions": {
-        "show": { "operation": ["get_candle"] }
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
       }
     },
     {
@@ -83,7 +132,10 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle",
+            "place_order"
+          ]
         }
       }
     },
@@ -92,17 +144,34 @@
       "label": "Interval",
       "type": "select",
       "options": [
-        { "id": "1Min", "name": "1 min" },
-        { "id": "5Min", "name": "5 min" },
-        { "id": "15Min", "name": "15 min" },
-        { "id": "1Hour", "name": "1 hour" },
-        { "id": "1Day", "name": "1 day" }
+        {
+          "id": "1Min",
+          "name": "1 min"
+        },
+        {
+          "id": "5Min",
+          "name": "5 min"
+        },
+        {
+          "id": "15Min",
+          "name": "15 min"
+        },
+        {
+          "id": "1Hour",
+          "name": "1 hour"
+        },
+        {
+          "id": "1Day",
+          "name": "1 day"
+        }
       ],
       "placeholder": "Select interval",
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -114,7 +183,141 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
+        }
+      }
+    },
+    {
+      "key": "exchange_segment",
+      "label": "Exchange Segment",
+      "type": "select",
+      "options": [
+        {
+          "id": "NSE_EQ",
+          "name": "NSE Equity"
+        },
+        {
+          "id": "BSE_EQ",
+          "name": "BSE Equity"
+        },
+        {
+          "id": "NSE_FNO",
+          "name": "NSE F&O"
+        },
+        {
+          "id": "BSE_FNO",
+          "name": "BSE F&O"
+        }
+      ],
+      "default": "NSE_EQ",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "side",
+      "label": "Side",
+      "type": "select",
+      "options": [
+        {
+          "id": "buy",
+          "name": "Buy"
+        },
+        {
+          "id": "sell",
+          "name": "Sell"
+        }
+      ],
+      "default": "buy",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "qty",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 1",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "market",
+          "name": "Market"
+        },
+        {
+          "id": "limit",
+          "name": "Limit"
+        }
+      ],
+      "default": "market",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "validity",
+      "label": "Validity",
+      "type": "select",
+      "options": [
+        {
+          "id": "day",
+          "name": "Day"
+        },
+        {
+          "id": "ioc",
+          "name": "Immediate Or Cancel"
+        }
+      ],
+      "default": "day",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "price",
+      "label": "Price",
+      "type": "text",
+      "placeholder": "Required for limit orders",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
         }
       }
     }

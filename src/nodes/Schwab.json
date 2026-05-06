@@ -86,7 +86,8 @@
           "operation": [
             "get_account",
             "get_positions",
-            "get_orders"
+            "get_orders",
+            "place_order"
           ]
         }
       },
@@ -117,6 +118,10 @@
         {
           "id": "get_price_history",
           "name": "Get Price History"
+        },
+        {
+          "id": "place_order",
+          "name": "Place Order"
         }
       ],
       "default": "get_account"
@@ -175,11 +180,12 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "AAPL",
-      "description": "Single symbol for price history",
+      "description": "Single symbol for price history or trading",
       "displayOptions": {
         "show": {
           "operation": [
-            "get_price_history"
+            "get_price_history",
+            "place_order"
           ]
         }
       },
@@ -354,6 +360,156 @@
         }
       },
       "showDescription": false
+    },
+    {
+      "key": "instruction",
+      "label": "Action",
+      "type": "select",
+      "options": [
+        {
+          "id": "BUY",
+          "name": "Buy"
+        },
+        {
+          "id": "SELL",
+          "name": "Sell"
+        },
+        {
+          "id": "BUY_TO_COVER",
+          "name": "Buy to Cover"
+        },
+        {
+          "id": "SELL_SHORT",
+          "name": "Sell Short"
+        }
+      ],
+      "default": "BUY",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "quantity",
+      "label": "Quantity",
+      "type": "text",
+      "placeholder": "e.g. 10",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "orderType",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "MARKET",
+          "name": "Market"
+        },
+        {
+          "id": "LIMIT",
+          "name": "Limit"
+        },
+        {
+          "id": "STOP",
+          "name": "Stop"
+        },
+        {
+          "id": "STOP_LIMIT",
+          "name": "Stop Limit"
+        }
+      ],
+      "default": "MARKET",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "price",
+      "label": "Limit Price",
+      "type": "text",
+      "placeholder": "Required for limit orders",
+      "displayOptions": {
+        "show": {
+          "orderType": [
+            "LIMIT",
+            "STOP_LIMIT"
+          ],
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "duration",
+      "label": "Duration",
+      "type": "select",
+      "options": [
+        {
+          "id": "DAY",
+          "name": "Day"
+        },
+        {
+          "id": "GOOD_TILL_CANCEL",
+          "name": "Good Till Cancel"
+        },
+        {
+          "id": "FILL_OR_KILL",
+          "name": "Fill or Kill"
+        }
+      ],
+      "default": "DAY",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
+    },
+    {
+      "key": "session",
+      "label": "Session",
+      "type": "select",
+      "options": [
+        {
+          "id": "NORMAL",
+          "name": "Normal"
+        },
+        {
+          "id": "AM",
+          "name": "Pre-Market"
+        },
+        {
+          "id": "PM",
+          "name": "After-Hours"
+        }
+      ],
+      "default": "NORMAL",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     }
   ]
 }

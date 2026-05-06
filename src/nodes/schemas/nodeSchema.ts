@@ -18,15 +18,20 @@ export const OptionSchema = z
     method: z.string().optional(),
     label: z.string().optional(),
     value: z.union([z.string(), z.number(), z.boolean()]).optional(),
-    displayOptions: z.object({
-      show: z.record(z.string(), z.any()).optional(),
-      hide: z.record(z.string(), z.any()).optional(),
-    }).optional(),
+    displayOptions: z
+      .object({
+        show: z.record(z.string(), z.any()).optional(),
+        hide: z.record(z.string(), z.any()).optional(),
+      })
+      .optional(),
     valueMap: ValueMapSchema.optional(),
   })
-  .refine((data) => data.id || data.value !== undefined || data.label || data.name, {
-    message: "Option must have at least id, value, label, or name",
-  });
+  .refine(
+    (data) => data.id || data.value !== undefined || data.label || data.name,
+    {
+      message: "Option must have at least id, value, label, or name",
+    },
+  );
 
 export const GroupedOptionsSchema = z.record(
   z.string(),
@@ -37,9 +42,9 @@ export const GroupedOptionsSchema = z.record(
       z.object({
         label: z.string(),
         value: z.union([z.string(), z.number(), z.boolean()]),
-      })
+      }),
     ),
-  })
+  }),
 );
 
 export const SubFieldSchema = z.object({
@@ -51,11 +56,25 @@ export const SubFieldSchema = z.object({
   groupedOptions: GroupedOptionsSchema.optional(),
 });
 
-const DisplayValueSchema = z.union([z.string(), OptionSchema, z.record(z.string(), z.any())]);
+const DisplayValueSchema = z.union([
+  z.string(),
+  OptionSchema,
+  z.record(z.string(), z.any()),
+]);
 
 export const DisplayOptionsSchema = z.object({
-  show: z.record(z.string(), z.union([z.array(DisplayValueSchema), DisplayValueSchema])).optional(),
-  hide: z.record(z.string(), z.union([z.array(DisplayValueSchema), DisplayValueSchema])).optional(),
+  show: z
+    .record(
+      z.string(),
+      z.union([z.array(DisplayValueSchema), DisplayValueSchema]),
+    )
+    .optional(),
+  hide: z
+    .record(
+      z.string(),
+      z.union([z.array(DisplayValueSchema), DisplayValueSchema]),
+    )
+    .optional(),
 });
 
 export const ConditionSchema = z.object({
@@ -63,7 +82,10 @@ export const ConditionSchema = z.object({
   value: z.union([z.boolean(), z.string(), z.number()]),
 });
 
-export const ConditionalOptionsSchema = z.record(z.string(), z.array(OptionSchema));
+export const ConditionalOptionsSchema = z.record(
+  z.string(),
+  z.array(OptionSchema),
+);
 
 export const DynamicOptionsSchema = z.object({
   dependsOn: z.string(),
@@ -159,7 +181,7 @@ export const ListeningConfigSchema = z.object({
 export const NodeConfigSchema = z
   .object({
     name: z.string().min(1),
-    node_type: z.enum(["main", "sub", "trigger", "backtest", "schwab"]),
+    node_type: z.enum(["main", "sub", "trigger", "backtest"]),
     handles: z.array(HandleSchema).min(1),
     fields: z.array(FieldSchema),
 
@@ -195,11 +217,10 @@ export const NodeConfigSchema = z
       }
       return true;
     },
-    { message: "Trigger nodes should only have source handles" }
+    { message: "Trigger nodes should only have source handles" },
   )
-  .refine(
-    (data) => data.handles.length >= 1,
-    { message: "Node must have at least one handle" }
-  );
+  .refine((data) => data.handles.length >= 1, {
+    message: "Node must have at least one handle",
+  });
 
 export type NodeConfig = z.infer<typeof NodeConfigSchema>;

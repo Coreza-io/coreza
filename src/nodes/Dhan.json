@@ -58,7 +58,8 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "description": "Your saved Dhan API credential."
     },
     {
       "key": "operation",
@@ -137,7 +138,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "NSE/BSE stock symbol (e.g., RELIANCE, TCS, INFY)."
     },
     {
       "key": "interval",
@@ -219,7 +221,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Exchange and segment: NSE/BSE for equities, FNO for futures & options."
     },
     {
       "key": "side",
@@ -243,7 +246,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Buy to open/add position, Sell to close/reduce position."
     },
     {
       "key": "qty",
@@ -257,7 +261,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Number of shares/lots to trade."
     },
     {
       "key": "type",
@@ -281,7 +286,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Market executes immediately at best price, Limit waits for specified price."
     },
     {
       "key": "validity",
@@ -305,7 +311,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Day order valid until market close, IOC fills immediately or cancels."
     },
     {
       "key": "price",
@@ -319,7 +326,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Limit price for the order."
     }
   ]
 }

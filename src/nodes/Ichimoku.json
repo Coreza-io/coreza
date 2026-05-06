@@ -38,42 +38,48 @@
       "label": "Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "The ticker symbol for the asset being analyzed (e.g. AAPL, BTCUSDT)."
     },
     {
       "key": "timeframe",
       "label": "Timeframe",
       "type": "text",
       "placeholder": "e.g. 1d",
-      "required": true
+      "required": true,
+      "description": "The timeframe/interval of the candle data (e.g. 1m, 5m, 1h, 1d)."
     },
     {
       "key": "conversion_period",
       "label": "Conversion Line Period (Tenkan-sen)",
       "type": "text",
       "default": "9",
-      "required": true
+      "required": true,
+      "description": "Period for Tenkan-sen (Conversion Line). Standard is 9. Short-term trend indicator."
     },
     {
       "key": "base_period",
       "label": "Base Line Period (Kijun-sen)",
       "type": "text",
       "default": "26",
-      "required": true
+      "required": true,
+      "description": "Period for Kijun-sen (Base Line). Standard is 26. Medium-term trend and support/resistance."
     },
     {
       "key": "leading_span_b_period",
       "label": "Leading Span B Period (Senkou Span B)",
       "type": "text",
       "default": "52",
-      "required": true
+      "required": true,
+      "description": "Period for Senkou Span B (cloud boundary). Standard is 52. Long-term trend indicator."
     },
     {
       "key": "displacement",
       "label": "Displacement (Chikou Span)",
       "type": "text",
       "default": "26",
-      "required": true
+      "required": true,
+      "description": "Displacement for Chikou Span (Lagging Span). Standard is 26. Shows momentum confirmation."
     }
   ]
 }

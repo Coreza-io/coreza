@@ -18,12 +18,26 @@
       "placeholder": "API Secret key"
     }
   ],
-  "authAction": { "url": "/finnhub/auth", "method": "POST" },
+  "authAction": {
+    "url": "/finnhub/auth",
+    "method": "POST"
+  },
   "icon": "/assets/icons/FinnHub.svg",
-  "size": { "width": 340, "height": 340 },
+  "size": {
+    "width": 340,
+    "height": 340
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/finnhub/get-quote",
@@ -36,14 +50,16 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "description": "Your saved FinnHub API credential."
     },
     {
       "key": "ticker",
       "label": "Ticker Symbol",
       "type": "text",
       "placeholder": "e.g. AAPL",
-      "required": true
+      "required": true,
+      "description": "Stock ticker symbol to fetch real-time quote for."
     }
   ]
 }

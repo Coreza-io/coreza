@@ -57,7 +57,8 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "description": "Your saved Binance API credential."
     },
     {
       "key": "environment",
@@ -74,7 +75,8 @@
         }
       ],
       "default": "testnet",
-      "required": true
+      "required": true,
+      "description": "Testnet for simulation/testing, Production for real trading."
     },
     {
       "key": "assetType",
@@ -137,7 +139,8 @@
         }
       ],
       "required": true,
-      "default": "get_ticker"
+      "default": "get_ticker",
+      "description": "Action to perform: account/position info, market data, or order management."
     },
     {
       "key": "symbol",
@@ -156,7 +159,8 @@
             "cancel_order"
           ]
         }
-      }
+      },
+      "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)."
     },
     {
       "key": "orderId",
@@ -169,7 +173,8 @@
             "cancel_order"
           ]
         }
-      }
+      },
+      "description": "Cancel normal order by Binance numeric orderId."
     },
     {
       "key": "fromId",
@@ -234,7 +239,8 @@
             "get_latest_bar"
           ]
         }
-      }
+      },
+      "description": "Kline/candlestick interval."
     },
     {
       "key": "limit",
@@ -250,7 +256,8 @@
             "get_trades"
           ]
         }
-      }
+      },
+      "description": "Maximum number of records to return."
     },
     {
       "key": "startTime",
@@ -265,7 +272,8 @@
             "get_trades"
           ]
         }
-      }
+      },
+      "description": "Start time for historical data query."
     },
     {
       "key": "endTime",
@@ -280,7 +288,8 @@
             "get_trades"
           ]
         }
-      }
+      },
+      "description": "End time for historical data query."
     },
     {
       "key": "orderId",
@@ -348,7 +357,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "BUY to open long/add, SELL to close/short."
     },
     {
       "key": "type",
@@ -391,7 +401,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Order type: Market executes immediately, Limit at specified price, Stop/TP for conditional orders."
     },
     {
       "key": "type",
@@ -438,7 +449,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Order type: Market executes immediately, Limit at specified price, Stop/TP for conditional orders."
     },
     {
       "key": "quantity",
@@ -479,7 +491,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Execution price for limit orders."
     },
     {
       "key": "stopPrice",
@@ -501,7 +514,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Trigger price for stop loss/take profit orders."
     },
     {
       "key": "timeInForce",
@@ -537,7 +551,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "GTC stays until filled/cancelled, IOC fills partially then cancels, FOK requires full fill or cancel."
     },
     {
       "key": "price",
@@ -558,7 +573,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Execution price for limit orders."
     },
     {
       "key": "stopPrice",
@@ -580,7 +596,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Trigger price for stop loss/take profit orders."
     },
     {
       "key": "timeInForce",
@@ -619,7 +636,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "GTC stays until filled/cancelled, IOC fills partially then cancels, FOK requires full fill or cancel."
     },
     {
       "key": "goodTillDate",
@@ -716,7 +734,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Visible portion of a large order. Hides true order size."
     },
     {
       "key": "newOrderRespType",
@@ -743,7 +762,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Response detail level: ACK (minimal), RESULT (order info), FULL (includes fills)."
     },
     {
       "key": "clientAlgoId",
@@ -760,7 +780,8 @@
             "cancel_order"
           ]
         }
-      }
+      },
+      "description": "If set, cancel uses futures algo endpoint (/fapi/v1/algoOrder)."
     },
     {
       "key": "positionSide",

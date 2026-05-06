@@ -56,7 +56,8 @@
       "label": "Credential",
       "type": "select",
       "optionsSource": "credentialsApi",
-      "required": true
+      "required": true,
+      "description": "Your saved Alpaca API credential."
     },
     {
       "key": "environment",
@@ -90,7 +91,8 @@
         }
       ],
       "default": "most_actives",
-      "required": true
+      "required": true,
+      "description": "Most Actives: highest volume/trades. Market Movers: biggest price changes (gainers/losers)."
     },
     {
       "key": "assetType",
@@ -113,14 +115,16 @@
             "market_movers"
           ]
         }
-      }
+      },
+      "description": "Asset class to screen: US stocks or cryptocurrency."
     },
     {
       "key": "top",
       "label": "Number of Results",
       "type": "text",
       "placeholder": "10",
-      "default": "10"
+      "default": "10",
+      "description": "Maximum number of results to return (1-100)."
     },
     {
       "key": "by",
@@ -143,7 +147,8 @@
             "most_actives"
           ]
         }
-      }
+      },
+      "description": "Ranking criteria: by dollar volume traded or by number of trades."
     }
   ]
 }

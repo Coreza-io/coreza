@@ -6,10 +6,21 @@
   "parentNode": "binance",
   "subCategory": "binance",
   "icon": "/assets/icons/binance.svg",
-  "size": { "width": 340, "height": 340 },
+  "size": {
+    "width": 340,
+    "height": 340
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/screener/binance/{{operation}}",
@@ -22,39 +33,66 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "description": "Your saved Binance API credential."
     },
     {
       "key": "environment",
       "label": "Environment",
       "type": "select",
       "options": [
-        { "name": "Testnet (Paper)", "id": "testnet" },
-        { "name": "Production (Live)", "id": "live" }
+        {
+          "name": "Testnet (Paper)",
+          "id": "testnet"
+        },
+        {
+          "name": "Production (Live)",
+          "id": "live"
+        }
       ],
       "default": "testnet",
-      "required": true
+      "required": true,
+      "description": "Testnet for testing, Production for real market data."
     },
     {
       "key": "assetType",
       "label": "Asset Type",
       "type": "select",
       "options": [
-        { "name": "Spot", "id": "spot" },
-        { "name": "Futures", "id": "futures" }
+        {
+          "name": "Spot",
+          "id": "spot"
+        },
+        {
+          "name": "Futures",
+          "id": "futures"
+        }
       ],
       "default": "spot",
-      "required": true
+      "required": true,
+      "description": "Market type: Spot for regular trading, Futures for derivatives."
     },
     {
       "key": "operation",
       "label": "Filter Type",
       "type": "select",
       "options": [
-        { "name": "Top Gainers", "id": "top_gainers" },
-        { "name": "Top Losers", "id": "top_losers" },
-        { "name": "Most Active by Volume", "id": "most_active" },
-        { "name": "New Listings", "id": "new_listings" }
+        {
+          "name": "Top Gainers",
+          "id": "top_gainers"
+        },
+        {
+          "name": "Top Losers",
+          "id": "top_losers"
+        },
+        {
+          "name": "Most Active by Volume",
+          "id": "most_active"
+        },
+        {
+          "name": "New Listings",
+          "id": "new_listings"
+        }
       ],
       "default": "top_gainers",
       "required": true
@@ -65,24 +103,40 @@
       "type": "text",
       "default": 10,
       "placeholder": "Number of results",
-      "required": true
+      "required": true,
+      "description": "Maximum number of results to return."
     },
     {
       "key": "quote_asset",
       "label": "Quote Asset",
       "type": "select",
       "options": [
-        { "name": "USDT", "id": "USDT" },
-        { "name": "BUSD", "id": "BUSD" },
-        { "name": "BTC", "id": "BTC" },
-        { "name": "ETH", "id": "ETH" }
+        {
+          "name": "USDT",
+          "id": "USDT"
+        },
+        {
+          "name": "BUSD",
+          "id": "BUSD"
+        },
+        {
+          "name": "BTC",
+          "id": "BTC"
+        },
+        {
+          "name": "ETH",
+          "id": "ETH"
+        }
       ],
       "default": "USDT",
       "displayOptions": {
         "show": {
-          "asset_type": ["spot"]
+          "asset_type": [
+            "spot"
+          ]
         }
-      }
+      },
+      "description": "Quote currency to filter pairs (e.g., USDT shows only *USDT pairs)."
     },
     {
       "key": "min_volume",
@@ -91,9 +145,12 @@
       "placeholder": "Minimum 24h volume",
       "displayOptions": {
         "show": {
-          "operation": ["most_active"]
+          "operation": [
+            "most_active"
+          ]
         }
-      }
+      },
+      "description": "Minimum 24-hour trading volume in quote currency."
     },
     {
       "key": "min_price_change",
@@ -102,9 +159,13 @@
       "placeholder": "Minimum price change percentage",
       "displayOptions": {
         "show": {
-          "operation": ["top_gainers", "top_losers"]
+          "operation": [
+            "top_gainers",
+            "top_losers"
+          ]
         }
-      }
+      },
+      "description": "Minimum absolute price change percentage to include."
     }
   ]
 }

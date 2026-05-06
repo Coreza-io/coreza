@@ -69,7 +69,8 @@
       "type": "select",
       "required": true,
       "optionsSource": "credentialsApi",
-      "optionsApiUrl": "/broker/schwab/credentials"
+      "optionsApiUrl": "/broker/schwab/credentials",
+      "description": "Your saved Schwab OAuth credential."
     },
     {
       "key": "accountHash",
@@ -391,7 +392,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Trade action: Buy/Sell for regular positions, Short/Cover for short selling."
     },
     {
       "key": "quantity",
@@ -405,7 +407,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Number of shares to trade."
     },
     {
       "key": "orderType",
@@ -437,7 +440,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Order execution type: Market fills immediately, Limit at specified price, Stop triggers at price."
     },
     {
       "key": "price",
@@ -454,7 +458,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Price for limit/stop-limit orders."
     },
     {
       "key": "duration",
@@ -482,7 +487,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "How long order stays active: Day expires at close, GTC until filled/cancelled."
     },
     {
       "key": "session",
@@ -509,7 +515,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Trading session: Normal (9:30am-4pm), AM (pre-market), PM (after-hours)."
     }
   ]
 }

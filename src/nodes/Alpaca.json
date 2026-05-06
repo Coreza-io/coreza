@@ -58,7 +58,8 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "description": "Your saved Alpaca API credential."
     },
     {
       "key": "environment",
@@ -90,7 +91,8 @@
             "close_position"
           ]
         }
-      }
+      },
+      "description": "Paper for testing/simulation, Live for real money trading."
     },
     {
       "key": "assetType",
@@ -107,7 +109,8 @@
         }
       ],
       "default": "stock",
-      "required": true
+      "required": true,
+      "description": "Type of asset: US stocks or cryptocurrency."
     },
     {
       "key": "operation",
@@ -176,7 +179,8 @@
         }
       ],
       "placeholder": "Select operation",
-      "required": true
+      "required": true,
+      "description": "Action to perform: fetch account info, positions, orders, or market data."
     },
     {
       "key": "order_id",
@@ -191,7 +195,8 @@
             "get_order"
           ]
         }
-      }
+      },
+      "description": "Order UUID for single-order lookup/cancel operations."
     },
     {
       "key": "symbol",
@@ -212,7 +217,8 @@
             "stock"
           ]
         }
-      }
+      },
+      "description": "Ticker symbol for market data operations."
     },
     {
       "key": "crypto_base",
@@ -308,7 +314,8 @@
             "get_candle"
           ]
         }
-      }
+      },
+      "description": "Time interval between data bars."
     },
     {
       "key": "limit",
@@ -323,7 +330,8 @@
             "fetch_news"
           ]
         }
-      }
+      },
+      "description": "Number of historical bars to retrieve."
     },
     {
       "key": "feed",
@@ -367,7 +375,8 @@
             "stock"
           ]
         }
-      }
+      },
+      "description": "Market data feed source. SIP includes all US exchanges, IEX is free tier."
     },
     {
       "key": "currency",
@@ -382,7 +391,8 @@
             "get_latest_bar"
           ]
         }
-      }
+      },
+      "description": "Currency for pricing data."
     },
     {
       "key": "sort",
@@ -407,7 +417,8 @@
             "fetch_news"
           ]
         }
-      }
+      },
+      "description": "Sort order for historical bars: ascending (oldest first) or descending (newest first)."
     },
     {
       "key": "start",
@@ -422,7 +433,8 @@
             "fetch_news"
           ]
         }
-      }
+      },
+      "description": "Start date/time for historical data range. ISO 8601 format."
     },
     {
       "key": "end",
@@ -437,7 +449,8 @@
             "fetch_news"
           ]
         }
-      }
+      },
+      "description": "End date/time for historical data range. ISO 8601 format."
     },
     {
       "key": "include_content",
@@ -501,7 +514,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Buy to open/add position, Sell to close/reduce position."
     },
     {
       "key": "qty",
@@ -516,7 +530,8 @@
             "close_position"
           ]
         }
-      }
+      },
+      "description": "Number of shares/units to trade. Supports fractional for crypto."
     },
     {
       "key": "percentage",
@@ -562,7 +577,8 @@
             "place_order"
           ]
         }
-      }
+      },
+      "description": "Market executes immediately, Limit at specified price, Stop triggers at price, Trailing Stop follows price."
     },
     {
       "key": "limit_price",
@@ -577,7 +593,8 @@
           ],
           "type": "limit"
         }
-      }
+      },
+      "description": "Price for limit order. Order fills at this price or better."
     },
     {
       "key": "stop_price",
@@ -592,7 +609,8 @@
           ],
           "type": "stop"
         }
-      }
+      },
+      "description": "Trigger price for stop order. Order activates when price reaches this level."
     },
     {
       "key": "trail_price",
@@ -670,7 +688,8 @@
             "crypto"
           ]
         }
-      }
+      },
+      "description": "How long order stays active. Day expires at market close, GTC stays until filled/cancelled."
     },
     {
       "key": "extended_hours",

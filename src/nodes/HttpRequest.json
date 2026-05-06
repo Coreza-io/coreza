@@ -1,4 +1,3 @@
-
 {
   "name": "HttpRequest",
   "def": "HTTP Request",
@@ -7,10 +6,21 @@
   "category": "Data",
   "description": "Make HTTP requests to external APIs and services",
   "color": "text-green-500",
-  "size": { "width": 360, "height": 400 },
+  "size": {
+    "width": 360,
+    "height": 400
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/http/request",
@@ -22,36 +32,72 @@
       "label": "HTTP Method",
       "type": "select",
       "options": [
-        { "id": "GET", "name": "GET" },
-        { "id": "POST", "name": "POST" },
-        { "id": "PUT", "name": "PUT" },
-        { "id": "DELETE", "name": "DELETE" },
-        { "id": "PATCH", "name": "PATCH" },
-        { "id": "HEAD", "name": "HEAD" },
-        { "id": "OPTIONS", "name": "OPTIONS" }
+        {
+          "id": "GET",
+          "name": "GET"
+        },
+        {
+          "id": "POST",
+          "name": "POST"
+        },
+        {
+          "id": "PUT",
+          "name": "PUT"
+        },
+        {
+          "id": "DELETE",
+          "name": "DELETE"
+        },
+        {
+          "id": "PATCH",
+          "name": "PATCH"
+        },
+        {
+          "id": "HEAD",
+          "name": "HEAD"
+        },
+        {
+          "id": "OPTIONS",
+          "name": "OPTIONS"
+        }
       ],
       "default": "GET",
-      "required": true
+      "required": true,
+      "description": "HTTP method: GET for reading, POST for creating, PUT for replacing, PATCH for updating, DELETE for removing."
     },
     {
       "key": "url",
       "label": "URL",
       "type": "text",
       "placeholder": "https://api.example.com/endpoint",
-      "required": true
+      "required": true,
+      "description": "Full URL to request including protocol (https://). Can include query parameters."
     },
     {
       "key": "auth_type",
       "label": "Authentication",
       "type": "select",
       "options": [
-        { "id": "none", "name": "None" },
-        { "id": "bearer", "name": "Bearer Token" },
-        { "id": "basic", "name": "Basic Auth" },
-        { "id": "api_key", "name": "API Key" }
+        {
+          "id": "none",
+          "name": "None"
+        },
+        {
+          "id": "bearer",
+          "name": "Bearer Token"
+        },
+        {
+          "id": "basic",
+          "name": "Basic Auth"
+        },
+        {
+          "id": "api_key",
+          "name": "API Key"
+        }
       ],
       "default": "none",
-      "required": true
+      "required": true,
+      "description": "Authentication method: None for public APIs, Bearer for OAuth tokens, Basic for username/password, API Key for header/query auth."
     },
     {
       "key": "bearer_token",
@@ -60,9 +106,12 @@
       "placeholder": "your-bearer-token",
       "displayOptions": {
         "show": {
-          "auth_type": ["bearer"]
+          "auth_type": [
+            "bearer"
+          ]
         }
-      }
+      },
+      "description": "OAuth access token or JWT. Will be sent as 'Authorization: Bearer <token>'."
     },
     {
       "key": "basic_username",
@@ -71,9 +120,12 @@
       "placeholder": "username",
       "displayOptions": {
         "show": {
-          "auth_type": ["basic"]
+          "auth_type": [
+            "basic"
+          ]
         }
-      }
+      },
+      "description": "Username for HTTP Basic authentication."
     },
     {
       "key": "basic_password",
@@ -82,24 +134,36 @@
       "placeholder": "password",
       "displayOptions": {
         "show": {
-          "auth_type": ["basic"]
+          "auth_type": [
+            "basic"
+          ]
         }
-      }
+      },
+      "description": "Password for HTTP Basic authentication."
     },
     {
       "key": "api_key_location",
       "label": "API Key Location",
       "type": "select",
       "options": [
-        { "id": "header", "name": "Header" },
-        { "id": "query", "name": "Query Parameter" }
+        {
+          "id": "header",
+          "name": "Header"
+        },
+        {
+          "id": "query",
+          "name": "Query Parameter"
+        }
       ],
       "default": "header",
       "displayOptions": {
         "show": {
-          "auth_type": ["api_key"]
+          "auth_type": [
+            "api_key"
+          ]
         }
-      }
+      },
+      "description": "Where to send the API key: in request headers or as URL query parameter."
     },
     {
       "key": "api_key_name",
@@ -108,9 +172,12 @@
       "placeholder": "X-API-Key",
       "displayOptions": {
         "show": {
-          "auth_type": ["api_key"]
+          "auth_type": [
+            "api_key"
+          ]
         }
-      }
+      },
+      "description": "Header name or query parameter name for the API key."
     },
     {
       "key": "api_key_value",
@@ -119,9 +186,12 @@
       "placeholder": "your-api-key",
       "displayOptions": {
         "show": {
-          "auth_type": ["api_key"]
+          "auth_type": [
+            "api_key"
+          ]
         }
-      }
+      },
+      "description": "The actual API key value."
     },
     {
       "key": "headers",
@@ -139,24 +209,42 @@
           "placeholder": "Header value"
         }
       ],
-      "default": []
+      "default": [],
+      "description": "Additional HTTP headers to send with the request."
     },
     {
       "key": "body_type",
       "label": "Body Type",
       "type": "select",
       "options": [
-        { "id": "none", "name": "No Body" },
-        { "id": "json", "name": "JSON" },
-        { "id": "form", "name": "Form Data" },
-        { "id": "raw", "name": "Raw Text" }
+        {
+          "id": "none",
+          "name": "No Body"
+        },
+        {
+          "id": "json",
+          "name": "JSON"
+        },
+        {
+          "id": "form",
+          "name": "Form Data"
+        },
+        {
+          "id": "raw",
+          "name": "Raw Text"
+        }
       ],
       "default": "none",
       "displayOptions": {
         "show": {
-          "method": ["POST", "PUT", "PATCH"]
+          "method": [
+            "POST",
+            "PUT",
+            "PATCH"
+          ]
         }
-      }
+      },
+      "description": "Request body format: JSON for APIs, Form for traditional forms, Raw for plain text."
     },
     {
       "key": "json_body",
@@ -165,9 +253,12 @@
       "placeholder": "{\n  \"key\": \"value\"\n}",
       "displayOptions": {
         "show": {
-          "body_type": ["json"]
+          "body_type": [
+            "json"
+          ]
         }
-      }
+      },
+      "description": "JSON object to send in request body."
     },
     {
       "key": "form_data",
@@ -188,9 +279,12 @@
       "default": [],
       "displayOptions": {
         "show": {
-          "body_type": ["form"]
+          "body_type": [
+            "form"
+          ]
         }
-      }
+      },
+      "description": "Form fields to send (application/x-www-form-urlencoded)."
     },
     {
       "key": "raw_body",
@@ -199,16 +293,20 @@
       "placeholder": "Raw text content",
       "displayOptions": {
         "show": {
-          "body_type": ["raw"]
+          "body_type": [
+            "raw"
+          ]
         }
-      }
+      },
+      "description": "Plain text content to send in request body."
     },
     {
       "key": "timeout",
       "label": "Timeout (seconds)",
       "type": "text",
       "placeholder": "30",
-      "default": "30"
+      "default": "30",
+      "description": "Maximum time to wait for response in seconds."
     }
   ]
 }

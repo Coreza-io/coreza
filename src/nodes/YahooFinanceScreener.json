@@ -7,10 +7,21 @@
   "subCategory": "YahooFinance",
   "description": "Screen stocks using Yahoo Finance predefined screeners (day gainers, most actives, etc.)",
   "color": "text-purple-500",
-  "size": { "width": 340, "height": 300 },
+  "size": {
+    "width": 340,
+    "height": 300
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/screener/yahoofinance/{{operation}}",
@@ -22,30 +33,50 @@
       "label": "Screener Type",
       "type": "select",
       "options": [
-        { "id": "day_gainers", "name": "Day Gainers" },
-        { "id": "day_losers", "name": "Day Losers" },
-        { "id": "most_actives", "name": "Most Actives" },
-        { "id": "small_cap_gainers", "name": "Small Cap Gainers" },
-        { "id": "undervalued_large_caps", "name": "Undervalued Large Caps" },
+        {
+          "id": "day_gainers",
+          "name": "Day Gainers"
+        },
+        {
+          "id": "day_losers",
+          "name": "Day Losers"
+        },
+        {
+          "id": "most_actives",
+          "name": "Most Actives"
+        },
+        {
+          "id": "small_cap_gainers",
+          "name": "Small Cap Gainers"
+        },
+        {
+          "id": "undervalued_large_caps",
+          "name": "Undervalued Large Caps"
+        },
         {
           "id": "growth_technology_stocks",
           "name": "Growth Technology Stocks"
         },
-        { "id": "aggressive_small_caps", "name": "Aggressive Small Caps" },
+        {
+          "id": "aggressive_small_caps",
+          "name": "Aggressive Small Caps"
+        },
         {
           "id": "undervalued_growth_stocks",
           "name": "Undervalued Growth Stocks"
         }
       ],
       "default": "day_gainers",
-      "required": true
+      "required": true,
+      "description": "Predefined screening strategy: Day Gainers/Losers for daily movers, Most Actives for volume, others for specific investment styles."
     },
     {
       "key": "count",
       "label": "Number of Results",
       "type": "text",
       "placeholder": "100",
-      "default": "100"
+      "default": "100",
+      "description": "Maximum number of stocks to return."
     },
     {
       "key": "min_gap_percent",
@@ -55,9 +86,12 @@
       "default": "0",
       "displayOptions": {
         "show": {
-          "operation": ["day_gainers"]
+          "operation": [
+            "day_gainers"
+          ]
         }
-      }
+      },
+      "description": "Minimum gap percentage filter (difference between previous close and current open)."
     },
     {
       "key": "min_change_percent",
@@ -67,9 +101,12 @@
       "default": "1.0",
       "displayOptions": {
         "show": {
-          "operation": ["most_actives"]
+          "operation": [
+            "most_actives"
+          ]
         }
-      }
+      },
+      "description": "Minimum absolute price change percentage to include."
     },
     {
       "key": "min_loss_percent",
@@ -79,9 +116,12 @@
       "default": "0",
       "displayOptions": {
         "show": {
-          "operation": ["day_losers"]
+          "operation": [
+            "day_losers"
+          ]
         }
-      }
+      },
+      "description": "Minimum loss percentage (absolute value) for day losers filter."
     }
   ]
 }

@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/ichimoku.svg",
   "category": "Indicators",
-  "description": "Ichimoku Cloud indicator to visualize trend, momentum, and support/resistance levels",
+  "description": "Ichimoku Cloud - comprehensive trend system showing support/resistance, momentum, and trend direction using five calculated lines.",
   "color": "text-red-500",
   "size": {
     "width": 340,

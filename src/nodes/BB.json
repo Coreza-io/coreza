@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/bollinger.svg",
   "category": "Indicators",
-  "description": "Bollinger Bands to detect volatility, price envelopes, and breakout signals",
+  "description": "Bollinger Bands - volatility indicator with upper/lower bands based on standard deviations. Price touching bands may indicate overbought/oversold conditions or breakouts.",
   "color": "text-sky-500",
   "size": {
     "width": 340,

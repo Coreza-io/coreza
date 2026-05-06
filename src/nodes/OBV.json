@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/obv.svg",
   "category": "Indicators",
-  "description": "On-Balance Volume indicator to detect volume-driven momentum trends",
+  "description": "On-Balance Volume - cumulative volume indicator that adds volume on up days and subtracts on down days to confirm price trends.",
   "color": "text-orange-500",
   "size": {
     "width": 300,

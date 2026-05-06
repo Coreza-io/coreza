@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/stochastic.svg",
   "category": "Indicators",
-  "description": "Stochastic Oscillator for identifying overbought/oversold conditions and price momentum",
+  "description": "Stochastic Oscillator - momentum indicator comparing closing price to price range. %K above 80 = overbought, below 20 = oversold.",
   "color": "text-green-500",
   "size": {
     "width": 340,

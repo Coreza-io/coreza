@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/rsi.svg",
   "category": "Indicators",
-  "description": "Relative Strength Index indicator",
+  "description": "Relative Strength Index - momentum oscillator measuring speed and magnitude of price changes. Values above 70 indicate overbought, below 30 oversold.",
   "color": "text-blue-500",
   "size": {
     "width": 300,

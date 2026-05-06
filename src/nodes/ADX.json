@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/adx.svg",
   "category": "Indicators",
-  "description": "ADX indicator to evaluate trend strength using DI+/DI- lines",
+  "description": "ADX (Average Directional Index) - measures trend strength. Values above 25 indicate strong trend, below 20 indicate weak/ranging market.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,

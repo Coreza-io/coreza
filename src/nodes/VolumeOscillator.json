@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/volume-oscillator.svg",
   "category": "Indicators",
-  "description": "Volume Oscillator showing difference between two volume moving averages",
+  "description": "Volume Oscillator - shows difference between two volume moving averages to identify volume trends and divergences.",
   "color": "text-purple-500",
   "size": {
     "width": 300,

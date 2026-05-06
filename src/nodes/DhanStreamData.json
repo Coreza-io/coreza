@@ -1,6 +1,6 @@
 {
-  "name": "DhanStreamData",
-  "def": "Dhan Stream Data",
+  "name": "DhanStreamListener",
+  "def": "Dhan Stream Listener",
   "node_type": "trigger",
   "icon": "/assets/icons/dhan.svg",
   "category": "Broker",
@@ -21,7 +21,7 @@
       "interval": 10000
     }
   },
-  "description": "Receives real-time market data from Dhan. Use Listen mode to receive pre-subscribed security IDs, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Register to receive subscribed real-time market data from Dhan. Use Listen mode to receive pre-subscribed security IDs, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-blue-500",
   "size": {
     "width": 320,
@@ -88,9 +88,7 @@
       "optionsSource": "credentialsApi",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": false
@@ -135,9 +133,7 @@
       ],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -149,9 +145,7 @@
       "description": "Security IDs to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false
@@ -174,14 +168,10 @@
           "name": "Full (OHLC + Depth)"
         }
       ],
-      "default": [
-        "ticker"
-      ],
+      "default": ["ticker"],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -203,9 +193,7 @@
       "description": "Receive only security IDs subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -218,9 +206,7 @@
       "description": "Only receive data for specific security IDs. Leave empty to receive all pre-subscribed.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -246,9 +232,7 @@
       "description": "Filter specific stream types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false

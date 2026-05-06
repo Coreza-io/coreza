@@ -20,7 +20,7 @@
       "interval": 10000
     }
   },
-  "description": "Register to receives real-time market data, news, or order fill events from Binance. Use BinanceSubscribe node to explicitly subscribe to market streams and/or Order Updates (Fills). Use an If node downstream to route market events vs order updates. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "description": "Register to receives subscribed real-time market data, news, or order fill events from Binance. Use BinanceSubscribe node to explicitly subscribe to market streams and/or Order Updates (Fills). Use an If node downstream to route market events vs order updates. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,

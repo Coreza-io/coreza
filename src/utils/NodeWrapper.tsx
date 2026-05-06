@@ -536,6 +536,29 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 {itemCount} item{itemCount !== 1 ? "s" : ""}
               </div>
             )}
+            {/* Tool mode toggle - only in editor mode */}
+            {!readOnly && onToggleTool && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleTool();
+                }}
+                title={isTool ? "Switch to normal node" : "Switch to AI tool mode"}
+                className={`absolute bottom-1 right-1 z-10 h-5 w-5 flex items-center justify-center rounded transition-colors nodrag ${
+                  isTool
+                    ? "bg-primary/20 text-primary"
+                    : "text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/50 opacity-0 group-hover:opacity-100"
+                }`}
+              >
+                <Wrench className="h-3 w-3" />
+              </button>
+            )}
+            {/* Tool mode badge indicator */}
+            {isTool && (
+              <div className="absolute top-1 left-1 z-10 text-[9px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                TOOL
+              </div>
+            )}
           </div>
         )}
 

@@ -382,6 +382,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           finishEditing={renderProps.finishEditing}
           setEditingName={renderProps.setEditingName}
           isExecuting={data.isExecuting}
+          isTool={isTool}
+          onToggleTool={handleToggleTool}
         >
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />

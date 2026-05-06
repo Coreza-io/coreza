@@ -196,7 +196,7 @@
           ]
         }
       },
-      "description": "Order UUID for single-order lookup/cancel operations."
+      "description": "Only for get_order/cancel_order operations."
     },
     {
       "key": "symbol",
@@ -515,7 +515,7 @@
           ]
         }
       },
-      "description": "Buy to open/add position, Sell to close/reduce position."
+      "description": "Order side buy/sell — only for place_order operation."
     },
     {
       "key": "qty",
@@ -531,7 +531,7 @@
           ]
         }
       },
-      "description": "Number of shares/units to trade. Supports fractional for crypto."
+      "description": "Order quantity — only for place_order."
     },
     {
       "key": "percentage",
@@ -578,7 +578,7 @@
           ]
         }
       },
-      "description": "Market executes immediately, Limit at specified price, Stop triggers at price, Trailing Stop follows price."
+      "description": "Order type market/limit/stop/etc — only for place_order."
     },
     {
       "key": "limit_price",
@@ -594,7 +594,7 @@
           "type": "limit"
         }
       },
-      "description": "Price for limit order. Order fills at this price or better."
+      "description": "Limit price — only for limit/stop_limit orders."
     },
     {
       "key": "stop_price",
@@ -610,7 +610,7 @@
           "type": "stop"
         }
       },
-      "description": "Trigger price for stop order. Order activates when price reaches this level."
+      "description": "Stop price — only for stop/stop_limit orders."
     },
     {
       "key": "trail_price",
@@ -618,7 +618,7 @@
       "type": "text",
       "required": false,
       "placeholder": "e.g. 0.20",
-      "description": "Dollar amount to trail. Required if trail_percent is not provided",
+      "description": "Only for trailing_stop orders.",
       "displayOptions": {
         "show": {
           "operation": [
@@ -635,7 +635,7 @@
       "type": "text",
       "required": false,
       "placeholder": "e.g. 0.20",
-      "description": "Percentage to trail (0-1). Required if trail_price is not provided",
+      "description": "Only for trailing_stop orders.",
       "displayOptions": {
         "show": {
           "operation": [
@@ -689,7 +689,7 @@
           ]
         }
       },
-      "description": "How long order stays active. Day expires at market close, GTC stays until filled/cancelled."
+      "description": "Time in force — only for place_order."
     },
     {
       "key": "extended_hours",

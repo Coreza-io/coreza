@@ -218,7 +218,9 @@ export function useNodeExecution({
           .filter(
             (n) =>
               attachedNodeIds.has(n.id) &&
-              (n.data?.definition as any)?.node_type === "sub",
+              ((n.data?.definition as any)?.node_type === "sub" ||
+                (n.data as any)?.values?.__isTool === true ||
+                (n.data as any)?.fieldState?.__isTool === true),
           )
           .map((n) => n.id),
       );

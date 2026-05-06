@@ -112,6 +112,9 @@ interface NodeWrapperProps {
   executionStatus?: "success" | "failed" | "pending" | "running" | "skipped";
   executionDuration?: number;
   itemCount?: number;
+  // Tool mode toggle
+  isTool?: boolean;
+  onToggleTool?: () => void;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({

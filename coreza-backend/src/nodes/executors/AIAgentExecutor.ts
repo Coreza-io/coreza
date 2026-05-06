@@ -333,9 +333,7 @@ export class AIAgentExecutor implements INodeExecutor {
           // Normalize node name for underlying executor (strip "Tool" suffix)
           const normalizedNode = {
             ...node,
-            name: node.name?.endsWith("Tool")
-              ? node.name.replace(/Tool$/, "")
-              : node.name,
+            name: node.name,
             values: { ...node.values, ...unwrappedInput },
           };
 
@@ -483,7 +481,8 @@ export class AIAgentExecutor implements INodeExecutor {
     if (
       nodeCategory.includes("Indicator") ||
       nodeCategory.includes("Market") ||
-      nodeName.includes("Market") ||
+      nodeCategory.includes("Broker") ||
+      nodeName.includes("Alpaca") ||
       nodeName.includes("Finance") ||
       nodeName.includes("Polygon") ||
       nodeName.includes("FinnHub")
@@ -509,17 +508,7 @@ export class AIAgentExecutor implements INodeExecutor {
     // If workflow node doesn't have fields, try to load from JSON definition
     if (!nodeFields || !Array.isArray(nodeFields) || nodeFields.length === 0) {
       const nodeName = node.name || "";
-      const normalizedName = nodeName.endsWith("Tool")
-        ? nodeName.replace(/Tool$/, "")
-        : nodeName;
-
-      // Try to find the Tool definition first, then the base node
-      const toolDefName = `${normalizedName}Tool`;
-      let nodeDefinition = loadNodeDefinition(toolDefName);
-
-      if (!nodeDefinition || !nodeDefinition.fields?.length) {
-        nodeDefinition = loadNodeDefinition(normalizedName);
-      }
+      let nodeDefinition = loadNodeDefinition(nodeName);
 
       if (nodeDefinition?.fields && nodeDefinition.fields.length > 0) {
         nodeFields = nodeDefinition.fields;
@@ -558,10 +547,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
   private getToolDefinition(node: WorkflowNode): ToolDefinition | undefined {
     const nodeName = node.name || node.category || "node";
-    const normalizedName = nodeName.endsWith("Tool")
-      ? nodeName.replace(/Tool$/, "")
-      : nodeName;
-    return TOOL_DEFINITIONS[normalizedName];
+    return TOOL_DEFINITIONS[nodeName];
   }
 
   private getExecutorCategory(
@@ -569,9 +555,6 @@ export class AIAgentExecutor implements INodeExecutor {
     definition?: ToolDefinition,
   ): string {
     const nodeName = node.name || node.category || "node";
-    const normalizedName = nodeName.endsWith("Tool")
-      ? nodeName.replace(/Tool$/, "")
-      : nodeName;
 
     const executorCategoryMap: Record<string, string> = {
       //Broker
@@ -615,7 +598,7 @@ export class AIAgentExecutor implements INodeExecutor {
     };
 
     return (
-      executorCategoryMap[normalizedName] ||
+      executorCategoryMap[nodeName] ||
       definition?.category ||
       node.category ||
       "Utility"

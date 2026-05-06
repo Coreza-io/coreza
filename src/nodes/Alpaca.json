@@ -156,6 +156,11 @@
           "id": "get_latest_bar",
           "name": "Get Latest Bar",
           "method": "POST"
+        },
+        {
+          "id": "fetch_news",
+          "name": "Get News",
+          "method": "POST"
         }
       ],
       "placeholder": "Select operation",
@@ -186,7 +191,8 @@
         "show": {
           "operation": [
             "get_candle",
-            "get_latest_bar"
+            "get_latest_bar",
+            "fetch_news"
           ],
           "assetType": [
             "stock"
@@ -295,7 +301,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "get_candle"
+            "get_candle",
+            "fetch_news"
           ]
         }
       }
@@ -378,7 +385,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "get_candle"
+            "get_candle",
+            "fetch_news"
           ]
         }
       }
@@ -392,7 +400,8 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "get_candle"
+            "get_candle",
+            "fetch_news"
           ]
         }
       }
@@ -406,7 +415,48 @@
       "displayOptions": {
         "show": {
           "operation": [
-            "get_candle"
+            "get_candle",
+            "fetch_news"
+          ]
+        }
+      }
+    },
+    {
+      "key": "include_content",
+      "label": "Include Full Content",
+      "type": "select",
+      "options": [
+        {
+          "id": "true",
+          "name": "Yes"
+        },
+        {
+          "id": "false",
+          "name": "No"
+        }
+      ],
+      "default": "false",
+      "description": "Include full article content (may increase response size)",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "fetch_news"
+          ]
+        }
+      }
+    },
+    {
+      "key": "page_token",
+      "label": "Page Token",
+      "type": "text",
+      "placeholder": "For pagination (optional)",
+      "description": "Token from previous response for pagination",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "fetch_news"
           ]
         }
       }

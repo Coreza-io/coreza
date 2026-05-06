@@ -19,7 +19,7 @@ import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layout/BasicNodeLayout";
 import RepeaterNodeLayout from "./layout/RepeaterNodeLayout";
-import { useNodeId } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";

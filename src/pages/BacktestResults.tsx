@@ -57,6 +57,12 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
 
   const backPath = isLive ? "/dashboard/live" : "/dashboard/backtests";
   const pageLabel = isLive ? "Live Strategy" : "Backtest";
+  const formatPercent = (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 0.01) return `${value.toFixed(2)}%`;
+    if (abs > 0) return `${value.toFixed(4)}%`;
+    return "0.00%";
+  };
 
   const renderHeader = () => {
     if (loading || !backtest) {
@@ -127,7 +133,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     format: "percent" | "number" | "currency" = "number",
   ) => {
     if (value === undefined || value === null || !Number.isFinite(value)) return "—";
-    if (format === "percent") return `${value.toFixed(2)}%`;
+    if (format === "percent") return formatPercent(value);
     if (format === "currency")
       return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return value.toFixed(2);

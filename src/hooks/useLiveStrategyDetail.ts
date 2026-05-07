@@ -7,7 +7,7 @@ import {
   BacktestTrade,
   PortfolioSnapshot,
 } from "./useBacktestResults";
-import { buildLiveMetrics } from "@/lib/liveMetrics";
+import { buildLiveMetrics, normalizeLiveEquitySnapshots } from "@/lib/liveMetrics";
 
 const toFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -16,28 +16,6 @@ const toFiniteNumber = (value: unknown): number | undefined => {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
-};
-
-const deriveInitialCapitalFromBalances = (balances: unknown): number | undefined => {
-  if (!balances || typeof balances !== "object") return undefined;
-  const values = Object.values(balances as Record<string, unknown>)
-    .map((value) => {
-      if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-      if (value && typeof value === "object") {
-        const candidate = value as Record<string, unknown>;
-        return (
-          toFiniteNumber(candidate.usdValue) ??
-          toFiniteNumber(candidate.usdtValue) ??
-          toFiniteNumber(candidate.value) ??
-          toFiniteNumber(candidate.total)
-        );
-      }
-      return toFiniteNumber(value);
-    })
-    .filter((v): v is number => v !== undefined);
-  if (values.length === 0) return undefined;
-  const sum = values.reduce((acc, val) => acc + val, 0);
-  return Number.isFinite(sum) && sum > 0 ? sum : undefined;
 };
 
 const mapFillStatusToOrderStatus = (
@@ -254,19 +232,14 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       const firstSnapshot = filteredSnapshots[0] as any | undefined;
       const lastSnapshot = filteredSnapshots[filteredSnapshots.length - 1] as any | undefined;
 
-      // Derive initial capital: prefer snapshot balances, then first trade's notional value
-      const snapshotCapital =
-        deriveInitialCapitalFromBalances(firstSnapshot?.balances) ??
-        toFiniteNumber(firstSnapshot?.total_value_usdt);
+      // Derive initial capital: prefer metrics/snapshot normalization logic, then first trade notional fallback
+      const normalizedData = normalizeLiveEquitySnapshots(filteredSnapshots as any[], undefined);
       const firstTrade = closedTrades[0] as any | undefined;
       const tradeEntryCapital =
         firstTrade?.entryPrice
           ? Number(firstTrade.entryPrice) * Math.abs(Number(firstTrade.quantity || 1))
           : undefined;
-      const derivedInitialCapital =
-        snapshotCapital && snapshotCapital > 0
-          ? snapshotCapital
-          : tradeEntryCapital;
+      const derivedInitialCapital = normalizedData.initialCapital && normalizedData.initialCapital > 0 ? normalizedData.initialCapital : tradeEntryCapital;
 
       const portfolioSummary = {
         initial_capital: derivedInitialCapital,
@@ -284,26 +257,29 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       // Map snapshots
       if (filteredSnapshots.length > 0) {
+        const normalizedByTimestamp = new Map(
+          normalizedData.normalizedSnapshots.map((s) => [s.ts, s.equity]),
+        );
         const mapped: PortfolioSnapshot[] = filteredSnapshots
           .filter((snapshot: any) => snapshot.snapshot_at)
-          .map((snapshot: any, index: number, snaps: any[]) => {
+          .map((snapshot: any) => {
             const mappedSnapshot = mapSnapshotToPortfolioSnapshot(
               snapshot,
               workflowId,
             );
-            if (index > 0) {
-              const prev = mapSnapshotToPortfolioSnapshot(
-                snaps[index - 1],
-                workflowId,
-              );
-              mappedSnapshot.daily_return =
-                prev.total_value > 0
-                  ? (mappedSnapshot.total_value - prev.total_value) /
-                    prev.total_value
-                  : undefined;
-            }
+            const ts = Date.parse(snapshot.snapshot_at);
+            const normalizedTotal = normalizedByTimestamp.get(ts);
+            if (normalizedTotal !== undefined) mappedSnapshot.total_value = normalizedTotal;
             return mappedSnapshot;
           });
+        for (let i = 1; i < mapped.length; i += 1) {
+          const prev = mapped[i - 1];
+          const current = mapped[i];
+          current.daily_return =
+            prev.total_value > 0
+              ? ((current.total_value - prev.total_value) / prev.total_value) * 100
+              : undefined;
+        }
         setSnapshots(mapped);
       } else {
         setSnapshots([]);
@@ -406,15 +382,16 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             return;
 
           setSnapshots((prev) => {
-            const nextSnapshot = mapSnapshotToPortfolioSnapshot(
-              newSnapshot,
-              workflowId,
-            );
+            const updatedRawSnapshots = [...latestRawSnapshotsRef.current, newSnapshot];
+            const normalizedData = normalizeLiveEquitySnapshots(updatedRawSnapshots as any[], latestPortfolioSummaryRef.current);
+            const nextSnapshot = mapSnapshotToPortfolioSnapshot(newSnapshot, workflowId);
+            const normalized = normalizedData.normalizedSnapshots[normalizedData.normalizedSnapshots.length - 1];
+            if (normalized) nextSnapshot.total_value = normalized.equity;
             const previous = prev[prev.length - 1];
             if (previous && previous.total_value > 0) {
               nextSnapshot.daily_return =
-                (nextSnapshot.total_value - previous.total_value) /
-                previous.total_value;
+                ((nextSnapshot.total_value - previous.total_value) /
+                previous.total_value) * 100;
             }
             return [...prev, nextSnapshot];
           });

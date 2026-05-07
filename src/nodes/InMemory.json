@@ -2,7 +2,7 @@
   "name": "InMemory",
   "def": "InMemory",
   "node_type": "main",
-  "icon": "store.svg",
+  "icon": "/assets/icons/store.svg",
   "category": "Data",
   "description": "Execution-scoped RAM storage for workflow data. Lives for one run only.",
   "color": "#10b981",

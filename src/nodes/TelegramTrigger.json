@@ -4,7 +4,7 @@
   "category": "Trigger",
   "subCategory": "telegram",
   "provider": "telegram",
-  "icon": "telegram",
+  "icon": "/assets/icons/telegram.svg",
   "description": "Receive messages and updates from Telegram bots",
   "color": "text-blue-400",
   "size": {

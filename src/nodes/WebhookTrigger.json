@@ -3,7 +3,7 @@
   "node_type": "trigger",
   "category": "webhook",
   "provider": "generic",
-  "icon": "webhook",
+  "icon": "/assets/icons/webhook.svg",
   "description": "Receive HTTP webhooks from external services",
   "color": "text-purple-500",
   "size": {

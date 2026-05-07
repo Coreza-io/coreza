@@ -2,7 +2,7 @@
   "name": "RollingWindow",
   "def": "Rolling Window Buffer",
   "node_type": "main",
-  "icon": "store.svg",
+  "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "RollingWindow",
   "description": "Bounded in-memory FIFO buffer. Receives candle data, holds most recent N bars. Returns window state and readiness.",

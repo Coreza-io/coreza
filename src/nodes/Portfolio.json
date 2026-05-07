@@ -2,7 +2,7 @@
   "name": "Portfolio",
   "def": "Portfolio",
   "node_type": "main",
-  "icon": "/assets/icons/backtest.svg",
+  "icon": "/assets/icons/portfolio.svg",
   "category": "Portfolio",
   "description": "Generic portfolio state node for backtest and live broker modes. Supports order intent, order updates, executions, position reconciliation, balance reconciliation, MTM, and portfolio queries.",
   "color": "text-orange-500",

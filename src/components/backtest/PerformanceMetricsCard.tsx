@@ -6,9 +6,15 @@ interface PerformanceMetricsCardProps {
 }
 
 const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' }) => {
+  const formatPercent = (percentValue: number) => {
+    const abs = Math.abs(percentValue);
+    if (abs >= 0.01) return `${percentValue.toFixed(2)}%`;
+    if (abs > 0) return `${percentValue.toFixed(4)}%`;
+    return "0.00%";
+  };
   const formatValue = () => {
     if (value === undefined || value === null || !Number.isFinite(value)) return '—';
-    if (format === 'percent') return `${value.toFixed(2)}%`;
+    if (format === 'percent') return formatPercent(value);
     if (format === 'currency') return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return value.toFixed(2);
   };

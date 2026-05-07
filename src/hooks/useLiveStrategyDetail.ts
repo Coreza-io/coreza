@@ -250,10 +250,23 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       const closedTrades = (liveTradesData ?? []) as any[];
       const firstSnapshot = filteredSnapshots[0] as any | undefined;
       const lastSnapshot = filteredSnapshots[filteredSnapshots.length - 1] as any | undefined;
+
+      // Derive initial capital: prefer snapshot balances, then first trade's notional value
+      const snapshotCapital =
+        deriveInitialCapitalFromBalances(firstSnapshot?.balances) ??
+        toFiniteNumber(firstSnapshot?.total_value_usdt);
+      const firstTrade = closedTrades[0] as any | undefined;
+      const tradeEntryCapital =
+        firstTrade?.entryPrice
+          ? Number(firstTrade.entryPrice) * Math.abs(Number(firstTrade.quantity || 1))
+          : undefined;
+      const derivedInitialCapital =
+        snapshotCapital && snapshotCapital > 0
+          ? snapshotCapital
+          : tradeEntryCapital;
+
       const portfolioSummary = {
-        initial_capital:
-          deriveInitialCapitalFromBalances(firstSnapshot?.balances) ??
-          toFiniteNumber(firstSnapshot?.total_value_usdt),
+        initial_capital: derivedInitialCapital,
         total_equity:
           toFiniteNumber(lastSnapshot?.equity) ??
           toFiniteNumber(lastSnapshot?.total_value_usdt),

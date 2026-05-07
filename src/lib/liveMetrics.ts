@@ -110,6 +110,32 @@ const resampleToReturnSeries = (points: { ts: number; equity: number }[]): Retur
     };
   }
 
+  // Fallback: per-snapshot returns for very short sessions (< 1 hour of data)
+  const snapshotReturns: number[] = [];
+  const snapshotEquity: number[] = [];
+  for (const point of points) {
+    if (!(point.equity > 0)) continue;
+    snapshotEquity.push(point.equity);
+  }
+  for (let i = 1; i < snapshotEquity.length; i += 1) {
+    const prev = snapshotEquity[i - 1];
+    if (prev > 0) snapshotReturns.push((snapshotEquity[i] - prev) / prev);
+  }
+
+  if (snapshotReturns.length > 0) {
+    // Estimate annualization from actual time span
+    const timeSpanMs = points[points.length - 1].ts - points[0].ts;
+    const avgIntervalMs = timeSpanMs / (points.length - 1);
+    const intervalsPerDay = DAY_MS / Math.max(avgIntervalMs, 1000);
+    const periodsPerYear = intervalsPerDay * 252;
+    return {
+      returns: snapshotReturns,
+      equitySeries: snapshotEquity,
+      periodsPerYear,
+      minSamplesForRatios: 5,
+    };
+  }
+
   return {
     returns,
     equitySeries: dailyEquity,
@@ -227,21 +253,21 @@ export const buildLiveMetrics = (
   const EPSILON = 1e-9;
   const cleanSnapshots = snapshots
     .map(mapLiveSnapshotToEquityPoint)
-    .filter((point) => Number.isFinite(point.ts) && point.equity >= 0)
+    .filter((point) => Number.isFinite(point.ts))
     .sort((a, b) => a.ts - b.ts);
 
-  const finalPortfolioValue =
-    toFiniteNumber(portfolioSummary?.final_portfolio_value) ??
+  const rawFinalEquity =
     toFiniteNumber(portfolioSummary?.total_equity) ??
     (cleanSnapshots.length > 0
       ? cleanSnapshots[cleanSnapshots.length - 1].equity
       : undefined);
+
   const latestSnapshot = snapshots[snapshots.length - 1];
   const latestRealizedPnl = toFiniteNumber(latestSnapshot?.realized_pnl);
   const inferredInitialCapitalFromPnl =
     latestRealizedPnl !== undefined &&
-    finalPortfolioValue !== undefined
-      ? finalPortfolioValue - latestRealizedPnl
+    rawFinalEquity !== undefined
+      ? rawFinalEquity - latestRealizedPnl
       : undefined;
   const candidateInitialCapital =
     toFiniteNumber(portfolioSummary?.initial_capital) ??
@@ -251,6 +277,8 @@ export const buildLiveMetrics = (
     candidateInitialCapital !== undefined && Math.abs(candidateInitialCapital) > EPSILON
       ? candidateInitialCapital
       : inferredInitialCapitalFromPnl;
+
+  // Detect PnL-based equity: values are small relative to initialCapital and include zero/negative
   const shouldTranslateFromPnl =
     initialCapital !== undefined &&
     initialCapital > 0 &&
@@ -265,6 +293,13 @@ export const buildLiveMetrics = (
       }))
     : cleanSnapshots;
   const riskMetrics = calculateRiskMetrics(normalizedSnapshots, initialCapital);
+
+  // For PnL-based equity, finalPortfolioValue must be translated too
+  const finalPortfolioValue =
+    toFiniteNumber(portfolioSummary?.final_portfolio_value) ??
+    (shouldTranslateFromPnl && initialCapital
+      ? (rawFinalEquity ?? 0) + initialCapital
+      : rawFinalEquity);
 
   const computedTotalReturn =
     initialCapital !== undefined && initialCapital > 0 && finalPortfolioValue !== undefined

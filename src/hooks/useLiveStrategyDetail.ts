@@ -418,6 +418,33 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             }
             return [...prev, nextSnapshot];
           });
+
+          // Recompute metrics with the new snapshot appended
+          const updatedRawSnapshots = [
+            ...latestRawSnapshotsRef.current,
+            newSnapshot,
+          ];
+          latestRawSnapshotsRef.current = updatedRawSnapshots;
+
+          // Update portfolio summary with latest snapshot equity
+          const latestEquity =
+            toFiniteNumber(newSnapshot.equity) ??
+            toFiniteNumber(newSnapshot.total_value_usdt);
+          if (latestPortfolioSummaryRef.current) {
+            latestPortfolioSummaryRef.current = {
+              ...latestPortfolioSummaryRef.current,
+              total_equity: latestEquity,
+              realized_pnl: toFiniteNumber(newSnapshot.realized_pnl),
+            };
+          }
+
+          setMetrics(
+            buildLiveMetrics(
+              latestPortfolioSummaryRef.current,
+              latestTradeMetricInputRef.current,
+              updatedRawSnapshots,
+            ) as BacktestResultMetrics,
+          );
         },
       )
       .subscribe();

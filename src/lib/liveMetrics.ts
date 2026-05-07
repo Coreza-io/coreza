@@ -153,13 +153,13 @@ const calculateRiskMetrics = (
     };
   }
 
-  const firstEquity =
-    baselineCapital !== undefined && baselineCapital > 0
-      ? baselineCapital
-      : equityPoints[0].equity;
+  // Use the actual first equity point from the normalized curve as the baseline
+  // for return calculations — NOT baselineCapital, which may differ.
+  const firstEquity = equityPoints[0].equity;
   const lastEquity = equityPoints[equityPoints.length - 1].equity;
 
-  let peak = firstEquity;
+  // Max drawdown uses the first equity as the initial peak floor
+  let peak = Math.max(firstEquity, baselineCapital ?? 0);
   let maxDrawdownPct = 0;
   for (const point of equityPoints) {
     peak = Math.max(peak, point.equity);
@@ -172,11 +172,30 @@ const calculateRiskMetrics = (
   const { returns, equitySeries, periodsPerYear, minSamplesForRatios } = resampleToReturnSeries(equityPoints);
   const totalReturnPct = firstEquity > 0 ? ((lastEquity - firstEquity) / firstEquity) * 100 : undefined;
 
+  // Annualized return: for daily data use CAGR, for intraday use mean-return compounding
+  let annualizedReturn: number | undefined;
   const yearsElapsed = equitySeries.length > 1 ? (equitySeries.length - 1) / periodsPerYear : 0;
-  const annualizedReturn =
-    yearsElapsed > 0 && firstEquity > 0
-      ? (Math.pow(lastEquity / firstEquity, 1 / yearsElapsed) - 1) * 100
-      : totalReturnPct;
+
+  if (returns.length >= 2 && yearsElapsed > 0) {
+    if (periodsPerYear <= 252) {
+      // Daily data: CAGR style
+      annualizedReturn =
+        firstEquity > 0
+          ? (Math.pow(lastEquity / firstEquity, 1 / yearsElapsed) - 1) * 100
+          : totalReturnPct;
+    } else {
+      // Intraday data: use mean period return to avoid extreme exponents
+      const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+      annualizedReturn = (Math.pow(1 + avgReturn, periodsPerYear) - 1) * 100;
+    }
+  } else {
+    annualizedReturn = totalReturnPct;
+  }
+
+  // Clamp non-finite annualized return
+  if (annualizedReturn !== undefined && !Number.isFinite(annualizedReturn)) {
+    annualizedReturn = undefined;
+  }
 
   const enoughForRatios = returns.length >= minSamplesForRatios;
   if (!enoughForRatios || annualizedReturn === undefined) {
@@ -221,9 +240,9 @@ const calculateRiskMetrics = (
   return {
     max_drawdown: maxDrawdownPct,
     annualized_return: annualizedReturn,
-    sharpe_ratio: sharpeRatio,
-    sortino_ratio: sortinoRatio,
-    calmar_ratio: calmarRatio,
+    sharpe_ratio: Number.isFinite(sharpeRatio) ? sharpeRatio : undefined,
+    sortino_ratio: Number.isFinite(sortinoRatio) ? sortinoRatio : undefined,
+    calmar_ratio: calmarRatio !== undefined && Number.isFinite(calmarRatio) ? calmarRatio : undefined,
   };
 };
 

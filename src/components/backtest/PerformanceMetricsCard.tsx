@@ -7,7 +7,7 @@ interface PerformanceMetricsCardProps {
 
 const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' }) => {
   const formatValue = () => {
-    if (value === undefined || value === null) return '—';
+    if (value === undefined || value === null || !Number.isFinite(value)) return '—';
     if (format === 'percent') return `${value.toFixed(2)}%`;
     if (format === 'currency') return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return value.toFixed(2);

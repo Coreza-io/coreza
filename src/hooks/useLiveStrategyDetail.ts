@@ -9,6 +9,37 @@ import {
 } from "./useBacktestResults";
 import { buildLiveMetrics } from "@/lib/liveMetrics";
 
+const toFiniteNumber = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+const deriveInitialCapitalFromBalances = (balances: unknown): number | undefined => {
+  if (!balances || typeof balances !== "object") return undefined;
+  const values = Object.values(balances as Record<string, unknown>)
+    .map((value) => {
+      if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+      if (value && typeof value === "object") {
+        const candidate = value as Record<string, unknown>;
+        return (
+          toFiniteNumber(candidate.usdValue) ??
+          toFiniteNumber(candidate.usdtValue) ??
+          toFiniteNumber(candidate.value) ??
+          toFiniteNumber(candidate.total)
+        );
+      }
+      return toFiniteNumber(value);
+    })
+    .filter((v): v is number => v !== undefined);
+  if (values.length === 0) return undefined;
+  const sum = values.reduce((acc, val) => acc + val, 0);
+  return Number.isFinite(sum) && sum > 0 ? sum : undefined;
+};
+
 const mapFillStatusToOrderStatus = (
   fillStatus?: string | null,
 ): "Partial" | "Filled" | "Cancelled" | "Rejected" | "Expired" => {
@@ -217,6 +248,17 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       );
       const filteredSnapshots = snapshotsData ?? [];
       const closedTrades = (liveTradesData ?? []) as any[];
+      const firstSnapshot = filteredSnapshots[0] as any | undefined;
+      const lastSnapshot = filteredSnapshots[filteredSnapshots.length - 1] as any | undefined;
+      const portfolioSummary = {
+        initial_capital:
+          deriveInitialCapitalFromBalances(firstSnapshot?.balances) ??
+          toFiniteNumber(firstSnapshot?.total_value_usdt),
+        total_equity:
+          toFiniteNumber(lastSnapshot?.equity) ??
+          toFiniteNumber(lastSnapshot?.total_value_usdt),
+        realized_pnl: toFiniteNumber(lastSnapshot?.realized_pnl),
+      };
 
       // Map trades from live_trades table
       const mappedTrades = closedTrades.map((trade: any) =>
@@ -258,7 +300,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
 
       setMetrics(
         buildLiveMetrics(
-          undefined,
+          portfolioSummary,
           tradeMetricInput,
           filteredSnapshots as any[],
         ) as BacktestResultMetrics,

@@ -171,11 +171,13 @@ coreza/
 
 ## License
 
-Coreza is open-source software licensed under the GNU Affero General Public License v3.0.
+Coreza Community Edition is open-source software licensed under the GNU Affero General Public License v3.0 only.
 
-You may use, modify, and distribute Coreza under the terms of the AGPL-3.0 license.
+You may use, modify, and distribute Coreza under the terms of AGPL-3.0.
 
 If you modify Coreza and make it available to users over a network, you must make the corresponding source code available under AGPL-3.0.
+
+Commercial licenses may be available for companies that need private modifications, proprietary distribution, embedding, white-labeling, or enterprise use outside AGPL obligations.
 
 See the [LICENSE](LICENSE) file for details.
 

@@ -1,6 +1,6 @@
 # Coreza Open Source Philosophy
 
-Coreza is built openly to make institutional-grade trading automation accessible to individuals and teams everywhere. The platform is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+Coreza is built openly to make institutional-grade trading automation accessible to individuals and teams everywhere. The Coreza Community Edition is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only).
 
 ## Our Principles
 
@@ -12,3 +12,7 @@ Coreza is built openly to make institutional-grade trading automation accessible
 
 - Follow the [Code of Conduct](../CODE_OF_CONDUCT.md).
 - Keep changes consistent with AGPL-3.0 obligations when distributing networked services.
+
+- Contributors must agree to the [Contributor License Agreement](../CLA.md) before changes are merged.
+
+External contributions require agreement to the Coreza CLA so the project can remain open-source while also supporting future commercial licensing.

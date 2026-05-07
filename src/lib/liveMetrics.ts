@@ -110,6 +110,32 @@ const resampleToReturnSeries = (points: { ts: number; equity: number }[]): Retur
     };
   }
 
+  // Fallback: per-snapshot returns for very short sessions (< 1 hour of data)
+  const snapshotReturns: number[] = [];
+  const snapshotEquity: number[] = [];
+  for (const point of points) {
+    if (!(point.equity > 0)) continue;
+    snapshotEquity.push(point.equity);
+  }
+  for (let i = 1; i < snapshotEquity.length; i += 1) {
+    const prev = snapshotEquity[i - 1];
+    if (prev > 0) snapshotReturns.push((snapshotEquity[i] - prev) / prev);
+  }
+
+  if (snapshotReturns.length > 0) {
+    // Estimate annualization from actual time span
+    const timeSpanMs = points[points.length - 1].ts - points[0].ts;
+    const avgIntervalMs = timeSpanMs / (points.length - 1);
+    const intervalsPerDay = DAY_MS / Math.max(avgIntervalMs, 1000);
+    const periodsPerYear = intervalsPerDay * 252;
+    return {
+      returns: snapshotReturns,
+      equitySeries: snapshotEquity,
+      periodsPerYear,
+      minSamplesForRatios: 5,
+    };
+  }
+
   return {
     returns,
     equitySeries: dailyEquity,

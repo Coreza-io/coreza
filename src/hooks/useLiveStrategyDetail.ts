@@ -288,6 +288,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       // Compute metrics from closed trades + snapshots
       const tradeMetricInput = closedTrades.map((t: any) => ({
         netPnl: t.net_pnl != null ? Number(t.net_pnl) : undefined,
+        commission: t.commission != null ? Number(t.commission) : undefined,
+        slippage: t.slippage != null ? Number(t.slippage) : undefined,
+        entryTime: t.entry_time,
+        exitTime: t.exit_time,
+        entryPrice: t.entry_price != null ? Number(t.entry_price) : undefined,
+        quantity: t.quantity != null ? Number(t.quantity) : undefined,
       }));
 
       // Store refs for realtime recomputation

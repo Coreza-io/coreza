@@ -5,7 +5,7 @@ interface PerformanceMetricsCardProps {
   metrics?: BacktestResultMetrics | null;
 }
 
-const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' }) => {
+const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' | 'integer' | 'duration' }) => {
   const formatPercent = (percentValue: number) => {
     const abs = Math.abs(percentValue);
     if (abs >= 0.01) return `${percentValue.toFixed(2)}%`;
@@ -13,9 +13,20 @@ const MetricItem = ({ label, value, format = 'number' }: { label: string; value?
     return "0.00%";
   };
   const formatValue = () => {
-    if (value === undefined || value === null || !Number.isFinite(value)) return '—';
+    if (value === undefined || value === null || Number.isNaN(value)) return '—';
+    if (value === Infinity) return '∞';
     if (format === 'percent') return formatPercent(value);
     if (format === 'currency') return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    if (format === 'integer') return Math.round(value).toString();
+    if (format === 'duration') {
+      const totalMinutes = Math.floor(value / 60000);
+      const days = Math.floor(totalMinutes / (24 * 60));
+      const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+      const minutes = totalMinutes % 60;
+      if (days > 0) return `${days}d${hours > 0 ? ` ${hours}h` : ''}`;
+      if (hours > 0) return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`;
+      return `${minutes}m`;
+    }
     return value.toFixed(2);
   };
 
@@ -37,6 +48,9 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 );
 
 export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps) => {
+  const isIntradaySessionReturn = metrics?.annualized_return !== undefined && metrics?.total_return !== undefined && Math.abs(metrics.annualized_return - metrics.total_return) < 1e-9;
+  const annualizedLabel = isIntradaySessionReturn ? "Session Return" : "Annualized Return";
+
   return (
     <Card>
       <CardHeader>
@@ -48,7 +62,7 @@ export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps)
             <Section title="Key Performance">
               <MetricItem label="Net Profit" value={metrics.net_profit} format="currency" />
               <MetricItem label="Total Return" value={metrics.total_return} format="percent" />
-              <MetricItem label="Annualized Return" value={metrics.annualized_return} format="percent" />
+              <MetricItem label={annualizedLabel} value={metrics.annualized_return} format="percent" />
               <MetricItem label="Final Portfolio Value" value={metrics.final_portfolio_value} format="currency" />
             </Section>
 
@@ -60,12 +74,12 @@ export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps)
             </Section>
 
             <Section title="Trade Statistics">
-              <MetricItem label="Total Trades" value={metrics.total_trades} />
-              <MetricItem label="Winning Trades" value={metrics.profitable_trades} />
-              <MetricItem label="Losing Trades" value={metrics.losing_trades} />
+              <MetricItem label="Total Trades" value={metrics.total_trades} format="integer" />
+              <MetricItem label="Winning Trades" value={metrics.profitable_trades} format="integer" />
+              <MetricItem label="Losing Trades" value={metrics.losing_trades} format="integer" />
               <MetricItem label="Win Rate" value={metrics.win_rate} format="percent" />
-              <MetricItem label="Profit Factor" value={metrics.profit_factor} />
-              <MetricItem label="Avg Holding Period" value={metrics.avg_holding_period} />
+              <MetricItem label="Profit Factor" value={metrics.total_trades === 0 && metrics.profit_factor === 0 ? undefined : (metrics.profit_factor === Infinity ? Number.POSITIVE_INFINITY : metrics.profit_factor)} />
+              <MetricItem label="Avg Holding Period" value={metrics.avg_holding_period} format="duration" />
             </Section>
 
             <Section title="P&L Analysis">

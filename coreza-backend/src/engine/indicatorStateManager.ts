@@ -237,7 +237,7 @@ export class IndicatorStateManager {
 
   async clearWorkflow(userId: string, workflowId: string): Promise<number> {
     const redis = getRedisCache();
-    const pattern = `userId:${userId}:workflowId:${workflowId}:executionId:*:ind:*`;
+    const pattern = `indicator:userId:${userId}:workflowId:${workflowId}:executionId:*`;
     let cursor = "0";
     let removed = 0;
 

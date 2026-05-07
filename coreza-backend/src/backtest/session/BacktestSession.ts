@@ -8,6 +8,7 @@ import { WorkflowRun } from "../../engine/workflowRun";
 import { compilePlan, runBar, CompiledPlan } from "../compiled";
 import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
+import { RedisKeys } from "../../infra/redisKeys";
 
 export interface BarEvent {
   bar: any;
@@ -872,7 +873,7 @@ export class BacktestSession {
 
     const redis = getRedisCache();
     await redis.set(
-      `backtest:progress:${this.backtestId}`,
+      RedisKeys.backtestProgress(this.userId, this.backtestId),
       JSON.stringify({
         backtestId: this.backtestId,
         barsProcessed: this.barsProcessed,
@@ -914,7 +915,7 @@ export class BacktestSession {
       timing,
     );
     t0 = performance.now();
-    await redis.del(`backtest:progress:${this.backtestId}`);
+    await redis.del(RedisKeys.backtestProgress(this.userId, this.backtestId));
     this.perf.progressCleanupMs += performance.now() - t0;
   }
 }

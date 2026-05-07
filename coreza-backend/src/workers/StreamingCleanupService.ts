@@ -6,6 +6,7 @@
  */
 
 import { getRedisCache } from "../config/redis";
+import { REDIS_CHANNELS } from "../config/redisChannels";
 import logger from "../utils/logger";
 
 // Default stale threshold: 1 hour (in milliseconds)
@@ -89,7 +90,7 @@ class StreamingCleanupService {
 
     try {
       // Find all streaming workflow registrations (user-scoped pattern)
-      const regKeys = await redis.keys("md:user:*:wf:reg:*");
+      const regKeys = await redis.keys("workflow:userId:*:workflowId:*");
 
       if (regKeys.length === 0) {
         logger.debug("No streaming registrations to clean up");
@@ -146,15 +147,19 @@ class StreamingCleanupService {
       // Clean up workflow-level data for fully cleaned workflows
       for (const [workflowId, { userId, nodeIds }] of workflowsToCleanup) {
         // Check if any registrations remain for this workflow (user-scoped pattern)
-        const remainingKeys = await redis.keys(`md:user:${userId}:wf:reg:${workflowId}`);
+        const remainingKeys = await redis.keys(
+          REDIS_CHANNELS.workflowRegistration(userId, workflowId),
+        );
 
         if (remainingKeys.length === 0) {
           // No more registrations, clean up workflow-level data
           await redis.srem(
-            `md:user:${userId}:active_streaming_workflows`,
+            REDIS_CHANNELS.activeStreamingWorkflows(userId),
             workflowId
           );
-          await redis.del(`md:user:${userId}:workflow:${workflowId}:stream_filter`);
+          await redis.del(
+            REDIS_CHANNELS.workflowStreamFilter(userId, workflowId),
+          );
 
           logger.info(
             { workflowId, cleanedNodes: nodeIds.length },
@@ -182,8 +187,7 @@ class StreamingCleanupService {
    */
   async updateActivity(userId: string, workflowId: string): Promise<void> {
     const redis = getRedisCache();
-    // Use user-scoped key pattern: md:user:{userId}:wf:reg:{workflowId}
-    const regKey = `md:user:${userId}:wf:reg:${workflowId}`;
+    const regKey = REDIS_CHANNELS.workflowRegistration(userId, workflowId);
 
     try {
       const data = await redis.get(regKey);

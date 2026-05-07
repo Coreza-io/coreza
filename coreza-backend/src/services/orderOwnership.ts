@@ -17,7 +17,7 @@ type OrderOwnerIds = {
   algoId?: string;
 };
 
-const ORDER_OWNER_PREFIX = "order_owner";
+const ORDER_OWNER_PREFIX = "orderowner";
 
 export function orderOwnerKey(
   source: string,

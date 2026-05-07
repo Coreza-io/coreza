@@ -569,12 +569,12 @@ export class StreamingLifecycleAdapter {
     workflowId: string,
   ): Promise<void> {
     const redis = getRedisCache();
-    const pattern = `md:user:${userId}:subscription:scope:workflow:${workflowId}:*:streams`;
+    const pattern = `sub:userId:${userId}:scope:workflow:workflowId:${workflowId}:*:streams`;
 
-    // Key structure: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:{environment}:streams
-    //                 0    1     2         3        4       5          6          7        8
-    const SOURCE_INDEX = 7;
-    const ENV_INDEX = 8;
+    // Key structure: sub:userId:{userId}:scope:workflow:workflowId:{workflowId}:{source}:{environment}:streams
+    //                 0   1      2        3        4          5        6        7          8
+    const SOURCE_INDEX = 6;
+    const ENV_INDEX = 7;
 
     let cursor = "0";
 

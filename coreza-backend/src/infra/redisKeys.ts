@@ -9,38 +9,38 @@
 export const RedisKeys = {
   // ── User scope ──
   userRun: (userId: string, runId: string): string =>
-    `userId:${userId}:runId:${runId}`,
+    `run:userId:${userId}:runId:${runId}`,
   userRunsPending: (userId: string): string =>
-    `userId:${userId}:runs:pending`,
+    `runqueue:userId:${userId}:pending`,
 
   // ── Workflow scope ──
   store: (userId: string, workflowId: string, varName: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:store:${varName}`,
+    `store:userId:${userId}:workflowId:${workflowId}:${varName}`,
   storePattern: (userId: string, workflowId: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:store:*`,
+    `store:userId:${userId}:workflowId:${workflowId}:*`,
 
   strategyStream: (userId: string, workflowId: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:strategy:stream`,
+    `strategy:userId:${userId}:workflowId:${workflowId}:stream`,
 
   portfolioFillsStream: (userId: string, workflowId: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:portfolio:fills:stream`,
+    `fills:userId:${userId}:workflowId:${workflowId}:stream`,
 
   portfolioSnapshotLatest: (userId: string, workflowId: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:portfolio:snapshot:latest`,
+    `portfolio:userId:${userId}:workflowId:${workflowId}:snapshot`,
 
   order: (userId: string, workflowId: string, idempotencyKey: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:order:${idempotencyKey}`,
+    `order:userId:${userId}:workflowId:${workflowId}:${idempotencyKey}`,
   orderReverse: (userId: string, workflowId: string, orderId: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:orderReverse:${orderId}`,
+    `order:userId:${userId}:workflowId:${workflowId}:reverse:${orderId}`,
 
   persistent: (userId: string, workflowId: string, key: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:persistent:${key}`,
+    `persistent:userId:${userId}:workflowId:${workflowId}:${key}`,
 
   // ── User-scoped discovery sets ──
   userActiveFillStreams: (userId: string): string =>
-    `userId:${userId}:portfolio:fills:active_streams`,
+    `fills:userId:${userId}:active_streams`,
   userActiveSnapshotKeys: (userId: string): string =>
-    `userId:${userId}:portfolio:snapshots:active_keys`,
+    `portfolio:userId:${userId}:active_keys`,
 
   // ── Execution scope ──
   indicator: (
@@ -51,7 +51,7 @@ export const RedisKeys = {
     timeframe: string,
     indicator: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:ind:${symbol}:${timeframe}:${indicator}`,
+    `indicator:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${symbol}:${timeframe}:${indicator}`,
 
   rollingWindow: (
     userId: string,
@@ -61,14 +61,14 @@ export const RedisKeys = {
     symbol: string,
     timeframe: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:rw:${nodeId}:${symbol}:${timeframe}`,
+    `rw:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${nodeId}:${symbol}:${timeframe}`,
 
   executionPattern: (
     userId: string,
     workflowId: string,
     executionId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:*`,
+    `*:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:*`,
 
   // ── Run scope ──
   nodeState: (
@@ -77,7 +77,7 @@ export const RedisKeys = {
     executionId: string,
     nodeId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:node:${nodeId}`,
+    `nodestate:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${nodeId}`,
 
   // ── Loop scope ──
   loopMeta: (
@@ -86,26 +86,29 @@ export const RedisKeys = {
     parentRunId: string,
     loopId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:loop:${parentRunId}:${loopId}:meta`,
+    `loop:userId:${userId}:workflowId:${workflowId}:${parentRunId}:${loopId}:meta`,
   loopResults: (
     userId: string,
     workflowId: string,
     parentRunId: string,
     loopId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:loop:${parentRunId}:${loopId}:results`,
+    `loop:userId:${userId}:workflowId:${workflowId}:${parentRunId}:${loopId}:results`,
   loopAggregated: (
     userId: string,
     workflowId: string,
     parentRunId: string,
     loopId: string,
   ): string =>
-    `userId:${userId}:workflowId:${workflowId}:loop:${parentRunId}:${loopId}:aggregated`,
+    `loop:userId:${userId}:workflowId:${workflowId}:${parentRunId}:${loopId}:aggregated`,
   loopPattern: (userId: string, workflowId: string, parentRunId: string): string =>
-    `userId:${userId}:workflowId:${workflowId}:loop:${parentRunId}:*`,
+    `loop:userId:${userId}:workflowId:${workflowId}:${parentRunId}:*`,
 
   // ── Global registries (minimal system discovery only) ──
-  registryRunsPending: (): string => "registry:users:runs:pending",
-  registryFillsActive: (): string => "registry:users:fills:active",
-  registrySnapshotsActive: (): string => "registry:users:snapshots:active",
+  registryRunsPending: (): string => "registry:runs:pending",
+  registryFillsActive: (): string => "registry:fills:active",
+  registrySnapshotsActive: (): string => "registry:snapshots:active",
+
+  backtestProgress: (userId: string, backtestId: string): string =>
+    `backtest:userId:${userId}:backtestId:${backtestId}:progress`,
 };

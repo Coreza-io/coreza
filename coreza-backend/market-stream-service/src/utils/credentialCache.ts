@@ -38,7 +38,7 @@ export class CredentialCache {
   }
 
   static buildKey(userId: string, serviceType: string, name?: string): string {
-    return `${userId}:${serviceType}:${name || "_default"}`;
+    return `userId:${userId}:${serviceType}:${name || "_default"}`;
   }
 
   private ensureRedis(): Redis {
@@ -157,14 +157,14 @@ export class CredentialCache {
     const redis = this.ensureRedis();
 
     if (!serviceType) {
-      const pattern = `${this.L2_PREFIX}${userId}:*`;
+      const pattern = `${this.L2_PREFIX}userId:${userId}:*`;
       const keys = await redis.keys(pattern);
       if (keys.length > 0) {
         await redis.del(...keys);
       }
 
       for (const key of this.l1Cache.keys()) {
-        if (key.startsWith(`${userId}:`)) {
+        if (key.startsWith(`userId:${userId}:`)) {
           this.l1Cache.delete(key);
         }
       }

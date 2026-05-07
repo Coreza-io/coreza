@@ -332,15 +332,15 @@ export class WorkflowRecoveryService {
       };
 
       // Find all user/workflow scoped loop metadata keys
-      const keys = await scanKeys("userId:*:workflowId:*:loop:*:meta");
+      const keys = await scanKeys("loop:userId:*:workflowId:*:*:*:meta");
 
       for (const metaKey of keys) {
-        // Extract key segments: userId:{uid}:workflowId:{wid}:loop:{parentRunId}:{loopId}:meta
+        // Extract key segments: loop:userId:{uid}:workflowId:{wid}:{parentRunId}:{loopId}:meta
         const parts = metaKey.split(":");
         if (parts.length < 8) continue;
 
-        const userId = parts[1];
-        const workflowId = parts[3];
+        const userId = parts[2];
+        const workflowId = parts[4];
         const parentRunId = parts[5];
 
         // Check if parent run is still active

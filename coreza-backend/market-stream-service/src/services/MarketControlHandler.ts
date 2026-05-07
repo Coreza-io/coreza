@@ -338,7 +338,12 @@ export class MarketControlHandler {
     try {
       // If source specified, only check that source
       if (source) {
-        const key = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:${environment}:streams`;
+        const key = REDIS_CHANNELS.workflowSubscriptionStreams(
+          userId,
+          workflowId,
+          source,
+          String(environment || ""),
+        );
         console.log(
           `🔍 [MarketControl] Checking workflow-scoped symbols at key: ${key}`,
         );
@@ -352,7 +357,12 @@ export class MarketControlHandler {
         // Also check companion sources (e.g., trading/news alongside market)
         const companionSources = this.getCompanionSources(source);
         for (const companionSource of companionSources) {
-          const companionKey = `md:user:${userId}:subscription:scope:workflow:${workflowId}:${companionSource}:${environment}:streams`;
+          const companionKey = REDIS_CHANNELS.workflowSubscriptionStreams(
+            userId,
+            workflowId,
+            companionSource,
+            String(environment || ""),
+          );
           console.log(
             `🔍 [MarketControl] Checking companion streams at key: ${companionKey}`,
           );
@@ -389,14 +399,22 @@ export class MarketControlHandler {
 
     try {
       // Use pattern matching to find ALL subscription keys for this user
-      const streamKey = `md:user:${userId}:subscription:scope:global:${source}:${environment}:streams`;
+      const streamKey = REDIS_CHANNELS.globalSubscriptionStreams(
+        userId,
+        source,
+        environment,
+      );
       const streams = await this.redisPub.smembers(streamKey);
       streams.forEach((s) => allStream.add(s));
 
       // Also check companion sources (e.g., trading/news alongside market/crypto)
       const companionSources = this.getCompanionSources(source);
       for (const companionSource of companionSources) {
-        const companionKey = `md:user:${userId}:subscription:scope:global:${companionSource}:${environment}:streams`;
+        const companionKey = REDIS_CHANNELS.globalSubscriptionStreams(
+          userId,
+          companionSource,
+          environment,
+        );
         const companionStreams = await this.redisPub.smembers(companionKey);
         if (companionStreams.length > 0) {
           console.log(
@@ -459,7 +477,7 @@ export class MarketControlHandler {
         }
 
         // Also update any test listeners for this workflow (handles race condition)
-        const workflowStreamListenerKey = `md:user:${userId}:stream:${targetWorkflowId}:*`;
+        const workflowStreamListenerKey = `listener:userId:${userId}:workflowId:${targetWorkflowId}:*`;
         try {
           const workflowStreamListeners = await this.redisPub.keys(
             workflowStreamListenerKey,
@@ -498,7 +516,8 @@ export class MarketControlHandler {
       }
 
       // Global scope: update all active workflows for this user
-      const activeStreamingWorkflowsKey = `md:user:${userId}:active_streaming_workflows`;
+      const activeStreamingWorkflowsKey =
+        REDIS_CHANNELS.activeStreamingWorkflows(userId);
       const activeStreamingWorkflows = new Set(
         await this.redisPub.smembers(activeStreamingWorkflowsKey),
       );
@@ -1155,11 +1174,11 @@ export class MarketControlHandler {
     try {
       console.log("🔄 [MarketControl] Restoring gateway states from Redis...");
 
-      const stateKeys = await this.redisPub.keys("md:gateway:*:*:state");
+      const stateKeys = await this.redisPub.keys("gateway:userId:*:*:state");
       let restoredCount = 0;
 
       for (const stateKey of stateKeys) {
-        const match = stateKey.match(/^md:gateway:([^:]+):([^:]+):state$/);
+        const match = stateKey.match(/^gateway:userId:([^:]+):([^:]+):state$/);
         if (!match) {
           continue;
         }

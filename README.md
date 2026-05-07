@@ -169,9 +169,15 @@ coreza/
 5. Open a Pull Request
 6. Follow our [Code of Conduct](CODE_OF_CONDUCT.md) in all interactions
 
-## 📄 License
+## License
 
-This project is licensed under the [GNU AGPL-3.0](LICENSE).
+Coreza is open-source software licensed under the GNU Affero General Public License v3.0.
+
+You may use, modify, and distribute Coreza under the terms of the AGPL-3.0 license.
+
+If you modify Coreza and make it available to users over a network, you must make the corresponding source code available under AGPL-3.0.
+
+See the [LICENSE](LICENSE) file for details.
 
 ## 🆘 Support
 

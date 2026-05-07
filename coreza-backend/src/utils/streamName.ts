@@ -1,10 +1,11 @@
-/*
- * Copyright (C) 2024 Coreza
- * Stream Name Utilities - Build and parse native broker stream names
+/**
+ * Coreza - Open-source trading workflow automation platform
+ * Copyright (C) 2026 Coreza-io
  *
- * Stream names are stored in Redis as native broker format:
- * - Binance: btcusdt@kline_1m, btcusdt@trade, btcusdt@depth20
- * - Alpaca: bars.AAPL, trades.AAPL, quotes.AAPL
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License v3.0.
+ *
+ * See the LICENSE file for details.
  */
 
 export interface StreamIdentifier {

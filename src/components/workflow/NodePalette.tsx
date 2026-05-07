@@ -61,6 +61,7 @@ const getIconComponent = (iconName: string) => {
     Play,
     Search,
     Globe,
+    Building2,
   };
   return icons[iconName as keyof typeof icons] || Database;
 };

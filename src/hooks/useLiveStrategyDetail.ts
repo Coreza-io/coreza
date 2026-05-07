@@ -130,6 +130,9 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const activeSessionRunIdRef = useRef<string | null>(null);
   const pendingSessionRunIdRef = useRef<string | null>(null);
+  const latestTradeMetricInputRef = useRef<{ netPnl?: number }[]>([]);
+  const latestPortfolioSummaryRef = useRef<any>(undefined);
+  const latestRawSnapshotsRef = useRef<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -311,6 +314,11 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         netPnl: t.net_pnl != null ? Number(t.net_pnl) : undefined,
       }));
 
+      // Store refs for realtime recomputation
+      latestTradeMetricInputRef.current = tradeMetricInput;
+      latestPortfolioSummaryRef.current = portfolioSummary;
+      latestRawSnapshotsRef.current = filteredSnapshots as any[];
+
       setMetrics(
         buildLiveMetrics(
           portfolioSummary,
@@ -410,6 +418,33 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
             }
             return [...prev, nextSnapshot];
           });
+
+          // Recompute metrics with the new snapshot appended
+          const updatedRawSnapshots = [
+            ...latestRawSnapshotsRef.current,
+            newSnapshot,
+          ];
+          latestRawSnapshotsRef.current = updatedRawSnapshots;
+
+          // Update portfolio summary with latest snapshot equity
+          const latestEquity =
+            toFiniteNumber(newSnapshot.equity) ??
+            toFiniteNumber(newSnapshot.total_value_usdt);
+          if (latestPortfolioSummaryRef.current) {
+            latestPortfolioSummaryRef.current = {
+              ...latestPortfolioSummaryRef.current,
+              total_equity: latestEquity,
+              realized_pnl: toFiniteNumber(newSnapshot.realized_pnl),
+            };
+          }
+
+          setMetrics(
+            buildLiveMetrics(
+              latestPortfolioSummaryRef.current,
+              latestTradeMetricInputRef.current,
+              updatedRawSnapshots,
+            ) as BacktestResultMetrics,
+          );
         },
       )
       .subscribe();

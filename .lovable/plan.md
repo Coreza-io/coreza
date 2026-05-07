@@ -1,60 +1,61 @@
+## What I found
 
-# Fix Live Strategy Metrics
+The previous fix partially handled Total Return, but Annualized Return and Sharpe Ratio still have two logic gaps:
 
-## Root Cause Analysis
+1. **Annualized Return still uses an inconsistent baseline**
+   - `calculateRiskMetrics()` receives normalized equity points, but it uses `baselineCapital` as the first equity.
+   - For PnL-style snapshots, the normalized first equity is `initialCapital + firstPnl`.
+   - If the first snapshot PnL is not exactly zero, Annualized Return can still be anchored incorrectly and drift toward the old `-100%` style behavior.
+   - The formula also annualizes a few minutes of live data with a very large exponent, which can produce misleading extreme values.
 
-The `cash_snapshots.equity` field stores **cumulative realized PnL** (starts at 0, goes up/down with trades), NOT absolute portfolio value. The first snapshot always has `equity: 0`. This breaks three things:
+2. **Sharpe Ratio is not populating because the sample threshold is still too high for the active live session**
+   - Current active session has only ~9 snapshots / ~8 returns.
+   - The code’s hourly path can require `10` returns, and the daily path requires `30`.
+   - Result: `enoughForRatios` is false, so Sharpe/Sortino are intentionally returned as `undefined` and the card shows `—`.
 
-### Issue 1: Total Return = -100%
-- `cleanSnapshots` filter (`equity >= 0`) keeps the first snapshot (equity=0) but removes negative-PnL snapshots
-- `initialCapital` falls back to `cleanSnapshots[0].equity = 0`
-- `computedTotalReturn` guard (`initialCapital > 0`) fails, returns `undefined`
-- But `calculateRiskMetrics` also computes `totalReturnPct` with `firstEquity = 0` → `undefined`
-- The -100% likely comes from a scenario where `firstEquity` is a tiny positive value (e.g. 0.10) and `lastEquity` is near-zero, yielding ~-100%
+3. **Realtime snapshot updates only append chart snapshots, not recompute metrics**
+   - On new `cash_snapshots` inserts, `useLiveStrategyDetail.ts` updates `snapshots`, but does not call `buildLiveMetrics()` again.
+   - Metrics therefore can remain stale until a full reload or trade insert reload happens.
 
-### Issue 2: Sharpe/Sortino/Calmar all "—"
-- All snapshots are within a single day (~10-45 minutes)
-- `resampleToDailyCloseReturns` groups by day bucket → only 1 bucket → 0 returns
-- `enoughForRatios = returns.length >= 30` → false → all ratios undefined
+## Implementation plan
 
-### Issue 3: Max Drawdown "—"
-- The `equity >= 0` filter removes negative-PnL snapshots, so drawdown calculation sees incomplete data
-- With only positive-equity snapshots remaining, drawdown may appear as 0 or be computed incorrectly
+### 1. Fix live risk metric baseline in `src/lib/liveMetrics.ts`
 
-## Planned Changes (3 files, minimal edits)
+- Change `calculateRiskMetrics()` so Total/Annualized Return uses the actual first normalized equity point as the baseline for curve math.
+- Keep `baselineCapital` only as the starting peak/drawdown floor where useful.
+- This prevents Annualized Return from mixing `initialCapital` with a normalized curve whose first point may already include live PnL.
 
-### 1. `src/lib/liveMetrics.ts` — Fix equity interpretation and intraday resampling
+### 2. Make Annualized Return safe for intraday live sessions
 
-**a) Remove the `equity >= 0` filter (line 161)**
-Negative equity values are valid (negative PnL). The filter was incorrectly discarding them. Change to only filter for valid timestamps.
+- For daily data, keep the existing CAGR-style annualization.
+- For intraday/per-snapshot data, calculate annualized return from the mean period return:
+  - `annualizedReturn = ((1 + avgReturn) ^ periodsPerYear - 1) * 100`
+- Clamp or reject impossible non-finite outputs so the UI shows `—` instead of extreme invalid values.
+- This removes the remaining `-99.98%` / initial `-100%` annualized-return artifact.
 
-**b) Fix `initialCapital` for PnL-based equity (line 166-169)**
-When equity represents PnL (first snapshot equity ~0), derive `initialCapital` from the first trade's entry price. Accept a new optional `initialCapital` from the caller. If not provided and first equity is 0 or near-zero, use the cumulative net PnL to compute return as `(netPnL / entryCapital)` where entryCapital comes from a new parameter.
+### 3. Lower the live intraday Sharpe threshold
 
-Pragmatic approach: add an `entryCapital` field to `buildLiveMetrics` params derived from the first trade's entry price. In the caller, compute this from `closedTrades[0].entryPrice * quantity`.
+- In the per-snapshot fallback, reduce `minSamplesForRatios` from `5` to `3` so short live sessions can populate once there is enough meaningful data.
+- Avoid the hourly bucket path blocking Sharpe at `10` samples; for live sessions with only one day of data, prefer the per-snapshot return series when it has enough data.
+- Keep a minimum sample guard so Sharpe is not calculated from only 1 return.
 
-**c) Add intraday resampling fallback (lines 40-63)**
-When all data fits in a single day bucket, fall back to per-snapshot returns instead of daily returns. Lower the `enoughForRatios` threshold to 5 for intraday data (with an annualization factor based on actual interval, not 252 trading days).
+### 4. Recompute metrics when live snapshots arrive
 
-**d) Guard Calmar NaN (line 105)**
-When `annualizedReturn` is `undefined`, return `undefined` for `calmar_ratio` instead of `undefined / 100 / maxDrawdownPct` which yields `NaN`.
+- In `useLiveStrategyDetail.ts`, store the latest closed trade metric input and portfolio summary in refs.
+- When a realtime `cash_snapshots` insert arrives, append the new chart snapshot and also recompute `metrics` using the updated snapshot list.
+- This makes Annualized Return, Sharpe Ratio, drawdown, and final portfolio value populate/update without requiring a page refresh.
 
-### 2. `src/hooks/useLiveStrategyDetail.ts` — Pass entry capital to buildLiveMetrics
+### 5. Normalize live chart snapshots consistently
 
-Compute `entryCapital` from the first closed trade's entry price and quantity. Pass it to `buildLiveMetrics` so Total Return can be computed as `netPnL / entryCapital * 100`.
+- For PnL-style cash snapshots, the chart currently receives raw PnL values as `total_value`, while metrics use normalized portfolio equity.
+- Add a small helper so live `PortfolioSnapshot.total_value` is translated to `initialCapital + equity` when the stream is PnL-based.
+- This aligns the Equity Curve with the metric calculations.
 
-### 3. `src/components/backtest/PerformanceMetricsCard.tsx` — Guard NaN/Infinity display
+### 6. Verify against the active session data
 
-In the `MetricItem` component, add a check: if `value` is `NaN` or `Infinity`, display "—" instead of the malformed number.
+After the code changes, I will validate the active workflow session using the database data:
 
-## Technical Details
-
-**Intraday resampling logic:**
-- Detect single-day data: all points share the same day bucket
-- Use per-snapshot returns instead of daily close returns  
-- Annualize using: `sqrt(periodsPerYear)` where `periodsPerYear = totalTimeSpanMs / avgIntervalMs * 252/365`
-- Lower threshold: require at least 5 return observations for ratio computation
-
-**Entry capital derivation:**
-- From `closedTrades[0]`: `entryPrice * quantity` gives the notional capital deployed
-- This is the correct denominator for return calculation in a PnL-based equity curve
+- Annualized Return should no longer show `-99.98%` / `-100%` for PnL-based live snapshots.
+- Sharpe Ratio should populate once there are at least 3 per-snapshot returns and non-zero volatility.
+- Total Return should remain correct.
+- Alpaca/absolute-equity sessions should not be regressed.

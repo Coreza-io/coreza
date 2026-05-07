@@ -14,6 +14,8 @@ type LiveSnapshot = {
   cash?: number | null;
   equity?: number | null;
   total_value_usdt?: number | null;
+  realized_pnl?: number | null;
+  balances?: Record<string, unknown> | null;
 };
 
 type ClosedTrade = {
@@ -37,10 +39,25 @@ const stdDev = (values: number[]): number => {
   return Math.sqrt(variance);
 };
 
-const resampleToDailyCloseReturns = (points: { ts: number; equity: number }[]) => {
-  if (points.length < 2) return { returns: [] as number[], dailyEquity: [] as number[] };
+type ReturnSeries = {
+  returns: number[];
+  equitySeries: number[];
+  periodsPerYear: number;
+  minSamplesForRatios: number;
+};
+
+const resampleToReturnSeries = (points: { ts: number; equity: number }[]): ReturnSeries => {
+  if (points.length < 2) {
+    return {
+      returns: [],
+      equitySeries: points.map((p) => p.equity),
+      periodsPerYear: 252,
+      minSamplesForRatios: 30,
+    };
+  }
 
   const DAY_MS = 86_400_000;
+  const HOUR_MS = 3_600_000;
   const dailyClose = new Map<number, number>();
 
   for (const point of points) {
@@ -59,10 +76,52 @@ const resampleToDailyCloseReturns = (points: { ts: number; equity: number }[]) =
     if (prev > 0) returns.push((current - prev) / prev);
   }
 
-  return { returns, dailyEquity };
+  if (dailyEquity.length > 1) {
+    return {
+      returns,
+      equitySeries: dailyEquity,
+      periodsPerYear: 252,
+      minSamplesForRatios: 30,
+    };
+  }
+
+  const hourlyClose = new Map<number, number>();
+  for (const point of points) {
+    if (!(point.equity > 0)) continue;
+    const hourlyBucket = Math.floor(point.ts / HOUR_MS);
+    hourlyClose.set(hourlyBucket, point.equity);
+  }
+
+  const hourlyBuckets = Array.from(hourlyClose.keys()).sort((a, b) => a - b);
+  const hourlyEquity = hourlyBuckets.map((bucket) => hourlyClose.get(bucket) ?? 0);
+  const hourlyReturns: number[] = [];
+  for (let i = 1; i < hourlyEquity.length; i += 1) {
+    const prev = hourlyEquity[i - 1];
+    const current = hourlyEquity[i];
+    if (prev > 0) hourlyReturns.push((current - prev) / prev);
+  }
+
+  if (hourlyReturns.length > 0) {
+    return {
+      returns: hourlyReturns,
+      equitySeries: hourlyEquity,
+      periodsPerYear: 252 * 24,
+      minSamplesForRatios: 10,
+    };
+  }
+
+  return {
+    returns,
+    equitySeries: dailyEquity,
+    periodsPerYear: 252,
+    minSamplesForRatios: 30,
+  };
 };
 
-const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[]) => {
+const calculateRiskMetrics = (
+  equityPoints: { ts: number; equity: number }[],
+  baselineCapital?: number,
+) => {
   if (equityPoints.length < 2) {
     return {
       max_drawdown: undefined,
@@ -73,7 +132,10 @@ const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[]) =>
     };
   }
 
-  const firstEquity = equityPoints[0].equity;
+  const firstEquity =
+    baselineCapital !== undefined && baselineCapital > 0
+      ? baselineCapital
+      : equityPoints[0].equity;
   const lastEquity = equityPoints[equityPoints.length - 1].equity;
 
   let peak = firstEquity;
@@ -86,32 +148,35 @@ const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[]) =>
     }
   }
 
-  const { returns, dailyEquity } = resampleToDailyCloseReturns(equityPoints);
+  const { returns, equitySeries, periodsPerYear, minSamplesForRatios } = resampleToReturnSeries(equityPoints);
   const totalReturnPct = firstEquity > 0 ? ((lastEquity - firstEquity) / firstEquity) * 100 : undefined;
 
-  const yearsElapsed = dailyEquity.length > 1 ? (dailyEquity.length - 1) / 252 : 0;
+  const yearsElapsed = equitySeries.length > 1 ? (equitySeries.length - 1) / periodsPerYear : 0;
   const annualizedReturn =
     yearsElapsed > 0 && firstEquity > 0
       ? (Math.pow(lastEquity / firstEquity, 1 / yearsElapsed) - 1) * 100
       : totalReturnPct;
 
-  const enoughForRatios = returns.length >= 30;
+  const enoughForRatios = returns.length >= minSamplesForRatios;
   if (!enoughForRatios || annualizedReturn === undefined) {
     return {
       max_drawdown: maxDrawdownPct,
       annualized_return: annualizedReturn,
       sharpe_ratio: undefined,
       sortino_ratio: undefined,
-      calmar_ratio: maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : 0,
+      calmar_ratio:
+        annualizedReturn !== undefined && maxDrawdownPct > 0
+          ? annualizedReturn / 100 / maxDrawdownPct
+          : undefined,
     };
   }
 
-  const dailyRf = Math.pow(1 + 0.02, 1 / 252) - 1;
-  const excessReturns = returns.map((r) => r - dailyRf);
+  const periodRf = Math.pow(1 + 0.02, 1 / periodsPerYear) - 1;
+  const excessReturns = returns.map((r) => r - periodRf);
   const avgExcess = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
 
   const volatility = stdDev(excessReturns);
-  const sharpeRatio = volatility > 0 ? (avgExcess / volatility) * Math.sqrt(252) : 0;
+  const sharpeRatio = volatility > 0 ? (avgExcess / volatility) * Math.sqrt(periodsPerYear) : 0;
 
   const downside = excessReturns.filter((r) => r < 0);
   const downsideDeviation =
@@ -124,10 +189,13 @@ const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[]) =>
         ? Infinity
         : 0
       : downsideDeviation > 0
-        ? (avgExcess / downsideDeviation) * Math.sqrt(252)
+        ? (avgExcess / downsideDeviation) * Math.sqrt(periodsPerYear)
         : 0;
 
-  const calmarRatio = maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : 0;
+  const calmarRatio =
+    annualizedReturn !== undefined && maxDrawdownPct > 0
+      ? annualizedReturn / 100 / maxDrawdownPct
+      : undefined;
 
   return {
     max_drawdown: maxDrawdownPct,
@@ -156,17 +224,11 @@ export const buildLiveMetrics = (
   closedTrades: ClosedTrade[] = [],
   snapshots: LiveSnapshot[] = [],
 ): BacktestResultMetrics => {
+  const EPSILON = 1e-9;
   const cleanSnapshots = snapshots
     .map(mapLiveSnapshotToEquityPoint)
     .filter((point) => Number.isFinite(point.ts) && point.equity >= 0)
     .sort((a, b) => a.ts - b.ts);
-
-  const riskMetrics = calculateRiskMetrics(cleanSnapshots);
-
-  const initialCapital =
-    toFiniteNumber(portfolioSummary?.initial_capital) ??
-    toFiniteNumber(portfolioSummary?.starting_equity) ??
-    (cleanSnapshots.length > 0 ? cleanSnapshots[0].equity : undefined);
 
   const finalPortfolioValue =
     toFiniteNumber(portfolioSummary?.final_portfolio_value) ??
@@ -174,6 +236,35 @@ export const buildLiveMetrics = (
     (cleanSnapshots.length > 0
       ? cleanSnapshots[cleanSnapshots.length - 1].equity
       : undefined);
+  const latestSnapshot = snapshots[snapshots.length - 1];
+  const latestRealizedPnl = toFiniteNumber(latestSnapshot?.realized_pnl);
+  const inferredInitialCapitalFromPnl =
+    latestRealizedPnl !== undefined &&
+    finalPortfolioValue !== undefined
+      ? finalPortfolioValue - latestRealizedPnl
+      : undefined;
+  const candidateInitialCapital =
+    toFiniteNumber(portfolioSummary?.initial_capital) ??
+    toFiniteNumber(portfolioSummary?.starting_equity) ??
+    (cleanSnapshots.length > 0 ? cleanSnapshots[0].equity : undefined);
+  const initialCapital =
+    candidateInitialCapital !== undefined && Math.abs(candidateInitialCapital) > EPSILON
+      ? candidateInitialCapital
+      : inferredInitialCapitalFromPnl;
+  const shouldTranslateFromPnl =
+    initialCapital !== undefined &&
+    initialCapital > 0 &&
+    cleanSnapshots.length > 1 &&
+    cleanSnapshots.some((point) => point.equity <= 0) &&
+    Math.max(...cleanSnapshots.map((point) => Math.abs(point.equity))) <
+      initialCapital * 0.25;
+  const normalizedSnapshots = shouldTranslateFromPnl
+    ? cleanSnapshots.map((point) => ({
+        ...point,
+        equity: point.equity + initialCapital,
+      }))
+    : cleanSnapshots;
+  const riskMetrics = calculateRiskMetrics(normalizedSnapshots, initialCapital);
 
   const computedTotalReturn =
     initialCapital !== undefined && initialCapital > 0 && finalPortfolioValue !== undefined

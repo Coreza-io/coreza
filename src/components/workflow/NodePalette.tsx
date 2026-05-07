@@ -35,6 +35,7 @@ import {
   Wrench,
   Radio,
   Layers,
+  Building2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { nodeManifest } from "@/nodes/manifest";
@@ -60,6 +61,7 @@ const getIconComponent = (iconName: string) => {
     Play,
     Search,
     Globe,
+    Building2,
   };
   return icons[iconName as keyof typeof icons] || Database;
 };

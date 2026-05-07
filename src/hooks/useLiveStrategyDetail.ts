@@ -130,6 +130,9 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const activeSessionRunIdRef = useRef<string | null>(null);
   const pendingSessionRunIdRef = useRef<string | null>(null);
+  const latestTradeMetricInputRef = useRef<{ netPnl?: number }[]>([]);
+  const latestPortfolioSummaryRef = useRef<any>(undefined);
+  const latestRawSnapshotsRef = useRef<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

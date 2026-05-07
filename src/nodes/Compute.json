@@ -3,7 +3,7 @@
   "label": "Compute",
   "def": "Compute values with type-specific operations",
   "node_type": "main",
-  "icon": "/assets/icons/if.svg",
+  "icon": "/assets/icons/compute.svg",
   "category": "Logic",
   "description": "Data computations for strings, numbers, dates, arrays, objects. Includes statistical and advanced date operations.",
   "color": "text-yellow-500",

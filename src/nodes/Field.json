@@ -3,7 +3,7 @@
   "label":       "Edit Fields",
   "def":         "Map or drop fields from your JSON payload",
   "node_type":   "main",
-  "icon":        "/assets/icons/if.svg",
+  "icon": "/assets/icons/edit-fields.svg",
   "category":    "Logic",
   "description": "Set, remove or rename JSON fields",
   "color":       "text-yellow-500",

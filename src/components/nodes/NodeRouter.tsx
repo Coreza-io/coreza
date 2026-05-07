@@ -150,10 +150,11 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
     }
 
     // For Switch nodes, generate handles based on cases - use stable reference
-    const cases = data.fieldState?.cases || data.values?.cases;
+    const rawCases = data.fieldState?.cases || data.values?.cases;
+    const cases = Array.isArray(rawCases) ? rawCases : [];
 
     // If no cases available, use defaults from definition
-    if (!cases || cases.length === 0) {
+    if (cases.length === 0) {
       const casesField = definition.fields?.find((f: any) => f.key === "cases");
       const defaultCases = Array.isArray(casesField?.default)
         ? casesField?.default

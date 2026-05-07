@@ -174,8 +174,9 @@ By contributing to Coreza, you agree that your contributions will be licensed un
 
 ## 🧾 Contributor License Agreement (CLA)
 
-- All contributors must sign the Coreza CLA before pull requests can be merged. You will be prompted to review and sign the CLA as part of the PR workflow.
-- By signing the CLA, you affirm that you have the right to contribute the code and that Coreza can distribute it under the AGPL-3.0 license.
+By submitting a contribution to Coreza, you agree to the Coreza Contributor License Agreement in [CLA.md](CLA.md).
+
+The CLA allows Coreza maintainers to use your contribution in both the AGPL-licensed Community Edition and future commercial/enterprise versions.
 
 ## 🧭 Feature Request Prioritization
 

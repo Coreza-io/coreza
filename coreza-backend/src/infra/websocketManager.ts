@@ -559,12 +559,12 @@ export class WebSocketManager {
     this.redisSub = sub;
 
     // Subscribe to pattern ws:user:* to receive market data for all users
-    this.redisSub.psubscribe("ws:user:*", (err, count) => {
+    this.redisSub.psubscribe(REDIS_CHANNELS.userDataPattern, (err, count) => {
       if (err) {
-        console.error("❌ Failed to subscribe to ws:user:* pattern:", err);
+        console.error("❌ Failed to subscribe to ws:user pattern:", err);
       } else {
         console.log(
-          `✅ Subscribed to ws:user:* pattern (${count} patterns active)`,
+          `✅ Subscribed to ws:user pattern (${count} patterns active)`,
         );
       }
     });

@@ -46,10 +46,10 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
   }
 
   const segments: Array<string | number> = [
+    config.scope,
     `userId:${config.userId}`,
     `workflowId:${config.workflowId}`,
     `executionId:${executionId}`,
-    config.scope,
   ];
 
   if (config.parts?.length) {

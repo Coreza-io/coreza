@@ -97,9 +97,9 @@ export class StatusService {
       if (stateStr) {
         try {
           const state = JSON.parse(stateStr);
-          // Extract source from key: md:gateway:{userId}:{source}:state
+          // Extract source from key: gateway:userId:{userId}:{source}:state
           const sourceMatch = key.match(
-            new RegExp(`^md:gateway:${userId}:([^:]+):state$`),
+            new RegExp(`^gateway:userId:${userId}:([^:]+):state$`),
           );
           if (sourceMatch) {
             sources.push({
@@ -235,9 +235,9 @@ export class StatusService {
     );
 
     for (const key of streamKeys) {
-      // Pattern: md:user:{userId}:subscription:scope:global:{source}:{environment}:streams
+      // Pattern: sub:userId:{userId}:scope:global:{source}:{environment}:streams
       const match = key.match(
-        /md:user:[^:]+:subscription:scope:global:([^:]+):([^:]+):streams$/,
+        /sub:userId:[^:]+:scope:global:([^:]+):([^:]+):streams$/,
       );
       if (match) {
         const source = match[1];
@@ -269,9 +269,9 @@ export class StatusService {
     );
 
     for (const key of streamKeys) {
-      // Pattern: md:user:{userId}:subscription:scope:workflow:{workflowId}:{source}:{environment}:streams
+      // Pattern: sub:userId:{userId}:scope:workflow:workflowId:{workflowId}:{source}:{environment}:streams
       const match = key.match(
-        /md:user:[^:]+:subscription:scope:workflow:([^:]+):([^:]+):([^:]+):streams$/,
+        /sub:userId:[^:]+:scope:workflow:workflowId:([^:]+):([^:]+):([^:]+):streams$/,
       );
       if (match) {
         const [, workflowId, source, environment] = match;

@@ -1,6 +1,6 @@
 import { getRedisQueue } from "../config/redis";
 
-const PREFIX = "order_owner";
+const PREFIX = "orderowner";
 
 export interface OrderOwner {
   userId: string;

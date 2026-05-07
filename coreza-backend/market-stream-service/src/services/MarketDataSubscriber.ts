@@ -26,7 +26,7 @@ const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
   "executionReport",
   "listen_key_expired",
 ]);
-const ORDER_OWNER_PREFIX = "order_owner";
+const ORDER_OWNER_PREFIX = "orderowner";
 
 function computeTradingNativeStreams(
   source: string,
@@ -283,8 +283,8 @@ export class MarketDataSubscriber {
 
       const { pub } = this.ensureRedisConnections();
       await this.cleanupLegacyTradingStreamEntries(pub);
-      // Use user-scoped pattern: md:user:{userId}:wf:reg:{workflowId}
-      const pattern = "md:user:*:wf:reg:*";
+      // Use user-scoped pattern: workflow:userId:{userId}:workflowId:{workflowId}
+      const pattern = "workflow:userId:*:workflowId:*";
       const keys = await pub.keys(pattern);
 
       let restored = 0;
@@ -361,8 +361,8 @@ export class MarketDataSubscriber {
 
   private async cleanupLegacyTradingStreamEntries(pub: Redis): Promise<void> {
     const patterns = [
-      "md:user:*:subscription:scope:workflow:*:*:*:streams",
-      "md:user:*:subscription:scope:global:*:*:streams",
+      "sub:userId:*:scope:workflow:workflowId:*:*:*:streams",
+      "sub:userId:*:scope:global:*:*:streams",
     ];
 
     for (const pattern of patterns) {

@@ -29,6 +29,7 @@ export const REDIS_CHANNELS = {
 
   // User-specific WebSocket delivery channel (WebSocketManager subscribes)
   userData: (userId: string) => `ws:user:${userId}`,
+  userDataPattern: "ws:user:*",
 
   // ============================================
   // WORKFLOW REGISTRATION KEYS (MarketDataSubscriber)
@@ -37,16 +38,16 @@ export const REDIS_CHANNELS = {
   // Workflow registration persistence (stores workflow routing info)
   // Used by: MarketDataSubscriber, StreamingCleanupService
   workflowRegistration: (userId: string, workflowId: string) =>
-    `md:user:${userId}:wf:reg:${workflowId}`,
+    `workflow:userId:${userId}:workflowId:${workflowId}`,
 
   // Active streaming workflows SET (tracks which workflows are streaming)
   // Used by: stream.ts status endpoint, cleanup services
   activeStreamingWorkflows: (userId: string) =>
-    `md:user:${userId}:active_streaming_workflows`,
+    `workflow:userId:${userId}:active_streaming`,
 
   // Workflow stream filter (stores filter config for a streaming workflow)
   workflowStreamFilter: (userId: string, workflowId: string) =>
-    `md:user:${userId}:workflow:${workflowId}:stream_filter`,
+    `workflow:userId:${userId}:workflowId:${workflowId}:stream_filter`,
 
   // ============================================
   // SUBSCRIPTION KEYS (Broker connections via Subscribe nodes)
@@ -60,7 +61,7 @@ export const REDIS_CHANNELS = {
     source: string,
     environment: string,
   ) =>
-    `md:user:${userId}:subscription:scope:global:${source}:${environment}:streams`,
+    `sub:userId:${userId}:scope:global:${source}:${environment}:streams`,
 
   // Workflow-scoped subscription streams (isolated to specific workflow)
   // Stores native stream names: btcusdt@kline_1m, bars.AAPL
@@ -71,7 +72,7 @@ export const REDIS_CHANNELS = {
     source: string,
     environment: string,
   ) =>
-    `md:user:${userId}:subscription:scope:workflow:${workflowId}:${source}:${environment}:streams`,
+    `sub:userId:${userId}:scope:workflow:workflowId:${workflowId}:${source}:${environment}:streams`,
 
   // ============================================
   // GATEWAY STATE KEYS (MarketDataGateway)
@@ -79,10 +80,10 @@ export const REDIS_CHANNELS = {
 
   // Gateway state persistence (per-user, per-source)
   gatewayState: (userId: string, source: string) =>
-    `md:gateway:${userId}:${source}:state`,
+    `gateway:userId:${userId}:${source}:state`,
 
   // Users associated with a gateway (for multi-user restoration)
-  gatewayUsers: (source: string) => `md:gateway:${source}:users`,
+  gatewayUsers: (source: string) => `gateway:${source}:users`,
 
   // ============================================
   // LISTENER KEYS (Stream testing in UI)
@@ -91,19 +92,19 @@ export const REDIS_CHANNELS = {
   // Individual test listener data
   // Used by: stream.ts register/unregister endpoints
   Listener: (userId: string, workflowId: string, nodeId: string) =>
-    `md:user:${userId}:stream:${workflowId}:${nodeId}`,
+    `listener:userId:${userId}:workflowId:${workflowId}:${nodeId}`,
 
   // listener result (stores captured market event)
   ListenerResult: (userId: string, workflowId: string, nodeId: string) =>
-    `md:user:${userId}:stream:${workflowId}:${nodeId}:result`,
+    `listener:userId:${userId}:workflowId:${workflowId}:${nodeId}:result`,
 
   // User's active listeners SET (for efficient per-user queries)
   userActiveListeners: (userId: string) =>
-    `md:user:${userId}:stream:active_listeners`,
+    `listener:userId:${userId}:active`,
 
   // User's listener count (for rate limiting)
   userListenerCount: (userId: string) =>
-    `md:user:${userId}:stream:listener_count`,
+    `listener:userId:${userId}:count`,
 } as const;
 
 // ============================================
@@ -112,29 +113,29 @@ export const REDIS_CHANNELS = {
 
 export const REDIS_KEY_PATTERNS = {
   // All workflow registrations for a user
-  userWorkflowRegistrations: (userId: string) => `md:user:${userId}:wf:reg:*`,
+  userWorkflowRegistrations: (userId: string) => `workflow:userId:${userId}:workflowId:*`,
 
   // All global subscription streams for a user (new format)
   userGlobalSubscriptionStreams: (userId: string) =>
-    `md:user:${userId}:subscription:scope:global:*:streams`,
+    `sub:userId:${userId}:scope:global:*:streams`,
 
   // All workflow-scoped subscription streams for a user (new format)
   userWorkflowSubscriptionStreams: (userId: string) =>
-    `md:user:${userId}:subscription:scope:workflow:*:*:streams`,
+    `sub:userId:${userId}:scope:workflow:workflowId:*:*:*:streams`,
 
   // All global subscription environments for a user
   userGlobalSubscriptionEnvironments: (userId: string) =>
-    `md:user:${userId}:subscription:scope:global:*:environment`,
+    `sub:userId:${userId}:scope:global:*:environment`,
 
   // All workflow-scoped subscription environments for a user
   userWorkflowSubscriptionEnvironments: (userId: string) =>
-    `md:user:${userId}:subscription:scope:workflow:*:*:environment`,
+    `sub:userId:${userId}:scope:workflow:workflowId:*:*:*:environment`,
 
   // All gateway states for a user
-  userGatewayStates: (userId: string) => `md:gateway:${userId}:*:state`,
+  userGatewayStates: (userId: string) => `gateway:userId:${userId}:*:state`,
 
   // All test listeners for a user
-  userListeners: (userId: string) => `md:user:${userId}:stream:*`,
+  userListeners: (userId: string) => `listener:userId:${userId}:*`,
 } as const;
 
 // Type exports

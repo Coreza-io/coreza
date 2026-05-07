@@ -27,9 +27,9 @@ import { RedisKeys } from "../infra/redisKeys";
  * 2. Batch syncing completed runs to Supabase every N seconds
  * 3. Cleaning up synced runs from Redis
  *
- * Pending lists are user-scoped: `userId:${userId}:runs:pending`
- * Active users are discovered from: `registry:users:runs:pending`
- * Data keys are user-scoped: `userId:${userId}:runId:${runId}`
+ * Pending lists are user-scoped: `runqueue:userId:${userId}:pending`
+ * Active users are discovered from: `registry:runs:pending`
+ * Data keys are user-scoped: `run:userId:${userId}:runId:${runId}`
  */
 export class RunSyncService {
   private static instance: RunSyncService;

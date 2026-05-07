@@ -1,7 +1,7 @@
 import { getRedisQueue } from "../config/redis";
 
 const TTL_SECONDS = 86400;
-const PREFIX = "order_owner";
+const PREFIX = "orderowner";
 
 export interface OrderOwner {
   userId: string;

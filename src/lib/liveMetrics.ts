@@ -58,36 +58,44 @@ const resampleToReturnSeries = (points: { ts: number; equity: number }[]): Retur
 
   const DAY_MS = 86_400_000;
   const HOUR_MS = 3_600_000;
-  const dailyClose = new Map<number, number>();
 
-  for (const point of points) {
-    if (!(point.equity > 0)) continue;
+  // Always compute per-snapshot returns as a candidate
+  const positivePoints = points.filter((p) => p.equity > 0);
+  const snapshotEquity = positivePoints.map((p) => p.equity);
+  const snapshotReturns: number[] = [];
+  for (let i = 1; i < snapshotEquity.length; i += 1) {
+    const prev = snapshotEquity[i - 1];
+    if (prev > 0) snapshotReturns.push((snapshotEquity[i] - prev) / prev);
+  }
+
+  // Try daily resampling first
+  const dailyClose = new Map<number, number>();
+  for (const point of positivePoints) {
     const dayBucket = Math.floor(point.ts / DAY_MS);
     dailyClose.set(dayBucket, point.equity);
   }
 
   const buckets = Array.from(dailyClose.keys()).sort((a, b) => a - b);
   const dailyEquity = buckets.map((bucket) => dailyClose.get(bucket) ?? 0);
-  const returns: number[] = [];
+  const dailyReturns: number[] = [];
 
   for (let i = 1; i < dailyEquity.length; i += 1) {
     const prev = dailyEquity[i - 1];
-    const current = dailyEquity[i];
-    if (prev > 0) returns.push((current - prev) / prev);
+    if (prev > 0) dailyReturns.push((dailyEquity[i] - prev) / prev);
   }
 
-  if (dailyEquity.length > 1) {
+  if (dailyReturns.length >= 2) {
     return {
-      returns,
+      returns: dailyReturns,
       equitySeries: dailyEquity,
       periodsPerYear: 252,
       minSamplesForRatios: 30,
     };
   }
 
+  // Try hourly resampling
   const hourlyClose = new Map<number, number>();
-  for (const point of points) {
-    if (!(point.equity > 0)) continue;
+  for (const point of positivePoints) {
     const hourlyBucket = Math.floor(point.ts / HOUR_MS);
     hourlyClose.set(hourlyBucket, point.equity);
   }
@@ -97,48 +105,35 @@ const resampleToReturnSeries = (points: { ts: number; equity: number }[]): Retur
   const hourlyReturns: number[] = [];
   for (let i = 1; i < hourlyEquity.length; i += 1) {
     const prev = hourlyEquity[i - 1];
-    const current = hourlyEquity[i];
-    if (prev > 0) hourlyReturns.push((current - prev) / prev);
+    if (prev > 0) hourlyReturns.push((hourlyEquity[i] - prev) / prev);
   }
 
-  if (hourlyReturns.length > 0) {
+  if (hourlyReturns.length >= 2) {
     return {
       returns: hourlyReturns,
       equitySeries: hourlyEquity,
       periodsPerYear: 252 * 24,
-      minSamplesForRatios: 10,
+      minSamplesForRatios: 3,
     };
   }
 
-  // Fallback: per-snapshot returns for very short sessions (< 1 hour of data)
-  const snapshotReturns: number[] = [];
-  const snapshotEquity: number[] = [];
-  for (const point of points) {
-    if (!(point.equity > 0)) continue;
-    snapshotEquity.push(point.equity);
-  }
-  for (let i = 1; i < snapshotEquity.length; i += 1) {
-    const prev = snapshotEquity[i - 1];
-    if (prev > 0) snapshotReturns.push((snapshotEquity[i] - prev) / prev);
-  }
-
-  if (snapshotReturns.length > 0) {
-    // Estimate annualization from actual time span
-    const timeSpanMs = points[points.length - 1].ts - points[0].ts;
-    const avgIntervalMs = timeSpanMs / (points.length - 1);
+  // Fallback: per-snapshot returns for very short sessions
+  if (snapshotReturns.length >= 2) {
+    const timeSpanMs = positivePoints[positivePoints.length - 1].ts - positivePoints[0].ts;
+    const avgIntervalMs = timeSpanMs / (positivePoints.length - 1);
     const intervalsPerDay = DAY_MS / Math.max(avgIntervalMs, 1000);
     const periodsPerYear = intervalsPerDay * 252;
     return {
       returns: snapshotReturns,
       equitySeries: snapshotEquity,
       periodsPerYear,
-      minSamplesForRatios: 5,
+      minSamplesForRatios: 3,
     };
   }
 
   return {
-    returns,
-    equitySeries: dailyEquity,
+    returns: snapshotReturns,
+    equitySeries: snapshotEquity,
     periodsPerYear: 252,
     minSamplesForRatios: 30,
   };

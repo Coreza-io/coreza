@@ -20,6 +20,12 @@ type LiveSnapshot = {
 
 type ClosedTrade = {
   netPnl?: number;
+  commission?: number;
+  slippage?: number;
+  entryTime?: string | number | Date;
+  exitTime?: string | number | Date;
+  entryPrice?: number;
+  quantity?: number;
 };
 
 const toFiniteNumber = (value: unknown): number | undefined => {
@@ -78,9 +84,9 @@ const resampleToReturnSeries = (points: { ts: number; equity: number }[]): Retur
     const prev = hourlyEquity[i - 1];
     if (prev > 0) hourlyReturns.push((hourlyEquity[i] - prev) / prev);
   }
-  if (hourlyReturns.length >= 2) return { returns: hourlyReturns, equitySeries: hourlyEquity, periodsPerYear: 252 * 24, minSamplesForRatios: 3 };
+  if (hourlyReturns.length >= 2) return { returns: hourlyReturns, equitySeries: hourlyEquity, periodsPerYear: 252 * 6.5, minSamplesForRatios: 20 };
 
-  return { returns: snapshotReturns, equitySeries: snapshotEquity, periodsPerYear: 252 * 24, minSamplesForRatios: 3 };
+  return { returns: snapshotReturns, equitySeries: snapshotEquity, periodsPerYear: 0, minSamplesForRatios: 20 };
 };
 
 const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[], baselineCapital?: number) => {
@@ -97,24 +103,29 @@ const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[], ba
   const { returns, equitySeries, periodsPerYear, minSamplesForRatios } = resampleToReturnSeries(equityPoints);
   const totalReturnPct = firstEquity > 0 ? ((lastEquity - firstEquity) / firstEquity) * 100 : undefined;
   let annualizedReturn: number | undefined;
-  const yearsElapsed = equitySeries.length > 1 ? (equitySeries.length - 1) / periodsPerYear : 0;
-  if (returns.length >= 2 && yearsElapsed > 0 && periodsPerYear <= 252) {
+  const yearsElapsed = periodsPerYear > 0 && equitySeries.length > 1 ? (equitySeries.length - 1) / periodsPerYear : 0;
+  if (periodsPerYear === 0) {
+    annualizedReturn = totalReturnPct;
+  } else if (returns.length >= 2 && yearsElapsed > 0 && periodsPerYear <= 252) {
     annualizedReturn = firstEquity > 0 ? (Math.pow(lastEquity / firstEquity, 1 / yearsElapsed) - 1) * 100 : totalReturnPct;
   } else {
     annualizedReturn = totalReturnPct;
   }
-  if (annualizedReturn !== undefined && !Number.isFinite(annualizedReturn)) annualizedReturn = undefined;
+  if (annualizedReturn !== undefined) {
+    if (!Number.isFinite(annualizedReturn)) annualizedReturn = undefined;
+    else annualizedReturn = Math.min(100000, Math.max(-100, annualizedReturn));
+  }
 
   const enoughForRatios = returns.length >= minSamplesForRatios;
   if (!enoughForRatios || annualizedReturn === undefined) {
     return { max_drawdown: maxDrawdownPct, annualized_return: annualizedReturn, sharpe_ratio: undefined, sortino_ratio: undefined, calmar_ratio: annualizedReturn !== undefined && maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : undefined };
   }
 
-  const periodRf = Math.pow(1 + 0.02, 1 / periodsPerYear) - 1;
+  const periodRf = periodsPerYear > 0 ? Math.pow(1 + 0.02, 1 / periodsPerYear) - 1 : 0;
   const excessReturns = returns.map((r) => r - periodRf);
   const avgExcess = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
   const volatility = stdDev(excessReturns);
-  const annualizationFactor = periodsPerYear <= 252 ? Math.sqrt(periodsPerYear) : 1;
+  const annualizationFactor = periodsPerYear > 0 ? Math.sqrt(periodsPerYear) : 1;
   const sharpeRatio = volatility > 0 ? (avgExcess / volatility) * annualizationFactor : 0;
   const downside = excessReturns.filter((r) => r < 0);
   const downsideDeviation = downside.length > 0 ? Math.sqrt(downside.reduce((sum, r) => sum + r * r, 0) / downside.length) : 0;
@@ -124,8 +135,8 @@ const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[], ba
   return {
     max_drawdown: maxDrawdownPct,
     annualized_return: annualizedReturn,
-    sharpe_ratio: Number.isFinite(sharpeRatio) && Math.abs(sharpeRatio) < 100 ? sharpeRatio : undefined,
-    sortino_ratio: Number.isFinite(sortinoRatio) && Math.abs(sortinoRatio) < 100 ? sortinoRatio : undefined,
+    sharpe_ratio: Number.isFinite(sharpeRatio) ? sharpeRatio : undefined,
+    sortino_ratio: Number.isFinite(sortinoRatio) ? sortinoRatio : undefined,
     calmar_ratio: calmarRatio !== undefined && Number.isFinite(calmarRatio) ? calmarRatio : undefined,
   };
 };
@@ -179,11 +190,19 @@ export const buildLiveMetrics = (portfolioSummary?: LivePortfolioSummary, closed
   const totalWins = winningPnls.reduce((sum, pnl) => sum + pnl, 0);
   const totalLossesAbs = Math.abs(losingPnls.reduce((sum, pnl) => sum + pnl, 0));
   const avgWin = profitableTrades > 0 ? totalWins / profitableTrades : 0;
-  const avgLoss = losingTrades > 0 ? losingPnls.reduce((sum, pnl) => sum + pnl, 0) / losingTrades : 0;
+  const avgLoss = losingTrades > 0 ? losingPnls.reduce((sum, pnl) => sum + pnl, 0) / losingTrades : undefined;
   const largestWin = profitableTrades > 0 ? Math.max(...winningPnls) : 0;
-  const largestLoss = losingTrades > 0 ? Math.min(...losingPnls) : 0;
+  const largestLoss = losingTrades > 0 ? Math.min(...losingPnls) : undefined;
   const profitFactor = totalLossesAbs > 0 ? totalWins / totalLossesAbs : totalWins > 0 ? Infinity : 0;
   const averageTradeReturn = totalTrades > 0 && initialCapital && initialCapital > 0 ? pnls.reduce((sum, pnl) => sum + (pnl / initialCapital) * 100, 0) / totalTrades : 0;
+  const totalCommission = closedTrades.reduce((sum, trade) => sum + (toFiniteNumber(trade.commission) ?? 0), 0);
+  const totalSlippage = closedTrades.reduce((sum, trade) => sum + (toFiniteNumber(trade.slippage) ?? 0), 0);
+  const holdingDurationsMs = closedTrades.map((trade) => {
+    const entryTs = trade.entryTime instanceof Date ? trade.entryTime.getTime() : Date.parse(String(trade.entryTime ?? ""));
+    const exitTs = trade.exitTime instanceof Date ? trade.exitTime.getTime() : Date.parse(String(trade.exitTime ?? ""));
+    return Number.isFinite(entryTs) && Number.isFinite(exitTs) && exitTs >= entryTs ? exitTs - entryTs : undefined;
+  }).filter((v): v is number => v !== undefined);
+  const avgHoldingPeriod = holdingDurationsMs.length > 0 ? holdingDurationsMs.reduce((sum, ms) => sum + ms, 0) / holdingDurationsMs.length : undefined;
   const expectancy = totalTrades > 0 ? tradeNetProfit / totalTrades : 0;
 
   return {
@@ -201,6 +220,9 @@ export const buildLiveMetrics = (portfolioSummary?: LivePortfolioSummary, closed
     largest_loss: toFiniteNumber(portfolioSummary?.largest_loss) ?? largestLoss,
     average_trade_return: toFiniteNumber(portfolioSummary?.average_trade_return) ?? averageTradeReturn,
     expectancy: toFiniteNumber(portfolioSummary?.expectancy) ?? expectancy,
+    total_commission: toFiniteNumber(portfolioSummary?.total_commission) ?? totalCommission,
+    total_slippage: toFiniteNumber(portfolioSummary?.total_slippage) ?? totalSlippage,
+    avg_holding_period: toFiniteNumber(portfolioSummary?.avg_holding_period) ?? avgHoldingPeriod,
     ...riskMetrics,
   };
 };

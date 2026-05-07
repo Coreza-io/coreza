@@ -126,7 +126,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     value?: number | null,
     format: "percent" | "number" | "currency" = "number",
   ) => {
-    if (value === undefined || value === null) return "—";
+    if (value === undefined || value === null || !Number.isFinite(value)) return "—";
     if (format === "percent") return `${value.toFixed(2)}%`;
     if (format === "currency")
       return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;

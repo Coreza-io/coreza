@@ -227,21 +227,21 @@ export const buildLiveMetrics = (
   const EPSILON = 1e-9;
   const cleanSnapshots = snapshots
     .map(mapLiveSnapshotToEquityPoint)
-    .filter((point) => Number.isFinite(point.ts) && point.equity >= 0)
+    .filter((point) => Number.isFinite(point.ts))
     .sort((a, b) => a.ts - b.ts);
 
-  const finalPortfolioValue =
-    toFiniteNumber(portfolioSummary?.final_portfolio_value) ??
+  const rawFinalEquity =
     toFiniteNumber(portfolioSummary?.total_equity) ??
     (cleanSnapshots.length > 0
       ? cleanSnapshots[cleanSnapshots.length - 1].equity
       : undefined);
+
   const latestSnapshot = snapshots[snapshots.length - 1];
   const latestRealizedPnl = toFiniteNumber(latestSnapshot?.realized_pnl);
   const inferredInitialCapitalFromPnl =
     latestRealizedPnl !== undefined &&
-    finalPortfolioValue !== undefined
-      ? finalPortfolioValue - latestRealizedPnl
+    rawFinalEquity !== undefined
+      ? rawFinalEquity - latestRealizedPnl
       : undefined;
   const candidateInitialCapital =
     toFiniteNumber(portfolioSummary?.initial_capital) ??
@@ -251,6 +251,8 @@ export const buildLiveMetrics = (
     candidateInitialCapital !== undefined && Math.abs(candidateInitialCapital) > EPSILON
       ? candidateInitialCapital
       : inferredInitialCapitalFromPnl;
+
+  // Detect PnL-based equity: values are small relative to initialCapital and include zero/negative
   const shouldTranslateFromPnl =
     initialCapital !== undefined &&
     initialCapital > 0 &&
@@ -265,6 +267,13 @@ export const buildLiveMetrics = (
       }))
     : cleanSnapshots;
   const riskMetrics = calculateRiskMetrics(normalizedSnapshots, initialCapital);
+
+  // For PnL-based equity, finalPortfolioValue must be translated too
+  const finalPortfolioValue =
+    toFiniteNumber(portfolioSummary?.final_portfolio_value) ??
+    (shouldTranslateFromPnl && initialCapital
+      ? (rawFinalEquity ?? 0) + initialCapital
+      : rawFinalEquity);
 
   const computedTotalReturn =
     initialCapital !== undefined && initialCapital > 0 && finalPortfolioValue !== undefined

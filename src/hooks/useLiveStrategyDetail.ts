@@ -314,6 +314,11 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         netPnl: t.net_pnl != null ? Number(t.net_pnl) : undefined,
       }));
 
+      // Store refs for realtime recomputation
+      latestTradeMetricInputRef.current = tradeMetricInput;
+      latestPortfolioSummaryRef.current = portfolioSummary;
+      latestRawSnapshotsRef.current = filteredSnapshots as any[];
+
       setMetrics(
         buildLiveMetrics(
           portfolioSummary,

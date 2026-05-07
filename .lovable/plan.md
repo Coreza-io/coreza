@@ -1,37 +1,60 @@
 
-# Review: Tool Toggle Implementation
+# Fix Live Strategy Metrics
 
-## Verdict: Well implemented with 3 minor issues
+## Root Cause Analysis
 
-The core architecture is solid. The toggle flows correctly through all layers:
-- **NodeRouter.tsx**: Reads `__isTool` from `fieldState`/`values`, provides `handleToggleTool` via `useCallback`, swaps handles to `TOOL_HANDLE` when active.
-- **NodeWrapper.tsx**: Wrench icon toggle (hidden until hover, highlighted when active), "TOOL" badge, proper `nodrag` class and `stopPropagation`.
-- **useNodeExecution.ts**: Correctly includes `__isTool` nodes in `support_nodes` payload, sets `node_type: "sub"` for toggled nodes.
-- **workflowExecutor.ts**: `isSubNode()` correctly treats `__isTool` nodes as sub-nodes (skipped in main execution).
-- **fieldVisibility.ts**: `__isTool` in `systemKeys` ensures persistence.
-- **Backend AIAgentExecutor.ts**: Logs toggled status, routes through existing `createToolFromNode`.
+The `cash_snapshots.equity` field stores **cumulative realized PnL** (starts at 0, goes up/down with trades), NOT absolute portfolio value. The first snapshot always has `equity: 0`. This breaks three things:
 
-## Issues to Fix
+### Issue 1: Total Return = -100%
+- `cleanSnapshots` filter (`equity >= 0`) keeps the first snapshot (equity=0) but removes negative-PnL snapshots
+- `initialCapital` falls back to `cleanSnapshots[0].equity = 0`
+- `computedTotalReturn` guard (`initialCapital > 0`) fails, returns `undefined`
+- But `calculateRiskMetrics` also computes `totalReturnPct` with `firstEquity = 0` → `undefined`
+- The -100% likely comes from a scenario where `firstEquity` is a tiny positive value (e.g. 0.10) and `lastEquity` is near-zero, yielding ~-100%
 
-### 1. Backend only logs, doesn't use toggled state meaningfully
-`AIAgentExecutor.ts:284` reads `__isTool` but only uses it for a log message. The `createToolFromNode` and `getToolName` methods should check `__isTool` to avoid stripping a "Tool" suffix that doesn't exist on toggled main nodes (e.g., "Alpaca" vs "AlpacaTrade**Tool**"). Verify `getToolName()` handles main node names correctly when toggled.
+### Issue 2: Sharpe/Sortino/Calmar all "—"
+- All snapshots are within a single day (~10-45 minutes)
+- `resampleToDailyCloseReturns` groups by day bucket → only 1 bucket → 0 returns
+- `enoughForRatios = returns.length >= 30` → false → all ratios undefined
 
-**Action**: Review `getToolName()` — if it strips "Tool" suffix, toggled main nodes (which don't have that suffix) should pass through unchanged. Confirm this works or add a guard.
+### Issue 3: Max Drawdown "—"
+- The `equity >= 0` filter removes negative-PnL snapshots, so drawdown calculation sees incomplete data
+- With only positive-equity snapshots remaining, drawdown may appear as 0 or be computed incorrectly
 
-### 2. handleToggleTool has stale closure risk
-The `useCallback` depends on `isTool` (derived from `data.fieldState?.__isTool`). When toggling, it uses `!isTool` which is correct. However, writing to both `values` AND `fieldState` simultaneously is redundant — `fieldState` is the canonical source (managed by `useNodeFieldState`), while `values` is the persisted snapshot. Writing to `fieldState` directly from `setNodes` bypasses the field state hook's own update mechanism, which could cause desync if `useNodeFieldState` overwrites it on next render.
+## Planned Changes (3 files, minimal edits)
 
-**Action**: Only write to `values` in `handleToggleTool`. The field state hook should derive `__isTool` from values. Alternatively, if `fieldState` is authoritative at runtime, only write there and ensure persistence picks it up from `fieldState`.
+### 1. `src/lib/liveMetrics.ts` — Fix equity interpretation and intraday resampling
 
-### 3. No guard against toggling nodes that shouldn't be tools
-Any node can be toggled to tool mode, including triggers (WebhookTrigger, Scheduler), backtest nodes, and AI Agent itself. An AI Agent toggled as a tool would create a recursive tool reference. Triggers as tools make no semantic sense.
+**a) Remove the `equity >= 0` filter (line 161)**
+Negative equity values are valid (negative PnL). The filter was incorrectly discarding them. Change to only filter for valid timestamps.
 
-**Action**: Add a guard — only allow toggling for nodes where `definition.node_type === "main"` and `definition.category` is not "Triggers" or "Backtest". Hide the wrench icon for ineligible nodes. This could be a simple prop like `canToggleTool` passed from NodeRouter based on the definition.
+**b) Fix `initialCapital` for PnL-based equity (line 166-169)**
+When equity represents PnL (first snapshot equity ~0), derive `initialCapital` from the first trade's entry price. Accept a new optional `initialCapital` from the caller. If not provided and first equity is 0 or near-zero, use the cumulative net PnL to compute return as `(netPnL / entryCapital)` where entryCapital comes from a new parameter.
 
-## No Issues Found With
+Pragmatic approach: add an `entryCapital` field to `buildLiveMetrics` params derived from the first trade's entry price. In the caller, compute this from `closedTrades[0].entryPrice * quantity`.
 
-- Handle swapping logic (clean TOOL_HANDLE constant, proper memoization deps)
-- Support node filtering in `useNodeExecution.ts` (correctly checks both `values` and `fieldState`)
-- Persistence via `systemKeys` in `fieldVisibility.ts`
-- UI/UX of the toggle (hover reveal, active highlight, badge)
-- `isSubNode` in `workflowExecutor.ts` (clean OR logic)
+**c) Add intraday resampling fallback (lines 40-63)**
+When all data fits in a single day bucket, fall back to per-snapshot returns instead of daily returns. Lower the `enoughForRatios` threshold to 5 for intraday data (with an annualization factor based on actual interval, not 252 trading days).
+
+**d) Guard Calmar NaN (line 105)**
+When `annualizedReturn` is `undefined`, return `undefined` for `calmar_ratio` instead of `undefined / 100 / maxDrawdownPct` which yields `NaN`.
+
+### 2. `src/hooks/useLiveStrategyDetail.ts` — Pass entry capital to buildLiveMetrics
+
+Compute `entryCapital` from the first closed trade's entry price and quantity. Pass it to `buildLiveMetrics` so Total Return can be computed as `netPnL / entryCapital * 100`.
+
+### 3. `src/components/backtest/PerformanceMetricsCard.tsx` — Guard NaN/Infinity display
+
+In the `MetricItem` component, add a check: if `value` is `NaN` or `Infinity`, display "—" instead of the malformed number.
+
+## Technical Details
+
+**Intraday resampling logic:**
+- Detect single-day data: all points share the same day bucket
+- Use per-snapshot returns instead of daily close returns  
+- Annualize using: `sqrt(periodsPerYear)` where `periodsPerYear = totalTimeSpanMs / avgIntervalMs * 252/365`
+- Lower threshold: require at least 5 return observations for ratio computation
+
+**Entry capital derivation:**
+- From `closedTrades[0]`: `entryPrice * quantity` gives the notional capital deployed
+- This is the correct denominator for return calculation in a PnL-based equity curve

@@ -10,6 +10,7 @@
 
 import { DataContext } from '../../engine';
 import { DataRef } from '../../engine/InMemoryStore';
+import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from '../../brokers/capabilities';
 
 /**
  * Processed output that's safe for AI agents

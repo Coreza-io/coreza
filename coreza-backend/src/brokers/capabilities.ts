@@ -318,17 +318,12 @@ export function resolveStreamSourceFromBroker(
   const normalizedAsset = (assetType || "").toLowerCase();
   const normalizedCategory = (category || "").toLowerCase();
 
-  // Check if broker has a news source and asset type matches
-  if (normalizedAsset === "news" && cap.streaming.newsSourceId) {
-    return cap.streaming.newsSourceId;
+  if (normalizedAsset) {
+    return `${source}_${normalizedAsset}`;
   }
 
   if (normalizedCategory) {
     return `${source}_${normalizedCategory}`;
-  }
-
-  if (normalizedAsset) {
-    return `${source}_${normalizedAsset}`;
   }
 
   return source;

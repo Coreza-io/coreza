@@ -1,5 +1,6 @@
 import { createError } from "../middleware/errorHandler";
 import { WorkflowNode } from "../nodes/types";
+import { getStreamingNodeNames } from "../brokers/capabilities";
 
 export type TriggerKind = "scheduler" | "streaming" | "webhook" | "backtest";
 
@@ -8,12 +9,8 @@ export interface ClassifiedTrigger {
   node: WorkflowNode;
 }
 
-const STREAMING_NODE_NAMES = new Set([
-  "AlpacaNews",
-  "AlpacaStreamData",
-  "BinanceStreamData",
-  "DhanStreamData",
-]);
+// Auto-generated from broker capabilities registry (config-driven)
+const STREAMING_NODE_NAMES = getStreamingNodeNames();
 
 export function classifyTrigger(node: WorkflowNode): TriggerKind | null {
   const workflowNode = node as WorkflowNode & {

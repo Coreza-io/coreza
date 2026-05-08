@@ -37,33 +37,11 @@ function getTradingNativeStreams(
   source: string,
   marketType?: string,
 ): string[] {
-  if (source === "alpaca_trading") {
-    return ["trade_updates"];
-  }
-
-  if (source === "binance_trading") {
-    return marketType === "spot"
-      ? [
-          "executionReport",
-          "outboundAccountPosition",
-          "balanceUpdate",
-          "listenKeyExpired",
-        ]
-      : [
-          "ORDER_TRADE_UPDATE",
-          "ALGO_UPDATE",
-          "ACCOUNT_UPDATE",
-          "ACCOUNT_CONFIG_UPDATE",
-          "MARGIN_CALL",
-          "listenKeyExpired",
-        ];
-  }
-
-  return [];
+  return getTradingStreamsForSource(source, marketType);
 }
 
 function isTradingSource(source: string): boolean {
-  return source === "alpaca_trading" || source === "binance_trading";
+  return checkIsTradingSource(source);
 }
 
 export class StreamingLifecycleAdapter {

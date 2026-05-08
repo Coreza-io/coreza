@@ -8,31 +8,35 @@
  * See the LICENSE file for details.
  */
 
+import { getBrokerConfig } from "./brokerRegistry";
+
 export interface ParsedStream {
   symbol: string;
   eventType: string;
   interval?: string;
 }
 
-/**
- * Parse native stream name to components
- * Binance: btcusdt@kline_1m -> { symbol: "BTCUSDT", eventType: "kline", interval: "1m" }
- * Alpaca: bars.AAPL -> { symbol: "AAPL", eventType: "bars" }
- */
 export const KNOWN_TRADING_STREAMS = new Set([
   "trade_updates",
   "order_update",
-  "ORDER_TRADE_UPDATE".toLowerCase(),
-  "ALGO_UPDATE".toLowerCase(),
-  "ACCOUNT_UPDATE".toLowerCase(),
-  "ACCOUNT_CONFIG_UPDATE".toLowerCase(),
-  "MARGIN_CALL".toLowerCase(),
-  "listenKeyExpired".toLowerCase(),
-  "executionReport".toLowerCase(),
-  "outboundAccountPosition".toLowerCase(),
-  "balanceUpdate".toLowerCase(),
+  "order_trade_update",
+  "algo_update",
+  "account_update",
+  "account_config_update",
+  "margin_call",
+  "listenkeyexpired",
+  "executionreport",
+  "outboundaccountposition",
+  "balanceupdate",
 ]);
 
+/**
+ * Parse native stream name to components.
+ * Uses broker registry streamFormat instead of hardcoded source checks.
+ * 
+ * 'at' format:  symbol@type_interval  (e.g. btcusdt@kline_1m)
+ * 'dot' format: type.SYMBOL           (e.g. bars.AAPL)
+ */
 export function parseStreamName(
   source: string,
   streamName: string,
@@ -42,45 +46,62 @@ export function parseStreamName(
     return { symbol: "", eventType: "order_update" };
   }
 
-  if (source.startsWith("binance")) {
-    const atIndex = streamName.indexOf("@");
-    if (atIndex === -1) {
-      return { symbol: streamName.toUpperCase(), eventType: "unknown" };
-    }
-    const sym = streamName.slice(0, atIndex).toUpperCase();
-    const typeWithInterval = streamName.slice(atIndex + 1);
+  const config = getBrokerConfig(source);
+  const format = config?.streamFormat ?? 'generic';
 
-    if (typeWithInterval.startsWith("depth")) {
-      return {
-        symbol: sym,
-        eventType: "depth",
-        interval: typeWithInterval.slice(5) || "20",
-      };
-    }
-
-    const underscoreIndex = typeWithInterval.indexOf("_");
-    if (underscoreIndex !== -1) {
-      return {
-        symbol: sym,
-        eventType: typeWithInterval.slice(0, underscoreIndex),
-        interval: typeWithInterval.slice(underscoreIndex + 1),
-      };
-    }
-    return { symbol: sym, eventType: typeWithInterval };
+  if (format === 'at') {
+    return parseAtFormat(streamName);
   }
 
-  if (source === "alpaca" || source === "alpaca_market" || source === "alpaca_news") {
-    const dotIndex = streamName.indexOf(".");
-    if (dotIndex === -1) {
-      return { symbol: streamName.toUpperCase(), eventType: "unknown" };
-    }
+  if (format === 'dot') {
+    return parseDotFormat(streamName);
+  }
+
+  // Generic fallback: try both formats
+  if (streamName.includes('@')) return parseAtFormat(streamName);
+  if (streamName.includes('.')) return parseDotFormat(streamName);
+
+  return { symbol: streamName.toUpperCase(), eventType: "unknown" };
+}
+
+/** Parse symbol@type_interval format */
+function parseAtFormat(streamName: string): ParsedStream {
+  const atIndex = streamName.indexOf("@");
+  if (atIndex === -1) {
+    return { symbol: streamName.toUpperCase(), eventType: "unknown" };
+  }
+  const sym = streamName.slice(0, atIndex).toUpperCase();
+  const typeWithInterval = streamName.slice(atIndex + 1);
+
+  if (typeWithInterval.startsWith("depth")) {
     return {
-      symbol: streamName.slice(dotIndex + 1).toUpperCase(),
-      eventType: streamName.slice(0, dotIndex),
+      symbol: sym,
+      eventType: "depth",
+      interval: typeWithInterval.slice(5) || "20",
     };
   }
 
-  return { symbol: streamName.toUpperCase(), eventType: "unknown" };
+  const underscoreIndex = typeWithInterval.indexOf("_");
+  if (underscoreIndex !== -1) {
+    return {
+      symbol: sym,
+      eventType: typeWithInterval.slice(0, underscoreIndex),
+      interval: typeWithInterval.slice(underscoreIndex + 1),
+    };
+  }
+  return { symbol: sym, eventType: typeWithInterval };
+}
+
+/** Parse type.SYMBOL format */
+function parseDotFormat(streamName: string): ParsedStream {
+  const dotIndex = streamName.indexOf(".");
+  if (dotIndex === -1) {
+    return { symbol: streamName.toUpperCase(), eventType: "unknown" };
+  }
+  return {
+    symbol: streamName.slice(dotIndex + 1).toUpperCase(),
+    eventType: streamName.slice(0, dotIndex),
+  };
 }
 
 /**

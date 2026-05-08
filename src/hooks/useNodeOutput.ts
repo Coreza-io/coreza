@@ -10,7 +10,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useNodeId } from "@xyflow/react";
-import { createWaitingNewsOutput } from "@/utils/alpacaNews";
+import { createWaitingNewsOutput } from "@/utils/newsStream";
+import { isNewsStreamNode } from "@/utils/brokerRegistry";
 import {
   useExecutionStore,
   useExecutionStoreVersion,
@@ -31,7 +32,7 @@ interface UseNodeOutputReturn {
 
 /**
  * Custom hook to manage node output display and pinning
- * Handles output updates, pinning, and special cases like AlpacaNews
+ * Handles output updates, pinning, and special cases like news stream nodes
  */
 
 export function useNodeOutput({
@@ -41,6 +42,8 @@ export function useNodeOutput({
   const nodeId = useNodeId();
   const executionStore = useExecutionStore();
   const version = useExecutionStoreVersion();
+  const isNews = isNewsStreamNode(definition);
+
   const [lastOutput, setLastOutput] = useState<any>(() => {
     // In execution view (readOnly), data.output contains the actual execution result
     if (data.output !== undefined && data.output !== null) {
@@ -52,7 +55,7 @@ export function useNodeOutput({
       return data.output;
     }
     // Default behavior for editor mode
-    if (definition?.name === "AlpacaNews") {
+    if (isNews) {
       return createWaitingNewsOutput({ nodeId: nodeId ?? undefined });
     }
     return { status: "pending" };
@@ -94,7 +97,7 @@ export function useNodeOutput({
     }
 
     // Fallback to data.output for non-streaming updates
-    if (definition?.name === "AlpacaNews") {
+    if (isNews) {
       if (data.output) {
         setLastOutput(data.output);
       } else if (lastOutput?.status !== "waiting") {
@@ -106,7 +109,7 @@ export function useNodeOutput({
   }, [
     version,
     data.output,
-    definition?.name,
+    isNews,
     isPinned,
     lastOutput?.status,
     nodeId,

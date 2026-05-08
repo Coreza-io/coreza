@@ -84,7 +84,8 @@ import {
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
 import { StableNodeProvider } from "@/contexts/StableNodeContext";
-import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
+import { appendNewsItem, createWaitingNewsOutput } from "@/utils/newsStream";
+import { isNewsStreamNode, getNewsUnsubscribeEndpoint } from "@/utils/brokerRegistry";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";

@@ -12,8 +12,7 @@ import React from "react";
 
 // Icon registry for easy access
 export const IconRegistry = {
-  // 'Alpaca': AlpacaIcon,
-  // 'EMA': EMAIcon,
+    // 'EMA': EMAIcon,
   // 'If': IfIcon,
   // 'Switch': SwitchIcon,
   // 'OpenAI': OpenAIIcon,

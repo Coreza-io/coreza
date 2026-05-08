@@ -34,6 +34,7 @@ import {
 import { LiveTradeRepository } from "../../repositories/LiveTradeRepository";
 import { createLogger } from "../../utils/logger";
 import { BrokerExecutor } from "./BrokerExecutor";
+import { BROKER_CAPABILITIES } from "../../brokers/capabilities";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
 const TERMINAL_ORDER_STATUSES = new Set([
@@ -507,7 +508,7 @@ export class PortfolioExecutor implements INodeExecutor {
           "TRAILING_STOP_MARKET",
         ].includes(orderType);
 
-        if (params.broker === "binance" && params.credential_id) {
+        if (this.supportsAlgoOrders(params.broker) && params.credential_id) {
           await this.callBrokerOperation(
             "cancel_order",
             {
@@ -534,10 +535,10 @@ export class PortfolioExecutor implements INodeExecutor {
         );
       }
       case "get_open_algo_orders": {
-        if (params.broker !== "binance") {
+        if (!this.supportsAlgoOrders(params.broker)) {
           return toNodeResult(
             createErrorOutput(
-              "get_open_algo_orders currently supports broker=binance only",
+              "get_open_algo_orders is not supported by this broker",
             ),
           );
         }
@@ -558,10 +559,10 @@ export class PortfolioExecutor implements INodeExecutor {
         return toNodeResult(createSuccessOutput(result || {}));
       }
       case "get_all_algo_orders": {
-        if (params.broker !== "binance") {
+        if (!this.supportsAlgoOrders(params.broker)) {
           return toNodeResult(
             createErrorOutput(
-              "get_all_algo_orders currently supports broker=binance only",
+              "get_all_algo_orders is not supported by this broker",
             ),
           );
         }
@@ -607,6 +608,11 @@ export class PortfolioExecutor implements INodeExecutor {
           createErrorOutput(`Unknown portfolio operation: ${operation}`),
         );
     }
+  }
+
+  private supportsAlgoOrders(broker?: string): boolean {
+    const brokerKey = String(broker || "").trim().toLowerCase();
+    return Boolean(BROKER_CAPABILITIES[brokerKey]?.supportsAlgoOrders);
   }
 
   private async callBrokerOperation(
@@ -928,7 +934,7 @@ export class PortfolioExecutor implements INodeExecutor {
       opts.executionId ||
       this.buildDeterministicEventId({
         user_id: opts.context.userId,
-        broker: opts.params.broker || "binance",
+        broker: opts.params.broker || "unknown",
         symbol: opts.symbol,
         order_id: opts.orderId,
         side: opts.side,
@@ -942,7 +948,7 @@ export class PortfolioExecutor implements INodeExecutor {
       user_id: opts.context.userId,
       workflow_id: opts.context.workflowId,
       execution_id: opts.context.executionId,
-      broker: opts.params.broker || "binance",
+      broker: opts.params.broker || "unknown",
       credential_id: opts.params.credential_id,
       symbol: opts.symbol,
       side: opts.side as "buy" | "sell",
@@ -1149,14 +1155,14 @@ export class PortfolioExecutor implements INodeExecutor {
       if (params.type === "listen_key_expired") {
         fillLogger.warn(
           {
-            broker: params.broker || "binance",
+            broker: params.broker || "unknown",
             credential_id: params.credential_id,
             workflow_id: context?.workflowId,
           },
-          "binance listen key expired event received",
+          "listen key expired event received",
         );
         let reconciliation: any = null;
-        if (params.broker === "binance" && params.credential_id) {
+        if (this.supportsAlgoOrders(params.broker) && params.credential_id) {
           try {
             reconciliation = await this.callBrokerOperation(
               "get_open_algo_orders",
@@ -1427,7 +1433,7 @@ export class PortfolioExecutor implements INodeExecutor {
             userId: context.userId,
             workflowId: context.workflowId,
             runId: context.executionId,
-            broker: params.broker || "binance",
+            broker: params.broker || "unknown",
             credentialId: params.credential_id,
             baseCurrency,
           });

@@ -88,6 +88,8 @@ export const alpacaCapabilities: BrokerCapabilities = {
     ],
   },
 
+  supportsAlgoOrders: false,
+
   assetTypes: ["stock", "crypto"],
 
   toolDescriptions: {

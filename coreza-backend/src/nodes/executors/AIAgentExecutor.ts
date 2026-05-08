@@ -9,6 +9,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { buildExecutorCategoryMap, isBrokerNode } from "../../brokers/capabilities";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
 import { createAgent } from "langchain";

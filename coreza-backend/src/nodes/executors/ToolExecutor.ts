@@ -10,6 +10,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import { buildExecutorCategoryMap } from "../../brokers/capabilities";
 
 export class ToolExecutor implements INodeExecutor {
   readonly category = "Tool";

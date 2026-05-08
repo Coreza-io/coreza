@@ -3,11 +3,13 @@ import type { MarketSource } from "../types/marketEvent";
 export interface BrokerStreamConfig {
   separator: string;
   symbolFirst: boolean;
-  tradingStreams?: { futures: string[]; spot: string[] };
+  tradingStreams?: Partial<Record<"spot" | "futures" | "account", string[]>>;
   tradingRoutingKey?: (eventType: string) => string;
   companionSources?: string[];
   emitsUnclosedBars?: boolean;
   normalizeOrderSymbol?: (symbol: string) => string;
+  resolveSourceForSymbol?: (symbol: string, defaultSource: string) => string;
+  normalizeStreamType?: (streamType: string) => string;
 }
 
 const DEFAULT_STREAM_CONFIG: BrokerStreamConfig = {
@@ -23,18 +25,28 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     companionSources: ["alpaca_trading", "alpaca_news"],
     normalizeOrderSymbol: (symbol: string) => symbol.replace("/", ""),
+    resolveSourceForSymbol: (symbol: string, defaultSource: string) =>
+      symbol.includes("/") && defaultSource === "alpaca_stream"
+        ? "alpaca_crypto"
+        : defaultSource,
   },
   binance: {
     separator: "@",
     symbolFirst: true,
     companionSources: ["binance_trading"],
     emitsUnclosedBars: true,
+    normalizeStreamType: (streamType: string) =>
+      streamType === "liquidation"
+        ? "forceOrder"
+        : streamType === "continuous_kline" || streamType === "continuousKline"
+          ? "continuousKline"
+          : streamType,
   },
   alpaca_trading: {
     separator: "@",
     symbolFirst: true,
     tradingRoutingKey: () => "trade_updates",
-    tradingStreams: { futures: ["trade_updates"], spot: ["trade_updates"] },
+    tradingStreams: { account: ["trade_updates"] },
   },
   binance_trading: {
     separator: "@",
@@ -74,9 +86,19 @@ export function computeTradingNativeStreamsFromConfig(
 ): string[] {
   const cfg = getBrokerStreamConfig(source);
   if (!cfg.tradingStreams) return [];
-  return String(marketType).toLowerCase() === "spot"
-    ? cfg.tradingStreams.spot
-    : cfg.tradingStreams.futures;
+  const normalizedMarketType = String(marketType || "").toLowerCase();
+  if (normalizedMarketType === "spot") {
+    return cfg.tradingStreams.spot ?? cfg.tradingStreams.account ?? [];
+  }
+  if (normalizedMarketType === "futures") {
+    return cfg.tradingStreams.futures ?? cfg.tradingStreams.account ?? [];
+  }
+  return (
+    cfg.tradingStreams.account ??
+    cfg.tradingStreams.spot ??
+    cfg.tradingStreams.futures ??
+    []
+  );
 }
 
 export function getCompanionSources(source: MarketSource | string): string[] {

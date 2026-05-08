@@ -30,8 +30,7 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
-import { extractAlpacaOrderOwnerIds } from "../../brokers/alpaca/orderOwnerExtract";
-import { extractBinanceOrderOwnerIds } from "../../brokers/binance/orderOwnerExtract";
+import { BROKER_CAPABILITIES, getOrderOwnerExtractor } from "../../brokers/capabilities";
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 

@@ -408,9 +408,10 @@ const WorkflowEditorContent = () => {
     );
   }, [workflowSessionId, nodes.length, setNodes]);
 
-  const cleanupAlpacaSubscription = useCallback(
+  const cleanupNewsSubscription = useCallback(
     async (
       nodeId: string,
+      nodeDef: any,
       fallbackSymbols: string[] = [],
       updateNodeState: boolean = true,
     ) => {
@@ -425,9 +426,11 @@ const WorkflowEditorContent = () => {
       const symbols = storedSymbols.length ? storedSymbols : fallbackSymbols;
 
       if (symbols.length) {
+        const source = nodeDef?.subCategory || 'alpaca';
+        const endpoint = getNewsUnsubscribeEndpoint(source);
         try {
           await apiClient.post(
-            "/alpaca-news/unsubscribe",
+            endpoint,
             {
               user_id: authUser.id,
               symbols,
@@ -437,7 +440,7 @@ const WorkflowEditorContent = () => {
           );
         } catch (error) {
           console.error(
-            "Failed to unsubscribe Alpaca news for node",
+            "Failed to unsubscribe news for node",
             nodeId,
             error,
           );

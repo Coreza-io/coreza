@@ -446,7 +446,7 @@ export class MarketDataGateway {
   ): boolean {
     if (!msg || typeof msg !== "object") return true;
 
-    if (this.config.shouldPassThrough) return this.config.shouldPassThrough(msg, this.source);
+    if (this.config.validateOutbound) return this.config.validateOutbound(msg, this.source);
     const method = typeof msg.method === "string" ? msg.method : "";
     const isSubscribePayload =
       method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
@@ -472,28 +472,10 @@ export class MarketDataGateway {
   }
 
   private encodeMessage(msg: any): Buffer | string {
-    if (this.config.encodeMessage) {
-      return this.config.encodeMessage(msg);
+    if (this.config.encodeOutboundBinary) {
+      return this.config.encodeOutboundBinary(msg);
     }
-    // Binary protocol (Dhan)
-    if (this.config.isBinary) {
-      const {
-        encodeDhanSubscribeMessage,
-        encodeDhanUnsubscribeMessage,
-      } = require("../utils/dhanBinaryParser");
-      if (msg.RequestCode === 15) {
-        return encodeDhanSubscribeMessage(
-          msg.InstrumentList.map((i: any) => i.SecurityId),
-          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ",
-        );
-      } else if (msg.RequestCode === 16) {
-        return encodeDhanUnsubscribeMessage(
-          msg.InstrumentList.map((i: any) => i.SecurityId),
-          msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ",
-        );
-      }
-      return Buffer.from(JSON.stringify(msg));
-    }
+    if (this.config.isBinary) return Buffer.from(JSON.stringify(msg));
 
     // JSON protocol (default)
     return JSON.stringify(msg);

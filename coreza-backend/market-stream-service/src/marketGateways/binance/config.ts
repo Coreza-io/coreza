@@ -55,7 +55,7 @@ export const binanceGatewayConfig: GatewayConfig = {
   preConnect: (creds, source) => preConnectBinance(creds, source),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,
-  shouldPassThrough: (msg, source) => {
+  validateOutbound: (msg, source) => {
     const method = typeof msg?.method === "string" ? msg.method : "";
     const isSubscribePayload = method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
     const isTradingPayload = method.startsWith("session.") || method.startsWith("userDataStream.") || method.startsWith("order.");

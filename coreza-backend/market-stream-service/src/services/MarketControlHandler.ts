@@ -12,8 +12,8 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { buildStreamNames, extractSymbol } from "../utils/streamName";
-import { computeTradingNativeStreamsFromConfig, getCompanionSources as getCompanionSourcesFromConfig } from "../config/brokerStreamConfig";
+import { buildStreamNames, extractSymbol, parseStreamName } from "../utils/streamName";
+import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig, getCompanionSources as getCompanionSourcesFromConfig } from "../config/brokerStreamConfig";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -287,17 +287,7 @@ export class MarketControlHandler {
    * Account-wide streams (trading/news) are discovered alongside market subscriptions.
    */
   private getCompanionSources(source: string): string[] {
-    const companions: string[] = [];
-
-    if (source === "alpaca_market" || source === "alpaca_crypto") {
-      companions.push("alpaca_trading", "alpaca_news");
-    }
-
-    if (source === "binance_market" || source === "binance_crypto") {
-      companions.push("binance_trading");
-    }
-
-    return companions;
+    return getCompanionSourcesFromConfig(source);
   }
 
   /**
@@ -704,9 +694,18 @@ export class MarketControlHandler {
             );
 
         // Check which stream names are NEW (not already in state.streams)
-        const newStreamNames = requestedStreamNames.filter(
-          (name) => !state.streams.has(name),
-        );
+        const cfg = getBrokerStreamConfig(source);
+        const resolvedGroups = new Map<string, string[]>();
+        for (const name of requestedStreamNames) {
+          const parsed = parseStreamName(source, name);
+          const resolvedSource = cfg.resolveSourceForSymbol
+            ? cfg.resolveSourceForSymbol(parsed.symbol, source)
+            : source;
+          const arr = resolvedGroups.get(resolvedSource) ?? [];
+          arr.push(name);
+          resolvedGroups.set(resolvedSource, arr);
+        }
+        const newStreamNames = requestedStreamNames.filter((name) => !state.streams.has(name));
 
         if (newStreamNames.length > 0) {
           console.log(
@@ -724,8 +723,27 @@ export class MarketControlHandler {
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
 
-          // Subscribe gateway with stream names directly
-          state.gateway.subscribeStreams(newStreamNames);
+          // Subscribe gateway with stream names directly, grouped by resolved source
+          for (const [resolvedSource, groupedStreamNames] of resolvedGroups.entries()) {
+            const resolvedStateKey = this.getStateKey(userId, resolvedSource as MarketSource);
+            let resolvedState = this.sourceStates.get(resolvedStateKey);
+            if (!resolvedState || !resolvedState.gateway.getStats().connected) {
+              await this.connectGateway(
+                resolvedSource as MarketSource,
+                userId,
+                msg.credentialId,
+                feed,
+                marketType,
+                environment,
+              );
+              resolvedState = this.sourceStates.get(resolvedStateKey)!;
+            }
+            const resolvedNew = groupedStreamNames.filter((name) => !resolvedState.streams.has(name));
+            if (resolvedNew.length === 0) continue;
+            resolvedNew.forEach((name) => resolvedState.streams.add(name));
+            resolvedState.gateway.subscribeStreams(resolvedNew);
+            await this.persistState(userId, resolvedSource as MarketSource);
+          }
 
           // Persist to Redis
           await this.persistState(userId, source);

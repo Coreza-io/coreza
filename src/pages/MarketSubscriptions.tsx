@@ -107,19 +107,9 @@ interface SubscriptionStatus {
   streamSourceMap: Record<string, string[]>;
 }
 
-const sourceColors: Record<string, string> = {
-  alpaca: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  binance: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  dhan: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  schwab: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-};
-
-const sourceIcons: Record<string, string> = {
-  alpaca: "🦙",
-  binance: "₿",
-  dhan: "📊",
-  schwab: "💼",
-};
+// Derived from broker registry — no hardcoded broker lists
+const sourceColors = (source: string) => getSourceBadgeClasses(source);
+const sourceIcons = (source: string) => getSourceEmoji(source);
 
 type ParsedStreamName = {
   symbol: string;

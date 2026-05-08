@@ -605,7 +605,7 @@ const WorkflowEditorContent = () => {
       wsRef.current = socket;
 
       socket.onopen = () => {
-        console.log("🔌 Alpaca news WebSocket connected");
+        console.log("🔌 News stream WebSocket connected");
       };
 
       socket.onmessage = (event) => {
@@ -617,7 +617,7 @@ const WorkflowEditorContent = () => {
 
           if (message.type === "node_output") {
             messageHandlerRef.current(message.payload, message.timestamp);
-          } else if (message.type === "alpaca_news") {
+          } else if (message.type === "alpaca_news" || message.type === "news_stream") {
             const payload = message.payload || {};
             messageHandlerRef.current(
               {
@@ -638,7 +638,7 @@ const WorkflowEditorContent = () => {
       };
 
       socket.onerror = (event) => {
-        console.error("Alpaca news WebSocket error", event);
+        console.error("News stream WebSocket error", event);
         socket.close();
       };
 

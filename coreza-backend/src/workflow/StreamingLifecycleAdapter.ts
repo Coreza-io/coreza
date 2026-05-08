@@ -2,6 +2,7 @@ import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { createError } from "../middleware/errorHandler";
 import { getSourceMapping, MarketSource } from "../brokers";
+import { getTradingStreamsForSource, isTradingSource as checkIsTradingSource, BROKER_CAPABILITIES } from "../brokers/capabilities";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { RegistrationService } from "../services/RegistrationService";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";

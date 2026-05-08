@@ -30,55 +30,10 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
-import { extractAlpacaOrderOwnerIds } from "../../brokers/alpaca/orderOwnerExtract";
-import { extractBinanceOrderOwnerIds } from "../../brokers/binance/orderOwnerExtract";
+import { BROKER_CAPABILITIES, getOrderOwnerExtractor } from "../../brokers/capabilities";
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
-const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
-
-function toCanonicalCryptoSymbol(symbol: string): string {
-  const fallbackSymbol = "ETH/USD";
-
-  if (!symbol || typeof symbol !== "string") return fallbackSymbol;
-
-  const upperSymbol = symbol.toUpperCase().replace(/\s+/g, "");
-  if (upperSymbol.includes("/")) {
-    const [rawBase, rawQuote] = upperSymbol.split("/");
-    if (rawBase && rawQuote) return `${rawBase}/${rawQuote}`;
-    return fallbackSymbol;
-  }
-
-  const detectedQuote = KNOWN_CRYPTO_QUOTES.find(
-    (quote) => upperSymbol.endsWith(quote) && upperSymbol.length > quote.length,
-  );
-
-  if (detectedQuote) {
-    const base = upperSymbol.slice(0, -detectedQuote.length);
-    return `${base}/${detectedQuote}`;
-  }
-
-  return fallbackSymbol;
-}
-
-function normalizeAlpacaCryptoSymbol(params: Record<string, any>) {
-  const fallbackSymbol = "ETH/USD";
-  const normalizePair = (base: string, quote: string) =>
-    `${base.toUpperCase().trim()}/${quote.toUpperCase().trim()}`;
-
-  if (params.crypto_base) {
-    const quote = params.crypto_quote || "USD";
-    params.symbol = normalizePair(params.crypto_base, quote);
-    return;
-  }
-
-  if (typeof params.symbol !== "string" || params.symbol.trim() === "") {
-    params.symbol = fallbackSymbol;
-    return;
-  }
-
-  params.symbol = toCanonicalCryptoSymbol(params.symbol);
-}
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -140,8 +95,10 @@ export class BrokerExecutor implements INodeExecutor {
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`,
       );
 
-      if (broker === "alpaca" && resolvedParams.assetType === "crypto") {
-        normalizeAlpacaCryptoSymbol(resolvedParams);
+      // Config-driven crypto symbol normalization
+      const brokerCap = BROKER_CAPABILITIES[broker];
+      if (brokerCap?.normalizeCryptoParams && resolvedParams.assetType === "crypto") {
+        brokerCap.normalizeCryptoParams(resolvedParams);
       }
 
       isOrderOperation =
@@ -313,12 +270,8 @@ export class BrokerExecutor implements INodeExecutor {
 
       if (operation === "place_order") {
         try {
-          const ids =
-            broker === "alpaca"
-              ? extractAlpacaOrderOwnerIds(data)
-              : broker === "binance"
-                ? extractBinanceOrderOwnerIds(data)
-                : "";
+          const extractor = getOrderOwnerExtractor(broker);
+          const ids = extractor ? extractor(data) : {};
 
           // Keep this post-response save:
           // - pre-save (before request) protects early WS fills via clientOrderId

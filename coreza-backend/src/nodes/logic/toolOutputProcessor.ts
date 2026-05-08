@@ -10,6 +10,7 @@
 
 import { DataContext } from '../../engine';
 import { DataRef } from '../../engine/InMemoryStore';
+import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from '../../brokers/capabilities';
 
 /**
  * Processed output that's safe for AI agents
@@ -64,17 +65,14 @@ export interface MarketDataSummary {
 }
 
 /**
- * Nodes that return large market data arrays
+ * Nodes that return large market data arrays (auto-generated from capabilities + static)
  */
 const MARKET_DATA_NODES = [
   'Market',
   'YahooFinance',
   'Polygon',
   'FinnHub',
-  'Alpaca',
-  'Binance',
-  'Schwab',
-  'Dhan',
+  ...getMarketDataNodeNames(),
 ];
 
 /**
@@ -97,17 +95,12 @@ const INDICATOR_NODES = [
 ];
 
 const SCREENER_NODES = [
-  'AlpacaScreener',
-  'BinanceScreener',
   'YahooFinanceScreener',
-  'SchwabScreener',
+  ...getScreenerNodeNames(),
 ];
 
 const TRADE_NODES = [
-  'AlpacaTrade',
-  'BinanceTrade',
-  'DhanTrade',
-  'SchwabTrade',
+  ...getTradeNodeNames(),
 ];
 
 /**

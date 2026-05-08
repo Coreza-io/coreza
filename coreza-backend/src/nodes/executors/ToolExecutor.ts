@@ -10,6 +10,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import { buildExecutorCategoryMap } from "../../brokers/capabilities";
 
 export class ToolExecutor implements INodeExecutor {
   readonly category = "Tool";
@@ -166,16 +167,17 @@ export class ToolExecutor implements INodeExecutor {
     context: any,
     normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
+    // Build broker-related categories from registry (config-driven)
+    const brokerCategories = buildExecutorCategoryMap();
+
     const executorCategoryMap: Record<string, string> = {
+      // Data sources (non-broker)
       YahooFinance: "DataSource",
       FinnHub: "DataSource",
       Polygon: "DataSource",
       Market: "Market",
-      Alpaca: "Market",
-      Binance: "Market",
-      Schwab: "Market",
-      Dhan: "Market",
 
+      // Indicators
       RSI: "Indicators",
       EMA: "Indicators",
       SMA: "Indicators",
@@ -189,21 +191,15 @@ export class ToolExecutor implements INodeExecutor {
       VolumeOscillator: "Indicators",
       SupportResistance: "Indicators",
 
-      AlpacaTrade: "Broker",
-      BinanceTrade: "Broker",
-      DhanTrade: "Broker",
-      SchwabTrade: "Broker",
-
-      AlpacaScreener: "Screener",
-      BinanceScreener: "Screener",
-      YahooFinanceScreener: "Screener",
-      SchwabScreener: "Screener",
-
+      // Utilities
       HttpRequest: "Utility",
       Math: "ControlFlow",
       Transform: "ControlFlow",
       Date: "ControlFlow",
       Field: "ControlFlow",
+
+      // Broker-related entries (auto-generated from capabilities registry)
+      ...brokerCategories,
     };
 
     const category = executorCategoryMap[normalizedName || ""] || node.category;

@@ -1,15 +1,12 @@
 import { MarketSource } from "../brokers";
+import { buildNodeNameToSourceMap, resolveStreamSourceFromBroker } from "../brokers/capabilities";
 import { WorkflowNode } from "../nodes/types";
 
+// Auto-generated from broker capabilities registry (config-driven)
 export const nodeNameToSourceMap: Record<
   string,
   MarketSource | `${MarketSource}_${string}`
-> = {
-  BinanceStreamData: "binance_stream",
-  AlpacaStreamData: "alpaca_stream",
-  AlpacaNews: "alpaca_news",
-  DhanStreamData: "dhan_stream",
-};
+> = buildNodeNameToSourceMap() as Record<string, MarketSource | `${MarketSource}_${string}`>;
 
 export function resolveStreamSourceId(
   node: WorkflowNode,

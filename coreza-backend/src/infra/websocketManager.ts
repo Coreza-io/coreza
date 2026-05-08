@@ -432,6 +432,15 @@ export class WebSocketManager {
           this.handleWebSocketStream(ws, message.payload);
           break;
 
+        case "news_stream":
+          // Generic news stream handler — source comes from payload
+          this.handleWebSocketStream(ws, {
+            source: message.payload?.source || message.type,
+            ...message.payload,
+          });
+          break;
+
+        // Legacy support: alpaca_news → generic news_stream
         case "alpaca_news":
           this.handleWebSocketStream(ws, {
             source: "alpaca_news",

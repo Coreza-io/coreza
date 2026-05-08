@@ -2,6 +2,7 @@ import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { createError } from "../middleware/errorHandler";
 import { getSourceMapping, MarketSource } from "../brokers";
+import { getTradingStreamsForSource, isTradingSource as checkIsTradingSource, BROKER_CAPABILITIES } from "../brokers/capabilities";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { RegistrationService } from "../services/RegistrationService";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
@@ -36,33 +37,11 @@ function getTradingNativeStreams(
   source: string,
   marketType?: string,
 ): string[] {
-  if (source === "alpaca_trading") {
-    return ["trade_updates"];
-  }
-
-  if (source === "binance_trading") {
-    return marketType === "spot"
-      ? [
-          "executionReport",
-          "outboundAccountPosition",
-          "balanceUpdate",
-          "listenKeyExpired",
-        ]
-      : [
-          "ORDER_TRADE_UPDATE",
-          "ALGO_UPDATE",
-          "ACCOUNT_UPDATE",
-          "ACCOUNT_CONFIG_UPDATE",
-          "MARGIN_CALL",
-          "listenKeyExpired",
-        ];
-  }
-
-  return [];
+  return getTradingStreamsForSource(source, marketType);
 }
 
 function isTradingSource(source: string): boolean {
-  return source === "alpaca_trading" || source === "binance_trading";
+  return checkIsTradingSource(source);
 }
 
 export class StreamingLifecycleAdapter {
@@ -641,8 +620,11 @@ export class StreamingLifecycleAdapter {
             workflowId,
             symbols: ["*"],
             streamType: streams,
-            ...(source === "binance" && {
-              marketType: streams.some((s) => s === "executionReport")
+            // Config-driven: if broker has spot trading streams, determine market type
+            ...(BROKER_CAPABILITIES[source]?.streaming.spotTradingStreams && {
+              marketType: streams.some((s) =>
+                BROKER_CAPABILITIES[source]?.streaming.spotTradingStreams?.includes(s)
+              )
                 ? "spot"
                 : "futures",
             }),

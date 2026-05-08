@@ -10,7 +10,11 @@
 
 /**
  * Production-grade credential validation utilities
+ * Broker validations are config-driven via BROKER_CAPABILITIES.
+ * Non-broker services (gmail, whatsapp, telegram, etc.) remain here as static entries.
  */
+
+import { BROKER_CAPABILITIES } from "../brokers/capabilities";
 
 export interface CredentialValidationResult {
   isValid: boolean;
@@ -18,9 +22,48 @@ export interface CredentialValidationResult {
   warnings: string[];
 }
 
+// Non-broker service validation configs (static)
+interface ServiceValidationConfig {
+  requiredFields: { key: string; label: string; minLength?: number; pattern?: RegExp }[];
+  optionalWarnings?: { key: string; message: string }[];
+}
+
+const SERVICE_VALIDATIONS: Record<string, ServiceValidationConfig> = {
+  gmail: {
+    requiredFields: [
+      { key: "client_id", label: "Gmail client ID" },
+      { key: "client_secret", label: "Gmail client secret" },
+    ],
+    optionalWarnings: [
+      { key: "refresh_token", message: "Gmail refresh token not provided - may need re-authentication" },
+    ],
+  },
+  whatsapp: {
+    requiredFields: [
+      { key: "access_token", label: "WhatsApp access token" },
+      { key: "phone_number_id", label: "WhatsApp phone number ID" },
+    ],
+  },
+  finnhub: {
+    requiredFields: [
+      { key: "api_key", label: "FinnHub API key", minLength: 10 },
+    ],
+  },
+  redis: {
+    requiredFields: [
+      { key: "host", label: "Redis host" },
+    ],
+  },
+  telegram: {
+    requiredFields: [
+      { key: "bot_token", label: "Telegram bot token", pattern: /^\d+:[A-Za-z0-9_-]+$/ },
+    ],
+  },
+};
+
 export class CredentialValidator {
   /**
-   * Validate credential structure for a given service type
+   * Validate credential structure for a given service type (config-driven)
    */
   static validateCredentials(
     serviceType: string,
@@ -38,141 +81,89 @@ export class CredentialValidator {
       return result;
     }
 
-    switch (serviceType.toLowerCase()) {
-      case "alpaca":
-        return this.validateAlpacaCredentials(credentials, result);
-      case "dhan":
-        return this.validateDhanCredentials(credentials, result);
-      case "gmail":
-        return this.validateGmailCredentials(credentials, result);
-      case "whatsapp":
-        return this.validateWhatsAppCredentials(credentials, result);
-      case "finnhub":
-        return this.validateFinnHubCredentials(credentials, result);
-      case "yahoo":
-      case "yahoofinance":
-        return this.validateYahooCredentials(credentials, result);
-      case "redis":
-        return this.validateRedisCredentials(credentials, result);
-      case "telegram":
-        return this.validateTelegramCredentials(credentials, result);
-      default:
-        result.warnings.push(`Unknown service type: ${serviceType}`);
-        return result;
-    }
-  }
+    const normalizedType = serviceType.toLowerCase();
 
-  private static validateAlpacaCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.api_key) {
-      result.isValid = false;
-      result.errors.push("Alpaca API key is required");
-    } else if (typeof creds.api_key !== "string" || creds.api_key.length < 10) {
-      result.isValid = false;
-      result.errors.push("Invalid Alpaca API key format");
-    }
-
-    if (!creds.secret_key) {
-      result.isValid = false;
-      result.errors.push("Alpaca secret key is required");
-    } else if (
-      typeof creds.secret_key !== "string" ||
-      creds.secret_key.length < 10
-    ) {
-      result.isValid = false;
-      result.errors.push("Invalid Alpaca secret key format");
-    }
-
-    return result;
-  }
-
-  private static validateDhanCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.client_id) {
-      result.isValid = false;
-      result.errors.push("Dhan client ID is required");
-    }
-
-    if (!creds.api_key) {
-      result.isValid = false;
-      result.errors.push("Dhan access token is required");
-    }
-
-    return result;
-  }
-
-  private static validateGmailCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.client_id) {
-      result.isValid = false;
-      result.errors.push("Gmail client ID is required");
-    }
-
-    if (!creds.client_secret) {
-      result.isValid = false;
-      result.errors.push("Gmail client secret is required");
-    }
-
-    if (!creds.refresh_token) {
-      result.warnings.push(
-        "Gmail refresh token not provided - may need re-authentication"
+    // Check broker capabilities registry first
+    const brokerCap = BROKER_CAPABILITIES[normalizedType];
+    if (brokerCap?.credentialValidation) {
+      return this.validateFromConfig(
+        credentials,
+        brokerCap.credentialValidation.requiredFields,
+        brokerCap.displayName,
+        result,
       );
     }
 
+    // Check non-broker service validations
+    const serviceConfig = SERVICE_VALIDATIONS[normalizedType] || SERVICE_VALIDATIONS[
+      // Handle aliases
+      normalizedType === "yahoo" || normalizedType === "yahoofinance" ? "yahoo" : normalizedType
+    ];
+
+    if (serviceConfig) {
+      const validated = this.validateFromConfig(
+        credentials,
+        serviceConfig.requiredFields,
+        serviceType,
+        result,
+      );
+
+      // Add optional warnings
+      if (serviceConfig.optionalWarnings) {
+        for (const warn of serviceConfig.optionalWarnings) {
+          if (!credentials[warn.key]) {
+            validated.warnings.push(warn.message);
+          }
+        }
+      }
+
+      return validated;
+    }
+
+    // Yahoo Finance special case - no credentials typically required
+    if (normalizedType === "yahoo" || normalizedType === "yahoofinance") {
+      if (
+        credentials.api_key &&
+        (typeof credentials.api_key !== "string" || credentials.api_key.length < 5)
+      ) {
+        result.warnings.push("Yahoo Finance API key format may be invalid");
+      }
+      return result;
+    }
+
+    // Redis additional validations
+    if (normalizedType === "redis") {
+      return this.validateRedisCredentials(credentials, result);
+    }
+
+    result.warnings.push(`Unknown service type: ${serviceType}`);
     return result;
   }
 
-  private static validateWhatsAppCredentials(
+  private static validateFromConfig(
     creds: any,
-    result: CredentialValidationResult
+    fields: { key: string; label: string; minLength?: number; pattern?: RegExp }[],
+    displayName: string,
+    result: CredentialValidationResult,
   ): CredentialValidationResult {
-    if (!creds.access_token) {
-      result.isValid = false;
-      result.errors.push("WhatsApp access token is required");
+    for (const field of fields) {
+      if (!creds[field.key]) {
+        result.isValid = false;
+        result.errors.push(`${field.label} is required`);
+      } else if (typeof creds[field.key] !== "string") {
+        result.isValid = false;
+        result.errors.push(`${field.label} must be a string`);
+      } else {
+        if (field.minLength && creds[field.key].length < field.minLength) {
+          result.isValid = false;
+          result.errors.push(`Invalid ${field.label} format`);
+        }
+        if (field.pattern && !field.pattern.test(creds[field.key])) {
+          result.isValid = false;
+          result.errors.push(`Invalid ${field.label} format (expected: ${field.pattern})`);
+        }
+      }
     }
-
-    if (!creds.phone_number_id) {
-      result.isValid = false;
-      result.errors.push("WhatsApp phone number ID is required");
-    }
-
-    return result;
-  }
-
-  private static validateFinnHubCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.api_key) {
-      result.isValid = false;
-      result.errors.push("FinnHub API key is required");
-    } else if (typeof creds.api_key !== "string" || creds.api_key.length < 10) {
-      result.isValid = false;
-      result.errors.push("Invalid FinnHub API key format");
-    }
-
-    return result;
-  }
-
-  private static validateYahooCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    // Yahoo Finance typically doesn't require credentials for basic operations
-    // but may require API keys for premium features
-    if (
-      creds.api_key &&
-      (typeof creds.api_key !== "string" || creds.api_key.length < 5)
-    ) {
-      result.warnings.push("Yahoo Finance API key format may be invalid");
-    }
-
     return result;
   }
 
@@ -199,26 +190,6 @@ export class CredentialValidator {
         result.isValid = false;
         result.errors.push("Redis database must be a number between 0 and 15");
       }
-    }
-
-    return result;
-  }
-
-  private static validateTelegramCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.bot_token) {
-      result.isValid = false;
-      result.errors.push("Telegram bot token is required");
-    } else if (typeof creds.bot_token !== "string") {
-      result.isValid = false;
-      result.errors.push("Telegram bot token must be a string");
-    } else if (!/^\d+:[A-Za-z0-9_-]+$/.test(creds.bot_token)) {
-      // Telegram bot tokens follow format: <bot_id>:<token>
-      // e.g., "8581185452:AAHYQtntJ_s6C4RlalJu7LE71rUbPTNfTow"
-      result.isValid = false;
-      result.errors.push("Invalid Telegram bot token format (expected: <number>:<alphanumeric>)");
     }
 
     return result;

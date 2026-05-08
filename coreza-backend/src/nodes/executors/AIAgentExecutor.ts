@@ -9,6 +9,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { buildExecutorCategoryMap, isBrokerNode } from "../../brokers/capabilities";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
 import { createAgent } from "langchain";
@@ -489,7 +490,7 @@ export class AIAgentExecutor implements INodeExecutor {
       nodeCategory.includes("Indicator") ||
       nodeCategory.includes("Market") ||
       nodeCategory.includes("Broker") ||
-      nodeName.includes("Alpaca") ||
+      isBrokerNode(nodeName) ||
       nodeName.includes("Finance") ||
       nodeName.includes("Polygon") ||
       nodeName.includes("FinnHub")
@@ -563,13 +564,11 @@ export class AIAgentExecutor implements INodeExecutor {
   ): string {
     const nodeName = node.name || node.category || "node";
 
+    // Build broker-related categories from registry (config-driven)
+    const brokerCategories = buildExecutorCategoryMap();
+
     const executorCategoryMap: Record<string, string> = {
-      //Broker
-      Alpaca: "Broker",
-      Binance: "Broker",
-      Schwab: "Broker",
-      Dhan: "Broker",
-      // Market data providers
+      // Market data providers (non-broker)
       YahooFinance: "DataSource",
       FinnHub: "DataSource",
       Polygon: "DataSource",
@@ -589,12 +588,6 @@ export class AIAgentExecutor implements INodeExecutor {
       VolumeOscillator: "Indicators",
       SupportResistance: "Indicators",
 
-      // Screeners
-      AlpacaScreener: "Screener",
-      BinanceScreener: "Screener",
-      YahooFinanceScreener: "Screener",
-      SchwabScreener: "Screener",
-
       // Utilities / tools
       GoogleWebSearch: "Tool",
       HttpRequest: "Utility",
@@ -602,6 +595,9 @@ export class AIAgentExecutor implements INodeExecutor {
       Transform: "ControlFlow",
       Date: "ControlFlow",
       Field: "ControlFlow",
+
+      // Broker-related entries (auto-generated from capabilities registry)
+      ...brokerCategories,
     };
 
     return (

@@ -34,50 +34,6 @@ import { BROKER_CAPABILITIES, getOrderOwnerExtractor } from "../../brokers/capab
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
-const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
-
-function toCanonicalCryptoSymbol(symbol: string): string {
-  const fallbackSymbol = "ETH/USD";
-
-  if (!symbol || typeof symbol !== "string") return fallbackSymbol;
-
-  const upperSymbol = symbol.toUpperCase().replace(/\s+/g, "");
-  if (upperSymbol.includes("/")) {
-    const [rawBase, rawQuote] = upperSymbol.split("/");
-    if (rawBase && rawQuote) return `${rawBase}/${rawQuote}`;
-    return fallbackSymbol;
-  }
-
-  const detectedQuote = KNOWN_CRYPTO_QUOTES.find(
-    (quote) => upperSymbol.endsWith(quote) && upperSymbol.length > quote.length,
-  );
-
-  if (detectedQuote) {
-    const base = upperSymbol.slice(0, -detectedQuote.length);
-    return `${base}/${detectedQuote}`;
-  }
-
-  return fallbackSymbol;
-}
-
-function normalizeAlpacaCryptoSymbol(params: Record<string, any>) {
-  const fallbackSymbol = "ETH/USD";
-  const normalizePair = (base: string, quote: string) =>
-    `${base.toUpperCase().trim()}/${quote.toUpperCase().trim()}`;
-
-  if (params.crypto_base) {
-    const quote = params.crypto_quote || "USD";
-    params.symbol = normalizePair(params.crypto_base, quote);
-    return;
-  }
-
-  if (typeof params.symbol !== "string" || params.symbol.trim() === "") {
-    params.symbol = fallbackSymbol;
-    return;
-  }
-
-  params.symbol = toCanonicalCryptoSymbol(params.symbol);
-}
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";

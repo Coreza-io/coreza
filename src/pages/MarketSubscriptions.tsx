@@ -57,6 +57,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
+import { getAllBrokerKeys, getSourceBadgeClasses, getSourceEmoji } from "@/utils/brokerRegistry";
 
 const TRADE_UPDATE_STREAMS = new Set([
   "trade_updates",

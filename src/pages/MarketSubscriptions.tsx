@@ -638,7 +638,7 @@ const MarketSubscriptions = () => {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {["alpaca", "binance", "dhan", "schwab"].map((source) => {
+              {getAllBrokerKeys().map((source) => {
                 const sourceData = data?.sources.find(
                   (s) => s.source === source,
                 );
@@ -657,7 +657,7 @@ const MarketSubscriptions = () => {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <span className="text-2xl">
-                            {sourceIcons[source]}
+                            {sourceIcons(source)}
                           </span>
                           <span className="font-semibold capitalize">
                             {source}
@@ -771,9 +771,9 @@ const MarketSubscriptions = () => {
                         <TableCell>
                           <Badge
                             variant="outline"
-                            className={sourceColors[wf.source] || "bg-muted"}
+                            className={sourceColors(wf.source) || "bg-muted"}
                           >
-                            {sourceIcons[wf.source] || "📡"} {wf.source}
+                            {sourceIcons(wf.source)} {wf.source}
                           </Badge>
                         </TableCell>
                         <TableCell>

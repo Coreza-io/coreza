@@ -8,6 +8,8 @@ export interface BrokerStreamConfig {
   companionSources?: string[];
   emitsUnclosedBars?: boolean;
   normalizeOrderSymbol?: (symbol: string) => string;
+  resolveSourceForSymbol?: (symbol: string, defaultSource: string) => string;
+  normalizeStreamType?: (streamType: string) => string;
 }
 
 const DEFAULT_STREAM_CONFIG: BrokerStreamConfig = {
@@ -23,12 +25,22 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     companionSources: ["alpaca_trading", "alpaca_news"],
     normalizeOrderSymbol: (symbol: string) => symbol.replace("/", ""),
+    resolveSourceForSymbol: (symbol: string, defaultSource: string) =>
+      symbol.includes("/") && defaultSource === "alpaca_stream"
+        ? "alpaca_crypto"
+        : defaultSource,
   },
   binance: {
     separator: "@",
     symbolFirst: true,
     companionSources: ["binance_trading"],
     emitsUnclosedBars: true,
+    normalizeStreamType: (streamType: string) =>
+      streamType === "liquidation"
+        ? "forceOrder"
+        : streamType === "continuous_kline" || streamType === "continuousKline"
+          ? "continuousKline"
+          : streamType,
   },
   alpaca_trading: {
     separator: "@",

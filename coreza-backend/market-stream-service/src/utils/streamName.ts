@@ -36,22 +36,16 @@ export function buildStreamName(
   contractType?: string,
 ): string {
   if (source.endsWith("_trading")) return tradingRoutingKey(source, streamType);
-  const baseSource = String(source || "").split("_")[0];
-  const normalizedStreamType =
-    baseSource === "binance"
-      ? streamType === "liquidation"
-        ? "forceOrder"
-        : streamType === "continuousKline" || streamType === "continuous_kline"
-          ? "continuousKline"
-          : streamType
-      : streamType;
+  const cfg = getBrokerStreamConfig(source);
+  const normalizedStreamType = cfg.normalizeStreamType
+    ? cfg.normalizeStreamType(streamType)
+    : streamType;
 
   if (normalizedStreamType === "continuous_kline") {
     if (!interval)
       throw new Error("interval is required for continuousKline stream names");
     return `${symbol}_${contractType || "perpetual"}@${normalizedStreamType}_${interval}`;
   }
-  const cfg = getBrokerStreamConfig(source);
   const typePart = interval
     ? `${normalizedStreamType}_${interval}`
     : normalizedStreamType;

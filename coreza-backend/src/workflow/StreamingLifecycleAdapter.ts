@@ -620,8 +620,11 @@ export class StreamingLifecycleAdapter {
             workflowId,
             symbols: ["*"],
             streamType: streams,
-            ...(source === "binance" && {
-              marketType: streams.some((s) => s === "executionReport")
+            // Config-driven: if broker has spot trading streams, determine market type
+            ...(BROKER_CAPABILITIES[source]?.streaming.spotTradingStreams && {
+              marketType: streams.some((s) =>
+                BROKER_CAPABILITIES[source]?.streaming.spotTradingStreams?.includes(s)
+              )
                 ? "spot"
                 : "futures",
             }),

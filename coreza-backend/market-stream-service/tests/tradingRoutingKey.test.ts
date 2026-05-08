@@ -1,3 +1,4 @@
+import { computeTradingNativeStreamsFromConfig } from "../src/config/brokerStreamConfig";
 import { tradingRoutingKey } from "../src/utils/streamName";
 
 describe("tradingRoutingKey", () => {
@@ -17,5 +18,11 @@ describe("tradingRoutingKey", () => {
     expect(tradingRoutingKey("binance_trading", "executionReport")).toBe(
       "executionReport",
     );
+  });
+
+  it("supports alpaca account trading stream shape", () => {
+    expect(computeTradingNativeStreamsFromConfig("alpaca_trading", "spot")).toEqual(["trade_updates"]);
+    expect(computeTradingNativeStreamsFromConfig("alpaca_trading", "futures")).toEqual(["trade_updates"]);
+    expect(computeTradingNativeStreamsFromConfig("alpaca_trading")).toEqual(["trade_updates"]);
   });
 });

@@ -287,17 +287,7 @@ export class MarketControlHandler {
    * Account-wide streams (trading/news) are discovered alongside market subscriptions.
    */
   private getCompanionSources(source: string): string[] {
-    const companions: string[] = [];
-
-    if (source === "alpaca_market" || source === "alpaca_crypto") {
-      companions.push("alpaca_trading", "alpaca_news");
-    }
-
-    if (source === "binance_market" || source === "binance_crypto") {
-      companions.push("binance_trading");
-    }
-
-    return companions;
+    return getCompanionSourcesFromConfig(source);
   }
 
   /**
@@ -723,7 +713,6 @@ export class MarketControlHandler {
             state.workflowStreams.get(workflowId) || new Set();
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
-
           // Subscribe gateway with stream names directly
           state.gateway.subscribeStreams(newStreamNames);
 

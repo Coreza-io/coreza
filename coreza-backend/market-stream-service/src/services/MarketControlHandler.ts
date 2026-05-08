@@ -12,8 +12,16 @@ import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
-import { buildStreamNames, extractSymbol, parseStreamName } from "../utils/streamName";
-import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig, getCompanionSources as getCompanionSourcesFromConfig } from "../config/brokerStreamConfig";
+import {
+  buildStreamNames,
+  extractSymbol,
+  parseStreamName,
+} from "../utils/streamName";
+import {
+  computeTradingNativeStreamsFromConfig,
+  getBrokerStreamConfig,
+  getCompanionSources as getCompanionSourcesFromConfig,
+} from "../config/brokerStreamConfig";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -52,7 +60,10 @@ function isTradingSource(source: MarketSource): boolean {
   return source.endsWith("_trading");
 }
 
-function computeTradingNativeStreams(source: MarketSource, marketType?: string): string[] {
+function computeTradingNativeStreams(
+  source: MarketSource,
+  marketType?: string,
+): string[] {
   return computeTradingNativeStreamsFromConfig(source, marketType);
 }
 
@@ -694,18 +705,9 @@ export class MarketControlHandler {
             );
 
         // Check which stream names are NEW (not already in state.streams)
-        const cfg = getBrokerStreamConfig(source);
-        const resolvedGroups = new Map<string, string[]>();
-        for (const name of requestedStreamNames) {
-          const parsed = parseStreamName(source, name);
-          const resolvedSource = cfg.resolveSourceForSymbol
-            ? cfg.resolveSourceForSymbol(parsed.symbol, source)
-            : source;
-          const arr = resolvedGroups.get(resolvedSource) ?? [];
-          arr.push(name);
-          resolvedGroups.set(resolvedSource, arr);
-        }
-        const newStreamNames = requestedStreamNames.filter((name) => !state.streams.has(name));
+        const newStreamNames = requestedStreamNames.filter(
+          (name) => !state.streams.has(name),
+        );
 
         if (newStreamNames.length > 0) {
           console.log(

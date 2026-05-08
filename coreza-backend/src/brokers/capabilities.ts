@@ -107,6 +107,9 @@ export interface BrokerCapabilities {
   /** Supported asset types */
   assetTypes?: string[];
 
+  /** Whether broker supports algo/conditional order APIs */
+  supportsAlgoOrders?: boolean;
+
   /** Description for AI tool definitions */
   toolDescriptions?: {
     data?: string;

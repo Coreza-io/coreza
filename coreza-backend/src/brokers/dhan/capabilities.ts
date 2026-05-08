@@ -27,6 +27,8 @@ export const dhanCapabilities: BrokerCapabilities = {
     ],
   },
 
+  supportsAlgoOrders: false,
+
   assetTypes: ["equity"],
 
   toolDescriptions: {

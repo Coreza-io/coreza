@@ -134,6 +134,8 @@ export const binanceCapabilities: BrokerCapabilities = {
     ],
   },
 
+  supportsAlgoOrders: true,
+
   assetTypes: ["spot", "futures"],
 
   toolDescriptions: {

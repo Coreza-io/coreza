@@ -19,6 +19,8 @@ export const schwabCapabilities: BrokerCapabilities = {
     symbolFirst: true,
   },
 
+  supportsAlgoOrders: false,
+
   assetTypes: ["equity", "options"],
 
   toolDescriptions: {

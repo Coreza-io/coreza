@@ -19,8 +19,8 @@ const DEFAULT_STREAM_CONFIG: BrokerStreamConfig = {
 
 const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
   alpaca: {
-    separator: ".",
-    symbolFirst: false,
+    separator: "@",
+    symbolFirst: true,
     companionSources: ["alpaca_trading", "alpaca_news"],
     normalizeOrderSymbol: (symbol: string) => symbol.replace("/", ""),
   },
@@ -41,21 +41,42 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     tradingRoutingKey: (eventType: string) => eventType,
     tradingStreams: {
-      spot: ["executionReport", "outboundAccountPosition", "balanceUpdate", "listenKeyExpired"],
-      futures: ["ORDER_TRADE_UPDATE", "ALGO_UPDATE", "ACCOUNT_UPDATE", "ACCOUNT_CONFIG_UPDATE", "MARGIN_CALL", "listenKeyExpired"],
+      spot: [
+        "executionReport",
+        "outboundAccountPosition",
+        "balanceUpdate",
+        "listenKeyExpired",
+      ],
+      futures: [
+        "ORDER_TRADE_UPDATE",
+        "ALGO_UPDATE",
+        "ACCOUNT_UPDATE",
+        "ACCOUNT_CONFIG_UPDATE",
+        "MARGIN_CALL",
+        "listenKeyExpired",
+      ],
     },
   },
 };
 
 export function getBrokerStreamConfig(source: string): BrokerStreamConfig {
   const base = String(source || "").split("_")[0];
-  return BROKER_STREAM_CONFIG[source] || BROKER_STREAM_CONFIG[base] || DEFAULT_STREAM_CONFIG;
+  return (
+    BROKER_STREAM_CONFIG[source] ||
+    BROKER_STREAM_CONFIG[base] ||
+    DEFAULT_STREAM_CONFIG
+  );
 }
 
-export function computeTradingNativeStreamsFromConfig(source: string, marketType?: string): string[] {
+export function computeTradingNativeStreamsFromConfig(
+  source: string,
+  marketType?: string,
+): string[] {
   const cfg = getBrokerStreamConfig(source);
   if (!cfg.tradingStreams) return [];
-  return String(marketType).toLowerCase() === "spot" ? cfg.tradingStreams.spot : cfg.tradingStreams.futures;
+  return String(marketType).toLowerCase() === "spot"
+    ? cfg.tradingStreams.spot
+    : cfg.tradingStreams.futures;
 }
 
 export function getCompanionSources(source: MarketSource | string): string[] {

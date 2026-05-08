@@ -322,22 +322,14 @@ export class MarketDataGateway {
   }
 
   private resolveTradingRoutingKey(event: CorezaMarketEvent): string {
-    if (this.source === "alpaca_trading") {
-      return tradingRoutingKey(this.source, "trade_updates");
-    }
-
-    if (this.source === "binance_trading") {
-      const nativeEventType =
-        event.rawOrderData?.e ||
-        (event.type === "algo_update"
-          ? "ALGO_UPDATE"
-          : event.type === "listen_key_expired"
-            ? "listenKeyExpired"
-            : "ORDER_TRADE_UPDATE");
-      return tradingRoutingKey(this.source, nativeEventType);
-    }
-
-    throw new Error(`Unknown trading gateway source: ${this.source}`);
+    const nativeEventType =
+      event.rawOrderData?.e ||
+      (event.type === "algo_update"
+        ? "ALGO_UPDATE"
+        : event.type === "listen_key_expired"
+          ? "listenKeyExpired"
+          : "ORDER_TRADE_UPDATE");
+    return tradingRoutingKey(this.source, nativeEventType);
   }
 
   /**
@@ -454,6 +446,7 @@ export class MarketDataGateway {
   ): boolean {
     if (!msg || typeof msg !== "object") return true;
 
+    if (this.config.shouldPassThrough) return this.config.shouldPassThrough(msg, this.source);
     const method = typeof msg.method === "string" ? msg.method : "";
     const isSubscribePayload =
       method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
@@ -479,6 +472,9 @@ export class MarketDataGateway {
   }
 
   private encodeMessage(msg: any): Buffer | string {
+    if (this.config.encodeMessage) {
+      return this.config.encodeMessage(msg);
+    }
     // Binary protocol (Dhan)
     if (this.config.isBinary) {
       const {

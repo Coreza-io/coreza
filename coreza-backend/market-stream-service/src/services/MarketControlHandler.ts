@@ -13,6 +13,7 @@ import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
 import { redisSetBreaker } from "../utils/redisCircuitBreaker";
 import { buildStreamNames, extractSymbol } from "../utils/streamName";
+import { computeTradingNativeStreamsFromConfig, getCompanionSources as getCompanionSourcesFromConfig } from "../config/brokerStreamConfig";
 import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
@@ -48,36 +49,11 @@ interface SourceState {
 }
 
 function isTradingSource(source: MarketSource): boolean {
-  return source === "alpaca_trading" || source === "binance_trading";
+  return source.endsWith("_trading");
 }
 
-function computeTradingNativeStreams(
-  source: MarketSource,
-  marketType?: string,
-): string[] {
-  if (source === "alpaca_trading") {
-    return ["trade_updates"];
-  }
-
-  if (source === "binance_trading") {
-    return marketType === "spot"
-      ? [
-          "executionReport",
-          "outboundAccountPosition",
-          "balanceUpdate",
-          "listenKeyExpired",
-        ]
-      : [
-          "ORDER_TRADE_UPDATE",
-          "ALGO_UPDATE",
-          "ACCOUNT_UPDATE",
-          "ACCOUNT_CONFIG_UPDATE",
-          "MARGIN_CALL",
-          "listenKeyExpired",
-        ];
-  }
-
-  return [];
+function computeTradingNativeStreams(source: MarketSource, marketType?: string): string[] {
+  return computeTradingNativeStreamsFromConfig(source, marketType);
 }
 
 export class MarketControlHandler {

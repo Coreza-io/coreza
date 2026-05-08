@@ -45,4 +45,8 @@ export interface GatewayConfig {
   isBinary?: boolean;
   requiresPreConnect?: boolean | ((source?: string, creds?: any) => boolean);
   preConnect?: (creds: any, source?: string) => Promise<any>;
+  shouldPassThrough?: (msg: any, source?: string) => boolean;
+  encodeMessage?: (msg: any) => Buffer | string;
+  onServiceStart?: () => Promise<void>;
+
 }

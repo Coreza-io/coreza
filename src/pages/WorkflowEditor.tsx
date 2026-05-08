@@ -800,22 +800,21 @@ const WorkflowEditorContent = () => {
     if (result !== null) {
       setIsActive(result);
 
-      // Cleanup Alpaca subscriptions on deactivation
+      // Cleanup news subscriptions on deactivation
       if (!result) {
         nodes
-          .filter((node) => {
-            const nodeName = (node.data?.definition as any)?.name;
-            return nodeName === "AlpacaNews";
-          })
+          .filter((node) => isNewsStreamNode((node.data?.definition as any)))
           .forEach((node) => {
             const nodeData = node.data as any;
+            const nodeDef = nodeData?.definition;
             const candidateSymbols =
               executionStore.getNodeData(node.id)?.output?.symbols ??
               nodeData?.output?.symbols ??
               nodeData?.values?.symbols ??
               nodeData?.fieldState?.symbols;
-            cleanupAlpacaSubscription(
+            cleanupNewsSubscription(
               node.id,
+              nodeDef,
               parseSymbolsValue(candidateSymbols),
             );
           });

@@ -270,12 +270,8 @@ export class BrokerExecutor implements INodeExecutor {
 
       if (operation === "place_order") {
         try {
-          const ids =
-            broker === "alpaca"
-              ? extractAlpacaOrderOwnerIds(data)
-              : broker === "binance"
-                ? extractBinanceOrderOwnerIds(data)
-                : "";
+          const extractor = getOrderOwnerExtractor(broker);
+          const ids = extractor ? extractor(data) : {};
 
           // Keep this post-response save:
           // - pre-save (before request) protects early WS fills via clientOrderId

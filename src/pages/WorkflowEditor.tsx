@@ -475,16 +475,17 @@ const WorkflowEditorContent = () => {
       if (removedNodeIds.length) {
         removedNodeIds.forEach((id) => {
           const removedNode = nodes.find((node) => node.id === id);
-          const nodeName = (removedNode?.data?.definition as any)?.name;
-          if (nodeName === "AlpacaNews") {
+          const nodeDef = (removedNode?.data?.definition as any);
+          if (isNewsStreamNode(nodeDef)) {
             const nodeData = removedNode.data as any;
             const candidateSymbols =
               executionStore.getNodeData(id)?.output?.symbols ??
               nodeData?.output?.symbols ??
               nodeData?.values?.symbols ??
               nodeData?.fieldState?.symbols;
-            cleanupAlpacaSubscription(
+            cleanupNewsSubscription(
               id,
+              nodeDef,
               parseSymbolsValue(candidateSymbols),
               false,
             );
@@ -494,7 +495,7 @@ const WorkflowEditorContent = () => {
 
       applyNodeChanges(changes);
     },
-    [applyNodeChanges, cleanupAlpacaSubscription, executionStore, nodes],
+    [applyNodeChanges, cleanupNewsSubscription, executionStore, nodes],
   );
 
   const handleNodeOutputMessage = useCallback(

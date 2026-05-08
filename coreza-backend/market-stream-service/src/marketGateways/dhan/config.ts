@@ -1,3 +1,4 @@
+import { encodeDhanSubscribeMessage, encodeDhanUnsubscribeMessage } from "../../utils/dhanBinaryParser";
 import { GatewayConfig } from '../types';
 import {
   buildDhanSubscribeMessage,
@@ -22,4 +23,9 @@ export const dhanGatewayConfig: GatewayConfig = {
   reconnectDelay: 2000,
   maxReconnectAttempts: 5,
   isBinary: true,
+  encodeMessage: (msg) => {
+    if (msg?.RequestCode === 15) return encodeDhanSubscribeMessage(msg.InstrumentList.map((i: any) => i.SecurityId), msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ");
+    if (msg?.RequestCode === 16) return encodeDhanUnsubscribeMessage(msg.InstrumentList.map((i: any) => i.SecurityId), msg.InstrumentList[0]?.ExchangeSegment || "NSE_EQ");
+    return Buffer.from(JSON.stringify(msg));
+  },
 };

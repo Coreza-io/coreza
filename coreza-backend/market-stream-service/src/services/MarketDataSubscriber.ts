@@ -16,6 +16,7 @@ import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
+import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from "../config/brokerStreamConfig";
 import { OrderOwnerRegistry } from "./OrderOwnerRegistry";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
@@ -28,31 +29,8 @@ const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
 ]);
 const ORDER_OWNER_PREFIX = "orderowner";
 
-function computeTradingNativeStreams(
-  source: string,
-  marketType?: string,
-): string[] {
-  if (source === "alpaca_trading") {
-    return ["trade_updates"];
-  }
-  if (source === "binance_trading") {
-    return marketType === "spot"
-      ? [
-          "executionReport",
-          "outboundAccountPosition",
-          "balanceUpdate",
-          "listenKeyExpired",
-        ]
-      : [
-          "ORDER_TRADE_UPDATE",
-          "ALGO_UPDATE",
-          "ACCOUNT_UPDATE",
-          "ACCOUNT_CONFIG_UPDATE",
-          "MARGIN_CALL",
-          "listenKeyExpired",
-        ];
-  }
-  return [];
+function computeTradingNativeStreams(source: string, marketType?: string): string[] {
+  return computeTradingNativeStreamsFromConfig(source, marketType);
 }
 
 /**
@@ -486,7 +464,7 @@ export class MarketDataSubscriber {
           // Other sources (Alpaca) only emit bars when closed, so no filter needed
           if (
             registration.onlyClosedBars !== false && // Default is true
-            event.source === "binance" &&
+            getBrokerStreamConfig(event.source).emitsUnclosedBars &&
             (event.type === "kline" || event.type === "continuousKline") &&
             event.isClosed !== true
           ) {
@@ -660,22 +638,14 @@ export class MarketDataSubscriber {
 
   private resolveTradingRoutingKey(event: CorezaMarketEvent): string {
     const tradingSource = `${event.source}_trading`;
-    if (tradingSource === "alpaca_trading") {
-      return tradingRoutingKey(tradingSource, "trade_updates");
-    }
-
-    if (tradingSource === "binance_trading") {
-      const nativeEventType =
-        event.rawOrderData?.e ||
-        (event.type === "algo_update"
-          ? "ALGO_UPDATE"
-          : event.type === "listen_key_expired"
-            ? "listenKeyExpired"
-            : "ORDER_TRADE_UPDATE");
-      return tradingRoutingKey(tradingSource, nativeEventType);
-    }
-
-    throw new Error(`Unknown trading event source: ${event.source}`);
+    const nativeEventType =
+      event.rawOrderData?.e ||
+      (event.type === "algo_update"
+        ? "ALGO_UPDATE"
+        : event.type === "listen_key_expired"
+          ? "listenKeyExpired"
+          : "ORDER_TRADE_UPDATE");
+    return tradingRoutingKey(tradingSource, nativeEventType);
   }
 
   private enqueueWorkflowDelivery(

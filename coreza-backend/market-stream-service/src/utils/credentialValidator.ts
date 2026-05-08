@@ -8,6 +8,13 @@ export interface CredentialValidationResult {
   warnings: string[];
 }
 
+
+interface FieldRule { key: string; label: string; minLength?: number; }
+const CREDENTIAL_VALIDATION_RULES: Record<string, { requiredFields: FieldRule[] }> = {
+  alpaca: { requiredFields: [{ key: "api_key", label: "Alpaca API key", minLength: 10 }, { key: "secret_key", label: "Alpaca secret key", minLength: 10 }] },
+  dhan: { requiredFields: [{ key: "client_id", label: "Dhan client ID" }, { key: "api_key", label: "Dhan access token" }] },
+};
+
 export class CredentialValidator {
   /**
    * Validate credential structure for a given service type
@@ -28,11 +35,25 @@ export class CredentialValidator {
       return result;
     }
 
-    switch (serviceType.toLowerCase()) {
-      case "alpaca":
-        return this.validateAlpacaCredentials(credentials, result);
-      case "dhan":
-        return this.validateDhanCredentials(credentials, result);
+    const normalizedService = serviceType.toLowerCase();
+    const rules = CREDENTIAL_VALIDATION_RULES[normalizedService];
+    if (rules) {
+      for (const field of rules.requiredFields) {
+        const value = credentials[field.key];
+        if (!value) {
+          result.isValid = false;
+          result.errors.push(`${field.label} is required`);
+          continue;
+        }
+        if (field.minLength && (typeof value !== "string" || value.length < field.minLength)) {
+          result.isValid = false;
+          result.errors.push(`Invalid ${field.label} format`);
+        }
+      }
+      return result;
+    }
+
+    switch (normalizedService) {
       case "gmail":
         return this.validateGmailCredentials(credentials, result);
       case "whatsapp":
@@ -48,49 +69,6 @@ export class CredentialValidator {
         result.warnings.push(`Unknown service type: ${serviceType}`);
         return result;
     }
-  }
-
-  private static validateAlpacaCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.api_key) {
-      result.isValid = false;
-      result.errors.push("Alpaca API key is required");
-    } else if (typeof creds.api_key !== "string" || creds.api_key.length < 10) {
-      result.isValid = false;
-      result.errors.push("Invalid Alpaca API key format");
-    }
-
-    if (!creds.secret_key) {
-      result.isValid = false;
-      result.errors.push("Alpaca secret key is required");
-    } else if (
-      typeof creds.secret_key !== "string" ||
-      creds.secret_key.length < 10
-    ) {
-      result.isValid = false;
-      result.errors.push("Invalid Alpaca secret key format");
-    }
-
-    return result;
-  }
-
-  private static validateDhanCredentials(
-    creds: any,
-    result: CredentialValidationResult
-  ): CredentialValidationResult {
-    if (!creds.client_id) {
-      result.isValid = false;
-      result.errors.push("Dhan client ID is required");
-    }
-
-    if (!creds.api_key) {
-      result.isValid = false;
-      result.errors.push("Dhan access token is required");
-    }
-
-    return result;
   }
 
   private static validateGmailCredentials(

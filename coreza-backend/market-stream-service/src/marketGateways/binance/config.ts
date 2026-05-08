@@ -16,6 +16,7 @@ import {
   isBinanceAuthSuccess,
   isBinanceAuthError,
 } from "./helpers";
+import { initBinanceTimeSync } from "../../utils/binanceTimeSync";
 
 export const binanceGatewayConfig: GatewayConfig = {
   id: "binance",
@@ -54,4 +55,13 @@ export const binanceGatewayConfig: GatewayConfig = {
   preConnect: (creds, source) => preConnectBinance(creds, source),
   reconnectDelay: 1000,
   maxReconnectAttempts: 5,
+  shouldPassThrough: (msg, source) => {
+    const method = typeof msg?.method === "string" ? msg.method : "";
+    const isSubscribePayload = method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
+    const isTradingPayload = method.startsWith("session.") || method.startsWith("userDataStream.") || method.startsWith("order.");
+    if (isSubscribePayload && source === "binance_trading") return false;
+    if (isTradingPayload && source !== "binance_trading") return false;
+    return true;
+  },
+  onServiceStart: async () => initBinanceTimeSync(),
 };

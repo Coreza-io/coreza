@@ -489,7 +489,7 @@ export class AIAgentExecutor implements INodeExecutor {
       nodeCategory.includes("Indicator") ||
       nodeCategory.includes("Market") ||
       nodeCategory.includes("Broker") ||
-      nodeName.includes("Alpaca") ||
+      isBrokerNode(nodeName) ||
       nodeName.includes("Finance") ||
       nodeName.includes("Polygon") ||
       nodeName.includes("FinnHub")

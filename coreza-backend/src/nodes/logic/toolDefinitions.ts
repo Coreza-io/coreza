@@ -1,4 +1,5 @@
 import { ZodTypeAny } from "zod";
+import { buildToolDefinitions } from "../../brokers/capabilities";
 
 export interface ToolDefinition {
   description: string;
@@ -6,8 +7,9 @@ export interface ToolDefinition {
   schema?: ZodTypeAny;
 }
 
-export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
-  // Market Data
+// Non-broker tool definitions (static)
+const STATIC_TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
+  // Market Data (non-broker sources)
   YahooFinance: {
     description:
       "Get historical OHLCV market data from Yahoo Finance for analysis and backtesting.",
@@ -21,22 +23,6 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   FinnHub: {
     description: "Retrieve quotes, news, and historical bars from Finnhub.",
     category: "DataSource",
-  },
-  Alpaca: {
-    description: "Request historical or real-time market data from Alpaca.",
-    category: "Broker",
-  },
-  Binance: {
-    description: "Get crypto market data from Binance including kline candles.",
-    category: "Broker",
-  },
-  Schwab: {
-    description: "Access equity market data from Charles Schwab.",
-    category: "Broker",
-  },
-  Dhan: {
-    description: "Fetch market data from Dhan for Indian markets.",
-    category: "Broker",
   },
   Market: {
     description: "Generic market data fetcher supporting broker data sources.",
@@ -94,40 +80,9 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
     category: "Indicators",
   },
 
-  // Brokers (Trade)
-  AlpacaTrade: {
-    description:
-      "Execute trades on Alpaca including market, limit, stop, and trailing stop orders.",
-    category: "Broker",
-  },
-  BinanceTrade: {
-    description: "Place or manage crypto orders on Binance.",
-    category: "Broker",
-  },
-  DhanTrade: {
-    description: "Execute equity trades on Dhan with basic order operations.",
-    category: "Broker",
-  },
-  SchwabTrade: {
-    description: "Place or manage trades via Charles Schwab APIs.",
-    category: "Broker",
-  },
-
-  // Screeners
-  AlpacaScreener: {
-    description: "Screen stocks using Alpaca screener APIs (market cap, volume, sector).",
-    category: "Screener",
-  },
-  BinanceScreener: {
-    description: "Filter Binance instruments by volume, price change, and symbol patterns.",
-    category: "Screener",
-  },
+  // Screeners (non-broker)
   YahooFinanceScreener: {
     description: "Use Yahoo Finance screener presets or custom filters to find tickers.",
-    category: "Screener",
-  },
-  SchwabScreener: {
-    description: "Run Charles Schwab screeners to discover equities meeting criteria.",
     category: "Screener",
   },
 
@@ -157,4 +112,10 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
       "Search the web using Google Custom Search and return concise search results.",
     category: "Tool",
   },
+};
+
+// Merge static definitions with broker-generated ones (config-driven)
+export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
+  ...STATIC_TOOL_DEFINITIONS,
+  ...buildToolDefinitions(),
 };

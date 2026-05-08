@@ -1,5 +1,6 @@
 {
   "name": "BinanceScreener",
+  "broker": "binance",
   "def": "Screen Assets",
   "node_type": "main",
   "category": "Screener",

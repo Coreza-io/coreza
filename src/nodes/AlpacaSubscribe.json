@@ -1,5 +1,6 @@
 {
   "name": "AlpacaStreamSubscribe",
+  "broker": "alpaca",
   "def": "Alpaca Stream Subscribe",
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
@@ -142,13 +143,18 @@
           "name": "Order Updates (Fills)"
         }
       ],
-      "default": ["trade"],
+      "default": [
+        "trade"
+      ],
       "description": "Select data stream types to subscribe to",
       "required": true,
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "assetType": ["stock", "crypto"]
+          "assetType": [
+            "stock",
+            "crypto"
+          ]
         }
       }
     },
@@ -162,7 +168,10 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "assetType": ["stock", "news"]
+          "assetType": [
+            "stock",
+            "news"
+          ]
         }
       }
     },
@@ -176,7 +185,9 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "assetType": ["crypto"]
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -208,7 +219,9 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "assetType": ["crypto"]
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -236,12 +249,16 @@
       "showDescription": false,
       "displayOptions": {
         "show": {
-          "assetType": ["stock"]
+          "assetType": [
+            "stock"
+          ]
         }
       },
       "hideOptions": {
         "show": {
-          "assetType": ["crypto"]
+          "assetType": [
+            "crypto"
+          ]
         }
       }
     },
@@ -278,7 +295,9 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "scope": ["workflow"]
+          "scope": [
+            "workflow"
+          ]
         }
       },
       "default": "__current__"

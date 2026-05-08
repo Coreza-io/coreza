@@ -1,5 +1,6 @@
 {
   "name": "Binance",
+  "broker": "binance",
   "def": "Fetch Market Data",
   "node_type": "main",
   "category": "Broker",

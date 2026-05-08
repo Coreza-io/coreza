@@ -1,5 +1,6 @@
 {
   "name": "Alpaca",
+  "broker": "alpaca",
   "def": "Alpaca",
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",
@@ -515,7 +516,7 @@
           ]
         }
       },
-      "description": "Order side buy/sell — only for place_order operation."
+      "description": "Order side buy/sell \u2014 only for place_order operation."
     },
     {
       "key": "qty",
@@ -531,7 +532,7 @@
           ]
         }
       },
-      "description": "Order quantity — only for place_order."
+      "description": "Order quantity \u2014 only for place_order."
     },
     {
       "key": "percentage",
@@ -578,7 +579,7 @@
           ]
         }
       },
-      "description": "Order type market/limit/stop/etc — only for place_order."
+      "description": "Order type market/limit/stop/etc \u2014 only for place_order."
     },
     {
       "key": "limit_price",
@@ -594,7 +595,7 @@
           "type": "limit"
         }
       },
-      "description": "Limit price — only for limit/stop_limit orders."
+      "description": "Limit price \u2014 only for limit/stop_limit orders."
     },
     {
       "key": "stop_price",
@@ -610,7 +611,7 @@
           "type": "stop"
         }
       },
-      "description": "Stop price — only for stop/stop_limit orders."
+      "description": "Stop price \u2014 only for stop/stop_limit orders."
     },
     {
       "key": "trail_price",
@@ -689,7 +690,7 @@
           ]
         }
       },
-      "description": "Time in force — only for place_order."
+      "description": "Time in force \u2014 only for place_order."
     },
     {
       "key": "extended_hours",

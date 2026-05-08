@@ -1,5 +1,6 @@
 {
   "name": "Dhan",
+  "broker": "dhan",
   "def": "Dhan",
   "node_type": "main",
   "icon": "/assets/icons/dhan.svg",

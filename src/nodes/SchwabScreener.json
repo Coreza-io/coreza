@@ -1,5 +1,6 @@
 {
   "name": "SchwabScreener",
+  "broker": "schwab",
   "def": "Schwab Screener",
   "node_type": "main",
   "icon": "/assets/icons/schwab.svg",

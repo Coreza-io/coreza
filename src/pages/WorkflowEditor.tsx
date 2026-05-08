@@ -84,7 +84,8 @@ import {
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
 import { StableNodeProvider } from "@/contexts/StableNodeContext";
-import { appendNewsItem, createWaitingNewsOutput } from "@/utils/alpacaNews";
+import { appendNewsItem, createWaitingNewsOutput } from "@/utils/newsStream";
+import { isNewsStreamNode, getNewsUnsubscribeEndpoint } from "@/utils/brokerRegistry";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
@@ -407,9 +408,10 @@ const WorkflowEditorContent = () => {
     );
   }, [workflowSessionId, nodes.length, setNodes]);
 
-  const cleanupAlpacaSubscription = useCallback(
+  const cleanupNewsSubscription = useCallback(
     async (
       nodeId: string,
+      nodeDef: any,
       fallbackSymbols: string[] = [],
       updateNodeState: boolean = true,
     ) => {
@@ -424,9 +426,11 @@ const WorkflowEditorContent = () => {
       const symbols = storedSymbols.length ? storedSymbols : fallbackSymbols;
 
       if (symbols.length) {
+        const source = nodeDef?.subCategory || 'alpaca';
+        const endpoint = getNewsUnsubscribeEndpoint(source);
         try {
           await apiClient.post(
-            "/alpaca-news/unsubscribe",
+            endpoint,
             {
               user_id: authUser.id,
               symbols,
@@ -436,7 +440,7 @@ const WorkflowEditorContent = () => {
           );
         } catch (error) {
           console.error(
-            "Failed to unsubscribe Alpaca news for node",
+            "Failed to unsubscribe news for node",
             nodeId,
             error,
           );
@@ -471,16 +475,17 @@ const WorkflowEditorContent = () => {
       if (removedNodeIds.length) {
         removedNodeIds.forEach((id) => {
           const removedNode = nodes.find((node) => node.id === id);
-          const nodeName = (removedNode?.data?.definition as any)?.name;
-          if (nodeName === "AlpacaNews") {
+          const nodeDef = (removedNode?.data?.definition as any);
+          if (isNewsStreamNode(nodeDef)) {
             const nodeData = removedNode.data as any;
             const candidateSymbols =
               executionStore.getNodeData(id)?.output?.symbols ??
               nodeData?.output?.symbols ??
               nodeData?.values?.symbols ??
               nodeData?.fieldState?.symbols;
-            cleanupAlpacaSubscription(
+            cleanupNewsSubscription(
               id,
+              nodeDef,
               parseSymbolsValue(candidateSymbols),
               false,
             );
@@ -490,7 +495,7 @@ const WorkflowEditorContent = () => {
 
       applyNodeChanges(changes);
     },
-    [applyNodeChanges, cleanupAlpacaSubscription, executionStore, nodes],
+    [applyNodeChanges, cleanupNewsSubscription, executionStore, nodes],
   );
 
   const handleNodeOutputMessage = useCallback(
@@ -600,7 +605,7 @@ const WorkflowEditorContent = () => {
       wsRef.current = socket;
 
       socket.onopen = () => {
-        console.log("🔌 Alpaca news WebSocket connected");
+        console.log("🔌 News stream WebSocket connected");
       };
 
       socket.onmessage = (event) => {
@@ -612,7 +617,7 @@ const WorkflowEditorContent = () => {
 
           if (message.type === "node_output") {
             messageHandlerRef.current(message.payload, message.timestamp);
-          } else if (message.type === "alpaca_news") {
+          } else if (message.type === "alpaca_news" || message.type === "news_stream") {
             const payload = message.payload || {};
             messageHandlerRef.current(
               {
@@ -633,7 +638,7 @@ const WorkflowEditorContent = () => {
       };
 
       socket.onerror = (event) => {
-        console.error("Alpaca news WebSocket error", event);
+        console.error("News stream WebSocket error", event);
         socket.close();
       };
 
@@ -795,22 +800,21 @@ const WorkflowEditorContent = () => {
     if (result !== null) {
       setIsActive(result);
 
-      // Cleanup Alpaca subscriptions on deactivation
+      // Cleanup news subscriptions on deactivation
       if (!result) {
         nodes
-          .filter((node) => {
-            const nodeName = (node.data?.definition as any)?.name;
-            return nodeName === "AlpacaNews";
-          })
+          .filter((node) => isNewsStreamNode((node.data?.definition as any)))
           .forEach((node) => {
             const nodeData = node.data as any;
+            const nodeDef = nodeData?.definition;
             const candidateSymbols =
               executionStore.getNodeData(node.id)?.output?.symbols ??
               nodeData?.output?.symbols ??
               nodeData?.values?.symbols ??
               nodeData?.fieldState?.symbols;
-            cleanupAlpacaSubscription(
+            cleanupNewsSubscription(
               node.id,
+              nodeDef,
               parseSymbolsValue(candidateSymbols),
             );
           });

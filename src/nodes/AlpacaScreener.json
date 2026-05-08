@@ -1,5 +1,6 @@
 {
   "name": "AlpacaScreener",
+  "broker": "alpaca",
   "def": "Alpaca Screener",
   "node_type": "main",
   "icon": "/assets/icons/alpaca.svg",

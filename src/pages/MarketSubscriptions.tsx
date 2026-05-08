@@ -57,6 +57,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
+import { getAllBrokerKeys, getSourceBadgeClasses, getSourceEmoji } from "@/utils/brokerRegistry";
 
 const TRADE_UPDATE_STREAMS = new Set([
   "trade_updates",
@@ -106,19 +107,9 @@ interface SubscriptionStatus {
   streamSourceMap: Record<string, string[]>;
 }
 
-const sourceColors: Record<string, string> = {
-  alpaca: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  binance: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  dhan: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  schwab: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-};
-
-const sourceIcons: Record<string, string> = {
-  alpaca: "🦙",
-  binance: "₿",
-  dhan: "📊",
-  schwab: "💼",
-};
+// Derived from broker registry — no hardcoded broker lists
+const sourceColors = (source: string) => getSourceBadgeClasses(source);
+const sourceIcons = (source: string) => getSourceEmoji(source);
 
 type ParsedStreamName = {
   symbol: string;
@@ -647,7 +638,7 @@ const MarketSubscriptions = () => {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {["alpaca", "binance", "dhan", "schwab"].map((source) => {
+              {getAllBrokerKeys().map((source) => {
                 const sourceData = data?.sources.find(
                   (s) => s.source === source,
                 );
@@ -666,7 +657,7 @@ const MarketSubscriptions = () => {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <span className="text-2xl">
-                            {sourceIcons[source]}
+                            {sourceIcons(source)}
                           </span>
                           <span className="font-semibold capitalize">
                             {source}
@@ -780,9 +771,9 @@ const MarketSubscriptions = () => {
                         <TableCell>
                           <Badge
                             variant="outline"
-                            className={sourceColors[wf.source] || "bg-muted"}
+                            className={sourceColors(wf.source) || "bg-muted"}
                           >
-                            {sourceIcons[wf.source] || "📡"} {wf.source}
+                            {sourceIcons(wf.source)} {wf.source}
                           </Badge>
                         </TableCell>
                         <TableCell>

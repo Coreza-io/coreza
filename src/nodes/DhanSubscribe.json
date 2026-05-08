@@ -1,5 +1,6 @@
 {
   "name": "DhanStreamSubscribe",
+  "broker": "dhan",
   "def": "Dhan Stream Subscribe",
   "node_type": "main",
   "icon": "/assets/icons/dhan.svg",
@@ -140,7 +141,9 @@
           "name": "Full (OHLC + Depth)"
         }
       ],
-      "default": ["ticker"],
+      "default": [
+        "ticker"
+      ],
       "description": "Select Dhan stream types to subscribe to",
       "required": true,
       "showDescription": false
@@ -174,7 +177,9 @@
       "description": "Comma-separated security IDs",
       "displayOptions": {
         "show": {
-          "symbolSource": ["manual"]
+          "symbolSource": [
+            "manual"
+          ]
         }
       },
       "required": false,
@@ -188,7 +193,9 @@
       "placeholder": "Select workflow containing symbols",
       "displayOptions": {
         "show": {
-          "symbolSource": ["store"]
+          "symbolSource": [
+            "store"
+          ]
         }
       }
     },
@@ -201,7 +208,9 @@
       "placeholder": "Select stored variable",
       "displayOptions": {
         "show": {
-          "symbolSource": ["store"]
+          "symbolSource": [
+            "store"
+          ]
         }
       }
     },
@@ -238,7 +247,9 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "subscriptionScope": ["workflow"]
+          "subscriptionScope": [
+            "workflow"
+          ]
         }
       },
       "default": "__current__"

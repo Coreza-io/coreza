@@ -722,28 +722,8 @@ export class MarketControlHandler {
             state.workflowStreams.get(workflowId) || new Set();
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
-
-          // Subscribe gateway with stream names directly, grouped by resolved source
-          for (const [resolvedSource, groupedStreamNames] of resolvedGroups.entries()) {
-            const resolvedStateKey = this.getStateKey(userId, resolvedSource as MarketSource);
-            let resolvedState = this.sourceStates.get(resolvedStateKey);
-            if (!resolvedState || !resolvedState.gateway.getStats().connected) {
-              await this.connectGateway(
-                resolvedSource as MarketSource,
-                userId,
-                msg.credentialId,
-                feed,
-                marketType,
-                environment,
-              );
-              resolvedState = this.sourceStates.get(resolvedStateKey)!;
-            }
-            const resolvedNew = groupedStreamNames.filter((name) => !resolvedState.streams.has(name));
-            if (resolvedNew.length === 0) continue;
-            resolvedNew.forEach((name) => resolvedState.streams.add(name));
-            resolvedState.gateway.subscribeStreams(resolvedNew);
-            await this.persistState(userId, resolvedSource as MarketSource);
-          }
+          // Subscribe gateway with stream names directly
+          state.gateway.subscribeStreams(newStreamNames);
 
           // Persist to Redis
           await this.persistState(userId, source);

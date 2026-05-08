@@ -8,32 +8,43 @@
  * See the LICENSE file for details.
  */
 
+/**
+ * Run node-specific value migrations.
+ * Add new migration functions here as needed — keyed by definition name.
+ */
+const NODE_MIGRATIONS: Record<string, (definition: any, merged: Record<string, any>) => void> = {
+  /**
+   * Legacy migration: AlpacaStreamData used "news" as an assetType value.
+   * This was moved to stream_type array. Applies to any StreamListener/Subscribe
+   * node that had this legacy pattern.
+   */
+  AlpacaStreamListener: migrateStreamDataNewsAssetType,
+  AlpacaStreamData: migrateStreamDataNewsAssetType,
+};
 
-function migrateAlpacaStreamDataValues(
-  definition: any,
+function migrateStreamDataNewsAssetType(
+  _definition: any,
   merged: Record<string, any>,
 ): void {
-  if (definition?.name !== "AlpacaStreamData") return;
+  if (merged.assetType !== "news") return;
 
-  if (merged.assetType === "news") {
-    merged.assetType = "stock";
+  merged.assetType = "stock";
 
-    const current = merged.stream_type;
-    const normalized = Array.isArray(current)
-      ? [...current]
-      : typeof current === "string"
-        ? current
-            .split(",")
-            .map((v: string) => v.trim())
-            .filter(Boolean)
-        : [];
+  const current = merged.stream_type;
+  const normalized = Array.isArray(current)
+    ? [...current]
+    : typeof current === "string"
+      ? current
+          .split(",")
+          .map((v: string) => v.trim())
+          .filter(Boolean)
+      : [];
 
-    if (!normalized.includes("news")) {
-      normalized.push("news");
-    }
-
-    merged.stream_type = normalized.length > 0 ? normalized : ["news"];
+  if (!normalized.includes("news")) {
+    normalized.push("news");
   }
+
+  merged.stream_type = normalized.length > 0 ? normalized : ["news"];
 }
 
 /**
@@ -83,7 +94,11 @@ export function reconcileNodeValues(
     }
   }
 
-  migrateAlpacaStreamDataValues(definition, merged);
+  // Run any registered migrations for this node type
+  const migrateFn = NODE_MIGRATIONS[definition?.name];
+  if (migrateFn) {
+    migrateFn(definition, merged);
+  }
 
   return { merged, hadMissingKeys };
 }

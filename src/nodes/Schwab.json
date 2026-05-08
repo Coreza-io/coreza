@@ -1,5 +1,6 @@
 {
   "name": "Schwab",
+  "broker": "schwab",
   "def": "Schwab",
   "node_type": "schwab",
   "description": "Access Schwab account info, positions, orders, quotes, and price history",

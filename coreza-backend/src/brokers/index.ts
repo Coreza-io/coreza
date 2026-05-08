@@ -10,6 +10,19 @@ import { schwabGatewayConfig } from './schwab/ws/config';
 import { GatewayConfig } from './gatewayTypes';
 import { BrokerConfig } from './types';
 
+// Import and register capabilities
+import { registerBrokerCapabilities } from './capabilities';
+import { alpacaCapabilities } from './alpaca/capabilities';
+import { binanceCapabilities } from './binance/capabilities';
+import { dhanCapabilities } from './dhan/capabilities';
+import { schwabCapabilities } from './schwab/capabilities';
+
+// Register all broker capabilities at module load
+registerBrokerCapabilities(alpacaCapabilities);
+registerBrokerCapabilities(binanceCapabilities);
+registerBrokerCapabilities(dhanCapabilities);
+registerBrokerCapabilities(schwabCapabilities);
+
 export const BROKER_CONFIGS: Record<string, BrokerConfig> = {
   alpaca: alpacaConfig,
   dhan: dhanConfig,
@@ -86,3 +99,4 @@ export function getSourceMapping(source: string): SourceMapping {
 
 export * from './types';
 export * from './gatewayTypes';
+export * from './capabilities';

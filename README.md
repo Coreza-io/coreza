@@ -29,27 +29,35 @@ Get up and running in minutes with our automated setup:
 git clone https://github.com/Coreza-io/coreza.git
 cd coreza
 
+# Clone backend repo into expected path
+git clone https://github.com/Coreza-io/coreza-backend.git coreza-backend
+
 # Run the automated setup
 node setup/setup.js
 
-# ⚠️ IMPORTANT: Start Redis server manually in a separate (cmd/shell)
+# ⚠️ IMPORTANT: Start Redis queue+cache instances manually in separate shell(s)
 
 # On Windows (cmd or PowerShell):
-redis-server.exe
+redis-server.exe --port 6379
+redis-server.exe --port 6380
 
 # On Linux:
-sudo service redis-server start
-# OR
-redis-server --daemonize yes
+redis-server --port 6379 --daemonize yes
+redis-server --port 6380 --daemonize yes
 
 # On macOS:
-brew services start redis
+redis-server --port 6379 --daemonize yes
+redis-server --port 6380 --daemonize yes
 
 # Once Redis is running, start the frontend:
 npm run dev
 
 # In another terminal, start the backend:
 cd coreza-backend
+npm run dev
+
+# In a third terminal, start market stream service:
+cd coreza-backend/market-stream-service
 npm run dev
 ```
 
@@ -107,10 +115,9 @@ If you prefer manual setup or the automated setup fails:
 
 ```bash
 # Copy and configure environment files
-cp .env.example .env
-cp coreza-backend/.env.example coreza-backend/.env
+node setup/setup.js
 
-# Edit both files with your Supabase credentials
+# setup writes .env files for frontend/backend/market-stream-service
 ```
 
 ### 2. Install Dependencies

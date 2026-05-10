@@ -14,6 +14,7 @@ This guide covers running Coreza on your own infrastructure for production or ad
    ```bash
    cp .env.example .env
    cp coreza-backend/.env.example coreza-backend/.env
+   cp coreza-backend/market-stream-service/.env.example coreza-backend/market-stream-service/.env
    ```
 2. Update both files with your Supabase, Redis, and broker credentials.
 3. Start the stack:
@@ -47,3 +48,7 @@ This guide covers running Coreza on your own infrastructure for production or ad
 - Review application logs from frontend, backend, and docker services.
 - Confirm Redis and database connectivity for workflow execution.
 - Use `npm run lint` and backend diagnostics before deploying changes.
+
+
+### Required backend env vars for docker-compose
+Ensure `coreza-backend/.env` includes at least: `DATABASE_URL`, `OPENAI_API_KEY`, `JWT_SECRET`, and `GRAFANA_PASSWORD`.

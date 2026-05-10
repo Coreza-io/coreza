@@ -16,6 +16,7 @@ class SetupValidator {
     this.checkSupabaseConfig();
     this.checkDatabaseSchema();
     this.checkEdgeFunctions();
+    this.checkMarketStreamService();
     
     this.displayResults();
     
@@ -35,8 +36,8 @@ class SetupValidator {
       if (!frontendEnv.includes('VITE_SUPABASE_URL=')) {
         this.errors.push('VITE_SUPABASE_URL missing from .env');
       }
-      if (!frontendEnv.includes('VITE_SUPABASE_ANON_KEY=')) {
-        this.errors.push('VITE_SUPABASE_ANON_KEY missing from .env');
+      if (!frontendEnv.includes('VITE_SUPABASE_PUBLISHABLE_KEY=')) {
+        this.errors.push('VITE_SUPABASE_PUBLISHABLE_KEY missing from .env');
       }
       if (!frontendEnv.includes('VITE_COREZA_ENCRYPTION_KEY=')) {
         this.errors.push('VITE_COREZA_ENCRYPTION_KEY missing from .env');
@@ -56,6 +57,15 @@ class SetupValidator {
       }
       if (!backendEnv.includes('COREZA_ENCRYPTION_KEY=')) {
         this.errors.push('COREZA_ENCRYPTION_KEY missing from coreza-backend/.env');
+      }
+      if (!backendEnv.includes('REDIS_QUEUE_URL=')) {
+        this.errors.push('REDIS_QUEUE_URL missing from coreza-backend/.env');
+      }
+      if (!backendEnv.includes('REDIS_CACHE_URL=')) {
+        this.errors.push('REDIS_CACHE_URL missing from coreza-backend/.env');
+      }
+      if (!backendEnv.includes('JWT_SECRET=')) {
+        this.errors.push('JWT_SECRET missing from coreza-backend/.env');
       }
     }
     
@@ -131,6 +141,19 @@ class SetupValidator {
     
     if (this.errors.length === 0) {
       console.log('✅ Edge functions are properly configured');
+    }
+  }
+
+  checkMarketStreamService() {
+    console.log('📡 Checking market-stream-service...');
+    const svcPath = 'coreza-backend/market-stream-service/package.json';
+    if (!fs.existsSync(svcPath)) {
+      this.errors.push('market-stream-service missing: coreza-backend/market-stream-service');
+      return;
+    }
+
+    if (!fs.existsSync('coreza-backend/market-stream-service/node_modules')) {
+      this.warnings.push('market-stream-service dependencies not installed. Run: cd coreza-backend/market-stream-service && npm install');
     }
   }
 

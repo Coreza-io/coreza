@@ -15,8 +15,9 @@ Before you begin, ensure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/Coreza-io/coreza.git
+cd coreza
+git clone https://github.com/Coreza-io/coreza-backend.git coreza-backend
 ```
 
 ### 2. Run the Setup Script
@@ -55,6 +56,10 @@ npm run dev
 
 # Terminal 2: Start the backend
 cd coreza-backend
+npm run dev
+
+# Terminal 3: Start market-stream-service
+cd coreza-backend/market-stream-service
 npm run dev
 ```
 
@@ -116,7 +121,7 @@ project_id = "your_project_id_here"
 After setup, verify everything is working:
 
 1. **Frontend**: Visit `http://localhost:3000`
-2. **Backend**: Check `http://localhost:3001/health`
+2. **Backend**: Check `http://localhost:8000/health`
 3. **Database**: Ensure all tables are created in Supabase dashboard
 4. **Edge Functions**: Check functions are deployed in Supabase dashboard
 

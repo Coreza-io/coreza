@@ -68,6 +68,14 @@ class CorezaSetup {
         shell: true,
       });
 
+      // Install market stream service dependencies
+      console.log("Installing market-stream-service dependencies...");
+      execSync("npm install", {
+        stdio: "inherit",
+        cwd: path.join(this.projectRoot, "coreza-backend", "market-stream-service"),
+        shell: true,
+      });
+
       console.log("✅ Dependencies installed successfully");
     } catch (error) {
       console.log("⚠️  Manual dependency installation required");
@@ -85,6 +93,13 @@ class CorezaSetup {
     const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0]);
     if (majorVersion < 18) {
       throw new Error("Node.js 18 or higher is required");
+    }
+
+    const backendPath = path.join(this.projectRoot, "coreza-backend");
+    if (!fs.existsSync(backendPath)) {
+      throw new Error(
+        "Missing ./coreza-backend directory. Clone https://github.com/Coreza-io/coreza-backend into ./coreza-backend and rerun setup."
+      );
     }
 
     // Ensure Supabase CLI is available via npx; install dev-dep if missing
@@ -326,11 +341,15 @@ class CorezaSetup {
 
     if (this.config.encryptionKey) {
       console.log("Using existing encryption key from environment files.");
+      if (!this.config.jwtSecret) {
+        this.config.jwtSecret = crypto.randomBytes(64).toString("hex");
+      }
       return;
     }
 
     this.config.encryptionKey = crypto.randomBytes(32).toString("base64");
-    console.log("? Encryption key generated");
+    this.config.jwtSecret = crypto.randomBytes(64).toString("hex");
+    console.log("✅ Encryption key generated");
   }
 
   async setupEnvironmentFiles() {
@@ -355,12 +374,36 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
 
 # Encryption Configuration
 COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
+JWT_SECRET=${this.config.jwtSecret || crypto.randomBytes(64).toString("hex")}
+REDIS_QUEUE_URL=redis://localhost:6379
+REDIS_CACHE_URL=redis://localhost:6380
+PORT=8000
+WEBSOCKET_PORT=8081
+MARKET_STREAM_PORT=8090
+WORKFLOW_JOB_ATTEMPTS=0
+BACKTEST_EXECUTION_MODE=auto
+ALPACA_REDIRECT_URI=http://localhost:8000/api/oauth/alpaca/callback
+BINANCE_REDIRECT_URI=http://localhost:8000/api/oauth/binance/callback
+SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
 `;
 
     fs.writeFileSync(path.join(this.projectRoot, ".env"), frontendEnv);
     fs.writeFileSync(
       path.join(this.projectRoot, "coreza-backend", ".env"),
       backendEnv
+    );
+
+    const streamEnv = `SUPABASE_URL=${this.config.supabaseUrl}
+SUPABASE_SERVICE_ROLE_KEY=${this.config.supabaseServiceKey}
+COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
+JWT_SECRET=${this.config.jwtSecret}
+REDIS_QUEUE_URL=redis://localhost:6379
+REDIS_CACHE_URL=redis://localhost:6380
+MARKET_STREAM_PORT=8090
+`;
+    fs.writeFileSync(
+      path.join(this.projectRoot, "coreza-backend", "market-stream-service", ".env"),
+      streamEnv
     );
 
     console.log("✅ Environment files created");
@@ -378,13 +421,13 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
     console.log("\n🏗️  Setting up Supabase project...");
 
     try {
-      // Scaffold a valid config.toml (don’t hand-write keys that the CLI may reject)
-      execSync("npx supabase init --force", {
-        stdio: "inherit",
-        cwd: this.projectRoot,
-        shell: true,
-        env: this.supabaseEnv(),
-      });
+      const templatePath = path.join(this.projectRoot, "supabase", "config.template.toml");
+      const configPath = path.join(this.projectRoot, "supabase", "config.toml");
+      if (fs.existsSync(templatePath)) {
+        const template = fs.readFileSync(templatePath, "utf8");
+        fs.writeFileSync(configPath, template.replace(/\{\{PROJECT_ID\}\}/g, this.config.projectId));
+        console.log("✅ Generated supabase/config.toml from template");
+      }
 
       // Link to your remote project so db push/deploy knows the project ref
       execSync(`npx supabase link --project-ref ${this.config.projectId}`, {
@@ -595,28 +638,39 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
         fs.mkdirSync(migrationsDir, { recursive: true });
       }
 
-      // Check for existing Coreza migrations and remove them for a clean reinstall
-      const existingMigrations = fs
-        .readdirSync(migrationsDir)
-        .filter(
-          (file) =>
-            file.includes("initial_setup") || file.includes("coreza_schema")
-        );
-
-      // Create a new migration
-      const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:T]/g, "")
-        .slice(0, 14);
-      const migrationPath = path.join(
-        migrationsDir,
-        `${timestamp}_coreza_schema_setup.sql`
-      );
-
       const schemaContent = fs.readFileSync(schemaPath, "utf8");
-      fs.writeFileSync(migrationPath, schemaContent);
+      const migrationFiles = fs
+        .readdirSync(migrationsDir)
+        .filter((file) => file.endsWith(".sql"))
+        .sort();
+      const latestMigration = migrationFiles[migrationFiles.length - 1];
 
-      console.log(`? Migration created: ${path.basename(migrationPath)}`);
+      let shouldCreateMigration = true;
+      if (latestMigration) {
+        const latestContent = fs.readFileSync(
+          path.join(migrationsDir, latestMigration),
+          "utf8"
+        );
+        if (latestContent.trim() === schemaContent.trim()) {
+          shouldCreateMigration = false;
+          console.log(
+            `✅ Latest migration (${latestMigration}) already matches setup/database-schema.sql; skipping migration file creation.`
+          );
+        }
+      }
+
+      if (shouldCreateMigration) {
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[-:T]/g, "")
+          .slice(0, 14);
+        const migrationPath = path.join(
+          migrationsDir,
+          `${timestamp}_coreza_schema_setup.sql`
+        );
+        fs.writeFileSync(migrationPath, schemaContent);
+        console.log(`✅ Migration created: ${path.basename(migrationPath)}`);
+      }
       // Ensure CLI reachable (already checked earlier, but re-ensure)
       try {
         execSync("npx supabase --version", {
@@ -856,7 +910,10 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
     console.log("\n🚀 Next Steps:");
     console.log("1. Start the frontend: npm run dev");
     console.log("2. Start the backend: cd coreza-backend && npm run dev");
-    console.log("3. Open http://localhost:5173 to access the platform");
+    console.log(
+      "3. Start market-stream-service: cd coreza-backend/market-stream-service && npm run dev"
+    );
+    console.log("4. Open http://localhost:5173 to access the platform");
 
     console.log("\n📚 Documentation:");
     console.log("• Setup guide: docs/SETUP.md");
@@ -892,11 +949,11 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
       console.log("✅ Redis is installed.");
 
       try {
-        this.startRedis("redis-server");
+        this.startRedisInstances("redis-server");
         return; // stop here if start was successful
       } catch (err) {
         console.log(
-          "⚠️ Failed to start Redis automatically. Please start it manually."
+          "⚠️ Failed to start Redis automatically. Please start two instances manually on ports 6379 and 6380."
         );
         return;
       }
@@ -913,12 +970,19 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
     }
   }
 
-  startRedis(binaryPath) {
-    console.log("🚀 Starting Redis server in background...");
+  startRedisInstances(binaryPath) {
+    console.log("🚀 Starting Redis queue/cache instances in background...");
+    this.startRedis(binaryPath, 6379);
+    this.startRedis(binaryPath, 6380);
+    console.log("✅ Redis instances started on ports 6379 (queue) and 6380 (cache)");
+  }
+
+  startRedis(binaryPath, port) {
+    console.log(`Starting Redis on port ${port}...`);
 
     const { spawn } = require("child_process");
 
-    const redis = spawn(binaryPath, {
+    const redis = spawn(binaryPath, ["--port", String(port)], {
       detached: true,
       stdio: "ignore", // don’t keep logs open
       shell: true,
@@ -926,7 +990,7 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
 
     redis.unref(); // allow parent (setup) to exit independently
 
-    console.log("✅ Redis server started (detached)");
+    console.log(`✅ Redis server started on port ${port} (detached)`);
   }
 } // <-- closes the class properly!
 

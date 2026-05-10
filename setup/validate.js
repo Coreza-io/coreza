@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
 class SetupValidator {
   constructor() {
@@ -10,129 +10,141 @@ class SetupValidator {
   }
 
   async validate() {
-    console.log('🔍 Validating Coreza setup...\n');
-    
+    console.log("🔍 Validating Coreza setup...\n");
+
     this.checkEnvironmentFiles();
     this.checkSupabaseConfig();
     this.checkDatabaseSchema();
     this.checkEdgeFunctions();
     this.checkMarketStreamService();
-    
+
     this.displayResults();
-    
+
     if (this.errors.length > 0) {
       process.exit(1);
     }
   }
 
   checkEnvironmentFiles() {
-    console.log('📝 Checking environment files...');
-    
+    console.log("📝 Checking environment files...");
+
     // Check frontend .env
-    if (!fs.existsSync('.env')) {
-      this.errors.push('Frontend .env file missing');
+    if (!fs.existsSync(".env")) {
+      this.errors.push("Frontend .env file missing");
     } else {
-      const frontendEnv = fs.readFileSync('.env', 'utf8');
-      if (!frontendEnv.includes('VITE_SUPABASE_URL=')) {
-        this.errors.push('VITE_SUPABASE_URL missing from .env');
+      const frontendEnv = fs.readFileSync(".env", "utf8");
+      if (!frontendEnv.includes("VITE_SUPABASE_URL=")) {
+        this.errors.push("VITE_SUPABASE_URL missing from .env");
       }
-      if (!frontendEnv.includes('VITE_SUPABASE_PUBLISHABLE_KEY=')) {
-        this.errors.push('VITE_SUPABASE_PUBLISHABLE_KEY missing from .env');
-      }
-      if (!frontendEnv.includes('VITE_COREZA_ENCRYPTION_KEY=')) {
-        this.errors.push('VITE_COREZA_ENCRYPTION_KEY missing from .env');
+      if (!frontendEnv.includes("VITE_SUPABASE_PUBLISHABLE_KEY=")) {
+        this.errors.push("VITE_SUPABASE_PUBLISHABLE_KEY missing from .env");
       }
     }
-    
+
     // Check backend .env
-    if (!fs.existsSync('coreza-backend/.env')) {
-      this.errors.push('Backend .env file missing');
+    if (!fs.existsSync("coreza-backend/.env")) {
+      this.errors.push("Backend .env file missing");
     } else {
-      const backendEnv = fs.readFileSync('coreza-backend/.env', 'utf8');
-      if (!backendEnv.includes('SUPABASE_URL=')) {
-        this.errors.push('SUPABASE_URL missing from coreza-backend/.env');
+      const backendEnv = fs.readFileSync("coreza-backend/.env", "utf8");
+      if (!backendEnv.includes("SUPABASE_URL=")) {
+        this.errors.push("SUPABASE_URL missing from coreza-backend/.env");
       }
-      if (!backendEnv.includes('SUPABASE_SERVICE_ROLE_KEY=')) {
-        this.errors.push('SUPABASE_SERVICE_ROLE_KEY missing from coreza-backend/.env');
+      if (!backendEnv.includes("SUPABASE_SERVICE_ROLE_KEY=")) {
+        this.errors.push(
+          "SUPABASE_SERVICE_ROLE_KEY missing from coreza-backend/.env",
+        );
       }
-      if (!backendEnv.includes('COREZA_ENCRYPTION_KEY=')) {
-        this.errors.push('COREZA_ENCRYPTION_KEY missing from coreza-backend/.env');
+      if (!backendEnv.includes("COREZA_ENCRYPTION_KEY=")) {
+        this.errors.push(
+          "COREZA_ENCRYPTION_KEY missing from coreza-backend/.env",
+        );
       }
-      if (!backendEnv.includes('REDIS_QUEUE_URL=')) {
-        this.errors.push('REDIS_QUEUE_URL missing from coreza-backend/.env');
+      if (!backendEnv.includes("REDIS_QUEUE_URL=")) {
+        this.errors.push("REDIS_QUEUE_URL missing from coreza-backend/.env");
       }
-      if (!backendEnv.includes('REDIS_CACHE_URL=')) {
-        this.errors.push('REDIS_CACHE_URL missing from coreza-backend/.env');
-      }
-      if (!backendEnv.includes('JWT_SECRET=')) {
-        this.errors.push('JWT_SECRET missing from coreza-backend/.env');
-      }
+      // if (!backendEnv.includes('REDIS_CACHE_URL=')) {
+      //   this.errors.push('REDIS_CACHE_URL missing from coreza-backend/.env');
+      // }
     }
-    
+
     if (this.errors.length === 0) {
-      console.log('✅ Environment files configured correctly');
+      console.log("✅ Environment files configured correctly");
     }
   }
 
   checkSupabaseConfig() {
-    console.log('🔧 Checking Supabase configuration...');
-    
-    if (!fs.existsSync('supabase/config.toml')) {
-      this.errors.push('supabase/config.toml file missing');
+    console.log("🔧 Checking Supabase configuration...");
+
+    if (!fs.existsSync("supabase/config.toml")) {
+      this.errors.push("supabase/config.toml file missing");
     } else {
-      const config = fs.readFileSync('supabase/config.toml', 'utf8');
-      if (!config.includes('project_id =')) {
-        this.errors.push('project_id missing from supabase/config.toml');
+      const config = fs.readFileSync("supabase/config.toml", "utf8");
+      if (!config.includes("project_id =")) {
+        this.errors.push("project_id missing from supabase/config.toml");
       }
-      if (!config.includes('[functions.derive-encryption-key]')) {
-        this.errors.push('derive-encryption-key function config missing');
+      if (!config.includes("[functions.derive-encryption-key]")) {
+        this.errors.push("derive-encryption-key function config missing");
       }
-      if (!config.includes('[functions.http-request]')) {
-        this.errors.push('http-request function config missing');
+      if (!config.includes("[functions.http-request]")) {
+        this.errors.push("http-request function config missing");
       }
     }
-    
+
     if (this.errors.length === 0) {
-      console.log('✅ Supabase configuration is valid');
+      console.log("✅ Supabase configuration is valid");
     }
   }
 
   checkDatabaseSchema() {
-    console.log('🗄️ Checking database schema...');
-    
-    if (!fs.existsSync('setup/database-schema.sql')) {
-      this.warnings.push('Database schema file missing (setup/database-schema.sql)');
+    console.log("🗄️ Checking database schema...");
+
+    if (!fs.existsSync("setup/database-schema.sql")) {
+      this.warnings.push(
+        "Database schema file missing (setup/database-schema.sql)",
+      );
     } else {
-      const schema = fs.readFileSync('setup/database-schema.sql', 'utf8');
+      const schema = fs.readFileSync("setup/database-schema.sql", "utf8");
       const requiredTables = [
-        'users', 'projects',
-        'workflows', 'workflow_versions', 'workflow_runs', 'node_executions',
-        'user_credentials',
-        'backtests', 'backtest_results', 'backtest_trades', 'backtest_portfolio_snapshots',
-        'live_fills', 'live_trades',
-        'cash_snapshots', 'position_snapshots',
+        "users",
+        "projects",
+        "workflows",
+        "workflow_versions",
+        "workflow_runs",
+        "node_executions",
+        "user_credentials",
+        "backtests",
+        "backtest_results",
+        "backtest_trades",
+        "backtest_portfolio_snapshots",
+        "live_fills",
+        "live_trades",
+        "cash_snapshots",
+        "position_snapshots",
       ];
 
       for (const table of requiredTables) {
-        const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const createTableRegex = new RegExp(`CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+public\\.${escaped}\\s*\\(`, 'i');
+        const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const createTableRegex = new RegExp(
+          `CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+public\\.${escaped}\\s*\\(`,
+          "i",
+        );
         if (!createTableRegex.test(schema)) {
           this.warnings.push(`Table ${table} not found in schema`);
         }
       }
     }
-    
+
     if (this.warnings.length === 0) {
-      console.log('✅ Database schema is complete');
+      console.log("✅ Database schema is complete");
     }
   }
 
   checkEdgeFunctions() {
-    console.log('⚡ Checking edge functions...');
-    
+    console.log("⚡ Checking edge functions...");
+
     // Check if edge function directories exist
-    const functions = ['derive-encryption-key', 'http-request'];
-    
+    const functions = ["derive-encryption-key", "http-request"];
+
     for (const func of functions) {
       const funcPath = `supabase/functions/${func}`;
       if (!fs.existsSync(funcPath)) {
@@ -144,57 +156,61 @@ class SetupValidator {
         }
       }
     }
-    
+
     if (this.errors.length === 0) {
-      console.log('✅ Edge functions are properly configured');
+      console.log("✅ Edge functions are properly configured");
     }
   }
 
   checkMarketStreamService() {
-    console.log('📡 Checking market-stream-service...');
-    const svcPath = 'coreza-backend/market-stream-service/package.json';
+    console.log("📡 Checking market-stream-service...");
+    const svcPath = "coreza-backend/market-stream-service/package.json";
     if (!fs.existsSync(svcPath)) {
-      this.errors.push('market-stream-service missing: coreza-backend/market-stream-service');
+      this.errors.push(
+        "market-stream-service missing: coreza-backend/market-stream-service",
+      );
       return;
     }
 
-    if (!fs.existsSync('coreza-backend/market-stream-service/node_modules')) {
-      this.warnings.push('market-stream-service dependencies not installed. Run: cd coreza-backend/market-stream-service && npm install');
+    if (!fs.existsSync("coreza-backend/market-stream-service/node_modules")) {
+      this.warnings.push(
+        "market-stream-service dependencies not installed. Run: cd coreza-backend/market-stream-service && npm install",
+      );
     }
   }
 
   displayResults() {
-    console.log('\n📊 Validation Results');
-    console.log('====================');
-    
+    console.log("\n📊 Validation Results");
+    console.log("====================");
+
     if (this.errors.length === 0 && this.warnings.length === 0) {
-      console.log('🎉 All checks passed! Your Coreza setup is ready.');
-      console.log('\nNext steps:');
-      console.log('1. npm install');
-      console.log('2. cd coreza-backend && npm install');
-      console.log('3. npm run dev (in one terminal)');
-      console.log('4. cd coreza-backend && npm run dev (in another terminal)');
+      console.log("🎉 All checks passed! Your Coreza setup is ready.");
+      console.log("\nNext steps:");
+      console.log("1. npm install");
+      console.log("2. cd coreza-backend && npm install");
+      console.log("3. npm run dev (in one terminal)");
+      console.log("4. cd coreza-backend && npm run dev (in another terminal)");
       return;
     }
-    
+
     if (this.errors.length > 0) {
       console.log(`\n❌ ${this.errors.length} Error(s) found:`);
       this.errors.forEach((error, index) => {
         console.log(`   ${index + 1}. ${error}`);
       });
     }
-    
+
     if (this.warnings.length > 0) {
       console.log(`\n⚠️  ${this.warnings.length} Warning(s):`);
       this.warnings.forEach((warning, index) => {
         console.log(`   ${index + 1}. ${warning}`);
       });
     }
-    
+
     if (this.errors.length > 0) {
-      console.log('\n🔧 To fix these issues:');
-      console.log('1. Run the setup script again: node setup/setup.js');
-      console.log('2. Or follow the manual setup guide: docs/SETUP.md');
+      console.log("\n🔧 To fix these issues:");
+      console.log("1. Run the setup script again: node setup/setup.js");
+      console.log("2. Or follow the manual setup guide: docs/SETUP.md");
     }
   }
 }

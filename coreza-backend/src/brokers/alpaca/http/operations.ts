@@ -101,7 +101,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
   get_order: {
     method: "get",
     path: (input: any) => {
-      if (!input.order_id) throw new Error("order_id is required for get_order");
+      if (!input.order_id)
+        throw new Error("order_id is required for get_order");
       return `/v2/orders/${encodeURIComponent(String(input.order_id))}`;
     },
     transformResult: (raw: any, input: any) =>
@@ -212,7 +213,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       if (!input.symbol)
         throw new Error("Symbol is required for get_latest_bar operation");
       const params: any = { symbols: input.symbol };
-      if (getAssetType(input) !== "crypto" && input.feed) params.feed = input.feed;
+      if (getAssetType(input) !== "crypto" && input.feed)
+        params.feed = input.feed;
       if (input.currency) params.currency = input.currency;
       return params;
     },
@@ -324,7 +326,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
           ? buildCryptoSymbolFromParts(input)
           : undefined);
 
-      if (!resolvedSymbol) throw new Error("Symbol is required for place_order");
+      if (!resolvedSymbol)
+        throw new Error("Symbol is required for place_order");
       if (!qty && !notional)
         throw new Error("Either qty or notional must be provided");
 
@@ -385,8 +388,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         throw new Error("close_position requires input.symbol");
       }
 
-      const normalized = String(resolvedSymbol).replace("/", "");
-      return `/v2/positions/${encodeURIComponent(normalized)}`;
+      // const normalized = String(resolvedSymbol).replace("/", "");
+      return `/v2/positions/${encodeURIComponent(resolvedSymbol)}`;
     },
 
     makeParams: (input: any) => {
@@ -396,6 +399,18 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
 
       if (hasQty && hasPercentage) {
         throw new Error("Provide either qty or percentage, not both");
+      }
+
+      if (hasPercentage) {
+        const percentage = Number(input.percentage);
+
+        if (
+          !Number.isFinite(percentage) ||
+          percentage < 0 ||
+          percentage > 100
+        ) {
+          throw new Error("percentage must be between 0 and 100");
+        }
       }
 
       const params: Record<string, string> = {};

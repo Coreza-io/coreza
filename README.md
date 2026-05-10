@@ -19,7 +19,6 @@ An advanced, open-source trading platform that combines powerful workflow automa
 
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
 
-
 ## 🚀 Quick Start
 
 Get up and running in minutes with our automated setup:
@@ -29,9 +28,6 @@ Get up and running in minutes with our automated setup:
 git clone https://github.com/Coreza-io/coreza.git
 cd coreza
 
-# Clone backend repo into expected path
-git clone https://github.com/Coreza-io/coreza-backend.git coreza-backend
-
 # Run the automated setup
 node setup/setup.js
 
@@ -39,15 +35,12 @@ node setup/setup.js
 
 # On Windows (cmd or PowerShell):
 redis-server.exe --port 6379
-redis-server.exe --port 6380
 
 # On Linux:
 redis-server --port 6379 --daemonize yes
-redis-server --port 6380 --daemonize yes
 
 # On macOS:
 redis-server --port 6379 --daemonize yes
-redis-server --port 6380 --daemonize yes
 
 # Once Redis is running, start the frontend:
 npm run dev
@@ -62,7 +55,8 @@ npm run dev
 ```
 
 The setup script will:
-- Install all dependencies (frontend & backend)  
+
+- Install all dependencies (frontend & backend)
 - Configure your Supabase project
 - Generate secure encryption keys
 - Set up environment files
@@ -107,7 +101,7 @@ If you prefer manual setup or the automated setup fails:
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - A Supabase account and project
 - Git
 
@@ -126,7 +120,7 @@ node setup/setup.js
 # Frontend dependencies
 npm install
 
-# Backend dependencies  
+# Backend dependencies
 cd coreza-backend
 npm install
 cd ..
@@ -142,7 +136,7 @@ The database schema is already configured through migrations. If needed, you can
 # Terminal 1: Frontend
 npm run dev
 
-# Terminal 2: Backend  
+# Terminal 2: Backend
 cd coreza-backend
 npm run dev
 ```
@@ -199,6 +193,7 @@ See the [LICENSE](LICENSE) file for details.
 ---
 
 **⚠️ Security Notice**: This platform handles financial data and trading credentials. Always:
+
 - Keep your encryption keys secure
 - Use HTTPS in production
 - Regularly update dependencies

@@ -105,12 +105,18 @@ class SetupValidator {
     } else {
       const schema = fs.readFileSync('setup/database-schema.sql', 'utf8');
       const requiredTables = [
-        'users', 'projects', 'workflows', 
-        'workflow_runs', 'node_executions', 'user_credentials'
+        'users', 'projects',
+        'workflows', 'workflow_versions', 'workflow_runs', 'node_executions',
+        'user_credentials',
+        'backtests', 'backtest_results', 'backtest_trades', 'backtest_portfolio_snapshots',
+        'live_fills', 'live_trades',
+        'cash_snapshots', 'position_snapshots',
       ];
-      
+
       for (const table of requiredTables) {
-        if (!schema.includes(`CREATE TABLE IF NOT EXISTS public.${table}`)) {
+        const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const createTableRegex = new RegExp(`CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+public\\.${escaped}\\s*\\(`, 'i');
+        if (!createTableRegex.test(schema)) {
           this.warnings.push(`Table ${table} not found in schema`);
         }
       }

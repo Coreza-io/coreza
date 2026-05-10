@@ -17,10 +17,7 @@ import {
   createErrorOutput,
   toNodeResult,
 } from "../../utils/normalizeOutput";
-import {
-  IndicatorStateManager,
-  buildIndicatorKey,
-} from "../../engine";
+import { IndicatorStateManager, buildIndicatorKey } from "../../engine";
 import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
 import { buildExecutionScopedKey } from "../../utils/executionKey";
 import { RollingWindow } from "../../engine/RollingWindow";
@@ -35,12 +32,19 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
-  private getIndicatorCacheKey(nodeId: string, symbol: string, timeframe: string): string {
+  private getIndicatorCacheKey(
+    nodeId: string,
+    symbol: string,
+    timeframe: string,
+  ): string {
     return `${nodeId}:${symbol}:${timeframe}`;
   }
 
-
-  execute(node: WorkflowNode, input: NodeInput, context?: any): NodeResult | Promise<NodeResult> {
+  execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any,
+  ): NodeResult | Promise<NodeResult> {
     const runId = context?.runId;
     if (runId && runId !== this.cachedRunId) {
       this.indicatorKeyCache.clear();
@@ -100,7 +104,14 @@ export class IndicatorsExecutor implements INodeExecutor {
         const cacheKey = this.getIndicatorCacheKey(node.id, symbol, timeframe);
         let key = this.indicatorKeyCache.get(cacheKey);
         if (!key) {
-          key = buildIndicatorKey(userId, workflowId, runId, symbol, timeframe, node.id);
+          key = buildIndicatorKey(
+            userId,
+            workflowId,
+            runId,
+            symbol,
+            timeframe,
+            node.id,
+          );
           this.indicatorKeyCache.set(cacheKey, key);
         }
 
@@ -244,7 +255,11 @@ export class IndicatorsExecutor implements INodeExecutor {
         ) {
           // const indicatorParams =
           //   this.extractIndicatorParams(processedParams);
-          const cacheKey = this.getIndicatorCacheKey(node.id, symbol, timeframe);
+          const cacheKey = this.getIndicatorCacheKey(
+            node.id,
+            symbol,
+            timeframe,
+          );
           let key = this.indicatorKeyCache.get(cacheKey);
           if (!key) {
             key = buildIndicatorKey(
@@ -318,19 +333,22 @@ export class IndicatorsExecutor implements INodeExecutor {
       });
       return toNodeResult(normalized);
     } catch (error) {
-      const normalized = createErrorOutput(
-        error instanceof Error ? error : String(error),
+      const errOutput = createErrorOutput(
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
         {
           nodeId: node.id,
           nodeName: node.name,
           category: this.category,
-          startTime,
         },
       );
-      return toNodeResult(normalized);
+
+      return toNodeResult(errOutput);
     }
   }
-
 
   private executeRollingWindowNode(
     node: WorkflowNode,
@@ -345,7 +363,11 @@ export class IndicatorsExecutor implements INodeExecutor {
     const workflowId = context?.workflowId || params.workflow_id || "manual";
     const runId = context?.runId || params.run_id || "manual";
 
-    const rollingCacheKey = this.getIndicatorCacheKey(node.id, symbol, timeframe);
+    const rollingCacheKey = this.getIndicatorCacheKey(
+      node.id,
+      symbol,
+      timeframe,
+    );
     let storeKey = this.rollingWindowKeyCache.get(rollingCacheKey);
     if (!storeKey) {
       storeKey = buildExecutionScopedKey({
@@ -374,7 +396,11 @@ export class IndicatorsExecutor implements INodeExecutor {
 
     let bars: any[];
     const rawCandle = params.candle_data;
-    if (rawCandle && typeof rawCandle === "object" && !Array.isArray(rawCandle)) {
+    if (
+      rawCandle &&
+      typeof rawCandle === "object" &&
+      !Array.isArray(rawCandle)
+    ) {
       bars = [rawCandle];
     } else if (Array.isArray(rawCandle)) {
       bars = rawCandle;

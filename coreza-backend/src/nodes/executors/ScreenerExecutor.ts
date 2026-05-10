@@ -93,8 +93,13 @@ export class ScreenerExecutor implements INodeExecutor {
       return toNodeResult(successOutput);
     } catch (error) {
       console.error("[SCREENER] Execution error:", error);
+
       const errOutput = createErrorOutput(
-        error instanceof Error ? error : String(error),
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
         {
           nodeId: node.id,
           nodeName: node.name,
@@ -102,6 +107,7 @@ export class ScreenerExecutor implements INodeExecutor {
           startTime,
         },
       );
+
       return toNodeResult(errOutput);
     }
   }

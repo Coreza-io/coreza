@@ -157,13 +157,18 @@ export class DataSourceExecutor implements INodeExecutor {
       return toNodeResult(successOutput);
     } catch (error) {
       const errOutput = createErrorOutput(
-        error instanceof Error ? error : String(error),
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
         {
           nodeId: node.id,
           nodeName: node.name,
           category: this.category,
         },
       );
+
       return toNodeResult(errOutput);
     }
   }

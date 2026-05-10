@@ -22,7 +22,7 @@ export class CommunicationExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     const nodeName = node.name;
@@ -45,7 +45,7 @@ export class CommunicationExecutor implements INodeExecutor {
       if (!service) {
         const errOutput = createErrorOutput(
           `Unknown communication service: ${nodeName}`,
-          ctx
+          ctx,
         );
         return toNodeResult(errOutput);
       }
@@ -68,9 +68,14 @@ export class CommunicationExecutor implements INodeExecutor {
       return toNodeResult(normalized);
     } catch (error) {
       const errOutput = createErrorOutput(
-        error instanceof Error ? error : String(error),
-        ctx
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
+        ctx,
       );
+
       return toNodeResult(errOutput);
     }
   }

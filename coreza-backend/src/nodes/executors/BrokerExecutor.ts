@@ -30,10 +30,12 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
-import { BROKER_CAPABILITIES, getOrderOwnerExtractor } from "../../brokers/capabilities";
+import {
+  BROKER_CAPABILITIES,
+  getOrderOwnerExtractor,
+} from "../../brokers/capabilities";
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
-
 
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
@@ -97,7 +99,10 @@ export class BrokerExecutor implements INodeExecutor {
 
       // Config-driven crypto symbol normalization
       const brokerCap = BROKER_CAPABILITIES[broker];
-      if (brokerCap?.normalizeCryptoParams && resolvedParams.assetType === "crypto") {
+      if (
+        brokerCap?.normalizeCryptoParams &&
+        resolvedParams.assetType === "crypto"
+      ) {
         brokerCap.normalizeCryptoParams(resolvedParams);
       }
 
@@ -344,7 +349,11 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       const normalized = createErrorOutput(
-        enrichedError instanceof Error ? enrichedError : String(enrichedError),
+        enrichedError instanceof Error
+          ? enrichedError
+          : typeof enrichedError === "object" && enrichedError !== null
+            ? ((enrichedError as any).message ?? JSON.stringify(enrichedError))
+            : String(enrichedError),
         {
           nodeId: node.id,
           nodeName: node.name,

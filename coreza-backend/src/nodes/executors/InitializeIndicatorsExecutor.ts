@@ -273,8 +273,15 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             `  ✓ ${ind.type} warmed up (value: ${JSON.stringify(state.currentValue)?.slice(0, 80)})`,
           );
         } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
+          const errMsg =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err !== null
+                ? ((err as any).message ?? JSON.stringify(err))
+                : String(err);
+
           console.error(`  ✗ ${ind.type} warmup failed: ${errMsg}`);
+
           results[ind.type] = {
             nodeId: ind.nodeId,
             indicator: ind.type,
@@ -305,16 +312,20 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       });
       return toNodeResult(normalized);
     } catch (error) {
-      const normalized = createErrorOutput(
-        error instanceof Error ? error : String(error),
+      const errOutput = createErrorOutput(
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
         {
           nodeId: node.id,
           nodeName: node.name,
           category: this.category,
-          startTime,
         },
       );
-      return toNodeResult(normalized);
+
+      return toNodeResult(errOutput);
     }
   }
 }

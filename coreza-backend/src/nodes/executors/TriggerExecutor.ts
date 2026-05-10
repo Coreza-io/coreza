@@ -11,7 +11,13 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import logger from "../../utils/logger";
-import { normalizeOutput, createSuccessOutput, createErrorOutput, createWaitingOutput, toNodeResult } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createSuccessOutput,
+  createErrorOutput,
+  createWaitingOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 /**
  * TriggerExecutor handles trigger-type nodes (RedisTrigger, AlpacaStreamData, etc.)
@@ -23,7 +29,7 @@ export class TriggerExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
@@ -60,7 +66,7 @@ export class TriggerExecutor implements INodeExecutor {
             userId,
             workflowId,
             nodeId,
-            resolvedParams
+            resolvedParams,
           );
           break;
 
@@ -69,7 +75,7 @@ export class TriggerExecutor implements INodeExecutor {
             userId,
             workflowId,
             nodeId,
-            resolvedParams
+            resolvedParams,
           );
           break;
 
@@ -83,7 +89,7 @@ export class TriggerExecutor implements INodeExecutor {
       if (!result.success) {
         logger.error(
           { nodeName, error: result.error },
-          "Trigger node execution failed"
+          "Trigger node execution failed",
         );
       }
 
@@ -96,10 +102,21 @@ export class TriggerExecutor implements INodeExecutor {
       return toNodeResult(normalized);
     } catch (error) {
       logger.error({ err: error }, "Trigger executor error");
+
       const errOutput = createErrorOutput(
-        error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+          startTime,
+        },
       );
+
       return toNodeResult(errOutput);
     }
   }
@@ -108,7 +125,7 @@ export class TriggerExecutor implements INodeExecutor {
     userId: string,
     workflowId: string,
     nodeId: string,
-    params: any
+    params: any,
   ): Promise<NodeResult> {
     try {
       const { credential_id, subscriptionType = "channel", channels } = params;
@@ -153,7 +170,7 @@ export class TriggerExecutor implements INodeExecutor {
           credential_id,
           subscription_type: subscriptionType,
           channels: channelList,
-        }
+        },
       );
 
       if (!response.data.success) {
@@ -185,7 +202,7 @@ export class TriggerExecutor implements INodeExecutor {
     userId: string,
     workflowId: string,
     nodeId: string,
-    params: any
+    params: any,
   ): Promise<NodeResult> {
     try {
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";

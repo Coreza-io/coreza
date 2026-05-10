@@ -9,12 +9,21 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { normalizeOutput, createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
+import {
+  normalizeOutput,
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 export class IOExecutor implements INodeExecutor {
   readonly category = "IO";
 
-  async execute(node: WorkflowNode, input: NodeInput, context?: any): Promise<NodeResult> {
+  async execute(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any,
+  ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
       // Handle different IO node types
@@ -26,15 +35,24 @@ export class IOExecutor implements INodeExecutor {
         default:
           const errOutput = createErrorOutput(
             `Unsupported IO node type: ${nodeName}`,
-            { nodeId: node.id, nodeName, category: this.category, startTime }
+            { nodeId: node.id, nodeName, category: this.category, startTime },
           );
           return toNodeResult(errOutput);
       }
     } catch (error) {
       const errOutput = createErrorOutput(
-        error instanceof Error ? error : String(error),
-        { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
+        error instanceof Error
+          ? error
+          : typeof error === "object" && error !== null
+            ? ((error as any).message ?? JSON.stringify(error))
+            : String(error),
+        {
+          nodeId: node.id,
+          nodeName: node.name,
+          category: this.category,
+        },
       );
+
       return toNodeResult(errOutput);
     }
   }
@@ -42,21 +60,24 @@ export class IOExecutor implements INodeExecutor {
   private async executeChatInput(
     node: WorkflowNode,
     input: NodeInput,
-    startTime: number
+    startTime: number,
   ): Promise<NodeResult> {
     // Handle chat input logic
     const message = node.values?.message || input.message || "";
 
-    const successOutput = createSuccessOutput({
-      message,
-      timestamp: new Date().toISOString(),
-      source: "chat_input",
-    }, {
-      nodeId: node.id,
-      nodeName: node.name,
-      category: this.category,
-      startTime,
-    });
+    const successOutput = createSuccessOutput(
+      {
+        message,
+        timestamp: new Date().toISOString(),
+        source: "chat_input",
+      },
+      {
+        nodeId: node.id,
+        nodeName: node.name,
+        category: this.category,
+        startTime,
+      },
+    );
     return toNodeResult(successOutput);
   }
 }

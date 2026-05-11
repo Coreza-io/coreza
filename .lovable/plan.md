@@ -1,136 +1,47 @@
+## Root cause (recap)
 
-# Harden `setup/setup.js` Supabase CLI flow + finish key migration
+`supabase/migrations/` holds 24 historical Lovable-generated incremental migrations. The earliest one (`20251110090945_*.sql`) does `ALTER TABLE public.users ADD COLUMN timezone` but no migration in the folder ever creates `public.users` — that CREATE lives only in `setup/database-schema.sql`. So `supabase db push` against a fresh DB fails on the first ALTER.
 
-Folds the new `SUPABASE_ACCESS_TOKEN` requirement into the same pass that finishes the legacy-key cleanup. All work is in `setup/setup.js`, `setup/validate.js`, the three `.env.example` files, and `supabase/config.template.toml`. No frontend or backend runtime code changes (those already use `VITE_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`).
+The historical files are Lovable's internal change log; they are not needed by self-hosters because `setup/database-schema.sql` already represents the final, complete schema (15 `CREATE TABLE IF NOT EXISTS` statements covering every table the app reads/writes).
 
-## 1. Re-do credential collection in `setup.js`
+## Fix: setup wipes old migrations and writes one fresh migration
 
-Replace `collectSupabaseCredentials` + `validateCredentials` with five strict prompts and validators:
+On every self-host install, `setup.js` will:
 
-| Prompt | Stored as | Validator |
-|---|---|---|
-| `Supabase Project URL:` | `supabaseUrl` | regex `^https://([a-z0-9]+)\.supabase\.co/?$` → also sets `projectId` |
-| `Supabase Publishable Key (sb_publishable_...):` | `supabasePublishableKey` | starts with `sb_publishable_` |
-| `Supabase Secret Key (sb_secret_...) [backend only]:` | `supabaseSecretKey` | starts with `sb_secret_`; print backend-only warning |
-| `Supabase Access Token (sbp_...) [CLI setup only]:` | `supabaseAccessToken` | starts with `sbp_` |
-| `Supabase DB Password (postgres role) [used for db push]:` | `supabaseDbPassword` | non-empty; never echoed/logged |
+1. **Delete every existing `*.sql` file** under `supabase/migrations/` (keep the directory and any non-SQL files like `.gitkeep`).
+2. **Write one fresh migration** at `supabase/migrations/00000000000000_coreza_initial_schema.sql` whose contents are exactly `setup/database-schema.sql`.
+3. **Run `supabase db push`** — applies the single consolidated schema, succeeds.
 
-Rules:
-- Each validator throws the exact error string from spec section 3.
-- Helper text printed once before prompts (spec section 9).
-- `loadExistingCredentials` reads new var names only; legacy `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are ignored (legacy values would fail the new prefix check anyway).
-- DB password input read with `terminal: false` style (no echo) where possible; otherwise just don't reprint it.
-- Add `mask(value)` helper → returns `"sb_secret_****" + last4`. Use everywhere a secret would otherwise be logged.
+No probing of remote state, no archive folder, no diffing — simple and deterministic. Self-host setup is the single source of truth; `setup/database-schema.sql` is the schema.
 
-## 2. Rewrite env-file generation
+### Idempotency on re-runs
 
-`setupEnvironmentFiles` writes:
+Re-running `node setup/setup.js` against a Supabase project that already has the schema applied:
+- Step 1 deletes the previous `00000000000000_coreza_initial_schema.sql`.
+- Step 2 rewrites it (same content, unless schema file changed).
+- Step 3 `db push` sees the migration version `00000000000000` is already applied remotely → no-op.
 
-**Frontend `.env`** (no secrets):
-```
-VITE_BACKEND_URL=http://localhost:8000
-VITE_SUPABASE_URL=<url>
-VITE_SUPABASE_PROJECT_ID=<id>
-VITE_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
-WEBSOCKET_PORT=8081
-VITE_BACKEND_WS_URL=ws://localhost:8081
-VITE_INACTIVITY_TIMEOUT=600000
-```
+If the user edited `setup/database-schema.sql` between runs, the new content is just a rewrite of the same migration version, which `supabase db push` will treat as already-applied (it tracks by version number, not content hash). For schema evolution after the initial install, users add new migration files manually — outside the setup script's responsibility.
 
-**Backend `coreza-backend/.env`** (no access token, no DB password):
-```
-SUPABASE_URL=<url>
-SUPABASE_PROJECT_ID=<id>
-SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
-SUPABASE_SECRET_KEY=<sb_secret_...>
-COREZA_ENCRYPTION_KEY=<generated>
-REDIS_QUEUE_URL=redis://localhost:6379
-PORT=8000
-WEBSOCKET_PORT=8081
-MARKET_STREAM_PORT=8090
-WORKFLOW_JOB_ATTEMPTS=0
-BACKTEST_EXECUTION_MODE=auto
-ALPACA_REDIRECT_URI=http://localhost:8000/api/oauth/alpaca/callback
-BINANCE_REDIRECT_URI=http://localhost:8000/api/oauth/binance/callback
-SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
-```
+### Safety guard
 
-**Stream service `.env`** (secret only, no publishable/anon, no access token):
-```
-SUPABASE_URL=<url>
-SUPABASE_SECRET_KEY=<sb_secret_...>
-COREZA_ENCRYPTION_KEY=<generated>
-REDIS_QUEUE_URL=redis://localhost:6379
-MARKET_STREAM_PORT=8090
-```
+Before deleting, if `supabase/migrations/` contains any file NOT matching either:
+- `00000000000000_coreza_initial_schema.sql` (our managed file), or
+- the known historical Lovable filenames (timestamp-prefixed `.sql` from before today),
 
-**Setup-only `.env.setup.local`** (gitignored, written for re-runs / CI inspection):
-```
-SUPABASE_PROJECT_ID=<id>
-SUPABASE_ACCESS_TOKEN=<sbp_...>
-SUPABASE_DB_PASSWORD=<password>
-```
-Add `.env.setup.local` to root `.gitignore` if absent.
+print a warning listing the unexpected files and abort unless the user passes `--force-reset-migrations`. This protects users who later add their own custom migrations from accidental deletion.
 
-## 3. CLI flow with hard-fail error handling
+For the current first run, the 24 known Lovable files match the historical pattern → safe to delete without prompt.
 
-Add `runOrThrow(label, command, friendlyError)` that wraps `spawnSync` (`stdio: 'inherit'`, `env: supabaseEnv()` with `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD` injected). On non-zero status: print `friendlyError`, throw — `run()` catches and exits 1. No more silent `try/catch` "manual setup required" branches that print fake success.
+### Touched files
 
-Replace existing flow (`setupSupabaseProject`, `deployEdgeFunctions`, `runDatabaseMigrations`) with one ordered method `runSupabaseCli()`:
+- `setup/setup.js` — replace `prepareMigrationFile()` body with the wipe-and-write logic above; add the safety-guard check.
+- `setup/validate.js` — keep as-is (already counts `*.sql` files; will see 1 after setup).
+- No frontend, backend, or DB-schema changes.
+- The 24 existing files in `supabase/migrations/` will be removed by setup at install time. (If you also want them gone from the repo right now so the diff is visible before users run setup, say so and I'll include that deletion in the implementation step.)
 
-1. `npx supabase --version` (preflight; install dev-dep on miss as today)
-2. `npx supabase login --token "$SUPABASE_ACCESS_TOKEN"` → spec 7.1 error
-3. Generate `supabase/config.toml` from template
-4. `npx supabase link --project-ref <id>` → spec 7.2 error
-5. Create migration file from `setup/database-schema.sql` (existing logic kept)
-6. `npx supabase db push` (env carries `SUPABASE_DB_PASSWORD`, no `--db-url`, no prompt) → spec 7.3 error; keep `handleMigrationPushError` repair-then-retry — but the retry must also throw on failure
-7. `npx supabase functions deploy` → spec 7.4 error
-8. `npx supabase secrets set COREZA_ENCRYPTION_KEY="<key>"` → reuses spec 7.4 message style
+### Acceptance
 
-Track booleans (`linked`, `migrated`, `functionsDeployed`, `secretsSet`) and only print the matching ✅ line in `showCompletionMessage` if true. If the flow threw, summary is never reached.
-
-## 4. Logging hygiene (spec 8)
-
-- Replace any `console.log(... key ...)` with `mask()`.
-- Never log `supabaseDbPassword` or `encryptionKey` at all.
-- Remove the `npx supabase secrets set COREZA_ENCRYPTION_KEY="..."` echo lines from the manual-fallback block (delete the block entirely — flow is now hard-fail).
-
-## 5. `setup/validate.js` adjustments
-
-- Add backend `.env` check for `SUPABASE_PROJECT_ID` and `SUPABASE_PUBLISHABLE_KEY` (already there).
-- Add frontend `.env` check for `VITE_SUPABASE_PROJECT_ID`.
-- Add new check: `.env.setup.local` exists and contains `SUPABASE_ACCESS_TOKEN=` and `SUPABASE_DB_PASSWORD=` → warning (not error) since the file is local-only and may legitimately be absent in deployed environments.
-- Existing schema-table check is already up to date — leave alone.
-
-## 6. `.env.example` files
-
-- Root `.env.example`: keep current frontend-only template (already correct).
-- `coreza-backend/.env.example`: drop `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` lines (these don't belong in backend runtime). Add `SUPABASE_PROJECT_ID=`.
-- `coreza-backend/market-stream-service/.env.example`: replace `SUPABASE_ANON_KEY=` / `SUPABASE_SERVICE_ROLE_KEY=` with `SUPABASE_SECRET_KEY=`. Rename `REDIS_URL=` → `REDIS_QUEUE_URL=`.
-- New `setup/.env.setup.local.example` documenting the three CLI-only vars.
-
-## 7. `supabase/config.template.toml` — apply guide section 9
-
-- Drop any `[edge_functions]` block.
-- Move `enable_confirmations = false` under `[auth.email]`.
-- Keep per-function `verify_jwt = false` blocks unchanged.
-
-## 8. Out of scope
-
-- Backend runtime code (`coreza-backend/src/config/supabase.ts`) already reads `SUPABASE_SECRET_KEY` with a deprecation fallback — leave as-is.
-- Frontend `src/integrations/supabase/client.ts` — already env-driven.
-- Postgres role string `'service_role'` in RLS policies — that's a database role, not a key.
-- Lovable runtime secrets named `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` — those belong to the connected Supabase project (not the self-host setup). Renaming them in the platform secrets store is a separate ops step you'd do per-project from the dashboard.
-- README/SETUP.md doc updates — flag if you want them in a follow-up; this plan only touches setup scripts and templates.
-
-## Acceptance check (mapped to spec section 10)
-
-All ten checkboxes covered:
-- prompts + sbp_ validation → §1
-- DB password read + non-interactive `db push` (env-injected) → §1, §3 step 6
-- `supabase login --token` step → §3 step 2
-- `link` step → §3 step 4
-- `functions deploy` → §3 step 7
-- `secrets set COREZA_ENCRYPTION_KEY` → §3 step 8
-- masked logging only → §1, §4
-- no false success — booleans gated in `showCompletionMessage` → §3
+- Fresh install on empty Supabase project → exactly one migration applied, all 15 tables created, `db push` succeeds.
+- Re-running setup → same single migration file, `db push` is a no-op.
+- User-added custom migrations are preserved (safety guard blocks accidental wipe).

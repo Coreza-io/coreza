@@ -337,6 +337,7 @@ VITE_INACTIVITY_TIMEOUT=600000
 SUPABASE_URL=${this.config.supabaseUrl}
 SUPABASE_PROJECT_ID=${this.config.projectId}
 SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
+SUPABASE_ANON_KEY=${this.config.supabasePublishableKey}
 SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
 
 # Encryption
@@ -344,6 +345,7 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
 
 # Redis
 REDIS_QUEUE_URL=redis://localhost:6379
+REDIS_CACHE_URL=redis://localhost:6379
 
 # Runtime ports
 PORT=8000

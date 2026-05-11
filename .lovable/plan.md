@@ -1,47 +1,51 @@
-## Root cause (recap)
+# Fix backend startup: missing `REDIS_CACHE_URL` and `SUPABASE_ANON_KEY`
 
-`supabase/migrations/` holds 24 historical Lovable-generated incremental migrations. The earliest one (`20251110090945_*.sql`) does `ALTER TABLE public.users ADD COLUMN timezone` but no migration in the folder ever creates `public.users` — that CREATE lives only in `setup/database-schema.sql`. So `supabase db push` against a fresh DB fails on the first ALTER.
+## Problem
 
-The historical files are Lovable's internal change log; they are not needed by self-hosters because `setup/database-schema.sql` already represents the final, complete schema (15 `CREATE TABLE IF NOT EXISTS` statements covering every table the app reads/writes).
+Two separate env-var gaps cause `npm run dev` in `coreza-backend` to crash on a fresh self-host install:
 
-## Fix: setup wipes old migrations and writes one fresh migration
+1. **Current crash:** `coreza-backend/src/config/redis.ts` requires either `REDIS_CACHE_URL` or `REDIS_URL` for the cache Redis instance. The setup script only writes `REDIS_QUEUE_URL`, so the cache connector throws on first import (`WorkflowRecoveryService` → `getRedisCache`).
+2. **Previously diagnosed (still pending):** `jwtAuth.ts` and `websocketManager.ts` read `SUPABASE_ANON_KEY`, but setup writes only `SUPABASE_PUBLISHABLE_KEY`.
 
-On every self-host install, `setup.js` will:
+This plan addresses both, since they share the same root cause (setup-script env template is incomplete) and the same files.
 
-1. **Delete every existing `*.sql` file** under `supabase/migrations/` (keep the directory and any non-SQL files like `.gitkeep`).
-2. **Write one fresh migration** at `supabase/migrations/00000000000000_coreza_initial_schema.sql` whose contents are exactly `setup/database-schema.sql`.
-3. **Run `supabase db push`** — applies the single consolidated schema, succeeds.
+## Changes
 
-No probing of remote state, no archive folder, no diffing — simple and deterministic. Self-host setup is the single source of truth; `setup/database-schema.sql` is the schema.
+### 1. `setup/setup.js` — backend `.env` template (around lines 336–361)
+Add the missing variables so the backend boots out of the box:
+- Add `REDIS_CACHE_URL=redis://localhost:6379` directly under the existing `REDIS_QUEUE_URL` line.
+- Add `SUPABASE_ANON_KEY=${this.config.supabasePublishableKey}` under the `SUPABASE_PUBLISHABLE_KEY` line (legacy alias for code that still reads the old name).
 
-### Idempotency on re-runs
+### 2. `setup/setup.js` — market-stream `.env` template (lines 363–368)
+- Add `REDIS_CACHE_URL=redis://localhost:6379` (the stream service shares the same Redis config module).
 
-Re-running `node setup/setup.js` against a Supabase project that already has the schema applied:
-- Step 1 deletes the previous `00000000000000_coreza_initial_schema.sql`.
-- Step 2 rewrites it (same content, unless schema file changed).
-- Step 3 `db push` sees the migration version `00000000000000` is already applied remotely → no-op.
+### 3. `coreza-backend/.env.example`
+- Add `REDIS_CACHE_URL=redis://localhost:6379` next to `REDIS_QUEUE_URL`.
+- Add `SUPABASE_ANON_KEY=` (empty) as a documented legacy alias.
 
-If the user edited `setup/database-schema.sql` between runs, the new content is just a rewrite of the same migration version, which `supabase db push` will treat as already-applied (it tracks by version number, not content hash). For schema evolution after the initial install, users add new migration files manually — outside the setup script's responsibility.
+### 4. `setup/validate.js` (lines 53–64)
+- Add `REDIS_CACHE_URL` to the required-vars list for `coreza-backend/.env`.
+- Keep `SUPABASE_PUBLISHABLE_KEY` as canonical; do not require `SUPABASE_ANON_KEY` (it's a fallback only).
 
-### Safety guard
+### 5. Backend code — accept publishable key as primary, anon as fallback
+Mirror the pattern already used in `coreza-backend/src/config/supabase.ts`:
+- `coreza-backend/src/middleware/jwtAuth.ts` (lines 16–33): read `process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY`. Update the startup error message to mention `SUPABASE_PUBLISHABLE_KEY`.
+- `coreza-backend/src/infra/websocketManager.ts` (all anon-key reads): same fallback pattern, update warnings to reference `SUPABASE_PUBLISHABLE_KEY`.
 
-Before deleting, if `supabase/migrations/` contains any file NOT matching either:
-- `00000000000000_coreza_initial_schema.sql` (our managed file), or
-- the known historical Lovable filenames (timestamp-prefixed `.sql` from before today),
+### 6. `docker-compose.yml`
+- The `coreza-backend` service already passes `REDIS_CACHE_URL=redis://redis-cache:6379` ✅ — no change.
+- Confirm `market-stream-service` already has it ✅ — no change.
 
-print a warning listing the unexpected files and abort unless the user passes `--force-reset-migrations`. This protects users who later add their own custom migrations from accidental deletion.
+## Out of scope
 
-For the current first run, the 24 known Lovable files match the historical pattern → safe to delete without prompt.
+- No DB / migration changes.
+- No frontend changes (frontend doesn't use Redis or anon-key fallback).
+- No edge-function changes.
+- No rename of `SUPABASE_ANON_KEY` references in the codebase — fallback is sufficient and preserves backward compatibility for existing self-hosters.
 
-### Touched files
+## Result
 
-- `setup/setup.js` — replace `prepareMigrationFile()` body with the wipe-and-write logic above; add the safety-guard check.
-- `setup/validate.js` — keep as-is (already counts `*.sql` files; will see 1 after setup).
-- No frontend, backend, or DB-schema changes.
-- The 24 existing files in `supabase/migrations/` will be removed by setup at install time. (If you also want them gone from the repo right now so the diff is visible before users run setup, say so and I'll include that deletion in the implementation step.)
-
-### Acceptance
-
-- Fresh install on empty Supabase project → exactly one migration applied, all 15 tables created, `db push` succeeds.
-- Re-running setup → same single migration file, `db push` is a no-op.
-- User-added custom migrations are preserved (safety guard blocks accidental wipe).
+After re-running `node setup/setup.js`:
+- Backend `.env` contains both `REDIS_QUEUE_URL` and `REDIS_CACHE_URL` → cache Redis initializes, no crash on `WorkflowRecoveryService` import.
+- Backend `.env` contains both `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_ANON_KEY` → JWKS auth + WebSocket auth boot cleanly.
+- `npm run dev` in `coreza-backend` starts successfully against a fresh Supabase project.

@@ -23,11 +23,11 @@ jobs:
       - name: Embed icon and version info
         working-directory: installer/launcher
         run: |
-          if [ -f icon.ico ] && [ -f versioninfo.json ]; then
+          if [ -f versioninfo.json ]; then
             go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
-            goversioninfo -platform-specific=true -o resource_windows_amd64.syso versioninfo.json || true
+            goversioninfo -platform-specific=true -o resource_windows_amd64.syso versioninfo.json
           else
-            echo "Skipping resource embedding (icon.ico or versioninfo.json missing)."
+            echo "Skipping resource embedding (versioninfo.json missing)."
           fi
 
       - name: Build setup.exe
@@ -37,7 +37,23 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: '0'
         run: |
-          go build -ldflags="-s -w" -o ../../setup.exe .
+          go build -ldflags="-s -w" -o ../../setup.exe.generated .
+
+      - name: Verify committed setup.exe is in sync (optional)
+        run: |
+          if git ls-files --error-unmatch setup.exe >/dev/null 2>&1; then
+            if ! cmp -s setup.exe setup.exe.generated; then
+              echo "Committed setup.exe is out of sync with launcher source."
+              echo "Rebuild from installer/launcher and re-commit setup.exe."
+              exit 1
+            fi
+            echo "Committed setup.exe is present and in sync."
+          else
+            echo "No committed setup.exe found (supported: release artifacts only)."
+          fi
+
+      - name: Prepare artifact file
+        run: mv setup.exe.generated setup.exe
 
       - uses: actions/upload-artifact@v4
         with:

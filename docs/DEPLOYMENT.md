@@ -29,7 +29,7 @@ Render provides easy deployment for both frontend and backend.
    - **Publish Directory**: `dist`
 4. Add environment variables:
    - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
    - `VITE_COREZA_ENCRYPTION_KEY`
 
 #### Backend Deployment
@@ -41,9 +41,11 @@ Render provides easy deployment for both frontend and backend.
    - **Start Command**: `cd coreza-backend && npm start`
 3. Add environment variables:
    - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SUPABASE_PUBLISHABLE_KEY`
+   - `SUPABASE_SECRET_KEY`
    - `COREZA_ENCRYPTION_KEY`
+   - Note: legacy `SUPABASE_ANON_KEY` is still accepted as a backend fallback.
+   - Note: legacy `SUPABASE_SERVICE_ROLE_KEY` is still accepted as a backend fallback for `SUPABASE_SECRET_KEY`.
    - `PORT=10000`
    - `NODE_ENV=production`
 
@@ -86,15 +88,15 @@ docker run -p 3001:3001 --env-file coreza-backend/.env coreza-backend
 #### Frontend (.env.production)
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_production_anon_key
+VITE_SUPABASE_PUBLISHABLE_KEY=your_production_anon_key
 VITE_COREZA_ENCRYPTION_KEY=your_production_encryption_key
 ```
 
 #### Backend (.env.production)
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your_production_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_production_service_key
+SUPABASE_PUBLISHABLE_KEY=your_production_anon_key
+SUPABASE_SECRET_KEY=your_production_service_key
 COREZA_ENCRYPTION_KEY=your_production_encryption_key
 NODE_ENV=production
 PORT=3001

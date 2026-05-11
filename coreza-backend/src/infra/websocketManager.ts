@@ -57,7 +57,8 @@ export class WebSocketManager {
   private constructor() {
     // Initialize JWKS for JWT verification with extended timeout and caching
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const supabasePublishableKey =
+      process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
 
     if (supabaseUrl && supabasePublishableKey) {
       const jwksUrl = new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`);
@@ -79,7 +80,7 @@ export class WebSocketManager {
         );
       if (!supabasePublishableKey)
         console.warn(
-          "⚠️ SUPABASE_PUBLISHABLE_KEY not set - JWT verification will be disabled",
+          "⚠️ SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY) not set - JWT verification will be disabled",
         );
     }
   }
@@ -96,7 +97,8 @@ export class WebSocketManager {
    */
   private async testJwksEndpoint(): Promise<boolean> {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const supabasePublishableKey =
+      process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
 
     if (!supabaseUrl) {
       console.warn("⚠️ SUPABASE_URL not set - skipping JWKS health check");
@@ -105,7 +107,7 @@ export class WebSocketManager {
 
     if (!supabasePublishableKey) {
       console.warn(
-        "⚠️ SUPABASE_PUBLISHABLE_KEY not set - skipping JWKS health check",
+        "⚠️ SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY) not set - skipping JWKS health check",
       );
       return false;
     }
@@ -264,10 +266,10 @@ export class WebSocketManager {
     try {
       if (!this.jwks) {
         console.error(
-          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY",
+          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY)",
         );
         throw new Error(
-          "JWKS not initialized - SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY required",
+          "JWKS not initialized - SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY) required",
         );
       }
 

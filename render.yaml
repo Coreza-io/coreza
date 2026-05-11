@@ -41,10 +41,10 @@ services:
       #   value: ""
       - key: SUPABASE_URL
         value: "YOUR_SUPABASE_URL"
-      - key: SUPABASE_ANON_KEY
-        value: "YOUR_SUPABASE_ANON_KEY"
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        value: "YOUR_SUPABASE_SERVICE_ROLE_KEY"
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: "YOUR_SUPABASE_PUBLISHABLE_KEY"
+      - key: SUPABASE_SECRET_KEY
+        value: "YOUR_SUPABASE_SECRET_KEY"
       - key: COREZA_ENCRYPTION_KEY
         value: "YOUR_ENCRYPTION_KEY"
       - key: PORT
@@ -78,10 +78,8 @@ services:
           property: connectionString
       - key: SUPABASE_URL
         value: "YOUR_SUPABASE_URL"
-      - key: SUPABASE_ANON_KEY
-        value: "YOUR_SUPABASE_ANON_KEY"
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        value: "YOUR_SUPABASE_SERVICE_ROLE_KEY"
+      - key: SUPABASE_SECRET_KEY
+        value: "YOUR_SUPABASE_SECRET_KEY"
       - key: COREZA_ENCRYPTION_KEY
         value: "YOUR_ENCRYPTION_KEY"
       - key: MARKET_STREAM_PORT
@@ -114,7 +112,7 @@ services:
         generateValue: true
       - key: SUPABASE_URL
         value: ""
-      - key: SUPABASE_SERVICE_ROLE_KEY
+      - key: SUPABASE_SECRET_KEY
         value: ""
       - key: ENVIRONMENT
         value: "production"
@@ -127,8 +125,8 @@ services:
     envVars:
       - key: VITE_SUPABASE_URL
         value: "YOUR_SUPABASE_URL"
-      - key: VITE_SUPABASE_ANON_KEY  
-        value: "YOUR_SUPABASE_ANON_KEY"
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        value: "YOUR_SUPABASE_PUBLISHABLE_KEY"
       - key: VITE_COREZA_ENCRYPTION_KEY
         value: "YOUR_ENCRYPTION_KEY"
       - key: VITE_API_URL

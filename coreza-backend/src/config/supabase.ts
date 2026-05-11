@@ -17,15 +17,22 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../types/supabase";
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+const supabaseSecretKey =
+  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!process.env.SUPABASE_SECRET_KEY) {
+if (!process.env.SUPABASE_SECRET_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn(
+    "[supabase] SUPABASE_SERVICE_ROLE_KEY is deprecated. Please migrate to SUPABASE_SECRET_KEY.",
+  );
+}
+
+if (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.warn("[supabase] SUPABASE_SECRET_KEY not found.");
 }
 
 if (!supabaseUrl || !supabaseSecretKey) {
   throw new Error(
-    "Missing required Supabase environment variables: SUPABASE_URL and SUPABASE_SECRET_KEY.",
+    "Missing required Supabase environment variables: SUPABASE_URL and SUPABASE_SECRET_KEY (SUPABASE_SERVICE_ROLE_KEY is deprecated fallback).",
   );
 }
 

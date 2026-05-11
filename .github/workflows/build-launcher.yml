@@ -1,0 +1,51 @@
+name: Build Windows Launcher
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'installer/launcher/**'
+      - '.github/workflows/build-launcher.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Embed icon and version info
+        working-directory: installer/launcher
+        run: |
+          if [ -f icon.ico ] && [ -f versioninfo.json ]; then
+            go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+            goversioninfo -platform-specific=true -o resource_windows_amd64.syso versioninfo.json || true
+          else
+            echo "Skipping resource embedding (icon.ico or versioninfo.json missing)."
+          fi
+
+      - name: Build setup.exe
+        working-directory: installer/launcher
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: |
+          go build -ldflags="-s -w" -o ../../setup.exe .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-exe
+          path: setup.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: setup.exe

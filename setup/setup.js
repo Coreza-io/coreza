@@ -5,7 +5,6 @@ const fs = require("fs");
 const path = require("path");
 const { execSync, spawnSync } = require("child_process");
 const crypto = require("crypto");
-const https = require("https");
 const os = require("os");
 
 const rl = readline.createInterface({
@@ -17,10 +16,21 @@ function question(query) {
   return new Promise((resolve) => rl.question(query, resolve));
 }
 
+function mask(value) {
+  if (!value || typeof value !== "string") return "";
+  if (value.length <= 8) return "****";
+  return `${value.slice(0, Math.min(14, value.length - 4))}****${value.slice(-4)}`;
+}
+
 class CorezaSetup {
   constructor() {
     this.config = {};
-    this.setupComplete = false;
+    this.status = {
+      linked: false,
+      migrated: false,
+      functionsDeployed: false,
+      secretsSet: false,
+    };
     this.projectRoot = path.resolve(__dirname, "..");
   }
 
@@ -34,9 +44,7 @@ class CorezaSetup {
       await this.collectSupabaseCredentials();
       await this.generateEncryptionKey();
       await this.setupEnvironmentFiles();
-      await this.setupSupabaseProject(); // init + link
-      await this.deployEdgeFunctions(); // link (safe) + deploy + secrets
-      await this.runDatabaseMigrations(); // link (safe) + db push
+      await this.runSupabaseCli();
       await this.checkAndStartRedis();
       await this.validateSetup();
       await this.showCompletionMessage();
@@ -52,7 +60,6 @@ class CorezaSetup {
     console.log("\n📦 Installing dependencies...");
 
     try {
-      // Install frontend dependencies
       console.log("Installing frontend dependencies...");
       execSync("npm install", {
         stdio: "inherit",
@@ -60,7 +67,6 @@ class CorezaSetup {
         shell: true,
       });
 
-      // Install backend dependencies
       console.log("Installing backend dependencies...");
       execSync("npm install", {
         stdio: "inherit",
@@ -68,7 +74,6 @@ class CorezaSetup {
         shell: true,
       });
 
-      // Install market stream service dependencies
       console.log("Installing market-stream-service dependencies...");
       execSync("npm install", {
         stdio: "inherit",
@@ -82,17 +87,15 @@ class CorezaSetup {
 
       console.log("✅ Dependencies installed successfully");
     } catch (error) {
-      console.log("⚠️  Manual dependency installation required");
-      console.log("Please run:");
-      console.log("1. npm install");
-      console.log("2. cd coreza-backend && npm install");
+      throw new Error(
+        "Dependency installation failed. Run npm install in project root, coreza-backend, and coreza-backend/market-stream-service.",
+      );
     }
   }
 
   async checkPrerequisites() {
     console.log("🔍 Checking prerequisites...");
 
-    // Check Node.js version
     const nodeVersion = process.version;
     const majorVersion = parseInt(nodeVersion.slice(1).split(".")[0]);
     if (majorVersion < 18) {
@@ -106,7 +109,6 @@ class CorezaSetup {
       );
     }
 
-    // Ensure Supabase CLI is available via npx; install dev-dep if missing
     try {
       execSync("npx supabase --version", {
         stdio: "ignore",
@@ -121,7 +123,6 @@ class CorezaSetup {
         shell: true,
       });
 
-      // Re-check availability
       try {
         execSync("npx supabase --version", {
           stdio: "ignore",
@@ -139,226 +140,182 @@ class CorezaSetup {
   }
 
   parseEnvFile(filePath) {
-    if (!fs.existsSync(filePath)) {
-      return {};
-    }
-
+    if (!fs.existsSync(filePath)) return {};
     const env = {};
     const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
-
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        continue;
-      }
-
+      if (!trimmed || trimmed.startsWith("#")) continue;
       const equalsIndex = trimmed.indexOf("=");
-      if (equalsIndex === -1) {
-        continue;
-      }
-
+      if (equalsIndex === -1) continue;
       const key = trimmed.slice(0, equalsIndex).trim();
       let value = trimmed.slice(equalsIndex + 1).trim();
-
       if (value.startsWith('"') && value.endsWith('"')) {
         value = value.slice(1, -1);
       }
-
       env[key] = value;
     }
-
     return env;
   }
 
   loadExistingCredentials() {
-    if (this.loadedExistingCredentials) {
-      return;
-    }
+    if (this.loadedExistingCredentials) return;
 
     const frontendEnv = this.parseEnvFile(path.join(this.projectRoot, ".env"));
     const backendEnv = this.parseEnvFile(
       path.join(this.projectRoot, "coreza-backend", ".env"),
     );
+    const setupLocal = this.parseEnvFile(
+      path.join(this.projectRoot, ".env.setup.local"),
+    );
 
-    const pickValue = (...candidates) =>
+    const pick = (...candidates) =>
       candidates.find(
-        (candidate) =>
-          typeof candidate === "string" && candidate.trim().length > 0,
+        (c) => typeof c === "string" && c.trim().length > 0,
       );
 
-    this.config.supabaseUrl =
-      this.config.supabaseUrl ||
-      pickValue(
-        backendEnv.SUPABASE_URL,
-        frontendEnv.VITE_SUPABASE_URL,
-        process.env.SUPABASE_URL,
-      );
-
-    this.config.supabasePublishableKey =
-      this.config.supabasePublishableKey ||
-      pickValue(
-        backendEnv.SUPABASE_PUBLISHABLE_KEY,
-        backendEnv.SUPABASE_ANON_KEY,
-        frontendEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
-        process.env.SUPABASE_PUBLISHABLE_KEY,
-        process.env.SUPABASE_ANON_KEY,
-      );
-
-    this.config.supabaseSecretKey =
-      this.config.supabaseSecretKey ||
-      pickValue(
-        backendEnv.SUPABASE_SECRET_KEY,
-        backendEnv.SUPABASE_SERVICE_ROLE_KEY,
-        process.env.SUPABASE_SECRET_KEY,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
-      );
-
-    this.config.supabaseAccessToken =
-      this.config.supabaseAccessToken ||
-      pickValue(
-        backendEnv.SUPABASE_ACCESS_TOKEN,
-        process.env.SUPABASE_ACCESS_TOKEN,
-      );
-
-    this.config.supabaseDbPassword =
-      this.config.supabaseDbPassword ||
-      pickValue(
-        backendEnv.SUPABASE_DB_PASSWORD,
-        process.env.SUPABASE_DB_PASSWORD,
-      );
-
-    this.config.projectId =
-      this.config.projectId ||
-      pickValue(
-        frontendEnv.VITE_SUPABASE_PROJECT_ID,
-        process.env.SUPABASE_PROJECT_ID,
-      );
-    this.config.encryptionKey =
-      this.config.encryptionKey ||
-      pickValue(
-        backendEnv.COREZA_ENCRYPTION_KEY,
-        process.env.COREZA_ENCRYPTION_KEY,
-      );
+    this.config.supabaseUrl = pick(
+      backendEnv.SUPABASE_URL,
+      frontendEnv.VITE_SUPABASE_URL,
+      process.env.SUPABASE_URL,
+    );
+    this.config.supabasePublishableKey = pick(
+      backendEnv.SUPABASE_PUBLISHABLE_KEY,
+      frontendEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
+      process.env.SUPABASE_PUBLISHABLE_KEY,
+    );
+    this.config.supabaseSecretKey = pick(
+      backendEnv.SUPABASE_SECRET_KEY,
+      process.env.SUPABASE_SECRET_KEY,
+    );
+    this.config.supabaseAccessToken = pick(
+      setupLocal.SUPABASE_ACCESS_TOKEN,
+      process.env.SUPABASE_ACCESS_TOKEN,
+    );
+    this.config.supabaseDbPassword = pick(
+      setupLocal.SUPABASE_DB_PASSWORD,
+      process.env.SUPABASE_DB_PASSWORD,
+    );
+    this.config.projectId = pick(
+      setupLocal.SUPABASE_PROJECT_ID,
+      backendEnv.SUPABASE_PROJECT_ID,
+      frontendEnv.VITE_SUPABASE_PROJECT_ID,
+      process.env.SUPABASE_PROJECT_ID,
+    );
+    this.config.encryptionKey = pick(
+      backendEnv.COREZA_ENCRYPTION_KEY,
+      process.env.COREZA_ENCRYPTION_KEY,
+    );
 
     this.loadedExistingCredentials = true;
   }
+
   async collectSupabaseCredentials() {
     console.log("\n🔑 Supabase Configuration");
-    console.log("Please provide your Supabase project credentials:");
-    console.log("(You can find these in your Supabase project settings)\n");
+    console.log("Provide your Supabase project credentials.");
+    console.log(
+      "Note: Do not paste anon, service_role, publishable, or secret keys as SUPABASE_ACCESS_TOKEN.",
+    );
+    console.log(
+      "      The access token must start with sbp_ and is created from Supabase Account → Access Tokens.\n",
+    );
 
     this.loadExistingCredentials();
 
+    // 1. Project URL
     if (this.config.supabaseUrl) {
-      console.log(
-        "Using existing Supabase Project URL from environment files.",
-      );
+      console.log(`Using existing Supabase Project URL: ${this.config.supabaseUrl}`);
     } else {
       this.config.supabaseUrl = (
         await question("Supabase Project URL: ")
       ).trim();
     }
+    const urlMatch = this.config.supabaseUrl.match(
+      /^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/,
+    );
+    if (!urlMatch) {
+      throw new Error(
+        "Invalid Supabase URL. Expected format: https://<project-ref>.supabase.co",
+      );
+    }
+    this.config.projectId = urlMatch[1];
+    console.log(`✅ Project ID: ${this.config.projectId}`);
 
+    // 2. Publishable key
     if (this.config.supabasePublishableKey) {
-      console.log("Using existing Supabase Publishable Key (sb_publishable_…) from environment files.");
+      console.log(
+        `Using existing Publishable Key: ${mask(this.config.supabasePublishableKey)}`,
+      );
     } else {
       this.config.supabasePublishableKey = (
-        await question("Supabase Publishable Key (sb_publishable_…): ")
+        await question("Supabase Publishable Key (sb_publishable_...): ")
       ).trim();
     }
+    if (!this.config.supabasePublishableKey.startsWith("sb_publishable_")) {
+      throw new Error(
+        "Invalid publishable key. Expected key starting with sb_publishable_.",
+      );
+    }
 
+    // 3. Secret key
     if (this.config.supabaseSecretKey) {
       console.log(
-        "Using existing Supabase Secret Key (sb_secret_…) from environment files.",
+        `Using existing Secret Key: ${mask(this.config.supabaseSecretKey)}`,
       );
     } else {
       this.config.supabaseSecretKey = (
-        await question("Supabase Secret Key (sb_secret_…): ")
+        await question("Supabase Secret Key (sb_secret_...) [backend only]: ")
       ).trim();
     }
-
-    // if (this.config.supabaseAccessToken) {
-    //   console.log(
-    //     "Using existing Supabase Personal Access Token from environment files.",
-    //   );
-    // } else {
-    //   this.config.supabaseAccessToken = (
-    //     await question("Supabase Personal Access Token: ")
-    //   ).trim();
-    // }
-
-    // if (this.config.supabaseDbPassword) {
-    //   console.log(
-    //     "Using existing Supabase database password from environment files.",
-    //   );
-    // } else {
-    //   this.config.supabaseDbPassword = (
-    //     await question("Supabase database password: ")
-    //   ).trim();
-    // }
-
-    this.config.projectId = this.extractProjectId(this.config.supabaseUrl);
-    if (!this.config.projectId) {
-      throw new Error("Invalid Supabase URL format");
-    }
-
-    // Validate credential formats
-    this.validateCredentials();
-
-    console.log(`✅ Project ID extracted: ${this.config.projectId}`);
-  }
-
-  validateCredentials() {
-    if (
-      !this.config.supabaseUrl.startsWith("https://") ||
-      !this.config.supabaseUrl.includes(".supabase.co")
-    ) {
+    if (!this.config.supabaseSecretKey.startsWith("sb_secret_")) {
       throw new Error(
-        "Invalid Supabase URL format. Should be https://your-project.supabase.co",
+        "Invalid secret key. Expected key starting with sb_secret_.",
+      );
+    }
+    console.warn(
+      "⚠️  SUPABASE_SECRET_KEY is backend-only. Never expose it in frontend files.",
+    );
+
+    // 4. Access token
+    if (this.config.supabaseAccessToken) {
+      console.log(
+        `Using existing Access Token: ${mask(this.config.supabaseAccessToken)}`,
+      );
+    } else {
+      this.config.supabaseAccessToken = (
+        await question("Supabase Access Token (sbp_...) [CLI setup only]: ")
+      ).trim();
+    }
+    if (!this.config.supabaseAccessToken.startsWith("sbp_")) {
+      throw new Error(
+        "Invalid Supabase access token. Expected personal access token starting with sbp_.\n" +
+          "Do not use publishable, secret, anon, or service-role keys here.",
       );
     }
 
-    const isPublishable = this.config.supabasePublishableKey.startsWith("sb_publishable_");
-    const isLegacyPublishable = this.config.supabasePublishableKey.startsWith("eyJ");
-    if (!isPublishable && !isLegacyPublishable) {
-      throw new Error('Invalid Supabase Publishable Key format. Expected prefix sb_publishable_ (legacy eyJ accepted temporarily).');
+    // 5. DB password
+    if (this.config.supabaseDbPassword) {
+      console.log("Using existing Supabase DB password: ********");
+    } else {
+      this.config.supabaseDbPassword = (
+        await question(
+          "Supabase DB Password (postgres role) [used for db push]: ",
+        )
+      ).trim();
     }
-    if (isLegacyPublishable) {
-      console.warn('⚠️ Legacy anon JWT key detected for publishable key. Please migrate to sb_publishable_ format.');
+    if (!this.config.supabaseDbPassword) {
+      throw new Error(
+        "Missing SUPABASE_DB_PASSWORD. This is required for non-interactive db push.",
+      );
     }
-
-    const isSecret = this.config.supabaseSecretKey.startsWith("sb_secret_");
-    const isLegacySecret = this.config.supabaseSecretKey.startsWith("eyJ");
-    if (!isSecret && !isLegacySecret) {
-      throw new Error('Invalid Supabase Secret Key format. Expected prefix sb_secret_ (legacy eyJ accepted temporarily).');
-    }
-    if (isLegacySecret) {
-      console.warn('⚠️ Legacy service role JWT key detected. Please migrate to sb_secret_ format.');
-    }
-
-    // NEW: require personal access token
-    // if (!this.config.supabaseAccessToken) {
-    //   throw new Error("Supabase Personal Access Token is required");
-    // }
-
-    // if (!this.config.supabaseDbPassword) {
-    //   throw new Error("Supabase database password is required");
-    // }
-  }
-
-  extractProjectId(url) {
-    const match = url.match(/https:\/\/([a-zA-Z0-9]+)\.supabase\.co/);
-    return match ? match[1] : null;
   }
 
   async generateEncryptionKey() {
     console.log("\n🔐 Setting up encryption key...");
-
     if (this.config.encryptionKey) {
       console.log("✅ Using existing encryption key from environment files.");
       return;
     }
-
     this.config.encryptionKey = crypto.randomBytes(32).toString("base64");
     console.log("✅ Encryption key generated");
   }
@@ -366,40 +323,42 @@ class CorezaSetup {
   async setupEnvironmentFiles() {
     console.log("\n📝 Setting up environment files...");
 
-    // Frontend .env
-    const frontendEnv = `# ="== React App Config ==="
-VITE_API_URL="http://localhost:8000"
-VITE_SUPABASE_PROJECT_ID="${this.config.projectId}"
-VITE_SUPABASE_PUBLISHABLE_KEY="${this.config.supabasePublishableKey}"
-VITE_SUPABASE_URL="${this.config.supabaseUrl}"
+    const frontendEnv = `# === React App Config ===
+VITE_BACKEND_URL=http://localhost:8000
+VITE_SUPABASE_URL=${this.config.supabaseUrl}
+VITE_SUPABASE_PROJECT_ID=${this.config.projectId}
+VITE_SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
+WEBSOCKET_PORT=8081
+VITE_BACKEND_WS_URL=ws://localhost:8081
+VITE_INACTIVITY_TIMEOUT=600000
 `;
 
-    // Backend .env
-    const backendEnv = `# Supabase Configuration
+    const backendEnv = `# Supabase Configuration (runtime — backend only)
 SUPABASE_URL=${this.config.supabaseUrl}
+SUPABASE_PROJECT_ID=${this.config.projectId}
 SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
 SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
-SUPABASE_ACCESS_TOKEN=${this.config.supabaseAccessToken}
-SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
 
-# Encryption Configuration
+# Encryption
 COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
+
+# Redis
 REDIS_QUEUE_URL=redis://localhost:6379
+
+# Runtime ports
 PORT=8000
 WEBSOCKET_PORT=8081
 MARKET_STREAM_PORT=8090
+
+# Workflow
 WORKFLOW_JOB_ATTEMPTS=0
 BACKTEST_EXECUTION_MODE=auto
+
+# Broker OAuth callback URLs
 ALPACA_REDIRECT_URI=http://localhost:8000/api/oauth/alpaca/callback
 BINANCE_REDIRECT_URI=http://localhost:8000/api/oauth/binance/callback
 SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
 `;
-
-    fs.writeFileSync(path.join(this.projectRoot, ".env"), frontendEnv);
-    fs.writeFileSync(
-      path.join(this.projectRoot, "coreza-backend", ".env"),
-      backendEnv,
-    );
 
     const streamEnv = `SUPABASE_URL=${this.config.supabaseUrl}
 SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
@@ -407,6 +366,19 @@ COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
 REDIS_QUEUE_URL=redis://localhost:6379
 MARKET_STREAM_PORT=8090
 `;
+
+    const setupLocalEnv = `# Setup/CI-only — never commit
+# Used by Supabase CLI for non-interactive login, link, and db push.
+SUPABASE_PROJECT_ID=${this.config.projectId}
+SUPABASE_ACCESS_TOKEN=${this.config.supabaseAccessToken}
+SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
+`;
+
+    fs.writeFileSync(path.join(this.projectRoot, ".env"), frontendEnv);
+    fs.writeFileSync(
+      path.join(this.projectRoot, "coreza-backend", ".env"),
+      backendEnv,
+    );
     fs.writeFileSync(
       path.join(
         this.projectRoot,
@@ -416,386 +388,233 @@ MARKET_STREAM_PORT=8090
       ),
       streamEnv,
     );
+    fs.writeFileSync(
+      path.join(this.projectRoot, ".env.setup.local"),
+      setupLocalEnv,
+    );
 
-    console.log("✅ Environment files created");
+    this.ensureGitignoreEntry(".env.setup.local");
+
+    console.log("✅ Environment files created (secrets redacted in logs)");
   }
 
-  // Helper: env with access token for Supabase CLI
+  ensureGitignoreEntry(entry) {
+    const gitignorePath = path.join(this.projectRoot, ".gitignore");
+    let contents = "";
+    if (fs.existsSync(gitignorePath)) {
+      contents = fs.readFileSync(gitignorePath, "utf8");
+    }
+    const lines = contents.split(/\r?\n/).map((l) => l.trim());
+    if (lines.includes(entry)) return;
+    const updated =
+      (contents.endsWith("\n") || contents.length === 0 ? contents : contents + "\n") +
+      `${entry}\n`;
+    fs.writeFileSync(gitignorePath, updated);
+  }
+
   supabaseEnv() {
     return {
       ...process.env,
       SUPABASE_ACCESS_TOKEN: this.config.supabaseAccessToken,
+      SUPABASE_DB_PASSWORD: this.config.supabaseDbPassword,
     };
   }
 
-  async setupSupabaseProject() {
-    console.log("\n🏗️  Setting up Supabase project...");
-
-    try {
-      const templatePath = path.join(
-        this.projectRoot,
-        "supabase",
-        "config.template.toml",
-      );
-      const configPath = path.join(this.projectRoot, "supabase", "config.toml");
-      if (fs.existsSync(templatePath)) {
-        const template = fs.readFileSync(templatePath, "utf8");
-        fs.writeFileSync(
-          configPath,
-          template.replace(/\{\{PROJECT_ID\}\}/g, this.config.projectId),
-        );
-        console.log("✅ Generated supabase/config.toml from template");
-      }
-
-      // Link to your remote project so db push/deploy knows the project ref
-      execSync(`npx supabase link --project-ref ${this.config.projectId}`, {
-        stdio: "inherit",
-        cwd: this.projectRoot,
-        shell: true,
-        env: this.supabaseEnv(),
-      });
-
-      console.log("✅ Supabase initialized and linked");
-    } catch (err) {
-      console.log("⚠️  Could not initialize/link automatically.");
-      console.log(`   Try: npx supabase init --force`);
-      console.log(
-        `        npx supabase link --project-ref ${this.config.projectId}`,
-      );
-    }
-  }
-
-  async deployEdgeFunctions() {
-    console.log("\n? Deploying edge functions...");
-
-    try {
-      // Ensure linked (safe if already linked)
-      execSync(`npx supabase link --project-ref ${this.config.projectId}`, {
-        stdio: "inherit",
-        cwd: this.projectRoot,
-        shell: true,
-        env: this.supabaseEnv(),
-      });
-
-      // Deploy functions
-      execSync("npx supabase functions deploy", {
-        stdio: "inherit",
-        cwd: this.projectRoot,
-        shell: true,
-        env: this.supabaseEnv(),
-      });
-
-      // Set secrets
-      execSync(
-        `npx supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`,
-        {
-          stdio: "inherit",
-          cwd: this.projectRoot,
-          shell: true,
-          env: this.supabaseEnv(),
-        },
-      );
-
-      console.log("✅ Edge functions deployed and secrets configured");
-    } catch (error) {
-      console.log("??  Manual setup required for edge functions");
-      console.log("Please run the following commands manually:");
-      console.log(`npx supabase link --project-ref ${this.config.projectId}`);
-      console.log("npx supabase functions deploy");
-      console.log(
-        `npx supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`,
-      );
-    }
-  }
-
-  runSupabaseDbPush({ directDbUrl } = {}) {
-    const command = directDbUrl
-      ? `npx supabase db push --db-url "${directDbUrl}"`
-      : "npx supabase db push";
-
+  runOrThrow(label, command, friendlyError) {
+    console.log(`\n▶  ${label}`);
     const result = spawnSync(command, {
       shell: true,
       cwd: this.projectRoot,
       env: this.supabaseEnv(),
-      encoding: "utf8",
-      input: "Y\n",
-      maxBuffer: 10 * 1024 * 1024,
+      stdio: "inherit",
     });
-
-    if (result.stdout) {
-      process.stdout.write(result.stdout);
+    if (result.status !== 0) {
+      console.error(`\n❌ ${friendlyError}`);
+      throw new Error(`${label} failed`);
     }
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-    }
-
-    const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
-
-    return {
-      success: result.status === 0,
-      output,
-    };
   }
 
-  async handleMigrationPushError(commandOutput) {
-    if (!commandOutput) {
-      return false;
-    }
+  async runSupabaseCli() {
+    console.log("\n🏗️  Running Supabase CLI flow...");
 
-    if (
-      commandOutput.includes(
-        "Remote migration versions not found in local migrations directory",
-      )
-    ) {
-      const versionMatch = commandOutput.match(
-        /supabase migration repair --status reverted (\d+)/,
+    // 1. Preflight
+    this.runOrThrow(
+      "Verify Supabase CLI",
+      "npx supabase --version",
+      "Supabase CLI is not available. Install with: npm install -D supabase",
+    );
+
+    // 2. Login
+    this.runOrThrow(
+      "Supabase CLI login",
+      `npx supabase login --token "${this.config.supabaseAccessToken}"`,
+      "Supabase CLI login failed.\n" +
+        "Check SUPABASE_ACCESS_TOKEN.\n" +
+        "It must be a personal access token starting with sbp_.",
+    );
+
+    // 3. Generate config.toml from template
+    const templatePath = path.join(
+      this.projectRoot,
+      "supabase",
+      "config.template.toml",
+    );
+    const configPath = path.join(this.projectRoot, "supabase", "config.toml");
+    if (fs.existsSync(templatePath)) {
+      const template = fs.readFileSync(templatePath, "utf8");
+      fs.writeFileSync(
+        configPath,
+        template.replace(/\{\{PROJECT_ID\}\}/g, this.config.projectId),
       );
-      const version = versionMatch ? versionMatch[1] : null;
-
-      if (!version) {
-        return false;
-      }
-
-      try {
-        console.log(`?? Repairing migration history for version ${version}...`);
-        const repairResult = spawnSync(
-          `npx supabase migration repair --status reverted ${version}`,
-          {
-            shell: true,
-            cwd: this.projectRoot,
-            env: this.supabaseEnv(),
-            encoding: "utf8",
-            stdio: "inherit",
-            maxBuffer: 10 * 1024 * 1024,
-          },
-        );
-
-        if (repairResult.status !== 0) {
-          console.log(
-            "? Migration repair command failed. Please run it manually.",
-          );
-          return false;
-        }
-      } catch (repairError) {
-        console.log("? Automatic repair failed:", repairError.message);
-        return false;
-      }
-
-      this.removeLocalMigrationVersion(version);
-
-      const retry = this.runSupabaseDbPush();
-      if (retry.success) {
-        console.log("? Migration applied successfully after repair.");
-        return true;
-      }
-
-      console.log("? Retry after repair failed. Output:");
-      console.log(retry.output);
-      return false;
+      console.log("✅ Generated supabase/config.toml from template");
     }
 
-    return false;
-  }
+    // 4. Link
+    this.runOrThrow(
+      "Link Supabase project",
+      `npx supabase link --project-ref ${this.config.projectId}`,
+      "Supabase project linking failed.\n" +
+        "Check:\n" +
+        "1. Project ref is correct.\n" +
+        "2. The project exists.\n" +
+        "3. Your access token belongs to an Owner/Admin of the Supabase organization.",
+    );
+    this.status.linked = true;
 
-  removeLocalMigrationVersion(version) {
+    // 5. Prepare migration file
+    this.prepareMigrationFile();
+
+    // 6. db push (non-interactive — env carries SUPABASE_DB_PASSWORD)
     try {
-      const migrationsDir = path.join(
-        this.projectRoot,
-        "supabase",
-        "migrations",
+      this.runOrThrow(
+        "Apply database migrations (db push)",
+        "npx supabase db push",
+        "Database migration push failed.\n" +
+          "Check:\n" +
+          "1. SUPABASE_DB_PASSWORD is correct.\n" +
+          "2. Project is linked.\n" +
+          "3. Your database is active and reachable.",
       );
-      if (!fs.existsSync(migrationsDir)) {
+      this.status.migrated = true;
+    } catch (err) {
+      // Attempt repair-then-retry once
+      const repaired = await this.tryMigrationRepair();
+      if (!repaired) throw err;
+      this.runOrThrow(
+        "Re-apply database migrations after repair",
+        "npx supabase db push",
+        "Database migration push failed after repair.\n" +
+          "Check SUPABASE_DB_PASSWORD and project link state.",
+      );
+      this.status.migrated = true;
+    }
+
+    // 7. Functions deploy
+    this.runOrThrow(
+      "Deploy edge functions",
+      "npx supabase functions deploy",
+      "Edge function deployment failed.\n" +
+        "Check:\n" +
+        "1. Supabase CLI login.\n" +
+        "2. Project link.\n" +
+        "3. Function folders exist under supabase/functions.",
+    );
+    this.status.functionsDeployed = true;
+
+    // 8. Set encryption secret
+    this.runOrThrow(
+      "Set Supabase secret COREZA_ENCRYPTION_KEY",
+      `npx supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`,
+      "Failed to set Supabase secret COREZA_ENCRYPTION_KEY.\n" +
+        "Check Supabase CLI login and project link.",
+    );
+    this.status.secretsSet = true;
+  }
+
+  prepareMigrationFile() {
+    const schemaPath = path.join(
+      this.projectRoot,
+      "setup",
+      "database-schema.sql",
+    );
+    if (!fs.existsSync(schemaPath)) {
+      throw new Error(
+        "Database schema file not found at setup/database-schema.sql",
+      );
+    }
+
+    const migrationsDir = path.join(
+      this.projectRoot,
+      "supabase",
+      "migrations",
+    );
+    if (!fs.existsSync(migrationsDir)) {
+      fs.mkdirSync(migrationsDir, { recursive: true });
+    }
+
+    const schemaContent = fs.readFileSync(schemaPath, "utf8");
+    const migrationFiles = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    const latest = migrationFiles[migrationFiles.length - 1];
+    if (latest) {
+      const latestContent = fs.readFileSync(
+        path.join(migrationsDir, latest),
+        "utf8",
+      );
+      if (latestContent.trim() === schemaContent.trim()) {
+        console.log(
+          `✅ Latest migration (${latest}) already matches schema; skipping create.`,
+        );
         return;
       }
-
-      const files = fs.readdirSync(migrationsDir);
-      for (const file of files) {
-        if (file.startsWith(version)) {
-          try {
-            fs.unlinkSync(path.join(migrationsDir, file));
-            console.log(`Removed local migration after repair: ${file}`);
-          } catch (removeError) {
-            console.log(
-              `Could not remove local migration ${file}: ${removeError.message}`,
-            );
-          }
-        }
-      }
-    } catch (cleanupError) {
-      console.log(
-        `Encountered an issue while cleaning up local migrations: ${cleanupError.message}`,
-      );
     }
+
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[-:T]/g, "")
+      .slice(0, 14);
+    const migrationPath = path.join(
+      migrationsDir,
+      `${timestamp}_coreza_schema_setup.sql`,
+    );
+    fs.writeFileSync(migrationPath, schemaContent);
+    console.log(`✅ Migration created: ${path.basename(migrationPath)}`);
   }
 
-  async runDatabaseMigrations() {
-    console.log("\n🗄️  Setting up database...");
-
-    try {
-      const schemaPath = path.join(
-        this.projectRoot,
-        "setup",
-        "database-schema.sql",
-      );
-
-      if (!fs.existsSync(schemaPath)) {
-        throw new Error(
-          "Database schema file not found at setup/database-schema.sql",
-        );
-      }
-
-      console.log("Creating database migration...");
-
-      // Ensure migrations directory exists
-      const migrationsDir = path.join(
-        this.projectRoot,
-        "supabase",
-        "migrations",
-      );
-      if (!fs.existsSync(migrationsDir)) {
-        fs.mkdirSync(migrationsDir, { recursive: true });
-      }
-
-      const schemaContent = fs.readFileSync(schemaPath, "utf8");
-      const migrationFiles = fs
-        .readdirSync(migrationsDir)
-        .filter((file) => file.endsWith(".sql"))
-        .sort();
-      const latestMigration = migrationFiles[migrationFiles.length - 1];
-
-      let shouldCreateMigration = true;
-      if (latestMigration) {
-        const latestContent = fs.readFileSync(
-          path.join(migrationsDir, latestMigration),
-          "utf8",
-        );
-        if (latestContent.trim() === schemaContent.trim()) {
-          shouldCreateMigration = false;
-          console.log(
-            `✅ Latest migration (${latestMigration}) already matches setup/database-schema.sql; skipping migration file creation.`,
-          );
-        }
-      }
-
-      if (shouldCreateMigration) {
-        const timestamp = new Date()
-          .toISOString()
-          .replace(/[-:T]/g, "")
-          .slice(0, 14);
-        const migrationPath = path.join(
-          migrationsDir,
-          `${timestamp}_coreza_schema_setup.sql`,
-        );
-        fs.writeFileSync(migrationPath, schemaContent);
-        console.log(`✅ Migration created: ${path.basename(migrationPath)}`);
-      }
-      // Ensure CLI reachable (already checked earlier, but re-ensure)
-      try {
-        execSync("npx supabase --version", {
-          stdio: "ignore",
-          cwd: this.projectRoot,
-          shell: true,
-          env: this.supabaseEnv(),
-        });
-      } catch {
-        console.log("📦 Installing Supabase CLI (dev dependency)...");
-        execSync("npm install -D supabase", {
-          stdio: "inherit",
-          cwd: this.projectRoot,
-          shell: true,
-        });
-      }
-
-      // Ensure project is linked before pushing
-      try {
-        execSync(`npx supabase link --project-ref ${this.config.projectId}`, {
-          stdio: "inherit",
-          cwd: this.projectRoot,
-          shell: true,
-          env: this.supabaseEnv(),
-        });
-      } catch {
-        // If already linked or pushing to local, proceed
-      }
-
-      // Apply the migration
-      console.log("Applying database migration...");
-      try {
-        execSync("npx supabase db push", {
-          stdio: "inherit",
-          cwd: this.projectRoot,
-          shell: true,
-          env: this.supabaseEnv(),
-        });
-        console.log("✅ Database migration applied successfully");
-      } catch (pushError) {
-        console.log("??  Migration push failed. Trying alternative method...");
-
-        const repaired = await this.handleMigrationPushError(
-          pushError.stderr || pushError.stdout || pushError.message || "",
-        );
-        if (repaired) {
-          return;
-        }
-
-        try {
-          if (!this.config.supabaseDbPassword) {
-            this.config.supabaseDbPassword = (
-              await question("Supabase DB Password (postgres role): ")
-            ).trim();
-          }
-
-          if (!this.config.supabaseDbPassword) {
-            throw new Error(
-              "Supabase database password is required for direct push",
-            );
-          }
-
-          const encodedPassword = encodeURIComponent(
-            this.config.supabaseDbPassword,
-          );
-          const directDbUrl = `postgresql://postgres:${encodedPassword}@db.${this.config.projectId}.supabase.co:5432/postgres?sslmode=require`;
-
-          console.log(
-            "Attempting direct database push using db.<project>.supabase.co...",
-          );
-          execSync(`npx supabase db push --db-url "${directDbUrl}"`, {
-            stdio: "inherit",
-            cwd: this.projectRoot,
-            shell: true,
-            env: this.supabaseEnv(),
-          });
-          console.log("? Direct database migration applied successfully");
-          return;
-        } catch (directError) {
-          console.log("??  Direct push attempt failed:", directError.message);
-        }
-
-        console.log("Please run the following commands manually:");
-        console.log(
-          "1. npx supabase link --project-ref " + this.config.projectId,
-        );
-        console.log("2. npx supabase db push");
-        console.log("3. Or apply the schema manually in Supabase SQL Editor");
-      }
-    } catch (error) {
-      console.log("⚠️  Database setup encountered an issue:", error.message);
-      console.log("\nManual setup options:");
-      console.log("1. Run: npx supabase db push");
-      console.log(
-        "2. Or copy contents of setup/database-schema.sql to Supabase SQL Editor",
-      );
-      console.log("3. Or use the migration tool in Supabase dashboard");
-    }
+  async tryMigrationRepair() {
+    // Best-effort: if remote has migration versions not in local, mark them reverted.
+    const probe = spawnSync("npx supabase db push --dry-run", {
+      shell: true,
+      cwd: this.projectRoot,
+      env: this.supabaseEnv(),
+      encoding: "utf8",
+    });
+    const output = `${probe.stdout || ""}\n${probe.stderr || ""}`;
+    const versionMatch = output.match(
+      /supabase migration repair --status reverted (\d+)/,
+    );
+    if (!versionMatch) return false;
+    const version = versionMatch[1];
+    console.log(`🔧 Repairing migration history for version ${version}...`);
+    const repair = spawnSync(
+      `npx supabase migration repair --status reverted ${version}`,
+      {
+        shell: true,
+        cwd: this.projectRoot,
+        env: this.supabaseEnv(),
+        stdio: "inherit",
+      },
+    );
+    return repair.status === 0;
   }
 
   async validateSetup() {
     console.log("\n🔍 Validating setup...");
-
     const errors = [];
     const warnings = [];
 
-    // Check if required files exist
     const requiredFiles = [
       { path: ".env", description: "Frontend environment file" },
       { path: "coreza-backend/.env", description: "Backend environment file" },
@@ -810,107 +629,71 @@ MARKET_STREAM_PORT=8090
       }
     }
 
-    // Check if edge functions exist
-    const requiredFunctions = [
-      {
-        name: "derive-encryption-key",
-        description: "Encryption key derivation function",
-      },
-      { name: "http-request", description: "HTTP request proxy function" },
-    ];
-
-    for (const func of requiredFunctions) {
+    const requiredFunctions = ["derive-encryption-key", "http-request"];
+    for (const name of requiredFunctions) {
       const funcPath = path.join(
         this.projectRoot,
         "supabase",
         "functions",
-        func.name,
+        name,
         "index.ts",
       );
       if (!fs.existsSync(funcPath)) {
-        warnings.push(
-          `Edge function missing: ${func.description} (${func.name})`,
-        );
+        warnings.push(`Edge function missing: ${name}`);
       }
     }
 
-    // Validate environment files have required variables
     if (fs.existsSync(path.join(this.projectRoot, ".env"))) {
-      const frontendEnv = fs.readFileSync(
-        path.join(this.projectRoot, ".env"),
-        "utf8",
-      );
-      const requiredFrontendVars = [
+      const env = fs.readFileSync(path.join(this.projectRoot, ".env"), "utf8");
+      for (const v of [
         "VITE_SUPABASE_URL",
-        "VITE_SUPABASE_PUBLISHABLE_KEY",
         "VITE_SUPABASE_PROJECT_ID",
-      ];
-
-      for (const varName of requiredFrontendVars) {
-        if (!frontendEnv.includes(`${varName}=`)) {
-          errors.push(`Missing frontend environment variable: ${varName}`);
-        }
+        "VITE_SUPABASE_PUBLISHABLE_KEY",
+      ]) {
+        if (!env.includes(`${v}=`)) errors.push(`Missing frontend var: ${v}`);
       }
     }
 
     if (fs.existsSync(path.join(this.projectRoot, "coreza-backend", ".env"))) {
-      const backendEnv = fs.readFileSync(
+      const env = fs.readFileSync(
         path.join(this.projectRoot, "coreza-backend", ".env"),
         "utf8",
       );
-      const requiredBackendVars = [
+      for (const v of [
         "SUPABASE_URL",
+        "SUPABASE_PROJECT_ID",
         "SUPABASE_PUBLISHABLE_KEY",
         "SUPABASE_SECRET_KEY",
         "COREZA_ENCRYPTION_KEY",
-        "SUPABASE_ACCESS_TOKEN",
-        "SUPABASE_DB_PASSWORD",
-      ];
-
-      for (const varName of requiredBackendVars) {
-        if (!backendEnv.includes(`${varName}=`)) {
-          errors.push(`Missing backend environment variable: ${varName}`);
-        }
+      ]) {
+        if (!env.includes(`${v}=`)) errors.push(`Missing backend var: ${v}`);
       }
     }
 
-    // Check migrations directory
     const migrationsDir = path.join(this.projectRoot, "supabase", "migrations");
     if (fs.existsSync(migrationsDir)) {
       const migrations = fs
         .readdirSync(migrationsDir)
-        .filter((file) => file.endsWith(".sql")).length;
-
+        .filter((f) => f.endsWith(".sql")).length;
       if (migrations === 0) {
-        warnings.push(
-          "No database migrations found - database may not be set up",
-        );
+        warnings.push("No database migrations found");
       } else {
         console.log(`✅ Found ${migrations} database migration(s)`);
       }
     } else {
-      warnings.push(
-        "Migrations directory not found - database setup may be incomplete",
-      );
+      warnings.push("Migrations directory not found");
     }
 
-    // Report results
     if (errors.length > 0) {
       console.log("\n❌ Setup validation failed:");
-      errors.forEach((error) => console.log(`  • ${error}`));
-      throw new Error("Setup validation failed - please fix the errors above");
+      errors.forEach((e) => console.log(`  • ${e}`));
+      throw new Error("Setup validation failed");
     }
-
     if (warnings.length > 0) {
       console.log("\n⚠️  Setup warnings:");
-      warnings.forEach((warning) => console.log(`  • ${warning}`));
+      warnings.forEach((w) => console.log(`  • ${w}`));
     }
-
     console.log("\n✅ Setup validation passed");
-
-    if (warnings.length === 0) {
-      console.log("🎯 All components are properly configured!");
-    }
   }
 
   async showCompletionMessage() {
@@ -919,10 +702,12 @@ MARKET_STREAM_PORT=8090
     console.log("\n📋 Setup Summary:");
     console.log("  ✅ Dependencies installed");
     console.log("  ✅ Environment files configured");
-    console.log("  ✅ Supabase project linked");
-    console.log("  ✅ Database schema prepared");
-    console.log("  ✅ Edge functions ready");
-    console.log("  ✅ Configuration validated");
+    if (this.status.linked) console.log("  ✅ Supabase project linked");
+    if (this.status.migrated) console.log("  ✅ Database schema applied");
+    if (this.status.functionsDeployed)
+      console.log("  ✅ Edge functions deployed");
+    if (this.status.secretsSet)
+      console.log("  ✅ Supabase secrets configured");
 
     console.log("\n🚀 Next Steps:");
     console.log("1. Start the frontend: npm run dev");
@@ -932,31 +717,14 @@ MARKET_STREAM_PORT=8090
     );
     console.log("4. Open http://localhost:5173 to access the platform");
 
-    console.log("\n📚 Documentation:");
-    console.log("• Setup guide: docs/SETUP.md");
-    console.log("• Security info: docs/SECURITY.md");
-    console.log("• Deployment: docs/DEPLOYMENT.md");
-
     console.log("\n🔐 Security Notes:");
-    console.log(
-      "• Environment files contain sensitive data - keep them private",
-    );
-    console.log("• Your encryption key has been securely generated");
-    console.log("• Review RLS policies before deploying to production");
-
-    console.log("\n💡 Troubleshooting:");
-    console.log("• If database tables are missing, run: npx supabase db push");
-    console.log(
-      "• For edge function issues, run: npx supabase functions deploy",
-    );
-    console.log("• Check docs/TROUBLESHOOTING.md for common issues");
-
-    console.log("\n🎯 Ready to build your trading algorithms!");
+    console.log("• .env.setup.local contains your access token + DB password — keep it private (gitignored).");
+    console.log("• SUPABASE_SECRET_KEY is in coreza-backend/.env only — never expose to frontend.");
+    console.log("• If a secret was pasted into logs/chat, rotate it from the Supabase dashboard.");
   }
 
   async checkAndStartRedis() {
     console.log("\n🟥 Checking for Redis...");
-
     const check = spawnSync("redis-server", ["--version"], {
       shell: true,
       encoding: "utf8",
@@ -964,19 +732,17 @@ MARKET_STREAM_PORT=8090
 
     if (check.status === 0 && /Redis/i.test(check.stdout)) {
       console.log("✅ Redis is installed.");
-
       try {
         this.startRedisInstances("redis-server");
-        return; // stop here if start was successful
-      } catch (err) {
+        return;
+      } catch {
         console.log(
-          "⚠️ Failed to start Redis automatically. Please start two instances manually on ports 6379.",
+          "⚠️ Failed to start Redis automatically. Please start manually on port 6379.",
         );
         return;
       }
     }
 
-    // Only prints if not installed
     console.log("⚠️ Redis is not installed on this system.");
     if (os.platform() === "win32") {
       console.log("👉 Windows: https://github.com/tporadowski/redis/releases");
@@ -988,29 +754,23 @@ MARKET_STREAM_PORT=8090
   }
 
   startRedisInstances(binaryPath) {
-    console.log("🚀 Starting Redis queue/cache instances in background...");
+    console.log("🚀 Starting Redis in background...");
     this.startRedis(binaryPath, 6379);
-    console.log("✅ Redis instances started on ports 6379");
+    console.log("✅ Redis started on port 6379");
   }
 
   startRedis(binaryPath, port) {
-    console.log(`Starting Redis on port ${port}...`);
-
     const { spawn } = require("child_process");
-
     const redis = spawn(binaryPath, ["--port", String(port)], {
       detached: true,
-      stdio: "ignore", // don’t keep logs open
+      stdio: "ignore",
       shell: true,
     });
-
-    redis.unref(); // allow parent (setup) to exit independently
-
+    redis.unref();
     console.log(`✅ Redis server started on port ${port} (detached)`);
   }
-} // <-- closes the class properly!
+}
 
-// Run setup if called directly
 if (require.main === module) {
   const setup = new CorezaSetup();
   setup.run();

@@ -13,6 +13,7 @@ class SetupValidator {
     console.log("🔍 Validating Coreza setup...\n");
 
     this.checkEnvironmentFiles();
+    this.checkSetupLocalFile();
     this.checkSupabaseConfig();
     this.checkDatabaseSchema();
     this.checkEdgeFunctions();
@@ -28,50 +29,74 @@ class SetupValidator {
   checkEnvironmentFiles() {
     console.log("📝 Checking environment files...");
 
-    // Check frontend .env
+    // Frontend .env
     if (!fs.existsSync(".env")) {
       this.errors.push("Frontend .env file missing");
     } else {
       const frontendEnv = fs.readFileSync(".env", "utf8");
-      if (!frontendEnv.includes("VITE_SUPABASE_URL=")) {
-        this.errors.push("VITE_SUPABASE_URL missing from .env");
-      }
-      if (!frontendEnv.includes("VITE_SUPABASE_PUBLISHABLE_KEY=")) {
-        this.errors.push("VITE_SUPABASE_PUBLISHABLE_KEY missing from .env");
+      for (const v of [
+        "VITE_SUPABASE_URL",
+        "VITE_SUPABASE_PROJECT_ID",
+        "VITE_SUPABASE_PUBLISHABLE_KEY",
+      ]) {
+        if (!frontendEnv.includes(`${v}=`)) {
+          this.errors.push(`${v} missing from .env`);
+        }
       }
     }
 
-    // Check backend .env
+    // Backend .env
     if (!fs.existsSync("coreza-backend/.env")) {
       this.errors.push("Backend .env file missing");
     } else {
       const backendEnv = fs.readFileSync("coreza-backend/.env", "utf8");
-      if (!backendEnv.includes("SUPABASE_URL=")) {
-        this.errors.push("SUPABASE_URL missing from coreza-backend/.env");
+      for (const v of [
+        "SUPABASE_URL",
+        "SUPABASE_PROJECT_ID",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_SECRET_KEY",
+        "COREZA_ENCRYPTION_KEY",
+        "REDIS_QUEUE_URL",
+      ]) {
+        if (!backendEnv.includes(`${v}=`)) {
+          this.errors.push(`${v} missing from coreza-backend/.env`);
+        }
       }
-      if (!backendEnv.includes("SUPABASE_PUBLISHABLE_KEY=")) {
-        this.errors.push("SUPABASE_PUBLISHABLE_KEY missing from coreza-backend/.env");
-      }
-      if (!backendEnv.includes("SUPABASE_SECRET_KEY=")) {
-        this.errors.push(
-          "SUPABASE_SECRET_KEY missing from coreza-backend/.env",
+      // Legacy keys should be gone
+      if (backendEnv.includes("SUPABASE_ANON_KEY=")) {
+        this.warnings.push(
+          "Legacy SUPABASE_ANON_KEY found in coreza-backend/.env — rename to SUPABASE_PUBLISHABLE_KEY.",
         );
       }
-      if (!backendEnv.includes("COREZA_ENCRYPTION_KEY=")) {
-        this.errors.push(
-          "COREZA_ENCRYPTION_KEY missing from coreza-backend/.env",
+      if (backendEnv.includes("SUPABASE_SERVICE_ROLE_KEY=")) {
+        this.warnings.push(
+          "Legacy SUPABASE_SERVICE_ROLE_KEY found in coreza-backend/.env — rename to SUPABASE_SECRET_KEY.",
         );
       }
-      if (!backendEnv.includes("REDIS_QUEUE_URL=")) {
-        this.errors.push("REDIS_QUEUE_URL missing from coreza-backend/.env");
-      }
-      // if (!backendEnv.includes('REDIS_CACHE_URL=')) {
-      //   this.errors.push('REDIS_CACHE_URL missing from coreza-backend/.env');
-      // }
     }
 
     if (this.errors.length === 0) {
       console.log("✅ Environment files configured correctly");
+    }
+  }
+
+  checkSetupLocalFile() {
+    console.log("🔐 Checking setup-only credentials (.env.setup.local)...");
+    if (!fs.existsSync(".env.setup.local")) {
+      this.warnings.push(
+        ".env.setup.local missing — Supabase CLI commands (login/link/db push) require SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD.",
+      );
+      return;
+    }
+    const setupEnv = fs.readFileSync(".env.setup.local", "utf8");
+    for (const v of [
+      "SUPABASE_PROJECT_ID",
+      "SUPABASE_ACCESS_TOKEN",
+      "SUPABASE_DB_PASSWORD",
+    ]) {
+      if (!setupEnv.includes(`${v}=`)) {
+        this.warnings.push(`${v} missing from .env.setup.local`);
+      }
     }
   }
 

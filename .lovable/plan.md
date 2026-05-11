@@ -1,183 +1,136 @@
 
-# Broker Abstraction: Zero Hardcoded Broker Logic
+# Harden `setup/setup.js` Supabase CLI flow + finish key migration
 
-## Goal
-Every broker-specific reference outside of `coreza-backend/src/brokers/{broker}/` config files and `src/nodes/*.json` must be eliminated. Adding a new broker = new node JSONs + new broker config folder. Zero code changes elsewhere.
+Folds the new `SUPABASE_ACCESS_TOKEN` requirement into the same pass that finishes the legacy-key cleanup. All work is in `setup/setup.js`, `setup/validate.js`, the three `.env.example` files, and `supabase/config.template.toml`. No frontend or backend runtime code changes (those already use `VITE_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`).
 
----
+## 1. Re-do credential collection in `setup.js`
 
-## Current Violations Inventory
+Replace `collectSupabaseCredentials` + `validateCredentials` with five strict prompts and validators:
 
-### FRONTEND (src/)
+| Prompt | Stored as | Validator |
+|---|---|---|
+| `Supabase Project URL:` | `supabaseUrl` | regex `^https://([a-z0-9]+)\.supabase\.co/?$` → also sets `projectId` |
+| `Supabase Publishable Key (sb_publishable_...):` | `supabasePublishableKey` | starts with `sb_publishable_` |
+| `Supabase Secret Key (sb_secret_...) [backend only]:` | `supabaseSecretKey` | starts with `sb_secret_`; print backend-only warning |
+| `Supabase Access Token (sbp_...) [CLI setup only]:` | `supabaseAccessToken` | starts with `sbp_` |
+| `Supabase DB Password (postgres role) [used for db push]:` | `supabaseDbPassword` | non-empty; never echoed/logged |
 
-| File | Violation | Severity |
-|------|-----------|----------|
-| `src/utils/streamNameParser.ts` | Hardcoded `if (source.startsWith("binance"))` and `if (source === "alpaca")` parse branches | High |
-| `src/utils/alpacaNews.ts` | Entire file is Alpaca-specific (`AlpacaNewsPayload`, `AlpacaNewsOutput`) | High |
-| `src/hooks/useNodeOutput.ts` | `if (definition?.name === "AlpacaNews")` special-case logic | High |
-| `src/pages/WorkflowEditor.tsx` | Hardcoded `cleanupAlpacaSubscription`, `AlpacaNews` name checks, `alpaca-news/unsubscribe` endpoint | High |
-| `src/pages/MarketSubscriptions.tsx` | Hardcoded `["alpaca", "binance", "dhan", "schwab"]` array, broker-specific colors/emojis | High |
-| `src/utils/reconcileNodeValues.ts` | `migrateAlpacaStreamDataValues()` function checking `definition?.name === "AlpacaStreamData"` | Medium |
-| `src/components/auth/SchwabAuthModal.tsx` | Schwab-specific OAuth modal (hardcoded endpoints, URLs) | Medium |
-| `src/components/nodes/layout/components/LayoutAuthModal.tsx` | `if (definition.auth === "SchwabAuthModal")` conditional rendering | Medium |
+Rules:
+- Each validator throws the exact error string from spec section 3.
+- Helper text printed once before prompts (spec section 9).
+- `loadExistingCredentials` reads new var names only; legacy `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are ignored (legacy values would fail the new prefix check anyway).
+- DB password input read with `terminal: false` style (no echo) where possible; otherwise just don't reprint it.
+- Add `mask(value)` helper → returns `"sb_secret_****" + last4`. Use everywhere a secret would otherwise be logged.
 
-### BACKEND (coreza-backend/src/) — Outside broker config folders
+## 2. Rewrite env-file generation
 
-| File | Violation | Severity |
-|------|-----------|----------|
-| `nodes/executors/BrokerExecutor.ts` | `if (broker === "alpaca" && assetType === "crypto")`, hardcoded `extractAlpacaOrderOwnerIds`/`extractBinanceOrderOwnerIds` imports and switch | Critical |
-| `nodes/executors/PortfolioExecutor.ts` | Alpaca-specific types (`AlpacaAccountResponse`, `AlpacaPosition`, `AlpacaOrder`), `normalizeAlpacaCryptoSymbol`, `sync_from_broker supports alpaca only`, `get_open_algo_orders supports binance only`, hardcoded broker defaults `|| "binance"` | Critical |
-| `nodes/executors/MarketExecutor.ts` | Hardcoded `AlpacaSubscribe`, `BinanceSubscribe` name checks in comments/routing | Medium |
-| `nodes/executors/ToolExecutor.ts` | Hardcoded maps `{ Alpaca: "Market", Binance: "Market", ... }`, `{ AlpacaTrade: "Broker", ... }` | High |
-| `nodes/executors/AIAgentExecutor.ts` | Hardcoded `{ Alpaca: "Broker", ... }`, `{ AlpacaScreener: "Screener", ... }` maps, `nodeName.includes("Alpaca")` | High |
-| `nodes/logic/toolDefinitions.ts` | Hardcoded `{ Alpaca: { description: "..." }, Binance: ... }` per-broker descriptions | High |
-| `nodes/logic/toolOutputProcessor.ts` | Hardcoded lists of broker node names in multiple arrays | High |
-| `utils/streamName.ts` | Hardcoded `if (source === "alpaca_trading")`, `if (source.startsWith("binance"))` branches in parsing and stream-name building | Critical |
-| `utils/credentialValidator.ts` | `switch (serviceType)` with per-broker validation methods | High |
-| `routes/helpers/streamSource.ts` | `if (source === "alpaca" && normalizedAsset === "crypto")` hardcoded asset routing | High |
-| `workflow/subscriptionPolicy.ts` | Hardcoded `nodeNameToSourceMap` with `BinanceStreamData`, `AlpacaStreamData`, etc. | High |
-| `workflow/triggerClassifier.ts` | `STREAMING_NODE_NAMES` hardcoded Set of broker node names | High |
-| `workflow/StreamingLifecycleAdapter.ts` | Hardcoded trading stream arrays for `alpaca_trading`, `binance_trading`, `isTradingSource()` | Critical |
-| `config/oauth.ts` | Already config-driven (good), but `SCHWAB_REDIRECT_URI` constant is acceptable in config |  OK |
-| `services/SubscriptionManager.ts` | `source: 'alpaca'` default hardcoded | Medium |
-| `infra/websocketManager.ts` | `case "alpaca_news"` hardcoded routing | Medium |
-| `backtest/simBroker/FeeModel.ts` | Alpaca comments only | Low |
-| `utils/binanceTimeSync.ts` | Binance-specific utility (should live under `brokers/binance/`) | Medium |
-| `utils/dhanBinaryParser.ts` | Dhan-specific utility (should live under `brokers/dhan/`) | Medium |
-| `utils/schwabStreamingSetup.ts` | Schwab-specific utility (should live under `brokers/schwab/`) | Medium |
+`setupEnvironmentFiles` writes:
 
----
-
-## Implementation Plan
-
-### Phase 1: Config Registry Foundation (Backend)
-
-**1.1 Create `BrokerCapabilities` config interface**
-
-Add to `coreza-backend/src/brokers/types.ts`:
-
-```text
-BrokerCapabilities {
-  id: string                          // "alpaca", "binance"
-  displayName: string                 // "Alpaca", "Binance" 
-  nodeNames: {
-    data: string                      // "Alpaca" (market data node)
-    trade: string                     // "AlpacaTrade"
-    screener?: string                 // "AlpacaScreener"
-    subscribe?: string                // "AlpacaSubscribe"
-    streamData?: string               // "AlpacaStreamData"
-  }
-  category: "Market" | "Broker" | "Screener"
-  streaming: {
-    sourceId: string                  // "alpaca_stream"
-    tradingSourceId?: string          // "alpaca_trading"
-    tradingStreams?: string[]          // ["trade_updates"]
-    newsSourceId?: string             // "alpaca_news"
-  }
-  symbolFormat: {
-    normalize?: (symbol, assetType?) => string
-    parseTradingStreamName?: (stream) => string  // trading stream → symbol
-    parseMarketStreamName?: (stream) => ParsedStream
-  }
-  credentialValidation?: {
-    requiredFields: { key: string; label: string; minLength?: number }[]
-  }
-  orderOwnerExtract?: (data: any) => string
-  assetTypes?: string[]               // ["stock", "crypto"]
-}
+**Frontend `.env`** (no secrets):
+```
+VITE_BACKEND_URL=http://localhost:8000
+VITE_SUPABASE_URL=<url>
+VITE_SUPABASE_PROJECT_ID=<id>
+VITE_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+WEBSOCKET_PORT=8081
+VITE_BACKEND_WS_URL=ws://localhost:8081
+VITE_INACTIVITY_TIMEOUT=600000
 ```
 
-**1.2 Create broker capability configs**
-
-In each `coreza-backend/src/brokers/{broker}/capabilities.ts`, export the capability config. Move `binanceTimeSync.ts`, `dhanBinaryParser.ts`, `schwabStreamingSetup.ts` into their respective broker folders.
-
-**1.3 Create `BROKER_CAPABILITIES` registry**
-
-In `coreza-backend/src/brokers/index.ts`, aggregate all capabilities into a single lookup map, plus helper functions:
-- `getBrokerByNodeName(nodeName)` — reverse-lookup broker from any node name
-- `getStreamingBrokers()` — all brokers with streaming config
-- `getTradingStreams(source)` — get trading stream names from source
-- `getOrderOwnerExtractor(broker)` — get extractor function
-- `getCredentialValidator(serviceType)` — get validation rules
-
-### Phase 2: Backend Elimination of Hardcoded Logic
-
-**2.1 `BrokerExecutor.ts`** — Replace `if (broker === "alpaca")` with `BROKER_CAPABILITIES[broker].symbolFormat.normalize?.()`. Replace hardcoded `extractAlpacaOrderOwnerIds`/`extractBinanceOrderOwnerIds` with `BROKER_CAPABILITIES[broker].orderOwnerExtract?.(data)`.
-
-**2.2 `PortfolioExecutor.ts`** — Replace Alpaca-specific types with generic broker response types. Replace `normalizeAlpacaCryptoSymbol` with `BROKER_CAPABILITIES[broker].symbolFormat.normalize()`. Replace `"sync_from_broker supports alpaca only"` guards with capability checks. Replace `|| "binance"` defaults with explicit broker param requirements.
-
-**2.3 `StreamingLifecycleAdapter.ts`** — Replace hardcoded `getTradingStreams()` with `BROKER_CAPABILITIES[broker].streaming.tradingStreams`. Replace `isTradingSource()` with `Object.values(BROKER_CAPABILITIES).some(b => b.streaming.tradingSourceId === source)`.
-
-**2.4 `utils/streamName.ts`** — Replace broker-specific `if` branches with a loop over `BROKER_CAPABILITIES` entries, using each broker's `symbolFormat.parseMarketStreamName()` and `symbolFormat.parseTradingStreamName()`.
-
-**2.5 `workflow/subscriptionPolicy.ts`** — Auto-generate `nodeNameToSourceMap` from `BROKER_CAPABILITIES` entries: `Object.fromEntries(Object.values(BROKER_CAPABILITIES).filter(b => b.nodeNames.streamData).map(b => [b.nodeNames.streamData, b.streaming.sourceId]))`.
-
-**2.6 `workflow/triggerClassifier.ts`** — Auto-generate `STREAMING_NODE_NAMES` from capabilities: `new Set(Object.values(BROKER_CAPABILITIES).flatMap(b => [b.nodeNames.streamData, b.nodeNames.news].filter(Boolean)))`.
-
-**2.7 `nodes/executors/ToolExecutor.ts` & `AIAgentExecutor.ts`** — Auto-generate category maps from `BROKER_CAPABILITIES` instead of hardcoded `{ Alpaca: "Market", ... }`.
-
-**2.8 `nodes/logic/toolDefinitions.ts`** — Move descriptions into node JSON `description` field or into `BrokerCapabilities.displayName`. Auto-generate from registry.
-
-**2.9 `nodes/logic/toolOutputProcessor.ts`** — Replace hardcoded node name arrays with lookups from capabilities registry.
-
-**2.10 `utils/credentialValidator.ts`** — Replace `switch (serviceType)` with `BROKER_CAPABILITIES[serviceType]?.credentialValidation`. Each broker's validation rules come from its capability config.
-
-**2.11 `routes/helpers/streamSource.ts`** — Replace Alpaca-specific asset routing with generic logic: check `BROKER_CAPABILITIES[source].assetTypes` to build source IDs.
-
-**2.12 `infra/websocketManager.ts`** — Replace `case "alpaca_news"` with generic routing via capabilities.
-
-**2.13 `services/SubscriptionManager.ts`** — Remove hardcoded `source: 'alpaca'` default; require explicit source.
-
-**2.14 Move broker-specific utilities** — `utils/binanceTimeSync.ts` → `brokers/binance/timeSync.ts`, `utils/dhanBinaryParser.ts` → `brokers/dhan/binaryParser.ts`, `utils/schwabStreamingSetup.ts` → `brokers/schwab/streamingSetup.ts`.
-
-### Phase 3: Frontend Elimination of Hardcoded Logic
-
-**3.1 `src/utils/streamNameParser.ts`** — Create a config-driven parser registry. Each broker registers its parse pattern (e.g., Binance uses `@` separator, Alpaca uses `.` separator). The parser iterates the registry instead of `if/else`.
-
-**3.2 `src/utils/alpacaNews.ts` + `src/hooks/useNodeOutput.ts`** — Generalize to a "News output" utility, not Alpaca-specific. The node JSON's `subCategory` or `outputFormat` field should drive output handling, not the node name.
-
-**3.3 `src/pages/WorkflowEditor.tsx`** — Replace `cleanupAlpacaSubscription` with a generic `cleanupStreamSubscription` that reads source from the node definition. Replace `AlpacaNews` name checks with `definition.subCategory === "news"` or similar JSON-driven check.
-
-**3.4 `src/pages/MarketSubscriptions.tsx`** — Replace hardcoded broker array with dynamic list derived from available node JSONs (all nodes with `subCategory === "broker"` or `category === "Market"`). Replace hardcoded color/emoji maps with values from node JSON (add `badgeColor` and `icon` to node definition).
-
-**3.5 `src/utils/reconcileNodeValues.ts`** — Replace `migrateAlpacaStreamDataValues()` with a generic migration function driven by node JSON migration rules or remove if no longer needed.
-
-**3.6 `src/components/auth/SchwabAuthModal.tsx` + `LayoutAuthModal.tsx`** — The `auth` field in node JSON already drives which modal to show. Keep `SchwabAuthModal` as a component but ensure `LayoutAuthModal` uses a registry pattern: `AUTH_MODALS[definition.auth]` instead of `if/else`.
-
-### Phase 4: Node JSON Enrichment
-
-Add fields to node JSONs so the frontend/backend can derive everything from config:
-
-```text
-{
-  "name": "Alpaca",
-  "broker": "alpaca",              // links to BROKER_CAPABILITIES
-  "subCategory": "broker",
-  "streamFormat": "dot",           // "dot" = bars.AAPL, "at" = btcusdt@kline_1m
-  "badgeColor": "emerald",         // for MarketSubscriptions UI
-  "badgeEmoji": "🦙",
-  "description": "Request historical or real-time market data from Alpaca."
-}
+**Backend `coreza-backend/.env`** (no access token, no DB password):
+```
+SUPABASE_URL=<url>
+SUPABASE_PROJECT_ID=<id>
+SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+SUPABASE_SECRET_KEY=<sb_secret_...>
+COREZA_ENCRYPTION_KEY=<generated>
+REDIS_QUEUE_URL=redis://localhost:6379
+PORT=8000
+WEBSOCKET_PORT=8081
+MARKET_STREAM_PORT=8090
+WORKFLOW_JOB_ATTEMPTS=0
+BACKTEST_EXECUTION_MODE=auto
+ALPACA_REDIRECT_URI=http://localhost:8000/api/oauth/alpaca/callback
+BINANCE_REDIRECT_URI=http://localhost:8000/api/oauth/binance/callback
+SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
 ```
 
-### Phase 5: Verification
+**Stream service `.env`** (secret only, no publishable/anon, no access token):
+```
+SUPABASE_URL=<url>
+SUPABASE_SECRET_KEY=<sb_secret_...>
+COREZA_ENCRYPTION_KEY=<generated>
+REDIS_QUEUE_URL=redis://localhost:6379
+MARKET_STREAM_PORT=8090
+```
 
-- Grep for all broker names in files outside `brokers/*/` and `nodes/*.json` — should return zero matches
-- Run existing test suites to verify no regressions
-- Test adding a hypothetical new broker by only creating JSON + config
+**Setup-only `.env.setup.local`** (gitignored, written for re-runs / CI inspection):
+```
+SUPABASE_PROJECT_ID=<id>
+SUPABASE_ACCESS_TOKEN=<sbp_...>
+SUPABASE_DB_PASSWORD=<password>
+```
+Add `.env.setup.local` to root `.gitignore` if absent.
 
----
+## 3. CLI flow with hard-fail error handling
 
-## Files Changed Summary
+Add `runOrThrow(label, command, friendlyError)` that wraps `spawnSync` (`stdio: 'inherit'`, `env: supabaseEnv()` with `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD` injected). On non-zero status: print `friendlyError`, throw — `run()` catches and exits 1. No more silent `try/catch` "manual setup required" branches that print fake success.
 
-### Backend (~25 files)
-- **New**: `brokers/{alpaca,binance,dhan,schwab}/capabilities.ts` (4 files)
-- **Modified**: `BrokerExecutor.ts`, `PortfolioExecutor.ts`, `MarketExecutor.ts`, `ToolExecutor.ts`, `AIAgentExecutor.ts`, `toolDefinitions.ts`, `toolOutputProcessor.ts`, `streamName.ts`, `credentialValidator.ts`, `streamSource.ts`, `subscriptionPolicy.ts`, `triggerClassifier.ts`, `StreamingLifecycleAdapter.ts`, `websocketManager.ts`, `SubscriptionManager.ts`, `brokers/index.ts`, `brokers/types.ts`
-- **Moved**: `binanceTimeSync.ts`, `dhanBinaryParser.ts`, `schwabStreamingSetup.ts` into broker folders
+Replace existing flow (`setupSupabaseProject`, `deployEdgeFunctions`, `runDatabaseMigrations`) with one ordered method `runSupabaseCli()`:
 
-### Frontend (~8 files)
-- **Modified**: `streamNameParser.ts`, `alpacaNews.ts` (renamed to generic), `useNodeOutput.ts`, `WorkflowEditor.tsx`, `MarketSubscriptions.tsx`, `reconcileNodeValues.ts`, `LayoutAuthModal.tsx`
-- **Modified**: Several node JSON files (add `broker`, `streamFormat`, `badgeColor` fields)
+1. `npx supabase --version` (preflight; install dev-dep on miss as today)
+2. `npx supabase login --token "$SUPABASE_ACCESS_TOKEN"` → spec 7.1 error
+3. Generate `supabase/config.toml` from template
+4. `npx supabase link --project-ref <id>` → spec 7.2 error
+5. Create migration file from `setup/database-schema.sql` (existing logic kept)
+6. `npx supabase db push` (env carries `SUPABASE_DB_PASSWORD`, no `--db-url`, no prompt) → spec 7.3 error; keep `handleMigrationPushError` repair-then-retry — but the retry must also throw on failure
+7. `npx supabase functions deploy` → spec 7.4 error
+8. `npx supabase secrets set COREZA_ENCRYPTION_KEY="<key>"` → reuses spec 7.4 message style
 
-### Estimated Effort
-This is a significant refactor touching ~30+ files across both repos. Recommend implementing in phases, with Phase 1-2 (backend) first, then Phase 3-4 (frontend), with tests after each phase.
+Track booleans (`linked`, `migrated`, `functionsDeployed`, `secretsSet`) and only print the matching ✅ line in `showCompletionMessage` if true. If the flow threw, summary is never reached.
+
+## 4. Logging hygiene (spec 8)
+
+- Replace any `console.log(... key ...)` with `mask()`.
+- Never log `supabaseDbPassword` or `encryptionKey` at all.
+- Remove the `npx supabase secrets set COREZA_ENCRYPTION_KEY="..."` echo lines from the manual-fallback block (delete the block entirely — flow is now hard-fail).
+
+## 5. `setup/validate.js` adjustments
+
+- Add backend `.env` check for `SUPABASE_PROJECT_ID` and `SUPABASE_PUBLISHABLE_KEY` (already there).
+- Add frontend `.env` check for `VITE_SUPABASE_PROJECT_ID`.
+- Add new check: `.env.setup.local` exists and contains `SUPABASE_ACCESS_TOKEN=` and `SUPABASE_DB_PASSWORD=` → warning (not error) since the file is local-only and may legitimately be absent in deployed environments.
+- Existing schema-table check is already up to date — leave alone.
+
+## 6. `.env.example` files
+
+- Root `.env.example`: keep current frontend-only template (already correct).
+- `coreza-backend/.env.example`: drop `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` lines (these don't belong in backend runtime). Add `SUPABASE_PROJECT_ID=`.
+- `coreza-backend/market-stream-service/.env.example`: replace `SUPABASE_ANON_KEY=` / `SUPABASE_SERVICE_ROLE_KEY=` with `SUPABASE_SECRET_KEY=`. Rename `REDIS_URL=` → `REDIS_QUEUE_URL=`.
+- New `setup/.env.setup.local.example` documenting the three CLI-only vars.
+
+## 7. `supabase/config.template.toml` — apply guide section 9
+
+- Drop any `[edge_functions]` block.
+- Move `enable_confirmations = false` under `[auth.email]`.
+- Keep per-function `verify_jwt = false` blocks unchanged.
+
+## 8. Out of scope
+
+- Backend runtime code (`coreza-backend/src/config/supabase.ts`) already reads `SUPABASE_SECRET_KEY` with a deprecation fallback — leave as-is.
+- Frontend `src/integrations/supabase/client.ts` — already env-driven.
+- Postgres role string `'service_role'` in RLS policies — that's a database role, not a key.
+- Lovable runtime secrets named `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` — those belong to the connected Supabase project (not the self-host setup). Renaming them in the platform secrets store is a separate ops step you'd do per-project from the dashboard.
+- README/SETUP.md doc updates — flag if you want them in a follow-up; this plan only touches setup scripts and templates.
+
+## Acceptance check (mapped to spec section 10)
+
+All ten checkboxes covered:
+- prompts + sbp_ validation → §1
+- DB password read + non-interactive `db push` (env-injected) → §1, §3 step 6
+- `supabase login --token` step → §3 step 2
+- `link` step → §3 step 4
+- `functions deploy` → §3 step 7
+- `secrets set COREZA_ENCRYPTION_KEY` → §3 step 8
+- masked logging only → §1, §4
+- no false success — booleans gated in `showCompletionMessage` → §3

@@ -45,3 +45,5 @@ docker-compose.override.yml
 # === Build artifacts ===
 frontend/.env
 frontend/dist/
+
+.env.setup.local

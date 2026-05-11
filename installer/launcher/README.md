@@ -7,11 +7,11 @@ A tiny (~2 MB) Windows launcher that:
    - **Coreza Frontend** (`npm run dev` in repo root, port 8080)
    - **Coreza Backend** (`npm run dev` in `coreza-backend/`, port 8000)
    - **Coreza Market Stream** (`npm run dev` in `coreza-backend/market-stream-service/`, port 8090)
-3. Waits for the frontend to respond, then opens `http://localhost:8080` in the default browser.
+3. Detects the frontend port from `vite.config.ts` (fallback `5173`), waits for the frontend to respond, then opens `http://localhost:<detected-port>` in the default browser.
 
 ## Usage
 
-Place `setup.exe` at the repository root (next to `package.json`) and double-click it.
+If `setup.exe` is not already present at repo root, download it from the latest GitHub Release (or build it using the command below), then place it at the repository root (next to `package.json`) and double-click it.
 
 Flags:
 
@@ -34,13 +34,13 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 CI builds it automatically on every tag push (`.github/workflows/build-launcher.yml`)
 and attaches it to the GitHub Release.
 
-## Optional: icon and Windows file properties
+## Optional: Windows file properties
 
-Drop a `icon.ico` next to `versioninfo.json`, then before `go build` run:
+Before `go build`, run:
 
 ```bash
 go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
 goversioninfo -platform-specific=true -o resource_windows_amd64.syso versioninfo.json
 ```
 
-The CI workflow already does this when `icon.ico` is present.
+The CI workflow already does this whenever `versioninfo.json` is present.

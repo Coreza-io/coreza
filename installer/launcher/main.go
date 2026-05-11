@@ -85,7 +85,7 @@ func main() {
 	fmt.Println("\n=== Coreza is running ===")
 	fmt.Printf("  Frontend:      %s\n", url)
 	fmt.Printf("  Backend:       http://localhost:%d\n", backendPort)
-	fmt.Printf("  Market stream: http://localhost:%d\n", marketStreamPort)
+	fmt.Printf("  Market stream: ws://localhost:%d\n", marketStreamPort)
 	fmt.Println("\nClose any of the three console windows to stop that service.")
 	fmt.Println("Re-run setup.exe to start everything again (use --start-only to skip the setup check).")
 	pause()

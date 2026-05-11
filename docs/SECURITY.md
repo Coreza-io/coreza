@@ -127,7 +127,7 @@ const { data } = await supabase
 #### 2. Environment Security
 ```bash
 # ✅ Good: Environment variables for secrets
-SUPABASE_SERVICE_ROLE_KEY=your_secret_here
+SUPABASE_SECRET_KEY=your_secret_here
 
 # ❌ Bad: Hardcoded secrets in code
 const serviceKey = "sbp_abc123...";

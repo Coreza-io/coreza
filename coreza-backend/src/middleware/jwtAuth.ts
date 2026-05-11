@@ -13,11 +13,12 @@ export interface JwtUser {
 
 // ---- Supabase config validation ----
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+const supabasePublishableKey =
+  process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error(
-    "[jwtAuth] SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment",
+    "[jwtAuth] SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY) must be set in environment",
   );
 }
 

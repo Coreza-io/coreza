@@ -111,13 +111,20 @@ function validateEnvironmentVariables(): void {
   
   const required = [
     'SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SECRET_KEY',
     'COREZA_ENCRYPTION_KEY',
   ];
   
   const missing: string[] = [];
   
   for (const varName of required) {
+    if (varName === 'SUPABASE_SECRET_KEY') {
+      if (!process.env.SUPABASE_SECRET_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        missing.push('SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY)');
+      }
+      continue;
+    }
+
     if (!process.env[varName]) {
       missing.push(varName);
     }

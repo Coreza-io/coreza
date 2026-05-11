@@ -226,7 +226,7 @@ await marketDataSubscriber.restoreFromRedis();
 | `WEBSOCKET_PORT` | No | WebSocket port (default: 8081) |
 | `REDIS_URL` | Yes | Redis connection URL |
 | `SUPABASE_URL` | Yes | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
+| `SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key (legacy `SUPABASE_ANON_KEY` also works in backend) |
 
 ### Market Stream Service
 
@@ -235,8 +235,7 @@ await marketDataSubscriber.restoreFromRedis();
 | `MARKET_STREAM_PORT` | No | HTTP port (default: 8090) |
 | `REDIS_URL` | Yes | Redis connection URL |
 | `SUPABASE_URL` | Yes | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key |
+| `SUPABASE_SECRET_KEY` | Yes | Service role key |
 | `COREZA_ENCRYPTION_KEY` | Yes | Encryption key |
 
 ## Monitoring & Health Checks

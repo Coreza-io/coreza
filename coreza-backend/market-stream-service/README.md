@@ -42,8 +42,7 @@ API Servers → SUBSCRIBE to ws:user:* → Forward to WebSocket clients
 | `REDIS_PORT` | No | Redis port (default: 6379) |
 | `REDIS_URL` | Yes | Full Redis connection URL |
 | `SUPABASE_URL` | Yes | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key |
+| `SUPABASE_SECRET_KEY` | Yes | Supabase service role key |
 | `COREZA_ENCRYPTION_KEY` | Yes | Encryption key for credential decryption |
 | `NODE_ENV` | No | Environment (default: development) |
 
@@ -142,7 +141,7 @@ npm run dev
 Common failures:
 - **Missing environment variables**: Check `.env` file matches `.env.example`
 - **Redis connection failed**: Ensure Redis is running (`redis-cli ping`)
-- **Supabase connection failed**: Verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+- **Supabase connection failed**: Verify SUPABASE_URL and SUPABASE_SECRET_KEY
 
 **2. Run health check after startup:**
 ```bash

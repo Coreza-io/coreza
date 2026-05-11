@@ -552,35 +552,40 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
       fs.mkdirSync(migrationsDir, { recursive: true });
     }
 
-    const schemaContent = fs.readFileSync(schemaPath, "utf8");
-    const migrationFiles = fs
+    const managedName = "00000000000000_coreza_initial_schema.sql";
+    // Filenames matching this pattern are considered "Lovable-generated history"
+    // (timestamp-prefixed) and are safe to wipe on self-host install.
+    const lovableHistoryPattern = /^\d{14}_.+\.sql$/;
+    const force = process.argv.includes("--force-reset-migrations");
+
+    const existing = fs
       .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith(".sql"))
-      .sort();
-    const latest = migrationFiles[migrationFiles.length - 1];
-    if (latest) {
-      const latestContent = fs.readFileSync(
-        path.join(migrationsDir, latest),
-        "utf8",
+      .filter((f) => f.endsWith(".sql"));
+
+    const unexpected = existing.filter(
+      (f) => f !== managedName && !lovableHistoryPattern.test(f),
+    );
+    if (unexpected.length > 0 && !force) {
+      throw new Error(
+        `Refusing to wipe supabase/migrations/: unexpected files present:\n  - ${unexpected.join(
+          "\n  - ",
+        )}\nMove them aside or re-run with --force-reset-migrations.`,
       );
-      if (latestContent.trim() === schemaContent.trim()) {
-        console.log(
-          `✅ Latest migration (${latest}) already matches schema; skipping create.`,
-        );
-        return;
-      }
     }
 
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/[-:T]/g, "")
-      .slice(0, 14);
-    const migrationPath = path.join(
-      migrationsDir,
-      `${timestamp}_coreza_schema_setup.sql`,
-    );
+    for (const f of existing) {
+      fs.unlinkSync(path.join(migrationsDir, f));
+    }
+    if (existing.length > 0) {
+      console.log(
+        `🧹 Removed ${existing.length} existing migration file(s) from supabase/migrations/.`,
+      );
+    }
+
+    const schemaContent = fs.readFileSync(schemaPath, "utf8");
+    const migrationPath = path.join(migrationsDir, managedName);
     fs.writeFileSync(migrationPath, schemaContent);
-    console.log(`✅ Migration created: ${path.basename(migrationPath)}`);
+    console.log(`✅ Migration created: ${managedName}`);
   }
 
   async tryMigrationRepair() {

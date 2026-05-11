@@ -170,9 +170,7 @@ class CorezaSetup {
     );
 
     const pick = (...candidates) =>
-      candidates.find(
-        (c) => typeof c === "string" && c.trim().length > 0,
-      );
+      candidates.find((c) => typeof c === "string" && c.trim().length > 0);
 
     this.config.supabaseUrl = pick(
       backendEnv.SUPABASE_URL,
@@ -224,7 +222,9 @@ class CorezaSetup {
 
     // 1. Project URL
     if (this.config.supabaseUrl) {
-      console.log(`Using existing Supabase Project URL: ${this.config.supabaseUrl}`);
+      console.log(
+        `Using existing Supabase Project URL: ${this.config.supabaseUrl}`,
+      );
     } else {
       this.config.supabaseUrl = (
         await question("Supabase Project URL: ")
@@ -337,7 +337,6 @@ VITE_INACTIVITY_TIMEOUT=600000
 SUPABASE_URL=${this.config.supabaseUrl}
 SUPABASE_PROJECT_ID=${this.config.projectId}
 SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
-SUPABASE_ANON_KEY=${this.config.supabasePublishableKey}
 SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
 
 # Encryption
@@ -410,8 +409,9 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     const lines = contents.split(/\r?\n/).map((l) => l.trim());
     if (lines.includes(entry)) return;
     const updated =
-      (contents.endsWith("\n") || contents.length === 0 ? contents : contents + "\n") +
-      `${entry}\n`;
+      (contents.endsWith("\n") || contents.length === 0
+        ? contents
+        : contents + "\n") + `${entry}\n`;
     fs.writeFileSync(gitignorePath, updated);
   }
 
@@ -546,11 +546,7 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
       );
     }
 
-    const migrationsDir = path.join(
-      this.projectRoot,
-      "supabase",
-      "migrations",
-    );
+    const migrationsDir = path.join(this.projectRoot, "supabase", "migrations");
     if (!fs.existsSync(migrationsDir)) {
       fs.mkdirSync(migrationsDir, { recursive: true });
     }
@@ -714,8 +710,7 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     if (this.status.migrated) console.log("  ✅ Database schema applied");
     if (this.status.functionsDeployed)
       console.log("  ✅ Edge functions deployed");
-    if (this.status.secretsSet)
-      console.log("  ✅ Supabase secrets configured");
+    if (this.status.secretsSet) console.log("  ✅ Supabase secrets configured");
 
     console.log("\n🚀 Next Steps:");
     console.log("1. Start the frontend: npm run dev");
@@ -726,9 +721,15 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     console.log("4. Open http://localhost:5173 to access the platform");
 
     console.log("\n🔐 Security Notes:");
-    console.log("• .env.setup.local contains your access token + DB password — keep it private (gitignored).");
-    console.log("• SUPABASE_SECRET_KEY is in coreza-backend/.env only — never expose to frontend.");
-    console.log("• If a secret was pasted into logs/chat, rotate it from the Supabase dashboard.");
+    console.log(
+      "• .env.setup.local contains your access token + DB password — keep it private (gitignored).",
+    );
+    console.log(
+      "• SUPABASE_SECRET_KEY is in coreza-backend/.env only — never expose to frontend.",
+    );
+    console.log(
+      "• If a secret was pasted into logs/chat, rotate it from the Supabase dashboard.",
+    );
   }
 
   async checkAndStartRedis() {

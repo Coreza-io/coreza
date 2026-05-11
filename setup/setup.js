@@ -273,25 +273,25 @@ class CorezaSetup {
       ).trim();
     }
 
-    if (this.config.supabaseAccessToken) {
-      console.log(
-        "Using existing Supabase Personal Access Token from environment files.",
-      );
-    } else {
-      this.config.supabaseAccessToken = (
-        await question("Supabase Personal Access Token: ")
-      ).trim();
-    }
+    // if (this.config.supabaseAccessToken) {
+    //   console.log(
+    //     "Using existing Supabase Personal Access Token from environment files.",
+    //   );
+    // } else {
+    //   this.config.supabaseAccessToken = (
+    //     await question("Supabase Personal Access Token: ")
+    //   ).trim();
+    // }
 
-    if (this.config.supabaseDbPassword) {
-      console.log(
-        "Using existing Supabase database password from environment files.",
-      );
-    } else {
-      this.config.supabaseDbPassword = (
-        await question("Supabase database password: ")
-      ).trim();
-    }
+    // if (this.config.supabaseDbPassword) {
+    //   console.log(
+    //     "Using existing Supabase database password from environment files.",
+    //   );
+    // } else {
+    //   this.config.supabaseDbPassword = (
+    //     await question("Supabase database password: ")
+    //   ).trim();
+    // }
 
     this.config.projectId = this.extractProjectId(this.config.supabaseUrl);
     if (!this.config.projectId) {
@@ -325,13 +325,13 @@ class CorezaSetup {
     }
 
     // NEW: require personal access token
-    if (!this.config.supabaseAccessToken) {
-      throw new Error("Supabase Personal Access Token is required");
-    }
+    // if (!this.config.supabaseAccessToken) {
+    //   throw new Error("Supabase Personal Access Token is required");
+    // }
 
-    if (!this.config.supabaseDbPassword) {
-      throw new Error("Supabase database password is required");
-    }
+    // if (!this.config.supabaseDbPassword) {
+    //   throw new Error("Supabase database password is required");
+    // }
   }
 
   extractProjectId(url) {

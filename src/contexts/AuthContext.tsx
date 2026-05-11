@@ -46,8 +46,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setSession(null);
     setUser(null);
 
-    // Force clear Supabase localStorage tokens to ensure clean state
-    localStorage.removeItem('sb-tiitofotheupylvxivge-auth-token');
   }, []);
 
   const signOut = useCallback(async () => {

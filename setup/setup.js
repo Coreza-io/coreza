@@ -194,18 +194,22 @@ class CorezaSetup {
         process.env.SUPABASE_URL,
       );
 
-    this.config.supabaseAnonKey =
-      this.config.supabaseAnonKey ||
+    this.config.supabasePublishableKey =
+      this.config.supabasePublishableKey ||
       pickValue(
+        backendEnv.SUPABASE_PUBLISHABLE_KEY,
         backendEnv.SUPABASE_ANON_KEY,
         frontendEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
+        process.env.SUPABASE_PUBLISHABLE_KEY,
         process.env.SUPABASE_ANON_KEY,
       );
 
-    this.config.supabaseServiceKey =
-      this.config.supabaseServiceKey ||
+    this.config.supabaseSecretKey =
+      this.config.supabaseSecretKey ||
       pickValue(
+        backendEnv.SUPABASE_SECRET_KEY,
         backendEnv.SUPABASE_SERVICE_ROLE_KEY,
+        process.env.SUPABASE_SECRET_KEY,
         process.env.SUPABASE_SERVICE_ROLE_KEY,
       );
 
@@ -255,21 +259,21 @@ class CorezaSetup {
       ).trim();
     }
 
-    if (this.config.supabaseAnonKey) {
-      console.log("Using existing Supabase Anon Key from environment files.");
+    if (this.config.supabasePublishableKey) {
+      console.log("Using existing Supabase Publishable Key (sb_publishable_…) from environment files.");
     } else {
-      this.config.supabaseAnonKey = (
-        await question("Supabase Anon Key: ")
+      this.config.supabasePublishableKey = (
+        await question("Supabase Publishable Key (sb_publishable_…): ")
       ).trim();
     }
 
-    if (this.config.supabaseServiceKey) {
+    if (this.config.supabaseSecretKey) {
       console.log(
-        "Using existing Supabase Service Role Key from environment files.",
+        "Using existing Supabase Secret Key (sb_secret_…) from environment files.",
       );
     } else {
-      this.config.supabaseServiceKey = (
-        await question("Supabase Service Role Key: ")
+      this.config.supabaseSecretKey = (
+        await question("Supabase Secret Key (sb_secret_…): ")
       ).trim();
     }
 
@@ -314,14 +318,22 @@ class CorezaSetup {
       );
     }
 
-    if (!this.config.supabaseAnonKey.startsWith("eyJ")) {
-      throw new Error('Invalid Anon Key format. Should start with "eyJ"');
+    const isPublishable = this.config.supabasePublishableKey.startsWith("sb_publishable_");
+    const isLegacyPublishable = this.config.supabasePublishableKey.startsWith("eyJ");
+    if (!isPublishable && !isLegacyPublishable) {
+      throw new Error('Invalid Supabase Publishable Key format. Expected prefix sb_publishable_ (legacy eyJ accepted temporarily).');
+    }
+    if (isLegacyPublishable) {
+      console.warn('⚠️ Legacy anon JWT key detected for publishable key. Please migrate to sb_publishable_ format.');
     }
 
-    if (!this.config.supabaseServiceKey.startsWith("eyJ")) {
-      throw new Error(
-        'Invalid Service Role Key format. Should start with "eyJ"',
-      );
+    const isSecret = this.config.supabaseSecretKey.startsWith("sb_secret_");
+    const isLegacySecret = this.config.supabaseSecretKey.startsWith("eyJ");
+    if (!isSecret && !isLegacySecret) {
+      throw new Error('Invalid Supabase Secret Key format. Expected prefix sb_secret_ (legacy eyJ accepted temporarily).');
+    }
+    if (isLegacySecret) {
+      console.warn('⚠️ Legacy service role JWT key detected. Please migrate to sb_secret_ format.');
     }
 
     // NEW: require personal access token
@@ -358,15 +370,15 @@ class CorezaSetup {
     const frontendEnv = `# ="== React App Config ==="
 VITE_API_URL="http://localhost:8000"
 VITE_SUPABASE_PROJECT_ID="${this.config.projectId}"
-VITE_SUPABASE_PUBLISHABLE_KEY="${this.config.supabaseAnonKey}"
+VITE_SUPABASE_PUBLISHABLE_KEY="${this.config.supabasePublishableKey}"
 VITE_SUPABASE_URL="${this.config.supabaseUrl}"
 `;
 
     // Backend .env
     const backendEnv = `# Supabase Configuration
 SUPABASE_URL=${this.config.supabaseUrl}
-SUPABASE_ANON_KEY=${this.config.supabaseAnonKey}
-SUPABASE_SERVICE_ROLE_KEY=${this.config.supabaseServiceKey}
+SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
+SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
 SUPABASE_ACCESS_TOKEN=${this.config.supabaseAccessToken}
 SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
 
@@ -390,7 +402,7 @@ SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
     );
 
     const streamEnv = `SUPABASE_URL=${this.config.supabaseUrl}
-SUPABASE_SERVICE_ROLE_KEY=${this.config.supabaseServiceKey}
+SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
 COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
 REDIS_QUEUE_URL=redis://localhost:6379
 MARKET_STREAM_PORT=8090
@@ -848,8 +860,8 @@ MARKET_STREAM_PORT=8090
       );
       const requiredBackendVars = [
         "SUPABASE_URL",
-        "SUPABASE_ANON_KEY",
-        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_SECRET_KEY",
         "COREZA_ENCRYPTION_KEY",
         "SUPABASE_ACCESS_TOKEN",
         "SUPABASE_DB_PASSWORD",

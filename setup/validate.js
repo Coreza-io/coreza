@@ -49,9 +49,12 @@ class SetupValidator {
       if (!backendEnv.includes("SUPABASE_URL=")) {
         this.errors.push("SUPABASE_URL missing from coreza-backend/.env");
       }
-      if (!backendEnv.includes("SUPABASE_SERVICE_ROLE_KEY=")) {
+      if (!backendEnv.includes("SUPABASE_PUBLISHABLE_KEY=")) {
+        this.errors.push("SUPABASE_PUBLISHABLE_KEY missing from coreza-backend/.env");
+      }
+      if (!backendEnv.includes("SUPABASE_SECRET_KEY=")) {
         this.errors.push(
-          "SUPABASE_SERVICE_ROLE_KEY missing from coreza-backend/.env",
+          "SUPABASE_SECRET_KEY missing from coreza-backend/.env",
         );
       }
       if (!backendEnv.includes("COREZA_ENCRYPTION_KEY=")) {

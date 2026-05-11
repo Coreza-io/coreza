@@ -57,6 +57,7 @@ class SetupValidator {
         "SUPABASE_SECRET_KEY",
         "COREZA_ENCRYPTION_KEY",
         "REDIS_QUEUE_URL",
+        "REDIS_CACHE_URL",
       ]) {
         if (!backendEnv.includes(`${v}=`)) {
           this.errors.push(`${v} missing from coreza-backend/.env`);

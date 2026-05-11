@@ -13,6 +13,7 @@ class SetupValidator {
     console.log("🔍 Validating Coreza setup...\n");
 
     this.checkEnvironmentFiles();
+    this.checkSetupLocalFile();
     this.checkSupabaseConfig();
     this.checkDatabaseSchema();
     this.checkEdgeFunctions();

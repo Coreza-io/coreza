@@ -12,6 +12,21 @@ Before you begin, ensure you have:
 
 ## Quick Setup
 
+### Windows: one-click `setup.exe`
+
+Download `setup.exe` from the latest [GitHub Release](https://github.com/Coreza-io/coreza/releases) (or build it from `installer/launcher/`) and place it at the repo root next to `package.json`. Double-click it.
+
+It will:
+1. Run the interactive setup wizard (`node setup/setup.js`).
+2. Open three console windows (Frontend, Backend, Market Stream) running `npm run dev`.
+3. Open `http://localhost:8080` in your default browser once the frontend is ready.
+
+Re-running `setup.exe` later just relaunches the servers (setup auto-skips when `.env` already exists). Flags: `--setup-only`, `--start-only`, `--no-browser`.
+
+> Make sure Node.js 18+ is installed first: https://nodejs.org
+
+### Manual: any OS
+
 ### 1. Clone the Repository
 
 ```bash

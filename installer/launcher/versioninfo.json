@@ -1,0 +1,26 @@
+{
+  "FixedFileInfo": {
+    "FileVersion":    {"Major": 1, "Minor": 0, "Patch": 0, "Build": 0},
+    "ProductVersion": {"Major": 1, "Minor": 0, "Patch": 0, "Build": 0},
+    "FileFlagsMask":  "3f",
+    "FileFlags":      "00",
+    "FileOS":         "040004",
+    "FileType":       "01",
+    "FileSubType":    "00"
+  },
+  "StringFileInfo": {
+    "Comments":         "Coreza Trading Platform setup and dev launcher",
+    "CompanyName":      "Coreza-io",
+    "FileDescription":  "Coreza Setup & Launcher",
+    "FileVersion":      "1.0.0.0",
+    "InternalName":     "setup.exe",
+    "LegalCopyright":   "Copyright (C) Coreza-io. AGPL-3.0-only.",
+    "OriginalFilename": "setup.exe",
+    "ProductName":      "Coreza Setup & Launcher",
+    "ProductVersion":   "1.0.0.0"
+  },
+  "VarFileInfo": {
+    "Translation": {"LangID": "0409", "CharsetID": "04B0"}
+  },
+  "IconPath": "icon.ico"
+}

@@ -366,6 +366,7 @@ SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
 SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
 COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
 REDIS_QUEUE_URL=redis://localhost:6379
+REDIS_CACHE_URL=redis://localhost:6379
 MARKET_STREAM_PORT=8090
 `;
 

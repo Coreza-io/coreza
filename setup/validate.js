@@ -62,17 +62,6 @@ class SetupValidator {
           this.errors.push(`${v} missing from coreza-backend/.env`);
         }
       }
-      // Legacy keys should be gone
-      if (backendEnv.includes("SUPABASE_ANON_KEY=")) {
-        this.warnings.push(
-          "Legacy SUPABASE_ANON_KEY found in coreza-backend/.env — rename to SUPABASE_PUBLISHABLE_KEY.",
-        );
-      }
-      if (backendEnv.includes("SUPABASE_SERVICE_ROLE_KEY=")) {
-        this.warnings.push(
-          "Legacy SUPABASE_SERVICE_ROLE_KEY found in coreza-backend/.env — rename to SUPABASE_SECRET_KEY.",
-        );
-      }
     }
 
     if (this.errors.length === 0) {

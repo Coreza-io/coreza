@@ -57,9 +57,9 @@ export class WebSocketManager {
   private constructor() {
     // Initialize JWKS for JWT verification with extended timeout and caching
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 
-    if (supabaseUrl && supabaseAnonKey) {
+    if (supabaseUrl && supabasePublishableKey) {
       const jwksUrl = new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`);
       console.log(`🔐 Initializing JWKS from: ${jwksUrl.toString()}`);
 
@@ -69,7 +69,7 @@ export class WebSocketManager {
         cooldownDuration: 30000, // 30 seconds between refetches on error
         cacheMaxAge: 600000, // Cache JWKS for 10 minutes
         headers: {
-          apikey: supabaseAnonKey, // Required by Supabase
+          apikey: supabasePublishableKey, // Required by Supabase
         },
       });
     } else {
@@ -77,9 +77,9 @@ export class WebSocketManager {
         console.warn(
           "⚠️ SUPABASE_URL not set - JWT verification will be disabled",
         );
-      if (!supabaseAnonKey)
+      if (!supabasePublishableKey)
         console.warn(
-          "⚠️ SUPABASE_ANON_KEY not set - JWT verification will be disabled",
+          "⚠️ SUPABASE_PUBLISHABLE_KEY not set - JWT verification will be disabled",
         );
     }
   }
@@ -96,15 +96,17 @@ export class WebSocketManager {
    */
   private async testJwksEndpoint(): Promise<boolean> {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+    const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 
     if (!supabaseUrl) {
       console.warn("⚠️ SUPABASE_URL not set - skipping JWKS health check");
       return false;
     }
 
-    if (!supabaseAnonKey) {
-      console.warn("⚠️ SUPABASE_ANON_KEY not set - skipping JWKS health check");
+    if (!supabasePublishableKey) {
+      console.warn(
+        "⚠️ SUPABASE_PUBLISHABLE_KEY not set - skipping JWKS health check",
+      );
       return false;
     }
 
@@ -118,7 +120,7 @@ export class WebSocketManager {
       const response = await fetch(jwksUrl, {
         signal: controller.signal,
         headers: {
-          apikey: supabaseAnonKey, // Required by Supabase
+          apikey: supabasePublishableKey, // Required by Supabase
         },
       });
       clearTimeout(timeoutId);
@@ -262,10 +264,10 @@ export class WebSocketManager {
     try {
       if (!this.jwks) {
         console.error(
-          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_ANON_KEY",
+          "❌ JWKS not initialized - check SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY",
         );
         throw new Error(
-          "JWKS not initialized - SUPABASE_URL and SUPABASE_ANON_KEY required",
+          "JWKS not initialized - SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY required",
         );
       }
 
@@ -586,7 +588,6 @@ export class WebSocketManager {
 
           // Parse message payload
           const payload = JSON.parse(message);
-
 
           // Forward to all connected WebSocket clients for this user
           const userClients = this.clients.get(userId);

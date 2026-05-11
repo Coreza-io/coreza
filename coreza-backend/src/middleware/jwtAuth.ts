@@ -13,11 +13,11 @@ export interface JwtUser {
 
 // ---- Supabase config validation ----
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error(
-    "[jwtAuth] SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment"
+    "[jwtAuth] SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment",
   );
 }
 
@@ -30,10 +30,10 @@ const jwks = createRemoteJWKSet(
   new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`),
   {
     headers: {
-      apikey: supabaseAnonKey,
+      apikey: supabasePublishableKey,
     },
     cacheMaxAge: 60 * 60 * 1000, // 1 hour
-  }
+  },
 );
 
 // ---- Core verification helper ----
@@ -124,7 +124,7 @@ function jwtVerifyMiddleware(options: JwtVerifyOptions = {}) {
 export function attachUserContext(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) {
   const userId = req.user?.id;
 

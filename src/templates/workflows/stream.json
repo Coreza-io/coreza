@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "st-stream",
+      "type": "AlpacaStreamListener",
+      "position": { "x": 80, "y": 200 },
+      "data": { "label": "Market Stream" }
+    },
+    {
+      "id": "st-rsi",
+      "type": "RSI",
+      "position": { "x": 380, "y": 200 },
+      "data": { "label": "RSI" }
+    },
+    {
+      "id": "st-if",
+      "type": "If",
+      "position": { "x": 680, "y": 200 },
+      "data": { "label": "Signal Check" }
+    },
+    {
+      "id": "st-portfolio",
+      "type": "Portfolio",
+      "position": { "x": 980, "y": 200 },
+      "data": { "label": "Place Order" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "st-stream", "target": "st-rsi", "type": "default" },
+    { "id": "e2", "source": "st-rsi", "target": "st-if", "type": "default" },
+    { "id": "e3", "source": "st-if", "target": "st-portfolio", "type": "default" }
+  ]
+}

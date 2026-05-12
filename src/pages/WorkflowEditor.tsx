@@ -76,6 +76,7 @@ import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHis
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
+import { getTemplate, isValidTemplate } from "@/templates/workflows";
 import { reconcileNodeValues } from "@/utils/reconcileNodeValues";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
 import { useWorkflowPersistence } from "@/hooks/useWorkflowPersistence";
@@ -979,7 +980,7 @@ const WorkflowEditorContent = () => {
 
     const doLoad = async () => {
       if (isNewWorkflow) {
-        // New workflow — generate smart name, start fresh
+        // New workflow — generate smart name, seed from selected template
         setLoading(true);
         try {
           const name = await generateNewWorkflowName(!!projectId);
@@ -987,8 +988,18 @@ const WorkflowEditorContent = () => {
         } catch {
           setWorkflowName(projectId ? "New Project Workflow" : "My workflow 1");
         }
-        setNodes(stampNodesWithWorkflowSession(initialNodes));
-        setEdges(initialEdges);
+        const templateParam = searchParams.get("template");
+        let template = getTemplate(templateParam);
+        if (!isValidTemplate(template)) {
+          toast({
+            title: "Template unavailable",
+            description: `Template "${templateParam}" references missing nodes. Loaded blank canvas instead.`,
+            variant: "destructive",
+          });
+          template = getTemplate("custom");
+        }
+        setNodes(stampNodesWithWorkflowSession(template.nodes));
+        setEdges(template.edges);
         setIsActive(false);
         setLoading(false);
         setHasLoadedWorkflowId("new");

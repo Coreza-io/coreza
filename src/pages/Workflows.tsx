@@ -58,6 +58,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
+import { TemplateChooserDialog } from "@/components/workflow/TemplateChooserDialog";
+import type { TemplateId } from "@/templates/workflows";
 
 interface Workflow {
   id: string;
@@ -81,6 +83,7 @@ const Workflows = () => {
     null,
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -301,18 +304,13 @@ const Workflows = () => {
               : "Manage your trading automation workflows"}
           </p>
         </div>
-        <Link
-          to={
-            projectId
-              ? `/dashboard/workflow/new?project=${projectId}`
-              : "/dashboard/workflow/new"
-          }
+        <Button
+          onClick={() => setTemplateDialogOpen(true)}
+          className="bg-gradient-primary hover:shadow-glow"
         >
-          <Button className="bg-gradient-primary hover:shadow-glow">
-            <Plus className="h-4 w-4 mr-2" />
-            New Workflow
-          </Button>
-        </Link>
+          <Plus className="h-4 w-4 mr-2" />
+          New Workflow
+        </Button>
       </div>
 
       <div className="flex items-center gap-4">
@@ -488,21 +486,27 @@ const Workflows = () => {
               : "Create your first workflow to start trading"}
           </p>
           {!searchQuery && (
-            <Link
-              to={
-                projectId
-                  ? `/dashboard/workflow/new?project=${projectId}`
-                  : "/dashboard/workflow/new"
-              }
+            <Button
+              onClick={() => setTemplateDialogOpen(true)}
+              className="bg-gradient-primary"
             >
-              <Button className="bg-gradient-primary">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Your First Workflow
-              </Button>
-            </Link>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Your First Workflow
+            </Button>
           )}
         </motion.div>
       )}
+
+      <TemplateChooserDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSelect={(templateId: TemplateId) => {
+          const params = new URLSearchParams();
+          params.set("template", templateId);
+          if (projectId) params.set("project", projectId);
+          navigate(`/dashboard/workflow/new?${params.toString()}`);
+        }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog

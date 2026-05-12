@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {
+      "id": "hello-node",
+      "type": "FinnHub",
+      "position": { "x": 100, "y": 100 },
+      "data": { "label": "Welcome to Coreza!" }
+    }
+  ],
+  "edges": []
+}

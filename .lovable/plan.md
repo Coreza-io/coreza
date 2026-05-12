@@ -1,72 +1,70 @@
-
-# Simple Windows `setup.exe` launcher — runs setup, then boots everything
+# Workflow Template Picker on New Workflow
 
 ## Goal
-A single double-clickable `setup.exe` at the repo root that:
-1. Runs `node setup/setup.js` (existing logic — installs deps, configures `.env`, migrations, etc.).
-2. After setup succeeds, **starts all three dev servers** and **opens the frontend in the default browser**.
+When the user clicks **New Workflow**, open a modal offering three starter templates. The chosen template seeds the editor's nodes/edges. "Custom" preserves today's default (single FinnHub welcome node).
 
-The `.exe` stays a thin launcher; no business logic moves into it.
+## UX flow
 
-## Approach: tiny Go launcher
+1. On `/dashboard/workflows`, the **New Workflow** button no longer navigates immediately. It opens a `TemplateChooserDialog`.
+2. Dialog shows three cards in a responsive grid:
+   - **Backtest** – icon `backtest.svg`, copy: "Historical strategy simulation with BacktestInit + indicators + portfolio."
+   - **Stream** – icon `broker.svg`, copy: "Live market stream with real-time signals and order routing."
+   - **Custom** – icon `compute.svg`, copy: "Start from a blank canvas with one starter node."
+3. Selecting a card navigates to `/dashboard/workflow/new?template=<backtest|stream|custom>` (preserving `?project=` if present).
+4. `WorkflowEditor` reads the `template` query param on first load and seeds nodes/edges from the matching template instead of `initialNodes`.
+5. The same dialog opens from the empty-state "Create Your First Workflow" button.
 
-Same rationale as before — ~2 MB static PE binary, no runtime, easy CI cross-compile from Linux. Alternatives (`pkg`, `ps2exe`, Bat2Exe, Node SEA) bring runtime bloat or AV/SmartScreen problems.
+## Templates
 
-## Launcher behavior (what `setup.exe` does, in order)
+Templates live as static JSON in `src/templates/workflows/`:
 
-1. **Resolve repo root** = directory containing `setup.exe`. `chdir` there.
-2. **Check `node` is on PATH.** If missing → print Node.js LTS download URL, `pause`, exit 1.
-3. **Run setup**: spawn `node setup\setup.js` with inherited stdio so existing readline prompts work unchanged. Wait for exit. If non-zero → `pause`, exit with same code.
-4. **Detect first-run vs re-run**: if user passes `--setup-only` flag (or double-clicks while holding Shift — optional, skip), stop here. Otherwise continue.
-5. **Launch the three services**, each in its **own new console window** so logs are separated and a user can close one without killing the others. On Windows this is done via `cmd /c start "<title>" cmd /k "<command>"`:
-   - Window title `Coreza Frontend` → `cmd /k "npm run dev"` in repo root.
-   - Window title `Coreza Backend` → `cmd /k "npm run dev"` in `coreza-backend\`.
-   - Window title `Coreza Market Stream` → `cmd /k "npm run dev"` in `coreza-backend\market-stream-service\`.
-6. **Wait for the frontend to be reachable.** Poll `http://localhost:8080` (or whatever port `vite.config.ts` uses — read it from the file at launch time, fallback `5173`) every 500 ms for up to 60 s.
-7. **Open the browser** to the frontend URL via `rundll32 url.dll,FileProtocolHandler <url>` (the standard Windows "open default browser" call).
-8. Print a summary in the launcher window:
-   - Frontend: http://localhost:<port>
-   - Backend:  http://localhost:8000
-   - Market stream: ws://localhost:8090
-   - "Close any of the three console windows to stop that service. Re-run setup.exe to start again."
-9. `pause` so the launcher window stays open for the user to read.
+```text
+src/templates/workflows/
+  backtest.json     # pre-built backtest pipeline
+  stream.json       # pre-built live stream pipeline
+  custom.json       # equivalent to today's initialNodes (single FinnHub welcome)
+  index.ts          # typed registry: { backtest, stream, custom }
+```
 
-### Re-run UX
-On subsequent double-clicks `setup/setup.js` already detects existing `.env` and skips re-prompting (it loads existing credentials). So a re-run effectively becomes "validate + relaunch servers" — no extra flag plumbing required. We rely on the existing setup.js behavior; no changes to it.
+Each JSON matches the existing workflow export shape (`{ nodes: Node[], edges: Edge[] }`) so it round-trips cleanly through `stampNodesWithWorkflowSession` and the editor.
 
-### Optional flags (nice-to-have, low cost)
-- `setup.exe --setup-only` → stop after step 3.
-- `setup.exe --start-only` → skip setup, jump straight to step 5 (for users who just want to relaunch services).
-- `setup.exe --no-browser` → skip step 7.
+For initial content:
+- `custom.json` = the current `initialNodes` array (FinnHub "Welcome to Coreza!" node) + empty edges. No behavior change for users who pick Custom.
+- `backtest.json` = minimal but runnable: `BacktestInit` → `RSI` indicator → `IF` → `Portfolio` (place_order) with sensible defaults and connecting edges.
+- `stream.json` = minimal: `Alpaca` (or `Binance`) market subscription stream node → `RSI` → `IF` → `Portfolio`.
 
-## Files added
+Node IDs in JSON use stable slugs (e.g. `bt-init`, `bt-rsi`); on load we run them through `stampNodesWithWorkflowSession` (already handles per-session re-stamping). Positions are pre-laid-out left→right so the canvas looks tidy on first open.
 
-- `installer/launcher/main.go` — ~80 lines of Go covering the steps above.
-- `installer/launcher/go.mod`
-- `installer/launcher/icon.ico` — Coreza icon.
-- `installer/launcher/versioninfo.json` — Windows file properties (ProductName "Coreza Setup & Launcher", company, version) embedded via `goversioninfo`.
-- `.github/workflows/build-launcher.yml` — Go setup, `go generate` for icon/versioninfo embedding, cross-compile:
-  ```
-  GOOS=windows GOARCH=amd64 go build \
-    -ldflags="-s -w" \
-    -o setup.exe ./installer/launcher
-  ```
-  Upload as workflow artifact and attach to GitHub Releases on tag pushes. Do **not** use `-H=windowsgui` — we want the console visible.
-- Optionally commit the built `setup.exe` at repo root so a fresh `git clone` is immediately double-clickable, with CI verifying it stays in sync.
+## Files to add
 
-## Documentation
+- `src/components/workflow/TemplateChooserDialog.tsx` — shadcn `Dialog` with 3 selectable cards, accepts `open`, `onOpenChange`, `onSelect(templateId, projectId?)`. Uses framer-motion for hover lift, semantic tokens only.
+- `src/templates/workflows/custom.json`
+- `src/templates/workflows/backtest.json`
+- `src/templates/workflows/stream.json`
+- `src/templates/workflows/index.ts` — exports a typed `workflowTemplates` map and a `TemplateId = 'backtest' | 'stream' | 'custom'` type; loads JSON via `import` so Vite bundles them.
 
-Update `docs/SETUP.md` Quick Setup section:
+## Files to edit
 
-> **Windows users:** double-click `setup.exe` in the repo root. It runs the setup wizard, then opens three console windows (frontend, backend, market-stream) and launches the app in your default browser. Make sure Node.js 18+ is installed first (https://nodejs.org).
->
-> Re-running `setup.exe` later just relaunches the servers (setup is skipped if already configured). Pass `--start-only` to skip the setup check, or `--setup-only` to reconfigure without launching.
+- `src/pages/Workflows.tsx`
+  - Replace the `<Link to="/dashboard/workflow/new">` wrappers around both **New Workflow** buttons with `<Button onClick={() => setTemplateDialogOpen(true)}>`.
+  - Add `templateDialogOpen` state and render `<TemplateChooserDialog>`.
+  - On select: `navigate(\`/dashboard/workflow/new?template=${id}${projectId ? \`&project=${projectId}\` : ''}\`)`.
+
+- `src/pages/WorkflowEditor.tsx`
+  - Read `searchParams.get('template')` (default `'custom'`).
+  - Replace the hardcoded `initialNodes` reference inside `doLoad()`'s `isNewWorkflow` branch with a lookup into `workflowTemplates[templateId]`, falling back to `custom`.
+  - Keep the module-level `initialNodes` only as the default for `useNodesState` initial render (or change it to `workflowTemplates.custom.nodes`); the real seeding happens in the effect.
+  - No other behavior changes — `stampNodesWithWorkflowSession` and existing save flow handle the rest.
 
 ## Out of scope
-- No wizard UI, no prerequisite auto-install, no Inno Setup.
-- No changes to `setup/setup.js` itself.
-- No process-supervision/restart logic — closing a console window stops that service, by design.
-- No code signing yet (CI hook can be added later when a cert is available).
 
-## Result
-One ~2 MB `setup.exe` at repo root. Double-click → setup runs (or skips if already configured) → three labeled console windows appear with the dev servers → browser opens to the frontend automatically.
+- No backend/database changes — templates are bundled client-side JSON.
+- No template management UI (create/edit/delete user templates).
+- No changes to existing workflows or the executor/runtime.
+- No new node types; templates only compose existing nodes from `nodeManifest`.
+
+## Technical notes
+
+- Template JSON is validated lightly at load time: if a template references a node `type` not in `nodeManifest`, fall back to `custom` and toast a warning (defensive against renamed nodes).
+- Dialog opens on the same route, so deep-linking `/dashboard/workflow/new?template=backtest` (e.g. from docs) also works without going through the picker.
+- All visuals use semantic tokens (`bg-card`, `border-border`, `text-muted-foreground`, `bg-gradient-primary`); no hardcoded colors.

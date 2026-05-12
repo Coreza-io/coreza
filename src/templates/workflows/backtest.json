@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "bt-init",
+      "type": "BacktestInit",
+      "position": { "x": 80, "y": 200 },
+      "data": { "label": "Backtest Init" }
+    },
+    {
+      "id": "bt-rsi",
+      "type": "RSI",
+      "position": { "x": 380, "y": 200 },
+      "data": { "label": "RSI" }
+    },
+    {
+      "id": "bt-if",
+      "type": "If",
+      "position": { "x": 680, "y": 200 },
+      "data": { "label": "Signal Check" }
+    },
+    {
+      "id": "bt-portfolio",
+      "type": "Portfolio",
+      "position": { "x": 980, "y": 200 },
+      "data": { "label": "Place Order" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "bt-init", "target": "bt-rsi", "type": "default" },
+    { "id": "e2", "source": "bt-rsi", "target": "bt-if", "type": "default" },
+    { "id": "e3", "source": "bt-if", "target": "bt-portfolio", "type": "default" }
+  ]
+}

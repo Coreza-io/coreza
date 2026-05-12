@@ -136,6 +136,8 @@ type AlpacaAccountResponse = {
   buying_power?: string | number;
   equity?: string | number;
   portfolio_value?: string | number;
+  multiplier?: string | number;
+  initial_margin?: string | number;
 };
 
 type AlpacaPosition = {
@@ -150,11 +152,12 @@ type AlpacaPosition = {
 type AlpacaOrder = {
   id?: string;
   client_order_id?: string;
-  symbol?: string;
-  qty?: string | number;
-  side?: string;
-  type?: string;
-  status?: string;
+  symbol: string;
+  qty: string | number;
+  side: string;
+  type: string;
+  status: string;
+  timeInForce: string;
 };
 
 function normalizeAlpacaCryptoSymbol(symbol: any, assetClass?: string): string {
@@ -611,7 +614,9 @@ export class PortfolioExecutor implements INodeExecutor {
   }
 
   private supportsAlgoOrders(broker?: string): boolean {
-    const brokerKey = String(broker || "").trim().toLowerCase();
+    const brokerKey = String(broker || "")
+      .trim()
+      .toLowerCase();
     return Boolean(BROKER_CAPABILITIES[brokerKey]?.supportsAlgoOrders);
   }
 
@@ -625,13 +630,14 @@ export class PortfolioExecutor implements INodeExecutor {
       {
         id: `portfolio-sync-${operation}`,
         name: broker,
+        category: "Broker",
         node_type: broker,
         subCategory: broker,
         values: {
           operation,
           ...params,
         },
-      } as WorkflowNode & { subCategory?: string },
+      } as WorkflowNode,
       {},
       context,
     );
@@ -713,8 +719,8 @@ export class PortfolioExecutor implements INodeExecutor {
       const baseCurrency = String(account.currency || "USD").toUpperCase();
       const cash = toNumber(account.cash) ?? 0;
       const buyingPower = toNumber(account.buying_power) ?? cash;
-      const margin = toNumber(account.multiplier);
-      const equity = toNumber(account.equity);
+      const margin = toNumber(account.multiplier) ?? 1;
+      const equity = toNumber(account.equity) ?? 1;
       const initialMargin = toNumber(account.initial_margin);
       pm.initializePortfolio(baseCurrency, cash);
 
@@ -789,8 +795,9 @@ export class PortfolioExecutor implements INodeExecutor {
           symbol: normalizedSymbol,
           side,
           origQty: orderQty,
-          orderType: order.type,
-          status: order.status,
+          orderType: order.type ?? "",
+          status: order.status ?? "unknown",
+          timeInForce: order.timeInForce ?? "",
         });
 
         syncedOrders.push({
@@ -968,7 +975,7 @@ export class PortfolioExecutor implements INodeExecutor {
       stop_price: opts.stopPrice,
       trail_percent: opts.trailPercent,
       trail_price: opts.trailPrice,
-      timeInForce: opts.timeInForce,
+      timeInForce: opts.timeInForce || "",
       tag: opts.tag,
     };
   }
@@ -1293,8 +1300,8 @@ export class PortfolioExecutor implements INodeExecutor {
             executionId: params.executionId,
             symbol,
             side: params.side,
-            filledQty,
-            fillPrice: avgFillPrice,
+            filledQty: filledQty ?? 0,
+            fillPrice: avgFillPrice ?? 0,
             feeAmount: feeAmount ?? 0,
             status: normalizedStatus,
             baseCurrency,
@@ -1793,38 +1800,6 @@ export class PortfolioExecutor implements INodeExecutor {
     return leanSuccess({
       positions: positions.map((p) => formatPositionWithPnlPercent(p)),
       positions_count: positions.length,
-    });
-  }
-
-  private brokerGetCash(
-    pm: PortfolioManager,
-    baseCurrency: string,
-  ): NodeResult {
-    const cash = pm.getCash();
-    return leanSuccess({
-      cash,
-      buying_power: cash[baseCurrency] || 0,
-    });
-  }
-
-  private brokerGetEquity(
-    pm: PortfolioManager,
-    baseCurrency: string,
-  ): NodeResult {
-    const state = pm.getPortfolioState(baseCurrency);
-    const positionsValue = state.positions.reduce(
-      (s, p) => s + p.marketValue,
-      0,
-    );
-    return leanSuccess({
-      total_equity: state.totalEquity,
-      cash_base: pm.getCash()[baseCurrency] || 0,
-      positions_value: positionsValue,
-      peak_equity: state.peakEquity,
-      drawdown_pct:
-        state.peakEquity > 0
-          ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
-          : 0,
     });
   }
 

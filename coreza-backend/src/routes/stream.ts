@@ -1084,25 +1084,27 @@ router.post("/unregister", async (req, res) => {
         "ORDER_TRADE_UPDATE",
         "executionReport",
       ]);
+      const streamTypes = listener.streamTypes ?? [];
+
       // Split trading lifecycle marker from market stream types
-      const hasOrderUpdate = listener.streamTypes.some((streamName) =>
+      const hasOrderUpdate = streamTypes.some((streamName) =>
         ORDER_UPDATE_MARKERS.has(streamName),
       );
-      const { marketstreamType, tradingstreamType } =
-        listener.streamTypes.reduce(
-          (acc, t: string) => {
-            if (ORDER_UPDATE_MARKERS.has(t)) {
-              acc.tradingstreamType.push(t);
-            } else {
-              acc.marketstreamType.push(t);
-            }
-            return acc;
-          },
-          {
-            marketstreamType: [] as string[],
-            tradingstreamType: [] as string[],
-          },
-        );
+
+      const { marketstreamType, tradingstreamType } = streamTypes.reduce(
+        (acc, t: string) => {
+          if (ORDER_UPDATE_MARKERS.has(t)) {
+            acc.tradingstreamType.push(t);
+          } else {
+            acc.marketstreamType.push(t);
+          }
+          return acc;
+        },
+        {
+          marketstreamType: [] as string[],
+          tradingstreamType: [] as string[],
+        },
+      );
 
       // Only unsubscribe trading if this was a market/crypto/stream source
       // (not if source is already a trading source)
@@ -1115,7 +1117,10 @@ router.post("/unregister", async (req, res) => {
           symbols: ["*"],
           streamType: tradingstreamType,
           marketType: listener.marketType,
-          scope: listener.scope,
+          scope:
+            listener.scope === "global" || listener.scope === "workflow"
+              ? listener.scope
+              : undefined,
           environment: listener.environment,
           targetWorkflowId: workflowId,
         });
@@ -1135,7 +1140,10 @@ router.post("/unregister", async (req, res) => {
         interval: listener.interval,
         depth_levels: listener.depth_levels,
         environment: listener.environment,
-        scope: listener.scope,
+        scope:
+          listener.scope === "global" || listener.scope === "workflow"
+            ? listener.scope
+            : undefined,
         targetWorkflowId: workflowId,
       });
     }

@@ -139,7 +139,7 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
           maxConcurrency,
           continueOnError,
           useRedisStorage: true,
-          executionMode: context.executionMode,
+          executionMode: (context as any).executionMode,
           doneEdges,
           parentNodes: context.nodes,
           parentEdges: context.edges,
@@ -184,7 +184,7 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       console.log(
         `🛑 Loop ${node.id}: Workflow cancelled via AbortSignal, stopping`,
       );
-      return { output: [], control: { cancelled: true } };
+      return { output: [], control: { cancelled: true } as any };
     }
 
     const batch = items.slice(startIndex, startIndex + batchSize);

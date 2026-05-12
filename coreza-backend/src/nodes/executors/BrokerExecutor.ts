@@ -223,7 +223,7 @@ export class BrokerExecutor implements INodeExecutor {
             runId: context?.runId,
             symbol: String(resolvedParams?.symbol || ""),
             createdAt: new Date().toISOString(),
-            clientOrderId: preRegisteredClientOrderId,
+            clientOrderId: preRegisteredClientOrderId || "",
           });
         } catch (err) {
           console.warn("Failed to pre-save order-owner mapping", err);
@@ -314,7 +314,17 @@ export class BrokerExecutor implements INodeExecutor {
       return toNodeResult(normalized);
     } catch (error) {
       console.error(`❌ [BROKER] Execution failed:`, error);
-      let enrichedError = error.response.data;
+      let enrichedError =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as any).response === "object" &&
+        (error as any).response !== null &&
+        "data" in (error as any).response
+          ? (error as any).response.data
+          : error instanceof Error
+            ? error.message
+            : String(error);
 
       if (axios.isAxiosError(error)) {
         const code = error.response?.data?.code;
@@ -377,15 +387,17 @@ export class BrokerExecutor implements INodeExecutor {
     broker: string,
     operation: string,
   ): Promise<any> {
+    type RequestParams = Record<string, any>;
     let allData: Record<string, any[]> = {};
     let pageToken: string | null = null;
     let requestCount = 0;
 
     do {
       // Add page token if we have one
-      const pageParams = pageToken
-        ? { ...baseParams, [pagination.paramField]: pageToken }
-        : baseParams;
+      const pageParams: RequestParams = {
+        ...baseParams,
+        ...(pageToken ? { [pagination.paramField]: pageToken } : {}),
+      };
 
       // Rate limit between requests (except first)
       if (requestCount > 0) {

@@ -37,12 +37,13 @@ export class CashSnapshotRepository {
   static async batchInsert(rows: CashSnapshotRow[]): Promise<void> {
     if (rows.length === 0) return;
 
-    const { error } = await supabase
-      .from("cash_snapshots")
-      .insert(rows);
+    const { error } = await supabase.from("cash_snapshots").insert(rows as any);
 
     if (error) {
-      logger.error({ error: error.message, count: rows.length }, "snapshot insert failed");
+      logger.error(
+        { error: error.message, count: rows.length },
+        "snapshot insert failed",
+      );
       throw error;
     }
 

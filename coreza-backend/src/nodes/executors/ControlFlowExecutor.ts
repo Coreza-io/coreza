@@ -422,7 +422,7 @@ export class ControlFlowExecutor implements INodeExecutor {
           isLastBatch: Boolean(v2Result.control?.isLastBatch),
         },
         control: v2Result.control,
-        meta: v2Result.meta,
+        meta: "meta" in v2Result ? (v2Result as any).meta : undefined,
       };
     }
 

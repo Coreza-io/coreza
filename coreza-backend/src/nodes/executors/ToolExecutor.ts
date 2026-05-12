@@ -9,7 +9,11 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 import { buildExecutorCategoryMap } from "../../brokers/capabilities";
 
 export class ToolExecutor implements INodeExecutor {
@@ -18,15 +22,9 @@ export class ToolExecutor implements INodeExecutor {
   async execute(
     node: WorkflowNode,
     input: NodeInput,
-    context?: any
+    context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
-    const normalizeCtx: NormalizeContext = {
-      nodeId: node.id,
-      nodeName: node.name,
-      category: this.category,
-      startTime,
-    };
 
     try {
       // Check both node.type and node.name since JSON definitions use 'name'
@@ -41,7 +39,7 @@ export class ToolExecutor implements INodeExecutor {
       let result;
       switch (nodename) {
         case "GoogleWebSearch":
-          result = await this.executeGoogleWebSearch(node, input, context, normalizeCtx);
+          result = await this.executeGoogleWebSearch(node, input, context);
           break;
         default:
           result = await this.delegateToolExecution(
@@ -49,7 +47,6 @@ export class ToolExecutor implements INodeExecutor {
             normalizedName,
             input,
             context,
-            normalizeCtx
           );
           break;
       }
@@ -57,7 +54,7 @@ export class ToolExecutor implements INodeExecutor {
       // Result is already in NodeResult format from internal methods
       return result;
     } catch (error) {
-      return toNodeResult(createErrorOutput(error, normalizeCtx));
+      return toNodeResult(createErrorOutput(error));
     }
   }
 
@@ -65,7 +62,6 @@ export class ToolExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     try {
       const CredentialManager = (await import("../../utils/credentialManager"))
@@ -77,58 +73,60 @@ export class ToolExecutor implements INodeExecutor {
       const { user_id, credential_id, query, numResults = 10 } = params;
 
       if (!user_id) {
-        return toNodeResult(createErrorOutput("user_id is required", normalizeCtx));
+        return toNodeResult(createErrorOutput("user_id is required"));
       }
 
       if (!credential_id) {
-        return toNodeResult(createErrorOutput("credential_id is required", normalizeCtx));
+        return toNodeResult(createErrorOutput("credential_id is required"));
       }
 
       if (!query) {
-        return toNodeResult(createErrorOutput("query is required", normalizeCtx));
+        return toNodeResult(createErrorOutput("query is required"));
       }
 
       console.log(
-        `🔍 [GoogleWebSearch] Searching for: "${query}" with ${numResults} results`
+        `🔍 [GoogleWebSearch] Searching for: "${query}" with ${numResults} results`,
       );
 
       // Get credentials
       const { credentials } = await CredentialManager.getCredentials(
         user_id,
         "googlewebsearch",
-        credential_id
+        credential_id,
       );
 
       if (!credentials) {
-        return toNodeResult(createErrorOutput(
-          "Google Web Search credentials not found",
-          normalizeCtx
-        ));
+        return toNodeResult(
+          createErrorOutput("Google Web Search credentials not found"),
+        );
       }
 
       const { api_key, search_engine_id } = credentials.client_json || {};
       if (!api_key || !search_engine_id) {
-        return toNodeResult(createErrorOutput(
-          "Google Web Search credential is missing api_key or search_engine_id",
-          normalizeCtx
-        ));
+        return toNodeResult(
+          createErrorOutput(
+            "Google Web Search credential is missing api_key or search_engine_id",
+          ),
+        );
       }
 
       // Execute search
       const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(
-        api_key
+        api_key,
       )}&cx=${encodeURIComponent(search_engine_id)}&q=${encodeURIComponent(
-        query
+        query,
       )}&num=${numResults}`;
 
       const response = await axios.get(searchUrl);
 
       if (!response.data || !response.data.items) {
-        return toNodeResult(createSuccessOutput({
-          query,
-          results: [],
-          searchInformation: response.data.searchInformation || {},
-        }, normalizeCtx));
+        return toNodeResult(
+          createSuccessOutput({
+            query,
+            results: [],
+            searchInformation: response.data.searchInformation || {},
+          }),
+        );
       }
 
       // Format results
@@ -141,22 +139,25 @@ export class ToolExecutor implements INodeExecutor {
 
       console.log(`✅ [GoogleWebSearch] Found ${results.length} results`);
 
-      return toNodeResult(createSuccessOutput({
-        query,
-        results,
-        searchInformation: response.data.searchInformation,
-      }, normalizeCtx));
+      return toNodeResult(
+        createSuccessOutput({
+          query,
+          results,
+          searchInformation: response.data.searchInformation,
+        }),
+      );
     } catch (error: any) {
       console.error(
         "❌ [GoogleWebSearch] Error:",
-        error.response?.data || error.message
+        error.response?.data || error.message,
       );
-      return toNodeResult(createErrorOutput(
-        error.response?.data?.error?.message ||
-        error.message ||
-        "Google Search execution failed",
-        normalizeCtx
-      ));
+      return toNodeResult(
+        createErrorOutput(
+          error.response?.data?.error?.message ||
+            error.message ||
+            "Google Search execution failed",
+        ),
+      );
     }
   }
 
@@ -165,7 +166,6 @@ export class ToolExecutor implements INodeExecutor {
     normalizedName: string | undefined,
     input: NodeInput,
     context: any,
-    normalizeCtx: NormalizeContext
   ): Promise<NodeResult> {
     // Build broker-related categories from registry (config-driven)
     const brokerCategories = buildExecutorCategoryMap();
@@ -207,10 +207,9 @@ export class ToolExecutor implements INodeExecutor {
     const executor = category ? getNodeExecutor(category) : undefined;
 
     if (!executor) {
-      return toNodeResult(createErrorOutput(
-        `Unsupported tool node type: ${node.name}`,
-        normalizeCtx
-      ));
+      return toNodeResult(
+        createErrorOutput(`Unsupported tool node type: ${node.name}`),
+      );
     }
 
     const delegatedNode: WorkflowNode = {

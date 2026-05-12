@@ -154,7 +154,7 @@ export class WorkflowRunner {
       let results: [string, [string, string[]][]][] | null = null;
 
       try {
-        results = (await this.streamRedisClient.xreadgroup(
+        results = (await (this.streamRedisClient as any).xreadgroup(
           "GROUP",
           STRATEGY_GROUP,
           this.consumerName,
@@ -352,10 +352,7 @@ export class WorkflowRunner {
     }
   }
 
-  private async recordFailure(
-    runId: string,
-    error: unknown,
-  ): Promise<void> {
+  private async recordFailure(runId: string, error: unknown): Promise<void> {
     try {
       await updateRunStatusInRedis(this.userId, runId, "failed", {
         errorMessage: error instanceof Error ? error.message : String(error),

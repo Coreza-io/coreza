@@ -15,8 +15,13 @@ export interface NodeInput {
 export interface NodeResult {
   success?: boolean;
   data?: any;
+  message?: string;
+  channels?: any;
+  subscriptionType?: string;
+  status?: string;
   index?: number;
   isLastBatch?: boolean;
+  callback_url?: string;
   error?: string;
   /**
    * Execution context metadata (e.g., error summaries, timing info).
@@ -32,7 +37,11 @@ export interface NodeResult {
 
 export interface INodeExecutor {
   readonly category: string; // e.g. "IO", "Indicators", "Broker"
-  execute(node: any, input: NodeInput, context?: any): NodeResult | Promise<NodeResult>;
+  execute(
+    node: any,
+    input: NodeInput,
+    context?: any,
+  ): NodeResult | Promise<NodeResult>;
   /** Indicates execute() is sync-capable for compiled VM usage. */
   readonly syncCapable?: boolean;
 }
@@ -43,6 +52,8 @@ export interface WorkflowNode {
   name?: string; // Actual node type (e.g., "GoogleWebSearch", "AIAgent", "Loop")
   /** Optional legacy type alias kept for backwards compatibility */
   type?: string;
+
+  description?: string;
   /** Optional grouping metadata used by a few screeners */
   subCategory?: string;
   node_type: string; // Classification ("main" or "sub")
@@ -125,6 +136,8 @@ export interface NodeExecutionOutput {
   falseItems?: Item[];
   /** Optional control instructions for the engine. */
   control?: ControlFlags;
+  error?: string;
+  meta?: Record<string, any>;
 }
 
 /**

@@ -68,43 +68,6 @@ const SUBSCRIPTION_READY_POLL_MS = parseInt(
  */
 export class SubscriptionService {
   /**
-   * Resolve symbols from various sources (manual, store, input)
-   */
-  private static async resolveSymbols(
-    params: SubscriptionParams,
-  ): Promise<string[]> {
-    const {
-      symbols,
-      symbolSource = "manual",
-      sourceWorkflowId,
-      sourceVariable,
-      userId,
-      initialInput,
-    } = params;
-
-    if (symbolSource === "input" && initialInput?.symbols) {
-      return Array.isArray(initialInput.symbols)
-        ? initialInput.symbols
-        : String(initialInput.symbols)
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-    }
-
-    // Manual entry
-    if (!symbols) return [];
-
-    return typeof symbols === "string"
-      ? symbols
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : Array.isArray(symbols)
-        ? symbols
-        : [];
-  }
-
-  /**
    * Subscribe or unsubscribe from market data
    *
    * IMPORTANT: Subscribe nodes ONLY manage gateway subscriptions.

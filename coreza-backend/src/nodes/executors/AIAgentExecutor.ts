@@ -9,7 +9,10 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { buildExecutorCategoryMap, isBrokerNode } from "../../brokers/capabilities";
+import {
+  buildExecutorCategoryMap,
+  isBrokerNode,
+} from "../../brokers/capabilities";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
 import { createAgent } from "langchain";
@@ -30,7 +33,6 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
-  NormalizeContext,
 } from "../../utils/normalizeOutput";
 import { getLLM, LLMConfig } from "../../config/llmProviders";
 
@@ -43,12 +45,6 @@ export class AIAgentExecutor implements INodeExecutor {
     context?: any,
   ): Promise<NodeResult> {
     const startTime = Date.now();
-    const normalizeCtx: NormalizeContext = {
-      nodeId: node.id,
-      nodeName: node.name,
-      category: node.category,
-      startTime,
-    };
 
     // Create DataContext for this agent execution
     const executionId =
@@ -75,7 +71,6 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!user_id) {
         const errOutput = createErrorOutput(
           "user_id is required for AI Agent execution",
-          normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
@@ -92,7 +87,6 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!chatModelEdge) {
         const errOutput = createErrorOutput(
           "Chat Model node must be connected to the 'Chat Model' handle",
-          normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
@@ -103,7 +97,6 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!chatModelNode) {
         const errOutput = createErrorOutput(
           "Connected Chat Model node not found",
-          normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
@@ -113,7 +106,6 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!credential_id) {
         const errOutput = createErrorOutput(
           "Chat Model node must have credentials configured",
-          normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
@@ -136,7 +128,6 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!client_json) {
         const errOutput = createErrorOutput(
           "Unable to load chat model credentials",
-          normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
@@ -145,7 +136,6 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!apiKey) {
         const errOutput = createErrorOutput(
           "Chat model credential is missing apiKey",
-          normalizeCtx,
         );
         return toNodeResult(errOutput);
       }
@@ -167,10 +157,7 @@ export class AIAgentExecutor implements INodeExecutor {
       //const temperature = resolvedParams.temperature ?? 1;
 
       if (!userPrompt) {
-        const errOutput = createErrorOutput(
-          "userPrompt is required",
-          normalizeCtx,
-        );
+        const errOutput = createErrorOutput("userPrompt is required");
         return toNodeResult(errOutput);
       }
 
@@ -243,13 +230,12 @@ export class AIAgentExecutor implements INodeExecutor {
       );
 
       const agentOutput = this.getAgentOutput(result);
-      const successOutput = createSuccessOutput(agentOutput, normalizeCtx);
+      const successOutput = createSuccessOutput(agentOutput);
       return toNodeResult(successOutput);
     } catch (error: any) {
       console.error("❌ [AIAgent] Agent execution error:", error);
       const errOutput = createErrorOutput(
         error.message || "AI Agent execution failed",
-        normalizeCtx,
       );
       return toNodeResult(errOutput);
     } finally {

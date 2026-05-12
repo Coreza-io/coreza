@@ -44,7 +44,7 @@ export class DataSourceExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       this.clearResultCachesForRun(context?.runId);
-      const nodeName = node.subCategory ?? node.name;
+      const nodeName = node.subCategory ?? node.name ?? " ";
       // Resolve and merge node parameters with input data
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)

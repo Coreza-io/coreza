@@ -10,7 +10,11 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { RiskEngineService } from "../../nodes/logic/risk";
-import { createSuccessOutput, createErrorOutput, toNodeResult, NormalizeContext } from "../../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+  toNodeResult,
+} from "../../utils/normalizeOutput";
 
 export class RiskExecutor implements INodeExecutor {
   readonly category = "Risk Management";
@@ -27,13 +31,6 @@ export class RiskExecutor implements INodeExecutor {
     context: any,
     startTime: number,
   ): NodeResult {
-    const normalizeCtx: NormalizeContext = {
-      nodeId: node.id,
-      nodeName: node.name,
-      category: this.category,
-      startTime,
-    };
-
     try {
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
@@ -41,19 +38,20 @@ export class RiskExecutor implements INodeExecutor {
 
       console.log(
         `⚖️ Executing ${node.name} node with params:`,
-        resolvedParams
+        resolvedParams,
       );
       const result = RiskEngineService.evaluate(resolvedParams);
       if (!result.success) {
-        const errOutput = createErrorOutput(result.error || "Risk evaluation failed", normalizeCtx);
+        const errOutput = createErrorOutput(
+          result.error || "Risk evaluation failed",
+        );
         return toNodeResult(errOutput);
       }
-      const successOutput = createSuccessOutput(result.data, normalizeCtx);
+      const successOutput = createSuccessOutput(result.data);
       return toNodeResult(successOutput);
     } catch (error) {
       const errOutput = createErrorOutput(
         `Risk engine execution failed: ${error instanceof Error ? error.message : String(error)}`,
-        normalizeCtx
       );
       return toNodeResult(errOutput);
     }

@@ -50,7 +50,7 @@ export class LiveFillRepository {
 
     const { error } = await supabase
       .from("live_fills")
-      .upsert(rows, { onConflict: "user_id,broker,symbol,fill_id" });
+      .upsert(rows as any, { onConflict: "user_id,broker,symbol,fill_id" });
 
     if (error) {
       logger.error(

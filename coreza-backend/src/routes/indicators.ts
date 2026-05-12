@@ -43,7 +43,8 @@ async function executeIndicatorWithState(
 ): Promise<IndicatorResult> {
   const userId = req.user?.id;
   const workflowId = req.body.workflowId;
-  const executionId = req.body.executionId || req.body.workflowSessionId || workflowId;
+  const executionId =
+    req.body.executionId || req.body.workflowSessionId || workflowId;
   const symbol = req.body.symbol;
   const timeframe = req.body.timeframe;
   const node_id = req.body.node_id;
@@ -71,20 +72,24 @@ async function executeIndicatorWithState(
           return {
             success: true,
             status: "success",
-            data: {
-              currentValue: updated.currentValue,
-              previousValue: updated.previousValue,
-            },
+            data: [
+              {
+                currentValue: updated.currentValue,
+                previousValue: updated.previousValue,
+              },
+            ],
           };
         }
 
         return {
           success: true,
           status: "success",
-          data: {
-            currentValue: state.currentValue,
-            previousValue: state.previousValue,
-          },
+          data: [
+            {
+              currentValue: state.currentValue,
+              previousValue: state.previousValue,
+            },
+          ],
         };
       }
     }
@@ -110,7 +115,8 @@ router.post("/initialize", async (req, res, next) => {
 
     const userId = req.user?.id;
     const workflowId = req.body.workflowId;
-    const executionId = req.body.executionId || req.body.workflowSessionId || workflowId;
+    const executionId =
+      req.body.executionId || req.body.workflowSessionId || workflowId;
 
     const result = await initializeIndicatorsExecutor.execute(node, req.body, {
       userId,

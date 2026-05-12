@@ -370,6 +370,7 @@ export class PortfolioManager {
     orderId: string;
     clientOrderId?: string;
     symbol: string;
+    algoId?: string;
     side: "buy" | "sell";
     origQty: number | undefined;
     orderType: string;
@@ -462,11 +463,8 @@ export class PortfolioManager {
         symbol: input.symbol,
         side: input.side,
         origQty: input.origQty,
-        filledQty: input.filledQty,
-        remainingQty: input.origQty,
-        avgFillPrice: input.avgFillPrice,
-        orderType: input.orderType,
-        timeInForce: input.timeInForce,
+        orderType: input.orderType ?? "market",
+        timeInForce: input.timeInForce ?? "GTC",
         limitPrice: input.limitPrice,
         stopPrice: input.stopPrice,
         trailPercent: input.trailPercent,
@@ -534,6 +532,12 @@ export class PortfolioManager {
 
     order.filledQty = newFilledQty;
 
+    if (order.origQty === undefined || order.origQty === null) {
+      throw new Error(
+        `Cannot calculate remainingQty: origQty is missing for order ${order.orderId}`,
+      );
+    }
+
     order.remainingQty = Math.max(0, order.origQty - order.filledQty);
 
     // Auto-normalize to filled when cumulative fill reaches origQty,
@@ -600,7 +604,7 @@ export class PortfolioManager {
     orderId?: string;
     symbol: string;
     side: "buy" | "sell";
-    orderType?: string;
+    orderType: string;
     origQty: number | undefined;
     status: string;
     stopPrice?: number;
@@ -1422,17 +1426,24 @@ export class PortfolioManager {
    */
   initializePortfolio(baseCurrency: string, cashBalance: number): void {
     if (this.bootstrapped) return;
+
     this.cashBook.set(baseCurrency, cashBalance);
+
     // Also set in v2 balances
     this.balances.set(baseCurrency, {
       asset: baseCurrency,
       cash: cashBalance,
+      equity: cashBalance,
+      margin: 1,
       updatedAt: new Date().toISOString(),
     });
+
     if (this.startingEquity === null && cashBalance > 0) {
       this.startingEquity = cashBalance;
     }
+
     this.bootstrapped = true;
+
     console.log(
       `[PortfolioManager] Initialized portfolio: ${baseCurrency} = ${cashBalance}`,
     );

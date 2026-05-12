@@ -100,8 +100,20 @@ function parseDateComparisonValues(
   const leftTime = new Date(leftValue).getTime();
   const rightTime = new Date(rightValue).getTime();
 
-  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
-    return createErrorOutput("Invalid date value in comparison");
+  const invalidFields: string[] = [];
+
+  if (Number.isNaN(leftTime)) {
+    invalidFields.push(`left date is invalid: ${JSON.stringify(leftValue)}`);
+  }
+
+  if (Number.isNaN(rightTime)) {
+    invalidFields.push(`right date is invalid: ${JSON.stringify(rightValue)}`);
+  }
+
+  if (invalidFields.length > 0) {
+    return createErrorOutput(
+      `Invalid date comparison input. ${invalidFields.join("; ")}`,
+    );
   }
 
   return createSuccessOutput({ leftTime, rightTime });
@@ -250,9 +262,11 @@ export class ComparatorService {
               left !== null &&
               left !== "" &&
               !(Array.isArray(left) && left.length === 0) &&
-              !(typeof left === "object" &&
+              !(
+                typeof left === "object" &&
                 left !== null &&
-                Object.keys(left).length === 0),
+                Object.keys(left).length === 0
+              ),
           );
         }
         case "isNull": {
@@ -269,7 +283,9 @@ export class ComparatorService {
           const parsedDates = parseDateComparisonValues(left, right);
 
           if (!parsedDates.success || !parsedDates.data) {
-            return parsedDates;
+            return createErrorOutput(
+              parsedDates.error || "Invalid date value in comparison",
+            );
           }
 
           const { leftTime, rightTime } = parsedDates.data;
@@ -281,7 +297,9 @@ export class ComparatorService {
           const parsedDates = parseDateComparisonValues(left, right);
 
           if (!parsedDates.success || !parsedDates.data) {
-            return parsedDates;
+            return createErrorOutput(
+              parsedDates.error || "Invalid date value in comparison",
+            );
           }
 
           const { leftTime, rightTime } = parsedDates.data;
@@ -293,7 +311,9 @@ export class ComparatorService {
           const parsedDates = parseDateComparisonValues(left, right);
 
           if (!parsedDates.success || !parsedDates.data) {
-            return parsedDates;
+            return createErrorOutput(
+              parsedDates.error || "Invalid date value in comparison",
+            );
           }
 
           const { leftTime, rightTime } = parsedDates.data;
@@ -305,7 +325,9 @@ export class ComparatorService {
           const parsedDates = parseDateComparisonValues(left, right);
 
           if (!parsedDates.success || !parsedDates.data) {
-            return parsedDates;
+            return createErrorOutput(
+              parsedDates.error || "Invalid date value in comparison",
+            );
           }
 
           const { leftTime, rightTime } = parsedDates.data;
@@ -314,27 +336,37 @@ export class ComparatorService {
         case "array_contains": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(Array.isArray(left) && left.includes(right));
+          return createSuccessOutput(
+            Array.isArray(left) && left.includes(right),
+          );
         }
         case "array_not_contains": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(Array.isArray(left) && !left.includes(right));
+          return createSuccessOutput(
+            Array.isArray(left) && !left.includes(right),
+          );
         }
         case "array_length_equals": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(Array.isArray(left) && left.length === Number(right));
+          return createSuccessOutput(
+            Array.isArray(left) && left.length === Number(right),
+          );
         }
         case "array_length_gt": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(Array.isArray(left) && left.length > Number(right));
+          return createSuccessOutput(
+            Array.isArray(left) && left.length > Number(right),
+          );
         }
         case "array_length_lt": {
           const left = parseValueByType(input.left, dataType);
           const right = parseValueByType(input.right, dataType);
-          return createSuccessOutput(Array.isArray(left) && left.length < Number(right));
+          return createSuccessOutput(
+            Array.isArray(left) && left.length < Number(right),
+          );
         }
         case "array_is_empty": {
           const left = parseValueByType(input.left, dataType);

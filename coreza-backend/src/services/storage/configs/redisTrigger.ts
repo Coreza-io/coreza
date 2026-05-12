@@ -17,17 +17,25 @@ export const redisTriggerConfig: StorageConfig = {
   operations: {
     subscribe: {
       handler: async (input: StorageInput, ctx: StorageContext) => {
-        const { workflow_id, node_id, channels, subscription_type = "channel" } = input;
+        const {
+          workflow_id,
+          node_id,
+          channels,
+          subscription_type = "channel",
+        } = input;
 
         if (!workflow_id || !node_id || !channels) {
           throw new Error("workflow_id, node_id, and channels are required");
         }
 
         // Parse channels
-        const channelList = Array.isArray(channels) 
-          ? channels 
+        const channelList = Array.isArray(channels)
+          ? channels
           : typeof channels === "string"
-            ? channels.split(",").map((c: string) => c.trim()).filter(Boolean)
+            ? channels
+                .split(",")
+                .map((c: string) => c.trim())
+                .filter(Boolean)
             : [];
 
         if (channelList.length === 0) {
@@ -35,9 +43,8 @@ export const redisTriggerConfig: StorageConfig = {
         }
 
         // Import RedisPubSubSubscriber from market-stream-service
-        const { RedisPubSubSubscriber } = await import(
-          "../../../../market-stream-service/src/services/RedisPubSubSubscriber"
-        );
+        const { RedisPubSubSubscriber } =
+          await import("../../../../market-stream-service/src/services/RedisPubSubSubscriber");
 
         const subscriber = RedisPubSubSubscriber.getInstance();
 
@@ -47,7 +54,7 @@ export const redisTriggerConfig: StorageConfig = {
           node_id,
           ctx.userId,
           channelList,
-          subscription_type as "channel" | "pattern"
+          subscription_type as "channel" | "pattern",
         );
 
         logger.info(
@@ -58,7 +65,7 @@ export const redisTriggerConfig: StorageConfig = {
             channels: channelList,
             type: subscription_type,
           },
-          "Redis Pub/Sub subscription created"
+          "Redis Pub/Sub subscription created",
         );
 
         return {
@@ -78,14 +85,16 @@ export const redisTriggerConfig: StorageConfig = {
           throw new Error("workflow_id is required");
         }
 
-        const { RedisPubSubSubscriber } = await import(
-          "../../../../market-stream-service/src/services/RedisPubSubSubscriber"
-        );
+        const { RedisPubSubSubscriber } =
+          await import("../../../../market-stream-service/src/services/RedisPubSubSubscriber");
 
         const subscriber = RedisPubSubSubscriber.getInstance();
         await subscriber.unsubscribe(workflow_id);
 
-        logger.info({ workflowId: workflow_id }, "Redis Pub/Sub subscription removed");
+        logger.info(
+          { workflowId: workflow_id },
+          "Redis Pub/Sub subscription removed",
+        );
 
         return {
           success: true,

@@ -26,12 +26,6 @@ export class CommunicationExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const startTime = Date.now();
     const nodeName = node.name;
-    const ctx = {
-      nodeId: node.id,
-      nodeName,
-      category: this.category,
-      startTime,
-    };
 
     try {
       const operation = node.values?.operation || "send";
@@ -39,13 +33,12 @@ export class CommunicationExecutor implements INodeExecutor {
       const user_id = context.user_id;
 
       // Get service from registry (node.name is Gmail, WhatsApp, Telegram)
-      const serviceKey = nodeName.toLowerCase();
+      const serviceKey = node.name!.toLowerCase();
       const service = getCommunicationService(serviceKey);
 
       if (!service) {
         const errOutput = createErrorOutput(
           `Unknown communication service: ${nodeName}`,
-          ctx,
         );
         return toNodeResult(errOutput);
       }
@@ -64,7 +57,7 @@ export class CommunicationExecutor implements INodeExecutor {
         ...resolvedParams,
       });
 
-      const normalized = normalizeOutput(result, ctx);
+      const normalized = normalizeOutput(result);
       return toNodeResult(normalized);
     } catch (error) {
       const errOutput = createErrorOutput(
@@ -73,7 +66,6 @@ export class CommunicationExecutor implements INodeExecutor {
           : typeof error === "object" && error !== null
             ? ((error as any).message ?? JSON.stringify(error))
             : String(error),
-        ctx,
       );
 
       return toNodeResult(errOutput);

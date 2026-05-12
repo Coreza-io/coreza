@@ -196,16 +196,16 @@ export class StatusService {
 
     // Fetch workflow names from Supabase
     if (workflowIds.size > 0) {
-      const { data: workflows } = await supabase
+      const { data } = await supabase
         .from("workflows")
         .select("id, name")
         .in("id", Array.from(workflowIds));
 
-      if (workflows) {
-        for (const reg of registrations) {
-          const wf = workflows.find((w) => w.id === reg.workflowId);
-          reg.workflowName = wf?.name || "Unknown Workflow";
-        }
+      const workflows = (data ?? []) as { id: string; name: string }[];
+
+      for (const reg of registrations) {
+        const wf = workflows.find((w) => w.id === reg.workflowId);
+        reg.workflowName = wf?.name || "Unknown Workflow";
       }
     }
 
@@ -295,16 +295,16 @@ export class StatusService {
 
     // Fetch workflow names from Supabase
     if (workflowIds.size > 0) {
-      const { data: workflows } = await supabase
+      const { data } = await supabase
         .from("workflows")
         .select("id, name")
         .in("id", Array.from(workflowIds));
 
-      if (workflows) {
-        for (const sub of subscriptions) {
-          const wf = workflows.find((w) => w.id === sub.workflowId);
-          sub.workflowName = wf?.name || "Unknown Workflow";
-        }
+      const workflows = (data ?? []) as { id: string; name: string }[];
+
+      for (const sub of subscriptions) {
+        const wf = workflows.find((w) => w.id === sub.workflowId);
+        sub.workflowName = wf?.name || "Unknown Workflow";
       }
     }
 

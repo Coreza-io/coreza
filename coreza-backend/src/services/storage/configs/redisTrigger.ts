@@ -10,6 +10,10 @@
 
 import type { StorageConfig, StorageInput, StorageContext } from "../types";
 import logger from "../../../utils/logger";
+import {
+  publishRedisTriggerSubscribe,
+  publishRedisTriggerUnsubscribe,
+} from "../helpers/redisTriggerControl";
 
 export const redisTriggerConfig: StorageConfig = {
   requiresCredentials: true, // Uses user's external Redis for Pub/Sub
@@ -34,21 +38,13 @@ export const redisTriggerConfig: StorageConfig = {
           throw new Error("channels must be a non-empty array");
         }
 
-        // Import RedisPubSubSubscriber from market-stream-service
-        const { RedisPubSubSubscriber } = await import(
-          "../../../../market-stream-service/src/services/RedisPubSubSubscriber"
-        );
-
-        const subscriber = RedisPubSubSubscriber.getInstance();
-
-        // Subscribe workflow to Redis channels
-        await subscriber.subscribe(
-          workflow_id,
-          node_id,
-          ctx.userId,
-          channelList,
-          subscription_type as "channel" | "pattern"
-        );
+        await publishRedisTriggerSubscribe({
+          workflowId: workflow_id,
+          nodeId: node_id,
+          userId: ctx.userId,
+          channels: channelList,
+          subscriptionType: subscription_type as "channel" | "pattern",
+        });
 
         logger.info(
           {
@@ -78,12 +74,10 @@ export const redisTriggerConfig: StorageConfig = {
           throw new Error("workflow_id is required");
         }
 
-        const { RedisPubSubSubscriber } = await import(
-          "../../../../market-stream-service/src/services/RedisPubSubSubscriber"
-        );
-
-        const subscriber = RedisPubSubSubscriber.getInstance();
-        await subscriber.unsubscribe(workflow_id);
+        await publishRedisTriggerUnsubscribe({
+          workflowId: workflow_id,
+          userId: ctx.userId,
+        });
 
         logger.info({ workflowId: workflow_id }, "Redis Pub/Sub subscription removed");
 

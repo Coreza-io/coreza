@@ -46,22 +46,6 @@ export const redisTriggerConfig: StorageConfig = {
           throw new Error("channels must be a non-empty array");
         }
 
-<<<<<<< HEAD
-        // Import RedisPubSubSubscriber from market-stream-service
-        const { RedisPubSubSubscriber } =
-          await import("../../../../market-stream-service/src/services/RedisPubSubSubscriber");
-
-        const subscriber = RedisPubSubSubscriber.getInstance();
-
-        // Subscribe workflow to Redis channels
-        await subscriber.subscribe(
-          workflow_id,
-          node_id,
-          ctx.userId,
-          channelList,
-          subscription_type as "channel" | "pattern",
-        );
-=======
         await publishRedisTriggerSubscribe({
           workflowId: workflow_id,
           nodeId: node_id,
@@ -69,7 +53,6 @@ export const redisTriggerConfig: StorageConfig = {
           channels: channelList,
           subscriptionType: subscription_type as "channel" | "pattern",
         });
->>>>>>> 0b4e0283c3c3762eedaebfc3e8df20c036414c34
 
         logger.info(
           {
@@ -99,18 +82,10 @@ export const redisTriggerConfig: StorageConfig = {
           throw new Error("workflow_id is required");
         }
 
-<<<<<<< HEAD
-        const { RedisPubSubSubscriber } =
-          await import("../../../../market-stream-service/src/services/RedisPubSubSubscriber");
-
-        const subscriber = RedisPubSubSubscriber.getInstance();
-        await subscriber.unsubscribe(workflow_id);
-=======
         await publishRedisTriggerUnsubscribe({
           workflowId: workflow_id,
           userId: ctx.userId,
         });
->>>>>>> 0b4e0283c3c3762eedaebfc3e8df20c036414c34
 
         logger.info(
           { workflowId: workflow_id },

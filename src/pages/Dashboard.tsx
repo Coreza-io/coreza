@@ -893,6 +893,13 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </motion.div>
+      <TemplateChooserDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSelect={(templateId: TemplateId) => {
+          navigate(`/dashboard/workflow/new?template=${templateId}`);
+        }}
+      />
     </div>
   );
 };

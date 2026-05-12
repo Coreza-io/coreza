@@ -10,7 +10,13 @@
 
 import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { RefreshCw, Loader2, CalendarRange, Filter, AlertCircle } from "lucide-react";
+import {
+  RefreshCw,
+  Loader2,
+  CalendarRange,
+  Filter,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,7 +30,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -82,7 +92,7 @@ export function ExecutionHistoryPanel({
 
   const filtersActive = useMemo(
     () => statusFilter !== "all" || !!dateFrom || !!dateTo,
-    [dateFrom, dateTo, statusFilter]
+    [dateFrom, dateTo, statusFilter],
   );
 
   const shouldVirtualize = executions.length > 50;
@@ -143,7 +153,7 @@ export function ExecutionHistoryPanel({
         "w-full text-left p-3 mb-1 transition-colors border-l-4",
         "hover:bg-muted/50",
         getStatusAccent(execution.status),
-        selectedExecution?.id === execution.id && "bg-muted"
+        selectedExecution?.id === execution.id && "bg-muted",
       )}
       aria-label={`Execution from ${format(new Date(execution.started_at), "MMM d, HH:mm:ss")}`}
     >
@@ -163,7 +173,9 @@ export function ExecutionHistoryPanel({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold">Executions</div>
-            <div className="text-xs text-muted-foreground">No active executions</div>
+            <div className="text-xs text-muted-foreground">
+              No active executions
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -184,7 +196,9 @@ export function ExecutionHistoryPanel({
                   disabled={!workflowId}
                 >
                   <Filter className="h-4 w-4" />
-                  {filtersActive && <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />}
+                  {filtersActive && (
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />
+                  )}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80" align="end" sideOffset={8}>
@@ -222,7 +236,9 @@ export function ExecutionHistoryPanel({
                             disabled={!workflowId}
                           >
                             <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
-                            <span className="truncate">Earliest: {formatDateLabel(dateFrom)}</span>
+                            <span className="truncate">
+                              Earliest: {formatDateLabel(dateFrom)}
+                            </span>
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="p-0" align="start">
@@ -247,7 +263,9 @@ export function ExecutionHistoryPanel({
                             disabled={!workflowId}
                           >
                             <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
-                            <span className="truncate">Latest: {formatDateLabel(dateTo)}</span>
+                            <span className="truncate">
+                              Latest: {formatDateLabel(dateTo)}
+                            </span>
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="p-0" align="start">
@@ -290,7 +308,10 @@ export function ExecutionHistoryPanel({
             checked={autoRefresh}
             onCheckedChange={(checked) => onAutoRefreshChange(!!checked)}
           />
-          <label htmlFor="auto-refresh" className="text-sm text-muted-foreground cursor-pointer">
+          <label
+            htmlFor="auto-refresh"
+            className="text-sm text-muted-foreground cursor-pointer"
+          >
             Auto refresh
           </label>
         </div>
@@ -344,7 +365,9 @@ export function ExecutionHistoryPanel({
                       <div
                         key={execution.id}
                         className="absolute top-0 left-0 w-full"
-                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        style={{
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
                       >
                         {renderExecutionRow(execution)}
                       </div>

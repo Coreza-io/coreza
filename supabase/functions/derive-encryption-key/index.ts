@@ -1,4 +1,6 @@
+// @ts-expect-error: Deno remote import
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// @ts-expect-error: Deno remote import
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -46,71 +48,78 @@ async function deriveUserKey(
   return btoa(String.fromCharCode(...new Uint8Array(exported)));
 }
 
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    // Verify user authentication
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+serve(
+  async (req: { method: string; headers: { get: (arg0: string) => any } }) => {
+    // Handle CORS preflight requests
+    if (req.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders });
     }
 
-    // Create Supabase client to verify JWT
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } },
-    );
+    try {
+      // Verify user authentication
+      const authHeader = req.headers.get("authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseClient.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Invalid authentication" }), {
-        status: 401,
+      // Create Supabase client to verify JWT
+      const supabaseClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
+        { global: { headers: { Authorization: authHeader } } },
+      );
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabaseClient.auth.getUser();
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ error: "Invalid authentication" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      // Get the master encryption key from environment
+      const masterKey = Deno.env.get("COREZA_ENCRYPTION_KEY");
+      if (!masterKey) {
+        console.error("COREZA_ENCRYPTION_KEY not found in environment");
+        return new Response(
+          JSON.stringify({ error: "Encryption key not configured" }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      // Derive user-specific key
+      const userKey = await deriveUserKey(masterKey, user.id, "credentials");
+
+      // Log access for security monitoring (without exposing key)
+      console.log(
+        `🔑 User-specific encryption key derived for user: ${user.id}`,
+      );
+
+      return new Response(JSON.stringify({ key: userKey }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-    }
-
-    // Get the master encryption key from environment
-    const masterKey = Deno.env.get("COREZA_ENCRYPTION_KEY");
-    if (!masterKey) {
-      console.error("COREZA_ENCRYPTION_KEY not found in environment");
+    } catch (error) {
+      console.error("Error deriving encryption key:", error);
       return new Response(
-        JSON.stringify({ error: "Encryption key not configured" }),
+        JSON.stringify({ error: "Failed to derive encryption key" }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
     }
-
-    // Derive user-specific key
-    const userKey = await deriveUserKey(masterKey, user.id, "credentials");
-
-    // Log access for security monitoring (without exposing key)
-    console.log(`🔑 User-specific encryption key derived for user: ${user.id}`);
-
-    return new Response(JSON.stringify({ key: userKey }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error deriving encryption key:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to derive encryption key" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  }
-});
+  },
+);

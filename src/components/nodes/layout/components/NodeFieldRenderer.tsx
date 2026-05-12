@@ -55,6 +55,13 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   userId,
   readOnly,
 }) => {
+  const [showFloatingPreview, setShowFloatingPreview] = React.useState(false);
+  const [previewAnchorRect, setPreviewAnchorRect] =
+    React.useState<DOMRect | null>(null);
+  const fieldWrapperRef = React.useRef<HTMLDivElement | null>(null);
+  const previewCardRef = React.useRef<HTMLDivElement | null>(null);
+  const activeElementRef = React.useRef<HTMLElement | null>(null);
+  const shouldShowDescription = field.showDescription !== false;
   if (field.type === "hidden") return null;
 
   if (field.displayOptions?.show) {
@@ -102,13 +109,6 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     typeof fieldValue === "string" && fieldValue.includes("{{");
   const referencePreview =
     isReference && getPreview ? getPreview(field.key) : null;
-  const [showFloatingPreview, setShowFloatingPreview] = React.useState(false);
-  const [previewAnchorRect, setPreviewAnchorRect] =
-    React.useState<DOMRect | null>(null);
-  const fieldWrapperRef = React.useRef<HTMLDivElement | null>(null);
-  const previewCardRef = React.useRef<HTMLDivElement | null>(null);
-  const activeElementRef = React.useRef<HTMLElement | null>(null);
-  const shouldShowDescription = field.showDescription !== false;
   const multiselectValueMapDeps = React.useMemo(() => {
     if (field.type !== "multiselect") return "";
     const options = selectOptions[field.key] || field.options || [];

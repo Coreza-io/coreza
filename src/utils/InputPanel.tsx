@@ -31,7 +31,7 @@ type InputPanelProps = {
   handleDragStart?: (
     e: React.DragEvent,
     keyPath: string,
-    value: string
+    value: string,
   ) => void;
   position?: "left" | "right";
   selectedPrevNodeId?: string;
@@ -80,7 +80,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const preferredPrevId = useMemo(() => {
     if (!nodeId || !edges) return undefined;
     const incomingDone = edges.find(
-      (e) => e.target === nodeId && e.sourceHandle === "done"
+      (e) => e.target === nodeId && e.sourceHandle === "done",
     );
     return incomingDone?.source;
   }, [nodeId, edges]);
@@ -119,7 +119,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
     // In readOnly mode with allNodeExecutions, use selected node's output
     if (readOnly && allNodeExecutions && selectedPrevNodeId) {
       const selectedExec = allNodeExecutions.find(
-        (e) => e.nodeId === selectedPrevNodeId
+        (e) => e.nodeId === selectedPrevNodeId,
       );
       return selectedExec?.output ?? {};
     }
@@ -177,6 +177,8 @@ const InputPanel: React.FC<InputPanelProps> = ({
                     Previous Node:
                   </label>
                   <select
+                    aria-label="Select executed node"
+                    title="Select executed node"
                     className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                     value={selectedPrevNodeId || ""}
                     onChange={(e) => setSelectedPrevNodeId(e.target.value)}

@@ -37,7 +37,6 @@
 }
 
 @layer base {
-
   :root,
   .dark {
     /* Dark theme - Professional trading platform */
@@ -91,15 +90,21 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Gradients - Dark */
-    --gradient-primary: linear-gradient(135deg,
-        hsl(217 91% 60%),
-        hsl(217 91% 70%));
-    --gradient-card: linear-gradient(145deg,
-        hsl(224 12% 10%),
-        hsl(224 12% 12%));
-    --gradient-glow: radial-gradient(circle at center,
-        hsl(217 91% 60% / 0.15),
-        transparent 70%);
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%),
+      hsl(217 91% 70%)
+    );
+    --gradient-card: linear-gradient(
+      145deg,
+      hsl(224 12% 10%),
+      hsl(224 12% 12%)
+    );
+    --gradient-glow: radial-gradient(
+      circle at center,
+      hsl(217 91% 60% / 0.15),
+      transparent 70%
+    );
 
     /* Shadows - Dark */
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
@@ -107,21 +112,126 @@
     --shadow-elevated: 0 8px 24px hsl(224 12% 4% / 0.6);
 
     /* Category-specific metallic gradients */
-    --gradient-indicators: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 25%, #4a7ab8 50%, #2d5a8e 75%, #1e3a5f 100%);
-    --gradient-broker: linear-gradient(135deg, #2d1f3d 0%, #5a3d7a 25%, #8b5fbf 50%, #5a3d7a 75%, #2d1f3d 100%);
-    --gradient-data: linear-gradient(135deg, #1f3d2d 0%, #3d7a5a 25%, #5fbf8b 50%, #3d7a5a 75%, #1f3d2d 100%);
-    --gradient-logic: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #bf8b5f 50%, #7a5a3d 75%, #3d2d1f 100%);
-    --gradient-screener: linear-gradient(135deg, #3d1f2d 0%, #7a3d5a 25%, #bf5f8b 50%, #7a3d5a 75%, #3d1f2d 100%);
-    --gradient-input: linear-gradient(135deg, #1f2d3d 0%, #3d5a7a 25%, #5f8bbf 50%, #3d5a7a 75%, #1f2d3d 100%);
-    --gradient-visualization: linear-gradient(135deg, #2d1f1f 0%, #5a3d3d 25%, #bf5f5f 50%, #5a3d3d 75%, #2d1f1f 100%);
-    --gradient-llm: linear-gradient(135deg, #1f1f3d 0%, #3d3d7a 25%, #5f5fbf 50%, #3d3d7a 75%, #1f1f3d 100%);
-    --gradient-chatmodel: linear-gradient(135deg, #2d2d1f 0%, #5a5a3d 25%, #8b8b5f 50%, #5a5a3d 75%, #2d2d1f 100%);
-    --gradient-aiagent: linear-gradient(135deg, #3d1f3d 0%, #7a3d7a 25%, #bf5fbf 50%, #7a3d7a 75%, #3d1f3d 100%);
-    --gradient-email: linear-gradient(135deg, #1f2d2d 0%, #3d5a5a 25%, #5f8b8b 50%, #3d5a5a 75%, #1f2d2d 100%);
-    --gradient-tool: linear-gradient(135deg, #2d2d3d 0%, #5a5a7a 25%, #8b8bbf 50%, #5a5a7a 75%, #2d2d3d 100%);
-    --gradient-risk: linear-gradient(135deg, #3d1f1f 0%, #7a3d3d 25%, #bf5f5f 50%, #7a3d3d 75%, #3d1f1f 100%);
-    --gradient-scheduler: linear-gradient(135deg, #1f3d3d 0%, #3d7a7a 25%, #5fbfbf 50%, #3d7a7a 75%, #1f3d3d 100%);
-    --gradient-binance: linear-gradient(135deg, #3d2d1f 0%, #7a5a3d 25%, #f3ba2f 50%, #7a5a3d 75%, #3d2d1f 100%);
+    --gradient-indicators: linear-gradient(
+      135deg,
+      #1e3a5f 0%,
+      #2d5a8e 25%,
+      #4a7ab8 50%,
+      #2d5a8e 75%,
+      #1e3a5f 100%
+    );
+    --gradient-broker: linear-gradient(
+      135deg,
+      #2d1f3d 0%,
+      #5a3d7a 25%,
+      #8b5fbf 50%,
+      #5a3d7a 75%,
+      #2d1f3d 100%
+    );
+    --gradient-data: linear-gradient(
+      135deg,
+      #1f3d2d 0%,
+      #3d7a5a 25%,
+      #5fbf8b 50%,
+      #3d7a5a 75%,
+      #1f3d2d 100%
+    );
+    --gradient-logic: linear-gradient(
+      135deg,
+      #3d2d1f 0%,
+      #7a5a3d 25%,
+      #bf8b5f 50%,
+      #7a5a3d 75%,
+      #3d2d1f 100%
+    );
+    --gradient-screener: linear-gradient(
+      135deg,
+      #3d1f2d 0%,
+      #7a3d5a 25%,
+      #bf5f8b 50%,
+      #7a3d5a 75%,
+      #3d1f2d 100%
+    );
+    --gradient-input: linear-gradient(
+      135deg,
+      #1f2d3d 0%,
+      #3d5a7a 25%,
+      #5f8bbf 50%,
+      #3d5a7a 75%,
+      #1f2d3d 100%
+    );
+    --gradient-visualization: linear-gradient(
+      135deg,
+      #2d1f1f 0%,
+      #5a3d3d 25%,
+      #bf5f5f 50%,
+      #5a3d3d 75%,
+      #2d1f1f 100%
+    );
+    --gradient-llm: linear-gradient(
+      135deg,
+      #1f1f3d 0%,
+      #3d3d7a 25%,
+      #5f5fbf 50%,
+      #3d3d7a 75%,
+      #1f1f3d 100%
+    );
+    --gradient-chatmodel: linear-gradient(
+      135deg,
+      #2d2d1f 0%,
+      #5a5a3d 25%,
+      #8b8b5f 50%,
+      #5a5a3d 75%,
+      #2d2d1f 100%
+    );
+    --gradient-aiagent: linear-gradient(
+      135deg,
+      #3d1f3d 0%,
+      #7a3d7a 25%,
+      #bf5fbf 50%,
+      #7a3d7a 75%,
+      #3d1f3d 100%
+    );
+    --gradient-email: linear-gradient(
+      135deg,
+      #1f2d2d 0%,
+      #3d5a5a 25%,
+      #5f8b8b 50%,
+      #3d5a5a 75%,
+      #1f2d2d 100%
+    );
+    --gradient-tool: linear-gradient(
+      135deg,
+      #2d2d3d 0%,
+      #5a5a7a 25%,
+      #8b8bbf 50%,
+      #5a5a7a 75%,
+      #2d2d3d 100%
+    );
+    --gradient-risk: linear-gradient(
+      135deg,
+      #3d1f1f 0%,
+      #7a3d3d 25%,
+      #bf5f5f 50%,
+      #7a3d3d 75%,
+      #3d1f1f 100%
+    );
+    --gradient-scheduler: linear-gradient(
+      135deg,
+      #1f3d3d 0%,
+      #3d7a7a 25%,
+      #5fbfbf 50%,
+      #3d7a7a 75%,
+      #1f3d3d 100%
+    );
+    --gradient-binance: linear-gradient(
+      135deg,
+      #3d2d1f 0%,
+      #7a5a3d 25%,
+      #f3ba2f 50%,
+      #7a5a3d 75%,
+      #3d2d1f 100%
+    );
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -181,13 +291,17 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Gradients - Light */
-    --gradient-primary: linear-gradient(135deg,
-        hsl(217 91% 60%),
-        hsl(217 91% 70%));
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%),
+      hsl(217 91% 70%)
+    );
     --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 10% 98%));
-    --gradient-glow: radial-gradient(circle at center,
-        hsl(217 91% 60% / 0.08),
-        transparent 70%);
+    --gradient-glow: radial-gradient(
+      circle at center,
+      hsl(217 91% 60% / 0.08),
+      transparent 70%
+    );
 
     /* Shadows - Light */
     --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.15);
@@ -197,21 +311,21 @@
 
   /* Electric Border Animations */
   @keyframes electric-pulse {
-
     0%,
     100% {
-      filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+      filter: drop-shadow(0 0 8px currentColor)
+        drop-shadow(0 0 16px currentColor);
       opacity: 1;
     }
 
     50% {
-      filter: drop-shadow(0 0 12px currentColor) drop-shadow(0 0 24px currentColor);
+      filter: drop-shadow(0 0 12px currentColor)
+        drop-shadow(0 0 24px currentColor);
       opacity: 0.8;
     }
   }
 
   @keyframes electric-flicker {
-
     0%,
     100% {
       opacity: 1;
@@ -245,7 +359,6 @@
   }
 
   @keyframes gradient-flow {
-
     0%,
     100% {
       background-position: 0% 50%;
@@ -257,7 +370,6 @@
   }
 
   @keyframes border-pulse {
-
     0%,
     100% {
       opacity: 0.6;
@@ -300,17 +412,28 @@
     --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 0 0% 83%;
     --sidebar-ring: 20 90% 48%;
-    --font-sans: 'Roboto', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
-    --font-serif: 'Libre Caslon Text', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-    --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --font-sans:
+      "Roboto", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    --font-serif:
+      "Libre Caslon Text", ui-serif, Georgia, Cambria, "Times New Roman", Times,
+      serif;
+    --font-mono:
+      "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
     --radius: 0.75rem;
     --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
     --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-    --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-    --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-    --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
-    --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
-    --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
+    --shadow-sm:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+    --shadow:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+    --shadow-md:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
+    --shadow-lg:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
+    --shadow-xl:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
     --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
     --tracking-normal: 0em;
     --spacing: 0.25rem;
@@ -350,11 +473,16 @@
     --sidebar-ring: 27 95% 60%;
     --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
     --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-    --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-    --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-    --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
-    --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
-    --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
+    --shadow-sm:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+    --shadow:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+    --shadow-md:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
+    --shadow-lg:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
+    --shadow-xl:
+      0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
     --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
   }
 }
@@ -375,25 +503,32 @@
   }
 
   .animated-gradient-border::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: -2px;
     border-radius: inherit;
     padding: 2px;
-    background: linear-gradient(90deg,
-        hsl(var(--primary)),
-        hsl(var(--chart-2)),
-        hsl(var(--chart-3)),
-        hsl(var(--primary)));
+    background: linear-gradient(
+      90deg,
+      hsl(var(--primary)),
+      hsl(var(--chart-2)),
+      hsl(var(--chart-3)),
+      hsl(var(--primary))
+    );
     background-size: 300% 300%;
     -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask:
       linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     opacity: 0;
     transition: opacity 0.3s ease;
-    animation: gradient-flow 4s ease infinite, border-pulse 2s ease-in-out infinite;
+    animation:
+      gradient-flow 4s ease infinite,
+      border-pulse 2s ease-in-out infinite;
     pointer-events: none;
     z-index: -1;
   }
@@ -441,7 +576,6 @@
   }
 
   @keyframes plug-edge-spark {
-
     0%,
     100% {
       transform: scale(0.9);
@@ -465,13 +599,16 @@
     }
 
     to {
-      transform: translate(var(--plug-edge-shift-x, 0%),
-          var(--plug-edge-shift-y, 0%));
+      transform: translate(
+        var(--plug-edge-shift-x, 0%),
+        var(--plug-edge-shift-y, 0%)
+      );
     }
   }
 
   @keyframes plug-drag-wobble {
-    0%, 100% {
+    0%,
+    100% {
       transform: scale(1);
     }
     50% {
@@ -480,7 +617,8 @@
   }
 
   @keyframes plug-pulse {
-    0%, 100% {
+    0%,
+    100% {
       opacity: 0.2;
       transform: scale(1);
     }
@@ -493,7 +631,9 @@
   .plug-edge__glow {
     opacity: 0.2;
     filter: blur(10px);
-    transition: opacity 0.3s ease, filter 0.3s ease;
+    transition:
+      opacity 0.3s ease,
+      filter 0.3s ease;
   }
 
   .plug-edge__glow--active {
@@ -563,10 +703,15 @@
   }
 
   .plug-edge__plug-shape path {
-    transition: filter 0.3s ease, fill 0.3s ease;
+    transition:
+      filter 0.3s ease,
+      fill 0.3s ease;
   }
 
-  .plug-edge__cord.executing-edge~.plug-edge__plug .plug-edge__plug-shape path {
+  .plug-edge__cord.executing-edge
+    ~ .plug-edge__plug
+    .plug-edge__plug-shape
+    path {
     filter: drop-shadow(0 0 8px currentColor);
   }
 
@@ -593,15 +738,19 @@
     --electric-border-outer: rgba(221, 132, 72, 0.45);
     --electric-border-glow: rgba(221, 132, 72, 0.7);
     --electric-border-glow-soft: rgba(221, 132, 72, 0.35);
-    --electric-border-overlay: linear-gradient(-30deg,
-        rgba(255, 255, 255, 0.9),
-        transparent 32%,
-        transparent 68%,
-        rgba(255, 255, 255, 0.85));
-    --electric-border-background: linear-gradient(-30deg,
-        var(--electric-border-light),
-        transparent,
-        var(--electric-border-color));
+    --electric-border-overlay: linear-gradient(
+      -30deg,
+      rgba(255, 255, 255, 0.9),
+      transparent 32%,
+      transparent 68%,
+      rgba(255, 255, 255, 0.85)
+    );
+    --electric-border-background: linear-gradient(
+      -30deg,
+      var(--electric-border-light),
+      transparent,
+      var(--electric-border-color)
+    );
   }
 
   .electric-border-effect__svg {
@@ -617,7 +766,7 @@
     border-radius: inherit;
   }
 
-  .electric-border-effect__layers>* {
+  .electric-border-effect__layers > * {
     position: absolute;
     inset: 0;
     border-radius: inherit;

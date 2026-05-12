@@ -9,7 +9,10 @@
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { ConnectionDragContext, DragSource } from "@/contexts/ConnectionDragContext";
+import {
+  ConnectionDragContext,
+  DragSource,
+} from "@/contexts/ConnectionDragContext";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,
@@ -86,7 +89,10 @@ import {
 } from "@/contexts/ExecutionStoreContext";
 import { StableNodeProvider } from "@/contexts/StableNodeContext";
 import { appendNewsItem, createWaitingNewsOutput } from "@/utils/newsStream";
-import { isNewsStreamNode, getNewsUnsubscribeEndpoint } from "@/utils/brokerRegistry";
+import {
+  isNewsStreamNode,
+  getNewsUnsubscribeEndpoint,
+} from "@/utils/brokerRegistry";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
@@ -325,7 +331,9 @@ const WorkflowEditorContent = () => {
 
   // Connection drag tracking for hiding source handle icon
   const [dragSource, setDragSource] = useState<DragSource>({
-    nodeId: null, handleId: null, handleType: null,
+    nodeId: null,
+    handleId: null,
+    handleType: null,
   });
   const onConnectStart = useCallback((_: any, params: any) => {
     setDragSource({
@@ -427,7 +435,7 @@ const WorkflowEditorContent = () => {
       const symbols = storedSymbols.length ? storedSymbols : fallbackSymbols;
 
       if (symbols.length) {
-        const source = nodeDef?.subCategory || 'alpaca';
+        const source = nodeDef?.subCategory || "alpaca";
         const endpoint = getNewsUnsubscribeEndpoint(source);
         try {
           await apiClient.post(
@@ -440,11 +448,7 @@ const WorkflowEditorContent = () => {
             session?.access_token,
           );
         } catch (error) {
-          console.error(
-            "Failed to unsubscribe news for node",
-            nodeId,
-            error,
-          );
+          console.error("Failed to unsubscribe news for node", nodeId, error);
         }
       }
 
@@ -476,7 +480,7 @@ const WorkflowEditorContent = () => {
       if (removedNodeIds.length) {
         removedNodeIds.forEach((id) => {
           const removedNode = nodes.find((node) => node.id === id);
-          const nodeDef = (removedNode?.data?.definition as any);
+          const nodeDef = removedNode?.data?.definition as any;
           if (isNewsStreamNode(nodeDef)) {
             const nodeData = removedNode.data as any;
             const candidateSymbols =
@@ -618,7 +622,10 @@ const WorkflowEditorContent = () => {
 
           if (message.type === "node_output") {
             messageHandlerRef.current(message.payload, message.timestamp);
-          } else if (message.type === "alpaca_news" || message.type === "news_stream") {
+          } else if (
+            message.type === "alpaca_news" ||
+            message.type === "news_stream"
+          ) {
             const payload = message.payload || {};
             messageHandlerRef.current(
               {
@@ -804,7 +811,7 @@ const WorkflowEditorContent = () => {
       // Cleanup news subscriptions on deactivation
       if (!result) {
         nodes
-          .filter((node) => isNewsStreamNode((node.data?.definition as any)))
+          .filter((node) => isNewsStreamNode(node.data?.definition as any))
           .forEach((node) => {
             const nodeData = node.data as any;
             const nodeDef = nodeData?.definition;
@@ -922,7 +929,11 @@ const WorkflowEditorContent = () => {
           nodeManifest[nodeName as keyof typeof nodeManifest];
 
         const rawValues = (node as any).values || node.data?.values || {};
-        const { merged } = reconcileNodeValues(definition, rawValues, node.data?.fieldState || {});
+        const { merged } = reconcileNodeValues(
+          definition,
+          rawValues,
+          node.data?.fieldState || {},
+        );
 
         return {
           ...node,
@@ -1085,7 +1096,9 @@ const WorkflowEditorContent = () => {
           return;
         }
 
-        setNodes(stampNodesWithWorkflowSession(cloneNodes(previousState.nodes)));
+        setNodes(
+          stampNodesWithWorkflowSession(cloneNodes(previousState.nodes)),
+        );
         setEdges(cloneEdges(previousState.edges));
         toast({ description: "Undid last change" });
         return;
@@ -1419,8 +1432,12 @@ const WorkflowEditorContent = () => {
           <input
             type="file"
             accept=".json"
+            aria-label="Import workflow JSON file"
+            title="Import workflow JSON file"
             className="hidden"
-            ref={(el) => { (window as any).__workflowFileInput = el; }}
+            ref={(el) => {
+              (window as any).__workflowFileInput = el;
+            }}
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
@@ -1441,11 +1458,18 @@ const WorkflowEditorContent = () => {
                   targetHandle: ed.targetHandle,
                 })) as Edge[];
                 handleRestoreFromVersion(importedNodes, importedEdges);
-                toast({ title: "Workflow imported", description: `Loaded "${imported.name}" with ${imported.nodes.length} nodes.` });
+                toast({
+                  title: "Workflow imported",
+                  description: `Loaded "${imported.name}" with ${imported.nodes.length} nodes.`,
+                });
               } catch (err: any) {
-                toast({ title: "Import failed", description: err.message, variant: "destructive" });
+                toast({
+                  title: "Import failed",
+                  description: err.message,
+                  variant: "destructive",
+                });
               }
-              e.target.value = '';
+              e.target.value = "";
             }}
           />
           <Button
@@ -1514,42 +1538,42 @@ const WorkflowEditorContent = () => {
           {/* ReactFlow Canvas */}
           <div className="flex-1 bg-trading-grid">
             <ConnectionDragContext.Provider value={dragSource}>
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onConnectStart={onConnectStart}
-              onConnectEnd={onConnectEnd}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              onMouseMove={onMouseMove}
-              onNodeDoubleClick={onNodeDoubleClick}
-              onPaneClick={onPaneClick}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              connectionLineComponent={EdgeManager.PlugConnectionLine}
-              connectionLineType={ConnectionLineType.Bezier}
-              fitView
-              className={cn(
-                "workflow-canvas",
-                resolvedTheme === "dark" && "dark",
-              )}
-              style={{ backgroundColor: "hsl(var(--trading-grid))" }}
-            >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={16}
-                size={0.8}
-                color="hsl(var(--muted-foreground) / 0.60)"
-              />
-              <MiniMap
-                className="!bg-card !border-border"
-                maskColor="hsl(var(--muted) / 0.6)"
-              />
-              <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
-            </ReactFlow>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onConnectStart={onConnectStart}
+                onConnectEnd={onConnectEnd}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                onMouseMove={onMouseMove}
+                onNodeDoubleClick={onNodeDoubleClick}
+                onPaneClick={onPaneClick}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                connectionLineComponent={EdgeManager.PlugConnectionLine}
+                connectionLineType={ConnectionLineType.Bezier}
+                fitView
+                className={cn(
+                  "workflow-canvas",
+                  resolvedTheme === "dark" && "dark",
+                )}
+                style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+              >
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={16}
+                  size={0.8}
+                  color="hsl(var(--muted-foreground) / 0.60)"
+                />
+                <MiniMap
+                  className="!bg-card !border-border"
+                  maskColor="hsl(var(--muted) / 0.6)"
+                />
+                <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
+              </ReactFlow>
             </ConnectionDragContext.Provider>
           </div>
 

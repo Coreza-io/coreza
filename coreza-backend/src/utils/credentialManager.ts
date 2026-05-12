@@ -90,7 +90,7 @@ class CredentialManager {
   private static async deriveUserKey(
     masterKey: string,
     userId: string,
-    context: string
+    context: string,
   ): Promise<Buffer> {
     const salt = Buffer.from(`coreza-salt-${userId}`, "utf8");
     const info = Buffer.from(`coreza-${context}-v1`, "utf8");
@@ -100,7 +100,7 @@ class CredentialManager {
       keyMaterial,
       salt,
       info,
-      32
+      32,
     ) as Buffer | ArrayBuffer;
     return Buffer.isBuffer(derivedKey) ? derivedKey : Buffer.from(derivedKey);
   }
@@ -110,7 +110,7 @@ class CredentialManager {
     userId: string,
     encPayloadB64: string,
     ivB64: string,
-    tagB64: string
+    tagB64: string,
   ): Promise<any> {
     try {
       const masterKey = process.env.COREZA_ENCRYPTION_KEY;
@@ -119,11 +119,11 @@ class CredentialManager {
       const keyBuffer = await this.deriveUserKey(
         masterKey,
         userId,
-        "credentials"
+        "credentials",
       );
       if (keyBuffer.byteLength !== 32) {
         throw new Error(
-          `Invalid derived key length: ${keyBuffer.byteLength} (expected 32)`
+          `Invalid derived key length: ${keyBuffer.byteLength} (expected 32)`,
         );
       }
 
@@ -145,7 +145,7 @@ class CredentialManager {
       return JSON.parse(out.toString("utf8"));
     } catch (err: any) {
       throw new Error(
-        `Failed to decrypt frontend data: ${err?.message ?? "Unknown error"}`
+        `Failed to decrypt frontend data: ${err?.message ?? "Unknown error"}`,
       );
     }
   }
@@ -183,7 +183,7 @@ class CredentialManager {
         return { error: "Multiple credentials found; specify credentialName" };
       }
 
-      const credential = data[0];
+      const credential = data[0] as any;
       let credentials: any | null = null;
       // Frontend v2 format (separate bytea/base64 fields)
       credential.is_encrypted &&
@@ -216,7 +216,7 @@ class CredentialManager {
   static async getCredentialRecords(
     userId: string,
     serviceType: string,
-    credentialName?: string
+    credentialName?: string,
   ): Promise<DecryptedCredential[]> {
     try {
       let query = supabase
@@ -234,13 +234,14 @@ class CredentialManager {
 
       const out: DecryptedCredential[] = [];
 
-      for (const record of data) {
+      for (const item of data) {
+        const record = item as any;
         try {
           let credentials: Record<string, any>;
 
           // Envelope or v2 (decide by version)
           console.log(
-            `🔓 Decrypting v2 (frontend) ${record.service_type}:${record.name}`
+            `🔓 Decrypting v2 (frontend) ${record.service_type}:${record.name}`,
           );
           const encPayload = this.bufferToBase64(record.enc_payload);
           const iv = this.bufferToBase64(record.iv);
@@ -281,6 +282,7 @@ class CredentialManager {
       useCache?: boolean;
     },
   ): Promise<{
+    bot_token: any;
     credentials: {
       client_json: Record<string, any>;
       token_json: Record<string, any>;
@@ -294,7 +296,10 @@ class CredentialManager {
         const cached = await cache.get(userId, serviceType, credentialName);
         if (cached !== null) {
           console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
-          return { credentials: { client_json: cached, token_json: {} } };
+          return {
+            bot_token: null,
+            credentials: { client_json: cached, token_json: {} },
+          };
         }
       } else {
         console.log(`📦 Cache BYPASS: ${serviceType}:${credentialName}`);
@@ -309,23 +314,25 @@ class CredentialManager {
       );
 
       if (result.error || !result.credentials) {
-        return { credentials: null };
+        return { bot_token: null, credentials: null };
       }
 
       if (!useCache) {
         return {
+          bot_token: null,
           credentials: { client_json: result.credentials, token_json: {} },
         };
       }
 
       return {
+        bot_token: null,
         credentials: { client_json: result.credentials, token_json: {} },
       };
     } catch (e: any) {
       throw new Error(
         `Failed to get ${serviceType} credentials: ${
           e?.message ?? "Unknown error"
-        }`
+        }`,
       );
     }
   }
@@ -343,7 +350,7 @@ class CredentialManager {
     serviceType: string,
     credentialName: string,
     credentials: any,
-    scopes?: string
+    scopes?: string,
   ): Promise<void> {
     if (!userId || !serviceType || !credentialName || !credentials) {
       throw new Error("Missing required parameters");
@@ -354,29 +361,32 @@ class CredentialManager {
 
     try {
       console.log(
-        `🔐 Encrypting credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`
+        `🔐 Encrypting credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`,
       );
 
       const encrypted = await ClientEncryption.encrypt(userId, credentials);
       const { enc_payload, iv, auth_tag } = encrypted;
 
-      const { error } = await supabase.from("user_credentials").upsert(
-        {
-          user_id: userId,
-          service_type: sanitizedServiceType,
-          name: sanitizedCredentialName,
-          enc_payload: this.b64ToPgHex(enc_payload),
-          iv: this.b64ToPgHex(iv),
-          auth_tag: this.b64ToPgHex(auth_tag),
-          is_encrypted: true,
-          enc_version: 2,
-          key_ref: "user:v2",
-          key_algo: "AES-256-GCM",
-          scopes: scopes?.substring(0, 255),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,service_type,name" }
-      );
+      const payload = {
+        user_id: userId,
+        service_type: sanitizedServiceType,
+        name: sanitizedCredentialName,
+        enc_payload: this.b64ToPgHex(enc_payload),
+        iv: this.b64ToPgHex(iv),
+        auth_tag: this.b64ToPgHex(auth_tag),
+        is_encrypted: true,
+        enc_version: 2,
+        key_ref: "user:v2",
+        key_algo: "AES-256-GCM",
+        scopes: scopes?.substring(0, 255),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("user_credentials")
+        .upsert(payload as any, {
+          onConflict: "user_id,service_type,name",
+        });
 
       if (error) {
         throw new Error(`Failed to store credentials: ${error.message}`);
@@ -386,10 +396,10 @@ class CredentialManager {
       await CredentialCache.getInstance().invalidate(
         userId,
         sanitizedServiceType,
-        sanitizedCredentialName
+        sanitizedCredentialName,
       );
       console.log(
-        `✅ Successfully stored encrypted credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`
+        `✅ Successfully stored encrypted credentials for ${sanitizedServiceType}:${sanitizedCredentialName}`,
       );
     } catch (e) {
       console.error("Error storing credentials:", e);
@@ -406,14 +416,14 @@ class CredentialManager {
     serviceType: string,
     credentialName: string,
     credentials: any,
-    scopes?: string
+    scopes?: string,
   ): Promise<string> {
     await this.storeCredentials(
       userId,
       serviceType,
       credentialName,
       credentials,
-      scopes
+      scopes,
     );
 
     const { data, error } = await supabase
@@ -424,16 +434,18 @@ class CredentialManager {
       .eq("name", credentialName)
       .single();
 
-    if (error || !data) {
+    const credential = data as { id: string } | null;
+
+    if (error || !credential) {
       throw new Error("Failed to retrieve credential id after saving");
     }
 
-    return data.id;
+    return credential.id;
   }
 
   static async deleteCredential(
     userId: string,
-    credentialId: string
+    credentialId: string,
   ): Promise<void> {
     try {
       const { error } = await supabase
@@ -455,13 +467,13 @@ class CredentialManager {
 
   static async listCredentials(
     userId: string,
-    serviceType?: string
+    serviceType?: string,
   ): Promise<UserCredential[]> {
     try {
       let q = supabase
         .from("user_credentials")
         .select(
-          "id, name, service_type, created_at, updated_at, is_encrypted, enc_version, key_ref"
+          "id, name, service_type, created_at, updated_at, is_encrypted, enc_version, key_ref",
         )
         .eq("user_id", userId)
         .order("created_at", { ascending: false });

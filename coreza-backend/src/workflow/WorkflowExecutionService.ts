@@ -13,7 +13,10 @@ export class WorkflowExecutionService {
     workflowId: string,
     inputData: Record<string, unknown> = {},
   ) {
-    const workflow = await this.workflowRepo.getOwnedWorkflow(userId, workflowId);
+    const workflow = (await this.workflowRepo.getOwnedWorkflow(
+      userId,
+      workflowId,
+    )) as any;
 
     const run = await this.runRepo.createRun(
       workflowId,
@@ -22,8 +25,10 @@ export class WorkflowExecutionService {
       workflow.edges,
     );
 
+    const runId = (run as any).id;
+
     await jobQueue.addWorkflowExecution({
-      runId: run.id,
+      runId,
       workflowId,
       userId,
       nodes: workflow.nodes,
@@ -34,7 +39,7 @@ export class WorkflowExecutionService {
     });
 
     return {
-      run_id: run.id,
+      run_id: runId,
       status: "queued",
       message: "Workflow execution queued",
     };

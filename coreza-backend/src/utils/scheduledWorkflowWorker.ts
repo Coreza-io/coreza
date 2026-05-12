@@ -40,7 +40,7 @@ export function createScheduledWorkflowWorker({
       console.log(
         `⏰ Processing scheduled workflow ${workflowId} (jobId=${
           job.id
-        }, fireTime=${new Date(scheduledTimestamp).toISOString()})`
+        }, fireTime=${new Date(scheduledTimestamp).toISOString()})`,
       );
 
       try {
@@ -65,37 +65,39 @@ export function createScheduledWorkflowWorker({
             status: "queued",
             initiated_by: userId,
             schedule_key: job.id,
-            nodes: workflow.nodes,
-            edges: workflow.edges,
-            node_count: Array.isArray(workflow.nodes)
-              ? workflow.nodes.length
+            nodes: (workflow as any).nodes,
+            edges: (workflow as any).edges,
+            node_count: Array.isArray((workflow as any).nodes)
+              ? (workflow as any).nodes.length
               : 0,
-            edge_count: Array.isArray(workflow.edges)
-              ? workflow.edges.length
+            edge_count: Array.isArray((workflow as any).edges)
+              ? (workflow as any).edges.length
               : 0,
-          })
+          } as any)
           .select()
           .single();
 
         if (runError) {
           if ((runError as any).code === "23505") {
             console.warn(
-              `⚠️ Duplicate scheduled run prevented for workflow ${workflowId} (schedule_key=${job.id})`
+              `⚠️ Duplicate scheduled run prevented for workflow ${workflowId} (schedule_key=${job.id})`,
             );
             return createSuccessOutput(
               { skipped: true, schedule_key: job.id },
-              { nodeName: "scheduler", category: "scheduled" }
+              { nodeName: "scheduler", category: "scheduled" },
             );
           }
           throw new Error(`Failed to create workflow run: ${runError.message}`);
         }
-        const jobId = `${userId}:${workflowId}:${run.id}`;
+
+        const runId = (run as any).id;
+        const jobId = `${userId}:${workflowId}:${runId}`;
         const data = {
-          runId: run.id,
+          runId: (run as any).id,
           workflowId,
           userId,
-          nodes: workflow.nodes,
-          edges: workflow.edges,
+          nodes: (workflow as any).nodes,
+          edges: (workflow as any).edges,
           trigger: "scheduled",
           executionMode: "manual" as const,
         };
@@ -115,11 +117,11 @@ export function createScheduledWorkflowWorker({
         });
 
         console.log(
-          `✅ Scheduled workflow run created for ${workflowId} (runId=${run.id}, schedule_key=${job.id})`
+          `✅ Scheduled workflow run created for ${workflowId} (runId=${runId}, schedule_key=${job.id})`,
         );
         return createSuccessOutput(
-          { runId: run.id, scheduleKey: job.id },
-          { nodeName: "scheduler", category: "scheduled" }
+          { runId, scheduleKey: job.id },
+          { nodeName: "scheduler", category: "scheduled" },
         );
       } catch (error) {
         const errorOutput = createErrorOutput(error, {
@@ -128,7 +130,7 @@ export function createScheduledWorkflowWorker({
         });
         console.error(
           `❌ Scheduled workflow failed for ${workflowId}:`,
-          errorOutput.error
+          errorOutput.error,
         );
         throw new Error(errorOutput.error);
       }
@@ -136,6 +138,6 @@ export function createScheduledWorkflowWorker({
     {
       connection: redis,
       concurrency: 10,
-    }
+    },
   );
 }

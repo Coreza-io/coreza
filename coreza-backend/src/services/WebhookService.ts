@@ -18,6 +18,12 @@ import {
 } from "../config/webhookProviders";
 import CredentialManager from "../utils/credentialManager";
 
+type WorkflowWebhookRow = {
+  is_active?: boolean | null;
+  nodes?: any[] | null;
+  edges?: any[] | null;
+};
+
 const logger = createLogger("WebhookService");
 
 export interface NormalizedWebhookPayload {
@@ -216,12 +222,14 @@ export class WebhookService {
 
     try {
       // Fetch workflow from database
-      const { data: workflow, error: workflowError } = await supabase
+      const { data, error: workflowError } = await supabase
         .from("workflows")
         .select("*")
         .eq("id", workflowId)
         .eq("user_id", userId)
         .single();
+
+      const workflow = data as WorkflowWebhookRow | null;
 
       if (workflowError || !workflow) {
         logger.warn({ workflowId, nodeId }, "Workflow not found");
@@ -229,7 +237,8 @@ export class WebhookService {
       }
 
       // Find node configuration in workflow
-      const nodes = workflow.nodes as any[];
+      const nodes = ((workflow as { nodes?: any[] } | null)?.nodes ??
+        []) as any[];
       const node = nodes.find((n: any) => n.id === nodeId);
 
       if (!node) {
@@ -289,7 +298,7 @@ export class WebhookService {
             edge_count: Array.isArray(workflow.edges)
               ? workflow.edges.length
               : 0,
-          })
+          } as any)
           .select()
           .single();
 
@@ -298,13 +307,15 @@ export class WebhookService {
           return;
         }
 
+        const runId = (run as any).id;
+
         // Queue workflow execution with webhook payload as initial input
         await bullMqJobQueue.addWorkflowExecution({
-          runId: run.id,
+          runId,
           workflowId,
           userId,
-          nodes: workflow.nodes,
-          edges: workflow.edges,
+          nodes: workflow.nodes ?? [],
+          edges: workflow.edges ?? [],
           trigger: "webhook",
           executionMode: "manual",
           initialInput: {
@@ -313,7 +324,7 @@ export class WebhookService {
         });
 
         logger.info(
-          { workflowId, nodeId, runId: run.id },
+          { workflowId, nodeId, runId },
           "Workflow queued for backend execution",
         );
       } else {
@@ -471,21 +482,20 @@ export class WebhookService {
         return { active: false, error: "Workflow not found" };
       }
 
-      const nodes = workflow.nodes as any[];
+      const userId = (workflow as { user_id: string }).user_id;
+
+      const nodes = ((workflow as { nodes?: any[] } | null)?.nodes ??
+        []) as any[];
       const node = nodes.find((n: any) => n.id === nodeId);
 
       if (!node) {
         return { active: false, error: "Node not found" };
       }
 
-      const callbackUrl = this.generateCallbackUrl(
-        workflow.user_id,
-        workflowId,
-        nodeId,
-      );
+      const callbackUrl = this.generateCallbackUrl(userId, workflowId, nodeId);
 
       return {
-        active: workflow.is_active,
+        active: (workflow as any).is_active,
         callbackUrl,
       };
     } catch (error) {

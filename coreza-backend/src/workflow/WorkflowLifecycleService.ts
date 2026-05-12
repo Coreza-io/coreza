@@ -5,7 +5,10 @@ import { StreamingLifecycleAdapter } from "./StreamingLifecycleAdapter";
 import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
 import { computeCron } from "./schedulePolicy";
-import { detectSingleTriggerOrThrow, type ClassifiedTrigger } from "./triggerClassifier";
+import {
+  detectSingleTriggerOrThrow,
+  type ClassifiedTrigger,
+} from "./triggerClassifier";
 
 export interface ActivationResult {
   workflow: any;
@@ -28,17 +31,22 @@ export class WorkflowLifecycleService {
     isActive: boolean;
     executionId?: string;
   }): Promise<ActivationResult> {
-    const workflow = await this.workflowRepo.getOwnedWorkflow(
+    const workflow = (await this.workflowRepo.getOwnedWorkflow(
       input.userId,
       input.workflowId,
       "id,user_id,nodes,edges,is_active,schedule_cron",
-    );
+    )) as any;
 
     const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
 
     try {
       if (input.isActive) {
-        return await this.activate(workflow, trigger, input.userId, input.executionId);
+        return await this.activate(
+          workflow,
+          trigger,
+          input.userId,
+          input.executionId,
+        );
       }
 
       return await this.deactivate(workflow, trigger, input.userId);
@@ -47,7 +55,8 @@ export class WorkflowLifecycleService {
         .setActivationState(input.userId, input.workflowId, false, null)
         .catch(() => undefined);
 
-      const message = error instanceof Error ? error.message : "Unknown activation error";
+      const message =
+        error instanceof Error ? error.message : "Unknown activation error";
       throw createError(`Activation failed: ${message}`, 502);
     }
   }
@@ -67,7 +76,12 @@ export class WorkflowLifecycleService {
         const schedule = computeCron(trigger.node);
         cronToSave = schedule.cron;
         nextRun = schedule.next;
-        await this.scheduler.schedule(workflow.id, userId, schedule.cron, schedule.timezone);
+        await this.scheduler.schedule(
+          workflow.id,
+          userId,
+          schedule.cron,
+          schedule.timezone,
+        );
         message = "Workflow scheduled";
         break;
       }
@@ -95,9 +109,11 @@ export class WorkflowLifecycleService {
           workflow.edges,
         );
 
+        const runId = (run as any).id;
+
         try {
           await this.backtest.startBacktest(
-            run.id,
+            runId,
             workflow.id,
             userId,
             workflow.nodes,
@@ -107,7 +123,7 @@ export class WorkflowLifecycleService {
           message = "Backtest workflow activated";
         } catch (error: unknown) {
           await this.runRepo.markRunFailed(
-            run.id,
+            runId,
             error instanceof Error
               ? error.message
               : "Backtest initialization failed",
@@ -175,11 +191,11 @@ export class WorkflowLifecycleService {
   }
 
   async deleteWorkflow(userId: string, workflowId: string): Promise<void> {
-    const workflow = await this.workflowRepo.getOwnedWorkflow(
+    const workflow = (await this.workflowRepo.getOwnedWorkflow(
       userId,
       workflowId,
       "id,user_id,nodes,edges,is_active",
-    );
+    )) as any;
 
     if (workflow.is_active) {
       const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);

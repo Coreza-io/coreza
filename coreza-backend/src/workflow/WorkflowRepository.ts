@@ -16,7 +16,7 @@ export class WorkflowRepository {
     }
 
     if (error) {
-      throw createError(error.message, 500);
+      throw createError((error as any).message, 500);
     }
 
     return data;
@@ -47,7 +47,7 @@ export class WorkflowRepository {
         project_id: input.project_id,
         schedule_cron: input.schedule_cron,
         is_active: false,
-      })
+      } as any)
       .select()
       .single();
 
@@ -59,8 +59,7 @@ export class WorkflowRepository {
   }
 
   async update(userId: string, workflowId: string, input: UpdateWorkflowInput) {
-    const { data, error } = await supabase
-      .from("workflows")
+    const { data, error } = await (supabase.from("workflows") as any)
       .update({
         ...input,
         updated_at: new Date().toISOString(),
@@ -110,8 +109,7 @@ export class WorkflowRepository {
       updatePayload.active_execution_id = activeExecutionId;
     }
 
-    const { data, error } = await supabase
-      .from("workflows")
+    const { data, error } = await (supabase.from("workflows") as any)
       .update(updatePayload)
       .eq("id", workflowId)
       .eq("user_id", userId)

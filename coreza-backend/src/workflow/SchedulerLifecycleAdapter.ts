@@ -20,7 +20,7 @@ export class SchedulerLifecycleAdapter {
   }
 
   async getScheduledJobs() {
-    const jobs = await jobQueue.getScheduledJobs();
+    const jobs = (await (jobQueue as any).getScheduledJobs()) as any[];
 
     return jobs.map((job) => ({
       workflow_id: job.id?.startsWith("schedule:")

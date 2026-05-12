@@ -19,7 +19,7 @@ export class WorkflowRunRepository {
         edges,
         node_count: Array.isArray(nodes) ? nodes.length : 0,
         edge_count: Array.isArray(edges) ? edges.length : 0,
-      })
+      } as any)
       .select()
       .single();
 
@@ -31,8 +31,7 @@ export class WorkflowRunRepository {
   }
 
   async markRunFailed(runId: string, errorMessage: string): Promise<void> {
-    const { error } = await supabase
-      .from("workflow_runs")
+    const { error } = await (supabase.from("workflow_runs") as any)
       .update({
         status: "failed",
         completed_at: new Date().toISOString(),
@@ -104,8 +103,7 @@ export class WorkflowRunRepository {
   }
 
   async cancelActiveRuns(workflowId: string) {
-    const { data, error } = await supabase
-      .from("workflow_runs")
+    const { data, error } = await (supabase.from("workflow_runs") as any)
       .update({
         status: "cancelled",
         completed_at: new Date().toISOString(),
@@ -134,8 +132,7 @@ export class WorkflowRunRepository {
     }
 
     if (active?.length) {
-      const { error: updateError } = await supabase
-        .from("backtests")
+      const { error: updateError } = await (supabase.from("backtests") as any)
         .update({
           status: "cancelled",
           completed_at: new Date().toISOString(),

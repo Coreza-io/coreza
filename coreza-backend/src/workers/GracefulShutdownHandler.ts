@@ -35,7 +35,10 @@ export class GracefulShutdownHandler {
 
   constructor(
     workers: Worker[],
-    timeoutMs: number = parseInt(process.env.SHUTDOWN_TIMEOUT_MS || "30000", 10)
+    timeoutMs: number = parseInt(
+      process.env.SHUTDOWN_TIMEOUT_MS || "30000",
+      10,
+    ),
   ) {
     this.workers = workers;
     this.timeoutMs = timeoutMs;
@@ -99,7 +102,7 @@ export class GracefulShutdownHandler {
       if (stats.activeJobsAtStart > 0) {
         logger.info(
           { activeJobs: stats.activeJobsAtStart },
-          "Waiting for active jobs to complete..."
+          "Waiting for active jobs to complete...",
         );
 
         // 3. Wait for active jobs with timeout
@@ -113,7 +116,7 @@ export class GracefulShutdownHandler {
               completed,
               remaining: stats.activeJobsAtStart - completed,
             },
-            "Shutdown timeout - marking remaining jobs as interrupted"
+            "Shutdown timeout - marking remaining jobs as interrupted",
           );
 
           // 4. Mark remaining jobs as interrupted
@@ -198,13 +201,14 @@ export class GracefulShutdownHandler {
         if (!runId) continue;
 
         try {
-          const { error } = await supabase
-            .from("workflow_runs")
-            .update({
-              status: "interrupted",
-              error_message: "Workflow interrupted due to server shutdown",
-              completed_at: new Date().toISOString(),
-            })
+          const updatePayload = {
+            status: "interrupted",
+            error_message: "Workflow interrupted due to server shutdown",
+            completed_at: new Date().toISOString(),
+          };
+
+          const { error } = await (supabase.from("workflow_runs") as any)
+            .update(updatePayload)
             .eq("id", runId)
             .in("status", ["running", "queued"]);
 
@@ -212,7 +216,7 @@ export class GracefulShutdownHandler {
             markedCount++;
             logger.debug(
               { runId, jobId: job.id },
-              "Marked job as interrupted during shutdown"
+              "Marked job as interrupted during shutdown",
             );
           }
         } catch (err) {

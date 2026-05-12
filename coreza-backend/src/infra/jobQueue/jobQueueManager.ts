@@ -19,7 +19,10 @@ import {
 } from "./queueInterface";
 import { createWorkflowWorker } from "../../utils/workflowWorker";
 import { createScheduledWorkflowWorker } from "../../utils/scheduledWorkflowWorker";
-import { createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
+import {
+  createSuccessOutput,
+  createErrorOutput,
+} from "../../utils/normalizeOutput";
 import {
   WorkflowJobResult,
   isWorkflowCancelled,
@@ -32,7 +35,7 @@ import { RedisKeys } from "../redisKeys";
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
   process.env.WORKFLOW_JOB_ATTEMPTS || "1",
-  10
+  10,
 );
 // Queue instances
 const workflowQueue = new Queue("workflow-execution", {
@@ -54,7 +57,7 @@ function createItemParentStore(
   loopId: string,
   item: any,
   itemIndex: number,
-  totalItems: number
+  totalItems: number,
 ): Record<string, any> {
   return {
     ...parentStoreData,
@@ -133,7 +136,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     subgraphNodes: any[],
     subgraphEdges: any[],
     items: any[],
-    options: ParallelLoopOptions = {}
+    options: ParallelLoopOptions = {},
   ): Promise<void> {
     const {
       maxConcurrency = 10,
@@ -142,7 +145,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     } = options;
 
     console.log(
-      `🔄 Creating ${items.length} parallel loop jobs for loop ${loopId} (maxConcurrency: ${maxConcurrency}, continueOnError: ${continueOnError})`
+      `🔄 Creating ${items.length} parallel loop jobs for loop ${loopId} (maxConcurrency: ${maxConcurrency}, continueOnError: ${continueOnError})`,
     );
 
     // Store loop metadata in Redis for continuation
@@ -155,20 +158,23 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         userId,
         workflowId,
         startedAt: new Date().toISOString(),
-      })
+      }),
     );
-    await redis.expire(RedisKeys.loopMeta(userId, workflowId, parentRunId, loopId), 3600);
+    await redis.expire(
+      RedisKeys.loopMeta(userId, workflowId, parentRunId, loopId),
+      3600,
+    );
 
     // Find the first node(s) in the loop body - targets of edges from the Loop node's "loop" handle
     const loopBodyEntryEdges = subgraphEdges.filter(
       (e) =>
-        e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop")
+        e.source === loopId && (!e.sourceHandle || e.sourceHandle === "loop"),
     );
     const startNodeId = loopBodyEntryEdges[0]?.target;
 
     if (!startNodeId) {
       console.warn(
-        `⚠️ No entry node found for loop ${loopId} - loop body may be empty`
+        `⚠️ No entry node found for loop ${loopId} - loop body may be empty`,
       );
     }
 
@@ -190,7 +196,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         loopId,
         item,
         i,
-        items.length
+        items.length,
       );
 
       return {
@@ -233,7 +239,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     });
 
     console.log(
-      `📦 Created ${items.length} child jobs with per-item store injection`
+      `📦 Created ${items.length} child jobs with per-item store injection`,
     );
 
     // Create the flow with parent aggregator and children
@@ -273,18 +279,17 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       `✅ Created ${
         items.length
       } parallel loop jobs with aggregator (${Math.ceil(
-        items.length / maxConcurrency
-      )} batches)`
+        items.length / maxConcurrency,
+      )} batches)`,
     );
   }
-
 
   async startWorkflowRunner(
     workflowId: string,
     userId: string,
     nodes: any[],
     edges: any[],
-    executionId?: string
+    executionId?: string,
   ): Promise<void> {
     const manager = WorkflowRunnerManager.getInstance();
     await manager.startStrategy(workflowId, userId, nodes, edges, executionId);
@@ -295,8 +300,6 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     await manager.stopStrategy(workflowId);
   }
 
-
-
   async startBacktest(
     runId: string,
     workflowId: string,
@@ -305,8 +308,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     edges: any[],
     backtestInitNode: any,
   ): Promise<void> {
-    await supabase
-      .from("workflow_runs")
+    await (supabase.from("workflow_runs") as any)
       .update({
         status: "running",
         started_at: new Date().toISOString(),
@@ -337,7 +339,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     workflowId: string,
     userId: string,
     cronExpression: string,
-    timezone?: string
+    timezone?: string,
   ): Promise<Job> {
     const schedulerId = `${userId}:${workflowId}`;
     // Remove existing scheduled job
@@ -369,13 +371,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
               : undefined,
           removeOnFail: true,
         },
-      }
+      },
     );
 
     console.log(
       `📅 Registered scheduled workflow ${workflowId} (cron=${cronExpression}, timezone=${
         timezone ?? "UTC"
-      }`
+      }`,
     );
 
     return job;
@@ -406,7 +408,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
    */
   async cancelWorkflowJobs(
     userId: string,
-    workflowId: string
+    workflowId: string,
   ): Promise<number> {
     console.log(`🛑 Cancelling workflow ${workflowId}`);
     const schedulerId = `${userId}:${workflowId}`;
@@ -430,7 +432,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           // This triggers the AbortSignal in the worker IMMEDIATELY
           workflowWorker.cancelJob(job.id!, "Job cancelled by user");
           console.log(
-            `🛑 Cancelled active job ${job.id} via BullMQ AbortSignal`
+            `🛑 Cancelled active job ${job.id} via BullMQ AbortSignal`,
           );
           cancelledCount++;
         } else {
@@ -442,8 +444,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
 
         // Update run status in database
         if (job.data.runId) {
-          await supabase
-            .from("workflow_runs")
+          await (supabase.from("workflow_runs") as any)
             .update({
               status: "cancelled",
               completed_at: new Date().toISOString(),
@@ -464,8 +465,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     }
 
     const backtestManager = BacktestSessionManager.getInstance();
-    const activeBacktests = await supabase
-      .from("backtests")
+    const activeBacktests = await (supabase.from("backtests") as any)
       .select("id")
       .eq("workflow_id", workflowId)
       .eq("status", "running");
@@ -478,7 +478,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     }
 
     console.log(
-      `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`
+      `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`,
     );
     return cancelledCount;
   }
@@ -499,7 +499,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
             // Active job - use BullMQ native cancellation
             await workflowWorker.cancelJob(job.id!);
             console.log(
-              `🛑 Cancelled active run ${runId} via BullMQ AbortSignal`
+              `🛑 Cancelled active run ${runId} via BullMQ AbortSignal`,
             );
           } else {
             // Waiting/delayed - remove from queue
@@ -508,8 +508,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           }
 
           // Update run status in database
-          await supabase
-            .from("workflow_runs")
+          await (supabase.from("workflow_runs") as any)
             .update({
               status: "cancelled",
               completed_at: new Date().toISOString(),
@@ -586,7 +585,7 @@ export const bullMqJobQueue = new BullMQJobQueue();
 import { GracefulShutdownHandler } from "../../workers/GracefulShutdownHandler";
 
 const gracefulShutdown = new GracefulShutdownHandler(
-  bullMqJobQueue.getWorkers()
+  bullMqJobQueue.getWorkers(),
 );
 
 // Register signal handlers for graceful shutdown

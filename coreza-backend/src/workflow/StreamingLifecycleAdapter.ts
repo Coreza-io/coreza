@@ -2,7 +2,11 @@ import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { createError } from "../middleware/errorHandler";
 import { getSourceMapping, MarketSource } from "../brokers";
-import { getTradingStreamsForSource, isTradingSource as checkIsTradingSource, BROKER_CAPABILITIES } from "../brokers/capabilities";
+import {
+  getTradingStreamsForSource,
+  isTradingSource as checkIsTradingSource,
+  BROKER_CAPABILITIES,
+} from "../brokers/capabilities";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { RegistrationService } from "../services/RegistrationService";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
@@ -133,6 +137,7 @@ export class StreamingLifecycleAdapter {
         };
       }
     ).values || {}) as {
+      mode: string;
       scope?: string;
       onlyClosedBars?: boolean;
       symbols?: unknown;
@@ -180,25 +185,28 @@ export class StreamingLifecycleAdapter {
     const hasOrderUpdate = streamType.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
     );
-    const hasNews = streamType.some((streamName) => NEWS_MARKERS.has(streamName));
-
-    const { marketstreamType, tradingstreamType, newsStreamType } = streamType.reduce(
-      (acc, t: string) => {
-        if (ORDER_UPDATE_MARKERS.has(t)) {
-          acc.tradingstreamType.push(t);
-        } else if (NEWS_MARKERS.has(t)) {
-          acc.newsStreamType.push(t);
-        } else {
-          acc.marketstreamType.push(t);
-        }
-        return acc;
-      },
-      {
-        marketstreamType: [] as string[],
-        tradingstreamType: [] as string[],
-        newsStreamType: [] as string[],
-      },
+    const hasNews = streamType.some((streamName) =>
+      NEWS_MARKERS.has(streamName),
     );
+
+    const { marketstreamType, tradingstreamType, newsStreamType } =
+      streamType.reduce(
+        (acc, t: string) => {
+          if (ORDER_UPDATE_MARKERS.has(t)) {
+            acc.tradingstreamType.push(t);
+          } else if (NEWS_MARKERS.has(t)) {
+            acc.newsStreamType.push(t);
+          } else {
+            acc.marketstreamType.push(t);
+          }
+          return acc;
+        },
+        {
+          marketstreamType: [] as string[],
+          tradingstreamType: [] as string[],
+          newsStreamType: [] as string[],
+        },
+      );
 
     const environment = nodeValues.environment as string;
     const subscriptionScope: "workflow" | "global" =
@@ -221,7 +229,11 @@ export class StreamingLifecycleAdapter {
         environment,
         assetType: nodeValues.assetType,
         marketType: nodeValues.marketType,
-        contractType: nodeValues.contractType,
+        contractType: nodeValues.contractType as
+          | "perpetual"
+          | "current_quarter"
+          | "next_quarter"
+          | undefined,
         scope: subscriptionScope,
         targetWorkflowId: workflowId,
       });
@@ -246,8 +258,6 @@ export class StreamingLifecycleAdapter {
       }
     }
 
-
-
     // 1b. Subscribe to dedicated news source when selected
     if (hasNews) {
       const baseName = triggerNode.subCategory;
@@ -264,7 +274,11 @@ export class StreamingLifecycleAdapter {
         environment,
         assetType: nodeValues.assetType,
         marketType: nodeValues.marketType,
-        contractType: nodeValues.contractType,
+        contractType: nodeValues.contractType as
+          | "perpetual"
+          | "current_quarter"
+          | "next_quarter"
+          | undefined,
         scope: subscriptionScope,
         targetWorkflowId: workflowId,
       });
@@ -306,9 +320,16 @@ export class StreamingLifecycleAdapter {
         environment,
         assetType: nodeValues.assetType,
         marketType: nodeValues.marketType,
-        contractType: nodeValues.contractType,
+        contractType: nodeValues.contractType as
+          | "perpetual"
+          | "current_quarter"
+          | "next_quarter"
+          | undefined,
         interval: nodeValues.interval,
-        depth_levels: nodeValues.depth_levels,
+        depth_levels:
+          nodeValues.depth_levels !== undefined
+            ? String(nodeValues.depth_levels)
+            : undefined,
         scope: subscriptionScope,
         targetWorkflowId: workflowId,
       };
@@ -370,15 +391,22 @@ export class StreamingLifecycleAdapter {
       nodeId: triggerNode.id,
       source: sourceId,
       mode: nodeValues.mode,
-      scope: nodeValues.scope,
+      scope: nodeValues.scope || "workflow",
       environment,
       symbols: symbols,
-      streamTypes: nodeValues.stream_type,
+      streamTypes: nodeValues.stream_type as any[],
       assetType: nodeValues.assetType,
       marketType: nodeValues.marketType,
-      contractType: nodeValues.contractType,
+      contractType: nodeValues.contractType as
+        | "perpetual"
+        | "current_quarter"
+        | "next_quarter"
+        | undefined,
       interval: nodeValues.interval,
-      depth_levels: nodeValues.depth_levels,
+      depth_levels:
+        nodeValues.depth_levels !== undefined
+          ? String(nodeValues.depth_levels)
+          : undefined,
     });
 
     // 3. NOW register the workflow (subscriptions are materialized)
@@ -392,7 +420,7 @@ export class StreamingLifecycleAdapter {
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
       isLive: true,
       symbols: symbols,
-      streamTypes: nodeValues.stream_type,
+      streamTypes: nodeValues.stream_type as any[],
     });
 
     await this.clearSessionData(userId, workflowId);
@@ -501,9 +529,16 @@ export class StreamingLifecycleAdapter {
           environment: nodeValues.environment as string,
           assetType: nodeValues.assetType as string,
           marketType: nodeValues.marketType as string,
-          contractType: nodeValues.contractType as string,
+          contractType: nodeValues.contractType as
+            | "perpetual"
+            | "current_quarter"
+            | "next_quarter"
+            | undefined,
           interval: nodeValues.interval as string,
-          depth_levels: nodeValues.depth_levels as string,
+          depth_levels:
+            nodeValues.depth_levels !== undefined
+              ? String(nodeValues.depth_levels)
+              : undefined,
           scope: nodeValues.scope,
           targetWorkflowId: workflowId,
         });
@@ -623,7 +658,9 @@ export class StreamingLifecycleAdapter {
             // Config-driven: if broker has spot trading streams, determine market type
             ...(BROKER_CAPABILITIES[source]?.streaming.spotTradingStreams && {
               marketType: streams.some((s) =>
-                BROKER_CAPABILITIES[source]?.streaming.spotTradingStreams?.includes(s)
+                BROKER_CAPABILITIES[
+                  source
+                ]?.streaming.spotTradingStreams?.includes(s),
               )
                 ? "spot"
                 : "futures",
@@ -642,7 +679,11 @@ export class StreamingLifecycleAdapter {
             environment,
             assetType: undefined,
             marketType: undefined,
-            contractType,
+            contractType: contractType as
+              | "perpetual"
+              | "current_quarter"
+              | "next_quarter"
+              | undefined,
             interval,
             scope: "workflow",
             targetWorkflowId: workflowId,

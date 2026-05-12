@@ -2,7 +2,13 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FieldWrapper } from "./FieldWrapper";
@@ -58,11 +64,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         if (!currentValue) return false;
         if (Array.isArray(currentValue)) {
           return currentValue.some((v: string) =>
-            (allowedValues as string[]).includes(v)
+            (allowedValues as string[]).includes(v),
           );
         }
         return (allowedValues as string[]).includes(currentValue);
-      }
+      },
     );
     if (!shouldShow) return null;
   }
@@ -71,9 +77,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     const shouldHide = Object.entries(field.displayOptions.hide).some(
       ([depKey, allowedValues]) => {
         const currentValue = fieldState[depKey];
-        const values = Array.isArray(allowedValues) ? allowedValues : [allowedValues];
+        const values = Array.isArray(allowedValues)
+          ? allowedValues
+          : [allowedValues];
         return values.some((v: any) => {
-          const compareVal = typeof v === "object" && v !== null ? (v.id || v.value) : v;
+          const compareVal =
+            typeof v === "object" && v !== null ? v.id || v.value : v;
           return String(currentValue) === String(compareVal);
         });
       },
@@ -84,14 +93,18 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   let displayLabel = field.label;
   if (field.dynamicLabel?.dependsOn && field.dynamicLabel?.labelsByValue) {
     const dependentValue = fieldState[field.dynamicLabel.dependsOn];
-    displayLabel = field.dynamicLabel.labelsByValue[dependentValue] || field.label;
+    displayLabel =
+      field.dynamicLabel.labelsByValue[dependentValue] || field.label;
   }
 
   const fieldValue = value ?? fieldState[field.key];
-  const isReference = typeof fieldValue === "string" && fieldValue.includes("{{");
-  const referencePreview = isReference && getPreview ? getPreview(field.key) : null;
+  const isReference =
+    typeof fieldValue === "string" && fieldValue.includes("{{");
+  const referencePreview =
+    isReference && getPreview ? getPreview(field.key) : null;
   const [showFloatingPreview, setShowFloatingPreview] = React.useState(false);
-  const [previewAnchorRect, setPreviewAnchorRect] = React.useState<DOMRect | null>(null);
+  const [previewAnchorRect, setPreviewAnchorRect] =
+    React.useState<DOMRect | null>(null);
   const fieldWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const previewCardRef = React.useRef<HTMLDivElement | null>(null);
   const activeElementRef = React.useRef<HTMLElement | null>(null);
@@ -112,7 +125,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   React.useEffect(() => {
     if (field.type !== "multiselect") return;
     const options = selectOptions[field.key] || field.options || [];
-    const valueMappedOpts = options.filter((opt: any) => opt.valueMap?.field && opt.valueMap?.values);
+    const valueMappedOpts = options.filter(
+      (opt: any) => opt.valueMap?.field && opt.valueMap?.values,
+    );
     if (valueMappedOpts.length === 0) return;
 
     const currentValues: string[] = Array.isArray(fieldValue)
@@ -128,10 +143,16 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     for (const opt of valueMappedOpts) {
       const depValue = fieldState[opt.valueMap.field];
       if (!depValue) continue;
-      const resolvedId = opt.valueMap.values[depValue] || (opt.id || opt.value);
-      const allMapped = [opt.id || opt.value, ...Object.values(opt.valueMap.values)] as string[];
+      const resolvedId = opt.valueMap.values[depValue] || opt.id || opt.value;
+      const allMapped = [
+        opt.id || opt.value,
+        ...Object.values(opt.valueMap.values),
+      ] as string[];
       const currentlySelected = allMapped.filter((v) => newValues.includes(v));
-      if (currentlySelected.length > 0 && !currentlySelected.includes(resolvedId)) {
+      if (
+        currentlySelected.length > 0 &&
+        !currentlySelected.includes(resolvedId)
+      ) {
         newValues = newValues.filter((v) => !allMapped.includes(v));
         newValues.push(resolvedId);
         changed = true;
@@ -141,7 +162,17 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     if (changed) {
       onChange(field.key, newValues);
     }
-  }, [field.type, field.key, field.options, field.default, fieldValue, selectOptions, fieldState, onChange, multiselectValueMapDeps]);
+  }, [
+    field.type,
+    field.key,
+    field.options,
+    field.default,
+    fieldValue,
+    selectOptions,
+    fieldState,
+    onChange,
+    multiselectValueMapDeps,
+  ]);
 
   const handleDropWrapper = (e: React.DragEvent) => {
     if (!onDrop) return;
@@ -158,7 +189,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   };
 
   const handleInputFocus = (
-    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     e.target.select();
     if (isReference) {
@@ -167,7 +198,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   };
 
   const handleInputClick = (
-    e: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     if (isReference) {
       openFloatingPreview(e.currentTarget);
@@ -203,7 +234,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     };
 
     window.addEventListener("pointerdown", handlePointerDown, true);
-    return () => window.removeEventListener("pointerdown", handlePointerDown, true);
+    return () =>
+      window.removeEventListener("pointerdown", handlePointerDown, true);
   }, [showFloatingPreview]);
 
   React.useEffect(() => {
@@ -231,13 +263,17 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   }, [isReference, referencePreview]);
 
   const renderPreviewCard = () => {
-    if (!referencePreview || !showFloatingPreview || !previewAnchorRect) return null;
+    if (!referencePreview || !showFloatingPreview || !previewAnchorRect)
+      return null;
 
     const availableWidth = window.innerWidth - 16;
-    const width = Math.min(Math.max(previewAnchorRect.width, 260), availableWidth);
+    const width = Math.min(
+      Math.max(previewAnchorRect.width, 260),
+      availableWidth,
+    );
     const left = Math.min(
       Math.max(8, previewAnchorRect.left),
-      availableWidth - width + 8
+      availableWidth - width + 8,
     );
 
     return createPortal(
@@ -255,7 +291,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
       >
         <div className="rounded-lg border bg-card text-card-foreground shadow-lg overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/60">
-            <span className="text-xs font-medium text-muted-foreground">Result</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              Result
+            </span>
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
               Preview
             </span>
@@ -269,14 +307,15 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           </div>
         </div>
       </div>,
-      document.body
+      document.body,
     );
   };
 
   const renderField = () => {
     switch (field.type) {
       case "webhookUrl": {
-        const baseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+        const baseUrl =
+          import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
         const provider =
           definition?.name === "WebhookTrigger"
             ? "generic"
@@ -296,7 +335,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Input value={webhookUrl} readOnly className="text-xs font-mono bg-muted" />
+              <Input
+                value={webhookUrl}
+                readOnly
+                className="text-xs font-mono bg-muted"
+              />
               <Button
                 size="sm"
                 variant="outline"
@@ -305,7 +348,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                     navigator.clipboard.writeText(webhookUrl);
                   }
                 }}
-                disabled={!webhookUrl || webhookUrl.includes("will be available")}
+                disabled={
+                  !webhookUrl || webhookUrl.includes("will be available")
+                }
               >
                 Copy
               </Button>
@@ -322,7 +367,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
         if (optionList?.length) {
           const displayValue =
-            fieldValue ?? (typeof field.default === "string" ? field.default : "");
+            fieldValue ??
+            (typeof field.default === "string" ? field.default : "");
 
           return (
             <Select
@@ -331,7 +377,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               disabled={readOnly}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={field.placeholder || "Select option"} />
+                <SelectValue
+                  placeholder={field.placeholder || "Select option"}
+                />
               </SelectTrigger>
               <SelectContent>
                 {optionList.map((opt: any) => (
@@ -357,8 +405,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                 field.type === "number"
                   ? "number"
                   : field.type === "password"
-                  ? "password"
-                  : undefined
+                    ? "password"
+                    : undefined
               }
             />
             {renderPreviewCard()}
@@ -393,7 +441,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               onAddCredential={() => setShowAuth?.(true)}
               onCredentialChanged={(val) => {
                 const dependentApiFields = definition.fields?.filter(
-                  (f: any) => f.dependsOn === field.key && f.optionsSource === "dependentApi"
+                  (f: any) =>
+                    f.dependsOn === field.key &&
+                    f.optionsSource === "dependentApi",
                 );
                 dependentApiFields?.forEach((depField: any) => {
                   fetchDependentOptions?.(depField, val);
@@ -414,7 +464,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               isLoading={loadingSelect[field.key]}
               dependsOn={field.dependsOn}
               placeholder={field.placeholder}
-              emptyLabel={!fieldState[field.dependsOn] ? "Select credential first" : "No accounts found"}
+              emptyLabel={
+                !fieldState[field.dependsOn]
+                  ? "Select credential first"
+                  : "No accounts found"
+              }
               disabled={readOnly}
             />
           );
@@ -430,7 +484,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               onValueChange={(val) => {
                 const updates: Record<string, any> = { [field.key]: val };
                 const variableFields = definition.fields?.filter(
-                  (f: any) => f.optionsSource === "storeVariablesApi" && f.dependsOn === field.key
+                  (f: any) =>
+                    f.optionsSource === "storeVariablesApi" &&
+                    f.dependsOn === field.key,
                 );
                 variableFields?.forEach((varField: any) => {
                   updates[varField.key] = "";
@@ -488,8 +544,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                     !hasParentValue
                       ? "Select workflow first"
                       : loadingSelect[field.key]
-                      ? "Loading variables..."
-                      : field.placeholder || "Select variable"
+                        ? "Loading variables..."
+                        : field.placeholder || "Select variable"
                   }
                 />
               </SelectTrigger>
@@ -505,8 +561,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                     {!hasParentValue
                       ? "Select workflow first"
                       : loadingSelect[field.key]
-                      ? "Loading..."
-                      : "No variables found"}
+                        ? "Loading..."
+                        : "No variables found"}
                   </SelectItem>
                 )}
               </SelectContent>
@@ -515,9 +571,13 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         }
 
         let displayOptions: any[] = [];
-        if (field.dynamicOptions?.dependsOn && field.dynamicOptions?.optionsByValue) {
+        if (
+          field.dynamicOptions?.dependsOn &&
+          field.dynamicOptions?.optionsByValue
+        ) {
           const parentValue = fieldState[field.dynamicOptions.dependsOn];
-          displayOptions = field.dynamicOptions.optionsByValue[parentValue] || [];
+          displayOptions =
+            field.dynamicOptions.optionsByValue[parentValue] || [];
         } else if (field.dependsOn && field.conditionalOptions) {
           const parentValue = fieldState[field.dependsOn];
           displayOptions = field.conditionalOptions[parentValue] || [];
@@ -532,14 +592,16 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               onChange(field.key, val);
               if (field.conditionalOptions) {
                 const dependentFields = definition.fields?.filter(
-                  (f: any) => f.dependsOn === field.key
+                  (f: any) => f.dependsOn === field.key,
                 );
                 dependentFields?.forEach((depField: any) => {
                   onChange(depField.key, "");
                 });
               }
               const dependentApiFields = definition.fields?.filter(
-                (f: any) => f.dependsOn === field.key && f.optionsSource === "dependentApi"
+                (f: any) =>
+                  f.dependsOn === field.key &&
+                  f.optionsSource === "dependentApi",
               );
               dependentApiFields?.forEach((depField: any) => {
                 fetchDependentOptions?.(depField, val);
@@ -552,7 +614,10 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             </SelectTrigger>
             <SelectContent>
               {displayOptions.map((opt: any) => (
-                <SelectItem key={opt.id || opt.value} value={opt.id || opt.value}>
+                <SelectItem
+                  key={opt.id || opt.value}
+                  value={opt.id || opt.value}
+                >
                   {opt.name || opt.label || opt.id || opt.value}
                 </SelectItem>
               ))}
@@ -590,14 +655,14 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             <div className="flex flex-col">
               <span className="text-sm text-foreground">{field.label}</span>
               {field.description && shouldShowDescription && (
-                <span className="text-xs text-muted-foreground">{field.description}</span>
+                <span className="text-xs text-muted-foreground">
+                  {field.description}
+                </span>
               )}
             </div>
             <Switch
               checked={
-                typeof fieldValue === "boolean"
-                  ? fieldValue
-                  : !!field.default
+                typeof fieldValue === "boolean" ? fieldValue : !!field.default
               }
               onCheckedChange={(checked) => onChange(field.key, checked)}
               disabled={readOnly}
@@ -606,8 +671,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         );
 
       case "multiselect": {
-        const selectedValues = Array.isArray(fieldValue) ? fieldValue : field.default || [];
-        const availableOptions = selectOptions[field.key] || field.options || [];
+        const selectedValues = Array.isArray(fieldValue)
+          ? fieldValue
+          : field.default || [];
+        const availableOptions =
+          selectOptions[field.key] || field.options || [];
 
         // Helper: resolve the actual value for an option based on valueMap
         const resolveOptionId = (opt: any): string => {
@@ -642,7 +710,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           return Object.entries(opt.displayOptions.show).every(
             ([depKey, rawAllowed]: [string, any]) => {
               const current = fieldState[depKey];
-              const allowed = Array.isArray(rawAllowed) ? rawAllowed : [rawAllowed];
+              const allowed = Array.isArray(rawAllowed)
+                ? rawAllowed
+                : [rawAllowed];
               if (Array.isArray(current)) {
                 return current.some((v: any) => allowed.includes(v));
               }
@@ -659,22 +729,31 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               const isSelected = isOptionSelected(opt);
 
               return (
-                <div key={optionId} className="flex items-center justify-between">
+                <div
+                  key={optionId}
+                  className="flex items-center justify-between"
+                >
                   <span className="text-sm text-foreground">{optionLabel}</span>
                   <Switch
                     checked={isSelected}
                     onCheckedChange={(checked) => {
-                      const currentValues = Array.isArray(fieldValue) ? fieldValue : field.default || [];
+                      const currentValues = Array.isArray(fieldValue)
+                        ? fieldValue
+                        : field.default || [];
                       if (checked) {
                         const resolvedId = resolveOptionId(opt);
                         // Remove any stale mapped values first, then add resolved
                         const allMapped = getAllMappedValues(opt);
-                        const cleaned = currentValues.filter((v: string) => !allMapped.includes(v));
+                        const cleaned = currentValues.filter(
+                          (v: string) => !allMapped.includes(v),
+                        );
                         onChange(field.key, [...cleaned, resolvedId]);
                       } else {
                         // Remove all possible mapped values
                         const allMapped = getAllMappedValues(opt);
-                        const newValues = currentValues.filter((v: string) => !allMapped.includes(v));
+                        const newValues = currentValues.filter(
+                          (v: string) => !allMapped.includes(v),
+                        );
                         onChange(field.key, newValues);
                       }
                     }}

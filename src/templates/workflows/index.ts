@@ -58,8 +58,16 @@ export const workflowTemplates: Record<TemplateId, WorkflowTemplate> = {
 };
 
 export const getTemplate = (id: string | null | undefined): WorkflowTemplate => {
-  if (id && id in workflowTemplates) return workflowTemplates[id as TemplateId];
-  return workflowTemplates.custom;
+  const tpl =
+    id && id in workflowTemplates
+      ? workflowTemplates[id as TemplateId]
+      : workflowTemplates.custom;
+  // Deep clone nodes/edges so editor mutations never corrupt the shared template.
+  return {
+    ...tpl,
+    nodes: JSON.parse(JSON.stringify(tpl.nodes)) as Node[],
+    edges: JSON.parse(JSON.stringify(tpl.edges)) as Edge[],
+  };
 };
 
 export const isValidTemplate = (tpl: WorkflowTemplate): boolean =>

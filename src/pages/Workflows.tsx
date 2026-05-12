@@ -497,6 +497,17 @@ const Workflows = () => {
         </motion.div>
       )}
 
+      <TemplateChooserDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSelect={(templateId: TemplateId) => {
+          const params = new URLSearchParams();
+          params.set("template", templateId);
+          if (projectId) params.set("project", projectId);
+          navigate(`/dashboard/workflow/new?${params.toString()}`);
+        }}
+      />
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog
         open={isDeleteDialogOpen}

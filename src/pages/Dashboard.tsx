@@ -26,7 +26,9 @@ import {
   Loader2
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { TemplateChooserDialog } from "@/components/workflow/TemplateChooserDialog";
+import type { TemplateId } from "@/templates/workflows";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -35,6 +37,8 @@ import { useAuth } from "@/contexts/AuthContext";
 const Dashboard = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState({
     activeWorkflows: 0,
     totalWorkflows: 0,
@@ -385,12 +389,13 @@ const Dashboard = () => {
           </p>
         </div>
         <div className="flex gap-3">
-          <Link to="/dashboard/workflow/new">
-            <Button className="bg-gradient-primary hover:shadow-glow">
-              <Plus className="h-4 w-4 mr-2" />
-              New Workflow
-            </Button>
-          </Link>
+          <Button
+            onClick={() => setTemplateDialogOpen(true)}
+            className="bg-gradient-primary hover:shadow-glow"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Workflow
+          </Button>
         </div>
       </div>
 
@@ -776,11 +781,14 @@ const Dashboard = () => {
                 ) : (
                   <div className="text-center py-4 text-muted-foreground">
                     <p>No workflows found</p>
-                    <Link to="/dashboard/workflow/new">
-                      <Button variant="outline" size="sm" className="mt-2">
-                        Create Your First Workflow
-                      </Button>
-                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => setTemplateDialogOpen(true)}
+                    >
+                      Create Your First Workflow
+                    </Button>
                   </div>
                 )}
               </div>
@@ -863,12 +871,14 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
-              <Link to="/dashboard/workflow/new">
-                <Button variant="outline" className="w-full h-auto p-4 flex flex-col gap-2">
-                  <Plus className="h-6 w-6" />
-                  <span>Create Workflow</span>
-                </Button>
-              </Link>
+              <Button
+                variant="outline"
+                className="w-full h-auto p-4 flex flex-col gap-2"
+                onClick={() => setTemplateDialogOpen(true)}
+              >
+                <Plus className="h-6 w-6" />
+                <span>Create Workflow</span>
+              </Button>
               <Link to="/dashboard/projects">
                 <Button variant="outline" className="w-full h-auto p-4 flex flex-col gap-2">
                   <Activity className="h-6 w-6" />
@@ -883,6 +893,13 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </motion.div>
+      <TemplateChooserDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSelect={(templateId: TemplateId) => {
+          navigate(`/dashboard/workflow/new?template=${templateId}`);
+        }}
+      />
     </div>
   );
 };

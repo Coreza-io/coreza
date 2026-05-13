@@ -25,7 +25,8 @@ export interface WorkflowTemplate {
 const hydrate = (raw: { nodes: any[]; edges: any[] }): { nodes: Node[]; edges: Edge[] } => {
   const nodes = raw.nodes
     .map((n) => {
-      const definition = nodeManifest[n.type as keyof typeof nodeManifest];
+      const nodeName = n.type || n.name || n.id;
+      const definition = nodeManifest[nodeName as keyof typeof nodeManifest];
       if (!definition) {
         return null;
       }
@@ -38,7 +39,7 @@ const hydrate = (raw: { nodes: any[]; edges: any[] }): { nodes: Node[]; edges: E
 
       return {
         id: n.id,
-        type: n.type,
+        type: nodeName,
         position: n.position,
         data: {
           ...(n.data || {}),

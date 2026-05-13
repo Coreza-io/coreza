@@ -1,33 +1,768 @@
 {
+  "meta": {
+    "exportedAt": "2026-05-13T18:57:25.216Z",
+    "version": "1.0",
+    "source": "coreza"
+  },
+  "name": "stream",
   "nodes": [
     {
-      "id": "st-stream",
-      "type": "AlpacaStreamListener",
-      "position": { "x": 80, "y": 200 },
-      "data": { "label": "Market Stream" }
-    },
-    {
-      "id": "st-rsi",
-      "type": "RSI",
-      "position": { "x": 380, "y": 200 },
-      "data": { "label": "RSI" }
-    },
-    {
-      "id": "st-if",
-      "type": "If",
-      "position": { "x": 680, "y": 200 },
-      "data": { "label": "Signal Check" }
-    },
-    {
-      "id": "st-portfolio",
+      "id": "getPosition",
       "type": "Portfolio",
-      "position": { "x": 980, "y": 200 },
-      "data": { "label": "Place Order" }
+      "category": "Portfolio",
+      "position": {
+        "x": -44.05868572541673,
+        "y": -91.70217598027119
+      },
+      "values": {
+        "mode": "broker",
+        "broker": "alpaca",
+        "symbol": "{{ $('AlpacaStreamListener').json.data.BarSeries.[0].symbol }}",
+        "operation": "get_position",
+        "backtestId": null,
+        "base_currency": "USD",
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "side": "long",
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "marketPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "noPosition",
+      "type": "If",
+      "category": "Logic",
+      "position": {
+        "x": 493.1501876724194,
+        "y": 6.088495798404097
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('getPosition').json.data.positions }}",
+            "right": "",
+            "dataType": "array",
+            "operator": "array_is_empty"
+          }
+        ],
+        "logicalOps": []
+      }
+    },
+    {
+      "id": "createPortfolio",
+      "type": "Portfolio",
+      "category": "Portfolio",
+      "position": {
+        "x": -883.6333950890789,
+        "y": 195.84252736843428
+      },
+      "values": {
+        "mode": "broker",
+        "side": "{{ $('getBrokerPosition').json.data.positions.[0:10].side }}",
+        "broker": "alpaca",
+        "operation": "create_portfolio",
+        "balance_cash": "{{ $('getBrokerBalance').json.data.cash }}",
+        "base_currency": "USDT",
+        "portfolio_tab": "balance",
+        "balance_equity": "{{ $('getBrokerBalance').json.data.equity }}",
+        "balance_margin": "{{ $('getBrokerBalance').json.data.multiplier }}",
+        "position_symbol": "{{ $('getBrokerPosition').json.data.positions.[0:10].symbol }}",
+        "position_quantity": "{{ $('getBrokerPosition').json.data.positions.[0:10].qty_available }}",
+        "balance_buying_power": "{{ $('getBrokerBalance').json.data.buying_power }}",
+        "position_market_value": "{{ $('getBrokerPosition').json.data.positions.[0:10].market_value }}",
+        "position_realized_pnl": null,
+        "balance_initial_margin": "{{ $('getBrokerBalance').json.data.initial_margin }}",
+        "position_current_price": "{{ $('getBrokerPosition').json.data.positions.[0:10].current_price }}",
+        "position_avg_fill_price": "{{ $('getBrokerPosition').json.data.positions.[0:10].avg_entry_price }}",
+        "position_unrealized_pnl": "{{ $('getBrokerPosition').json.data.positions.[0:10].unrealized_intraday_pl }}",
+        "position_open_cost_basis": "{{ $('getBrokerPosition').json.data.positions.[0:10].cost_basis }}",
+        "backtestId": null,
+        "cash_balance": null,
+        "symbol": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "marketPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "updatePortfolioValue",
+      "type": "Portfolio",
+      "category": "Portfolio",
+      "position": {
+        "x": -314.7436935605974,
+        "y": 49.87164423621245
+      },
+      "values": {
+        "mode": "broker",
+        "broker": "alpaca",
+        "symbol": "{{ $('AlpacaStreamListener').json.data.BarSeries.[0].symbol }}",
+        "operation": "update_mtm",
+        "marketPrice": "{{ $('AlpacaStreamListener').json.data.BarSeries.[0].bars.[0].close }}",
+        "backtestId": null,
+        "base_currency": "USD",
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "side": "long",
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "portfolioNotExist",
+      "type": "If",
+      "category": "Logic",
+      "position": {
+        "x": -1501.1655938218262,
+        "y": 347.86656208774474
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('getPortfolio').json.data.cash }}",
+            "right": "",
+            "dataType": "object",
+            "operator": "object_is_empty"
+          }
+        ],
+        "logicalOps": []
+      }
+    },
+    {
+      "id": "getPortfolio",
+      "type": "Portfolio",
+      "category": "Portfolio",
+      "position": {
+        "x": -1749.0117773389177,
+        "y": 345.6159790399528
+      },
+      "values": {
+        "mode": "broker",
+        "broker": "alpaca",
+        "operation": "get_portfolio",
+        "base_currency": "USDT",
+        "backtestId": null,
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "side": "long",
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "symbol": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "marketPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "Switch",
+      "type": "Switch",
+      "category": "Logic",
+      "position": {
+        "x": -614.3062985111188,
+        "y": 368.33204237789323
+      },
+      "values": {
+        "cases": [
+          {
+            "left": "{{ $('OnAlpacaStreamListener').json.data.type }}",
+            "right": "bar",
+            "operator": "===",
+            "outputName": "market"
+          },
+          {
+            "left": "{{ $('OnAlpacaStreamListener').json.data.type }}",
+            "right": "trade_updates",
+            "dataType": "any",
+            "operator": "===",
+            "outputName": "order_update"
+          }
+        ],
+        "enableFallback": true,
+        "checkDependency": true
+      }
+    },
+    {
+      "id": "syncFills",
+      "type": "Portfolio",
+      "category": "Portfolio",
+      "position": {
+        "x": -311.4712522329676,
+        "y": 489.5583535373013
+      },
+      "values": {
+        "mode": "broker",
+        "side": "{{ $('AlpacaStreamListener').json.data.order.side }}",
+        "broker": "alpaca",
+        "status": "{{ $('AlpacaStreamListener').json.data.order.orderStatus }}",
+        "symbol": "{{ $('AlpacaStreamListener').json.data.symbol }}",
+        "orderId": "{{ $('AlpacaStreamListener').json.data.order.orderId }}",
+        "origQty": "{{ $('AlpacaStreamListener').json.data.order.requestedQty }}",
+        "feeAsset": null,
+        "feeAmount": "0",
+        "filledQty": "{{ $('AlpacaStreamListener').json.data.order.filledQty }}",
+        "operation": "sync_order_event",
+        "orderType": "{{ $('AlpacaStreamListener').json.data.order.orderType }}",
+        "stopPrice": null,
+        "limitPrice": null,
+        "trailPrice": null,
+        "executionId": "{{ $('AlpacaStreamListener').json.data.order.rawOrderData.event_id }}",
+        "positionQty": "{{ $('AlpacaStreamListener').json.data.order.positionQty }}",
+        "timeInForce": "{{ $('AlpacaStreamListener').json.data.order.rawOrderData.order.time_in_force }}",
+        "avgFillPrice": "{{ $('AlpacaStreamListener').json.data.order.filledAvgPrice }}",
+        "trailPercent": null,
+        "base_currency": "USDT",
+        "clientOrderId": "{{ $('AlpacaStreamListener').json.data.order.clientOrderId }}",
+        "backtestId": null,
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "asset": null,
+        "algoId": null,
+        "marketPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "getOpenOrders",
+      "type": "Portfolio",
+      "category": "Portfolio",
+      "position": {
+        "x": -43.069142296386715,
+        "y": 122.22685675981398
+      },
+      "values": {
+        "mode": "broker",
+        "broker": "alpaca",
+        "symbol": "{{ $('AlpacaStreamListener').json.data.BarSeries.[0].symbol }}",
+        "operation": "get_open_orders",
+        "backtestId": null,
+        "base_currency": "USD",
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "side": "long",
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "marketPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "noOpenOrder",
+      "type": "If",
+      "category": "Logic",
+      "position": {
+        "x": 218.75426625603072,
+        "y": 31.166804063467453
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('getOpenOrders').json.data.openOrders }}",
+            "right": "",
+            "dataType": "array",
+            "operator": "array_is_empty"
+          }
+        ],
+        "logicalOps": []
+      }
+    },
+    {
+      "id": "isLongPosition",
+      "type": "If",
+      "category": "Logic",
+      "position": {
+        "x": 751.4405036858977,
+        "y": 126.09676105146474
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('getPosition').json.data.positions.[0].side }}",
+            "right": "long",
+            "dataType": "string",
+            "operator": "==="
+          }
+        ],
+        "logicalOps": []
+      }
+    },
+    {
+      "id": "getBrokerBalance",
+      "type": "Alpaca",
+      "category": "Broker",
+      "position": {
+        "x": -1206.4073736176697,
+        "y": 0.8935588974876225
+      },
+      "values": {
+        "assetType": "crypto",
+        "operation": "get_account",
+        "environment": "paper",
+        "credential_id": "My Alpaca2",
+        "order_id": null,
+        "symbol": null,
+        "crypto_base": null,
+        "crypto_quote": "USD",
+        "interval": null,
+        "limit": null,
+        "feed": "sip",
+        "currency": "USD",
+        "sort": "asc",
+        "start": null,
+        "end": null,
+        "include_content": "false",
+        "page_token": null,
+        "side": "buy",
+        "qty": null,
+        "percentage": null,
+        "type": "market",
+        "limit_price": null,
+        "stop_price": null,
+        "trail_price": null,
+        "trail_percent": null,
+        "time_in_force": "day",
+        "extended_hours": "false"
+      }
+    },
+    {
+      "id": "getBrokerPosition",
+      "type": "Alpaca",
+      "category": "Broker",
+      "position": {
+        "x": -1208.1181570893305,
+        "y": 212.92919623345173
+      },
+      "values": {
+        "assetType": "crypto",
+        "operation": "get_positions",
+        "environment": "paper",
+        "credential_id": "My Alpaca3",
+        "order_id": null,
+        "symbol": null,
+        "crypto_base": null,
+        "crypto_quote": "USD",
+        "interval": null,
+        "limit": null,
+        "feed": "sip",
+        "currency": "USD",
+        "sort": "asc",
+        "start": null,
+        "end": null,
+        "include_content": "false",
+        "page_token": null,
+        "side": "buy",
+        "qty": null,
+        "percentage": null,
+        "type": "market",
+        "limit_price": null,
+        "stop_price": null,
+        "trail_price": null,
+        "trail_percent": null,
+        "time_in_force": "day",
+        "extended_hours": "false"
+      }
+    },
+    {
+      "id": "Buy",
+      "type": "Alpaca",
+      "category": "Broker",
+      "position": {
+        "x": 1122.1689584390158,
+        "y": -175.62968580087016
+      },
+      "values": {
+        "qty": "1",
+        "side": "buy",
+        "type": "market",
+        "assetType": "crypto",
+        "operation": "place_order",
+        "crypto_base": "ETH",
+        "environment": "paper",
+        "crypto_quote": "USDT",
+        "credential_id": "My Alpaca3",
+        "time_in_force": "gtc",
+        "order_id": null,
+        "symbol": null,
+        "interval": null,
+        "limit": null,
+        "feed": "sip",
+        "currency": "USD",
+        "sort": "asc",
+        "start": null,
+        "end": null,
+        "include_content": "false",
+        "page_token": null,
+        "percentage": null,
+        "limit_price": null,
+        "stop_price": null,
+        "trail_price": null,
+        "trail_percent": null,
+        "extended_hours": "false"
+      }
+    },
+    {
+      "id": "Sell",
+      "type": "Alpaca",
+      "category": "Broker",
+      "position": {
+        "x": 1130.3249632547777,
+        "y": 84.89775645563297
+      },
+      "values": {
+        "qty": null,
+        "assetType": "crypto",
+        "operation": "close_position",
+        "percentage": null,
+        "crypto_base": "ETH",
+        "environment": "paper",
+        "crypto_quote": "USDT",
+        "credential_id": "My Alpaca3",
+        "order_id": null,
+        "symbol": null,
+        "interval": null,
+        "limit": null,
+        "feed": "sip",
+        "currency": "USD",
+        "sort": "asc",
+        "start": null,
+        "end": null,
+        "include_content": "false",
+        "page_token": null,
+        "side": "buy",
+        "type": "market",
+        "limit_price": null,
+        "stop_price": null,
+        "trail_price": null,
+        "trail_percent": null,
+        "time_in_force": "day",
+        "extended_hours": "false"
+      }
+    },
+    {
+      "id": "AlpacaStreamListener",
+      "type": "AlpacaStreamListener",
+      "category": "Stream",
+      "subCategory": "alpaca",
+      "position": {
+        "x": -1971.1912661223082,
+        "y": 344.573808861814
+      },
+      "values": {
+        "mode": "subscribe",
+        "assetType": "crypto",
+        "crypto_base": "ETH",
+        "environment": "paper",
+        "stream_type": [
+          "bar",
+          "trade_updates"
+        ],
+        "crypto_quote": "USDT",
+        "credential_id": null,
+        "feed": "iex",
+        "symbols": null,
+        "scope": "workflow",
+        "filter_symbols": null,
+        "filter_types": null
+      }
     }
   ],
   "edges": [
-    { "id": "e1", "source": "st-stream", "target": "st-rsi", "type": "default" },
-    { "id": "e2", "source": "st-rsi", "target": "st-if", "type": "default" },
-    { "id": "e3", "source": "st-if", "target": "st-portfolio", "type": "default" }
-  ]
+    {
+      "id": "edge_1773834474490",
+      "source": "getPortfolio",
+      "target": "portfolioNotExist",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774337586808",
+      "source": "updatePortfolioValue",
+      "target": "getPosition",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774596414214",
+      "source": "createPortfolio",
+      "target": "Switch",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774596503088",
+      "source": "Switch",
+      "target": "updatePortfolioValue",
+      "sourceHandle": "market",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774784917160",
+      "source": "Switch",
+      "target": "syncFills",
+      "sourceHandle": "order_update",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774975256423",
+      "source": "updatePortfolioValue",
+      "target": "getOpenOrders",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774975881797",
+      "source": "getOpenOrders",
+      "target": "noOpenOrder",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774975883632",
+      "source": "getPosition",
+      "target": "noOpenOrder",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774975989977",
+      "source": "noOpenOrder",
+      "target": "noPosition",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1774976612866",
+      "source": "noPosition",
+      "target": "isLongPosition",
+      "sourceHandle": "false",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1775633797790",
+      "source": "portfolioNotExist",
+      "target": "getBrokerBalance",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1775633825210",
+      "source": "portfolioNotExist",
+      "target": "getBrokerPosition",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1775633838438",
+      "source": "getBrokerBalance",
+      "target": "createPortfolio",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1775633839894",
+      "source": "getBrokerPosition",
+      "target": "createPortfolio",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1777628399842",
+      "source": "portfolioNotExist",
+      "target": "Switch",
+      "sourceHandle": "false",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1778063603677",
+      "source": "noPosition",
+      "target": "Buy",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1778063607304",
+      "source": "isLongPosition",
+      "target": "Sell",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1778698328091",
+      "source": "AlpacaStreamListener",
+      "target": "getPortfolio",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    }
+  ],
+  "isActive": false
 }

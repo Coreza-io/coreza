@@ -136,6 +136,30 @@ function clampWindow(window: number[], size: number): number[] {
   return window;
 }
 
+
+
+function calculatePivotLevels(high: number, low: number, close: number, numLevels: number) {
+  const PP = (high + low + close) / 3;
+  const levels = { pivot: PP, resistance: [] as number[], support: [] as number[] };
+  if (numLevels >= 1) { levels.resistance.push(2 * PP - low); levels.support.push(2 * PP - high); }
+  if (numLevels >= 2) { levels.resistance.push(PP + (high - low)); levels.support.push(PP - (high - low)); }
+  if (numLevels >= 3) { levels.resistance.push(high + 2 * (PP - low)); levels.support.push(low - 2 * (high - PP)); }
+  return levels;
+}
+
+function clusterLevels(prices: number[], sensitivity: number, numLevels: number): number[] {
+  if (!prices.length) return [];
+  const sorted = [...prices].sort((a, b) => a - b);
+  const clusters: number[][] = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = clusters[clusters.length - 1];
+    const lastPrice = last[last.length - 1];
+    if (Math.abs(sorted[i] - lastPrice) / lastPrice <= sensitivity) last.push(sorted[i]);
+    else clusters.push([sorted[i]]);
+  }
+  return clusters.sort((a, b) => b.length - a.length).slice(0, numLevels).map((c) => c.reduce((sum, p) => sum + p, 0) / c.length).sort((a, b) => b - a);
+}
+
 const INDICATOR_CONTEXT = { category: "indicators" };
 
 export class IndicatorService {
@@ -704,6 +728,208 @@ export class IndicatorService {
               value,
               internalState: state,
             };
+          },
+        };
+      }
+
+      case "ichimoku": {
+        const conversionPeriod = Number(params.conversion_period);
+        const basePeriod = Number(params.base_period);
+        const spanPeriod = Number(params.leading_span_b_period);
+        const displacement = Number(params.displacement);
+        if (
+          [conversionPeriod, basePeriod, spanPeriod, displacement].some(
+            (v) => !Number.isFinite(v) || v <= 0,
+          )
+        ) {
+          throw createError(
+            "All Ichimoku periods are required and must be positive numbers",
+            400,
+          );
+        }
+
+        const push = (arr: number[], v: number, max: number) => {
+          arr.push(v);
+          if (arr.length > max) arr.shift();
+        };
+
+        const midpoint = (highs: number[], lows: number[], period: number) => {
+          if (highs.length < period || lows.length < period) return null;
+          const h = Math.max(...highs.slice(-period));
+          const l = Math.min(...lows.slice(-period));
+          return (h + l) / 2;
+        };
+
+        const compute = (state: Record<string, any>) => {
+          const tenkan = midpoint(state.highWindow, state.lowWindow, state.conversionPeriod);
+          const kijun = midpoint(state.highWindow, state.lowWindow, state.basePeriod);
+          const spanBCurrent = midpoint(state.highWindow, state.lowWindow, state.spanPeriod);
+
+          const spanA = tenkan != null && kijun != null ? (tenkan + kijun) / 2 : null;
+          state.spanAQueue.push(spanA);
+          state.spanBQueue.push(spanBCurrent);
+
+          let senkouA: number | null = null;
+          let senkouB: number | null = null;
+          if (state.spanAQueue.length > state.displacement) senkouA = state.spanAQueue.shift() ?? null;
+          if (state.spanBQueue.length > state.displacement) senkouB = state.spanBQueue.shift() ?? null;
+
+          state.closeQueue.push(state.lastClose);
+          let chikou: number | null = null;
+          if (state.closeQueue.length > state.displacement) chikou = state.closeQueue.shift() ?? null;
+
+          return { tenkan, kijun, senkouA, senkouB, chikou };
+        };
+
+        return {
+          warmUp: (bars) => {
+            const maxPeriod = Math.max(conversionPeriod, basePeriod, spanPeriod);
+            const state: Record<string, any> = {
+              conversionPeriod,
+              basePeriod,
+              spanPeriod,
+              displacement,
+              maxPeriod,
+              highWindow: [],
+              lowWindow: [],
+              spanAQueue: [],
+              spanBQueue: [],
+              closeQueue: [],
+              lastClose: null,
+              lastValue: null,
+            };
+            let value: Record<string, any> | null = null;
+            for (const bar of bars) {
+              state.lastClose = asClose(bar);
+              push(state.highWindow, asHigh(bar), state.maxPeriod);
+              push(state.lowWindow, asLow(bar), state.maxPeriod);
+              value = compute(state);
+            }
+            return {
+              internalState: state,
+              value,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            state.highWindow = state.highWindow || [];
+            state.lowWindow = state.lowWindow || [];
+            state.spanAQueue = state.spanAQueue || [];
+            state.spanBQueue = state.spanBQueue || [];
+            state.closeQueue = state.closeQueue || [];
+            state.maxPeriod = state.maxPeriod || Math.max(state.conversionPeriod, state.basePeriod, state.spanPeriod);
+            state.lastClose = asClose(bar);
+            push(state.highWindow, asHigh(bar), state.maxPeriod);
+            push(state.lowWindow, asLow(bar), state.maxPeriod);
+            return { value: compute(state), internalState: state };
+          },
+        };
+      }
+      case "support-resistance":
+      case "support & resistance":
+      case "supportresistance": {
+        const mode = String(params.method ?? params.mode ?? "").toLowerCase();
+        const numLevels = Math.min(Number(params.num_levels ?? 3), 5);
+        const lookback = Number(params.lookback_period ?? 20);
+        const sensitivity = Number(params.sensitivity ?? 1) / 100;
+
+                const calc = (state: Record<string, any>) => {
+          if (state.mode === "pivot") {
+            if (!Number.isFinite(state.lastHigh) || !Number.isFinite(state.lastLow) || !Number.isFinite(state.lastClose)) return null;
+            return calculatePivotLevels(state.lastHigh, state.lastLow, state.lastClose, state.numLevels);
+          }
+
+          if (state.highWindow.length < state.lookback || state.lowWindow.length < state.lookback) return null;
+          const highs = state.highWindow;
+          const lows = state.lowWindow;
+
+          if (state.mode === "historical") {
+            return {
+              resistance: clusterLevels(highs, state.sensitivity, state.numLevels),
+              support: clusterLevels(lows, state.sensitivity, state.numLevels).reverse(),
+              highest_high: Math.max(...highs),
+              lowest_low: Math.min(...lows),
+            };
+          }
+
+          const swingHighs: number[] = [];
+          const swingLows: number[] = [];
+          for (let i = 2; i < highs.length - 2; i++) {
+            if (highs[i] > highs[i - 1] && highs[i] > highs[i - 2] && highs[i] > highs[i + 1] && highs[i] > highs[i + 2]) swingHighs.push(highs[i]);
+            if (lows[i] < lows[i - 1] && lows[i] < lows[i - 2] && lows[i] < lows[i + 1] && lows[i] < lows[i + 2]) swingLows.push(lows[i]);
+          }
+          return {
+            resistance: clusterLevels(swingHighs, state.sensitivity, state.numLevels),
+            support: clusterLevels(swingLows, state.sensitivity, state.numLevels).reverse(),
+            swing_highs_count: swingHighs.length,
+            swing_lows_count: swingLows.length,
+          };
+        };
+
+        return {
+          warmUp: (bars) => {
+            const state: Record<string, any> = {
+              mode,
+              numLevels,
+              lookback,
+              sensitivity,
+              highWindow: [],
+              lowWindow: [],
+              lastHigh: null,
+              lastLow: null,
+              lastClose: null,
+              lastValue: null,
+            };
+            let value: Record<string, any> | null = null;
+            for (const bar of bars) {
+              const high = asHigh(bar);
+              const low = asLow(bar);
+              const close = asClose(bar);
+              if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) continue;
+
+              state.prevHigh = state.lastHigh;
+              state.prevLow = state.lastLow;
+              state.prevClose = state.lastClose;
+              state.lastHigh = high;
+              state.lastLow = low;
+              state.lastClose = close;
+              state.highWindow.push(state.lastHigh);
+              state.lowWindow.push(state.lastLow);
+              if (state.highWindow.length > state.lookback) state.highWindow.shift();
+              if (state.lowWindow.length > state.lookback) state.lowWindow.shift();
+              if (state.mode === "pivot" && Number.isFinite(state.prevHigh) && Number.isFinite(state.prevLow) && Number.isFinite(state.prevClose)) {
+                value = calculatePivotLevels(state.prevHigh, state.prevLow, state.prevClose, state.numLevels);
+              } else {
+                value = calc(state);
+              }
+              state.lastValue = value;
+            }
+            return { internalState: state, value, lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "" };
+          },
+          update: (state, bar) => {
+            state.highWindow = state.highWindow || [];
+            state.lowWindow = state.lowWindow || [];
+            const high = asHigh(bar);
+            const low = asLow(bar);
+            const close = asClose(bar);
+            if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+              return { value: state.lastValue ?? null, internalState: state };
+            }
+            state.prevHigh = state.lastHigh;
+            state.prevLow = state.lastLow;
+            state.prevClose = state.lastClose;
+            state.lastHigh = high;
+            state.lastLow = low;
+            state.lastClose = close;
+            state.highWindow.push(state.lastHigh);
+            state.lowWindow.push(state.lastLow);
+            if (state.highWindow.length > state.lookback) state.highWindow.shift();
+            if (state.lowWindow.length > state.lookback) state.lowWindow.shift();
+            const value = state.mode === "pivot" && Number.isFinite(state.prevHigh) && Number.isFinite(state.prevLow) && Number.isFinite(state.prevClose)
+              ? calculatePivotLevels(state.prevHigh, state.prevLow, state.prevClose, state.numLevels)
+              : calc(state);
+            state.lastValue = value;
+            return { value, internalState: state };
           },
         };
       }
@@ -1579,28 +1805,8 @@ export class IndicatorService {
         throw createError("Invalid OHLC data in last candle", 400);
       }
 
-      const PP = (high + low + close) / 3;
-
-      const levels = {
-        pivot: PP,
-        resistance: [] as number[],
-        support: [] as number[],
-      };
-
-      const numLevels = Math.min(Number(num_levels), 5);
-
-      if (numLevels >= 1) {
-        levels.resistance.push(2 * PP - low);
-        levels.support.push(2 * PP - high);
-      }
-      if (numLevels >= 2) {
-        levels.resistance.push(PP + (high - low));
-        levels.support.push(PP - (high - low));
-      }
-      if (numLevels >= 3) {
-        levels.resistance.push(high + 2 * (PP - low));
-        levels.support.push(low - 2 * (high - PP));
-      }
+      const numLevels = Math.min(Number(num_levels), 3);
+      const levels = calculatePivotLevels(high, low, close, numLevels)
 
       return createSuccessOutput([levels], {
         ...INDICATOR_CONTEXT,
@@ -1634,7 +1840,7 @@ export class IndicatorService {
 
       const lookback = Number(lookback_period);
       const sens = Number(sensitivity) / 100;
-      const numLevels = Math.min(Number(num_levels), 5);
+      const numLevels = Math.min(Number(num_levels), 3);
 
       if (candles.length < lookback) {
         throw createError(`Need at least ${lookback} candles`, 400);
@@ -1742,8 +1948,8 @@ export class IndicatorService {
       const sortedHighs = [...highs].sort((a, b) => b - a);
       const sortedLows = [...lows].sort((a, b) => a - b);
 
-      const resistanceLevels = sortedHighs.slice(0, numLevels);
-      const supportLevels = sortedLows.slice(0, numLevels);
+      const resistanceLevels = clusterLevels(highs, 0.01, numLevels);
+      const supportLevels = clusterLevels(lows, 0.01, numLevels).reverse();
 
       const levels = {
         resistance: resistanceLevels,

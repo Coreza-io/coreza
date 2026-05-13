@@ -64,31 +64,36 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const shouldShowDescription = field.showDescription !== false;
   const isHiddenField = field.type === "hidden";
   const matchesShowOptions = field.displayOptions?.show
-    ? Object.entries(field.displayOptions.show).every(([depKey, allowedValues]) => {
-        const currentValue = fieldState[depKey];
-        if (!currentValue) return false;
-        if (Array.isArray(currentValue)) {
-          return currentValue.some((v: string) =>
-            (allowedValues as string[]).includes(v),
-          );
-        }
-        return (allowedValues as string[]).includes(currentValue);
-      })
+    ? Object.entries(field.displayOptions.show).every(
+        ([depKey, allowedValues]) => {
+          const currentValue = fieldState[depKey];
+          if (!currentValue) return false;
+          if (Array.isArray(currentValue)) {
+            return currentValue.some((v: string) =>
+              (allowedValues as string[]).includes(v),
+            );
+          }
+          return (allowedValues as string[]).includes(currentValue);
+        },
+      )
     : true;
   const matchesHideOptions = field.displayOptions?.hide
-    ? !Object.entries(field.displayOptions.hide).some(([depKey, allowedValues]) => {
-        const currentValue = fieldState[depKey];
-        const values = Array.isArray(allowedValues)
-          ? allowedValues
-          : [allowedValues];
-        return values.some((v: any) => {
-          const compareVal =
-            typeof v === "object" && v !== null ? v.id || v.value : v;
-          return String(currentValue) === String(compareVal);
-        });
-      })
+    ? !Object.entries(field.displayOptions.hide).some(
+        ([depKey, allowedValues]) => {
+          const currentValue = fieldState[depKey];
+          const values = Array.isArray(allowedValues)
+            ? allowedValues
+            : [allowedValues];
+          return values.some((v: any) => {
+            const compareVal =
+              typeof v === "object" && v !== null ? v.id || v.value : v;
+            return String(currentValue) === String(compareVal);
+          });
+        },
+      )
     : true;
-  const shouldRender = !isHiddenField && matchesShowOptions && matchesHideOptions;
+  const shouldRender =
+    !isHiddenField && matchesShowOptions && matchesHideOptions;
 
   let displayLabel = field.label;
   if (field.dynamicLabel?.dependsOn && field.dynamicLabel?.labelsByValue) {

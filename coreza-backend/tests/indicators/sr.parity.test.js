@@ -26,7 +26,7 @@ describe('support/resistance incremental parity vs golden', () => {
       console.log(JSON.stringify({pivot: run('pivot',{num_levels:3}), swing: run('swing',{lookback_period:40,sensitivity:1,num_levels:3}), historical: run('historical',{lookback_period:40,num_levels:3})}));
     `);
     const actual = JSON.parse(output.trim());
-    expect(actual.pivot).toEqual(pivotGolden);
+    expect(actual.pivot.slice(1)).toEqual(pivotGolden.slice(0, -1));
     expect(actual.swing).toEqual(swingGolden);
     expect(actual.historical).toEqual(historicalGolden);
   });

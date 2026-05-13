@@ -68,8 +68,6 @@ const normalizeHex = (hex: string): string | null => {
   return `#${value}`;
 };
 
-const FEMALE_PLUG_PATH =
-  "M 23.707 0.293 c -0.391 -0.391 -1.023 -0.391 -1.414 0 l -2.58 2.58 c -2.004 -1.344 -4.749 -1.132 -6.519 0.638 l -1.135 1.135 l -0.353 -0.353 c -0.391 -0.391 -1.023 -0.391 -1.414 0 s -0.391 1.023 0 1.414 l 8 8 c 0.195 0.195 0.451 0.293 0.707 0.293 s 0.512 -0.098 0.707 -0.293 c 0.391 -0.391 0.391 -1.023 0 -1.414 l -0.353 -0.353 l 1.135 -1.135 c 1.77 -1.769 1.982 -4.515 0.638 -6.519 l 2.58 -2.58 c 0.391 -0.391 0.391 -1.023 0 -1.414 Z";
 interface PlugIconProps {
   color?: string;
   size?: number;
@@ -77,14 +75,10 @@ interface PlugIconProps {
   style?: React.CSSProperties;
 }
 
-const MALE_PLUG_PATH =
-  "m12.707,12.707l-2.293,2.293-1.414-1.414,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0l-2.293,2.293-1.879-1.879c-.391-.391-1.023-.391-1.414,0s-.391,1.023,0,1.414l.352.352-1.134,1.135c-1.77,1.769-1.982,4.515-.638,6.519l-2.58,2.58c-.391.391-.391,1.023,0,1.414.195.195.451.293.707.293s.512-.098.707-.293l2.58-2.58c.865.58,1.868.871,2.871.871,1.321,0,2.642-.503,3.647-1.509l1.135-1.134.352.352c.195.195.451.293.707.293s.512-.098.707-.293c.391-.391.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c.391-.391.391-1.023,0-1.414s-1.023-.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z";
-interface PlugIconProps {
-  color?: string;
-  size?: number;
-  className?: string;
-  style?: React.CSSProperties;
-}
+const SOCKET_RING_PATH =
+  "M12 4.25a7.75 7.75 0 1 0 0 15.5a7.75 7.75 0 1 0 0-15.5Zm0 2.25a5.5 5.5 0 1 1 0 11a5.5 5.5 0 1 1 0-11Z";
+const PLUG_CORE_PATH =
+  "M9.8 8.2h4.4c.88 0 1.6.72 1.6 1.6v.55h1.1a1.1 1.1 0 1 1 0 2.2h-1.1v1.65c0 .88-.72 1.6-1.6 1.6H9.8c-.88 0-1.6-.72-1.6-1.6V9.8c0-.88.72-1.6 1.6-1.6Zm1.4 2.45a.9.9 0 1 0 0 1.8a.9.9 0 1 0 0-1.8Zm2.6 0a.9.9 0 1 0 0 1.8a.9.9 0 1 0 0-1.8Z";
 
 const mergeIconStyle = (style?: React.CSSProperties): React.CSSProperties => ({
   pointerEvents: "none",
@@ -98,14 +92,8 @@ export const MalePlugIcon: React.FC<PlugIconProps> = ({
   className,
   style,
 }) => (
-  <svg
-    viewBox="0 0 24 24"
-    width={size}
-    height={size}
-    className={className}
-    style={mergeIconStyle(style)}
-  >
-    <path d={MALE_PLUG_PATH} fill={color} />
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={mergeIconStyle(style)}>
+    <path d={PLUG_CORE_PATH} fill={color} />
   </svg>
 );
 
@@ -115,25 +103,20 @@ export const FemalePlugIcon: React.FC<PlugIconProps> = ({
   className,
   style,
 }) => (
-  <svg
-    viewBox="0 0 24 24"
-    width={size}
-    height={size}
-    className={className}
-    style={mergeIconStyle(style)}
-  >
-    <path d={FEMALE_PLUG_PATH} fill={color} />
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={mergeIconStyle(style)}>
+    <path d={SOCKET_RING_PATH} fill={color} />
   </svg>
 );
+
 export const ConnectedSwitchIcon: React.FC<PlugIconProps> = ({
   color = "#6b7280",
   size = 24,
   className,
   style,
 }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width={size} height={size} className={className} style={mergeIconStyle(style)}>
-    <path d="M23.707,0.293c-0.391-0.391-1.023-0.391-1.414,0l-2.58,2.58c-2.004-1.344-4.749-1.132-6.519,0.638l-1.135,1.135l-0.353-0.353c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l8,8c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-0.353-0.353l1.135-1.135c1.77-1.769,1.982-4.515,0.638-6.519l2.58-2.58c0.391-0.391,0.391-1.023,0-1.414Z" fill={color} />
-    <path d="M19.707,5.707l-2.293,2.293-1.414-1.414,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0l-2.293,2.293-1.879-1.879c-0.391-0.391-1.023-0.391-1.414,0s-0.391,1.023,0,1.414l0.352,0.352-1.134,1.135c-1.77,1.769-1.982,4.515-0.638,6.519l-2.58,2.58c-0.391,0.391-0.391,1.023,0,1.414c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293l2.58-2.58c0.865,0.58,1.868,0.871,2.871,0.871,1.321,0,2.642-0.503,3.647-1.509l1.135-1.134l0.352,0.352c0.195,0.195,0.451,0.293,0.707,0.293s0.512-0.098,0.707-0.293c0.391-0.391,0.391-1.023,0-1.414l-1.879-1.879,2.293-2.293c0.391-0.391,0.391-1.023,0-1.414s-1.023-0.391-1.414,0Zm-3.315,6.368c-1.232,1.23-3.234,1.23-4.467,0-1.231-1.231-1.231-3.235,0-4.467l1.134-1.135,4.467,4.467-1.135,1.134Z" fill={color} />
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={mergeIconStyle(style)}>
+    <path d={SOCKET_RING_PATH} fill={color} />
+    <path d={PLUG_CORE_PATH} fill={color} />
   </svg>
 );
 

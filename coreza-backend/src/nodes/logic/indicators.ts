@@ -707,6 +707,211 @@ export class IndicatorService {
           },
         };
       }
+
+      case "ichimoku": {
+        const conversionPeriod = Number(params.conversion_period);
+        const basePeriod = Number(params.base_period);
+        const spanPeriod = Number(params.leading_span_b_period);
+        const displacement = Number(params.displacement);
+        if (
+          [conversionPeriod, basePeriod, spanPeriod, displacement].some(
+            (v) => !Number.isFinite(v) || v <= 0,
+          )
+        ) {
+          throw createError(
+            "All Ichimoku periods are required and must be positive numbers",
+            400,
+          );
+        }
+
+        const push = (arr: number[], v: number, max: number) => {
+          arr.push(v);
+          if (arr.length > max) arr.shift();
+        };
+
+        const midpoint = (highs: number[], lows: number[], period: number) => {
+          if (highs.length < period || lows.length < period) return null;
+          const h = Math.max(...highs.slice(-period));
+          const l = Math.min(...lows.slice(-period));
+          return (h + l) / 2;
+        };
+
+        const compute = (state: Record<string, any>) => {
+          const tenkan = midpoint(state.highWindow, state.lowWindow, state.conversionPeriod);
+          const kijun = midpoint(state.highWindow, state.lowWindow, state.basePeriod);
+          const spanBCurrent = midpoint(state.highWindow, state.lowWindow, state.spanPeriod);
+
+          const spanA = tenkan != null && kijun != null ? (tenkan + kijun) / 2 : null;
+          state.spanAQueue.push(spanA);
+          state.spanBQueue.push(spanBCurrent);
+
+          let senkouA: number | null = null;
+          let senkouB: number | null = null;
+          if (state.spanAQueue.length > state.displacement) senkouA = state.spanAQueue.shift() ?? null;
+          if (state.spanBQueue.length > state.displacement) senkouB = state.spanBQueue.shift() ?? null;
+
+          state.closeQueue.push(state.lastClose);
+          let chikou: number | null = null;
+          if (state.closeQueue.length > state.displacement) chikou = state.closeQueue.shift() ?? null;
+
+          return { tenkan, kijun, senkouA, senkouB, chikou };
+        };
+
+        return {
+          warmUp: (bars) => {
+            const maxPeriod = Math.max(conversionPeriod, basePeriod, spanPeriod);
+            const state: Record<string, any> = {
+              conversionPeriod,
+              basePeriod,
+              spanPeriod,
+              displacement,
+              maxPeriod,
+              highWindow: [],
+              lowWindow: [],
+              spanAQueue: [],
+              spanBQueue: [],
+              closeQueue: [],
+              lastClose: null,
+            };
+            let value: Record<string, any> | null = null;
+            for (const bar of bars) {
+              state.lastClose = asClose(bar);
+              push(state.highWindow, asHigh(bar), state.maxPeriod);
+              push(state.lowWindow, asLow(bar), state.maxPeriod);
+              value = compute(state);
+            }
+            return {
+              internalState: state,
+              value,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            state.highWindow = state.highWindow || [];
+            state.lowWindow = state.lowWindow || [];
+            state.spanAQueue = state.spanAQueue || [];
+            state.spanBQueue = state.spanBQueue || [];
+            state.closeQueue = state.closeQueue || [];
+            state.maxPeriod = state.maxPeriod || Math.max(state.conversionPeriod, state.basePeriod, state.spanPeriod);
+            state.lastClose = asClose(bar);
+            push(state.highWindow, asHigh(bar), state.maxPeriod);
+            push(state.lowWindow, asLow(bar), state.maxPeriod);
+            return { value: compute(state), internalState: state };
+          },
+        };
+      }
+      case "support-resistance":
+      case "support & resistance":
+      case "supportresistance": {
+        const mode = String(params.mode ?? params.method ?? "").toLowerCase();
+        const numLevels = Math.min(Number(params.num_levels ?? 3), 5);
+        const lookback = Number(params.lookback_period ?? 20);
+        const sensitivity = Number(params.sensitivity ?? 1) / 100;
+
+        const clusterLevels = (prices: number[], sens: number, levels: number): number[] => {
+          if (!prices.length) return [];
+          const sorted = [...prices].sort((a, b) => a - b);
+          const clusters: number[][] = [[sorted[0]]];
+          for (let i = 1; i < sorted.length; i++) {
+            const last = clusters[clusters.length - 1];
+            const lastPrice = last[last.length - 1];
+            if (Math.abs(sorted[i] - lastPrice) / lastPrice <= sens) last.push(sorted[i]);
+            else clusters.push([sorted[i]]);
+          }
+          return clusters
+            .sort((a, b) => b.length - a.length)
+            .slice(0, levels)
+            .map((c) => c.reduce((sum, p) => sum + p, 0) / c.length)
+            .sort((a, b) => b - a);
+        };
+
+        const calc = (state: Record<string, any>) => {
+          if (state.mode === "pivot") {
+            if (!Number.isFinite(state.lastHigh) || !Number.isFinite(state.lastLow) || !Number.isFinite(state.lastClose)) return null;
+            const PP = (state.lastHigh + state.lastLow + state.lastClose) / 3;
+            const out = { pivot: PP, resistance: [] as number[], support: [] as number[] };
+            if (state.numLevels >= 1) {
+              out.resistance.push(2 * PP - state.lastLow);
+              out.support.push(2 * PP - state.lastHigh);
+            }
+            if (state.numLevels >= 2) {
+              out.resistance.push(PP + (state.lastHigh - state.lastLow));
+              out.support.push(PP - (state.lastHigh - state.lastLow));
+            }
+            if (state.numLevels >= 3) {
+              out.resistance.push(state.lastHigh + 2 * (PP - state.lastLow));
+              out.support.push(state.lastLow - 2 * (state.lastHigh - PP));
+            }
+            return out;
+          }
+
+          if (state.highWindow.length < state.lookback || state.lowWindow.length < state.lookback) return null;
+          const highs = state.highWindow;
+          const lows = state.lowWindow;
+
+          if (state.mode === "historical") {
+            return {
+              resistance: [...highs].sort((a, b) => b - a).slice(0, state.numLevels),
+              support: [...lows].sort((a, b) => a - b).slice(0, state.numLevels),
+              highest_high: Math.max(...highs),
+              lowest_low: Math.min(...lows),
+            };
+          }
+
+          const swingHighs: number[] = [];
+          const swingLows: number[] = [];
+          for (let i = 2; i < highs.length - 2; i++) {
+            if (highs[i] > highs[i - 1] && highs[i] > highs[i - 2] && highs[i] > highs[i + 1] && highs[i] > highs[i + 2]) swingHighs.push(highs[i]);
+            if (lows[i] < lows[i - 1] && lows[i] < lows[i - 2] && lows[i] < lows[i + 1] && lows[i] < lows[i + 2]) swingLows.push(lows[i]);
+          }
+          return {
+            resistance: clusterLevels(swingHighs, state.sensitivity, state.numLevels),
+            support: clusterLevels(swingLows, state.sensitivity, state.numLevels).reverse(),
+            swing_highs_count: swingHighs.length,
+            swing_lows_count: swingLows.length,
+          };
+        };
+
+        return {
+          warmUp: (bars) => {
+            const state: Record<string, any> = {
+              mode,
+              numLevels,
+              lookback,
+              sensitivity,
+              highWindow: [],
+              lowWindow: [],
+              lastHigh: null,
+              lastLow: null,
+              lastClose: null,
+            };
+            let value: Record<string, any> | null = null;
+            for (const bar of bars) {
+              state.lastHigh = asHigh(bar);
+              state.lastLow = asLow(bar);
+              state.lastClose = asClose(bar);
+              state.highWindow.push(state.lastHigh);
+              state.lowWindow.push(state.lastLow);
+              if (state.highWindow.length > state.lookback) state.highWindow.shift();
+              if (state.lowWindow.length > state.lookback) state.lowWindow.shift();
+              value = calc(state);
+            }
+            return { internalState: state, value, lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "" };
+          },
+          update: (state, bar) => {
+            state.highWindow = state.highWindow || [];
+            state.lowWindow = state.lowWindow || [];
+            state.lastHigh = asHigh(bar);
+            state.lastLow = asLow(bar);
+            state.lastClose = asClose(bar);
+            state.highWindow.push(state.lastHigh);
+            state.lowWindow.push(state.lastLow);
+            if (state.highWindow.length > state.lookback) state.highWindow.shift();
+            if (state.lowWindow.length > state.lookback) state.lowWindow.shift();
+            return { value: calc(state), internalState: state };
+          },
+        };
+      }
       case "adx":
       case "stochastic": {
         if (type === "adx") {

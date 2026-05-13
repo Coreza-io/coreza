@@ -62,11 +62,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const previewCardRef = React.useRef<HTMLDivElement | null>(null);
   const activeElementRef = React.useRef<HTMLElement | null>(null);
   const shouldShowDescription = field.showDescription !== false;
-  if (field.type === "hidden") return null;
-
-  if (field.displayOptions?.show) {
-    const shouldShow = Object.entries(field.displayOptions.show).every(
-      ([depKey, allowedValues]) => {
+  const isHiddenField = field.type === "hidden";
+  const matchesShowOptions = field.displayOptions?.show
+    ? Object.entries(field.displayOptions.show).every(([depKey, allowedValues]) => {
         const currentValue = fieldState[depKey];
         if (!currentValue) return false;
         if (Array.isArray(currentValue)) {
@@ -75,14 +73,10 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           );
         }
         return (allowedValues as string[]).includes(currentValue);
-      },
-    );
-    if (!shouldShow) return null;
-  }
-
-  if (field.displayOptions?.hide) {
-    const shouldHide = Object.entries(field.displayOptions.hide).some(
-      ([depKey, allowedValues]) => {
+      })
+    : true;
+  const matchesHideOptions = field.displayOptions?.hide
+    ? !Object.entries(field.displayOptions.hide).some(([depKey, allowedValues]) => {
         const currentValue = fieldState[depKey];
         const values = Array.isArray(allowedValues)
           ? allowedValues
@@ -92,10 +86,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             typeof v === "object" && v !== null ? v.id || v.value : v;
           return String(currentValue) === String(compareVal);
         });
-      },
-    );
-    if (shouldHide) return null;
-  }
+      })
+    : true;
+  const shouldRender = !isHiddenField && matchesShowOptions && matchesHideOptions;
 
   let displayLabel = field.label;
   if (field.dynamicLabel?.dependsOn && field.dynamicLabel?.labelsByValue) {
@@ -123,6 +116,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   }, [field.type, field.key, field.options, selectOptions, fieldState]);
 
   React.useEffect(() => {
+    if (!shouldRender) return;
     if (field.type !== "multiselect") return;
     const options = selectOptions[field.key] || field.options || [];
     const valueMappedOpts = options.filter(
@@ -172,6 +166,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     fieldState,
     onChange,
     multiselectValueMapDeps,
+    shouldRender,
   ]);
 
   const handleDropWrapper = (e: React.DragEvent) => {
@@ -261,6 +256,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
       setShowFloatingPreview(false);
     }
   }, [isReference, referencePreview]);
+
+  if (!shouldRender) return null;
 
   const renderPreviewCard = () => {
     if (!referencePreview || !showFloatingPreview || !previewAnchorRect)

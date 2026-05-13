@@ -47,12 +47,8 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   parentKey = "",
   maxItems = 25,
 }) => {
-  if (!isObjectLike(data)) return null;
-
-  const isArray = Array.isArray(data);
-  const totalLength = isArray ? data.length : 0;
-
   const entriesToShow: Entry[] = useMemo(() => {
+    if (!isObjectLike(data)) return [];
     if (Array.isArray(data)) {
       return (data as unknown[]).slice(0, maxItems).map((item, idx) => ({
         key: String(idx),
@@ -61,6 +57,11 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
     }
     return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({ key: k, value: v }));
   }, [data, maxItems]);
+
+  if (!isObjectLike(data)) return null;
+
+  const isArray = Array.isArray(data);
+  const totalLength = isArray ? data.length : 0;
 
   const remainingCount = isArray ? totalLength - entriesToShow.length : 0;
 

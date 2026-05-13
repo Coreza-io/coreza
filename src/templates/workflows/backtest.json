@@ -1,33 +1,346 @@
 {
+  "meta": {
+    "exportedAt": "2026-05-13T15:27:01.600Z",
+    "version": "1.0",
+    "source": "coreza"
+  },
+  "name": "BacktestT",
   "nodes": [
     {
-      "id": "bt-init",
-      "type": "BacktestInit",
-      "position": { "x": 80, "y": 200 },
-      "data": { "label": "Backtest Init" }
+      "id": "VolumeOscillator",
+      "type": "VolumeOscillator",
+      "category": "Indicators",
+      "position": {
+        "x": 1683.8173478891767,
+        "y": 348.90987503360526
+      },
+      "values": {
+        "type": "percentage",
+        "symbol": "{{ $('OnBar').json.data.BarSeries.[0].symbol }}",
+        "timeframe": "{{ $('OnBar').json.data.BarSeries.[0].interval }}",
+        "candle_data": "{{ $('OnBar').json.data.BarSeries.[0].bars }}",
+        "long_period": "26",
+        "short_period": "12"
+      }
     },
     {
-      "id": "bt-rsi",
-      "type": "RSI",
-      "position": { "x": 380, "y": 200 },
-      "data": { "label": "RSI" }
-    },
-    {
-      "id": "bt-if",
+      "id": "isVolumeFading",
       "type": "If",
-      "position": { "x": 680, "y": 200 },
-      "data": { "label": "Signal Check" }
+      "category": "Logic",
+      "position": {
+        "x": 2632.9478870391736,
+        "y": 62.69399001002063
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('VolumeOscillator').json.data.currentValue }}",
+            "right": "0",
+            "dataType": "number",
+            "operator": "<"
+          }
+        ],
+        "logicalOps": []
+      }
     },
     {
-      "id": "bt-portfolio",
+      "id": "enoughProfit",
+      "type": "If",
+      "category": "Logic",
+      "position": {
+        "x": 2654.0059720454256,
+        "y": 573.784962894608
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('updatePortfolioValue').json.data.unrealized_pnl }}",
+            "right": "4",
+            "dataType": "number",
+            "operator": ">"
+          }
+        ],
+        "logicalOps": []
+      }
+    },
+    {
+      "id": "getPosition",
       "type": "Portfolio",
-      "position": { "x": 980, "y": 200 },
-      "data": { "label": "Place Order" }
+      "category": "Portfolio",
+      "position": {
+        "x": 1941.077353918785,
+        "y": 348.5583191865919
+      },
+      "values": {
+        "mode": "backtest",
+        "symbol": "{{ $('OnBar').json.data.BarSeries.[0].symbol }}",
+        "operation": "get_position",
+        "backtestId": "{{ $('BacktestInit').json.data.backtest_id }}",
+        "broker": "generic",
+        "base_currency": "USD",
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "side": "long",
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "marketPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null,
+        "currentBar": null
+      }
+    },
+    {
+      "id": "noPosition",
+      "type": "If",
+      "category": "Logic",
+      "position": {
+        "x": 2209.25481125832,
+        "y": 348.05515950299855
+      },
+      "values": {
+        "conditions": [
+          {
+            "left": "{{ $('getPosition').json.data.has_position }}",
+            "right": "",
+            "dataType": "boolean",
+            "operator": "is_false"
+          }
+        ],
+        "logicalOps": []
+      }
+    },
+    {
+      "id": "updatePortfolioValue",
+      "type": "Portfolio",
+      "category": "Portfolio",
+      "position": {
+        "x": 1384.9723401370895,
+        "y": 348.97294856458745
+      },
+      "values": {
+        "mode": "backtest",
+        "symbol": "{{ $('OnBar').json.data.BarSeries.[0].symbol }}",
+        "operation": "update_mtm",
+        "backtestId": "{{ $('BacktestInit').json.data.backtest_id }}",
+        "currentBar": "{{ $('OnBar').json.data.BarSeries.[0].bars.[0] }}",
+        "marketPrice": "{{ $('OnBar').json.data.BarSeries.[0].bars.[0].close }}",
+        "broker": "generic",
+        "base_currency": "USD",
+        "cash_balance": null,
+        "portfolio_tab": "balance",
+        "balance_cash": null,
+        "balance_buying_power": null,
+        "balance_equity": null,
+        "balance_margin": null,
+        "balance_initial_margin": null,
+        "position_symbol": null,
+        "side": "long",
+        "position_quantity": null,
+        "position_avg_fill_price": null,
+        "position_current_price": null,
+        "position_open_cost_basis": null,
+        "position_market_value": null,
+        "position_realized_pnl": null,
+        "position_unrealized_pnl": null,
+        "asset": null,
+        "orderType": null,
+        "timeInForce": null,
+        "status": null,
+        "orderId": null,
+        "clientOrderId": null,
+        "executionId": null,
+        "algoId": null,
+        "origQty": null,
+        "filledQty": null,
+        "avgFillPrice": null,
+        "feeAmount": "0",
+        "feeAsset": null,
+        "positionQty": null,
+        "limitPrice": null,
+        "stopPrice": null,
+        "trailPercent": null,
+        "trailPrice": null,
+        "avgEntryPrice": null,
+        "total": null,
+        "available": null,
+        "locked": null
+      }
+    },
+    {
+      "id": "BacktestInit",
+      "type": "BacktestInit",
+      "category": "Backtest",
+      "position": {
+        "x": 856.4123769248936,
+        "y": 350.25203735265035
+      },
+      "values": {
+        "feed": "sip",
+        "name": null,
+        "broker": "alpaca",
+        "symbols": "BKSY",
+        "end_date": "2025-06-01",
+        "interval": "1Min",
+        "asset_type": "stock",
+        "fill_model": "immediate",
+        "start_date": "2025-01-01",
+        "credential_id": "My Alpaca3",
+        "warmup_period": "200",
+        "slippage_model": "percentage",
+        "slippage_value": "0.001",
+        "initial_capital": "1000000",
+        "commission_model": "per_share",
+        "commission_value": "0.01"
+      }
+    },
+    {
+      "id": "OnBar",
+      "type": "OnBar",
+      "category": "Backtest",
+      "position": {
+        "x": 1119.2252147926483,
+        "y": 349.83902605561707
+      },
+      "values": {
+        "backtest_id": "{{ $('BacktestInit').json.data.backtest_id }}"
+      }
+    },
+    {
+      "id": "Buy",
+      "type": "BacktestTrade",
+      "category": "Backtest",
+      "position": {
+        "x": 2936.170189129436,
+        "y": 33.76014520071567
+      },
+      "values": {
+        "side": "buy",
+        "symbol": "{{ $('OnBar').json.data.BarSeries.[0].symbol }}",
+        "quantity": "1",
+        "order_type": "market",
+        "backtest_id": "{{ $('BacktestInit').json.data.backtest_id }}",
+        "current_bar": "{{ $('OnBar').json.data.BarSeries.[0].bars.[0] }}",
+        "checkDependency": true,
+        "limit_price": null,
+        "stop_price": null
+      }
+    },
+    {
+      "id": "Sell",
+      "type": "BacktestTrade",
+      "category": "Backtest",
+      "position": {
+        "x": 2933.7176769418597,
+        "y": 548.0451754466083
+      },
+      "values": {
+        "side": "sell",
+        "symbol": "{{ $('OnBar').json.data.BarSeries.[0].symbol }}",
+        "quantity": "1",
+        "order_type": "market",
+        "backtest_id": "{{ $('BacktestInit').json.data.backtest_id }}",
+        "current_bar": "{{ $('OnBar').json.data.BarSeries.[0].bars.[0] }}",
+        "checkDependency": true,
+        "limit_price": null,
+        "stop_price": null
+      }
     }
   ],
   "edges": [
-    { "id": "e1", "source": "bt-init", "target": "bt-rsi", "type": "default" },
-    { "id": "e2", "source": "bt-rsi", "target": "bt-if", "type": "default" },
-    { "id": "e3", "source": "bt-if", "target": "bt-portfolio", "type": "default" }
-  ]
+    {
+      "id": "edge_1772439693625",
+      "source": "VolumeOscillator",
+      "target": "getPosition",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1772439716772",
+      "source": "getPosition",
+      "target": "noPosition",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1772439732634",
+      "source": "noPosition",
+      "target": "enoughProfit",
+      "sourceHandle": "false",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1773045338068",
+      "source": "updatePortfolioValue",
+      "target": "VolumeOscillator",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1773113411856",
+      "source": "BacktestInit",
+      "target": "OnBar",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1773201763861",
+      "source": "enoughProfit",
+      "target": "Sell",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1773212261487",
+      "source": "OnBar",
+      "target": "updatePortfolioValue",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1778685365501",
+      "source": "noPosition",
+      "target": "isVolumeFading",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "edge_1778685931653",
+      "source": "isVolumeFading",
+      "target": "Buy",
+      "sourceHandle": "true",
+      "targetHandle": "input"
+    }
+  ],
+  "isActive": false
 }

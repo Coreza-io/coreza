@@ -25,13 +25,13 @@ export interface WorkflowTemplate {
 const hydrate = (raw: { nodes: any[]; edges: any[] }): { nodes: Node[]; edges: Edge[] } => {
   const nodes = raw.nodes
     .map((n) => {
-      const nodeName = n.type || n.name || n.id;
+      const nodeName = n.name || n.type || n.id;
       const definition = nodeManifest[nodeName as keyof typeof nodeManifest];
       if (!definition) {
         return null;
       }
 
-      const merged = reconcileNodeValues(
+      const { merged } = reconcileNodeValues(
         definition,
         n.values || n.data?.values || {},
         n.data?.fieldState || {},

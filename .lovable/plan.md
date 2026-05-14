@@ -1,70 +1,52 @@
-# Workflow Template Picker on New Workflow
+## Issues observed
 
-## Goal
-When the user clicks **New Workflow**, open a modal offering three starter templates. The chosen template seeds the editor's nodes/edges. "Custom" preserves today's default (single FinnHub welcome node).
+From the screenshot, the canvas shows two nodes side by side:
 
-## UX flow
+- **BacktestInit** — uses `public/assets/icons/backtest.svg` (clock-rewind glyph). Its strokes extend almost edge-to-edge of the 24×24 viewBox, so it visually looks larger and slightly off-center compared to other node icons.
+- **Compute** (Logic category) — uses `public/assets/icons/compute.svg`, which is literally a red rectangle with an "X" through it. It looks like a "delete/error" icon, not a compute/logic icon.
 
-1. On `/dashboard/workflows`, the **New Workflow** button no longer navigates immediately. It opens a `TemplateChooserDialog`.
-2. Dialog shows three cards in a responsive grid:
-   - **Backtest** – icon `backtest.svg`, copy: "Historical strategy simulation with BacktestInit + indicators + portfolio."
-   - **Stream** – icon `broker.svg`, copy: "Live market stream with real-time signals and order routing."
-   - **Custom** – icon `compute.svg`, copy: "Start from a blank canvas with one starter node."
-3. Selecting a card navigates to `/dashboard/workflow/new?template=<backtest|stream|custom>` (preserving `?project=` if present).
-4. `WorkflowEditor` reads the `template` query param on first load and seeds nodes/edges from the matching template instead of `initialNodes`.
-5. The same dialog opens from the empty-state "Create Your First Workflow" button.
+Both icons render through the same wrapper (`NodeWrapper.tsx`, `w-6 h-6` `<img>`), so the alignment difference comes from the SVG content itself, not the layout.
 
-## Templates
+## Plan
 
-Templates live as static JSON in `src/templates/workflows/`:
+### 1. Fix BacktestInit icon alignment
 
-```text
-src/templates/workflows/
-  backtest.json     # pre-built backtest pipeline
-  stream.json       # pre-built live stream pipeline
-  custom.json       # equivalent to today's initialNodes (single FinnHub welcome)
-  index.ts          # typed registry: { backtest, stream, custom }
-```
+Update `public/assets/icons/backtest.svg` so its glyph sits inside the same safe area as other node icons (≈4px padding inside the 24×24 viewBox), matching the optical size of `if.svg`, `portfolio.svg`, `switch.svg`, etc.
 
-Each JSON matches the existing workflow export shape (`{ nodes: Node[], edges: Edge[] }`) so it round-trips cleanly through `stampNodesWithWorkflowSession` and the editor.
+Approach:
+- Keep the clock-rewind concept (it is meaningful for "backtest" = replay history).
+- Re-center the path inside `viewBox="0 0 24 24"` with the visible glyph sitting roughly within `x: 4–20, y: 4–20`.
+- Keep the existing indigo stroke color `#6366F1` and `stroke-width="2"` for visual parity.
 
-For initial content:
-- `custom.json` = the current `initialNodes` array (FinnHub "Welcome to Coreza!" node) + empty edges. No behavior change for users who pick Custom.
-- `backtest.json` = minimal but runnable: `BacktestInit` → `RSI` indicator → `IF` → `Portfolio` (place_order) with sensible defaults and connecting edges.
-- `stream.json` = minimal: `Alpaca` (or `Binance`) market subscription stream node → `RSI` → `IF` → `Portfolio`.
+### 2. Replace the Logic / Compute icon
 
-Node IDs in JSON use stable slugs (e.g. `bt-init`, `bt-rsi`); on load we run them through `stampNodesWithWorkflowSession` (already handles per-session re-stamping). Positions are pre-laid-out left→right so the canvas looks tidy on first open.
+Replace `public/assets/icons/compute.svg` with a more meaningful glyph for the Logic category. The current red-X reads as "error/cancel".
 
-## Files to add
+Recommended new glyph: **function braces `{ƒ}`** or **sliders/equation** style — clean line-art, same 24×24 viewBox, same padding rules as above, using the existing accent color (e.g. `#F59E0B` amber, kept for Logic category continuity, or switched to a calmer hue if preferred).
 
-- `src/components/workflow/TemplateChooserDialog.tsx` — shadcn `Dialog` with 3 selectable cards, accepts `open`, `onOpenChange`, `onSelect(templateId, projectId?)`. Uses framer-motion for hover lift, semantic tokens only.
-- `src/templates/workflows/custom.json`
-- `src/templates/workflows/backtest.json`
-- `src/templates/workflows/stream.json`
-- `src/templates/workflows/index.ts` — exports a typed `workflowTemplates` map and a `TemplateId = 'backtest' | 'stream' | 'custom'` type; loads JSON via `import` so Vite bundles them.
+Concretely, ship a new `compute.svg` that draws:
+- left curly brace `{`
+- centered lowercase `ƒ` or `x` glyph
+- right curly brace `}`
 
-## Files to edit
+This reads as "compute / expression / logic" instead of "delete".
 
-- `src/pages/Workflows.tsx`
-  - Replace the `<Link to="/dashboard/workflow/new">` wrappers around both **New Workflow** buttons with `<Button onClick={() => setTemplateDialogOpen(true)}>`.
-  - Add `templateDialogOpen` state and render `<TemplateChooserDialog>`.
-  - On select: `navigate(\`/dashboard/workflow/new?template=${id}${projectId ? \`&project=${projectId}\` : ''}\`)`.
+No JSON changes needed — `Compute.json` already points to `/assets/icons/compute.svg`, so swapping the file is enough.
 
-- `src/pages/WorkflowEditor.tsx`
-  - Read `searchParams.get('template')` (default `'custom'`).
-  - Replace the hardcoded `initialNodes` reference inside `doLoad()`'s `isNewWorkflow` branch with a lookup into `workflowTemplates[templateId]`, falling back to `custom`.
-  - Keep the module-level `initialNodes` only as the default for `useNodesState` initial render (or change it to `workflowTemplates.custom.nodes`); the real seeding happens in the effect.
-  - No other behavior changes — `stampNodesWithWorkflowSession` and existing save flow handle the rest.
+### Files to change
 
-## Out of scope
+- `public/assets/icons/backtest.svg` — re-balanced clock-rewind glyph
+- `public/assets/icons/compute.svg` — new function-braces glyph
 
-- No backend/database changes — templates are bundled client-side JSON.
-- No template management UI (create/edit/delete user templates).
-- No changes to existing workflows or the executor/runtime.
-- No new node types; templates only compose existing nodes from `nodeManifest`.
+### Out of scope
 
-## Technical notes
+- Other category icons (If, Switch, Portfolio, etc.) — not part of this request.
+- NodeWrapper / NodeRouter rendering logic — already correct, no code changes needed.
+- Template hydration — already fixed in the previous turn.
 
-- Template JSON is validated lightly at load time: if a template references a node `type` not in `nodeManifest`, fall back to `custom` and toast a warning (defensive against renamed nodes).
-- Dialog opens on the same route, so deep-linking `/dashboard/workflow/new?template=backtest` (e.g. from docs) also works without going through the picker.
-- All visuals use semantic tokens (`bg-card`, `border-border`, `text-muted-foreground`, `bg-gradient-primary`); no hardcoded colors.
+### Verification
+
+After the swap, on the workflow canvas:
+- BacktestInit and Compute icons should appear at the same optical size and vertical alignment as If/Switch/Portfolio.
+- The Compute node should show a clear function-braces glyph instead of the red X.
+- Template chooser dialog (which also uses these SVGs at `h-6 w-6`) should look consistent.

@@ -55,7 +55,14 @@ function unwrapBinanceUserDataEnvelope(msg: any): any {
 }
 
 function normalizeBinanceIncomingEventType(eventType: string): string {
-  return eventType === "continuous_kline" ? "continuousKline" : eventType;
+  switch (eventType) {
+    case "continuous_kline":
+      return "continuousKline";
+    case "24hrMiniTicker":
+      return "24hrMiniTicker";
+    default:
+      return eventType;
+  }
 }
 
 function normalizeBinanceIncomingEvent(msg: any): any {
@@ -347,7 +354,7 @@ export function shouldPublishBinanceMessage(
     "kline",
     "bookTicker",
     "24hrTicker",
-    "miniTicker",
+    "24hrMiniTicker",
     "depthUpdate",
     "markPriceUpdate",
     "forceOrder",
@@ -399,13 +406,6 @@ export function handleBinanceControlMessage(
     return;
   }
 
-  if (eventMsg.e !== undefined) {
-    const msgId =
-      eventMsg.s && eventMsg.E
-        ? `${eventMsg.s}:${eventMsg.e}:${eventMsg.k?.i}:${eventMsg.E}`
-        : undefined;
-    logger.info({ source: "binance", id: msgId }, "Subscription confirmed");
-  }
 }
 
 // ============ ORDER STATUS MAPPING ============
@@ -678,7 +678,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         source: "binance" as const,
       };
 
-    case "miniTicker":
+    case "24hrMiniTicker":
       return {
         symbol,
         t,

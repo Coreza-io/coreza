@@ -67,7 +67,7 @@ export function shouldPublishBinanceMessage(msg: any): boolean {
     'kline',
     'bookTicker',
     '24hrTicker',
-    'miniTicker',
+    '24hrMiniTicker',
     'depthUpdate',
   ].includes(msg.e);
 }
@@ -142,7 +142,7 @@ export function normalizeBinanceMessage(msg: any): MarketEvent | null {
         source: 'binance' as const,
       };
 
-    case 'miniTicker':
+    case '24hrMiniTicker':
       return {
         symbol,
         t,
@@ -151,7 +151,7 @@ export function normalizeBinanceMessage(msg: any): MarketEvent | null {
         h: parseFloat(msg.h),
         l: parseFloat(msg.l),
         v: parseFloat(msg.v),
-        type: 'miniTicker' as const,
+        type: '24hrMiniTicker' as const,
         source: 'binance' as const,
       };
 

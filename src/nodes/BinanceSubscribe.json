@@ -148,7 +148,7 @@
           }
         },
         {
-          "id": "miniTicker",
+          "id": "24hrMiniTicker",
           "name": "Mini Ticker"
         },
         {

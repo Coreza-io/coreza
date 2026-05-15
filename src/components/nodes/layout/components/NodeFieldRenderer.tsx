@@ -608,6 +608,48 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               dependentApiFields?.forEach((depField: any) => {
                 fetchDependentOptions?.(depField, val);
               });
+
+              // Generic option-swap: when this select changes, walk other multiselect
+              // fields whose options use displayOptions.show[field.key] and rewrite
+              // selected ids that are now hidden, swapping via opt.swapTo when defined.
+              const multiselectFields = definition.fields?.filter(
+                (f: any) =>
+                  f.type === "multiselect" &&
+                  Array.isArray(f.options) &&
+                  f.options.some(
+                    (o: any) => o?.displayOptions?.show?.[field.key],
+                  ),
+              );
+              multiselectFields?.forEach((msField: any) => {
+                const current: string[] = Array.isArray(fieldState[msField.key])
+                  ? fieldState[msField.key]
+                  : [];
+                if (!current.length && !msField.default) return;
+                const optionsById: Record<string, any> = {};
+                msField.options.forEach((o: any) => {
+                  optionsById[o.id ?? o.value] = o;
+                });
+                const next: string[] = [];
+                let changed = false;
+                current.forEach((id) => {
+                  const opt = optionsById[id];
+                  const allowed = opt?.displayOptions?.show?.[field.key];
+                  if (!allowed || allowed.includes(val)) {
+                    next.push(id);
+                    return;
+                  }
+                  changed = true;
+                  const swap = opt?.swapTo?.[field.key]?.[val];
+                  if (swap && !next.includes(swap)) next.push(swap);
+                });
+                if (!next.length && Array.isArray(msField.default)) {
+                  msField.default.forEach((d: string) => {
+                    if (!next.includes(d)) next.push(d);
+                  });
+                  changed = true;
+                }
+                if (changed) onChange(msField.key, next);
+              });
             }}
             disabled={readOnly}
           >

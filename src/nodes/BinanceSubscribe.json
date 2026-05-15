@@ -133,19 +133,7 @@
         },
         {
           "id": "kline",
-          "name": "Kline (Candlestick)",
-          "displayOptions": {
-            "show": {
-              "marketType": [
-                "spot"
-              ]
-            }
-          },
-          "swapTo": {
-            "marketType": {
-              "futures": "continuous_kline"
-            }
-          }
+          "name": "Kline (Candlestick)"
         },
         {
           "id": "miniTicker",
@@ -197,11 +185,6 @@
               "marketType": [
                 "futures"
               ]
-            }
-          },
-          "swapTo": {
-            "marketType": {
-              "spot": "kline"
             }
           }
         },

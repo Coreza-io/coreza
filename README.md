@@ -17,8 +17,11 @@ An advanced, open-source trading platform that combines powerful workflow automa
 - **Real-Time Analytics**: Live market data, technical indicators, and risk management in one unified interface
 - **100% Open Source**: Fully transparent codebase under AGPL-3.0 - audit, customize, and extend freely
 
+## Scheduler
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
+## Stream
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
+## Backtest
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
 
 ## 🚀 Quick Start

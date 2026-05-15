@@ -11,8 +11,16 @@
   ],
   "fields": [
     {
-      "key": "candles",
+      "key": "candle_data",
       "label": "Candle Data",
+      "type": "json",
+      "optionsSource": "inputData",
+      "required": false,
+      "description": "Optional explicit candle payload for charting. If empty, Visualize falls back to incoming input candles."
+    },
+    {
+      "key": "candles",
+      "label": "Legacy Candle Data",
       "type": "json",
       "optionsSource": "inputData",
       "hidden": true,

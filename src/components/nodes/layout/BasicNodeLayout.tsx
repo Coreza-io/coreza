@@ -9,6 +9,7 @@
  */
 
 import React, { useMemo, memo } from "react";
+import { resolveVisualizeData } from "@/components/nodes/layout/utils/visualizeData";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -75,87 +76,12 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const { user } = useAuth();
   const isVisualize = definition?.name === "Visualize";
 
+  const configuredCandles = fieldState.candle_data ?? fieldState.candles;
+
   const { vizCandles, filteredIndicator } = useMemo(() => {
-    if (!isVisualize || !selectedInputData)
-      return { vizCandles: null, filteredIndicator: [] };
-
-    const normalizeTime = (t: any): string | undefined => {
-      if (t == null) return undefined;
-      if (typeof t === "number") {
-        try {
-          return new Date(t).toISOString().slice(0, 10);
-        } catch {
-          return undefined;
-        }
-      }
-      if (typeof t === "string") {
-        // numeric-string epoch
-        if (/^\d+$/.test(t)) {
-          const n = Number(t);
-          try {
-            return new Date(n).toISOString().slice(0, 10);
-          } catch {
-            return undefined;
-          }
-        }
-        return t.slice(0, 10);
-      }
-      return undefined;
-    };
-
-    const toDictOfArrays = (candlesArray: any) => {
-      if (!Array.isArray(candlesArray)) return candlesArray;
-      return candlesArray.reduce(
-        (acc, c) => {
-          acc.t.push(normalizeTime(c.t ?? c.time));
-          acc.o.push(c.o ?? c.open);
-          acc.h.push(c.h ?? c.high);
-          acc.l.push(c.l ?? c.low);
-          acc.c.push(c.c ?? c.close);
-          acc.v.push(c.v ?? c.volume);
-          return acc;
-        },
-        { t: [], o: [], h: [], l: [], c: [], v: [] }
-      );
-    };
-
-    const firstInput = Array.isArray(selectedInputData)
-      ? selectedInputData[0]
-      : selectedInputData;
-
-    // Locate bars across known shapes
-    const findBars = (input: any): any[] | null => {
-      if (!input) return null;
-      if (Array.isArray(input?.data?.BarSeries?.[0]?.bars)) return input.data.BarSeries[0].bars;
-      if (Array.isArray(input?.BarSeries?.[0]?.bars)) return input.BarSeries[0].bars;
-      if (Array.isArray(input?.bars)) return input.bars;
-      if (Array.isArray(input?.candles)) return input.candles;
-      if (Array.isArray(input)) return input;
-      return null;
-    };
-
-    let vizCandles: any = null;
-    let vizIndicator = null;
-
-    const bars = findBars(firstInput);
-    if (bars) {
-      vizCandles = toDictOfArrays(bars);
-    } else if (firstInput?.candles && typeof firstInput.candles === "object") {
-      vizCandles = firstInput.candles;
-    }
-
-    if (firstInput?.indicator) {
-      vizIndicator = firstInput.indicator;
-    }
-
-    const filteredIndicator = Array.isArray(vizIndicator)
-      ? vizIndicator.filter(
-          (d: any) => d && d.value !== null && !isNaN(d.value)
-        )
-      : [];
-
-    return { vizCandles, filteredIndicator };
-  }, [isVisualize, selectedInputData]);
+    if (!isVisualize) return { vizCandles: null, filteredIndicator: [] };
+    return resolveVisualizeData(selectedInputData, configuredCandles);
+  }, [isVisualize, selectedInputData, configuredCandles]);
 
   return (
     <>
@@ -191,7 +117,36 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       </div>
 
       {isVisualize && (
-        <div className="py-2">
+        <div className="space-y-3 py-2">
+          {(definition.fields || []).map((f: any) => (
+            <NodeFieldRenderer
+              key={f.key}
+              field={f}
+              definition={definition}
+              fieldState={fieldState}
+              value={fieldState[f.key]}
+              selectOptions={selectOptions}
+              loadingSelect={loadingSelect}
+              onChange={handleChange}
+              onBatchChange={handleFieldStateBatch}
+              onDrop={(fieldDef, e, currentValue) =>
+                handleDrop(
+                  fieldDef.key,
+                  (val: string) => handleChange(fieldDef.key, val),
+                  e,
+                  currentValue
+                )
+              }
+              getPreview={getFieldPreview}
+              referenceStyle={referenceStyle}
+              fetchDependentOptions={fetchDependentOptions}
+              setShowAuth={setShowAuth}
+              workflowId={workflowId}
+              nodeId={nodeId}
+              userId={user?.id || ""}
+              readOnly={readOnly}
+            />
+          ))}
           {vizCandles?.t?.length ? (
             <VisualizeCandlesSignals
               candles={vizCandles}

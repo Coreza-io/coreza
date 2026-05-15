@@ -12,7 +12,7 @@ import { registerNodeExecutor } from "./registry";
 import { IOExecutor } from "./executors/IOExecutor";
 import { IndicatorsExecutor } from "./executors/IndicatorsExecutor";
 import { BrokerExecutor } from "./executors/BrokerExecutor";
-import { MarketExecutor } from "./executors/MarketExecutor";
+//import { MarketExecutor } from "./executors/MarketExecutor";
 import { ControlFlowExecutor } from "./executors/ControlFlowExecutor";
 import { UtilityExecutor } from "./executors/UtilityExecutor";
 import { CommunicationExecutor } from "./executors/CommunicationExecutor";
@@ -31,7 +31,7 @@ export function initializeNodeExecutors() {
     new IOExecutor(),
     new IndicatorsExecutor(),
     new BrokerExecutor(),
-    new MarketExecutor(),
+    //new MarketExecutor(),
     new ControlFlowExecutor(),
     new UtilityExecutor(),
     new CommunicationExecutor(),

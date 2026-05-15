@@ -1,71 +1,48 @@
-# Binance Stream Type: Auto-select Kline ↔ Continuous Kline by Market Type
+# Fix Visualize node — candle data not rendering
 
-## Goal
+## Problem
 
-When the user changes **Market Type** on the Binance stream nodes:
+The Visualize node shows "No candle data to visualize" even when the previous node (Alpaca) outputs valid bar data. The input shape coming in is the standardized `BarSeries` format:
 
-- **Spot** → hide `Continuous Kline`, auto-select `Kline (Candlestick)` (and deselect `continuousKline` if it was on).
-- **Futures (USDT-M)** → hide `Kline (Candlestick)`, auto-select `Continuous Kline` (and deselect `kline` if it was on).
-
-Applies to both `BinanceStreamData` and `BinanceSubscribe` nodes.
-
-## Changes
-
-### 1. Node JSON — make `kline` spot-only (mirror existing `continuousKline` futures-only)
-
-In `src/nodes/BinanceStreamData.json` and `src/nodes/BinanceSubscribe.json`, add `displayOptions.show.marketType: ["spot"]` to the `kline` stream-type option. `continuousKline` already has the futures-only rule.
-
-This hides the wrong option per market type in the multiselect list.
-
-### 2. Generic option-swap on parent change (NodeFieldRenderer)
-
-In `src/components/nodes/layout/components/NodeFieldRenderer.tsx`, extend the `Select` `onValueChange` (the marketType field):
-
-- After firing `onChange(field.key, val)`, scan sibling `multiselect` fields whose options carry `displayOptions.show[field.key]`.
-- For each such multiselect, recompute selected values:
-  - Drop any option ids whose `displayOptions.show[field.key]` no longer includes `val`.
-  - If the dropped id has a configured replacement, push the replacement id.
-  - If the resulting list is empty, fall back to the field's `default`.
-- Emit a single `onChange(multiselectKey, newValues)`.
-
-The replacement mapping is declared inline on the option:
-
-```json
+```text
 {
-  "id": "kline",
-  "name": "Kline (Candlestick)",
-  "displayOptions": { "show": { "marketType": ["spot"] } },
-  "swapTo": { "marketType": { "futures": "continuousKline" } }
-},
-{
-  "id": "continuousKline",
-  "name": "Continuous Kline",
-  "displayOptions": { "show": { "marketType": ["futures"] } },
-  "swapTo": { "marketType": { "spot": "kline" } }
+  success: true,
+  data: {
+    BarSeries: [
+      {
+        symbol: "BKSY",
+        interval: "1Day",
+        bars: [
+          { time: 1704171600000, open: 1.38, high: 1.39, low: 1.34, close: 1.38, volume: 631074 },
+          ...
+        ]
+      }
+    ]
+  }
 }
 ```
 
-Generic enough to reuse for any future parent→option swap (no Binance-specific code).
+The current resolver in `BasicNodeLayout.tsx` only looks at `firstInput.candles` or a top-level array, and only maps the short keys `{t,o,h,l,c,v}`. It also calls `.slice(0,10)` on `time`, which is a numeric epoch, not a string — that throws or yields garbage.
 
-### 3. Apply the same swap metadata in `BinanceSubscribe.json`
+## Fix (frontend only)
 
-Same two option entries as above (currently only `continuousKline` has `displayOptions`; `kline` has none and there is no swap mapping).
+Update the `vizCandles` memo in `src/components/nodes/layout/BasicNodeLayout.tsx`:
 
-## Files
+1. Locate bars by trying, in order:
+   - `firstInput.data?.BarSeries?.[0]?.bars`
+   - `firstInput.BarSeries?.[0]?.bars`
+   - `firstInput.bars`
+   - `firstInput.candles`
+   - `firstInput` itself if it's an array
+2. In `toDictOfArrays`, accept both key styles per bar:
+   - short: `t,o,h,l,c,v`
+   - long:  `time, open, high, low, close, volume`
+3. Normalize `time`:
+   - if number → `new Date(t).toISOString().slice(0,10)`
+   - if string → `t.slice(0,10)`
 
-- `src/nodes/BinanceStreamData.json` — add `displayOptions` + `swapTo` on `kline`; add `swapTo` on `continuousKline`.
-- `src/nodes/BinanceSubscribe.json` — same edits (note: this file currently uses `continuous_kline` id; I will keep its existing id and apply the same pattern).
-- `src/components/nodes/layout/components/NodeFieldRenderer.tsx` — generic swap-on-parent-change logic in the Select `onValueChange`.
-
-## Out of scope
-
-- Backend stream-type handling (ids unchanged).
-- Other node types.
-- The `interval` (Kline Interval) field already shows correctly via existing `displayOptions`; no change needed.
+No backend changes. No changes to chart component or Visualize.json.
 
 ## Verification
 
-1. Open a Binance stream node, switch Market Type Spot ↔ Futures repeatedly.
-2. Confirm the hidden option disappears from the Stream Type list.
-3. Confirm the toggle for the visible counterpart auto-flips on (and the hidden one is removed from selection).
-4. Confirm other selected stream types (e.g., `trade`, `bookTicker`) are preserved across the switch.
+Reload the Visualize node with Alpaca BarSeries input — the chart should render the candles. Confirm via screenshot.

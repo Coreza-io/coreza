@@ -1,4 +1,4 @@
-# Coreza Trading Platform
+# Coreza Trading Automation Platform
 
 ![Open Source](https://img.shields.io/badge/Open%20Source-AGPL--3.0-success)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)

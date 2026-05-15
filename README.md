@@ -19,8 +19,10 @@ An advanced, open-source trading platform that combines powerful workflow automa
 
 ## Scheduler
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
+
 ## Stream
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
+
 ## Backtest
 <img width="1901" height="991" alt="image" src="https://github.com/user-attachments/assets/edd24d1f-804d-4ea3-8b5d-caecc7cc4808" />
 

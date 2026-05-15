@@ -7,8 +7,23 @@ Welcome to the Coreza Trading Platform! This guide will help you set up your own
 Before you begin, ensure you have:
 
 - **Node.js 18+** installed on your system
-- A **Supabase account** and project
+- A **Supabase account** and project (required)
 - **Git** for cloning the repository
+
+### Required Credentials Collected by Setup
+
+`node setup/setup.js` expects these values during setup and validation:
+
+- `SUPABASE_URL` (`https://<project-ref>.supabase.co`)
+- `SUPABASE_PROJECT_ID` (project ref, auto-derived from URL)
+- `SUPABASE_PUBLISHABLE_KEY` / `VITE_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`)
+- `SUPABASE_SECRET_KEY` (`sb_secret_...`, backend only)
+- `SUPABASE_ACCESS_TOKEN` (`sbp_...`, setup/CLI only)
+- `SUPABASE_DB_PASSWORD` (Postgres DB password for `supabase db push`)
+- `COREZA_ENCRYPTION_KEY` (generated if missing)
+- `REDIS_QUEUE_URL` and `REDIS_CACHE_URL` (defaults to localhost Redis)
+
+The setup-only credentials are written to `.env.setup.local` and used for non-interactive Supabase CLI commands (`login`, `link`, and `db push`).
 
 ## Quick Setup
 

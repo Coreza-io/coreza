@@ -245,6 +245,11 @@
                 "futures"
               ]
             }
+          },
+          "swapTo": {
+            "marketType": {
+              "spot": "kline"
+            }
           }
         },
         {

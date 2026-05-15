@@ -1,52 +1,71 @@
-## Issues observed
+# Binance Stream Type: Auto-select Kline ↔ Continuous Kline by Market Type
 
-From the screenshot, the canvas shows two nodes side by side:
+## Goal
 
-- **BacktestInit** — uses `public/assets/icons/backtest.svg` (clock-rewind glyph). Its strokes extend almost edge-to-edge of the 24×24 viewBox, so it visually looks larger and slightly off-center compared to other node icons.
-- **Compute** (Logic category) — uses `public/assets/icons/compute.svg`, which is literally a red rectangle with an "X" through it. It looks like a "delete/error" icon, not a compute/logic icon.
+When the user changes **Market Type** on the Binance stream nodes:
 
-Both icons render through the same wrapper (`NodeWrapper.tsx`, `w-6 h-6` `<img>`), so the alignment difference comes from the SVG content itself, not the layout.
+- **Spot** → hide `Continuous Kline`, auto-select `Kline (Candlestick)` (and deselect `continuousKline` if it was on).
+- **Futures (USDT-M)** → hide `Kline (Candlestick)`, auto-select `Continuous Kline` (and deselect `kline` if it was on).
 
-## Plan
+Applies to both `BinanceStreamData` and `BinanceSubscribe` nodes.
 
-### 1. Fix BacktestInit icon alignment
+## Changes
 
-Update `public/assets/icons/backtest.svg` so its glyph sits inside the same safe area as other node icons (≈4px padding inside the 24×24 viewBox), matching the optical size of `if.svg`, `portfolio.svg`, `switch.svg`, etc.
+### 1. Node JSON — make `kline` spot-only (mirror existing `continuousKline` futures-only)
 
-Approach:
-- Keep the clock-rewind concept (it is meaningful for "backtest" = replay history).
-- Re-center the path inside `viewBox="0 0 24 24"` with the visible glyph sitting roughly within `x: 4–20, y: 4–20`.
-- Keep the existing indigo stroke color `#6366F1` and `stroke-width="2"` for visual parity.
+In `src/nodes/BinanceStreamData.json` and `src/nodes/BinanceSubscribe.json`, add `displayOptions.show.marketType: ["spot"]` to the `kline` stream-type option. `continuousKline` already has the futures-only rule.
 
-### 2. Replace the Logic / Compute icon
+This hides the wrong option per market type in the multiselect list.
 
-Replace `public/assets/icons/compute.svg` with a more meaningful glyph for the Logic category. The current red-X reads as "error/cancel".
+### 2. Generic option-swap on parent change (NodeFieldRenderer)
 
-Recommended new glyph: **function braces `{ƒ}`** or **sliders/equation** style — clean line-art, same 24×24 viewBox, same padding rules as above, using the existing accent color (e.g. `#F59E0B` amber, kept for Logic category continuity, or switched to a calmer hue if preferred).
+In `src/components/nodes/layout/components/NodeFieldRenderer.tsx`, extend the `Select` `onValueChange` (the marketType field):
 
-Concretely, ship a new `compute.svg` that draws:
-- left curly brace `{`
-- centered lowercase `ƒ` or `x` glyph
-- right curly brace `}`
+- After firing `onChange(field.key, val)`, scan sibling `multiselect` fields whose options carry `displayOptions.show[field.key]`.
+- For each such multiselect, recompute selected values:
+  - Drop any option ids whose `displayOptions.show[field.key]` no longer includes `val`.
+  - If the dropped id has a configured replacement, push the replacement id.
+  - If the resulting list is empty, fall back to the field's `default`.
+- Emit a single `onChange(multiselectKey, newValues)`.
 
-This reads as "compute / expression / logic" instead of "delete".
+The replacement mapping is declared inline on the option:
 
-No JSON changes needed — `Compute.json` already points to `/assets/icons/compute.svg`, so swapping the file is enough.
+```json
+{
+  "id": "kline",
+  "name": "Kline (Candlestick)",
+  "displayOptions": { "show": { "marketType": ["spot"] } },
+  "swapTo": { "marketType": { "futures": "continuousKline" } }
+},
+{
+  "id": "continuousKline",
+  "name": "Continuous Kline",
+  "displayOptions": { "show": { "marketType": ["futures"] } },
+  "swapTo": { "marketType": { "spot": "kline" } }
+}
+```
 
-### Files to change
+Generic enough to reuse for any future parent→option swap (no Binance-specific code).
 
-- `public/assets/icons/backtest.svg` — re-balanced clock-rewind glyph
-- `public/assets/icons/compute.svg` — new function-braces glyph
+### 3. Apply the same swap metadata in `BinanceSubscribe.json`
 
-### Out of scope
+Same two option entries as above (currently only `continuousKline` has `displayOptions`; `kline` has none and there is no swap mapping).
 
-- Other category icons (If, Switch, Portfolio, etc.) — not part of this request.
-- NodeWrapper / NodeRouter rendering logic — already correct, no code changes needed.
-- Template hydration — already fixed in the previous turn.
+## Files
 
-### Verification
+- `src/nodes/BinanceStreamData.json` — add `displayOptions` + `swapTo` on `kline`; add `swapTo` on `continuousKline`.
+- `src/nodes/BinanceSubscribe.json` — same edits (note: this file currently uses `continuous_kline` id; I will keep its existing id and apply the same pattern).
+- `src/components/nodes/layout/components/NodeFieldRenderer.tsx` — generic swap-on-parent-change logic in the Select `onValueChange`.
 
-After the swap, on the workflow canvas:
-- BacktestInit and Compute icons should appear at the same optical size and vertical alignment as If/Switch/Portfolio.
-- The Compute node should show a clear function-braces glyph instead of the red X.
-- Template chooser dialog (which also uses these SVGs at `h-6 w-6`) should look consistent.
+## Out of scope
+
+- Backend stream-type handling (ids unchanged).
+- Other node types.
+- The `interval` (Kline Interval) field already shows correctly via existing `displayOptions`; no change needed.
+
+## Verification
+
+1. Open a Binance stream node, switch Market Type Spot ↔ Futures repeatedly.
+2. Confirm the hidden option disappears from the Stream Type list.
+3. Confirm the toggle for the visible counterpart auto-flips on (and the hidden one is removed from selection).
+4. Confirm other selected stream types (e.g., `trade`, `bookTicker`) are preserved across the switch.

@@ -40,7 +40,7 @@ interface BasicNodeLayoutProps extends BaseNodeRenderProps {
     fieldKey: string,
     setter: React.Dispatch<React.SetStateAction<string>>,
     e: React.DragEvent,
-    currentValue: string
+    currentValue: string,
   ) => void;
   getFieldPreview: (fieldKey: string) => string | null;
   setShowAuth: (show: boolean) => void;
@@ -76,22 +76,70 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const isVisualize = definition?.name === "Visualize";
 
   const { vizCandles, filteredIndicator } = useMemo(() => {
-    if (!isVisualize || !selectedInputData)
+    if (!isVisualize || !selectedInputData) {
       return { vizCandles: null, filteredIndicator: [] };
+    }
 
-    const toDictOfArrays = (candlesArray: any) => {
-      if (!Array.isArray(candlesArray)) return candlesArray;
-      return candlesArray.reduce(
-        (acc, c) => {
-          acc.t.push(c.t ? c.t.slice(0, 10) : undefined);
-          acc.o.push(c.o);
-          acc.h.push(c.h);
-          acc.l.push(c.l);
-          acc.c.push(c.c);
-          acc.v.push(c.v);
+    const normalizeTime = (value: any) => {
+      if (value === null || value === undefined) return undefined;
+
+      if (typeof value === "number") {
+        // Supports both epoch seconds and epoch milliseconds
+        const milliseconds = value < 1e12 ? value * 1000 : value;
+        return new Date(milliseconds).toISOString().slice(0, 10);
+      }
+
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+
+        // Numeric timestamp as string
+        if (/^\d+$/.test(trimmed)) {
+          const numericValue = Number(trimmed);
+          const milliseconds =
+            numericValue < 1e12 ? numericValue * 1000 : numericValue;
+          return new Date(milliseconds).toISOString().slice(0, 10);
+        }
+
+        // ISO datetime
+        if (trimmed.includes("T")) {
+          return trimmed.slice(0, 10);
+        }
+
+        // Already date-like
+        return trimmed;
+      }
+
+      return undefined;
+    };
+
+    const getBarValue = (bar: any, shortKey: string, longKey: string) => {
+      return bar?.[shortKey] ?? bar?.[longKey];
+    };
+
+    const toDictOfArrays = (barsArray: any) => {
+      if (!Array.isArray(barsArray)) return barsArray;
+
+      return barsArray.reduce(
+        (acc, bar) => {
+          acc.t.push(
+            normalizeTime(
+              bar?.t ??
+                bar?.time ??
+                bar?.timestamp ??
+                bar?.datetime ??
+                bar?.date,
+            ),
+          );
+
+          acc.o.push(getBarValue(bar, "o", "open"));
+          acc.h.push(getBarValue(bar, "h", "high"));
+          acc.l.push(getBarValue(bar, "l", "low"));
+          acc.c.push(getBarValue(bar, "c", "close"));
+          acc.v.push(getBarValue(bar, "v", "volume"));
+
           return acc;
         },
-        { t: [], o: [], h: [], l: [], c: [], v: [] }
+        { t: [], o: [], h: [], l: [], c: [], v: [] },
       );
     };
 
@@ -102,27 +150,52 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
     let vizCandles = null;
     let vizIndicator = null;
 
-    if (Array.isArray(firstInput?.candles)) {
-      vizCandles = toDictOfArrays(firstInput.candles);
-    } else if (firstInput?.candles && typeof firstInput.candles === "object") {
-      vizCandles = firstInput.candles;
+    const standardBars =
+      firstInput?.data?.BarSeries?.[0]?.bars ??
+      firstInput?.Data?.BarSeries?.[0]?.bars ??
+      firstInput?.BarSeries?.[0]?.bars ??
+      firstInput?.barSeries?.[0]?.bars;
+
+    const fallbackBars =
+      firstInput?.bars ??
+      firstInput?.candles ??
+      firstInput?.data?.bars ??
+      firstInput?.data?.candles;
+
+    if (Array.isArray(standardBars)) {
+      vizCandles = toDictOfArrays(standardBars);
+    } else if (standardBars && typeof standardBars === "object") {
+      vizCandles = standardBars;
+    } else if (Array.isArray(fallbackBars)) {
+      vizCandles = toDictOfArrays(fallbackBars);
+    } else if (fallbackBars && typeof fallbackBars === "object") {
+      vizCandles = fallbackBars;
     } else if (Array.isArray(firstInput)) {
       vizCandles = toDictOfArrays(firstInput);
     }
 
-    if (firstInput?.indicator) {
-      vizIndicator = firstInput.indicator;
-    }
+    vizIndicator =
+      firstInput?.indicator ??
+      firstInput?.data?.indicator ??
+      firstInput?.data?.IndicatorSeries?.[0]?.values ??
+      firstInput?.IndicatorSeries?.[0]?.values ??
+      null;
 
     const filteredIndicator = Array.isArray(vizIndicator)
-      ? vizIndicator.filter(
-          (d: any) => d && d.value !== null && !isNaN(d.value)
-        )
+      ? vizIndicator.filter((d: any) => {
+          const value = d?.value ?? d?.v;
+
+          return (
+            d &&
+            value !== null &&
+            value !== undefined &&
+            !Number.isNaN(Number(value))
+          );
+        })
       : [];
 
     return { vizCandles, filteredIndicator };
   }, [isVisualize, selectedInputData]);
-
   return (
     <>
       <div className="mb-4">
@@ -131,8 +204,10 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             (() => {
               const IconComponent =
                 IconRegistry[definition.name as keyof typeof IconRegistry];
-              if (IconComponent && typeof IconComponent === 'function') {
-                return React.createElement(IconComponent, { className: "w-6 h-6" });
+              if (IconComponent && typeof IconComponent === "function") {
+                return React.createElement(IconComponent, {
+                  className: "w-6 h-6",
+                });
               }
 
               return (
@@ -162,7 +237,13 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             <VisualizeCandlesSignals
               candles={vizCandles}
               indicator={{
-                name: definition.name,
+                name:
+                  (Array.isArray(selectedInputData)
+                    ? selectedInputData[0]?.indicatorName ||
+                      selectedInputData[0]?.data?.IndicatorSeries?.[0]?.name
+                    : selectedInputData?.indicatorName ||
+                      selectedInputData?.data?.IndicatorSeries?.[0]?.name) ||
+                  "Indicator",
                 color: "#1e40af",
                 data: filteredIndicator,
               }}
@@ -203,7 +284,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                   fieldDef.key,
                   (val: string) => handleChange(fieldDef.key, val),
                   e,
-                  currentValue
+                  currentValue,
                 )
               }
               getPreview={getFieldPreview}
@@ -225,7 +306,10 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
           {!readOnly && incomingEdgeCount >= 2 && (
             <div className="flex items-center justify-between pt-1">
-              <Label htmlFor="check-dependency" className="text-xs text-muted-foreground cursor-pointer">
+              <Label
+                htmlFor="check-dependency"
+                className="text-xs text-muted-foreground cursor-pointer"
+              >
                 Skip dependency check
               </Label>
               <Switch

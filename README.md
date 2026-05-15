@@ -18,7 +18,7 @@ An advanced, open-source trading platform that combines powerful workflow automa
 - **100% Open Source**: Fully transparent codebase under AGPL-3.0 - audit, customize, and extend freely
 
 ## Scheduler
-<img width="1912" height="1037" alt="Scheduler" src="https://github.com/user-attachments/assets/0f5d0b77-d0d5-4eab-baa9-79ca3289cd3f" />
+<img width="1915" height="1036" alt="Scheduler" src="https://github.com/user-attachments/assets/8cbb443e-d220-48c3-8aa7-3bce7186251c" />
 
 ## Stream
 <img width="1911" height="1032" alt="stream" src="https://github.com/user-attachments/assets/91e826e9-1272-449d-bdcd-18b39ea22f7a" />

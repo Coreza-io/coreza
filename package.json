@@ -60,6 +60,7 @@
     "input-otp": "^1.2.4",
     "jest": "^30.0.5",
     "jose": "^6.1.2",
+    "lightweight-charts": "^5.2.0",
     "lucide-react": "^0.462.0",
     "opossum": "^8.5.0",
     "pino": "^10.1.0",

@@ -13,18 +13,27 @@
     {
       "key": "candles",
       "label": "Candle Data",
-      "type": "json",
-      "optionsSource": "inputData",
-      "hidden": true,
+      "type": "string",
+      "placeholder": "{{ $('Alpaca').json.data.BarSeries[0].bars }}",
       "required": false
     },
     {
-      "key": "signals",
-      "label": "Signals",
-      "type": "json",
-      "optionsSource": "inputData",
-      "hidden": true,
-      "required": false
+      "key": "overlays",
+      "label": "Overlays",
+      "type": "repeater",
+      "subFields": [
+        { "key": "name", "type": "string", "placeholder": "BB(20,2)" },
+        { "key": "data", "type": "string", "placeholder": "{{ $('BB').json.data }}" },
+        { "key": "render", "type": "select", "options": [
+          { "id": "Auto", "name": "Auto" },
+          { "id": "Line", "name": "Line" },
+          { "id": "Bands", "name": "Bands" },
+          { "id": "Levels", "name": "Levels" },
+          { "id": "Panel", "name": "Panel" }
+        ], "default": "Auto" },
+        { "key": "color", "type": "string", "placeholder": "#3b82f6" }
+      ],
+      "default": []
     }
   ]
 }

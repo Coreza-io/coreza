@@ -8,12 +8,12 @@
  * See the LICENSE file for details.
  */
 
-import React, { useMemo, memo } from "react";
+import React, { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import VisualizeCandlesSignals from "@/components/charts/VisualizeCandlesSignals";
+import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -75,127 +75,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const { user } = useAuth();
   const isVisualize = definition?.name === "Visualize";
 
-  const { vizCandles, filteredIndicator } = useMemo(() => {
-    if (!isVisualize || !selectedInputData) {
-      return { vizCandles: null, filteredIndicator: [] };
-    }
-
-    const normalizeTime = (value: any) => {
-      if (value === null || value === undefined) return undefined;
-
-      if (typeof value === "number") {
-        // Supports both epoch seconds and epoch milliseconds
-        const milliseconds = value < 1e12 ? value * 1000 : value;
-        return new Date(milliseconds).toISOString().slice(0, 10);
-      }
-
-      if (typeof value === "string") {
-        const trimmed = value.trim();
-
-        // Numeric timestamp as string
-        if (/^\d+$/.test(trimmed)) {
-          const numericValue = Number(trimmed);
-          const milliseconds =
-            numericValue < 1e12 ? numericValue * 1000 : numericValue;
-          return new Date(milliseconds).toISOString().slice(0, 10);
-        }
-
-        // ISO datetime
-        if (trimmed.includes("T")) {
-          return trimmed.slice(0, 10);
-        }
-
-        // Already date-like
-        return trimmed;
-      }
-
-      return undefined;
-    };
-
-    const getBarValue = (bar: any, shortKey: string, longKey: string) => {
-      return bar?.[shortKey] ?? bar?.[longKey];
-    };
-
-    const toDictOfArrays = (barsArray: any) => {
-      if (!Array.isArray(barsArray)) return barsArray;
-
-      return barsArray.reduce(
-        (acc, bar) => {
-          acc.t.push(
-            normalizeTime(
-              bar?.t ??
-                bar?.time ??
-                bar?.timestamp ??
-                bar?.datetime ??
-                bar?.date,
-            ),
-          );
-
-          acc.o.push(getBarValue(bar, "o", "open"));
-          acc.h.push(getBarValue(bar, "h", "high"));
-          acc.l.push(getBarValue(bar, "l", "low"));
-          acc.c.push(getBarValue(bar, "c", "close"));
-          acc.v.push(getBarValue(bar, "v", "volume"));
-
-          return acc;
-        },
-        { t: [], o: [], h: [], l: [], c: [], v: [] },
-      );
-    };
-
-    const firstInput = Array.isArray(selectedInputData)
-      ? selectedInputData[0]
-      : selectedInputData;
-
-    let vizCandles = null;
-    let vizIndicator = null;
-
-    const standardBars =
-      firstInput?.data?.BarSeries?.[0]?.bars ??
-      firstInput?.Data?.BarSeries?.[0]?.bars ??
-      firstInput?.BarSeries?.[0]?.bars ??
-      firstInput?.barSeries?.[0]?.bars;
-
-    const fallbackBars =
-      firstInput?.bars ??
-      firstInput?.candles ??
-      firstInput?.data?.bars ??
-      firstInput?.data?.candles;
-
-    if (Array.isArray(standardBars)) {
-      vizCandles = toDictOfArrays(standardBars);
-    } else if (standardBars && typeof standardBars === "object") {
-      vizCandles = standardBars;
-    } else if (Array.isArray(fallbackBars)) {
-      vizCandles = toDictOfArrays(fallbackBars);
-    } else if (fallbackBars && typeof fallbackBars === "object") {
-      vizCandles = fallbackBars;
-    } else if (Array.isArray(firstInput)) {
-      vizCandles = toDictOfArrays(firstInput);
-    }
-
-    vizIndicator =
-      firstInput?.indicator ??
-      firstInput?.data?.indicator ??
-      firstInput?.data?.IndicatorSeries?.[0]?.values ??
-      firstInput?.IndicatorSeries?.[0]?.values ??
-      null;
-
-    const filteredIndicator = Array.isArray(vizIndicator)
-      ? vizIndicator.filter((d: any) => {
-          const value = d?.value ?? d?.v;
-
-          return (
-            d &&
-            value !== null &&
-            value !== undefined &&
-            !Number.isNaN(Number(value))
-          );
-        })
-      : [];
-
-    return { vizCandles, filteredIndicator };
-  }, [isVisualize, selectedInputData]);
   return (
     <>
       <div className="mb-4">
@@ -233,36 +112,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
       {isVisualize && (
         <div className="py-2">
-          {vizCandles?.t?.length ? (
-            <VisualizeCandlesSignals
-              candles={vizCandles}
-              indicator={{
-                name:
-                  (Array.isArray(selectedInputData)
-                    ? selectedInputData[0]?.indicatorName ||
-                      selectedInputData[0]?.data?.IndicatorSeries?.[0]?.name
-                    : selectedInputData?.indicatorName ||
-                      selectedInputData?.data?.IndicatorSeries?.[0]?.name) ||
-                  "Indicator",
-                color: "#1e40af",
-                data: filteredIndicator,
-              }}
-            />
-          ) : (
-            <div className="text-gray-500 text-sm py-8 text-center">
-              No candle data to visualize
-            </div>
-          )}
-          <div className="text-xs mt-2 flex gap-4">
-            <span>
-              <span className="inline-block w-3 h-3 rounded-full bg-green-600 mr-1" />
-              Buy
-            </span>
-            <span>
-              <span className="inline-block w-3 h-3 rounded-full bg-red-600 mr-1" />
-              Sell
-            </span>
-          </div>
+          <VisualizeNodePreview fieldState={fieldState} selectedInputData={selectedInputData} />
         </div>
       )}
 

@@ -124,7 +124,7 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     if (!priceChart || !candleSeries || !volumeSeries) return;
 
     candleSeries.setData(viewModel.candles.map((candle: CorezaCandle) => ({ ...candle, time: candle.time as Time })));
-    volumeSeries.setData(toVolumeData(viewModel.candles).map((item) => ({ ...item, time: item.time as Time })));
+    volumeSeries.setData(toVolumeData(viewModel.candles));
 
     // reconcile price overlays
     const activePriceIds = new Set(priceOverlays.map((overlay) => overlay.id));

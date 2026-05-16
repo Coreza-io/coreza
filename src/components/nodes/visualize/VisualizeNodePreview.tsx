@@ -28,9 +28,17 @@ const stableId = (row: OverlayRow): string => {
   return `overlay-${Math.abs(hash)}`;
 };
 
-const VisualizeNodePreview: React.FC<{ fieldState: Record<string, unknown>; selectedInputData: unknown }> = ({ fieldState, selectedInputData }) => {
+const VisualizeNodePreview: React.FC<{
+  fieldState: Record<string, unknown>;
+  sourceData: unknown;
+  allNodeData: Record<string, unknown>;
+}> = ({ fieldState, sourceData, allNodeData }) => {
   const viewModel = useMemo<VisualizeChartViewModel>(() => {
-    const resolvedCandles = resolveReferences(String(fieldState.candles ?? ""), selectedInputData);
+    const resolvedCandles = resolveReferences(
+      String(fieldState.candles ?? ""),
+      sourceData,
+      allNodeData
+    );
     const candles = extractBars(resolvedCandles);
     const currentClose = candles[candles.length - 1]?.close;
 
@@ -38,7 +46,7 @@ const VisualizeNodePreview: React.FC<{ fieldState: Record<string, unknown>; sele
     const overlays = overlayRows.reduce<VisualizeOverlay[]>((acc, row, index) => {
       if (!row?.data?.trim()) return acc;
 
-      const resolved = resolveReferences(row.data, selectedInputData);
+      const resolved = resolveReferences(row.data, sourceData, allNodeData);
       const name = row.name?.trim() || `Overlay ${index + 1}`;
       const color = getPaletteColor(index, row.color);
       const id = stableId(row);
@@ -61,7 +69,7 @@ const VisualizeNodePreview: React.FC<{ fieldState: Record<string, unknown>; sele
     }, []);
 
     return { candles, overlays, options: { showVolume: true, showLegend: true, autoFit: true } };
-  }, [fieldState.candles, fieldState.overlays, selectedInputData]);
+  }, [allNodeData, fieldState.candles, fieldState.overlays, sourceData]);
 
   return <LightweightVisualizeChart viewModel={viewModel} />;
 };

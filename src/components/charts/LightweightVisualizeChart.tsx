@@ -3,7 +3,6 @@ import {
   CandlestickSeries,
   createChart,
   HistogramSeries,
-  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type LogicalRange,

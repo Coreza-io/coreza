@@ -1013,7 +1013,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         )}
 
         {definition?.name === "Visualize" && (
-          <div className="pt-2">
+          <div className="pt-2 min-h-[340px] w-full">
             <VisualizeNodePreview
               fieldState={fieldState}
               sourceData={visualizePreviewContext.sourceData}

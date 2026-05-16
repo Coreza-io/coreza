@@ -1,19 +1,31 @@
-# Fix drag-and-drop into Overlays subfields
+# Fix drag-and-drop into Overlay subfields
 
-## Problem
+## Symptom
 
-Dragging a value from the Input Data panel (e.g. `BB.data`) onto an overlay row's `data` input does nothing — the field stays empty after drop.
+- Dragging from Input Data into the top-level **Candle Data** field → works.
+- Dragging from Input Data into an **Overlay** row's `data` (or `name`, `color`) input → field stays empty, no `{{ ... }}` text appears.
+
+So the bug is specific to the repeater subfield path, not the generic drop pipeline.
 
 ## Root cause
 
-In `src/hooks/useNodeReferences.ts`, `handleDrop` does two writes back to state:
+`src/hooks/useNodeReferences.ts` `handleDrop` performs two writes on every drop:
 
 ```ts
-setter(newValue);                       // for overlays: updateOverlay(row, "data", newValue)
-handleChange(fieldKey, newValue);       // also writes top-level fieldState["data"]
+setter(newValue);                    // routed by the caller
+handleChange(fieldKey, newValue);    // ALWAYS writes top-level fieldState[fieldKey]
 ```
 
-Both `useNodeFieldState.handleChange` and `handleFieldStateBatch` build their next state from the **closure copy of `fieldState`** rather than from the latest state:
+`RepeaterNodeLayout` wires the two paths differently:
+
+| Target              | `setter` does                                       |
+|---------------------|-----------------------------------------------------|
+| Top-level field     | `(val) => handleChange(fieldDef.key, val)`          |
+| Overlay subfield    | `(val) => updateOverlay(rowIndex, fieldDef.key, val)` → `handleFieldStateBatch({ overlays: [...] })` |
+
+For the **top-level** case both writes target `fieldState[fieldDef.key]`, so the duplicate call is harmless — that's why Candle Data works.
+
+For the **overlay** case the two writes hit different slices of state, and `useNodeFieldState` builds each next state from the **closure copy** of `fieldState` rather than a functional updater:
 
 ```ts
 const newFieldState = { ...fieldState, [key]: normalizedValue };
@@ -21,39 +33,26 @@ setFieldState(newFieldState);
 setNodes(... values: newFieldState ...);
 ```
 
-Sequence during an overlay drop:
+Sequence on an overlay drop:
 
-1. `setter(newValue)` → `updateOverlay` → `handleFieldStateBatch({ overlays: [...with data set] })` updates `fieldState.overlays`.
-2. `handleChange("data", newValue)` runs immediately after, still seeing the **stale** `fieldState` (without the overlays update), and writes `{ ...stale, data: newValue }`. This silently overwrites the overlay row update from step 1.
+1. `setter(newValue)` → `updateOverlay` → `handleFieldStateBatch({ overlays: rowsWithData })` writes `{ ...stale, overlays: rowsWithData }`.
+2. `handleChange("data", newValue)` runs in the same tick, still holding the **stale** `fieldState` (without the overlay update), and writes `{ ...stale, data: newValue }` — clobbering the overlays change from step 1.
 
-Net effect: the overlay row's `data` cell reverts to empty; a stray top-level `data` key gets set but is never rendered. The user sees an empty input after dropping.
+The overlay row reverts to empty; a stray top-level `data` key is set but never rendered.
 
 ## Fix
 
-Two small, isolated changes:
+Two small, isolated edits:
 
-1. `src/hooks/useNodeReferences.ts` — remove the redundant `handleChange(fieldKey, newValue)` call inside `handleDrop`. The `setter(newValue)` argument already routes the write to the correct destination (top-level field for basic nodes via `(val) => handleChange(key, val)`; overlay row via `updateOverlay`; condition cell via `updateCondition`, etc.). Keep the `sourceMap` update.
+1. **`src/hooks/useNodeReferences.ts`** — remove the redundant `handleChange(fieldKey, newValue)` inside `handleDrop`. The `setter(newValue)` argument is already wired to the correct destination by each caller (`handleChange` for basic, `updateOverlay` for overlays, `updateCondition`/`updateCase` for repeaters). Keep the `setSourceMap` update.
 
-2. `src/hooks/useNodeFieldState.ts` — convert `handleChange` and `handleFieldStateBatch` to functional updates so back-to-back writes in the same tick can't clobber each other:
-   ```ts
-   setFieldState((prev) => {
-     const next = { ...prev, [key]: normalizedValue };
-     // dynamicOptions handling stays the same, against `next`
-     setNodes((nds) => nds.map((n) =>
-       n.id === nodeId
-         ? { ...n, data: { ...n.data, values: next, fieldState: next } }
-         : n));
-     return next;
-   });
-   ```
-   Same pattern for `handleFieldStateBatch`. Drop `fieldState` from the `useCallback` deps so the callbacks are stable.
+2. **`src/hooks/useNodeFieldState.ts`** — convert `handleChange` and `handleFieldStateBatch` to functional `setFieldState((prev) => …)` updates and mirror the same `prev`-based object into `setNodes`. This makes back-to-back state writes in one tick safe and stable even outside this bug. Drop `fieldState` from the `useCallback` dep arrays so the callbacks are referentially stable.
+
+No changes to `RepeaterNodeLayout`, `NodeFieldRenderer`, `LightweightVisualizeChart`, `Visualize.json`, or backend.
 
 ## Verification
 
-- Drag `BB.data` from Input Data onto overlay row 1's data field → field shows `{{ $('Bollinger Bands').json.data }}` and chart re-renders with the overlay.
-- Drag onto a basic node field (e.g. condition `left`) — still works as before.
-- Adding multiple overlays and dropping into each one preserves the values.
-
-## Out of scope
-
-No changes to chart rendering, `RepeaterNodeLayout`, `NodeFieldRenderer`, Visualize.json, or backend.
+- Drag `BB.data` from Input Data onto overlay row's data field → input fills with `{{ $('Bollinger Bands').json.data }}` and the chart re-renders with the overlay.
+- Drag onto Candle Data (top-level) — still works exactly as today.
+- Add two overlay rows, drop into each — both retain their values.
+- Drop into a Conditional / Switch repeater cell — unchanged behavior.

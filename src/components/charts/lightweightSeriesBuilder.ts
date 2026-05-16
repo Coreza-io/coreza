@@ -1,3 +1,4 @@
+import type { Time } from "lightweight-charts";
 import type { CorezaCandle, SeriesPoint, VisualizeOverlay } from "./chartTypes";
 
 type ChartLineStyle = 0 | 1 | 2 | 3;
@@ -20,7 +21,12 @@ const nearestLevels = (levels: number[], currentClose: number | undefined, direc
     .slice(0, MAX_LEVELS_PER_SIDE);
 };
 
-export const toVolumeData = (candles: CorezaCandle[]) => candles.map((candle) => ({ time: candle.time, value: candle.volume ?? 0, color: candle.close >= candle.open ? "#22c55e99" : "#ef444499" }));
+export const toVolumeData = (candles: CorezaCandle[]) =>
+  candles.map((candle) => ({
+    time: candle.time as Time,
+    value: candle.volume ?? 0,
+    color: candle.close >= candle.open ? "#22c55e99" : "#ef444499",
+  }));
 
 export const addOverlaySeries = (chart: ChartApi, overlay: VisualizeOverlay): ChartLineSeries[] => {
   const created: ChartLineSeries[] = [];

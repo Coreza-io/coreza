@@ -20,15 +20,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, X, Plus } from "lucide-react";
+import { useReactFlow } from "@xyflow/react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
+import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
-import { useReactFlow } from "@xyflow/react";
-import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
-import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
+import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
@@ -56,39 +56,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  selectedInputData,
   incomingEdgeCount,
   readOnly,
 }) => {
   const { getNodes } = useReactFlow();
-  const executionStore = useExecutionStore();
+  const executionContext = useExecutionStore();
   const { user } = useAuth();
-  const selectedInputData = useMemo(() => {
-    if (!previousNodes || previousNodes.length === 0) return null;
-
-    const getNodeExecutionOutput = (nodeId: string) =>
-      executionStore.executionOutput[nodeId] || null;
-
-    if (selectedPrevNodeId) {
-      const selectedNode = previousNodes.find((n: any) => n.id === selectedPrevNodeId);
-      if (selectedNode) {
-        const output = getNodeExecutionOutput(selectedNode.id);
-        return {
-          nodeId: selectedNode.id,
-          nodeName: getDisplayName(selectedNode),
-          output,
-        };
-      }
-    }
-
-    const firstNode = previousNodes[0];
-    if (!firstNode) return null;
-
-    return {
-      nodeId: firstNode.id,
-      nodeName: getDisplayName(firstNode),
-      output: getNodeExecutionOutput(firstNode.id),
-    };
-  }, [executionStore.executionOutput, previousNodes, selectedPrevNodeId]);
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find(
@@ -465,17 +439,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [handleDropWithInsert, updateCase]
   );
 
+  const getPreviewData = useCallback(
+    () => buildPreviewData(previousNodes, executionContext, getNodes),
+    [previousNodes, executionContext, getNodes]
+  );
+
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
       if (typeof expr !== "string" && typeof expr !== "object") return null;
       if (typeof expr === "string" && !expr.includes("{{")) return null;
 
       const srcId = sourceMap[idx]?.[field] || selectedPrevNodeId;
-      const { allNodeData, getSourceData } = buildPreviewData(
-        previousNodes,
-        executionStore,
-        getNodes
-      );
+      const { allNodeData, getSourceData } = getPreviewData();
       const srcData = getSourceData(srcId);
 
       try {
@@ -489,9 +464,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [
       selectedPrevNodeId,
       sourceMap,
-      getNodes,
-      previousNodes,
-      executionStore,
+      getPreviewData,
       resolveDeep,
     ]
   );
@@ -501,11 +474,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (typeof expr !== "string" && typeof expr !== "object") return null;
       if (typeof expr === "string" && !expr.includes("{{")) return null;
 
-      const { allNodeData, getSourceData } = buildPreviewData(
-        previousNodes,
-        executionStore,
-        getNodes
-      );
+      const { allNodeData, getSourceData } = getPreviewData();
       const srcData = getSourceData(selectedPrevNodeId);
 
       try {
@@ -518,9 +487,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     },
     [
       selectedPrevNodeId,
-      getNodes,
-      previousNodes,
-      executionStore,
+      getPreviewData,
       resolveDeep,
     ]
   );

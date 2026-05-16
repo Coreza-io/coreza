@@ -20,12 +20,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, X, Plus } from "lucide-react";
+import { useReactFlow } from "@xyflow/react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
 import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
+import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
@@ -57,6 +59,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   incomingEdgeCount,
   readOnly,
 }) => {
+  const { getNodes } = useReactFlow();
   const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========

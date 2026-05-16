@@ -195,7 +195,7 @@ export const classifyOverlay = (name: string, render: string | undefined, resolv
     }
     if (arr?.length) {
       const parsed = parseLevelsArray(arr);
-      if (parsed.supports.length || parsed.resistances.length) return { kind: "levels", ...parsed };
+      if (parsed.supports.length || parsed.resistances.length) return { kind: "levels", ...parsed } as OverlayClassification;
     }
     return null;
   })();

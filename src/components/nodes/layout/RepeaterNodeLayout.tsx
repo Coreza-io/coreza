@@ -31,6 +31,7 @@ import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
+import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
   readOnly?: boolean;
@@ -61,6 +62,33 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const { getNodes } = useReactFlow();
   const executionStore = useExecutionStore();
   const { user } = useAuth();
+  const selectedInputData = useMemo(() => {
+    if (!previousNodes || previousNodes.length === 0) return null;
+
+    const getNodeExecutionOutput = (nodeId: string) =>
+      executionStore.executionOutput[nodeId] || null;
+
+    if (selectedPrevNodeId) {
+      const selectedNode = previousNodes.find((n: any) => n.id === selectedPrevNodeId);
+      if (selectedNode) {
+        const output = getNodeExecutionOutput(selectedNode.id);
+        return {
+          nodeId: selectedNode.id,
+          nodeName: getDisplayName(selectedNode),
+          output,
+        };
+      }
+    }
+
+    const firstNode = previousNodes[0];
+    if (!firstNode) return null;
+
+    return {
+      nodeId: firstNode.id,
+      nodeName: getDisplayName(firstNode),
+      output: getNodeExecutionOutput(firstNode.id),
+    };
+  }, [executionStore.executionOutput, previousNodes, selectedPrevNodeId]);
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find(
@@ -964,6 +992,15 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </form>
 
       {/* Auth Modal */}
+      {definition?.name === "Visualize" && (
+        <div className="pt-2">
+          <VisualizeNodePreview
+            fieldState={fieldState}
+            selectedInputData={selectedInputData}
+          />
+        </div>
+      )}
+
       <LayoutAuthModal
         definition={definition}
         showAuth={showAuth}

@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { createChart, type IChartApi, type ISeriesApi, type Time } from "lightweight-charts";
+import {
+  CandlestickSeries,
+  createChart,
+  HistogramSeries,
+  type IChartApi,
+  type ISeriesApi,
+  type LogicalRange,
+  type Time,
+} from "lightweight-charts";
 import type { CorezaCandle, VisualizeChartViewModel, VisualizeOverlay } from "./chartTypes";
 import { addOverlaySeries, toVolumeData } from "./lightweightSeriesBuilder";
 
@@ -14,14 +22,14 @@ type OverlayRegistry = {
 const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
   let syncing = false;
 
-  const fromFirst = (range: ReturnType<IChartApi["timeScale"]>["getVisibleLogicalRange"]) => {
+  const fromFirst = (range: LogicalRange | null) => {
     if (!range || syncing) return;
     syncing = true;
     second.timeScale().setVisibleLogicalRange(range);
     syncing = false;
   };
 
-  const fromSecond = (range: ReturnType<IChartApi["timeScale"]>["getVisibleLogicalRange"]) => {
+  const fromSecond = (range: LogicalRange | null) => {
     if (!range || syncing) return;
     syncing = true;
     first.timeScale().setVisibleLogicalRange(range);
@@ -70,8 +78,8 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
       timeScale: { timeVisible: true, secondsVisible: false },
     });
 
-    const candleSeries = priceChart.addCandlestickSeries();
-    const volumeSeries = priceChart.addHistogramSeries({
+    const candleSeries = priceChart.addSeries(CandlestickSeries);
+    const volumeSeries = priceChart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
@@ -116,7 +124,7 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     if (!priceChart || !candleSeries || !volumeSeries) return;
 
     candleSeries.setData(viewModel.candles.map((candle: CorezaCandle) => ({ ...candle, time: candle.time as Time })));
-    volumeSeries.setData(toVolumeData(viewModel.candles));
+    volumeSeries.setData(toVolumeData(viewModel.candles).map((item) => ({ ...item, time: item.time as Time })));
 
     // reconcile price overlays
     const activePriceIds = new Set(priceOverlays.map((overlay) => overlay.id));

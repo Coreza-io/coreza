@@ -1012,6 +1012,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           </div>
         )}
 
+        {definition?.name === "Visualize" && (
+          <div className="pt-2">
+            <VisualizeNodePreview
+              fieldState={fieldState}
+              sourceData={visualizePreviewContext.sourceData}
+              allNodeData={visualizePreviewContext.allNodeData}
+            />
+          </div>
+        )}
+
         {!readOnly && incomingEdgeCount >= 2 && (
           <div className="flex items-center justify-between pt-1">
             <Label htmlFor="check-dependency-repeater" className="text-xs text-muted-foreground cursor-pointer">
@@ -1058,16 +1068,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </form>
 
       {/* Auth Modal */}
-      {definition?.name === "Visualize" && (
-        <div className="pt-2">
-          <VisualizeNodePreview
-            fieldState={fieldState}
-            sourceData={visualizePreviewContext.sourceData}
-            allNodeData={visualizePreviewContext.allNodeData}
-          />
-        </div>
-      )}
-
       <LayoutAuthModal
         definition={definition}
         showAuth={showAuth}

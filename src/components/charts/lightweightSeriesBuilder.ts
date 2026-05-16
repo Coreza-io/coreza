@@ -3,14 +3,14 @@ import type { CorezaCandle, SeriesPoint, VisualizeOverlay } from "./chartTypes";
 
 type ChartLineStyle = 0 | 1 | 2 | 3;
 interface PriceLineTarget { createPriceLine: (options: { price: number; color: string; lineStyle: ChartLineStyle; lineWidth: number; axisLabelVisible?: boolean; title?: string }) => void; }
-interface ChartLineSeries extends PriceLineTarget { setData: (data: Array<{ time: number; value: number }>) => void; }
+interface ChartLineSeries extends PriceLineTarget { setData: (data: Array<{ time: Time; value: number }>) => void; }
 type ChartApi = IChartApi;
 
 const LINE_STYLE_DASHED: ChartLineStyle = 2;
 const MAX_LEVELS_PER_SIDE = 5;
 
-const toLineData = (points: SeriesPoint[]): Array<{ time: number; value: number }> =>
-  points.filter((point) => point.value !== null).map((point) => ({ time: point.time, value: point.value as number }));
+const toLineData = (points: SeriesPoint[]): Array<{ time: Time; value: number }> =>
+  points.filter((point) => point.value !== null).map((point) => ({ time: point.time as Time, value: point.value as number }));
 
 const nearestLevels = (levels: number[], currentClose: number | undefined, direction: "support" | "resistance"): number[] => {
   if (!levels.length) return [];

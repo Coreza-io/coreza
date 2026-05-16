@@ -4,10 +4,21 @@
   "node_type": "main",
   "category": "Visualization",
   "icon": "/assets/icons/visualize.svg",
-  "size": { "width": 580, "height": 540 },
+  "size": {
+    "width": 580,
+    "height": 800
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "fields": [
     {
@@ -22,16 +33,48 @@
       "label": "Overlays",
       "type": "repeater",
       "subFields": [
-        { "key": "name", "type": "string", "placeholder": "BB(20,2)" },
-        { "key": "data", "type": "string", "placeholder": "{{ $('BB').json.data }}" },
-        { "key": "render", "type": "select", "options": [
-          { "id": "Auto", "name": "Auto" },
-          { "id": "Line", "name": "Line" },
-          { "id": "Bands", "name": "Bands" },
-          { "id": "Levels", "name": "Levels" },
-          { "id": "Panel", "name": "Panel" }
-        ], "default": "Auto" },
-        { "key": "color", "type": "string", "placeholder": "#3b82f6" }
+        {
+          "key": "name",
+          "type": "string",
+          "placeholder": "BB(20,2)"
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "placeholder": "{{ $('BB').json.data }}"
+        },
+        {
+          "key": "render",
+          "type": "select",
+          "options": [
+            {
+              "id": "Auto",
+              "name": "Auto"
+            },
+            {
+              "id": "Line",
+              "name": "Line"
+            },
+            {
+              "id": "Bands",
+              "name": "Bands"
+            },
+            {
+              "id": "Levels",
+              "name": "Levels"
+            },
+            {
+              "id": "Panel",
+              "name": "Panel"
+            }
+          ],
+          "default": "Auto"
+        },
+        {
+          "key": "color",
+          "type": "string",
+          "placeholder": "#3b82f6"
+        }
       ],
       "default": []
     }

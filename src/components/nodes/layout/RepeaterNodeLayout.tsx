@@ -23,6 +23,7 @@ import { Loader2, X, Plus } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
+import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
 import { buildPreviewData } from "@/utils/previewDataResolver";

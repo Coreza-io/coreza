@@ -103,10 +103,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
 
   // Determine layout type based on node characteristics
   const getLayoutType = (definition: any) => {
-    // Visualize uses generic fields + custom preview in BasicNodeLayout.
-    if (definition?.name === "Visualize") return "basic";
-
-    // Check if node has repeater fields (conditional logic or switch cases)
+      // Check if node has repeater fields (conditional logic or switch cases)
     const hasRepeaterFields = definition.fields?.some(
       (f: any) => f.type === "repeater"
     );

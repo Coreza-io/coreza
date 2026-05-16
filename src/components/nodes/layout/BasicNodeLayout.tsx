@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -73,8 +72,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   referenceStyle,
 }) => {
   const { user } = useAuth();
-  const isVisualize = definition?.name === "Visualize";
-
   return (
     <>
       <div className="mb-4">
@@ -110,14 +107,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         </div>
       </div>
 
-      {isVisualize && (
-        <div className="py-2">
-          <VisualizeNodePreview fieldState={fieldState} selectedInputData={selectedInputData} />
-        </div>
-      )}
-
-      {!isVisualize && (
-        <form className="space-y-3" onSubmit={handleSubmit}>
+      <form className="space-y-3" onSubmit={handleSubmit}>
           {(definition.fields || []).map((f: any) => (
             <NodeFieldRenderer
               key={f.key}
@@ -189,8 +179,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               )}
             </Button>
           )}
-        </form>
-      )}
+      </form>
 
       <LayoutAuthModal
         definition={definition}

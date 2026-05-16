@@ -1,67 +1,65 @@
-# Visualize node — fix runtime crash + missing fields + TS build errors
+# Visualize node — three concrete bugs to fix
 
-## Problem 1 (runtime crash, blocks the node from opening)
+The crash is gone, but the node still doesn't behave like a visualization node. Three independent issues, each with a small surgical fix.
 
-`TypeError: Cannot read properties of undefined (reading 'Alpaca')` at `RepeaterNodeLayout.tsx:69`.
+## Bug 1 — Chart shows "No candle data" even though the template is filled
 
-### Root cause
-
-In the previous fix, Visualize was routed to `RepeaterNodeLayout` so its `overlays` repeater would render. `RepeaterNodeLayout` then tries to compute `selectedInputData` locally with:
+`VisualizeNodePreview` calls:
 
 ```ts
-const executionStore = useExecutionStore();
-const getNodeExecutionOutput = (nodeId) => executionStore.executionOutput[nodeId] || null;
+resolveReferences(String(fieldState.candles ?? ""), selectedInputData)
 ```
 
-But `useExecutionStore()` returns an `ExecutionContext` instance (`src/utils/executionContext.ts`) — it has no `executionOutput` property. Reading `.executionOutput` is `undefined`, then indexing by node id (e.g. the upstream "Alpaca" node id) throws.
+`resolveReferences` needs the full `{ allNodeData, getSourceData }` map to resolve cross-node templates like `{{ $('Alpaca').json.data.BarSeries[0].bars }}`. Passing only `selectedInputData` (which is a single node's data, not a map keyed by display name) returns the raw unresolved string, so `extractBars` returns `[]`.
 
-This bug was latent before — no repeater-routed node previously had upstream node data accessed via this path. Visualize is the first one to hit it.
+**Fix**
 
-### Fix
+- In `RepeaterNodeLayout`, build the preview context with the existing helper:
+  ```ts
+  const { allNodeData, getSourceData } = buildPreviewData(previousNodes, executionStore, getNodes);
+  const sourceData = getSourceData(selectedPrevNodeId);
+  ```
+- Pass `sourceData` and `allNodeData` down to `VisualizeNodePreview` as new props.
+- Inside `VisualizeNodePreview`, change every `resolveReferences(expr, selectedInputData)` call to `resolveReferences(expr, sourceData, allNodeData)`.
 
-`selectedInputData` is **already passed as a prop** from `BaseNode` → `NodeRouter` → `RepeaterNodeLayout` (via `BaseNodeRenderProps`, see `BaseNode.tsx` line 170 and 205). Stop recomputing it.
+## Bug 2 — Overlays repeater never renders
 
-- **`src/components/nodes/layout/RepeaterNodeLayout.tsx`** —
-  - Add `selectedInputData` to the destructured props.
-  - Delete the local `useMemo` block (lines ~62–91) including the `useExecutionStore`, `getNodes`, and `getDisplayName` usage for this purpose.
-  - Drop the now-unused imports (`useExecutionStore`, `useReactFlow`, `getDisplayName`) if nothing else in the file uses them; otherwise leave them.
+`RepeaterNodeLayout` line 553 gates the repeater UI behind:
+```ts
+(isConditional || isFieldRepeater) && repeaterField
+```
+`overlays` is neither `conditions` nor `fields`, so the Add-row UI is never mounted. That is why the screenshot has no Overlays section between Candle Data and Execute.
 
-## Problem 2 (no fields visible — already covered, restate)
+**Fix**
 
-Two layered issues prevented Candle Data input and Overlays repeater from rendering:
+- Add an `isOverlays = repeaterKey === "overlays"` flag near the existing `isConditional` / `isFieldRepeater` / `isSwitch` flags.
+- Extend the gate on line 553 to include `isOverlays`, and inside that block render a generic rows + Add-row block driven by `repeaterField.subFields` (name / data / render / color) for the overlays case. Reuse `NodeFieldRenderer` per sub-field so drag-drop and preview behave like other string fields. Wire add/remove to `handleFieldStateBatch({ overlays: nextRows })`.
+- Each row gets a stable `id` (uuid or counter) the first time it's created so the chart's overlay registry can diff cleanly.
 
-1. **`NodeRouter.tsx`** short-circuited Visualize to `"basic"` layout, bypassing repeater detection.
-2. **`BasicNodeLayout.tsx`** gated the entire fields `<form>` behind `{!isVisualize && ...}`.
+## Bug 3 — Execute button + backend output for a UI-only node
 
-### Fix (already applied; keep)
+Visualize is a pure visualization node, but the form still shows the standard Execute button, which runs the backend executor and fills the Output panel with `{ candles, overlays, support_nodes, edges }`. That's what the screenshot is showing in the right panel. The user expects no backend run — just a chart.
 
-- `NodeRouter.tsx` — remove the Visualize → basic short-circuit so the existing `hasRepeaterFields` check routes it to `"repeater"`.
-- `RepeaterNodeLayout.tsx` — render `<VisualizeNodePreview fieldState={fieldState} selectedInputData={selectedInputData} />` after the fields/repeater section when `definition.name === "Visualize"`.
-- `BasicNodeLayout.tsx` — remove the `isVisualize` branch and revert to generic.
+**Fix**
 
-## Problem 3 (TypeScript build errors)
+- In `RepeaterNodeLayout`, when `definition?.name === "Visualize"`, do not render the Execute button block. Keep error and auth modal rendering intact.
+- Leave `useNodeExecution` wiring untouched (other code paths may reference it); just skip the button.
 
-`lightweight-charts@^5.2.0` API differs from v4 the code was written against.
+## Order of work
 
-### Fixes in `src/components/charts/LightweightVisualizeChart.tsx`
-
-- v5 removed `chart.addCandlestickSeries()` / `chart.addHistogramSeries()`. Use `chart.addSeries(CandlestickSeries, options)` and `chart.addSeries(HistogramSeries, options)` — import `CandlestickSeries` and `HistogramSeries` from `lightweight-charts`.
-- `subscribeVisibleLogicalRangeChange` handler signature is `(range: LogicalRange | null) => void`. The `fromFirst`/`fromSecond` callbacks currently mistype `range` as the return type of `getVisibleLogicalRange` (a function). Import `LogicalRange` from `lightweight-charts` and type the parameter as `LogicalRange | null`.
-- Histogram data `time` must be typed as `Time`, not raw `number`. Cast each `time` to `Time` in `toVolumeData` (same pattern already used for candle mapping).
-
-### Fixes in `src/utils/visualizeNormalize.ts`
-
-Lines 193 and 198 build `{ kind: "levels", ... }` literals without an `as OverlayClassification` assertion, so TS widens `kind` to `string`. Add `as OverlayClassification` (or `as const` on `kind`) on both — matches the bands branches on lines 179 and 183.
+1. Bug 2 first — without the repeater UI, bugs 1 and 3 can't be observed end to end.
+2. Bug 1 — pass real `sourceData` + `allNodeData` into `VisualizeNodePreview` and update its `resolveReferences` calls.
+3. Bug 3 — hide Execute for Visualize.
 
 ## Verification
 
-1. Build passes — no TS errors.
-2. Open a workflow with an upstream node (e.g. Alpaca) connected to Visualize — node opens without crash.
-3. Candle Data string input and Overlays repeater (Name / Data / Render / Color + Add) are visible.
-4. Drag `bars` into Candle Data → candles render.
-5. Add an overlay row, drag BB output into Data → lines render on the chart.
-6. Remove a row → series disappears without remount.
+1. Open Visualize connected to Alpaca. Candle Data field is visible; below it an "Overlays" section with an "Add" button; no Execute button.
+2. With the Alpaca template in Candle Data, candles render in the chart (no more "No candle data").
+3. Click Add in Overlays, drop a BB template into Data, leave render = Auto. BB renders as 3 lines on the price pane.
+4. Add a Volume Oscillator overlay. A second pane appears with synced time scale.
+5. Remove an overlay row — its series disappears without remounting the chart.
 
 ## Out of scope
 
-`Visualize.json`, `VisualizeNodePreview`, `chartTypes.ts`, and the normalizer's classification logic remain unchanged beyond the two type assertions.
+- No changes to `Visualize.json`, `chartTypes.ts`, `LightweightVisualizeChart.tsx`, or normalizer classification logic.
+- No backend changes. The Visualize backend executor is untouched; the frontend simply doesn't invoke it.

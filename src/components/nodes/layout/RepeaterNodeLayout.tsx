@@ -56,6 +56,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  selectedInputData,
   incomingEdgeCount,
   readOnly,
 }) => {

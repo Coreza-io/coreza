@@ -71,6 +71,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const repeaterKey = repeaterField?.key;
   const isConditional = repeaterKey === "conditions";
   const isFieldRepeater = repeaterKey === "fields";
+  const isOverlays = repeaterKey === "overlays";
   const isSwitch = repeaterKey === "cases";
   const fallbackField = useMemo(
     () => definition.fields?.find((f: any) => f.key === "enableFallback"),
@@ -108,6 +109,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const [sourceMap, setSourceMap] = useState<
     { left?: string; right?: string }[]
   >(conditions.map(() => ({})));
+
+  const overlays = useMemo(
+    () => (Array.isArray(fieldState.overlays) ? fieldState.overlays : []),
+    [fieldState.overlays]
+  );
 
   // ─── Seed the repeater on first render ────────────────────────────────────
   useEffect(() => {
@@ -186,6 +192,38 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     // sourceMap still needs to grow
     setSourceMap((sm) => (Array.isArray(sm) ? [...sm, {}] : [{}]));
   };
+
+  const createRepeaterRowId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `row-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  };
+
+  const addOverlay = () => {
+    const defaultRow = repeaterField?.default && !Array.isArray(repeaterField.default)
+      ? repeaterField.default
+      : {};
+    const newRow = { ...defaultRow, id: createRepeaterRowId() };
+    handleFieldStateBatch({ overlays: [...overlays, newRow] });
+  };
+
+  const removeOverlay = (idx: number) => {
+    handleFieldStateBatch({
+      overlays: overlays.filter((_, rowIndex) => rowIndex !== idx),
+    });
+  };
+
+  const updateOverlay = useCallback(
+    (idx: number, key: string, val: unknown) => {
+      handleFieldStateBatch({
+        overlays: overlays.map((row, rowIndex) =>
+          rowIndex === idx ? { ...(row as Record<string, unknown>), [key]: val } : row
+        ),
+      });
+    },
+    [handleFieldStateBatch, overlays]
+  );
 
   const removeCondition = (idx: number) => {
     // 1) compute new conditions array
@@ -443,6 +481,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     () => buildPreviewData(previousNodes, executionContext, getNodes),
     [previousNodes, executionContext, getNodes]
   );
+  const visualizePreviewContext = useMemo(() => {
+    const { allNodeData, getSourceData } = getPreviewData();
+    return {
+      allNodeData,
+      sourceData: getSourceData(selectedPrevNodeId),
+    };
+  }, [getPreviewData, selectedPrevNodeId]);
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
@@ -550,16 +595,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         })}
 
         {/* --------- CONDITIONAL/FIELDS REPEATER --------- */}
-        {(isConditional || isFieldRepeater) && repeaterField && (
+        {(isConditional || isFieldRepeater || isOverlays) && repeaterField && (
           <div className="space-y-3">
             <h4 className="font-semibold">
               {repeaterField?.key === "conditions" ||
               repeaterField?.type === "conditions"
                 ? "Conditions"
+                : isOverlays
+                ? "Overlays"
                 : "Fields"}
             </h4>
 
-            {conditions.map((cond, i) => {
+            {(isConditional || isFieldRepeater) &&
+              conditions.map((cond, i) => {
               const leftField = repeaterField.subFields?.find(
                 (sf: any) => sf.key === "left"
               );
@@ -698,18 +746,69 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   )}
                 </div>
               );
-            })}
+              })}
+
+            {isOverlays &&
+              overlays.map((overlayRow: any, rowIndex: number) => (
+                <div
+                  key={overlayRow?.id || rowIndex}
+                  className="space-y-2 p-2 border rounded bg-muted/10"
+                >
+                  {repeaterField.subFields?.map((subField: any) => (
+                    <NodeFieldRenderer
+                      key={`${overlayRow?.id || rowIndex}-${subField.key}`}
+                      field={subField}
+                      definition={definition}
+                      fieldState={{
+                        ...fieldState,
+                        [subField.key]: overlayRow?.[subField.key],
+                      }}
+                      value={overlayRow?.[subField.key]}
+                      selectOptions={selectOptions}
+                      loadingSelect={loadingSelect}
+                      onChange={(key, val) => updateOverlay(rowIndex, key, val)}
+                      onDrop={(fieldDef, e, currentValue) =>
+                        handleDrop(
+                          fieldDef.key,
+                          (val: string) => updateOverlay(rowIndex, fieldDef.key, val),
+                          e,
+                          currentValue
+                        )
+                      }
+                      getPreview={(fieldKey) =>
+                        getFieldPreview(`overlays.${rowIndex}.${fieldKey}`)
+                      }
+                      referenceStyle={referenceStyle}
+                      fetchDependentOptions={fetchDependentOptions}
+                      setShowAuth={setShowAuth}
+                      readOnly={readOnly}
+                    />
+                  ))}
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeOverlay(rowIndex)}
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      disabled={readOnly}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
 
             <Button
               type="button"
               size="sm"
               variant="outline"
-              onClick={addCondition}
+              onClick={isOverlays ? addOverlay : addCondition}
               className="flex items-center gap-2"
               disabled={readOnly}
             >
               <Plus className="w-3 h-3" />
-              Add {isConditional ? "Condition" : "Field"}
+              Add {isConditional ? "Condition" : isOverlays ? "Overlay" : "Field"}
             </Button>
 
             {isConditional &&
@@ -930,7 +1029,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         )}
 
         {/* Submit Button */}
-        {!readOnly && (
+        {!readOnly && definition?.name !== "Visualize" && (
           <div className="pt-2">
             <Button
               type="submit"
@@ -963,7 +1062,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         <div className="pt-2">
           <VisualizeNodePreview
             fieldState={fieldState}
-            selectedInputData={selectedInputData}
+            sourceData={visualizePreviewContext.sourceData}
+            allNodeData={visualizePreviewContext.allNodeData}
           />
         </div>
       )}

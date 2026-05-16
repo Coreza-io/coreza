@@ -29,24 +29,20 @@ type OverlayRegistry = {
 
 const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
   let syncing = false;
-
   const fromFirst = (range: LogicalRange | null) => {
     if (!range || syncing) return;
     syncing = true;
     second.timeScale().setVisibleLogicalRange(range);
     syncing = false;
   };
-
   const fromSecond = (range: LogicalRange | null) => {
     if (!range || syncing) return;
     syncing = true;
     first.timeScale().setVisibleLogicalRange(range);
     syncing = false;
   };
-
   first.timeScale().subscribeVisibleLogicalRangeChange(fromFirst);
   second.timeScale().subscribeVisibleLogicalRangeChange(fromSecond);
-
   return () => {
     first.timeScale().unsubscribeVisibleLogicalRangeChange(fromFirst);
     second.timeScale().unsubscribeVisibleLogicalRangeChange(fromSecond);
@@ -57,7 +53,13 @@ const removeSeriesList = (
   chart: IChartApi,
   list: ISeriesApi<"Line", Time>[],
 ) => {
-  list.forEach((series) => chart.removeSeries(series));
+  list.forEach((series) => {
+    try {
+      chart.removeSeries(series);
+    } catch {
+      /* ignore */
+    }
+  });
 };
 
 const LightweightVisualizeChart: React.FC<{
@@ -74,6 +76,7 @@ const LightweightVisualizeChart: React.FC<{
     panel: new Map(),
   });
   const cleanupSyncRef = useRef<(() => void) | null>(null);
+  const readyTickRef = useRef(0);
 
   const panelOverlays = useMemo(
     () => viewModel.overlays.filter((overlay) => overlay.kind === "panel"),
@@ -84,28 +87,69 @@ const LightweightVisualizeChart: React.FC<{
     [viewModel.overlays],
   );
 
+  // Initialize the price chart once the container has a non-zero width.
+  // Retries via rAF until the container is measured (handles React Flow expand transitions).
   useEffect(() => {
-    if (!priceRef.current || priceChartRef.current) return;
+    let cancelled = false;
+    let rafId: number | null = null;
 
-    const priceChart = createChart(priceRef.current, {
-      width: priceRef.current.clientWidth,
-      height: PRICE_HEIGHT,
-      rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.2 } },
-      timeScale: { timeVisible: true, secondsVisible: false },
-    });
+    const tryInit = () => {
+      if (cancelled) return;
+      if (priceChartRef.current) return;
+      const container = priceRef.current;
+      if (!container || container.clientWidth === 0) {
+        rafId = requestAnimationFrame(tryInit);
+        return;
+      }
 
-    const candleSeries = priceChart.addSeries(CandlestickSeries);
-    const volumeSeries = priceChart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" },
-      priceScaleId: "",
-    });
-    volumeSeries
-      .priceScale()
-      .applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+      const priceChart = createChart(container, {
+        width: container.clientWidth,
+        height: PRICE_HEIGHT,
+        rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.2 } },
+        timeScale: { timeVisible: true, secondsVisible: false },
+      });
 
-    priceChartRef.current = priceChart;
-    candleSeriesRef.current = candleSeries;
-    volumeSeriesRef.current = volumeSeries;
+      const candleSeries = priceChart.addSeries(CandlestickSeries);
+      const volumeSeries = priceChart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceScaleId: "",
+      });
+      volumeSeries
+        .priceScale()
+        .applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+
+      priceChartRef.current = priceChart;
+      candleSeriesRef.current = candleSeries;
+      volumeSeriesRef.current = volumeSeries;
+      // Trigger the data effect now that the chart exists.
+      readyTickRef.current += 1;
+      // Force a state-less re-render via ref bump by scheduling a microtask.
+      // We rely on the data effect's dependency on viewModel; ensure it runs:
+      queueMicrotask(() => {
+        // no-op; data effect handles next render. We still want the first
+        // paint right away, so apply data inline:
+        applyData();
+      });
+    };
+
+    const applyData = () => {
+      const priceChart = priceChartRef.current;
+      const candleSeries = candleSeriesRef.current;
+      const volumeSeries = volumeSeriesRef.current;
+      if (!priceChart || !candleSeries || !volumeSeries) return;
+      candleSeries.setData(
+        viewModel.candles.map((candle: CorezaCandle) => ({
+          ...candle,
+          time: toChartTime(candle.time),
+        })),
+      );
+      volumeSeries.setData(toVolumeData(viewModel.candles));
+      if (viewModel.options.autoFit) {
+        priceChart.timeScale().fitContent();
+      }
+    };
+
+    tryInit();
 
     const resizeObserver = new ResizeObserver(() => {
       if (priceRef.current && priceChartRef.current) {
@@ -119,31 +163,46 @@ const LightweightVisualizeChart: React.FC<{
         });
       }
     });
-
-    resizeObserver.observe(priceRef.current);
-    if (panelRef.current) resizeObserver.observe(panelRef.current);
+    if (priceRef.current) resizeObserver.observe(priceRef.current);
 
     const registry = registryRef.current;
     return () => {
+      cancelled = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       cleanupSyncRef.current?.();
+      cleanupSyncRef.current = null;
       if (priceChartRef.current) {
         registry.price.forEach((seriesList) =>
-          removeSeriesList(priceChartRef.current, seriesList),
+          removeSeriesList(priceChartRef.current!, seriesList),
         );
         registry.price.clear();
-        priceChartRef.current.remove();
+        try {
+          priceChartRef.current.remove();
+        } catch {
+          /* ignore */
+        }
       }
       if (panelChartRef.current) {
         registry.panel.forEach((seriesList) =>
-          removeSeriesList(panelChartRef.current, seriesList),
+          removeSeriesList(panelChartRef.current!, seriesList),
         );
         registry.panel.clear();
-        panelChartRef.current.remove();
+        try {
+          panelChartRef.current.remove();
+        } catch {
+          /* ignore */
+        }
       }
+      priceChartRef.current = null;
+      panelChartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Data + overlays reconciliation
   useEffect(() => {
     const priceChart = priceChartRef.current;
     const candleSeries = candleSeriesRef.current;
@@ -158,7 +217,6 @@ const LightweightVisualizeChart: React.FC<{
     );
     volumeSeries.setData(toVolumeData(viewModel.candles));
 
-    // reconcile price overlays
     const activePriceIds = new Set(priceOverlays.map((overlay) => overlay.id));
     for (const [id, seriesList] of registryRef.current.price.entries()) {
       if (!activePriceIds.has(id)) {
@@ -175,7 +233,6 @@ const LightweightVisualizeChart: React.FC<{
       );
     });
 
-    // panel chart lifecycle + reconcile
     if (
       panelOverlays.length > 0 &&
       panelRef.current &&
@@ -204,17 +261,21 @@ const LightweightVisualizeChart: React.FC<{
       }
       panelOverlays.forEach((overlay) => {
         const existing = registryRef.current.panel.get(overlay.id);
-        if (existing) removeSeriesList(panelChartRef.current, existing);
+        if (existing) removeSeriesList(panelChartRef.current!, existing);
         registryRef.current.panel.set(
           overlay.id,
-          addOverlaySeries(panelChartRef.current, overlay),
+          addOverlaySeries(panelChartRef.current!, overlay),
         );
       });
 
       if (panelOverlays.length === 0) {
         cleanupSyncRef.current?.();
         cleanupSyncRef.current = null;
-        panelChartRef.current.remove();
+        try {
+          panelChartRef.current.remove();
+        } catch {
+          /* ignore */
+        }
         panelChartRef.current = null;
       }
     }
@@ -227,12 +288,16 @@ const LightweightVisualizeChart: React.FC<{
 
   return (
     <div className="space-y-2 relative">
-      <div ref={priceRef} className="w-full" style={{ height: PRICE_HEIGHT }} />
+      <div
+        ref={priceRef}
+        className="w-full"
+        style={{ height: PRICE_HEIGHT, minHeight: PRICE_HEIGHT }}
+      />
       {panelOverlays.length > 0 && (
         <div
           ref={panelRef}
           className="w-full"
-          style={{ height: PANEL_HEIGHT }}
+          style={{ height: PANEL_HEIGHT, minHeight: PANEL_HEIGHT }}
         />
       )}
       {viewModel.candles.length === 0 && (

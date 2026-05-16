@@ -90,9 +90,7 @@
       "optionsSource": "credentialsApi",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": false
@@ -114,9 +112,7 @@
       "default": "testnet",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -137,9 +133,7 @@
       "default": "spot",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -151,9 +145,7 @@
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false
@@ -176,9 +168,7 @@
           "name": "Kline (Candlestick)",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "spot"
-              ]
+              "marketType": ["spot"]
             }
           },
           "swapTo": {
@@ -188,7 +178,7 @@
           }
         },
         {
-          "id": "24hrMiniTicker",
+          "id": "miniTicker",
           "name": "Mini Ticker"
         },
         {
@@ -219,9 +209,7 @@
           "name": "Mark Price Update",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -230,9 +218,7 @@
           "name": "Liquidation (forceOrder)",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -241,9 +227,7 @@
           "name": "Continuous Kline",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           },
           "swapTo": {
@@ -257,9 +241,7 @@
           "name": "Index Price Update",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         },
@@ -268,21 +250,15 @@
           "name": "Composite Index",
           "displayOptions": {
             "show": {
-              "marketType": [
-                "futures"
-              ]
+              "marketType": ["futures"]
             }
           }
         }
       ],
-      "default": [
-        "kline"
-      ],
+      "default": ["kline"],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -355,13 +331,8 @@
       "default": "1m",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ],
-          "stream_type": [
-            "kline",
-            "continuousKline"
-          ]
+          "mode": ["subscribe"],
+          "stream_type": ["kline", "continuousKline"]
         }
       }
     },
@@ -386,9 +357,7 @@
       "default": "10",
       "displayOptions": {
         "show": {
-          "stream_type": [
-            "depth"
-          ]
+          "stream_type": ["depth"]
         }
       }
     },
@@ -413,15 +382,9 @@
       "default": "perpetual",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ],
-          "marketType": [
-            "futures"
-          ],
-          "stream_type": [
-            "continuousKline"
-          ]
+          "mode": ["subscribe"],
+          "marketType": ["futures"],
+          "stream_type": ["continuousKline"]
         }
       }
     },
@@ -443,9 +406,7 @@
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -458,9 +419,7 @@
       "description": "Optional \u2014 only receive events for these symbols. Leave empty for all.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -483,7 +442,7 @@
           "name": "Kline (Candlestick)"
         },
         {
-          "id": "24hrMiniTicker",
+          "id": "miniTicker",
           "name": "Mini Ticker"
         },
         {
@@ -514,9 +473,7 @@
       "description": "Optional \u2014 only receive these event types. Leave empty for all.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false

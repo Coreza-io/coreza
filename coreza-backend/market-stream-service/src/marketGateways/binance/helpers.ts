@@ -59,7 +59,9 @@ function normalizeBinanceIncomingEventType(eventType: string): string {
     case "continuous_kline":
       return "continuousKline";
     case "24hrMiniTicker":
-      return "24hrMiniTicker";
+      return "miniTicker";
+    case "24hrTicker":
+      return "ticker";
     default:
       return eventType;
   }
@@ -353,8 +355,8 @@ export function shouldPublishBinanceMessage(
     "aggTrade",
     "kline",
     "bookTicker",
-    "24hrTicker",
-    "24hrMiniTicker",
+    "ticker",
+    "miniTicker",
     "depthUpdate",
     "markPriceUpdate",
     "forceOrder",
@@ -405,7 +407,6 @@ export function handleBinanceControlMessage(
     }
     return;
   }
-
 }
 
 // ============ ORDER STATUS MAPPING ============
@@ -666,7 +667,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         source: "binance" as const,
       };
 
-    case "24hrTicker":
+    case "ticker":
       return {
         symbol,
         t,
@@ -678,7 +679,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         source: "binance" as const,
       };
 
-    case "24hrMiniTicker":
+    case "miniTicker":
       return {
         symbol,
         t,

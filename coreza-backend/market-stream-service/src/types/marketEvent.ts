@@ -12,7 +12,7 @@ export type MarketEventType =
   | "daily_bar"
   | "news"
   | "ticker"
-  | "24hrMiniTicker"
+  | "miniTicker"
   | "depth"
   | "order_update"
   | "bookTicker"

@@ -1,91 +1,88 @@
-# Visualize node — fix blank chart after Candle Data is populated
+# Visualize node — chart stays blank because `priceRef.current` is null
 
-## Current symptom
+## Confirmed symptom
 
-The Candle Data field is filled correctly and the floating preview resolves to a real array of bars, but the chart area stays blank instead of creating a Lightweight Charts candlestick chart.
+- `viewModel.candles.length === 594` (data resolves correctly).
+- At the chart return statement, `priceRef.current === null`.
+- Result: chart container is rendered, but the Lightweight Charts instance was never created, so the area stays empty.
 
-## Root cause
+## Root cause (precise)
 
-`LightweightVisualizeChart` starts with no candles, so it renders this branch:
+`LightweightVisualizeChart.tsx` has this exact ordering problem:
 
-```tsx
-if (viewModel.candles.length === 0) {
-  return <div>No candle data</div>;
-}
-```
+1. First render — `fieldState.candles` is still empty, so `viewModel.candles.length === 0`. The component takes the early-return branch:
+   ```tsx
+   if (viewModel.candles.length === 0) {
+     return <div>No candle data</div>;
+   }
+   ```
+   The chart container `<div ref={priceRef} />` is never rendered, so `priceRef.current` stays `null`.
 
-Because that branch does not render the `priceRef` chart container, the chart setup effect runs once, sees `priceRef.current === null`, and exits:
+2. The init effect runs once on mount with an empty dependency array:
+   ```tsx
+   useEffect(() => {
+     if (!priceRef.current || priceChartRef.current) return; // ← bails out, ref is null
+     // createChart(...) never reached
+   }, []);
+   ```
+   Because `priceRef.current` is null at that moment, the effect bails immediately. It will never run again — `[]` deps.
 
-```tsx
-useEffect(() => {
-  if (!priceRef.current || priceChartRef.current) return;
-  // create chart...
-}, []);
-```
+3. User drops Candle Data → `viewModel.candles.length` becomes 594 → component re-renders the chart container → `priceRef.current` is now a real div. But the init effect does not re-run, so `priceChartRef.current` is still `null`. The data-update effect then bails on its own guard:
+   ```tsx
+   if (!priceChart || !candleSeries || !volumeSeries) return;
+   ```
+   Net effect: chart container exists, but no Lightweight Charts instance was ever created. Permanent blank chart.
 
-Later, when the user drops Candle Data and `viewModel.candles` becomes non-empty, React renders the chart container, but the setup effect has already run and will not run again because its dependency array is empty. The update effect then also exits because `priceChartRef.current` was never created.
+This is exactly the state shown in the screenshots: `candles = 594`, `current = null`.
 
-That creates a permanent blank chart area even though the candle data is valid.
+## Fix — always mount the chart container, gate only the empty message
 
-## Fix 1 — create the chart when candles become available
-
-Update `src/components/charts/LightweightVisualizeChart.tsx` so the chart initialization effect can run after the empty state changes to real candle data.
-
-Implementation details:
-
-- Add `viewModel.candles.length` to the chart initialization effect dependency list.
-- Keep the existing guard `if (!priceRef.current || priceChartRef.current) return;` so the chart is created only once.
-- When `viewModel.candles.length === 0`, show the empty state as before.
-- When candles become non-empty, the container is rendered, the effect reruns, and `createChart(...)` initializes the candlestick/volume chart.
-
-## Fix 2 — make the chart container layout stable
-
-The chart container currently has only `w-full`. To avoid a zero-height or visually collapsed chart while Lightweight Charts initializes, give it stable dimensions.
+Change `LightweightVisualizeChart.tsx` so the chart container is rendered on every render (so `priceRef` always attaches), and the "No candle data" hint becomes an overlay/sibling instead of an early return.
 
 Implementation details:
 
-- Change the price chart container to a fixed chart height matching `PRICE_HEIGHT`, for example:
-  ```tsx
-  <div ref={priceRef} className="w-full" style={{ height: PRICE_HEIGHT }} />
-  ```
-- Do the same for the oscillator panel container with `PANEL_HEIGHT`.
-- Keep the chart options height values unchanged.
+1. Remove the early `if (viewModel.candles.length === 0) return ...` branch.
+2. Always render:
+   ```tsx
+   return (
+     <div className="space-y-2 relative">
+       <div ref={priceRef} className="w-full" style={{ height: PRICE_HEIGHT }} />
+       {panelOverlays.length > 0 && (
+         <div ref={panelRef} className="w-full" style={{ height: PANEL_HEIGHT }} />
+       )}
+       {viewModel.candles.length === 0 && (
+         <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm pointer-events-none">
+           No candle data
+         </div>
+       )}
+     </div>
+   );
+   ```
+   Explicit `height` on the container guarantees a non-zero box for Lightweight Charts to lay out into; `w-full` alone can give 0 height on some parent layouts.
+3. The init effect can stay as-is (`[]` deps) — once the container is always present, `priceRef.current` is non-null on mount and `createChart(...)` runs.
+4. The data-update effect already depends on `viewModel`, so when candles arrive it will `setData(...)` on the existing series.
 
-## Fix 3 — pass React Flow nodes into Visualize reference resolution
+That single change is the minimum required to make the chart render.
 
-`resolveReferences` supports display-name/id fallback through the optional `nodes` argument. `VisualizeNodePreview` currently receives `sourceData` and `allNodeData`, but not `nodes`.
+## Secondary fix — Lightweight Charts v5 overlay series API
 
-Implementation details:
+Once candles render, the next user step is adding overlays (BB, oscillator, S/R). The project uses `lightweight-charts@5.2.0`, but `src/components/charts/lightweightSeriesBuilder.ts` still calls `chart.addLineSeries(...)`, which does not exist in v5. Overlays would silently throw the moment a row is added.
 
-- In `RepeaterNodeLayout`, pass `nodes={getNodes()}` or a memoized current node list to `VisualizeNodePreview`.
-- In `VisualizeNodePreview`, add a `nodes` prop and call:
-  ```ts
-  resolveReferences(expr, sourceData, allNodeData, nodes)
-  ```
-- This makes Visualize resolution match the normal field preview path in `useNodeReferences`.
-
-## Fix 4 — update overlay series creation for Lightweight Charts v5
-
-`lightweightSeriesBuilder.ts` still assumes the older `chart.addLineSeries(...)` API. The project uses `lightweight-charts@5.2.0`, so overlays may fail as soon as a BB / support-resistance / oscillator row is added.
-
-Implementation details:
+Update `lightweightSeriesBuilder.ts`:
 
 - Import `LineSeries` from `lightweight-charts`.
-- Replace `chart.addLineSeries(options)` with `chart.addSeries(LineSeries, options)`.
-- Keep the existing overlay behavior unchanged: line, bands, levels, and panel all still return series lists for cleanup.
-
-## Verification checklist
-
-1. Open Visualize connected to Alpaca.
-2. Drop `BarSeries[0].bars` into Candle Data.
-3. Candlestick + volume chart appears immediately without clicking Execute.
-4. The Output panel does not need to change for the chart to render.
-5. Add a BB overlay row and drop BB data into Data: upper/middle/lower lines render on the price chart.
-6. Add an oscillator overlay row: a second panel appears under the price chart.
-7. Remove an overlay row: its series disappears cleanly.
+- Replace every `chart.addLineSeries(options)` with `chart.addSeries(LineSeries, options)`.
+- Update the local `ChartApi` type accordingly so the helper compiles. Keep the rest of the logic unchanged (line / bands / levels / panel still return arrays of series for cleanup).
 
 ## Out of scope
 
 - No backend changes.
-- No change to `Visualize.json` fields.
-- No change to candle/indicator normalization logic unless a specific input shape is still not recognized after the chart initialization fix.
+- No change to `Visualize.json`, `chartTypes.ts`, the normalizer, or `RepeaterNodeLayout` (overlays repeater, preview resolution wiring, and Execute-hidden behavior remain as currently implemented).
+
+## Verification
+
+1. Open Visualize, connect Alpaca, drop `BarSeries[0].bars` into Candle Data. Candlestick chart + volume histogram render immediately.
+2. With Candle Data still empty, the area shows "No candle data" overlaid on a sized chart container (no layout jump when data arrives).
+3. Add a BB overlay row, drop BB data — upper/middle/lower lines appear on the price pane.
+4. Add an oscillator overlay row — second panel renders below with synced time scale.
+5. Remove an overlay row — its series disappears without remounting the chart.

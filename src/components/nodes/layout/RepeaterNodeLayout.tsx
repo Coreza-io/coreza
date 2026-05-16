@@ -61,6 +61,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   readOnly,
 }) => {
   const { getNodes } = useReactFlow();
+  const executionContext = useExecutionStore();
   const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========
@@ -438,17 +439,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [handleDropWithInsert, updateCase]
   );
 
+  const getPreviewData = useCallback(
+    () => buildPreviewData(previousNodes, executionContext, getNodes),
+    [previousNodes, executionContext, getNodes]
+  );
+
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
       if (typeof expr !== "string" && typeof expr !== "object") return null;
       if (typeof expr === "string" && !expr.includes("{{")) return null;
 
       const srcId = sourceMap[idx]?.[field] || selectedPrevNodeId;
-      const { allNodeData, getSourceData } = buildPreviewData(
-        previousNodes,
-        executionStore,
-        getNodes
-      );
+      const { allNodeData, getSourceData } = getPreviewData();
       const srcData = getSourceData(srcId);
 
       try {
@@ -462,9 +464,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [
       selectedPrevNodeId,
       sourceMap,
-      getNodes,
-      previousNodes,
-      executionStore,
+      getPreviewData,
       resolveDeep,
     ]
   );
@@ -474,11 +474,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (typeof expr !== "string" && typeof expr !== "object") return null;
       if (typeof expr === "string" && !expr.includes("{{")) return null;
 
-      const { allNodeData, getSourceData } = buildPreviewData(
-        previousNodes,
-        executionStore,
-        getNodes
-      );
+      const { allNodeData, getSourceData } = getPreviewData();
       const srcData = getSourceData(selectedPrevNodeId);
 
       try {
@@ -491,9 +487,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     },
     [
       selectedPrevNodeId,
-      getNodes,
-      previousNodes,
-      executionStore,
+      getPreviewData,
       resolveDeep,
     ]
   );

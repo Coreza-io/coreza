@@ -8,11 +8,19 @@ import {
   type LogicalRange,
   type Time,
 } from "lightweight-charts";
-import type { CorezaCandle, VisualizeChartViewModel, VisualizeOverlay } from "./chartTypes";
+import type {
+  CorezaCandle,
+  VisualizeChartViewModel,
+  VisualizeOverlay,
+} from "./chartTypes";
 import { addOverlaySeries, toVolumeData } from "./lightweightSeriesBuilder";
 
 const PRICE_HEIGHT = 320;
 const PANEL_HEIGHT = 140;
+
+const toChartTime = (time: number): Time => {
+  return (time > 9999999999 ? Math.floor(time / 1000) : time) as Time;
+};
 
 type OverlayRegistry = {
   price: Map<string, ISeriesApi<"Line", Time>[]>;
@@ -45,18 +53,26 @@ const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
   };
 };
 
-const removeSeriesList = (chart: IChartApi, list: ISeriesApi<"Line", Time>[]) => {
+const removeSeriesList = (
+  chart: IChartApi,
+  list: ISeriesApi<"Line", Time>[],
+) => {
   list.forEach((series) => chart.removeSeries(series));
 };
 
-const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }> = ({ viewModel }) => {
+const LightweightVisualizeChart: React.FC<{
+  viewModel: VisualizeChartViewModel;
+}> = ({ viewModel }) => {
   const priceRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const priceChartRef = useRef<IChartApi | null>(null);
   const panelChartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram", Time> | null>(null);
-  const registryRef = useRef<OverlayRegistry>({ price: new Map(), panel: new Map() });
+  const registryRef = useRef<OverlayRegistry>({
+    price: new Map(),
+    panel: new Map(),
+  });
   const cleanupSyncRef = useRef<(() => void) | null>(null);
 
   const panelOverlays = useMemo(
@@ -83,7 +99,9 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
-    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
+    volumeSeries
+      .priceScale()
+      .applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
 
     priceChartRef.current = priceChart;
     candleSeriesRef.current = candleSeries;
@@ -91,10 +109,14 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
 
     const resizeObserver = new ResizeObserver(() => {
       if (priceRef.current && priceChartRef.current) {
-        priceChartRef.current.applyOptions({ width: priceRef.current.clientWidth });
+        priceChartRef.current.applyOptions({
+          width: priceRef.current.clientWidth,
+        });
       }
       if (panelRef.current && panelChartRef.current) {
-        panelChartRef.current.applyOptions({ width: panelRef.current.clientWidth });
+        panelChartRef.current.applyOptions({
+          width: panelRef.current.clientWidth,
+        });
       }
     });
 
@@ -106,12 +128,16 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
       resizeObserver.disconnect();
       cleanupSyncRef.current?.();
       if (priceChartRef.current) {
-        registry.price.forEach((seriesList) => removeSeriesList(priceChartRef.current, seriesList));
+        registry.price.forEach((seriesList) =>
+          removeSeriesList(priceChartRef.current, seriesList),
+        );
         registry.price.clear();
         priceChartRef.current.remove();
       }
       if (panelChartRef.current) {
-        registry.panel.forEach((seriesList) => removeSeriesList(panelChartRef.current, seriesList));
+        registry.panel.forEach((seriesList) =>
+          removeSeriesList(panelChartRef.current, seriesList),
+        );
         registry.panel.clear();
         panelChartRef.current.remove();
       }
@@ -124,7 +150,12 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     const volumeSeries = volumeSeriesRef.current;
     if (!priceChart || !candleSeries || !volumeSeries) return;
 
-    candleSeries.setData(viewModel.candles.map((candle: CorezaCandle) => ({ ...candle, time: candle.time as Time })));
+    candleSeries.setData(
+      viewModel.candles.map((candle: CorezaCandle) => ({
+        ...candle,
+        time: toChartTime(candle.time),
+      })),
+    );
     volumeSeries.setData(toVolumeData(viewModel.candles));
 
     // reconcile price overlays
@@ -138,21 +169,33 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     priceOverlays.forEach((overlay: VisualizeOverlay) => {
       const existing = registryRef.current.price.get(overlay.id);
       if (existing) removeSeriesList(priceChart, existing);
-      registryRef.current.price.set(overlay.id, addOverlaySeries(priceChart, overlay));
+      registryRef.current.price.set(
+        overlay.id,
+        addOverlaySeries(priceChart, overlay),
+      );
     });
 
     // panel chart lifecycle + reconcile
-    if (panelOverlays.length > 0 && panelRef.current && !panelChartRef.current) {
+    if (
+      panelOverlays.length > 0 &&
+      panelRef.current &&
+      !panelChartRef.current
+    ) {
       panelChartRef.current = createChart(panelRef.current, {
         width: panelRef.current.clientWidth,
         height: PANEL_HEIGHT,
         timeScale: { timeVisible: true, secondsVisible: false },
       });
-      cleanupSyncRef.current = syncTimeScales(priceChart, panelChartRef.current);
+      cleanupSyncRef.current = syncTimeScales(
+        priceChart,
+        panelChartRef.current,
+      );
     }
 
     if (panelChartRef.current) {
-      const activePanelIds = new Set(panelOverlays.map((overlay) => overlay.id));
+      const activePanelIds = new Set(
+        panelOverlays.map((overlay) => overlay.id),
+      );
       for (const [id, seriesList] of registryRef.current.panel.entries()) {
         if (!activePanelIds.has(id)) {
           removeSeriesList(panelChartRef.current, seriesList);
@@ -162,7 +205,10 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
       panelOverlays.forEach((overlay) => {
         const existing = registryRef.current.panel.get(overlay.id);
         if (existing) removeSeriesList(panelChartRef.current, existing);
-        registryRef.current.panel.set(overlay.id, addOverlaySeries(panelChartRef.current, overlay));
+        registryRef.current.panel.set(
+          overlay.id,
+          addOverlaySeries(panelChartRef.current, overlay),
+        );
       });
 
       if (panelOverlays.length === 0) {
@@ -182,7 +228,13 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
   return (
     <div className="space-y-2 relative">
       <div ref={priceRef} className="w-full" style={{ height: PRICE_HEIGHT }} />
-      {panelOverlays.length > 0 && <div ref={panelRef} className="w-full" style={{ height: PANEL_HEIGHT }} />}
+      {panelOverlays.length > 0 && (
+        <div
+          ref={panelRef}
+          className="w-full"
+          style={{ height: PANEL_HEIGHT }}
+        />
+      )}
       {viewModel.candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm pointer-events-none">
           No candle data

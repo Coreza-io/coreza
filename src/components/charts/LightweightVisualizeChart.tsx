@@ -15,8 +15,8 @@ const PRICE_HEIGHT = 320;
 const PANEL_HEIGHT = 140;
 
 type OverlayRegistry = {
-  price: Map<string, ISeriesApi<any, Time>[]>;
-  panel: Map<string, ISeriesApi<any, Time>[]>;
+  price: Map<string, ISeriesApi<"Line", Time>[]>;
+  panel: Map<string, ISeriesApi<"Line", Time>[]>;
 };
 
 const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
@@ -45,7 +45,7 @@ const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
   };
 };
 
-const removeSeriesList = (chart: IChartApi, list: ISeriesApi<any, Time>[]) => {
+const removeSeriesList = (chart: IChartApi, list: ISeriesApi<"Line", Time>[]) => {
   list.forEach((series) => chart.removeSeries(series));
 };
 
@@ -101,17 +101,18 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     resizeObserver.observe(priceRef.current);
     if (panelRef.current) resizeObserver.observe(panelRef.current);
 
+    const registry = registryRef.current;
     return () => {
       resizeObserver.disconnect();
       cleanupSyncRef.current?.();
       if (priceChartRef.current) {
-        registryRef.current.price.forEach((seriesList) => removeSeriesList(priceChartRef.current as IChartApi, seriesList));
-        registryRef.current.price.clear();
+        registry.price.forEach((seriesList) => removeSeriesList(priceChartRef.current, seriesList));
+        registry.price.clear();
         priceChartRef.current.remove();
       }
       if (panelChartRef.current) {
-        registryRef.current.panel.forEach((seriesList) => removeSeriesList(panelChartRef.current as IChartApi, seriesList));
-        registryRef.current.panel.clear();
+        registry.panel.forEach((seriesList) => removeSeriesList(panelChartRef.current, seriesList));
+        registry.panel.clear();
         panelChartRef.current.remove();
       }
     };
@@ -137,7 +138,7 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     priceOverlays.forEach((overlay: VisualizeOverlay) => {
       const existing = registryRef.current.price.get(overlay.id);
       if (existing) removeSeriesList(priceChart, existing);
-      registryRef.current.price.set(overlay.id, addOverlaySeries(priceChart as any, overlay) as unknown as ISeriesApi<any, Time>[]);
+      registryRef.current.price.set(overlay.id, addOverlaySeries(priceChart, overlay));
     });
 
     // panel chart lifecycle + reconcile
@@ -160,8 +161,8 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
       }
       panelOverlays.forEach((overlay) => {
         const existing = registryRef.current.panel.get(overlay.id);
-        if (existing) removeSeriesList(panelChartRef.current as IChartApi, existing);
-        registryRef.current.panel.set(overlay.id, addOverlaySeries(panelChartRef.current as any, overlay) as unknown as ISeriesApi<any, Time>[]);
+        if (existing) removeSeriesList(panelChartRef.current, existing);
+        registryRef.current.panel.set(overlay.id, addOverlaySeries(panelChartRef.current, overlay));
       });
 
       if (panelOverlays.length === 0) {
@@ -178,14 +179,15 @@ const LightweightVisualizeChart: React.FC<{ viewModel: VisualizeChartViewModel }
     }
   }, [viewModel, panelOverlays, priceOverlays]);
 
-  if (viewModel.candles.length === 0) {
-    return <div className="text-gray-500 text-sm py-8 text-center">No candle data</div>;
-  }
-
   return (
-    <div className="space-y-2">
-      <div ref={priceRef} className="w-full" />
-      {panelOverlays.length > 0 && <div ref={panelRef} className="w-full" />}
+    <div className="space-y-2 relative">
+      <div ref={priceRef} className="w-full" style={{ height: PRICE_HEIGHT }} />
+      {panelOverlays.length > 0 && <div ref={panelRef} className="w-full" style={{ height: PANEL_HEIGHT }} />}
+      {viewModel.candles.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm pointer-events-none">
+          No candle data
+        </div>
+      )}
     </div>
   );
 };

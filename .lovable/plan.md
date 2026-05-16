@@ -1,105 +1,71 @@
-# Visualize node — chart data exists but chart area is still blank
+# Visualize node chart still blank
 
-## Updated diagnosis
+## What is actually happening
 
-The latest screenshot proves the Candle Data field resolves correctly:
+The Candle Data path is working now:
 
-- The field preview shows an array with 594 bar items.
-- `viewModel.candles` is therefore not the remaining blocker.
-- The visible Visualize node still shows only the fields and overlays section; there is no chart, no empty-state overlay, and no reserved 320px chart area.
+- The field preview shows the Alpaca bars.
+- `VisualizeNodePreview` is creating a `viewModel` with candles.
+- `LightweightVisualizeChart` is receiving that `viewModel`.
+- Your debugger shows `priceRef.current` is a real DOM element with `clientWidth = 545` and `clientHeight = 320`.
 
-That changes the root-cause priority. The issue is now more likely that the chart preview is mounted outside the visible/scrollable node content, not that the data model is empty.
+So this is no longer a candle parsing problem and no longer the old `priceRef.current === null` problem.
 
-## Primary root cause
+## Do I know what the issue is?
 
-In `RepeaterNodeLayout.tsx`, the chart preview is rendered after the closing `</form>`:
+Yes. The most likely blocker is inside the chart lifecycle and node layout, not backend execution.
 
-```tsx
-</form>
+There are two concrete issues to fix:
 
-{definition?.name === "Visualize" && (
-  <div className="pt-2">
-    <VisualizeNodePreview ... />
-  </div>
-)}
-```
+1. `RepeaterNodeLayout.tsx` is responsible for placing the chart preview. The chart must remain inside the Visualize node's visible form stack, directly after the Overlays controls, so it cannot be hidden outside the visible field layout.
+2. `LightweightVisualizeChart.tsx` currently creates the chart once in a mount-only effect, then sets data in a separate effect. In React 18 StrictMode and React Flow expanded/collapsed layouts, this is fragile because the chart can be created/removed during lifecycle transitions while refs still point to stale chart objects. The data effect can then run before a valid chart/series set exists or after cleanup.
 
-The expanded node card is constrained by React Flow / `NodeWrapper` sizing and panel layout. Rendering the chart outside the form means it is not part of the same visible field stack where the Candle Data and Overlays controls live. In the current UI, that makes the preview effectively invisible even though `VisualizeNodePreview` can build a valid view model.
+There is also a separate TypeScript issue in `lightweightSeriesBuilder.ts` around Lightweight Charts v5 `Time` typing.
 
-## Primary fix
+## Implementation plan
 
-Move the Visualize chart preview inside the form, directly after the Overlays repeater and before the dependency/submit/error blocks.
+### 1. Make the chart preview placement explicit in `RepeaterNodeLayout.tsx`
 
-Target structure:
+- Keep the Visualize preview inside the `<form className="space-y-3">` stack.
+- Render it after the repeater section and before dependency/submit/error controls.
+- Wrap it in a visible container with a stable minimum height, e.g. `min-h-[320px]`, so the React Flow node reserves space for the chart.
+- Do not re-add the Execute button for Visualize.
 
-```tsx
-<form className="space-y-3" onSubmit={handleSubmit}>
-  ...Candle Data field...
-  ...Overlays repeater...
+### 2. Harden `LightweightVisualizeChart.tsx` lifecycle
 
-  {definition?.name === "Visualize" && (
-    <div className="pt-2">
-      <VisualizeNodePreview
-        fieldState={fieldState}
-        sourceData={visualizePreviewContext.sourceData}
-        allNodeData={visualizePreviewContext.allNodeData}
-      />
-    </div>
-  )}
+- Combine chart creation and first data application into the initialization effect, or call a shared `applyChartData()` immediately after series creation.
+- Reset all refs to `null` during cleanup:
+  - `priceChartRef`
+  - `panelChartRef`
+  - `candleSeriesRef`
+  - `volumeSeriesRef`
+  - `cleanupSyncRef`
+- Add a lightweight guard so chart creation waits for a non-zero container width.
+- Keep the chart container always rendered with explicit height.
+- Keep `No candle data` as an overlay only when candles are empty.
 
-  ...skip dependency...
-  ...non-Visualize Execute button...
-  ...error...
-</form>
-```
+This makes the component resilient when React StrictMode mounts/unmounts once during development and when React Flow changes expanded layout.
 
-Then remove the duplicate preview block currently rendered after `</form>`.
+### 3. Fix Lightweight Charts v5 typing in `lightweightSeriesBuilder.ts`
 
-## Chart container guard
+- Ensure every line-series point uses `time: Time`, not raw `number`.
+- `toLineData()` already has the right shape in the current file; keep that pattern and ensure no raw number arrays are passed to `setData`.
 
-Keep the current `LightweightVisualizeChart.tsx` approach:
+### 4. Optional only if still visually clipped
 
-- Always render `<div ref={priceRef} />`.
-- Give it explicit `height: PRICE_HEIGHT`.
-- Show `No candle data` as an overlay only when candles are empty.
+If the chart appears but is cramped/clipped, increase `src/nodes/Visualize.json` height from `540` to around `820`.
 
-This is still correct because it prevents the old `priceRef.current === null` first-render deadlock.
+## Verification
 
-## Lightweight Charts v5 TypeScript fix
-
-The current source already migrated overlays from `addLineSeries(...)` to `addSeries(LineSeries, ...)`, but TypeScript still fails because `toLineData()` returns `time: number`, while v5 expects `time: Time`.
-
-Update `lightweightSeriesBuilder.ts`:
-
-```tsx
-const toLineData = (points: SeriesPoint[]): Array<{ time: Time; value: number }> =>
-  points
-    .filter((point) => point.value !== null)
-    .map((point) => ({ time: point.time as Time, value: point.value as number }));
-```
-
-No other chart logic needs to change for this build error.
-
-## Optional layout improvement if chart is still cramped
-
-If moving the preview inside the form shows the chart but it is clipped by the node height, update Visualize sizing only:
-
-- `src/nodes/Visualize.json`: increase `size.height` from `540` to around `820`.
-- Keep width unchanged unless the chart feels too narrow.
-
-This is a layout-only adjustment and should be done only if clipping remains visible.
+1. Open Visualize node.
+2. Confirm Candle Data preview still shows Alpaca bars.
+3. Confirm the chart area appears directly below Overlays.
+4. Confirm candlestick + volume render without pressing Execute.
+5. Add an overlay and confirm no Lightweight Charts v5 errors appear.
 
 ## Out of scope
 
 - No backend changes.
-- No changes to Candle Data resolution.
-- No changes to `Visualize.json` unless clipping remains after the preview is moved.
-- No changes to normalizer classification logic.
-
-## Verification
-
-1. Open Visualize with Alpaca connected.
-2. Confirm Candle Data preview still shows 594 bars.
-3. Confirm a 320px chart area appears directly below Overlays.
-4. Confirm candlestick + volume chart renders without pressing Execute.
-5. Add an overlay and confirm no v5 `addLineSeries` or TypeScript time errors occur.
+- No candle normalizer changes.
+- No executor changes.
+- No data schema changes.

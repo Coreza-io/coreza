@@ -24,9 +24,6 @@ import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
-import { useReactFlow } from "@xyflow/react";
-import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
-import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
@@ -56,39 +53,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   referenceStyle,
   previousNodes,
   selectedPrevNodeId,
+  selectedInputData,
   incomingEdgeCount,
   readOnly,
 }) => {
-  const { getNodes } = useReactFlow();
-  const executionStore = useExecutionStore();
   const { user } = useAuth();
-  const selectedInputData = useMemo(() => {
-    if (!previousNodes || previousNodes.length === 0) return null;
-
-    const getNodeExecutionOutput = (nodeId: string) =>
-      executionStore.executionOutput[nodeId] || null;
-
-    if (selectedPrevNodeId) {
-      const selectedNode = previousNodes.find((n: any) => n.id === selectedPrevNodeId);
-      if (selectedNode) {
-        const output = getNodeExecutionOutput(selectedNode.id);
-        return {
-          nodeId: selectedNode.id,
-          nodeName: getDisplayName(selectedNode),
-          output,
-        };
-      }
-    }
-
-    const firstNode = previousNodes[0];
-    if (!firstNode) return null;
-
-    return {
-      nodeId: firstNode.id,
-      nodeName: getDisplayName(firstNode),
-      output: getNodeExecutionOutput(firstNode.id),
-    };
-  }, [executionStore.executionOutput, previousNodes, selectedPrevNodeId]);
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find(

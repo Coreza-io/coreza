@@ -1,71 +1,59 @@
-# Visualize node chart still blank
+# Fix drag-and-drop into Overlays subfields
 
-## What is actually happening
+## Problem
 
-The Candle Data path is working now:
+Dragging a value from the Input Data panel (e.g. `BB.data`) onto an overlay row's `data` input does nothing — the field stays empty after drop.
 
-- The field preview shows the Alpaca bars.
-- `VisualizeNodePreview` is creating a `viewModel` with candles.
-- `LightweightVisualizeChart` is receiving that `viewModel`.
-- Your debugger shows `priceRef.current` is a real DOM element with `clientWidth = 545` and `clientHeight = 320`.
+## Root cause
 
-So this is no longer a candle parsing problem and no longer the old `priceRef.current === null` problem.
+In `src/hooks/useNodeReferences.ts`, `handleDrop` does two writes back to state:
 
-## Do I know what the issue is?
+```ts
+setter(newValue);                       // for overlays: updateOverlay(row, "data", newValue)
+handleChange(fieldKey, newValue);       // also writes top-level fieldState["data"]
+```
 
-Yes. The most likely blocker is inside the chart lifecycle and node layout, not backend execution.
+Both `useNodeFieldState.handleChange` and `handleFieldStateBatch` build their next state from the **closure copy of `fieldState`** rather than from the latest state:
 
-There are two concrete issues to fix:
+```ts
+const newFieldState = { ...fieldState, [key]: normalizedValue };
+setFieldState(newFieldState);
+setNodes(... values: newFieldState ...);
+```
 
-1. `RepeaterNodeLayout.tsx` is responsible for placing the chart preview. The chart must remain inside the Visualize node's visible form stack, directly after the Overlays controls, so it cannot be hidden outside the visible field layout.
-2. `LightweightVisualizeChart.tsx` currently creates the chart once in a mount-only effect, then sets data in a separate effect. In React 18 StrictMode and React Flow expanded/collapsed layouts, this is fragile because the chart can be created/removed during lifecycle transitions while refs still point to stale chart objects. The data effect can then run before a valid chart/series set exists or after cleanup.
+Sequence during an overlay drop:
 
-There is also a separate TypeScript issue in `lightweightSeriesBuilder.ts` around Lightweight Charts v5 `Time` typing.
+1. `setter(newValue)` → `updateOverlay` → `handleFieldStateBatch({ overlays: [...with data set] })` updates `fieldState.overlays`.
+2. `handleChange("data", newValue)` runs immediately after, still seeing the **stale** `fieldState` (without the overlays update), and writes `{ ...stale, data: newValue }`. This silently overwrites the overlay row update from step 1.
 
-## Implementation plan
+Net effect: the overlay row's `data` cell reverts to empty; a stray top-level `data` key gets set but is never rendered. The user sees an empty input after dropping.
 
-### 1. Make the chart preview placement explicit in `RepeaterNodeLayout.tsx`
+## Fix
 
-- Keep the Visualize preview inside the `<form className="space-y-3">` stack.
-- Render it after the repeater section and before dependency/submit/error controls.
-- Wrap it in a visible container with a stable minimum height, e.g. `min-h-[320px]`, so the React Flow node reserves space for the chart.
-- Do not re-add the Execute button for Visualize.
+Two small, isolated changes:
 
-### 2. Harden `LightweightVisualizeChart.tsx` lifecycle
+1. `src/hooks/useNodeReferences.ts` — remove the redundant `handleChange(fieldKey, newValue)` call inside `handleDrop`. The `setter(newValue)` argument already routes the write to the correct destination (top-level field for basic nodes via `(val) => handleChange(key, val)`; overlay row via `updateOverlay`; condition cell via `updateCondition`, etc.). Keep the `sourceMap` update.
 
-- Combine chart creation and first data application into the initialization effect, or call a shared `applyChartData()` immediately after series creation.
-- Reset all refs to `null` during cleanup:
-  - `priceChartRef`
-  - `panelChartRef`
-  - `candleSeriesRef`
-  - `volumeSeriesRef`
-  - `cleanupSyncRef`
-- Add a lightweight guard so chart creation waits for a non-zero container width.
-- Keep the chart container always rendered with explicit height.
-- Keep `No candle data` as an overlay only when candles are empty.
-
-This makes the component resilient when React StrictMode mounts/unmounts once during development and when React Flow changes expanded layout.
-
-### 3. Fix Lightweight Charts v5 typing in `lightweightSeriesBuilder.ts`
-
-- Ensure every line-series point uses `time: Time`, not raw `number`.
-- `toLineData()` already has the right shape in the current file; keep that pattern and ensure no raw number arrays are passed to `setData`.
-
-### 4. Optional only if still visually clipped
-
-If the chart appears but is cramped/clipped, increase `src/nodes/Visualize.json` height from `540` to around `820`.
+2. `src/hooks/useNodeFieldState.ts` — convert `handleChange` and `handleFieldStateBatch` to functional updates so back-to-back writes in the same tick can't clobber each other:
+   ```ts
+   setFieldState((prev) => {
+     const next = { ...prev, [key]: normalizedValue };
+     // dynamicOptions handling stays the same, against `next`
+     setNodes((nds) => nds.map((n) =>
+       n.id === nodeId
+         ? { ...n, data: { ...n.data, values: next, fieldState: next } }
+         : n));
+     return next;
+   });
+   ```
+   Same pattern for `handleFieldStateBatch`. Drop `fieldState` from the `useCallback` deps so the callbacks are stable.
 
 ## Verification
 
-1. Open Visualize node.
-2. Confirm Candle Data preview still shows Alpaca bars.
-3. Confirm the chart area appears directly below Overlays.
-4. Confirm candlestick + volume render without pressing Execute.
-5. Add an overlay and confirm no Lightweight Charts v5 errors appear.
+- Drag `BB.data` from Input Data onto overlay row 1's data field → field shows `{{ $('Bollinger Bands').json.data }}` and chart re-renders with the overlay.
+- Drag onto a basic node field (e.g. condition `left`) — still works as before.
+- Adding multiple overlays and dropping into each one preserves the values.
 
 ## Out of scope
 
-- No backend changes.
-- No candle normalizer changes.
-- No executor changes.
-- No data schema changes.
+No changes to chart rendering, `RepeaterNodeLayout`, `NodeFieldRenderer`, Visualize.json, or backend.

@@ -214,7 +214,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     previousNodes,
     selectedPrevNodeId,
     selectedPrevNode,
-    handleChange: fieldStateHook.handleChange,
   });
 
   // Auto-execution (sets up event listeners, no return value)

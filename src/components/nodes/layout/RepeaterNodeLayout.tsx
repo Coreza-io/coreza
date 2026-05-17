@@ -481,6 +481,32 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     () => buildPreviewData(previousNodes, executionContext, getNodes),
     [previousNodes, executionContext, getNodes]
   );
+
+  const getOverlayPreviewFor = useCallback(
+    (expr: unknown) => {
+      if (typeof expr !== "string" || !expr.includes("{{")) return null;
+
+      const { allNodeData, getSourceData } = getPreviewData();
+      const srcData = getSourceData(selectedPrevNodeId);
+
+      try {
+        return fullePreview(resolveReferences(expr, srcData, allNodeData, getNodes()));
+      } catch {
+        return "";
+      }
+    },
+    [getPreviewData, selectedPrevNodeId, getNodes]
+  );
+
+  const handleOverlayDrop = useCallback(
+    (rowIndex: number, field: string, e: React.DragEvent, currentValue: string) => {
+      handleDropWithInsert(e, currentValue, (insert) => {
+        updateOverlay(rowIndex, field, currentValue + insert);
+      });
+    },
+    [handleDropWithInsert, updateOverlay]
+  );
+
   const visualizePreviewContext = useMemo(() => {
     const { allNodeData, getSourceData } = getPreviewData();
     return {
@@ -768,16 +794,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       loadingSelect={loadingSelect}
                       onChange={(key, val) => updateOverlay(rowIndex, key, val)}
                       onDrop={(fieldDef, e, currentValue) =>
-                        handleDrop(
-                          fieldDef.key,
-                          (val: string) => updateOverlay(rowIndex, fieldDef.key, val),
-                          e,
-                          currentValue
-                        )
+                        handleOverlayDrop(rowIndex, fieldDef.key, e, currentValue)
                       }
-                      getPreview={(fieldKey) =>
-                        getFieldPreview(`overlays.${rowIndex}.${fieldKey}`)
-                      }
+                      getPreview={() => getOverlayPreviewFor(overlayRow?.[subField.key])}
                       referenceStyle={referenceStyle}
                       fetchDependentOptions={fetchDependentOptions}
                       setShowAuth={setShowAuth}

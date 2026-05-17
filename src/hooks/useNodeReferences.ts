@@ -21,7 +21,6 @@ interface UseNodeReferencesProps {
   previousNodes: Node[];
   selectedPrevNodeId: string;
   selectedPrevNode: Node | undefined;
-  handleChange: (key: string, value: any) => void;
 }
 
 interface UseNodeReferencesReturn {
@@ -45,7 +44,6 @@ export function useNodeReferences({
   previousNodes,
   selectedPrevNodeId,
   selectedPrevNode,
-  handleChange,
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
   const { getNodes } = useReactFlow();
   const executionStore = useExecutionStore();
@@ -111,7 +109,6 @@ export function useNodeReferences({
         const newValue = currentValue + insert;
 
         setter(newValue);
-        handleChange(fieldKey, newValue);
         setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
       } catch (err) {
         console.error("❌ Drop error:", err);
@@ -119,7 +116,7 @@ export function useNodeReferences({
 
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
-    [getNodes, selectedPrevNodeId, handleChange]
+    [getNodes, selectedPrevNodeId]
   );
 
   // Get preview of resolved reference expression

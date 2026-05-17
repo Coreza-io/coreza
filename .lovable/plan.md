@@ -1,67 +1,174 @@
-# S&R duplicate lines + label clutter — root cause and fix
+# Why MACD (and most multi-channel indicators) don't render + fix via Indicator Type dropdown
 
-## Root cause 1 — duplicate price lines (why you see 6 instead of 3)
+## Root cause — MACD specifically
 
-The data is correct (3 supports + 3 resistances). The chart accumulates them on every re-render.
+The MACD payload dragged into the overlay row is an array of objects:
+```text
+[ { macd: 0.0046, signal: 0.0046, histogram: 0 }, { macd: 0.0049, signal: 0.0013, histogram: 0.0036 }, ... ]
+```
 
-In `src/components/charts/lightweightSeriesBuilder.ts` the `levels` branch now attaches `createPriceLine(...)` to the candlestick series (`priceAnchor`). That fixed visibility, but introduced a leak:
+The current pipeline fails it in two stacked ways:
 
-- `LightweightVisualizeChart` reconciles overlays by removing the previous `ISeriesApi<"Line">[]` returned for that overlay id and calling `addOverlaySeries` again.
-- `removeSeries(...)` removes only the Line series in that list. **Price lines attached to the candlestick series are NOT tracked in that list**, so they survive.
-- Every re-render (debounced field edit, viewport change, parent re-render) appends another 3 supports + 3 resistances onto the candle series. After 2 cycles you see 6/6, after 3 you would see 9/9.
+1. **Classification (`src/utils/visualizeNormalize.ts > classifyOverlay`)**
+   - Not "bands" (no `upper`/`lower` keys on rows).
+   - Not "levels" (no `type: support|resistance` and no `{support, resistance}` summary).
+   - `OSCILLATOR_NAMES` check uses the overlay **row name**, which the user set to `BB(20,2)` (a label, not an indicator id). So the `macd` token is never matched and it does NOT classify as `panel`.
+   - Falls through to `hasNonOverlappingRange` → `alignSeriesToCandles` with an array of objects with no `time`/`value` → all nulls → returns false.
+   - Final classification: `line`.
 
-The currentClose filter in `nearestLevels` further means as the closing price drifts, some lines change side but the old ones never disappear, which is what produces the visible mix of stale label values.
+2. **Per-row value extraction (`alignSeriesToCandles` → `normalizeSeriesPoint`)**
+   - Only knows the keys `value`, `v`, `level`, `close`, `c`. It does not know about `macd`, `signal`, `histogram`, `k`, `d`, `adx`, `plusDI`, `tenkan`, etc.
+   - Even if classification were `panel`, every point would resolve to `null` and nothing would draw.
 
-## Root cause 2 — label clutter blocks the chart
+## Why the same problem hits other indicators
 
-`createPriceLine` is currently called with `title: "${overlay.name} support"` and `axisLabelVisible: true`. Each price line renders both:
-- a colored axis label on the right (price value), and
-- a colored badge with the title text drawn on top of the chart area.
+Every indicator whose row payload uses a custom field name has the same issue:
 
-With 6 supports + 6 resistances stacked tightly, the title badges cover the candles and the BB lines.
+| Indicator | Row shape (historical array) | Currently renders? |
+|---|---|---|
+| RSI | `number[]` or `{value}[]` | line (wrong — should be panel with 30/70 guides) |
+| EMA / SMA / VWAP | `number[]` | line on price ✓ |
+| MACD | `{macd, signal, histogram}[]` | broken |
+| BB | `{upper, middle, lower}` arrays | bands ✓ (only because keys match) |
+| ADX | `{adx, plusDI, minusDI}[]` | broken |
+| Stoch | `{k, d}[]` | broken |
+| OBV | `number[]` | line on price (wrong — should be panel) |
+| Volume Oscillator / PVO | `number[]` | line on price (wrong — should be panel) |
+| Ichimoku | `{tenkan, kijun, senkouA, senkouB, chikou}[]` | broken |
+| Support & Resistance | `[{pivot, support, resistance}]` | levels ✓ (fixed earlier) |
 
-## Fix
+The classifier was relying on either fixed key names (BB, S&R) or substring matches on a user-provided label. That is fragile and cannot disambiguate channels for multi-line indicators.
 
-Make these changes only in `src/components/charts/lightweightSeriesBuilder.ts` and `src/components/charts/LightweightVisualizeChart.tsx`. No other files touched.
+## Fix — explicit Indicator Type dropdown + a frontend Indicator Registry
 
-### 1. Track and remove price lines per overlay
+Make the indicator type **explicit** on every overlay row. The dropdown both tells the chart how to render and tells the extractor which fields to pull.
+
+### 1. UI: add an `indicatorType` field to overlays
+
+`src/nodes/Visualize.json` — extend the `overlays` repeater `subFields` with a new `select` placed before `render`:
+
+```json
+{
+  "key": "indicatorType",
+  "label": "Indicator",
+  "type": "select",
+  "options": [
+    { "id": "auto", "name": "Auto detect" },
+    { "id": "rsi", "name": "RSI" },
+    { "id": "ema", "name": "EMA" },
+    { "id": "sma", "name": "SMA" },
+    { "id": "macd", "name": "MACD" },
+    { "id": "bb", "name": "Bollinger Bands" },
+    { "id": "adx", "name": "ADX" },
+    { "id": "stoch", "name": "Stochastic" },
+    { "id": "vwap", "name": "VWAP" },
+    { "id": "obv", "name": "OBV" },
+    { "id": "volume_oscillator", "name": "Volume Oscillator" },
+    { "id": "pvo", "name": "PVO" },
+    { "id": "ichimoku", "name": "Ichimoku" },
+    { "id": "support_resistance", "name": "Support & Resistance" }
+  ],
+  "default": "auto"
+}
+```
+
+Default is `auto` so existing workflows keep working. When set to a specific indicator, registry-driven rendering takes over.
+
+### 2. New registry: `src/utils/indicatorRegistry.ts`
+
+Single source of truth describing each indicator's render kind, channels, default colors, panel placement, and optional reference levels. Shape:
+
+```text
+type IndicatorChannel = {
+  key: string;             // field on each row (e.g. "macd", "signal", "histogram")
+  label: string;           // legend text suffix
+  color: string;           // default color, overridable by row.color for primary channel
+  style?: "line" | "histogram";
+  dashed?: boolean;
+};
+
+type IndicatorSpec = {
+  id: string;
+  label: string;
+  pane: "price" | "panel";
+  kind: "line" | "bands" | "levels" | "multi";
+  channels: IndicatorChannel[];        // for line / multi
+  bands?: { upper: string; middle?: string; lower: string };  // for bands
+  levels?: { supports: string; resistances: string };          // for levels
+  referenceLines?: Array<{ price: number; color: string; label?: string }>;  // e.g. RSI 30/70
+};
+```
+
+Entries:
+- `rsi` → panel, multi, channels `[{key:"value"|number,...}]`, referenceLines 30/70.
+- `ema` / `sma` / `vwap` → price, line, single numeric channel.
+- `macd` → panel, multi, channels `macd` (line), `signal` (dashed line), `histogram` (histogram).
+- `bb` → price, bands `{upper, middle, lower}`.
+- `adx` → panel, multi, channels `adx`, `plusDI`, `minusDI`.
+- `stoch` → panel, multi, channels `k`, `d`, referenceLines 20/80.
+- `obv` → panel, line, single numeric.
+- `volume_oscillator` / `pvo` → panel, line, single numeric.
+- `ichimoku` → price, multi, channels `tenkan`, `kijun`, `senkouA`, `senkouB`, `chikou`.
+- `support_resistance` → price, levels `{support, resistance}` (delegates to existing levels path).
+
+### 3. Extend chart types and the series builder
+
+`src/components/charts/chartTypes.ts`
+- Add a new overlay kind `multi`:
+  ```text
+  | { kind: "multi"; id; name; pane: "price"|"panel"; channels: Array<{ label; color; style: "line"|"histogram"; data: SeriesPoint[] }>; referenceLines?: Array<{ price; color; label? }> }
+  ```
 
 `src/components/charts/lightweightSeriesBuilder.ts`
-- Change the return type of `addOverlaySeries` from `ISeriesApi<"Line", Time>[]` to a richer record, e.g.:
-  ```text
-  type OverlayHandles = {
-    series: ISeriesApi<"Line", Time>[];
-    priceLines: Array<{ anchor: ISeriesApi<any, Time>; line: IPriceLine }>;
-  };
-  ```
-- In the `levels` branch, capture the return value of each `priceAnchor.createPriceLine(...)` call and push `{ anchor: priceAnchor, line }` into `priceLines`.
-- Other branches (`line`, `bands`, `panel`) return `priceLines: []`.
+- Add a `multi` branch in `addOverlaySeries` that loops over `channels` and adds a `LineSeries` or `HistogramSeries` per channel, returning all created series in `handles.series`.
+- Apply `referenceLines` as `createPriceLine` on the first added channel series (and push into `handles.priceLines` so existing cleanup works).
 
-`src/components/charts/LightweightVisualizeChart.tsx`
-- Change the `OverlayRegistry` value type from `ISeriesApi<"Line", Time>[]` to `OverlayHandles`.
-- Update `removeSeriesList` (or add a sibling helper) to also call `handles.priceLines.forEach(({ anchor, line }) => anchor.removePriceLine(line))` before removing the line series.
-- Apply this in both reconciliation paths (active id no longer present, and same id re-added).
+### 4. Preview wiring: `src/components/nodes/visualize/VisualizeNodePreview.tsx`
 
-### 2. Clean up labels
+- Add `indicatorType` to the `OverlayRow` type.
+- When `row.indicatorType && row.indicatorType !== "auto"`:
+  - Look up spec from registry.
+  - If `spec.kind === "bands"`: extract each band array (`rows.map(r => r[spec.bands.upper])` etc.) and push a `bands` overlay (reuses existing rendering).
+  - If `spec.kind === "levels"`: read from the latest row using `spec.levels.supports`/`spec.levels.resistances` (covers the S&R summary shape). Reuse existing `levels` overlay.
+  - If `spec.kind === "line"`: extract single channel as numeric series, push `line` or `panel` overlay according to `spec.pane`.
+  - If `spec.kind === "multi"`: for each channel, build `SeriesPoint[]` by extracting `row[channel.key]` from each row in the array, aligned to candle tail. Push one `multi` overlay with all channels and `spec.referenceLines`.
+- When `row.indicatorType === "auto"` or missing, keep current `classifyOverlay` path so old workflows continue to render.
 
-In the `levels` branch of `addOverlaySeries`:
-- Drop the `title` from `createPriceLine` (or set it to an empty string) so the on-chart text badge disappears. The colored axis label on the right keeps the price value visible, which is the useful information.
-- Keep `axisLabelVisible: true`, dashed style, width 1.
+### 5. Make field extraction tolerant of nested shapes
 
-Result: chart shows clean horizontal dashed lines (green = support, red = resistance) with only a price value on the right axis. No overlapping "Overlay 1 support" / "Overlay 1 resistance" badges over the candles.
+In the registry path, before reading `row[channel.key]`, unwrap common wrappers so users can drag either the raw array, `$('MACD').json.data`, `currentValue`, etc.:
+- If `resolved` is `{ data: [...] }` use `.data`.
+- If each row has `{ value: { macd, signal, histogram } }`, descend into `.value`.
+- If a row has `time`/`t`/`timestamp`, prefer it; otherwise tail-align numerically to candles (same as existing `alignSeriesToCandles`).
 
-## "How does the chart know where to mark a level?"
+### 6. Backwards compatibility and defaults
 
-Supports and resistances are price values that apply across the entire chart, not at a specific bar. `createPriceLine` draws a full-width horizontal line at that price plus a single label on the price axis. Timestamps are not needed for plain numeric levels. Time-bounded segments (rare) are still handled by the existing `supportSeries` / `resistanceSeries` branch when entries include `time`.
+- `indicatorType` default `auto` keeps the existing classifier path live.
+- Existing rows without the field behave exactly as today.
+- Color: `row.color` overrides the primary channel only; secondary channels keep registry colors so MACD signal/histogram remain visually distinguishable.
 
 ## Verification
 
-1. Open the Visualize node with the current S&R payload. Expect exactly 3 green dashed lines (0.220 / 0.207 / 0.199) and 3 red dashed lines (0.241 / 0.249 / 0.262), with price-only labels on the right axis.
-2. Edit any field on the node to force re-render. Line count must stay at 3 + 3, not grow.
-3. Remove the S&R overlay row. Both lines and price-axis labels must disappear cleanly.
-4. BB band overlay continues to render upper/middle/lower lines (regression).
-5. Switching render between Auto and Levels keeps the same 3 + 3 output.
+1. Drag `{{ $('MACD').json.data }}`, set Indicator = MACD → panel shows MACD line, signal line, histogram. No console errors.
+2. Drag `{{ $('BB').json.data }}`, Indicator = Bollinger Bands → 3 lines around price (regression).
+3. Drag `{{ $('RSI').json.data }}`, Indicator = RSI → panel with single line + dashed 30 and 70 reference lines.
+4. Drag `{{ $('Stochastic').json.data }}`, Indicator = Stochastic → panel with K and D + 20/80 reference lines.
+5. Drag `{{ $('ADX').json.data }}`, Indicator = ADX → panel with adx, +DI, -DI lines.
+6. Drag `{{ $('Ichimoku').json.data }}`, Indicator = Ichimoku → 5 lines overlaid on price.
+7. Drag `{{ $('OBV').json.data }}`, Indicator = OBV → panel with single line.
+8. Drag `{{ $('VWAP').json.data }}`, Indicator = VWAP → line overlaid on price.
+9. Support & Resistance row still works (Indicator = Support & Resistance or Auto).
+10. Leaving Indicator = Auto keeps the BB / S&R / numeric-array cases rendering as before.
+11. Switching Indicator on an existing row updates without leaking series or price lines (uses existing `OverlayHandles` cleanup).
+
+## Files touched
+
+- `src/nodes/Visualize.json` — add `indicatorType` select.
+- `src/utils/indicatorRegistry.ts` — new registry.
+- `src/components/charts/chartTypes.ts` — add `multi` overlay kind.
+- `src/components/charts/lightweightSeriesBuilder.ts` — add `multi` branch + reference lines.
+- `src/components/nodes/visualize/VisualizeNodePreview.tsx` — registry-driven build path with `auto` fallback.
 
 ## Out of scope
 
-`VisualizeNodePreview`, `visualizeNormalize.ts`, drag-and-drop hooks, repeater layout, backend.
+Backend indicator code, drag-and-drop hooks, repeater layout, reference resolution, normalizeOutput.

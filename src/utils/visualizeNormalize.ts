@@ -152,6 +152,19 @@ const parseLevelsArray = (entries: unknown[]) => {
   return { supports, resistances, supportSeries: supportSeries.length ? supportSeries : undefined, resistanceSeries: resistanceSeries.length ? resistanceSeries : undefined };
 };
 
+const parseLevelsSummaryRow = (value: unknown): { supports: number[]; resistances: number[] } | null => {
+  const row = asDict(value);
+  if (!row) return null;
+
+  const supportsRaw = Array.isArray(row.support) ? row.support : Array.isArray(row.supports) ? row.supports : null;
+  const resistancesRaw = Array.isArray(row.resistance) ? row.resistance : Array.isArray(row.resistances) ? row.resistances : null;
+  if (!supportsRaw && !resistancesRaw) return null;
+
+  const supports = (supportsRaw ?? []).map(toFiniteNumber).filter((level): level is number => level !== null);
+  const resistances = (resistancesRaw ?? []).map(toFiniteNumber).filter((level): level is number => level !== null);
+  return { supports, resistances };
+};
+
 const hasNonOverlappingRange = (candles: CorezaCandle[], resolved: unknown): boolean => {
   const aligned = alignSeriesToCandles(candles, Array.isArray(resolved) ? resolved : asDict(resolved)?.values ?? asDict(resolved)?.data ?? []);
   const values = aligned.map((p) => p.value).filter((p): p is number => p !== null);
@@ -187,13 +200,12 @@ export const classifyOverlay = (name: string, render: string | undefined, resolv
 
   const levels = (() => {
     if (obj) {
-      const supports = Array.isArray(obj.support) ? obj.support : Array.isArray(obj.supports) ? obj.supports : [];
-      const resistances = Array.isArray(obj.resistance) ? obj.resistance : Array.isArray(obj.resistances) ? obj.resistances : [];
-      if (supports.length || resistances.length) {
-        return { kind: "levels", supports: supports.map(toFiniteNumber).filter((v): v is number => v !== null), resistances: resistances.map(toFiniteNumber).filter((v): v is number => v !== null) } as OverlayClassification;
-      }
+      const parsedSummary = parseLevelsSummaryRow(obj);
+      if (parsedSummary && (parsedSummary.supports.length || parsedSummary.resistances.length)) return { kind: "levels", ...parsedSummary } as OverlayClassification;
     }
     if (arr?.length) {
+      const parsedSummary = parseLevelsSummaryRow(arr[arr.length - 1]);
+      if (parsedSummary && (parsedSummary.supports.length || parsedSummary.resistances.length)) return { kind: "levels", ...parsedSummary } as OverlayClassification;
       const parsed = parseLevelsArray(arr);
       if (parsed.supports.length || parsed.resistances.length) return { kind: "levels", ...parsed } as OverlayClassification;
     }

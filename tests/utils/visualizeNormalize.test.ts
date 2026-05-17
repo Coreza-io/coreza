@@ -65,4 +65,39 @@ describe("visualizeNormalize", () => {
     expect(classifyOverlay("RSI", "Auto", [50, 51], candles).kind).toBe("panel");
     expect(classifyOverlay("EMA", "Auto", [11, 12, 13], candles).kind).toBe("line");
   });
+
+  test("classifyOverlay detects levels from latest summary row in array payload", () => {
+    const classification = classifyOverlay(
+      "Support & Resistance",
+      "Auto",
+      [
+        {
+          pivot: 0.2281,
+          support: [0.2202, 0.2072, 0.1993],
+          resistance: [0.241, 0.2489, 0.2619],
+        },
+      ],
+      candles,
+    );
+
+    expect(classification.kind).toBe("levels");
+    if (classification.kind === "levels") {
+      expect(classification.supports).toEqual([0.2202, 0.2072, 0.1993]);
+      expect(classification.resistances).toEqual([0.241, 0.2489, 0.2619]);
+    }
+  });
+
+  test("classifyOverlay keeps object summary row support/resistance behavior", () => {
+    const classification = classifyOverlay(
+      "Support & Resistance",
+      "Auto",
+      {
+        support: [0.2202, 0.2072, 0.1993],
+        resistance: [0.241, 0.2489, 0.2619],
+      },
+      candles,
+    );
+
+    expect(classification.kind).toBe("levels");
+  });
 });

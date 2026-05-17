@@ -1,57 +1,67 @@
-# Support & Resistance overlay not visible — root cause and fix
+# S&R duplicate lines + label clutter — root cause and fix
 
-## Why it does not render
+## Root cause 1 — duplicate price lines (why you see 6 instead of 3)
 
-The classifier and S&R data flow are correct. Verified end-to-end:
+The data is correct (3 supports + 3 resistances). The chart accumulates them on every re-render.
 
-1. `{{ $('Support & Resistance').json.data }}` resolves (pure template) to the array `[{ pivot, support: [...], resistance: [...] }]`.
-2. `classifyOverlay` with render = "Levels" returns `{ kind: "levels", supports: [0.2202, 0.2072, 0.1993], resistances: [0.2411, 0.2489, 0.2619] }` (covered by the existing test "detects levels from latest summary row in array payload").
-3. `VisualizeNodePreview` pushes a `levels` overlay with `currentClose` = last candle close.
+In `src/components/charts/lightweightSeriesBuilder.ts` the `levels` branch now attaches `createPriceLine(...)` to the candlestick series (`priceAnchor`). That fixed visibility, but introduced a leak:
 
-The bug lives in `src/components/charts/lightweightSeriesBuilder.ts` inside `addOverlaySeries`:
+- `LightweightVisualizeChart` reconciles overlays by removing the previous `ISeriesApi<"Line">[]` returned for that overlay id and calling `addOverlaySeries` again.
+- `removeSeries(...)` removes only the Line series in that list. **Price lines attached to the candlestick series are NOT tracked in that list**, so they survive.
+- Every re-render (debounced field edit, viewport change, parent re-render) appends another 3 supports + 3 resistances onto the candle series. After 2 cycles you see 6/6, after 3 you would see 9/9.
 
-```text
-const anchor = chart.addSeries(LineSeries, { color: "transparent", lineVisible: false, ... });
-anchor.setData([]);                       // <-- empty
-nearestLevels(...).forEach((price) => anchor.createPriceLine({ price, ... }));
-```
+The currentClose filter in `nearestLevels` further means as the closing price drifts, some lines change side but the old ones never disappear, which is what produces the visible mix of stale label values.
 
-`createPriceLine` is attached to a transparent `LineSeries` that has **no data**. In `lightweight-charts`, a series with `setData([])` has no auto price scale range, so the price lines bound to it either render outside the visible price range or get culled. That is why only stray axis labels appear (the few that happen to land in the volume scale range) and no horizontal lines show up over the candles.
+## Root cause 2 — label clutter blocks the chart
 
-BB renders correctly because bands use real `LineSeries.setData(...)` per upper/middle/lower — never `createPriceLine`.
+`createPriceLine` is currently called with `title: "${overlay.name} support"` and `axisLabelVisible: true`. Each price line renders both:
+- a colored axis label on the right (price value), and
+- a colored badge with the title text drawn on top of the chart area.
+
+With 6 supports + 6 resistances stacked tightly, the title badges cover the candles and the BB lines.
 
 ## Fix
 
-Attach the price lines to a series that already participates in the price scale — the candlestick series. Concretely:
+Make these changes only in `src/components/charts/lightweightSeriesBuilder.ts` and `src/components/charts/LightweightVisualizeChart.tsx`. No other files touched.
 
-1. **`src/components/charts/lightweightSeriesBuilder.ts`**
-   - Change `addOverlaySeries(chart, overlay)` to `addOverlaySeries(chart, overlay, priceAnchor?)` where `priceAnchor` is `ISeriesApi<'Candlestick' | 'Line', Time>` from the host chart.
-   - In the `levels` branch, call `priceAnchor.createPriceLine(...)` instead of creating an internal transparent series. Drop the `anchor` series entirely.
-   - If `priceAnchor` is not supplied (defensive), fall back to creating a small `LineSeries` seeded with two dummy points at the candle time range using one of the supports/resistances values so the scale is initialized.
+### 1. Track and remove price lines per overlay
 
-2. **`src/components/charts/LightweightVisualizeChart.tsx`**
-   - In the data effect, pass `candleSeriesRef.current` as the third argument when calling `addOverlaySeries(priceChart, overlay, candleSeriesRef.current)`.
-   - For panel overlays (oscillators) leave the call signature as today (no price anchor — panel overlays never use levels).
+`src/components/charts/lightweightSeriesBuilder.ts`
+- Change the return type of `addOverlaySeries` from `ISeriesApi<"Line", Time>[]` to a richer record, e.g.:
+  ```text
+  type OverlayHandles = {
+    series: ISeriesApi<"Line", Time>[];
+    priceLines: Array<{ anchor: ISeriesApi<any, Time>; line: IPriceLine }>;
+  };
+  ```
+- In the `levels` branch, capture the return value of each `priceAnchor.createPriceLine(...)` call and push `{ anchor: priceAnchor, line }` into `priceLines`.
+- Other branches (`line`, `bands`, `panel`) return `priceLines: []`.
 
-3. **No other files need changes.** Existing `nearestLevels` logic, colors, and titles are preserved.
+`src/components/charts/LightweightVisualizeChart.tsx`
+- Change the `OverlayRegistry` value type from `ISeriesApi<"Line", Time>[]` to `OverlayHandles`.
+- Update `removeSeriesList` (or add a sibling helper) to also call `handles.priceLines.forEach(({ anchor, line }) => anchor.removePriceLine(line))` before removing the line series.
+- Apply this in both reconciliation paths (active id no longer present, and same id re-added).
+
+### 2. Clean up labels
+
+In the `levels` branch of `addOverlaySeries`:
+- Drop the `title` from `createPriceLine` (or set it to an empty string) so the on-chart text badge disappears. The colored axis label on the right keeps the price value visible, which is the useful information.
+- Keep `axisLabelVisible: true`, dashed style, width 1.
+
+Result: chart shows clean horizontal dashed lines (green = support, red = resistance) with only a price value on the right axis. No overlapping "Overlay 1 support" / "Overlay 1 resistance" badges over the candles.
 
 ## "How does the chart know where to mark a level?"
 
-Support and resistance levels are **horizontal price values** — they apply across the entire chart, not at a specific bar. The library's `createPriceLine` is built for exactly this: it draws a full-width horizontal line at a given price with an axis label on the right.
-
-You do **not** need timestamps for the standard "level" use case. Timestamps would only matter if you wanted to render a level as a partial segment (e.g. "this resistance was valid only between bar 50 and bar 80"). The existing data shape already supports that via `supportSeries` / `resistanceSeries` (parsed from `{ type, level, time }` entries), and those keep using real `LineSeries.setData(...)`, so they will continue to plot as time-bounded segments when provided.
-
-Summary:
-- Plain numeric arrays (current S&R payload) → full-width horizontal price lines via `createPriceLine` on the candle series.
-- Time-stamped level entries → segmented `LineSeries` already handled.
+Supports and resistances are price values that apply across the entire chart, not at a specific bar. `createPriceLine` draws a full-width horizontal line at that price plus a single label on the price axis. Timestamps are not needed for plain numeric levels. Time-bounded segments (rare) are still handled by the existing `supportSeries` / `resistanceSeries` branch when entries include `time`.
 
 ## Verification
 
-1. With current S&R payload (`[{ pivot, support: [...], resistance: [...] }]`) and render = Levels: three green dashed support lines around 0.220 / 0.207 / 0.199 and three red dashed resistance lines around 0.241 / 0.249 / 0.262, each with a colored price label on the right axis.
-2. BB overlay still renders as bands (regression).
-3. Removing the S&R overlay row removes the lines cleanly (no orphan price lines).
-4. Switching render from Levels back to Auto still produces the same levels output (classifier already handles both).
+1. Open the Visualize node with the current S&R payload. Expect exactly 3 green dashed lines (0.220 / 0.207 / 0.199) and 3 red dashed lines (0.241 / 0.249 / 0.262), with price-only labels on the right axis.
+2. Edit any field on the node to force re-render. Line count must stay at 3 + 3, not grow.
+3. Remove the S&R overlay row. Both lines and price-axis labels must disappear cleanly.
+4. BB band overlay continues to render upper/middle/lower lines (regression).
+5. Switching render between Auto and Levels keeps the same 3 + 3 output.
 
 ## Out of scope
 
-`VisualizeNodePreview`, `visualizeNormalize.ts`, drag/drop hooks, repeater layout, and backend.
+`VisualizeNodePreview`, `visualizeNormalize.ts`, drag-and-drop hooks, repeater layout, backend.

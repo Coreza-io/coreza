@@ -13,7 +13,11 @@ import type {
   VisualizeChartViewModel,
   VisualizeOverlay,
 } from "./chartTypes";
-import { addOverlaySeries, toVolumeData } from "./lightweightSeriesBuilder";
+import {
+  addOverlaySeries,
+  toVolumeData,
+  type OverlayHandles,
+} from "./lightweightSeriesBuilder";
 
 const PRICE_HEIGHT = 320;
 const PANEL_HEIGHT = 140;
@@ -23,8 +27,8 @@ const toChartTime = (time: number): Time => {
 };
 
 type OverlayRegistry = {
-  price: Map<string, ISeriesApi<"Line", Time>[]>;
-  panel: Map<string, ISeriesApi<"Line", Time>[]>;
+  price: Map<string, OverlayHandles>;
+  panel: Map<string, OverlayHandles>;
 };
 
 const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
@@ -49,11 +53,15 @@ const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
   };
 };
 
-const removeSeriesList = (
-  chart: IChartApi,
-  list: ISeriesApi<"Line", Time>[],
-) => {
-  list.forEach((series) => {
+const removeOverlayHandles = (chart: IChartApi, handles: OverlayHandles) => {
+  handles.priceLines.forEach(({ anchor, line }) => {
+    try {
+      anchor.removePriceLine(line);
+    } catch {
+      /* ignore */
+    }
+  });
+  handles.series.forEach((series) => {
     try {
       chart.removeSeries(series);
     } catch {
@@ -174,7 +182,7 @@ const LightweightVisualizeChart: React.FC<{
       cleanupSyncRef.current = null;
       if (priceChartRef.current) {
         registry.price.forEach((seriesList) =>
-          removeSeriesList(priceChartRef.current!, seriesList),
+          removeOverlayHandles(priceChartRef.current!, seriesList),
         );
         registry.price.clear();
         try {
@@ -185,7 +193,7 @@ const LightweightVisualizeChart: React.FC<{
       }
       if (panelChartRef.current) {
         registry.panel.forEach((seriesList) =>
-          removeSeriesList(panelChartRef.current!, seriesList),
+          removeOverlayHandles(panelChartRef.current!, seriesList),
         );
         registry.panel.clear();
         try {
@@ -220,16 +228,30 @@ const LightweightVisualizeChart: React.FC<{
     const activePriceIds = new Set(priceOverlays.map((overlay) => overlay.id));
     for (const [id, seriesList] of registryRef.current.price.entries()) {
       if (!activePriceIds.has(id)) {
-        removeSeriesList(priceChart, seriesList);
+        removeOverlayHandles(priceChart, seriesList);
         registryRef.current.price.delete(id);
       }
     }
     priceOverlays.forEach((overlay: VisualizeOverlay) => {
       const existing = registryRef.current.price.get(overlay.id);
-      if (existing) removeSeriesList(priceChart, existing);
+      if (existing) removeOverlayHandles(priceChart, existing);
+      const firstCandle = viewModel.candles[0];
+      const lastCandle = viewModel.candles[viewModel.candles.length - 1];
+      const priceAnchorRange =
+        firstCandle && lastCandle
+          ? {
+              from: toChartTime(firstCandle.time),
+              to: toChartTime(lastCandle.time),
+            }
+          : undefined;
       registryRef.current.price.set(
         overlay.id,
-        addOverlaySeries(priceChart, overlay),
+        addOverlaySeries(
+          priceChart,
+          overlay,
+          candleSeriesRef.current ?? undefined,
+          priceAnchorRange,
+        ),
       );
     });
 
@@ -255,13 +277,13 @@ const LightweightVisualizeChart: React.FC<{
       );
       for (const [id, seriesList] of registryRef.current.panel.entries()) {
         if (!activePanelIds.has(id)) {
-          removeSeriesList(panelChartRef.current, seriesList);
+          removeOverlayHandles(panelChartRef.current, seriesList);
           registryRef.current.panel.delete(id);
         }
       }
       panelOverlays.forEach((overlay) => {
         const existing = registryRef.current.panel.get(overlay.id);
-        if (existing) removeSeriesList(panelChartRef.current!, existing);
+        if (existing) removeOverlayHandles(panelChartRef.current!, existing);
         registryRef.current.panel.set(
           overlay.id,
           addOverlaySeries(panelChartRef.current!, overlay),

@@ -143,37 +143,41 @@ export function useNodeFieldState({
 
       const normalizedValue =
         typeof value === "string" && value.trim() === "" ? null : value;
-      const newFieldState = { ...fieldState, [key]: normalizedValue };
 
-      // Handle dynamicOptions dependencies
-      if (definition?.fields) {
-        for (const field of definition.fields) {
-          if (field.dynamicOptions?.dependsOn === key) {
-            const options = field.dynamicOptions.optionsByValue?.[value];
-            if (options && options.length > 0) {
-              newFieldState[field.key] = options[0].value;
+      setFieldState((prevState) => {
+        const nextFieldState = { ...prevState, [key]: normalizedValue };
+
+        // Handle dynamicOptions dependencies
+        if (definition?.fields) {
+          for (const field of definition.fields) {
+            if (field.dynamicOptions?.dependsOn === key) {
+              const options = field.dynamicOptions.optionsByValue?.[value];
+              if (options && options.length > 0) {
+                nextFieldState[field.key] = options[0].value;
+              }
             }
           }
         }
-      }
 
-      setFieldState(newFieldState);
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  values: newFieldState,
-                  fieldState: newFieldState,
-                },
-              }
-            : n,
-        ),
-      );
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    values: nextFieldState,
+                    fieldState: nextFieldState,
+                  },
+                }
+              : n,
+          ),
+        );
+
+        return nextFieldState;
+      });
     },
-    [fieldState, nodeId, setNodes, definition?.fields, readOnly],
+    [nodeId, setNodes, definition?.fields, readOnly],
   );
 
   // ── Batch field update ───────────────────────────────────────────────
@@ -181,17 +185,26 @@ export function useNodeFieldState({
     (updates: Record<string, any>) => {
       if (readOnly) return;
 
-      const newFS = { ...fieldState, ...updates };
-      setFieldState(newFS);
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...n.data, values: newFS, fieldState: newFS } }
-            : n,
-        ),
-      );
+      setFieldState((prevState) => {
+        const nextFieldState = { ...prevState, ...updates };
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    values: nextFieldState,
+                    fieldState: nextFieldState,
+                  },
+                }
+              : n,
+          ),
+        );
+        return nextFieldState;
+      });
     },
-    [fieldState, nodeId, setNodes, readOnly],
+    [nodeId, setNodes, readOnly],
   );
 
   return { fieldState, handleChange, handleFieldStateBatch };

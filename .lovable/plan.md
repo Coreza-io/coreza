@@ -1,58 +1,142 @@
-# Fix drag-and-drop into Overlay subfields
+# Fix overlay drag-and-drop specifically
 
-## Symptom
+## Actual issue
 
-- Dragging from Input Data into the top-level **Candle Data** field → works.
-- Dragging from Input Data into an **Overlay** row's `data` (or `name`, `color`) input → field stays empty, no `{{ ... }}` text appears.
+- Candle Data drag/drop works.
+- Overlay row fields are the only failing target.
+- The overlay input can contain manually typed `{{ $('BB').json.data }}`, but the drag/drop path still does not reliably populate it.
 
-So the bug is specific to the repeater subfield path, not the generic drop pipeline.
+This means the remaining problem is not chart rendering, candle parsing, or the top-level reference insertion flow. It is specific to how overlay repeater subfields are wired.
 
-## Root cause
+## Step-by-step analysis
 
-`src/hooks/useNodeReferences.ts` `handleDrop` performs two writes on every drop:
+1. **Top-level Candle Data path is simple and works**
 
-```ts
-setter(newValue);                    // routed by the caller
-handleChange(fieldKey, newValue);    // ALWAYS writes top-level fieldState[fieldKey]
-```
+   ```text
+   NodeFieldRenderer drop
+     -> useNodeReferences.handleDrop("candles", setter)
+     -> setter(newValue)
+     -> handleChange("candles", newValue)
+     -> fieldState.candles updates
+   ```
 
-`RepeaterNodeLayout` wires the two paths differently:
+2. **Overlay fields currently reuse the top-level helper even though they are nested**
 
-| Target              | `setter` does                                       |
-|---------------------|-----------------------------------------------------|
-| Top-level field     | `(val) => handleChange(fieldDef.key, val)`          |
-| Overlay subfield    | `(val) => updateOverlay(rowIndex, fieldDef.key, val)` → `handleFieldStateBatch({ overlays: [...] })` |
+   ```text
+   NodeFieldRenderer drop
+     -> useNodeReferences.handleDrop("data", setter)
+     -> setter(newValue)
+     -> updateOverlay(rowIndex, "data", newValue)
+     -> fieldState.overlays[rowIndex].data should update
+   ```
 
-For the **top-level** case both writes target `fieldState[fieldDef.key]`, so the duplicate call is harmless — that's why Candle Data works.
+3. **The overlay field key is not globally unique**
 
-For the **overlay** case the two writes hit different slices of state, and `useNodeFieldState` builds each next state from the **closure copy** of `fieldState` rather than a functional updater:
+   Every overlay row has subfields named `name`, `data`, `render`, and `color`. Passing only `fieldDef.key` (`"data"`) into the generic drop helper loses the nested identity:
 
-```ts
-const newFieldState = { ...fieldState, [key]: normalizedValue };
-setFieldState(newFieldState);
-setNodes(... values: newFieldState ...);
-```
+   ```text
+   overlay[0].data  -> fieldKey "data"
+   overlay[1].data  -> fieldKey "data"
+   top-level data   -> fieldKey "data" if any node has one
+   ```
 
-Sequence on an overlay drop:
+   This is harmless for Candle Data because `candles` is top-level and unique. It is fragile for overlay rows.
 
-1. `setter(newValue)` → `updateOverlay` → `handleFieldStateBatch({ overlays: rowsWithData })` writes `{ ...stale, overlays: rowsWithData }`.
-2. `handleChange("data", newValue)` runs in the same tick, still holding the **stale** `fieldState` (without the overlay update), and writes `{ ...stale, data: newValue }` — clobbering the overlays change from step 1.
+4. **`useNodeReferences.getFieldPreview` cannot resolve nested overlay paths**
 
-The overlay row reverts to empty; a stray top-level `data` key is set but never rendered.
+   `RepeaterNodeLayout` calls:
+
+   ```ts
+   getFieldPreview(`overlays.${rowIndex}.${fieldKey}`)
+   ```
+
+   But `useNodeReferences.getFieldPreview` does:
+
+   ```ts
+   const expr = fieldState[fieldKey] || "";
+   ```
+
+   For `fieldKey = "overlays.0.data"`, that always reads `fieldState["overlays.0.data"]`, not `fieldState.overlays[0].data`. So preview/source tracking is broken for overlay subfields even if the input text is present.
+
+5. **The shared top-level drop helper is the wrong abstraction for overlay subfields**
+
+   `RepeaterNodeLayout` already has a local nested drop helper for conditional/switch repeaters: `computeDropInsert` + `handleDropWithInsert`. Overlay fields should use that local nested path too, because it updates the exact row and exact subfield without pretending the nested subfield is a top-level field.
 
 ## Fix
 
-Two small, isolated edits:
+Make overlay drag/drop use an overlay-specific nested handler instead of the generic top-level `handleDrop`.
 
-1. **`src/hooks/useNodeReferences.ts`** — remove the redundant `handleChange(fieldKey, newValue)` inside `handleDrop`. The `setter(newValue)` argument is already wired to the correct destination by each caller (`handleChange` for basic, `updateOverlay` for overlays, `updateCondition`/`updateCase` for repeaters). Keep the `setSourceMap` update.
+### 1. `src/components/nodes/layout/RepeaterNodeLayout.tsx`
 
-2. **`src/hooks/useNodeFieldState.ts`** — convert `handleChange` and `handleFieldStateBatch` to functional `setFieldState((prev) => …)` updates and mirror the same `prev`-based object into `setNodes`. This makes back-to-back state writes in one tick safe and stable even outside this bug. Drop `fieldState` from the `useCallback` dep arrays so the callbacks are referentially stable.
+Add a dedicated overlay drop handler:
 
-No changes to `RepeaterNodeLayout`, `NodeFieldRenderer`, `LightweightVisualizeChart`, `Visualize.json`, or backend.
+```ts
+const handleOverlayDrop = useCallback(
+  (rowIndex: number, field: string, e: React.DragEvent, currentValue: string) => {
+    handleDropWithInsert(e, currentValue, (insert) => {
+      updateOverlay(rowIndex, field, currentValue + insert);
+    });
+  },
+  [handleDropWithInsert, updateOverlay]
+);
+```
+
+Then replace the overlay subfield `onDrop` block with:
+
+```ts
+onDrop={(fieldDef, e, currentValue) =>
+  handleOverlayDrop(rowIndex, fieldDef.key, e, currentValue)
+}
+```
+
+This bypasses the top-level `fieldKey = "data"` ambiguity and writes directly to `fieldState.overlays[rowIndex].data`.
+
+### 2. `src/components/nodes/layout/RepeaterNodeLayout.tsx`
+
+For overlay rows, stop using the generic `getFieldPreview("overlays.0.data")` because it cannot read nested paths from `fieldState`.
+
+Add a local overlay preview resolver that receives the actual overlay cell value:
+
+```ts
+const getOverlayPreviewFor = useCallback((expr: unknown) => {
+  if (typeof expr !== "string" || !expr.includes("{{")) return null;
+  const { allNodeData, getSourceData } = getPreviewData();
+  const srcData = getSourceData(selectedPrevNodeId);
+  try {
+    return fullePreview(resolveReferences(expr, srcData, allNodeData, getNodes()));
+  } catch {
+    return "";
+  }
+}, [getPreviewData, selectedPrevNodeId, getNodes]);
+```
+
+Then wire overlay fields as:
+
+```ts
+getPreview={() => getOverlayPreviewFor(overlayRow?.[subField.key])}
+```
+
+This fixes overlay preview separately from top-level fields.
+
+### 3. `src/hooks/useNodeReferences.ts`
+
+Keep the previous cleanup: `handleDrop` should not force an extra top-level `handleChange(fieldKey, newValue)` after calling `setter(newValue)`. The setter already points to the right destination for top-level fields.
+
+### 4. `src/hooks/useNodeFieldState.ts`
+
+Keep the previous functional state update fix for `handleChange` and `handleFieldStateBatch`, so nested repeater updates cannot be clobbered by stale closure state.
 
 ## Verification
 
-- Drag `BB.data` from Input Data onto overlay row's data field → input fills with `{{ $('Bollinger Bands').json.data }}` and the chart re-renders with the overlay.
-- Drag onto Candle Data (top-level) — still works exactly as today.
-- Add two overlay rows, drop into each — both retain their values.
-- Drop into a Conditional / Switch repeater cell — unchanged behavior.
+- Drag `BB.data` onto overlay row 1 `data` field -> the overlay input fills with `{{ $('Bollinger Bands').json.data }}`.
+- Drag onto overlay row 2 `data` field -> row 1 remains unchanged, row 2 updates independently.
+- Drag onto overlay `name` or `color` -> the correct row/subfield updates.
+- Drag onto Candle Data -> still works.
+- Overlay preview/chart update uses `fieldState.overlays[rowIndex].data`, not a fake top-level `fieldState["overlays.0.data"]` key.
+
+## Out of scope
+
+- No chart lifecycle changes.
+- No candle-data changes.
+- No backend changes.
+- No Visualize node schema changes.

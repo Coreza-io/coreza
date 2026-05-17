@@ -506,6 +506,32 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     () => buildPreviewData(previousNodes, executionContext, getNodes),
     [previousNodes, executionContext, getNodes]
   );
+
+  const getOverlayPreviewFor = useCallback(
+    (expr: unknown) => {
+      if (typeof expr !== "string" || !expr.includes("{{")) return null;
+
+      const { allNodeData, getSourceData } = getPreviewData();
+      const srcData = getSourceData(selectedPrevNodeId);
+
+      try {
+        return fullePreview(resolveReferences(expr, srcData, allNodeData, getNodes()));
+      } catch {
+        return "";
+      }
+    },
+    [getPreviewData, selectedPrevNodeId, getNodes]
+  );
+
+  const handleOverlayDrop = useCallback(
+    (rowIndex: number, field: string, e: React.DragEvent, currentValue: string) => {
+      handleDropWithInsert(e, currentValue, (insert) => {
+        updateOverlay(rowIndex, field, currentValue + insert);
+      });
+    },
+    [handleDropWithInsert, updateOverlay]
+  );
+
   const visualizePreviewContext = useMemo(() => {
     const { allNodeData, getSourceData } = getPreviewData();
     return {

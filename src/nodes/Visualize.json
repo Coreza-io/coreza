@@ -44,6 +44,70 @@
           "placeholder": "{{ $('BB').json.data }}"
         },
         {
+          "key": "indicatorType",
+          "label": "Indicator",
+          "type": "select",
+          "options": [
+            {
+              "id": "auto",
+              "name": "Auto detect"
+            },
+            {
+              "id": "rsi",
+              "name": "RSI"
+            },
+            {
+              "id": "ema",
+              "name": "EMA"
+            },
+            {
+              "id": "sma",
+              "name": "SMA"
+            },
+            {
+              "id": "macd",
+              "name": "MACD"
+            },
+            {
+              "id": "bb",
+              "name": "Bollinger Bands"
+            },
+            {
+              "id": "adx",
+              "name": "ADX"
+            },
+            {
+              "id": "stoch",
+              "name": "Stochastic"
+            },
+            {
+              "id": "vwap",
+              "name": "VWAP"
+            },
+            {
+              "id": "obv",
+              "name": "OBV"
+            },
+            {
+              "id": "volume_oscillator",
+              "name": "Volume Oscillator"
+            },
+            {
+              "id": "pvo",
+              "name": "PVO"
+            },
+            {
+              "id": "ichimoku",
+              "name": "Ichimoku"
+            },
+            {
+              "id": "support_resistance",
+              "name": "Support & Resistance"
+            }
+          ],
+          "default": "auto"
+        },
+        {
           "key": "render",
           "type": "select",
           "options": [

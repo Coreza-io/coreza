@@ -48,6 +48,20 @@ export type VisualizeOverlay =
       name: string;
       color: string;
       data: SeriesPoint[];
+    }
+  | {
+      kind: "multi";
+      id: string;
+      name: string;
+      pane: "price" | "panel";
+      channels: Array<{
+        label: string;
+        color: string;
+        style: "line" | "histogram";
+        dashed?: boolean;
+        data: SeriesPoint[];
+      }>;
+      referenceLines?: Array<{ price: number; color: string; label?: string }>;
     };
 
 export type VisualizeChartViewModel = {

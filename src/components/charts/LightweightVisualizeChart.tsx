@@ -227,9 +227,23 @@ const LightweightVisualizeChart: React.FC<{
     priceOverlays.forEach((overlay: VisualizeOverlay) => {
       const existing = registryRef.current.price.get(overlay.id);
       if (existing) removeSeriesList(priceChart, existing);
+      const firstCandle = viewModel.candles[0];
+      const lastCandle = viewModel.candles[viewModel.candles.length - 1];
+      const priceAnchorRange =
+        firstCandle && lastCandle
+          ? {
+              from: toChartTime(firstCandle.time),
+              to: toChartTime(lastCandle.time),
+            }
+          : undefined;
       registryRef.current.price.set(
         overlay.id,
-        addOverlaySeries(priceChart, overlay),
+        addOverlaySeries(
+          priceChart,
+          overlay,
+          candleSeriesRef.current ?? undefined,
+          priceAnchorRange,
+        ),
       );
     });
 

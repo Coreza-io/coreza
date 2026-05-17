@@ -17,10 +17,11 @@ interface PriceLineTarget {
     title?: string;
   }) => void;
 }
-interface ChartLineSeries extends PriceLineTarget {
-  setData: (data: Array<{ time: Time; value: number }>) => void;
-}
 type ChartApi = IChartApi;
+type PriceAnchorRange = {
+  from: Time;
+  to: Time;
+};
 
 const LINE_STYLE_DASHED: ChartLineStyle = 2;
 const MAX_LEVELS_PER_SIDE = 5;
@@ -70,6 +71,8 @@ export const toVolumeData = (candles: CorezaCandle[]) =>
 export const addOverlaySeries = (
   chart: ChartApi,
   overlay: VisualizeOverlay,
+  priceAnchor?: ISeriesApi<"Candlestick" | "Line", Time>,
+  priceAnchorRange?: PriceAnchorRange,
 ): ISeriesApi<"Line", Time>[] => {
   const created: ISeriesApi<"Line", Time>[] = [];
   if (overlay.kind === "line" || overlay.kind === "panel") {
@@ -110,17 +113,42 @@ export const addOverlaySeries = (
     return created;
   }
 
-  const anchor = chart.addSeries(LineSeries, {
-    color: "transparent",
-    lineVisible: false,
-    lastValueVisible: false,
-    priceLineVisible: false,
-  });
-  anchor.setData([]);
+  const fallbackSeries =
+    priceAnchor === undefined
+      ? chart.addSeries(LineSeries, {
+          color: "transparent",
+          lineVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        })
+      : undefined;
+  const priceLineTarget = priceAnchor ?? fallbackSeries;
+  if (!priceLineTarget) {
+    return created;
+  }
+
+  if (fallbackSeries) {
+    const fallbackRange =
+      priceAnchorRange ??
+      ({
+        from: toChartTime(Math.floor(Date.now() / 1000)),
+        to: toChartTime(Math.floor(Date.now() / 1000) + 1),
+      } satisfies PriceAnchorRange);
+    const fallbackPrice =
+      nearestLevels(overlay.supports, overlay.currentClose, "support")[0] ??
+      nearestLevels(overlay.resistances, overlay.currentClose, "resistance")[0] ??
+      overlay.currentClose ??
+      0;
+
+    fallbackSeries.setData([
+      { time: fallbackRange.from, value: fallbackPrice },
+      { time: fallbackRange.to, value: fallbackPrice },
+    ]);
+  }
 
   nearestLevels(overlay.supports, overlay.currentClose, "support").forEach(
     (price) =>
-      anchor.createPriceLine({
+      priceLineTarget.createPriceLine({
         price,
         color: "#22c55e",
         lineStyle: LINE_STYLE_DASHED,
@@ -134,7 +162,7 @@ export const addOverlaySeries = (
     overlay.currentClose,
     "resistance",
   ).forEach((price) =>
-    anchor.createPriceLine({
+    priceLineTarget.createPriceLine({
       price,
       color: "#ef4444",
       lineStyle: LINE_STYLE_DASHED,
@@ -162,6 +190,8 @@ export const addOverlaySeries = (
     resistanceSeries.setData(toLineData(overlay.resistanceSeries));
     created.push(resistanceSeries);
   }
-  created.push(anchor);
+  if (fallbackSeries) {
+    created.push(fallbackSeries);
+  }
   return created;
 };

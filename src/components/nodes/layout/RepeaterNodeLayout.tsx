@@ -66,7 +66,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   // =========== DETERMINE REPEATER TYPE ===========
   const repeaterField = definition.fields?.find(
-    (f: any) => f.type === "repeater"
+    (f: any) => f.type === "repeater",
   );
   const repeaterKey = repeaterField?.key;
   const isConditional = repeaterKey === "conditions";
@@ -75,14 +75,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const isSwitch = repeaterKey === "cases";
   const fallbackField = useMemo(
     () => definition.fields?.find((f: any) => f.key === "enableFallback"),
-    [definition.fields]
+    [definition.fields],
   );
 
   // =========== CONDITIONAL LOGIC ===========
   const defaultCond =
     Array.isArray(repeaterField?.default) && repeaterField.default.length > 0
       ? repeaterField.default[0]
-      : repeaterField?.default ?? { left: "", operator: "===", right: "" };
+      : (repeaterField?.default ?? { left: "", operator: "===", right: "" });
 
   // =========== STATE ===========
   // make sure these are always arrays before you map/filter them
@@ -98,12 +98,12 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       isConditional && Array.isArray(fieldState.logicalOps)
         ? fieldState.logicalOps
         : [],
-    [fieldState.logicalOps, isConditional]
+    [fieldState.logicalOps, isConditional],
   );
 
   const cases = useMemo(
     () => (Array.isArray(fieldState.cases) ? fieldState.cases : []),
-    [fieldState.cases]
+    [fieldState.cases],
   );
 
   const [sourceMap, setSourceMap] = useState<
@@ -112,7 +112,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const overlays = useMemo(
     () => (Array.isArray(fieldState.overlays) ? fieldState.overlays : []),
-    [fieldState.overlays]
+    [fieldState.overlays],
   );
 
   // ─── Seed the repeater on first render ────────────────────────────────────
@@ -126,8 +126,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const seedRows = Array.isArray(repeaterField.default)
       ? repeaterField.default
       : repeaterField.default
-      ? [repeaterField.default]
-      : [{}];
+        ? [repeaterField.default]
+        : [{}];
 
     // 2) batch-set both fields: repeater + logicalOps (for If nodes)
     if (key === "conditions") {
@@ -165,7 +165,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     if (currentLen !== targetLen) {
       const padded = Array.from(
         { length: targetLen },
-        (_, i) => logicalOps[i] || "AND"
+        (_, i) => logicalOps[i] || "AND",
       );
       handleFieldStateBatch({ logicalOps: padded });
     }
@@ -194,16 +194,20 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   };
 
   const createRepeaterRowId = () => {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
       return crypto.randomUUID();
     }
     return `row-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   };
 
   const addOverlay = () => {
-    const defaultRow = repeaterField?.default && !Array.isArray(repeaterField.default)
-      ? repeaterField.default
-      : {};
+    const defaultRow =
+      repeaterField?.default && !Array.isArray(repeaterField.default)
+        ? repeaterField.default
+        : {};
     const newRow = { ...defaultRow, id: createRepeaterRowId() };
     handleFieldStateBatch({ overlays: [...overlays, newRow] });
   };
@@ -218,11 +222,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     (idx: number, key: string, val: unknown) => {
       handleFieldStateBatch({
         overlays: overlays.map((row, rowIndex) =>
-          rowIndex === idx ? { ...(row as Record<string, unknown>), [key]: val } : row
+          rowIndex === idx
+            ? { ...(row as Record<string, unknown>), [key]: val }
+            : row,
         ),
       });
     },
-    [handleFieldStateBatch, overlays]
+    [handleFieldStateBatch, overlays],
   );
 
   const removeCondition = (idx: number) => {
@@ -246,7 +252,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
     // 4) trim your sourceMap too
     setSourceMap((sm) =>
-      Array.isArray(sm) ? sm.filter((_, i) => i !== idx) : []
+      Array.isArray(sm) ? sm.filter((_, i) => i !== idx) : [],
     );
   };
 
@@ -255,11 +261,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       handleChange(
         repeaterKey!,
         conditions.map((row, i) =>
-          i === idx ? { ...row, [field]: value } : row
-        )
+          i === idx ? { ...row, [field]: value } : row,
+        ),
       );
     },
-    [conditions, handleChange, repeaterKey]
+    [conditions, handleChange, repeaterKey],
   );
 
   const handleOperatorSelect = useCallback(
@@ -279,10 +285,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           }
 
           return updated;
-        })
+        }),
       );
     },
-    [conditions, handleChange, repeaterKey]
+    [conditions, handleChange, repeaterKey],
   );
 
   const updateLogicalOp = useCallback(
@@ -294,11 +300,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         // update in place
         handleChange(
           "logicalOps",
-          logicalOps.map((v, i) => (i === idx ? op : v))
+          logicalOps.map((v, i) => (i === idx ? op : v)),
         );
       }
     },
-    [logicalOps, handleChange]
+    [logicalOps, handleChange],
   );
 
   // =========== SWITCH HELPERS ===========
@@ -319,7 +325,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const removeCase = (idx: number) => {
     handleChange(
       "cases",
-      cases.filter((_, i) => i !== idx)
+      cases.filter((_, i) => i !== idx),
     );
   };
 
@@ -327,10 +333,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     (idx: number, field: string, value: string) => {
       handleChange(
         "cases",
-        cases.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+        cases.map((row, i) => (i === idx ? { ...row, [field]: value } : row)),
       );
     },
-    [cases, handleChange]
+    [cases, handleChange],
   );
 
   const handleCaseOperatorSelect = useCallback(
@@ -350,10 +356,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           }
 
           return updated;
-        })
+        }),
       );
     },
-    [cases, handleChange]
+    [cases, handleChange],
   );
 
   // =========== SHARED HELPERS ===========
@@ -366,7 +372,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             value,
             selectedInputData,
             allNodeData,
-            allNodes
+            allNodes,
           );
         }
         if (Array.isArray(value)) {
@@ -377,7 +383,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             Object.entries(value).map(([key, nested]) => [
               key,
               resolveValue(nested),
-            ])
+            ]),
           );
         }
         return value;
@@ -385,7 +391,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       return resolveValue(val);
     },
-    [getNodes]
+    [getNodes],
   );
 
   const computeDropInsert = useCallback(
@@ -396,7 +402,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       try {
         const { keyPath = "" } = JSON.parse(raw);
         const sourceNode = previousNodes.find(
-          (n) => n.id === selectedPrevNodeId
+          (n) => n.id === selectedPrevNodeId,
         );
         const sourceDisplayName =
           sourceNode?.data?.displayName ||
@@ -415,14 +421,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return null;
       }
     },
-    [previousNodes, selectedPrevNodeId]
+    [previousNodes, selectedPrevNodeId],
   );
 
   const handleDropWithInsert = useCallback(
     (
       e: React.DragEvent,
       currentValue: string,
-      onInsert: (insert: string, sourceId: string) => void
+      onInsert: (insert: string, sourceId: string) => void,
     ) => {
       e.preventDefault();
       e.stopPropagation();
@@ -436,7 +442,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       onInsert(result.insert, result.sourceId);
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
-    [computeDropInsert]
+    [computeDropInsert],
   );
 
   // Drag helper for repeater (conditional)
@@ -455,7 +461,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         });
       });
     },
-    [handleDropWithInsert, updateCondition]
+    [handleDropWithInsert, updateCondition],
   );
 
   // Drag helper for switch
@@ -465,7 +471,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         handleChange(field, currentValue + insert);
       });
     },
-    [handleDropWithInsert, handleChange]
+    [handleDropWithInsert, handleChange],
   );
 
   const handleSwitchConditionDrop = useCallback(
@@ -474,37 +480,12 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         updateCase(idx, field, currentValue + insert);
       });
     },
-    [handleDropWithInsert, updateCase]
-  );
-
-  const getOverlayPreviewFor = useCallback(
-    (expr: unknown) => {
-      if (typeof expr !== "string" || !expr.includes("{{")) return null;
-
-      const { allNodeData, getSourceData } = getPreviewData();
-      const srcData = getSourceData(selectedPrevNodeId);
-
-      try {
-        return fullePreview(resolveReferences(expr, srcData, allNodeData, getNodes()));
-      } catch {
-        return "";
-      }
-    },
-    [getPreviewData, selectedPrevNodeId, getNodes]
-  );
-
-  const handleOverlayDrop = useCallback(
-    (rowIndex: number, field: string, e: React.DragEvent, currentValue: string) => {
-      handleDropWithInsert(e, currentValue, (insert) => {
-        updateOverlay(rowIndex, field, currentValue + insert);
-      });
-    },
-    [handleDropWithInsert, updateOverlay]
+    [handleDropWithInsert, updateCase],
   );
 
   const getPreviewData = useCallback(
     () => buildPreviewData(previousNodes, executionContext, getNodes),
-    [previousNodes, executionContext, getNodes]
+    [previousNodes, executionContext, getNodes],
   );
 
   const getOverlayPreviewFor = useCallback(
@@ -515,21 +496,28 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       const srcData = getSourceData(selectedPrevNodeId);
 
       try {
-        return fullePreview(resolveReferences(expr, srcData, allNodeData, getNodes()));
+        return fullePreview(
+          resolveReferences(expr, srcData, allNodeData, getNodes()),
+        );
       } catch {
         return "";
       }
     },
-    [getPreviewData, selectedPrevNodeId, getNodes]
+    [getPreviewData, selectedPrevNodeId, getNodes],
   );
 
   const handleOverlayDrop = useCallback(
-    (rowIndex: number, field: string, e: React.DragEvent, currentValue: string) => {
+    (
+      rowIndex: number,
+      field: string,
+      e: React.DragEvent,
+      currentValue: string,
+    ) => {
       handleDropWithInsert(e, currentValue, (insert) => {
         updateOverlay(rowIndex, field, currentValue + insert);
       });
     },
-    [handleDropWithInsert, updateOverlay]
+    [handleDropWithInsert, updateOverlay],
   );
 
   const visualizePreviewContext = useMemo(() => {
@@ -557,12 +545,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
     },
-    [
-      selectedPrevNodeId,
-      sourceMap,
-      getPreviewData,
-      resolveDeep,
-    ]
+    [selectedPrevNodeId, sourceMap, getPreviewData, resolveDeep],
   );
 
   const getSwitchPreviewFor = useCallback(
@@ -581,11 +564,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
     },
-    [
-      selectedPrevNodeId,
-      getPreviewData,
-      resolveDeep,
-    ]
+    [selectedPrevNodeId, getPreviewData, resolveDeep],
   );
 
   return (
@@ -602,7 +581,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
-
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
@@ -628,7 +606,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     fieldDef.key,
                     (val: string) => handleChange(fieldDef.key, val),
                     e,
-                    currentValue
+                    currentValue,
                   );
                 }
               }}
@@ -653,150 +631,154 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               repeaterField?.type === "conditions"
                 ? "Conditions"
                 : isOverlays
-                ? "Overlays"
-                : "Fields"}
+                  ? "Overlays"
+                  : "Fields"}
             </h4>
 
             {(isConditional || isFieldRepeater) &&
               conditions.map((cond, i) => {
-              const leftField = repeaterField.subFields?.find(
-                (sf: any) => sf.key === "left"
-              );
-              const operatorField = repeaterField.subFields?.find(
-                (sf: any) => sf.key === "operator"
-              );
-              const rightField = repeaterField.subFields?.find(
-                (sf: any) => sf.key === "right"
-              );
-              const persistentField = repeaterField.subFields?.find(
-                (sf: any) => sf.key === "persistent"
-              );
-              const showRightField = operatorRequiresRightValue(cond.operator);
+                const leftField = repeaterField.subFields?.find(
+                  (sf: any) => sf.key === "left",
+                );
+                const operatorField = repeaterField.subFields?.find(
+                  (sf: any) => sf.key === "operator",
+                );
+                const rightField = repeaterField.subFields?.find(
+                  (sf: any) => sf.key === "right",
+                );
+                const persistentField = repeaterField.subFields?.find(
+                  (sf: any) => sf.key === "persistent",
+                );
+                const showRightField = operatorRequiresRightValue(
+                  cond.operator,
+                );
 
-              return (
-                <div key={i} className="space-y-2">
-                  {repeaterField?.key === "conditions" && i > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={logicalOps[i - 1]}
-                        onValueChange={(v) => updateLogicalOp(i - 1, v)}
-                      >
-                        <SelectTrigger className="w-20 h-8 text-xs">
-                          <SelectValue placeholder="Logic" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="AND">AND</SelectItem>
-                          <SelectItem value="OR">OR</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <hr className="flex-1 border-t" />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-muted/10">
-                    {leftField && (
-                      <NodeFieldRenderer
-                        field={leftField}
-                        definition={definition}
-                        fieldState={{
-                          ...fieldState,
-                          [leftField.key]: cond.left,
-                        }}
-                        value={cond.left}
-                        selectOptions={selectOptions}
-                        loadingSelect={loadingSelect}
-                        onChange={(key, val) => updateCondition(i, key, val)}
-                        onDrop={(fieldDef, e, currentValue) =>
-                          handleRepeaterDrop(i, fieldDef.key, e, currentValue)
-                        }
-                        getPreview={() => getPreviewFor(i, "left", cond.left)}
-                        referenceStyle={referenceStyle}
-                        fetchDependentOptions={fetchDependentOptions}
-                        setShowAuth={setShowAuth}
-                        readOnly={readOnly}
-                      />
-                    )}
-
-                    {operatorField && (
-                      <div className="min-w-0">
-                        <NodeFieldRenderer
-                          field={operatorField}
-                          definition={definition}
-                        fieldState={{
-                          ...fieldState,
-                          [operatorField.key]: cond.operator,
-                        }}
-                        value={cond.operator}
-                        selectOptions={selectOptions}
-                        loadingSelect={loadingSelect}
-                        onChange={(key, val, dataType) =>
-                          handleOperatorSelect(i, val, dataType)
-                        }
-                        referenceStyle={referenceStyle}
-                        fetchDependentOptions={fetchDependentOptions}
-                        setShowAuth={setShowAuth}
-                        readOnly={readOnly}
-                        />
+                return (
+                  <div key={i} className="space-y-2">
+                    {repeaterField?.key === "conditions" && i > 0 && (
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={logicalOps[i - 1]}
+                          onValueChange={(v) => updateLogicalOp(i - 1, v)}
+                        >
+                          <SelectTrigger className="w-20 h-8 text-xs">
+                            <SelectValue placeholder="Logic" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="AND">AND</SelectItem>
+                            <SelectItem value="OR">OR</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <hr className="flex-1 border-t" />
                       </div>
                     )}
 
-                    {rightField && showRightField && (
+                    <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-muted/10">
+                      {leftField && (
+                        <NodeFieldRenderer
+                          field={leftField}
+                          definition={definition}
+                          fieldState={{
+                            ...fieldState,
+                            [leftField.key]: cond.left,
+                          }}
+                          value={cond.left}
+                          selectOptions={selectOptions}
+                          loadingSelect={loadingSelect}
+                          onChange={(key, val) => updateCondition(i, key, val)}
+                          onDrop={(fieldDef, e, currentValue) =>
+                            handleRepeaterDrop(i, fieldDef.key, e, currentValue)
+                          }
+                          getPreview={() => getPreviewFor(i, "left", cond.left)}
+                          referenceStyle={referenceStyle}
+                          fetchDependentOptions={fetchDependentOptions}
+                          setShowAuth={setShowAuth}
+                          readOnly={readOnly}
+                        />
+                      )}
+
+                      {operatorField && (
+                        <div className="min-w-0">
+                          <NodeFieldRenderer
+                            field={operatorField}
+                            definition={definition}
+                            fieldState={{
+                              ...fieldState,
+                              [operatorField.key]: cond.operator,
+                            }}
+                            value={cond.operator}
+                            selectOptions={selectOptions}
+                            loadingSelect={loadingSelect}
+                            onChange={(key, val, dataType) =>
+                              handleOperatorSelect(i, val, dataType)
+                            }
+                            referenceStyle={referenceStyle}
+                            fetchDependentOptions={fetchDependentOptions}
+                            setShowAuth={setShowAuth}
+                            readOnly={readOnly}
+                          />
+                        </div>
+                      )}
+
+                      {rightField && showRightField && (
+                        <NodeFieldRenderer
+                          field={rightField}
+                          definition={definition}
+                          fieldState={{
+                            ...fieldState,
+                            [rightField.key]: cond.right,
+                          }}
+                          value={cond.right}
+                          selectOptions={selectOptions}
+                          loadingSelect={loadingSelect}
+                          onChange={(key, val) => updateCondition(i, key, val)}
+                          onDrop={(fieldDef, e, currentValue) =>
+                            handleRepeaterDrop(i, fieldDef.key, e, currentValue)
+                          }
+                          getPreview={() =>
+                            getPreviewFor(i, "right", cond.right)
+                          }
+                          referenceStyle={referenceStyle}
+                          fetchDependentOptions={fetchDependentOptions}
+                          setShowAuth={setShowAuth}
+                          readOnly={readOnly}
+                        />
+                      )}
+
+                      {conditions.length > 1 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeCondition(i)}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          disabled={readOnly}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+
+                    {persistentField && (
                       <NodeFieldRenderer
-                        field={rightField}
+                        field={persistentField}
                         definition={definition}
                         fieldState={{
                           ...fieldState,
-                          [rightField.key]: cond.right,
+                          [persistentField.key]: cond.persistent,
                         }}
-                        value={cond.right}
+                        value={cond.persistent}
                         selectOptions={selectOptions}
                         loadingSelect={loadingSelect}
                         onChange={(key, val) => updateCondition(i, key, val)}
-                        onDrop={(fieldDef, e, currentValue) =>
-                          handleRepeaterDrop(i, fieldDef.key, e, currentValue)
-                        }
-                        getPreview={() => getPreviewFor(i, "right", cond.right)}
                         referenceStyle={referenceStyle}
                         fetchDependentOptions={fetchDependentOptions}
                         setShowAuth={setShowAuth}
                         readOnly={readOnly}
                       />
                     )}
-
-                    {conditions.length > 1 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeCondition(i)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                        disabled={readOnly}
-                      >
-                        <X className="w-3 h-3" />
-                      </Button>
-                    )}
                   </div>
-
-                  {persistentField && (
-                    <NodeFieldRenderer
-                      field={persistentField}
-                      definition={definition}
-                      fieldState={{
-                        ...fieldState,
-                        [persistentField.key]: cond.persistent,
-                      }}
-                      value={cond.persistent}
-                      selectOptions={selectOptions}
-                      loadingSelect={loadingSelect}
-                      onChange={(key, val) => updateCondition(i, key, val)}
-                      referenceStyle={referenceStyle}
-                      fetchDependentOptions={fetchDependentOptions}
-                      setShowAuth={setShowAuth}
-                      readOnly={readOnly}
-                    />
-                  )}
-                </div>
-              );
+                );
               })}
 
             {isOverlays &&
@@ -819,9 +801,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       loadingSelect={loadingSelect}
                       onChange={(key, val) => updateOverlay(rowIndex, key, val)}
                       onDrop={(fieldDef, e, currentValue) =>
-                        handleOverlayDrop(rowIndex, fieldDef.key, e, currentValue)
+                        handleOverlayDrop(
+                          rowIndex,
+                          fieldDef.key,
+                          e,
+                          currentValue,
+                        )
                       }
-                      getPreview={() => getOverlayPreviewFor(overlayRow?.[subField.key])}
+                      getPreview={() =>
+                        getOverlayPreviewFor(overlayRow?.[subField.key])
+                      }
                       referenceStyle={referenceStyle}
                       fetchDependentOptions={fetchDependentOptions}
                       setShowAuth={setShowAuth}
@@ -852,7 +841,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               disabled={readOnly}
             >
               <Plus className="w-3 h-3" />
-              Add {isConditional ? "Condition" : isOverlays ? "Overlay" : "Field"}
+              Add{" "}
+              {isConditional ? "Condition" : isOverlays ? "Overlay" : "Field"}
             </Button>
 
             {isConditional &&
@@ -873,7 +863,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     setShowAuth={setShowAuth}
                     readOnly={readOnly}
                   />
-                ) : null
+                ) : null,
               )}
           </div>
         )}
@@ -898,19 +888,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
             {cases.map((caseItem, i) => {
               const leftField = repeaterField?.subFields?.find(
-                (sf: any) => sf.key === "left"
+                (sf: any) => sf.key === "left",
               );
               const operatorSubField = repeaterField?.subFields?.find(
-                (sf: any) => sf.key === "operator"
+                (sf: any) => sf.key === "operator",
               );
               const rightField = repeaterField?.subFields?.find(
-                (sf: any) => sf.key === "right"
+                (sf: any) => sf.key === "right",
               );
               const outputField = repeaterField?.subFields?.find(
-                (sf: any) => sf.key === "outputName"
+                (sf: any) => sf.key === "outputName",
               );
               const showRightField = operatorRequiresRightValue(
-                caseItem.operator
+                caseItem.operator,
               );
 
               return (
@@ -933,7 +923,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             i,
                             fieldDef.key,
                             e,
-                            currentValue
+                            currentValue,
                           )
                         }
                         getPreview={() => getSwitchPreviewFor(caseItem.left)}
@@ -949,19 +939,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         <NodeFieldRenderer
                           field={operatorSubField}
                           definition={definition}
-                        fieldState={{
-                          ...fieldState,
-                          [operatorSubField.key]: caseItem.operator,
-                        }}
-                        value={caseItem.operator}
-                        selectOptions={selectOptions}
-                        loadingSelect={loadingSelect}
-                        onChange={(key, val, dataType) =>
-                          handleCaseOperatorSelect(i, val, dataType)
-                        }
-                        referenceStyle={referenceStyle}
-                        fetchDependentOptions={fetchDependentOptions}
-                        setShowAuth={setShowAuth}
+                          fieldState={{
+                            ...fieldState,
+                            [operatorSubField.key]: caseItem.operator,
+                          }}
+                          value={caseItem.operator}
+                          selectOptions={selectOptions}
+                          loadingSelect={loadingSelect}
+                          onChange={(key, val, dataType) =>
+                            handleCaseOperatorSelect(i, val, dataType)
+                          }
+                          referenceStyle={referenceStyle}
+                          fetchDependentOptions={fetchDependentOptions}
+                          setShowAuth={setShowAuth}
                           readOnly={readOnly}
                         />
                       </div>
@@ -984,7 +974,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             i,
                             fieldDef.key,
                             e,
-                            currentValue
+                            currentValue,
                           )
                         }
                         getPreview={() => getSwitchPreviewFor(caseItem.right)}
@@ -1068,7 +1058,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
         {!readOnly && incomingEdgeCount >= 2 && (
           <div className="flex items-center justify-between pt-1">
-            <Label htmlFor="check-dependency-repeater" className="text-xs text-muted-foreground cursor-pointer">
+            <Label
+              htmlFor="check-dependency-repeater"
+              className="text-xs text-muted-foreground cursor-pointer"
+            >
               Skip dependency check
             </Label>
             <Switch

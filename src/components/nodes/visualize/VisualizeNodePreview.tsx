@@ -2,9 +2,10 @@ import React, { useMemo } from "react";
 import LightweightVisualizeChart from "@/components/charts/LightweightVisualizeChart";
 import type { SeriesPoint, VisualizeChartViewModel, VisualizeOverlay } from "@/components/charts/chartTypes";
 import { resolveReferences } from "@/utils/resolveReferences";
+import { getIndicatorSpec } from "@/utils/indicatorRegistry";
 import { alignSeriesToCandles, classifyOverlay, extractBars, getPaletteColor } from "@/utils/visualizeNormalize";
 
-type OverlayRow = { id?: string; name?: string; data?: string; render?: string; color?: string };
+type OverlayRow = { id?: string; name?: string; data?: string; render?: string; color?: string; indicatorType?: string };
 
 const getSeriesSource = (resolved: unknown): unknown => {
   if (Array.isArray(resolved)) return resolved;
@@ -19,6 +20,44 @@ const toHistoricalSeries = (candles: VisualizeChartViewModel["candles"], points?
   if (!points?.length) return undefined;
   return alignSeriesToCandles(candles, points);
 };
+
+const unwrapSeriesArray = (value: unknown): Array<Record<string, unknown> | number> | undefined => {
+  const src = getSeriesSource(value);
+  return Array.isArray(src) ? (src as Array<Record<string, unknown> | number>) : undefined;
+};
+
+const unwrapRow = (row: Record<string, unknown> | number): Record<string, unknown> | number => {
+  if (typeof row !== "object" || row === null) return row;
+  const rec = row as Record<string, unknown>;
+  if (rec.value && typeof rec.value === "object") return rec.value as Record<string, unknown>;
+  return rec;
+};
+
+const readNumeric = (row: Record<string, unknown> | number, key: string): number | null => {
+  if (typeof row === "number") return Number.isFinite(row) ? row : null;
+  const unwrapped = unwrapRow(row);
+  if (typeof unwrapped === "number") return Number.isFinite(unwrapped) ? unwrapped : null;
+  const rec = unwrapped as Record<string, unknown>;
+  const value = rec[key] ?? (key === "value" ? rec.v ?? rec.close ?? rec.c : undefined);
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
+const readTime = (row: Record<string, unknown> | number, fallbackIndex: number): number => {
+  if (typeof row !== "object" || row === null) return fallbackIndex;
+  const rec = unwrapRow(row);
+  if (typeof rec !== "object" || rec === null) return fallbackIndex;
+  const candidate = (rec.time ?? rec.t ?? rec.timestamp) as unknown;
+  return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : fallbackIndex;
+};
+
+const buildSeriesPoints = (
+  rows: Array<Record<string, unknown> | number>,
+  key: string,
+): Array<{ time: number; value: number | null }> =>
+  rows.map((item, index) => ({
+    time: readTime(item, index),
+    value: readNumeric(item, key),
+  }));
 
 const stableId = (row: OverlayRow): string => {
   if (row.id && row.id.trim()) return row.id;
@@ -50,6 +89,58 @@ const VisualizeNodePreview: React.FC<{
       const name = row.name?.trim() || `Overlay ${index + 1}`;
       const color = getPaletteColor(index, row.color);
       const id = stableId(row);
+      const spec = row.indicatorType && row.indicatorType !== "auto" ? getIndicatorSpec(row.indicatorType) : undefined;
+
+      if (spec) {
+        const seriesRows = unwrapSeriesArray(resolved) ?? [];
+        if (spec.kind === "bands" && spec.bands) {
+          const toBandPoints = (key: string): Array<{ time: number; value: number | null }> =>
+            buildSeriesPoints(seriesRows, key);
+          acc.push({
+            kind: "bands",
+            id,
+            name,
+            color,
+            pane: "price",
+            upper: alignSeriesToCandles(candles, toBandPoints(spec.bands.upper)),
+            middle: spec.bands.middle ? alignSeriesToCandles(candles, toBandPoints(spec.bands.middle)) : undefined,
+            lower: alignSeriesToCandles(candles, toBandPoints(spec.bands.lower)),
+          });
+          return acc;
+        }
+        if (spec.kind === "levels" && spec.levels) {
+          const latest = seriesRows[seriesRows.length - 1];
+          const source = typeof latest === "object" && latest !== null ? (unwrapRow(latest) as Record<string, unknown>) : {};
+          const supports = Array.isArray(source[spec.levels.supports]) ? (source[spec.levels.supports] as number[]) : [];
+          const resistances = Array.isArray(source[spec.levels.resistances]) ? (source[spec.levels.resistances] as number[]) : [];
+          acc.push({ kind: "levels", id, name, supports, resistances, currentClose });
+          return acc;
+        }
+        if (spec.channels?.length) {
+          const channels = spec.channels.map((channel, channelIndex) => {
+            const points: SeriesPoint[] = alignSeriesToCandles(
+              candles,
+              buildSeriesPoints(seriesRows, channel.key),
+            );
+            return {
+              label: channel.label,
+              color: channelIndex === 0 ? color : channel.color,
+              style: channel.style ?? "line",
+              dashed: channel.dashed,
+              data: points,
+            };
+          });
+          if (spec.kind === "line") {
+            const primary = channels[0];
+            if (primary) {
+              acc.push(spec.pane === "panel" ? { kind: "panel", id, name, color: primary.color, data: primary.data } : { kind: "line", id, name, color: primary.color, pane: "price", data: primary.data });
+            }
+            return acc;
+          }
+          acc.push({ kind: "multi", id, name, pane: spec.pane, channels, referenceLines: spec.referenceLines });
+          return acc;
+        }
+      }
       const classification = classifyOverlay(name, row.render, resolved, candles);
 
       if (classification.kind === "bands") {

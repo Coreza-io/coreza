@@ -1,4 +1,5 @@
 import {
+  HistogramSeries,
   LineSeries,
   type IChartApi,
   type IPriceLine,
@@ -24,9 +25,9 @@ type PriceAnchorRange = {
   to: Time;
 };
 export type OverlayHandles = {
-  series: ISeriesApi<"Line", Time>[];
+  series: Array<ISeriesApi<"Line" | "Histogram", Time>>;
   priceLines: Array<{
-    anchor: ISeriesApi<"Candlestick" | "Line", Time>;
+    anchor: ISeriesApi<"Candlestick" | "Line" | "Histogram", Time>;
     line: IPriceLine;
   }>;
 };
@@ -91,6 +92,39 @@ export const addOverlaySeries = (
     });
     series.setData(toLineData(overlay.data));
     handles.series.push(series);
+    return handles;
+  }
+  if (overlay.kind === "multi") {
+    overlay.channels.forEach((channel, index) => {
+      const title = `${overlay.name} ${channel.label}`;
+      const series =
+        channel.style === "histogram"
+          ? chart.addSeries(HistogramSeries, {
+              color: channel.color,
+              title,
+            })
+          : chart.addSeries(LineSeries, {
+              color: channel.color,
+              lineWidth: 2,
+              lineStyle: channel.dashed ? LINE_STYLE_DASHED : undefined,
+              title,
+            });
+      series.setData(toLineData(channel.data));
+      handles.series.push(series);
+      if (index === 0 && overlay.referenceLines?.length) {
+        overlay.referenceLines.forEach((ref) => {
+          const line = series.createPriceLine({
+            price: ref.price,
+            color: ref.color,
+            lineStyle: LINE_STYLE_DASHED,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: ref.label,
+          });
+          handles.priceLines.push({ anchor: series, line });
+        });
+      }
+    });
     return handles;
   }
   if (overlay.kind === "bands") {

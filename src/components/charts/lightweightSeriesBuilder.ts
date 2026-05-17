@@ -1,6 +1,7 @@
 import {
   LineSeries,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type Time,
 } from "lightweight-charts";
@@ -21,6 +22,13 @@ type ChartApi = IChartApi;
 type PriceAnchorRange = {
   from: Time;
   to: Time;
+};
+export type OverlayHandles = {
+  series: ISeriesApi<"Line", Time>[];
+  priceLines: Array<{
+    anchor: ISeriesApi<"Candlestick" | "Line", Time>;
+    line: IPriceLine;
+  }>;
 };
 
 const LINE_STYLE_DASHED: ChartLineStyle = 2;
@@ -73,8 +81,8 @@ export const addOverlaySeries = (
   overlay: VisualizeOverlay,
   priceAnchor?: ISeriesApi<"Candlestick" | "Line", Time>,
   priceAnchorRange?: PriceAnchorRange,
-): ISeriesApi<"Line", Time>[] => {
-  const created: ISeriesApi<"Line", Time>[] = [];
+): OverlayHandles => {
+  const handles: OverlayHandles = { series: [], priceLines: [] };
   if (overlay.kind === "line" || overlay.kind === "panel") {
     const series = chart.addSeries(LineSeries, {
       color: overlay.color,
@@ -82,8 +90,8 @@ export const addOverlaySeries = (
       title: overlay.name,
     });
     series.setData(toLineData(overlay.data));
-    created.push(series);
-    return created;
+    handles.series.push(series);
+    return handles;
   }
   if (overlay.kind === "bands") {
     const upper = chart.addSeries(LineSeries, {
@@ -92,7 +100,7 @@ export const addOverlaySeries = (
       title: `${overlay.name} upper`,
     });
     upper.setData(toLineData(overlay.upper));
-    created.push(upper);
+    handles.series.push(upper);
     if (overlay.middle) {
       const middle = chart.addSeries(LineSeries, {
         color: overlay.color,
@@ -101,7 +109,7 @@ export const addOverlaySeries = (
         title: `${overlay.name} middle`,
       });
       middle.setData(toLineData(overlay.middle));
-      created.push(middle);
+      handles.series.push(middle);
     }
     const lower = chart.addSeries(LineSeries, {
       color: overlay.color,
@@ -109,8 +117,8 @@ export const addOverlaySeries = (
       title: `${overlay.name} lower`,
     });
     lower.setData(toLineData(overlay.lower));
-    created.push(lower);
-    return created;
+    handles.series.push(lower);
+    return handles;
   }
 
   const fallbackSeries =
@@ -124,7 +132,7 @@ export const addOverlaySeries = (
       : undefined;
   const priceLineTarget = priceAnchor ?? fallbackSeries;
   if (!priceLineTarget) {
-    return created;
+    return handles;
   }
 
   if (fallbackSeries) {
@@ -147,30 +155,31 @@ export const addOverlaySeries = (
   }
 
   nearestLevels(overlay.supports, overlay.currentClose, "support").forEach(
-    (price) =>
-      priceLineTarget.createPriceLine({
+    (price) => {
+      const line = priceLineTarget.createPriceLine({
         price,
         color: "#22c55e",
         lineStyle: LINE_STYLE_DASHED,
         lineWidth: 1,
         axisLabelVisible: true,
-        title: `${overlay.name} support`,
-      }),
+      });
+      handles.priceLines.push({ anchor: priceLineTarget, line });
+    },
   );
   nearestLevels(
     overlay.resistances,
     overlay.currentClose,
     "resistance",
-  ).forEach((price) =>
-    priceLineTarget.createPriceLine({
+  ).forEach((price) => {
+    const line = priceLineTarget.createPriceLine({
       price,
       color: "#ef4444",
       lineStyle: LINE_STYLE_DASHED,
       lineWidth: 1,
       axisLabelVisible: true,
-      title: `${overlay.name} resistance`,
-    }),
-  );
+    });
+    handles.priceLines.push({ anchor: priceLineTarget, line });
+  });
 
   if (overlay.supportSeries) {
     const supportSeries = chart.addSeries(LineSeries, {
@@ -179,7 +188,7 @@ export const addOverlaySeries = (
       title: `${overlay.name} support`,
     });
     supportSeries.setData(toLineData(overlay.supportSeries));
-    created.push(supportSeries);
+    handles.series.push(supportSeries);
   }
   if (overlay.resistanceSeries) {
     const resistanceSeries = chart.addSeries(LineSeries, {
@@ -188,10 +197,10 @@ export const addOverlaySeries = (
       title: `${overlay.name} resistance`,
     });
     resistanceSeries.setData(toLineData(overlay.resistanceSeries));
-    created.push(resistanceSeries);
+    handles.series.push(resistanceSeries);
   }
   if (fallbackSeries) {
-    created.push(fallbackSeries);
+    handles.series.push(fallbackSeries);
   }
-  return created;
+  return handles;
 };

@@ -62,6 +62,64 @@ This means the remaining problem is not chart rendering, candle parsing, or the 
 
    `RepeaterNodeLayout` already has a local nested drop helper for conditional/switch repeaters: `computeDropInsert` + `handleDropWithInsert`. Overlay fields should use that local nested path too, because it updates the exact row and exact subfield without pretending the nested subfield is a top-level field.
 
+## Why IF/Switch repeaters work but Overlay does not
+
+The important difference is the handler path, not the rendered input component.
+
+### IF condition rows
+
+IF row fields use `handleRepeaterDrop`:
+
+```text
+NodeFieldRenderer drop
+  -> handleRepeaterDrop(rowIndex, fieldKey, event, currentValue)
+  -> handleDropWithInsert(...)
+  -> updateCondition(rowIndex, fieldKey, currentValue + insert)
+  -> handleChange("conditions", updatedConditions)
+```
+
+That means IF only writes to the nested repeater array: `fieldState.conditions`.
+
+It does **not** call `useNodeReferences.handleDrop("left" | "right", ...)`, so it does not create stray top-level `left` / `right` fields and it does not run the duplicate top-level `handleChange` path.
+
+### Switch case rows
+
+Switch row fields use `handleSwitchConditionDrop`:
+
+```text
+NodeFieldRenderer drop
+  -> handleSwitchConditionDrop(rowIndex, fieldKey, event, currentValue)
+  -> handleDropWithInsert(...)
+  -> updateCase(rowIndex, fieldKey, currentValue + insert)
+  -> handleChange("cases", updatedCases)
+```
+
+That means Switch only writes to the nested repeater array: `fieldState.cases`.
+
+It does **not** call `useNodeReferences.handleDrop("left" | "right", ...)` for nested case cells.
+
+### Overlay rows
+
+Overlay row fields currently use the generic top-level helper:
+
+```text
+NodeFieldRenderer drop
+  -> useNodeReferences.handleDrop("data", setter, event, currentValue)
+  -> setter(newValue)
+  -> updateOverlay(rowIndex, "data", newValue)
+  -> handleFieldStateBatch({ overlays: updatedOverlays })
+  -> handleChange("data", newValue)
+```
+
+That final `handleChange("data", newValue)` is the key difference. It treats overlay `data` as if it were a top-level field. IF/Switch avoid this entirely.
+
+So Overlay has two problems IF/Switch do not have:
+
+1. It writes both `fieldState.overlays[rowIndex].data` and stray top-level `fieldState.data`.
+2. Because `handleChange` / `handleFieldStateBatch` still use closure-based `fieldState`, those back-to-back writes can overwrite each other.
+
+The same issue also applies to overlay preview: IF/Switch preview receives the actual nested value (`cond.left`, `caseItem.right`), while Overlay calls `getFieldPreview("overlays.0.data")`, which the generic preview hook reads as `fieldState["overlays.0.data"]` instead of `fieldState.overlays[0].data`.
+
 ## Fix
 
 Make overlay drag/drop use an overlay-specific nested handler instead of the generic top-level `handleDrop`.

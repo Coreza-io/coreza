@@ -1,62 +1,71 @@
-# Fix Ichimoku rendering — align backend output shape
+# Align `indicatorRegistry.ts` channel keys with backend output
 
-## Root cause
+Stop forcing the backend to change. The frontend registry should mirror the exact keys the backend's historical path (which feeds Visualize) emits. Audit every indicator and fix mismatches.
 
-The Ichimoku backend has two code paths emitting **different keys** for the same indicator:
+## Backend output shapes (historical / Visualize path)
 
-- Incremental updater (`coreza-backend/src/nodes/logic/indicators.ts` line 781) returns `{tenkan, kijun, senkouA, senkouB, chikou}`.
-- Historical `calculateIchimoku` (line 1603) returns the raw output of the `technicalindicators` library: `{conversion, base, spanA, spanB}` (no `chikou`).
+| Indicator | File location | Row shape produced |
+|---|---|---|
+| RSI | `indicators.ts` calculateRSI | `number` (plain) |
+| EMA | calculateEMA | `number` |
+| SMA | calculateSMA | `number` |
+| MACD | calculateMACD | `{ macd, signal, histogram }` |
+| Bollinger Bands | calculateBollingerValues | `{ upper, middle, lower, bb_width }` |
+| ADX | calculateADX (library) | `{ adx, pdi, mdi }` |
+| Stochastic | calculateStochastic (library) | `{ k, d }` |
+| Ichimoku | calculateIchimoku (library) | `{ conversion, base, spanA, spanB }` — no chikou |
+| VWAP | calculateVWAP | `{ timestamp, vwap, sessionStart }` |
+| OBV | calculateOBV | `{ timestamp, obv }` |
+| Volume Oscillator | calculateVolumeOscillator | `number` |
+| PVO | (no backend function found) | n/a |
+| Support/Resistance | calculatePivot/Swing/Historical | `{ support: number[], resistance: number[], ... }` |
 
-The Visualize node receives the historical shape, but the frontend registry (and any consumer expecting the incremental contract) only knows `tenkan`/`kijun`/`senkouA`/`senkouB`/`chikou`. Every lookup returns `null` and nothing renders.
+## Registry mismatches to fix
 
-## Fix — make the backend consistent (no frontend alias hack)
+In `src/utils/indicatorRegistry.ts`:
 
-Treat the incremental updater's shape `{tenkan, kijun, senkouA, senkouB, chikou}` as the canonical contract (already documented, already used by live streaming, matches the standard Ichimoku terminology).
-
-### 1. `coreza-backend/src/nodes/logic/indicators.ts` — `calculateIchimoku`
-
-After calling `IchimokuCloud.calculate(...)`, map each library row to the canonical shape and also compute `chikou` (the library omits it). Chikou Span = current close shifted back by `displacement` bars; align it with the same index as the cloud rows the library returns.
-
-Outline (around lines 1600-1614):
-
+### 1. Ichimoku — replace channel keys, drop `chikou`
 ```text
-const closes = candles.map((c) => Number(c.c ?? c.close));
-const raw = IchimokuCloud.calculate({ high, low, conversionPeriod: conv, basePeriod: base, spanPeriod: span, displacement: disp });
+ichimoku: {
+  pane: "price", kind: "multi",
+  channels: [
+    { key: "conversion", label: "Tenkan (Conversion)",  color: "#3b82f6" },
+    { key: "base",       label: "Kijun (Base)",         color: "#f59e0b" },
+    { key: "spanA",      label: "Senkou Span A",        color: "#22c55e" },
+    { key: "spanB",      label: "Senkou Span B",        color: "#ef4444" },
+  ],
+}
+```
+Remove `aliases`. Chikou not produced by the historical library path — omit it (no point showing an always-empty line).
 
-// Library returns rows starting at index (basePeriod - 1); preserve that offset.
-const offset = candles.length - raw.length;
-const mapped = raw.map((r, i) => {
-  const candleIdx = offset + i;
-  const chikouIdx = candleIdx + disp; // chikou plots current close shifted forward in time = read close from `disp` bars ahead
-  const chikou = chikouIdx < closes.length ? closes[chikouIdx] : null;
-  return {
-    tenkan: r.conversion ?? null,
-    kijun: r.base ?? null,
-    senkouA: r.spanA ?? null,
-    senkouB: r.spanB ?? null,
-    chikou,
-    timestamp: candles[candleIdx]?.t ?? candles[candleIdx]?.timestamp,
-  };
-});
-
-return createSuccessOutput(mapped, { ...INDICATOR_CONTEXT, nodeName: "Ichimoku" });
+### 2. VWAP — channel key `vwap`
+```text
+{ key: "vwap", label: "VWAP", color: "#14b8a6" }
 ```
 
-Notes:
-- Verify the exact direction the project uses for Chikou (some implementations shift backwards instead). Match whatever the incremental updater at line 781 produces so historical + live stay identical (the user's existing memory rule: "identical warmup/live").
-- Adding `timestamp` is optional but lines Ichimoku up with the other indicators (RSI/MACD already include it).
+### 3. OBV — channel key `obv`
+```text
+{ key: "obv", label: "OBV", color: "#6366f1" }
+```
 
-### 2. `coreza-backend/tests/indicators/golden/ichimoku.golden.json`
+### 4. PVO — no backend function exists
+Either remove the `pvo` entry from the registry/dropdown, or leave it with a note that the backend doesn't emit it yet. Recommend removal until backend is added.
 
-Regenerate via `coreza-backend/tests/indicators/generateGolden.ts` so the parity test (`ichimoku.parity.test.js`) and incremental parity test (`indicatorIncrementalParity.ichimoku.test.ts`) pass against the new keys.
+### Unchanged (already correct)
+- RSI / EMA / SMA / Volume Oscillator — backend returns plain `number`; registry `{ key: "value" }` continues to work because `VisualizeNodePreview` treats numeric rows as the channel value regardless of key.
+- MACD, Bollinger Bands, ADX, Stochastic, Support/Resistance — keys already match.
 
-### 3. No frontend changes
+## Files touched
 
-`src/utils/indicatorRegistry.ts` already declares `tenkan`/`kijun`/`senkouA`/`senkouB`/`chikou`. Once the backend emits those keys, the chart renders without any alias mechanism.
+- `src/utils/indicatorRegistry.ts` — only file. No backend changes. No chart code changes. No `aliases` mechanism needed.
 
 ## Verification
 
-- Open Visualize with `{{ $('Ichimoku').json.data }}`, Indicator = Ichimoku → five lines on the price chart (Tenkan, Kijun, Senkou A, Senkou B, Chikou).
-- Run `coreza-backend` indicator parity tests: incremental vs historical must produce identical values at every index now that both emit the same keys.
-- Live streaming path unchanged — incremental updater already produced canonical keys.
-- ADX / MACD / BB / RSI / S&R unaffected.
+- Ichimoku → 4 lines on price chart (Tenkan/Kijun/Senkou A/Senkou B), values match the `conversion/base/spanA/spanB` shown in the input panel.
+- VWAP → single line on price chart.
+- OBV → single line on panel chart.
+- MACD / BB / ADX / RSI / Stochastic / S&R remain working.
+
+## Note on the incremental updater divergence
+
+The streaming/incremental path still emits `{tenkan, kijun, senkouA, senkouB, chikou}` for Ichimoku and is consumed by live engine logic — not by Visualize. Leaving it alone here. If you later want a single canonical shape for both paths, that's a separate backend task and would require regenerating golden fixtures and updating `indicatorIncrementalParity.ichimoku.test.ts`.

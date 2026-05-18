@@ -9,7 +9,6 @@ export type IndicatorTypeId =
   | "vwap"
   | "obv"
   | "volume_oscillator"
-  | "pvo"
   | "ichimoku"
   | "support_resistance";
 
@@ -95,21 +94,19 @@ const INDICATOR_SPECS: Record<IndicatorTypeId, IndicatorSpec> = {
       { price: 80, color: "#64748b", label: "Stoch 80" },
     ],
   },
-  vwap: { id: "vwap", label: "VWAP", pane: "price", kind: "line", channels: [{ key: "value", label: "VWAP", color: "#14b8a6" }] },
-  obv: { id: "obv", label: "OBV", pane: "panel", kind: "line", channels: [{ key: "value", label: "OBV", color: "#6366f1" }] },
+  vwap: { id: "vwap", label: "VWAP", pane: "price", kind: "line", channels: [{ key: "vwap", label: "VWAP", color: "#14b8a6" }] },
+  obv: { id: "obv", label: "OBV", pane: "panel", kind: "line", channels: [{ key: "obv", label: "OBV", color: "#6366f1" }] },
   volume_oscillator: { id: "volume_oscillator", label: "Volume Oscillator", pane: "panel", kind: "line", channels: [{ key: "value", label: "Volume Oscillator", color: "#10b981" }] },
-  pvo: { id: "pvo", label: "PVO", pane: "panel", kind: "line", channels: [{ key: "value", label: "PVO", color: "#f97316" }] },
   ichimoku: {
     id: "ichimoku",
     label: "Ichimoku",
     pane: "price",
     kind: "multi",
     channels: [
-      { key: "tenkan", label: "Tenkan", color: "#3b82f6" },
-      { key: "kijun", label: "Kijun", color: "#f59e0b" },
-      { key: "senkouA", label: "Senkou A", color: "#22c55e" },
-      { key: "senkouB", label: "Senkou B", color: "#ef4444" },
-      { key: "chikou", label: "Chikou", color: "#8b5cf6" },
+      { key: "conversion", label: "Tenkan (Conversion)", color: "#3b82f6" },
+      { key: "base", label: "Kijun (Base)", color: "#f59e0b" },
+      { key: "spanA", label: "Senkou Span A", color: "#22c55e" },
+      { key: "spanB", label: "Senkou Span B", color: "#ef4444" },
     ],
   },
   support_resistance: {

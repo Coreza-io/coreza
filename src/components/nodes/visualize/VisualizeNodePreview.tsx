@@ -59,6 +59,29 @@ const buildSeriesPoints = (
     value: readNumeric(item, key),
   }));
 
+const rowsHaveRealTime = (rows: Array<Record<string, unknown> | number>): boolean =>
+  rows.some((row) => {
+    if (typeof row !== "object" || row === null) return false;
+    const rec = unwrapRow(row);
+    if (typeof rec !== "object" || rec === null) return false;
+    const timeValue = rec.time ?? rec.t ?? rec.timestamp;
+    return typeof timeValue === "number" || typeof timeValue === "string";
+  });
+
+const buildChannelSeries = (
+  candles: VisualizeChartViewModel["candles"],
+  rows: Array<Record<string, unknown> | number>,
+  key: string,
+): SeriesPoint[] => {
+  if (rowsHaveRealTime(rows)) {
+    return alignSeriesToCandles(candles, buildSeriesPoints(rows, key));
+  }
+  const numeric = rows
+    .map((row) => readNumeric(row, key))
+    .filter((value): value is number => value !== null);
+  return alignSeriesToCandles(candles, numeric);
+};
+
 const stableId = (row: OverlayRow): string => {
   if (row.id && row.id.trim()) return row.id;
   const base = JSON.stringify([row.name ?? "", row.data ?? "", row.render ?? "", row.color ?? ""]);
@@ -94,17 +117,15 @@ const VisualizeNodePreview: React.FC<{
       if (spec) {
         const seriesRows = unwrapSeriesArray(resolved) ?? [];
         if (spec.kind === "bands" && spec.bands) {
-          const toBandPoints = (key: string): Array<{ time: number; value: number | null }> =>
-            buildSeriesPoints(seriesRows, key);
           acc.push({
             kind: "bands",
             id,
             name,
             color,
             pane: "price",
-            upper: alignSeriesToCandles(candles, toBandPoints(spec.bands.upper)),
-            middle: spec.bands.middle ? alignSeriesToCandles(candles, toBandPoints(spec.bands.middle)) : undefined,
-            lower: alignSeriesToCandles(candles, toBandPoints(spec.bands.lower)),
+            upper: buildChannelSeries(candles, seriesRows, spec.bands.upper),
+            middle: spec.bands.middle ? buildChannelSeries(candles, seriesRows, spec.bands.middle) : undefined,
+            lower: buildChannelSeries(candles, seriesRows, spec.bands.lower),
           });
           return acc;
         }
@@ -118,10 +139,7 @@ const VisualizeNodePreview: React.FC<{
         }
         if (spec.channels?.length) {
           const channels = spec.channels.map((channel, channelIndex) => {
-            const points: SeriesPoint[] = alignSeriesToCandles(
-              candles,
-              buildSeriesPoints(seriesRows, channel.key),
-            );
+            const points = buildChannelSeries(candles, seriesRows, channel.key);
             return {
               label: channel.label,
               color: channelIndex === 0 ? color : channel.color,

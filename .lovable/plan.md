@@ -1,66 +1,132 @@
-# Review of implementation + two bugs preventing MACD from rendering
+# Fix MACD + restore BB rendering after indicator-registry rollout
 
-The dropdown, registry, `multi` overlay kind, and series-builder branch are wired correctly. Two issues remain that make the MACD overlay invisible.
+## What is happening on screen
 
-## Bug 1 — `multi` panel overlays are sent to the PRICE chart
+- MACD: nothing visible. No second panel under the candle chart.
+- BB: previously rendered as 3 lines on the price chart; after selecting Indicator = "Bollinger Bands" it disappears.
+- Support & Resistance: still works (only because its registry branch ignores per-row times).
 
-`src/components/charts/LightweightVisualizeChart.tsx` splits overlays by `kind === "panel"`:
+## Two confirmed root causes
+
+### Cause A — multi-panel overlays are sent to the price chart
+
+`src/components/charts/LightweightVisualizeChart.tsx`:
 
 ```text
 panelOverlays = overlays.filter(o => o.kind === "panel")
 priceOverlays = overlays.filter(o => o.kind !== "panel")
 ```
 
-MACD is `{ kind: "multi", pane: "panel" }`, so it falls into `priceOverlays`. It gets added to the price chart whose range is dominated by candle prices (0–10 on the screenshot). MACD values (~0.005) render as a flat line glued to the bottom axis — effectively invisible.
+MACD is `{ kind: "multi", pane: "panel" }`. It is **not** `kind === "panel"`, so it never goes to the panel chart. The second chart container is also gated by `panelOverlays.length > 0`, so the second pane is never even created. MACD lines are added to the price chart, where the y-scale is dominated by candle prices and MACD values (~0.005) collapse to a flat line at the bottom axis — effectively invisible.
 
-**Fix:** route multi overlays by their `pane` field.
+This explains "MACD not showing" by itself, but does **not** explain BB. BB is `kind: "bands"`, `pane: "price"` — it should still render on the price chart. The reason it disappeared is Cause B.
+
+### Cause B — `buildSeriesPoints` fabricates fake timestamps that defeat `alignSeriesToCandles`
+
+`src/components/nodes/visualize/VisualizeNodePreview.tsx > readTime` returns the **row index** when a row has no `time` field:
 
 ```text
-const isPanel = (o) =>
+readTime(row, fallbackIndex) -> 0, 1, 2, 3, ...
+```
+
+`buildSeriesPoints` then produces rows like `[{time: 0, value: 0.004}, {time: 1, value: 0.005}, ...]` and passes them into `alignSeriesToCandles`.
+
+Inside `alignSeriesToCandles` (`src/utils/visualizeNormalize.ts`):
+
+1. `allNumeric` check uses `toFiniteNumber(value)` on each element. Our elements are **objects** `{time, value}`, so `toFiniteNumber({...}) === null`. `allNumeric` is false → tail-alignment path is skipped.
+2. The fallback path builds a Map keyed by `point.time` (via `normalizeSeriesPoint`) and looks up `byTime.get(candle.time)`. Candle `time` is a real UTC second (e.g. 1716060000). Our keys are 0, 1, 2, ... → **every lookup misses**, every output value is `null`, nothing is drawn.
+
+This is why BB stopped rendering as soon as the user picked "Bollinger Bands": the registry path runs `buildSeriesPoints` for `upper`, `middle`, `lower` and all three series become full of nulls. The same problem kills MACD's channels even if Cause A is fixed.
+
+S&R survives only because its registry branch never goes through `buildSeriesPoints` — it reads `support` / `resistance` arrays from the latest row directly.
+
+## Fix
+
+### 1. Route multi overlays by `pane`, not by `kind`
+
+`src/components/charts/LightweightVisualizeChart.tsx`:
+
+```text
+const isPanelOverlay = (o) =>
   o.kind === "panel" || (o.kind === "multi" && o.pane === "panel");
-const panelOverlays = overlays.filter(isPanel);
-const priceOverlays = overlays.filter((o) => !isPanel(o));
+
+const panelOverlays = overlays.filter(isPanelOverlay);
+const priceOverlays = overlays.filter((o) => !isPanelOverlay(o));
 ```
 
-No other change needed there; the panel chart is auto-created when `panelOverlays.length > 0`.
+No other change needed in this file. The lazy second-chart creation already kicks in once `panelOverlays.length > 0`. `addOverlaySeries` already handles `kind: "multi"` correctly on whichever chart it receives.
 
-## Bug 2 — time fallback breaks alignment for indicator rows without `time`
+### 2. Pick the right alignment strategy per channel in `VisualizeNodePreview.tsx`
 
-MACD historical rows are `{ macd, signal, histogram }` with no `time`. In `VisualizeNodePreview.tsx > readTime`, the fallback returns the row index (0, 1, 2, …). Then `buildSeriesPoints` produces `[{time:0,value:0.004}, {time:1,value:0.005}, …]` and we pass that to `alignSeriesToCandles`.
-
-`alignSeriesToCandles` only does tail-alignment when **every** element is a finite number (`allNumeric`). With objects present it takes the time-map path, looks up `byTime.get(candle.time)` where candle times are huge UTC seconds → every lookup misses → all values become `null` → nothing draws.
-
-**Fix:** in the registry path, extract each channel as a **plain `number[]`** when rows have no real time field, and let `alignSeriesToCandles` tail-align it (same behavior already used for numeric arrays like RSI). Use the time-bearing path only when rows actually carry a timestamp.
-
-In `VisualizeNodePreview.tsx`:
+Introduce one helper and use it in the `bands` and `channels` branches of the registry path:
 
 ```text
-const rowsHaveTime = seriesRows.some(
-  (r) => typeof r === "object" && r !== null &&
-    ((r as any).time ?? (r as any).t ?? (r as any).timestamp) !== undefined
-);
+const rowsHaveRealTime = (rows) =>
+  rows.some((r) => {
+    if (typeof r !== "object" || r === null) return false;
+    const rec = unwrapRow(r);
+    if (typeof rec !== "object" || rec === null) return false;
+    const t = (rec as any).time ?? (rec as any).t ?? (rec as any).timestamp;
+    return typeof t === "number" || typeof t === "string";
+  });
 
-const buildChannelInput = (key: string) =>
-  rowsHaveTime
-    ? buildSeriesPoints(seriesRows, key)     // {time, value}[]
-    : seriesRows.map((r) => readNumeric(r, key)); // number[] (nulls coerced to NaN)
+const buildChannelSeries = (candles, rows, key) => {
+  if (rowsHaveRealTime(rows)) {
+    // {time, value}[] -> alignSeriesToCandles via byTime path (real timestamps)
+    return alignSeriesToCandles(candles, buildSeriesPoints(rows, key));
+  }
+  // number[] -> alignSeriesToCandles via allNumeric tail-alignment path
+  const numeric = rows.map((r) => readNumeric(r, key) ?? NaN);
+  return alignSeriesToCandles(candles, numeric);
+};
 ```
 
-Then pass that to `alignSeriesToCandles`. For the `number[]` path, drop `null` entries or substitute `NaN` so `allNumeric` stays true and tail-alignment kicks in. Apply the same fix to the `bands` branch (so BB rows without time still work) and keep the existing `levels` branch unchanged.
+Notes:
 
-## Verification
+- `NaN` is intentional: `toFiniteNumber(NaN)` returns `null`, which fails the `allNumeric` check. So we instead substitute missing entries with `0`? No — we must keep `allNumeric` true. Use `Number.NaN` and update only the `allNumeric` check? Cleaner: filter to a clean number array. Since indicators that lack `time` are always candle-aligned tail series, we can pass `rows.map((r) => readNumeric(r, key)).filter((v) => v !== null) as number[]` — `alignSeriesToCandles` already pads the front when the resulting array is shorter than the candle window.
 
-1. Drag `{{ $('MACD').json.data }}`, Indicator = MACD → a second panel appears under the candle chart with blue MACD line, dashed orange Signal line, and purple Histogram bars. Price chart range stays focused on candles.
-2. RSI with Indicator = RSI → panel with line + dashed 30/70 levels; price chart unaffected.
-3. BB with Indicator = Bollinger Bands → 3 lines on price (regression).
-4. Support & Resistance with Indicator = Support & Resistance → 3 green + 3 red dashed price lines (regression).
-5. Indicator = Auto on any row → existing classifier path still works.
+Final helper:
 
-## Files to change
+```text
+const buildChannelSeries = (candles, rows, key) => {
+  if (rowsHaveRealTime(rows)) {
+    return alignSeriesToCandles(candles, buildSeriesPoints(rows, key));
+  }
+  const numeric = rows
+    .map((r) => readNumeric(r, key))
+    .filter((v) => v !== null) as number[];
+  return alignSeriesToCandles(candles, numeric);
+};
+```
 
-- `src/components/charts/LightweightVisualizeChart.tsx` — route multi overlays by `pane`.
-- `src/components/nodes/visualize/VisualizeNodePreview.tsx` — when rows lack `time`, feed `number[]` per channel into `alignSeriesToCandles`.
+Replace the three `alignSeriesToCandles(candles, buildSeriesPoints(seriesRows, ...))` calls in:
 
-## Out of scope
+- The `bands` branch (`upper`, `middle`, `lower`).
+- The `channels.map(...)` block in the `multi` branch.
 
-Registry contents, dropdown options, chartTypes, series builder, backend.
+Levels branch stays as is. Auto-classifier path (no `indicatorType` or `auto`) stays as is.
+
+### 3. No changes needed in
+
+`indicatorRegistry.ts`, `chartTypes.ts`, `lightweightSeriesBuilder.ts`, `visualizeNormalize.ts`, `Visualize.json`, drag/drop hooks, backend.
+
+## Verification checklist
+
+1. Overlay row with `{{ $('MACD').json.data }}`, Indicator = MACD
+   - Second pane appears under the candle chart.
+   - Blue MACD line, dashed orange Signal line, purple Histogram bars all visible.
+   - Price pane y-scale stays focused on candles.
+2. Overlay row with `{{ $('BB').json.data }}`, Indicator = Bollinger Bands
+   - Three lines (upper solid, middle dashed, lower solid) render on the price chart, hugging price.
+3. Overlay row with `{{ $('SR').json.data }}`, Indicator = Support & Resistance
+   - Exactly 3 green + 3 red dashed horizontal lines with price-only axis labels. No duplicates after edits.
+4. Overlay row with Indicator = Auto on any of the above payloads
+   - Classifier path renders the same as before this change (regression check).
+5. RSI with Indicator = RSI
+   - Panel with single line plus dashed 30/70 reference lines.
+6. Remove an overlay row — corresponding lines disappear cleanly from the correct pane.
+
+## Files touched
+
+- `src/components/charts/LightweightVisualizeChart.tsx` — `isPanelOverlay` split.
+- `src/components/nodes/visualize/VisualizeNodePreview.tsx` — `rowsHaveRealTime` + `buildChannelSeries`; use it in bands + multi branches.

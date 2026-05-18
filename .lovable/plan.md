@@ -1,94 +1,86 @@
-# Why per-node timing shows for only some nodes
+# Redis keys + upstream streams persist after deactivating a live workflow
 
-## Review of the previous fix
+## Confirming the previous fix
 
-The earlier plan was implemented correctly:
+Per-node execution timing now displays the real backend duration for every node (sub-ms included). That fix is done. This plan is a new investigation.
 
-- `coreza-backend/src/engine/workflowRun.ts` — `buildExecutionResult()` and `buildFailureResult()` now include `timing: this.runtime.getNodeTiming()` in the persisted payload.
-- `src/hooks/useExecutionHistory.ts > getNodeExecutions()` — reads `payload.timing?.[nodeId]?.totalMs` instead of the old "total / N" averaging trick.
+## What's actually wrong
 
-Real per-node durations now flow end-to-end. The screenshot confirms it: `getBrokerBalance 264ms`, `createPortfolio 2ms`. That part works.
+Two distinct leaks on workflow deactivation:
 
-## Why other nodes show no badge
+1. **Upstream broker subscription is never torn down.** The backend keeps publishing `md:stream:ethusdt@kline_1m` even after the workflow is deactivated and `Unregistered streaming workflow ...` is logged.
+2. **Workflow-scoped Redis keys are left behind.** The Redis screenshot shows `fills`, `strategy`, `order`, `gateway`, `listener`, `registry`, plus `bull`/`scheduled-workflows` namespaces still populated.
 
-Two separate causes are at play.
+## Why — root causes
 
-### Cause 1 — Sub-millisecond timings are rounded to 0 and hidden
+### 1. Deactivation only unregisters the routing table, not the gateway
 
-In `useExecutionHistory.ts` the duration is stored as:
-```text
-durationMs: Math.max(0, Math.round(timing[nodeId]?.totalMs ?? 0))
-```
-
-The backend measures with `performance.now()` which returns fractional milliseconds. Fast nodes — `Switch`, `syncFills`, `getPosition`/`getOpenOrders` (often a cache hit), `updatePortfolioValue` (an in-memory write), `noOpenOrder` — typically take 0.05–0.4 ms. `Math.round(0.3) = 0`.
-
-Then `NodeWrapper.tsx` hides the badge with this guard:
-```text
-{readOnly && executionDuration !== undefined && executionDuration > 0 && (...)}
-```
-
-So any node faster than ~0.5 ms disappears, which is exactly the pattern in the screenshot: the slow IO nodes (broker call, portfolio create) show badges; the fast in-memory nodes don't.
-
-### Cause 2 — Backtest runtime never records timing at all
-
-`coreza-backend/src/engine/executionRuntime.ts > BacktestExecutionRuntime.routeNodeResult` overrides the base method but drops the timing block:
+`coreza-backend/src/workflow/StreamingLifecycleAdapter.ts > deactivateStreaming()` does:
 
 ```text
-protected override routeNodeResult(node, result, _t0, meta) {
-  this.executionOrder.push(node.id);
-  this.store.setNodeResult(node.id, result);
-  // (no nodeTiming.set call — t0 is even prefixed with _ to mark it unused)
-  ...
-}
+- srem activeStreamingWorkflows
+- del workflowStreamFilter
+- OrderOwnerRegistry.cleanupByWorkflow
+- cleanupWorkflowListeners
+- RegistrationService.publishUnregisterWorkflow   // → controlUnregister
+- jobQueue.stopWorkflowRunner
+- // clearSessionData(...) is COMMENTED OUT
 ```
 
-The base class (used by Standard/manual/live runs) does record into `nodeTiming`, which is why the current manual run shows real timings. But **every backtest run will report 0 for every node** because the override never populates the map.
+The `controlUnregister` message lands in `market-stream-service/src/services/MarketControlHandler.ts > handleUnregister()`, which only calls `MarketDataSubscriber.unregisterWorkflow(...)`. That method is explicit about its scope:
+
+> "This does NOT unsubscribe from a broker - it removes the workflow from the internal routing table"
+
+So:
+- The workflow is removed from the in-process routing map.
+- The Redis fan-out channel `md:stream:<symbol>@<interval>` is unsubscribed only if no other workflow needs it.
+- **But** the upstream broker websocket (e.g. Binance kline_1m for ETHUSDT) is never closed and `MarketDataGateway.unsubscribeStreams` is never called, so the gateway keeps publishing forever. That matches the screenshot: `PUBLISHED to Redis channel: md:stream:ethusdt@kline_1m` after deactivation.
+
+By contrast, the explicit `handleUnsubscribe` path *does* the right thing — it calls `state.gateway.unsubscribeStreams(...)`, decrements per-workflow stream sets, and `state.gateway.disconnect()` when `state.streams.size === 0`. Deactivation never goes through that path.
+
+### 2. Workflow-scoped session keys are not cleared
+
+`clearSessionData()` (which deletes `strategyStream`, `portfolioFillsStream`, `portfolioSnapshotLatest`, `order:*`, `orderReverse:*` and updates the active-streams registries) exists and is called from other lifecycle paths (`unregisterStreamingTriggers`, fallbacks) but is **commented out** in `deactivateStreaming()`. So:
+
+- `fills:userId:..:workflowId:..:stream` → orphaned
+- `strategy:userId:..:workflowId:..:stream` → orphaned
+- `order:userId:..:workflowId:..:*` and `orderReverse:..` → orphaned
+- `registry:fills:active`, `registry:snapshots:active` → still list the user
+
+`WorkflowRunner.cleanupRunnerKeys()` only matches `*:userId:..:workflowId:..:executionId:..:*` so it can't catch any of these workflow-scoped (no `executionId` segment) keys.
+
+### 3. Gateway state persists in Redis
+
+`md:gateway:state:<userId>:<source>` (the `gateway` folder in the screenshot) is only `del`'d inside `handleUnsubscribe` when `state.streams.size === 0`. Since deactivation never triggers `handleUnsubscribe`, this key stays.
+
+### Out of scope but worth noting
+
+- `cred:*` is intentionally global (per project memory) — leave it.
+- `bull:*` and `scheduled-workflows:*` are BullMQ infra (job state, repeatable schedulers); they have their own retention/cleanup and are not per-deactivation garbage.
+- `listener:*` and `registry:*` — registry is partially cleared by `clearSessionData`; listener entries should be covered by `cleanupWorkflowListeners` (already called). Verify after fix.
 
 ## Fix
 
-### Frontend (`src/`)
+### Backend (`coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`)
 
-1. **`src/hooks/useExecutionHistory.ts > getNodeExecutions()`** — stop rounding away sub-ms values. Keep the original float (or round to 2 decimals) so the badge can render meaningful sub-ms timings:
-   ```text
-   const totalMs = timing[nodeId]?.totalMs;
-   durationMs: typeof totalMs === "number" ? +totalMs.toFixed(2) : undefined,
-   ```
-   Using `undefined` (instead of `0`) for the "no timing recorded" case keeps the existing "hide badge when missing" behaviour for old runs while letting real sub-ms values through.
+1. **In `deactivateStreaming(userId, workflowId)`**, before publishing `unregisterWorkflow`, look up the workflow's nodes (the existing call sites already have them — pass them in, or load via `WorkflowRepository`) and call `unsubscribeStreamingNodes(userId, workflowId, nodes)` first. That publishes `controlUnsubscribe` for every streaming node, which exercises the proper `handleUnsubscribe` path in the market-stream-service: gateway streams removed, broker websocket disconnected when last stream goes, `md:gateway:state:*` key deleted.
+2. **Uncomment `await this.clearSessionData(userId, workflowId);`** at the end of `deactivateStreaming`. That removes `strategy`/`fills`/`snapshot`/`order`/`orderReverse` keys and updates the active-streams registries.
+3. **Update `WorkflowLifecycleService > deactivate(workflow, ...)`** to pass `workflow.nodes` into `deactivateStreaming` so step 1 has the node list (avoid a second DB read if it already has them).
 
-2. **`src/utils/NodeWrapper.tsx`** — update the badge guard and formatter to handle sub-ms values:
-   ```text
-   {readOnly && typeof executionDuration === "number" && (
-     <div className="...badge classes...">
-       {executionDuration < 1
-         ? `${executionDuration.toFixed(2)}ms`   // e.g. "0.32ms"
-         : executionDuration < 1000
-           ? `${Math.round(executionDuration)}ms` // e.g. "264ms"
-           : `${(executionDuration / 1000).toFixed(1)}s`}
-     </div>
-   )}
-   ```
-   Dropping the `> 0` guard means truly-zero (skipped/never-executed) nodes still get no badge because their `durationMs` is `undefined`, not `0`.
+### Market-stream-service (`coreza-backend/market-stream-service/src/services/MarketControlHandler.ts`)
 
-3. **`src/hooks/useExecutionHistory.ts`** — update the `NodeExecutionLog.durationMs` type from `number` to `number | undefined`, plus any consumer (`NodeExecutionInspector.tsx`) that formats it (mirror the same `< 1` branch there for consistency).
+4. **Harden `handleUnregister`** as a safety net for older clients/tests that only send the unregister message: after `subscriber.unregisterWorkflow(...)`, iterate `this.sourceStates` for that `userId`, drop the workflow from `state.workflowStreams`, recompute streams still claimed by any remaining workflow, and call `state.gateway.unsubscribeStreams(orphaned)` plus the same "no streams left → `gateway.disconnect()` + delete `gatewayState`" block that already lives in `handleUnsubscribe`. This ensures deactivation cleans up even if step 1 above misses a stream.
 
-### Backend (`coreza-backend/`)
+### Workflow runner key cleanup (already correct, no change)
 
-4. **`coreza-backend/src/engine/executionRuntime.ts > BacktestExecutionRuntime.routeNodeResult`** — record timing the same way the base class does, before the routing branch:
-   ```text
-   const elapsed = performance.now() - t0;
-   const prev = this.nodeTiming.get(node.id) ?? { totalMs: 0, count: 0 };
-   prev.totalMs += elapsed;
-   prev.count += 1;
-   this.nodeTiming.set(node.id, prev);
-   ```
-   Rename the parameter back from `_t0` to `t0`. With this, backtests get the same per-node timings as manual/live runs (and since backtests iterate the same node many times across bars, `totalMs` correctly accumulates the full cost of that node across the whole backtest, while `count` lets the UI later show "avg per bar" if we ever want that).
+`WorkflowRunner.cleanupRunnerKeys()` is fine; the leaks above are workflow-scoped, not execution-scoped, so they require workflow-scoped cleanup in `clearSessionData`.
 
 ## Verification
 
-- Re-run the same workflow. Every node now shows a badge: fast nodes display `0.12ms` / `0.4ms`, slow ones still show `264ms` / `2.1s`. None are silently hidden.
-- Run a backtest from the Backtests page and open the executions view: per-node badges appear with cumulative time across all bars, instead of empty/0 everywhere.
-- Old runs (persisted before the previous fix) still render with no badge because `timing` is absent → `durationMs` is `undefined` → guard hides it.
+After deactivating a live Binance ETHUSDT workflow:
 
-## Out of scope
-
-- We are not introducing per-call vs per-bar averaging in the UI yet. `count` and `avgMs` are already in the payload; surfacing them is a follow-up if needed.
+- Backend logs stop showing `PUBLISHED to Redis channel: md:stream:ethusdt@kline_1m` within ~1 second.
+- Market-stream-service logs show `🔌 No streams left, disconnecting binance gateway` and `Disconnected binance gateway`.
+- `redis-cli KEYS 'fills:userId:*:workflowId:<id>:*'`, `strategy:...`, `order:...:workflowId:<id>:*`, `md:gateway:state:<userId>:binance`, `workflow:userId:<userId>:workflowId:<id>` all return empty.
+- `cred:*`, `bull:*`, `scheduled-workflows:*` are unaffected (intentional).
+- Re-activating the same workflow still works end-to-end — no stale state interferes.

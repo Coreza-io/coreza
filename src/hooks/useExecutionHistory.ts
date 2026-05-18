@@ -55,6 +55,7 @@ export interface ExecutionResultPayload {
   success?: boolean;
   nodeResults?: Record<string, ExecutionNodeResult>;
   executionOrder?: string[];
+  timing?: Record<string, { avgMs: number; totalMs: number; count: number }>;
   error?: string | { code?: string; phase?: string; message?: string };
   data?: Record<string, unknown>;
   meta?: Record<string, unknown>;
@@ -547,19 +548,12 @@ export function useExecutionHistory(
         return [];
       }
 
-      const totalDurationMs =
-        execution.completed_at && execution.started_at
-          ? Math.max(
-              0,
-              new Date(execution.completed_at).getTime() -
-                new Date(execution.started_at).getTime(),
-            )
-          : 0;
-
-      const estimatedDurationMs =
-        executionOrder.length > 0
-          ? Math.round(totalDurationMs / executionOrder.length)
-          : 0;
+      const timing = isRecord(payload.timing)
+        ? (payload.timing as Record<
+            string,
+            { avgMs: number; totalMs: number; count: number }
+          >)
+        : {};
 
       const nodeExecutions: NodeExecutionLog[] = [];
 
@@ -576,7 +570,7 @@ export function useExecutionHistory(
           nodeName: nodeId,
           startedAt: execution.started_at,
           completedAt: execution.completed_at ?? execution.started_at,
-          durationMs: estimatedDurationMs,
+          durationMs: Math.max(0, Math.round(timing[nodeId]?.totalMs ?? 0)),
           status: output.status,
           input: null,
           output,

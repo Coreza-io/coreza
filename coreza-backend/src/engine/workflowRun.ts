@@ -274,6 +274,7 @@ export class WorkflowRun {
   private buildExecutionResult(): WorkflowExecutionResult {
     const nodeResults = this.store.getAllResults() ?? {};
     const executionOrder = this.runtime.getExecutionOrder();
+    const timing = this.runtime.getNodeTiming();
 
     if (this.runtime.hasFailures()) {
       return {
@@ -287,6 +288,7 @@ export class WorkflowRun {
         },
         nodeResults,
         executionOrder,
+        timing,
       };
     }
 
@@ -294,18 +296,21 @@ export class WorkflowRun {
       success: true,
       nodeResults,
       executionOrder,
+      timing,
     };
   }
 
   private buildFailureResult(error: unknown): WorkflowExecutionResult {
     const nodeResults = this.store.getAllResults() ?? {};
     const executionOrder = this.runtime.getExecutionOrder();
+    const timing = this.runtime.getNodeTiming();
 
     return {
       success: false,
       error: toExecutionError(error, "execute"),
       nodeResults,
       executionOrder,
+      timing,
     };
   }
 

@@ -1,60 +1,60 @@
-# Fix ADX channels (+DI / -DI not rendering)
+# Fix Ichimoku rendering (key-name mismatch)
 
 ## What you're seeing
 
-The ADX panel currently shows only one blue line. The expected output is three lines: ADX, +DI (green), -DI (red).
+Ichimoku with Indicator = Ichimoku shows no lines on the chart. Input Data shows rows like `{conversion, base, spanA, spanB}`.
 
 ## Root cause
 
-Backend ADX output rows have keys:
+The Ichimoku backend has two code paths that emit **different keys**:
 
-```text
-{ adx: number, pdi: number, mdi: number }
-```
+- Incremental updater (`coreza-backend/src/nodes/logic/indicators.ts` line 781) returns `{tenkan, kijun, senkouA, senkouB, chikou}`.
+- Historical `calculateIchimoku` (line 1603) delegates to the `technicalindicators` library, which returns `{conversion, base, spanA, spanB}` — no `chikou`.
 
-(confirmed in `coreza-backend/src/nodes/logic/indicators.ts` lines 1060 and 1076, and visible in the Input Data panel of your screenshot: `adx`, `pdi`, `mdi`).
+The Visualize node receives the historical shape. The registry channels only declare the incremental keys (`tenkan`, `kijun`, ...), so `readNumeric(row, "tenkan")` returns `null` for every row and all five channels render as empty arrays.
 
-The indicator registry in `src/utils/indicatorRegistry.ts` declares ADX channels with keys:
-
-```text
-{ key: "adx" }, { key: "plusDI" }, { key: "minusDI" }
-```
-
-`readNumeric(row, "plusDI")` returns `null` for every row → both DI channels become empty `SeriesPoint[]` arrays → only the ADX line is drawn. No error is logged because empty data is a valid render.
-
-All other indicators check out:
-
-- MACD → `macd`, `signal`, `histogram` (matches backend)
-- BB → `upper`, `middle`, `lower` (matches)
-- Stochastic → `k`, `d` (matches)
-- Ichimoku → `tenkan`, `kijun`, `senkouA`, `senkouB`, `chikou` (matches)
-- RSI, EMA, SMA, VWAP, OBV, Volume Oscillator, PVO → single value, working
+Same class of bug as ADX (`pdi`/`mdi` vs `plusDI`/`minusDI`), but here the backend itself is inconsistent. Rather than risk breaking the live/streaming path by renaming backend keys, the frontend registry should accept either spelling.
 
 ## Fix
 
-One file. Update only the ADX entry in `src/utils/indicatorRegistry.ts`:
+Two small changes, frontend only. No backend changes.
+
+### 1. `src/utils/indicatorRegistry.ts`
+
+Add an optional `aliases?: string[]` to `IndicatorChannel`, and update the Ichimoku spec to list both naming conventions:
 
 ```text
-adx: {
-  id: "adx",
-  label: "ADX",
-  pane: "panel",
+ichimoku: {
+  id: "ichimoku",
+  label: "Ichimoku",
+  pane: "price",
   kind: "multi",
   channels: [
-    { key: "adx",  label: "ADX",  color: "#3b82f6" },
-    { key: "pdi",  label: "+DI",  color: "#22c55e" },
-    { key: "mdi",  label: "-DI",  color: "#ef4444" },
+    { key: "tenkan",  aliases: ["conversion"], label: "Tenkan",  color: "#3b82f6" },
+    { key: "kijun",   aliases: ["base"],       label: "Kijun",   color: "#f59e0b" },
+    { key: "senkouA", aliases: ["spanA"],      label: "Senkou A", color: "#22c55e" },
+    { key: "senkouB", aliases: ["spanB"],      label: "Senkou B", color: "#ef4444" },
+    { key: "chikou",                            label: "Chikou",  color: "#8b5cf6" },
   ],
 },
 ```
 
-No other changes needed. No backend changes. No chart code changes.
+The `chikou` channel will remain empty for the historical path (the library doesn't produce it) — that's expected and matches what the data contains.
+
+### 2. `src/components/nodes/visualize/VisualizeNodePreview.tsx`
+
+Teach the channel readers to try aliases. Two touch points:
+
+- `readNumeric(row, key, aliases?)` — after the primary `key` returns `null`, try each alias in order.
+- `buildChannelSeries(candles, rows, key, aliases?)` — pass aliases through. Same for the `rowsHaveRealTime` check (unchanged) and the numeric tail-align branch.
+
+Wire it in the registry-path loop: `buildChannelSeries(candles, seriesRows, channel.key, channel.aliases)`.
+
+No other indicators need aliases today, but the mechanism is now in place for any future drift.
 
 ## Verification
 
-Open Visualize with `{{ $('ADX').json.data }}`, Indicator = ADX:
-
-- Bottom panel renders three lines: blue ADX, green +DI, red -DI.
-- All three lines span the same x-range as the candles.
-- Switching Indicator back to Auto falls through to the classifier (single line) — confirms registry path is the only branch affected.
-- Other indicators (MACD, BB, RSI, Stochastic, S&R) remain unchanged.
+- Ichimoku with Indicator = Ichimoku → four overlay lines on the price chart (Tenkan blue, Kijun orange, Senkou A green, Senkou B red). Chikou legend entry present but no line (data not provided by backend).
+- ADX with Indicator = ADX → still renders 3 lines (regression check).
+- MACD / BB / RSI / Stochastic / S&R → unchanged.
+- Auto on Ichimoku → falls through to the classifier (existing behavior).

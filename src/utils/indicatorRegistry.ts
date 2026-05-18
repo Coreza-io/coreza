@@ -15,6 +15,7 @@ export type IndicatorTypeId =
 
 export type IndicatorChannel = {
   key: string;
+  aliases?: string[];
   label: string;
   color: string;
   style?: "line" | "histogram";
@@ -105,10 +106,10 @@ const INDICATOR_SPECS: Record<IndicatorTypeId, IndicatorSpec> = {
     pane: "price",
     kind: "multi",
     channels: [
-      { key: "tenkan", label: "Tenkan", color: "#3b82f6" },
-      { key: "kijun", label: "Kijun", color: "#f59e0b" },
-      { key: "senkouA", label: "Senkou A", color: "#22c55e" },
-      { key: "senkouB", label: "Senkou B", color: "#ef4444" },
+      { key: "tenkan", aliases: ["conversion"], label: "Tenkan", color: "#3b82f6" },
+      { key: "kijun", aliases: ["base"], label: "Kijun", color: "#f59e0b" },
+      { key: "senkouA", aliases: ["spanA"], label: "Senkou A", color: "#22c55e" },
+      { key: "senkouB", aliases: ["spanB"], label: "Senkou B", color: "#ef4444" },
       { key: "chikou", label: "Chikou", color: "#8b5cf6" },
     ],
   },

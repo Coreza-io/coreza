@@ -1,86 +1,40 @@
-# Redis keys + upstream streams persist after deactivating a live workflow
+# Why manual stream-node leaves `sub:` keys, but activate/deactivate live doesn't
 
-## Confirming the previous fix
+## TL;DR
 
-Per-node execution timing now displays the real backend duration for every node (sub-ms included). That fix is done. This plan is a new investigation.
+Both flows use the **same** `SubscriptionService.subscribe` → `MarketControlHandler.handleSubscribe` path, which writes the `sub:userId:..:streams` SET in Redis. The difference is on the **stop/deactivate** side:
 
-## What's actually wrong
+- **Live activate then deactivate** runs `WorkflowLifecycleService.deactivate` → `streaming.cleanupWorkflowSubscriptions` (`StreamingLifecycleAdapter.ts:581`). That scans every `sub:userId:..:workflowId:..:streams` key, publishes a proper `controlUnsubscribe` for the streams in it, and finally `del`s the key (line 693). So after deactivation the `sub:` key is *correctly gone*.
+- **Manual stream-node "subscribe" mode** writes the same `sub:` key during start. The only stop hook is `POST /stream/stop` (`routes/stream.ts:1109`-1158) which already calls `SubscriptionService.unsubscribe` for that node's specific streams. That works **only if the UI actually fires the stop endpoint**. If the user just closes the tab, navigates away, or the listener TTL expires, no one publishes `controlUnsubscribe` and the `sub:` key lives until something else evicts it.
 
-Two distinct leaks on workflow deactivation:
+So the apparent asymmetry is a perception + missing-fallback issue, not a missing subscribe.
 
-1. **Upstream broker subscription is never torn down.** The backend keeps publishing `md:stream:ethusdt@kline_1m` even after the workflow is deactivated and `Unregistered streaming workflow ...` is logged.
-2. **Workflow-scoped Redis keys are left behind.** The Redis screenshot shows `fills`, `strategy`, `order`, `gateway`, `listener`, `registry`, plus `bull`/`scheduled-workflows` namespaces still populated.
+## What about `md:` channels?
 
-## Why — root causes
+`md:stream:<stream>` and `md:symbol:<SYMBOL>` are **pub/sub channels**, not Redis keys. They are present in both flows but never show up in `KEYS` / RedisInsight key listings — only in `PUBSUB CHANNELS`. The `sub:` entries are SET keys. Comparing one against the other made the flows look different when they aren't.
 
-### 1. Deactivation only unregisters the routing table, not the gateway
+`md:gateway:*` (and `gateway:userId:..:state`) keys are written by `MarketControlHandler.persistState` whenever a gateway becomes active; both flows produce these too.
 
-`coreza-backend/src/workflow/StreamingLifecycleAdapter.ts > deactivateStreaming()` does:
+## Confirmation in code
 
-```text
-- srem activeStreamingWorkflows
-- del workflowStreamFilter
-- OrderOwnerRegistry.cleanupByWorkflow
-- cleanupWorkflowListeners
-- RegistrationService.publishUnregisterWorkflow   // → controlUnregister
-- jobQueue.stopWorkflowRunner
-- // clearSessionData(...) is COMMENTED OUT
-```
+- `StreamingLifecycleAdapter.activateStreaming` (`:215`-:375`) calls `SubscriptionService.subscribe` for trading / news / market in sequence and `waitForSubscriptionReady` polls the `sub:` key until `SCARD > 0`. If the key were not being created on activate, that poll would time out and throw `Activation failed: Market subscription readiness timed out ...` — which we are not seeing.
+- `MarketControlHandler.handleSubscribe` (`:641`) is the single writer of `sub:..:streams` via `redisPub.sadd(streamsKey, ...newStreamNames)` (`:748`). Both flows publish to the same control channel and exercise this code.
+- `WorkflowLifecycleService.deactivate` (`:177`) calls `streaming.cleanupWorkflowSubscriptions` unconditionally — that's why the `sub:` key disappears the moment the workflow is turned off.
+- `routes/stream.ts` POST `/stream/execute` registers the listener but does **not** add anything that fires on listener TTL expiry. The only cleanup is the explicit POST `/stream/stop`.
 
-The `controlUnregister` message lands in `market-stream-service/src/services/MarketControlHandler.ts > handleUnregister()`, which only calls `MarketDataSubscriber.unregisterWorkflow(...)`. That method is explicit about its scope:
+## Fix — make manual and live symmetric
 
-> "This does NOT unsubscribe from a broker - it removes the workflow from the internal routing table"
+Goal: a manual stream-node listener should leave Redis in the same shape as a deactivated live workflow once it stops, no matter how it stops.
 
-So:
-- The workflow is removed from the in-process routing map.
-- The Redis fan-out channel `md:stream:<symbol>@<interval>` is unsubscribed only if no other workflow needs it.
-- **But** the upstream broker websocket (e.g. Binance kline_1m for ETHUSDT) is never closed and `MarketDataGateway.unsubscribeStreams` is never called, so the gateway keeps publishing forever. That matches the screenshot: `PUBLISHED to Redis channel: md:stream:ethusdt@kline_1m` after deactivation.
+1. **`coreza-backend/src/services/RegistrationService.ts > deleteListener`** — after deleting the listener key, call `streaming.cleanupWorkflowSubscriptions(userId, workflowId)` for the listener's `(userId, workflowId)` pair so the `sub:` key is removed and `controlUnsubscribe` is fanned out. (Today this only runs from `WorkflowLifecycleService.deactivate`.) This makes the explicit `/stream/stop` path idempotent and also covers any other callers of `deleteListener`.
 
-By contrast, the explicit `handleUnsubscribe` path *does* the right thing — it calls `state.gateway.unsubscribeStreams(...)`, decrements per-workflow stream sets, and `state.gateway.disconnect()` when `state.streams.size === 0`. Deactivation never goes through that path.
+2. **Listener TTL expiry sweep** — `LISTENER_TTL_SECONDS` is enforced by Redis SETEX, so an abandoned tab silently expires the listener key but never publishes unsubscribe. Add a small reaper in `RegistrationService` (or piggy-back on `cleanupWorkflowListeners` which already iterates `userActiveListeners`): for every entry in `listener:userId:<u>:active` whose detail key no longer exists (`EXISTS` returns 0), run the same cleanup as `deleteListener` for that `(workflowId, nodeId)`. Schedule from the existing periodic cleanup loop in `market-stream-service/src/services/WorkflowCache.ts` or a new lightweight job in the backend — whichever already runs every ~60s.
 
-### 2. Workflow-scoped session keys are not cleared
-
-`clearSessionData()` (which deletes `strategyStream`, `portfolioFillsStream`, `portfolioSnapshotLatest`, `order:*`, `orderReverse:*` and updates the active-streams registries) exists and is called from other lifecycle paths (`unregisterStreamingTriggers`, fallbacks) but is **commented out** in `deactivateStreaming()`. So:
-
-- `fills:userId:..:workflowId:..:stream` → orphaned
-- `strategy:userId:..:workflowId:..:stream` → orphaned
-- `order:userId:..:workflowId:..:*` and `orderReverse:..` → orphaned
-- `registry:fills:active`, `registry:snapshots:active` → still list the user
-
-`WorkflowRunner.cleanupRunnerKeys()` only matches `*:userId:..:workflowId:..:executionId:..:*` so it can't catch any of these workflow-scoped (no `executionId` segment) keys.
-
-### 3. Gateway state persists in Redis
-
-`md:gateway:state:<userId>:<source>` (the `gateway` folder in the screenshot) is only `del`'d inside `handleUnsubscribe` when `state.streams.size === 0`. Since deactivation never triggers `handleUnsubscribe`, this key stays.
-
-### Out of scope but worth noting
-
-- `cred:*` is intentionally global (per project memory) — leave it.
-- `bull:*` and `scheduled-workflows:*` are BullMQ infra (job state, repeatable schedulers); they have their own retention/cleanup and are not per-deactivation garbage.
-- `listener:*` and `registry:*` — registry is partially cleared by `clearSessionData`; listener entries should be covered by `cleanupWorkflowListeners` (already called). Verify after fix.
-
-## Fix
-
-### Backend (`coreza-backend/src/workflow/StreamingLifecycleAdapter.ts`)
-
-1. **In `deactivateStreaming(userId, workflowId)`**, before publishing `unregisterWorkflow`, look up the workflow's nodes (the existing call sites already have them — pass them in, or load via `WorkflowRepository`) and call `unsubscribeStreamingNodes(userId, workflowId, nodes)` first. That publishes `controlUnsubscribe` for every streaming node, which exercises the proper `handleUnsubscribe` path in the market-stream-service: gateway streams removed, broker websocket disconnected when last stream goes, `md:gateway:state:*` key deleted.
-2. **Uncomment `await this.clearSessionData(userId, workflowId);`** at the end of `deactivateStreaming`. That removes `strategy`/`fills`/`snapshot`/`order`/`orderReverse` keys and updates the active-streams registries.
-3. **Update `WorkflowLifecycleService > deactivate(workflow, ...)`** to pass `workflow.nodes` into `deactivateStreaming` so step 1 has the node list (avoid a second DB read if it already has them).
-
-### Market-stream-service (`coreza-backend/market-stream-service/src/services/MarketControlHandler.ts`)
-
-4. **Harden `handleUnregister`** as a safety net for older clients/tests that only send the unregister message: after `subscriber.unregisterWorkflow(...)`, iterate `this.sourceStates` for that `userId`, drop the workflow from `state.workflowStreams`, recompute streams still claimed by any remaining workflow, and call `state.gateway.unsubscribeStreams(orphaned)` plus the same "no streams left → `gateway.disconnect()` + delete `gatewayState`" block that already lives in `handleUnsubscribe`. This ensures deactivation cleans up even if step 1 above misses a stream.
-
-### Workflow runner key cleanup (already correct, no change)
-
-`WorkflowRunner.cleanupRunnerKeys()` is fine; the leaks above are workflow-scoped, not execution-scoped, so they require workflow-scoped cleanup in `clearSessionData`.
+3. **Doc/UX nit (optional)** — update the inline comment on `REDIS_CHANNELS.marketData` / `streamData` to remind that those are pub/sub channels, and add a one-line note in `docs/redis-key-audit-2026-04-05.md` clarifying that `sub:` keys are SETs while `md:*` are channels. Helps the next person debugging this.
 
 ## Verification
 
-After deactivating a live Binance ETHUSDT workflow:
-
-- Backend logs stop showing `PUBLISHED to Redis channel: md:stream:ethusdt@kline_1m` within ~1 second.
-- Market-stream-service logs show `🔌 No streams left, disconnecting binance gateway` and `Disconnected binance gateway`.
-- `redis-cli KEYS 'fills:userId:*:workflowId:<id>:*'`, `strategy:...`, `order:...:workflowId:<id>:*`, `md:gateway:state:<userId>:binance`, `workflow:userId:<userId>:workflowId:<id>` all return empty.
-- `cred:*`, `bull:*`, `scheduled-workflows:*` are unaffected (intentional).
-- Re-activating the same workflow still works end-to-end — no stale state interferes.
+- Manual stream-node test (Binance, ETHUSDT, kline_1m), then click Stop → `KEYS 'sub:userId:<u>:scope:workflow:workflowId:<wf>:*'` returns empty, and `PUBSUB CHANNELS 'md:stream:ethusdt@kline_1m'` shows zero subscribers.
+- Manual stream-node test, then close the tab and wait for TTL → after the reaper tick, same empty state as above. Logs show `🗑️ Removed empty streams key sub:...:streams` and `🔌 No streams left, disconnecting binance gateway`.
+- Live activate then deactivate continues to behave as it does today (already correct).
+- Both flows: `gateway:userId:<u>:binance:state` is present only while at least one stream is active and is deleted when the last stream goes.

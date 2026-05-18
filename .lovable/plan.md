@@ -1,60 +1,62 @@
-# Fix Ichimoku rendering (key-name mismatch)
-
-## What you're seeing
-
-Ichimoku with Indicator = Ichimoku shows no lines on the chart. Input Data shows rows like `{conversion, base, spanA, spanB}`.
+# Fix Ichimoku rendering — align backend output shape
 
 ## Root cause
 
-The Ichimoku backend has two code paths that emit **different keys**:
+The Ichimoku backend has two code paths emitting **different keys** for the same indicator:
 
 - Incremental updater (`coreza-backend/src/nodes/logic/indicators.ts` line 781) returns `{tenkan, kijun, senkouA, senkouB, chikou}`.
-- Historical `calculateIchimoku` (line 1603) delegates to the `technicalindicators` library, which returns `{conversion, base, spanA, spanB}` — no `chikou`.
+- Historical `calculateIchimoku` (line 1603) returns the raw output of the `technicalindicators` library: `{conversion, base, spanA, spanB}` (no `chikou`).
 
-The Visualize node receives the historical shape. The registry channels only declare the incremental keys (`tenkan`, `kijun`, ...), so `readNumeric(row, "tenkan")` returns `null` for every row and all five channels render as empty arrays.
+The Visualize node receives the historical shape, but the frontend registry (and any consumer expecting the incremental contract) only knows `tenkan`/`kijun`/`senkouA`/`senkouB`/`chikou`. Every lookup returns `null` and nothing renders.
 
-Same class of bug as ADX (`pdi`/`mdi` vs `plusDI`/`minusDI`), but here the backend itself is inconsistent. Rather than risk breaking the live/streaming path by renaming backend keys, the frontend registry should accept either spelling.
+## Fix — make the backend consistent (no frontend alias hack)
 
-## Fix
+Treat the incremental updater's shape `{tenkan, kijun, senkouA, senkouB, chikou}` as the canonical contract (already documented, already used by live streaming, matches the standard Ichimoku terminology).
 
-Two small changes, frontend only. No backend changes.
+### 1. `coreza-backend/src/nodes/logic/indicators.ts` — `calculateIchimoku`
 
-### 1. `src/utils/indicatorRegistry.ts`
+After calling `IchimokuCloud.calculate(...)`, map each library row to the canonical shape and also compute `chikou` (the library omits it). Chikou Span = current close shifted back by `displacement` bars; align it with the same index as the cloud rows the library returns.
 
-Add an optional `aliases?: string[]` to `IndicatorChannel`, and update the Ichimoku spec to list both naming conventions:
+Outline (around lines 1600-1614):
 
 ```text
-ichimoku: {
-  id: "ichimoku",
-  label: "Ichimoku",
-  pane: "price",
-  kind: "multi",
-  channels: [
-    { key: "tenkan",  aliases: ["conversion"], label: "Tenkan",  color: "#3b82f6" },
-    { key: "kijun",   aliases: ["base"],       label: "Kijun",   color: "#f59e0b" },
-    { key: "senkouA", aliases: ["spanA"],      label: "Senkou A", color: "#22c55e" },
-    { key: "senkouB", aliases: ["spanB"],      label: "Senkou B", color: "#ef4444" },
-    { key: "chikou",                            label: "Chikou",  color: "#8b5cf6" },
-  ],
-},
+const closes = candles.map((c) => Number(c.c ?? c.close));
+const raw = IchimokuCloud.calculate({ high, low, conversionPeriod: conv, basePeriod: base, spanPeriod: span, displacement: disp });
+
+// Library returns rows starting at index (basePeriod - 1); preserve that offset.
+const offset = candles.length - raw.length;
+const mapped = raw.map((r, i) => {
+  const candleIdx = offset + i;
+  const chikouIdx = candleIdx + disp; // chikou plots current close shifted forward in time = read close from `disp` bars ahead
+  const chikou = chikouIdx < closes.length ? closes[chikouIdx] : null;
+  return {
+    tenkan: r.conversion ?? null,
+    kijun: r.base ?? null,
+    senkouA: r.spanA ?? null,
+    senkouB: r.spanB ?? null,
+    chikou,
+    timestamp: candles[candleIdx]?.t ?? candles[candleIdx]?.timestamp,
+  };
+});
+
+return createSuccessOutput(mapped, { ...INDICATOR_CONTEXT, nodeName: "Ichimoku" });
 ```
 
-The `chikou` channel will remain empty for the historical path (the library doesn't produce it) — that's expected and matches what the data contains.
+Notes:
+- Verify the exact direction the project uses for Chikou (some implementations shift backwards instead). Match whatever the incremental updater at line 781 produces so historical + live stay identical (the user's existing memory rule: "identical warmup/live").
+- Adding `timestamp` is optional but lines Ichimoku up with the other indicators (RSI/MACD already include it).
 
-### 2. `src/components/nodes/visualize/VisualizeNodePreview.tsx`
+### 2. `coreza-backend/tests/indicators/golden/ichimoku.golden.json`
 
-Teach the channel readers to try aliases. Two touch points:
+Regenerate via `coreza-backend/tests/indicators/generateGolden.ts` so the parity test (`ichimoku.parity.test.js`) and incremental parity test (`indicatorIncrementalParity.ichimoku.test.ts`) pass against the new keys.
 
-- `readNumeric(row, key, aliases?)` — after the primary `key` returns `null`, try each alias in order.
-- `buildChannelSeries(candles, rows, key, aliases?)` — pass aliases through. Same for the `rowsHaveRealTime` check (unchanged) and the numeric tail-align branch.
+### 3. No frontend changes
 
-Wire it in the registry-path loop: `buildChannelSeries(candles, seriesRows, channel.key, channel.aliases)`.
-
-No other indicators need aliases today, but the mechanism is now in place for any future drift.
+`src/utils/indicatorRegistry.ts` already declares `tenkan`/`kijun`/`senkouA`/`senkouB`/`chikou`. Once the backend emits those keys, the chart renders without any alias mechanism.
 
 ## Verification
 
-- Ichimoku with Indicator = Ichimoku → four overlay lines on the price chart (Tenkan blue, Kijun orange, Senkou A green, Senkou B red). Chikou legend entry present but no line (data not provided by backend).
-- ADX with Indicator = ADX → still renders 3 lines (regression check).
-- MACD / BB / RSI / Stochastic / S&R → unchanged.
-- Auto on Ichimoku → falls through to the classifier (existing behavior).
+- Open Visualize with `{{ $('Ichimoku').json.data }}`, Indicator = Ichimoku → five lines on the price chart (Tenkan, Kijun, Senkou A, Senkou B, Chikou).
+- Run `coreza-backend` indicator parity tests: incremental vs historical must produce identical values at every index now that both emit the same keys.
+- Live streaming path unchanged — incremental updater already produced canonical keys.
+- ADX / MACD / BB / RSI / S&R unaffected.

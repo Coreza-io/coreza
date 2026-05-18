@@ -77,8 +77,8 @@ const INDICATOR_SPECS: Record<IndicatorTypeId, IndicatorSpec> = {
     kind: "multi",
     channels: [
       { key: "adx", label: "ADX", color: "#3b82f6" },
-      { key: "plusDI", label: "+DI", color: "#22c55e" },
-      { key: "minusDI", label: "-DI", color: "#ef4444" },
+      { key: "pdi", label: "+DI", color: "#22c55e" },
+      { key: "mdi", label: "-DI", color: "#ef4444" },
     ],
   },
   stoch: {

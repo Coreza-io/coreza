@@ -33,7 +33,7 @@ export interface NodeExecutionLog {
   nodeName: string;
   startedAt: string;
   completedAt: string;
-  durationMs: number;
+  durationMs?: number;
   status: "success" | "failed" | "skipped";
   input: unknown;
   output: unknown;
@@ -55,6 +55,7 @@ export interface ExecutionResultPayload {
   success?: boolean;
   nodeResults?: Record<string, ExecutionNodeResult>;
   executionOrder?: string[];
+  timing?: Record<string, { avgMs: number; totalMs: number; count: number }>;
   error?: string | { code?: string; phase?: string; message?: string };
   data?: Record<string, unknown>;
   meta?: Record<string, unknown>;
@@ -547,19 +548,12 @@ export function useExecutionHistory(
         return [];
       }
 
-      const totalDurationMs =
-        execution.completed_at && execution.started_at
-          ? Math.max(
-              0,
-              new Date(execution.completed_at).getTime() -
-                new Date(execution.started_at).getTime(),
-            )
-          : 0;
-
-      const estimatedDurationMs =
-        executionOrder.length > 0
-          ? Math.round(totalDurationMs / executionOrder.length)
-          : 0;
+      const timing = isRecord(payload.timing)
+        ? (payload.timing as Record<
+            string,
+            { avgMs: number; totalMs: number; count: number }
+          >)
+        : {};
 
       const nodeExecutions: NodeExecutionLog[] = [];
 
@@ -576,7 +570,10 @@ export function useExecutionHistory(
           nodeName: nodeId,
           startedAt: execution.started_at,
           completedAt: execution.completed_at ?? execution.started_at,
-          durationMs: estimatedDurationMs,
+          durationMs:
+            typeof timing[nodeId]?.totalMs === "number"
+              ? Number(timing[nodeId].totalMs.toFixed(2))
+              : undefined,
           status: output.status,
           input: null,
           output,

@@ -402,9 +402,15 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   protected override routeNodeResult(
     node: WorkflowNode,
     result: NodeResult,
-    _t0: number,
+    t0: number,
     meta?: IterMeta,
   ): void {
+    const elapsed = performance.now() - t0;
+    const prev = this.nodeTiming.get(node.id) ?? { totalMs: 0, count: 0 };
+    prev.totalMs += elapsed;
+    prev.count += 1;
+    this.nodeTiming.set(node.id, prev);
+
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
 

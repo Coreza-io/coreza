@@ -587,8 +587,8 @@ export class StreamingLifecycleAdapter {
 
     // Key structure: sub:userId:{userId}:scope:workflow:workflowId:{workflowId}:{source}:{environment}:streams
     //                 0   1      2        3        4          5        6        7          8
-    const SOURCE_INDEX = 6;
-    const ENV_INDEX = 7;
+    const SOURCE_INDEX = 7;
+    const ENV_INDEX = 8;
 
     let cursor = "0";
 

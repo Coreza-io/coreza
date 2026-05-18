@@ -86,12 +86,16 @@ const LightweightVisualizeChart: React.FC<{
   const cleanupSyncRef = useRef<(() => void) | null>(null);
   const readyTickRef = useRef(0);
 
+  const isPanelOverlay = (overlay: VisualizeOverlay): boolean =>
+    overlay.kind === "panel" ||
+    (overlay.kind === "multi" && overlay.pane === "panel");
+
   const panelOverlays = useMemo(
-    () => viewModel.overlays.filter((overlay) => overlay.kind === "panel"),
+    () => viewModel.overlays.filter(isPanelOverlay),
     [viewModel.overlays],
   );
   const priceOverlays = useMemo(
-    () => viewModel.overlays.filter((overlay) => overlay.kind !== "panel"),
+    () => viewModel.overlays.filter((overlay) => !isPanelOverlay(overlay)),
     [viewModel.overlays],
   );
 

@@ -1,71 +1,56 @@
-# Align `indicatorRegistry.ts` channel keys with backend output
+# Fix per-node execution time badge (same value on every node)
 
-Stop forcing the backend to change. The frontend registry should mirror the exact keys the backend's historical path (which feeds Visualize) emits. Audit every indicator and fix mismatches.
+## What's wrong
 
-## Backend output shapes (historical / Visualize path)
+In the execution detail view, every node shows the same duration (e.g. `1ms`, `1ms`, `1ms`). The badge is not the real time the backend spent on that node — it is the total run time divided by the number of nodes, then applied uniformly to all of them.
 
-| Indicator | File location | Row shape produced |
-|---|---|---|
-| RSI | `indicators.ts` calculateRSI | `number` (plain) |
-| EMA | calculateEMA | `number` |
-| SMA | calculateSMA | `number` |
-| MACD | calculateMACD | `{ macd, signal, histogram }` |
-| Bollinger Bands | calculateBollingerValues | `{ upper, middle, lower, bb_width }` |
-| ADX | calculateADX (library) | `{ adx, pdi, mdi }` |
-| Stochastic | calculateStochastic (library) | `{ k, d }` |
-| Ichimoku | calculateIchimoku (library) | `{ conversion, base, spanA, spanB }` — no chikou |
-| VWAP | calculateVWAP | `{ timestamp, vwap, sessionStart }` |
-| OBV | calculateOBV | `{ timestamp, obv }` |
-| Volume Oscillator | calculateVolumeOscillator | `number` |
-| PVO | (no backend function found) | n/a |
-| Support/Resistance | calculatePivot/Swing/Historical | `{ support: number[], resistance: number[], ... }` |
+## Root cause
 
-## Registry mismatches to fix
+Two-part bug across backend and frontend:
 
-In `src/utils/indicatorRegistry.ts`:
+1. **Backend already measures real per-node timing but never persists it.**
+   - `coreza-backend/src/engine/executionRuntime.ts` records `nodeTiming` per node (`totalMs`, `count`) on every `routeNodeResult` call.
+   - `WorkflowExecutionResult` type (`engine/types/executionError.ts`) already has an optional `timing` field for exactly this.
+   - `coreza-backend/src/engine/workflowRun.ts > buildExecutionResult()` / `buildFailureResult()` build the payload that gets saved into `workflow_runs.result`, but they only include `nodeResults` and `executionOrder` — they never call `this.runtime.getNodeTiming()`. So the saved payload has no per-node timing.
 
-### 1. Ichimoku — replace channel keys, drop `chikou`
-```text
-ichimoku: {
-  pane: "price", kind: "multi",
-  channels: [
-    { key: "conversion", label: "Tenkan (Conversion)",  color: "#3b82f6" },
-    { key: "base",       label: "Kijun (Base)",         color: "#f59e0b" },
-    { key: "spanA",      label: "Senkou Span A",        color: "#22c55e" },
-    { key: "spanB",      label: "Senkou Span B",        color: "#ef4444" },
-  ],
-}
-```
-Remove `aliases`. Chikou not produced by the historical library path — omit it (no point showing an always-empty line).
+2. **Frontend fakes per-node duration by averaging total run time.**
+   - `src/hooks/useExecutionHistory.ts > getNodeExecutions()` (lines ~550-585):
+     ```text
+     totalDurationMs = completed_at - started_at
+     estimatedDurationMs = totalDurationMs / executionOrder.length
+     ...
+     nodeExecutions.push({ ..., durationMs: estimatedDurationMs })
+     ```
+     Every node gets the **same** `estimatedDurationMs`, which is why the badge is identical on every node.
+   - `ExecutionDetailView.tsx` passes `nodeExec?.durationMs` straight into `NodeWrapper`'s `executionDuration` prop, which renders the badge.
 
-### 2. VWAP — channel key `vwap`
-```text
-{ key: "vwap", label: "VWAP", color: "#14b8a6" }
-```
+## Fix
 
-### 3. OBV — channel key `obv`
-```text
-{ key: "obv", label: "OBV", color: "#6366f1" }
-```
+### Backend (`coreza-backend/`)
 
-### 4. PVO — no backend function exists
-Either remove the `pvo` entry from the registry/dropdown, or leave it with a note that the backend doesn't emit it yet. Recommend removal until backend is added.
+1. **`src/engine/workflowRun.ts`** — In both `buildExecutionResult()` and `buildFailureResult()`, include the real timing map:
+   ```text
+   const timing = this.runtime.getNodeTiming();
+   return { success, nodeResults, executionOrder, timing, ... };
+   ```
+   No other shape changes; consumers that ignore `timing` keep working.
 
-### Unchanged (already correct)
-- RSI / EMA / SMA / Volume Oscillator — backend returns plain `number`; registry `{ key: "value" }` continues to work because `VisualizeNodePreview` treats numeric rows as the channel value regardless of key.
-- MACD, Bollinger Bands, ADX, Stochastic, Support/Resistance — keys already match.
+2. **No type change needed.** `WorkflowExecutionResult.timing` already exists.
 
-## Files touched
+3. **Persistence path.** `RunSyncService` already writes the whole `result` object to `workflow_runs.result`, so once `timing` is in the payload it lands in the DB automatically — no migration, no schema change.
 
-- `src/utils/indicatorRegistry.ts` — only file. No backend changes. No chart code changes. No `aliases` mechanism needed.
+### Frontend (`src/`)
+
+4. **`src/hooks/useExecutionHistory.ts > getNodeExecutions()`**
+   - Remove the `estimatedDurationMs = totalDurationMs / executionOrder.length` fallback that assigns the same value to every node.
+   - Read real per-node timing from `payload.timing?.[nodeId]`. Use `totalMs` (rounded to ms) as `durationMs` — this matches what the backend actually spent on that node, including all incremental updates for loops/streaming nodes.
+   - When `payload.timing` is missing (older runs persisted before this fix), set `durationMs: 0` so the badge is hidden (the existing `executionDuration > 0` guard in `NodeWrapper.tsx` already does this) instead of showing a misleading uniform value.
+
+5. **No changes to** `NodeWrapper.tsx`, `NodeRouter.tsx`, or `ExecutionDetailView.tsx` — they already consume `durationMs` correctly; they were just being fed a fake value.
 
 ## Verification
 
-- Ichimoku → 4 lines on price chart (Tenkan/Kijun/Senkou A/Senkou B), values match the `conversion/base/spanA/spanB` shown in the input panel.
-- VWAP → single line on price chart.
-- OBV → single line on panel chart.
-- MACD / BB / ADX / RSI / Stochastic / S&R remain working.
-
-## Note on the incremental updater divergence
-
-The streaming/incremental path still emits `{tenkan, kijun, senkouA, senkouB, chikou}` for Ichimoku and is consumed by live engine logic — not by Visualize. Leaving it alone here. If you later want a single canonical shape for both paths, that's a separate backend task and would require regenerating golden fixtures and updating `indicatorIncrementalParity.ichimoku.test.ts`.
+- Run a manual workflow with mixed-cost nodes (e.g. a fast `Switch` and a slower `getBrokerBalance`/HTTP node).
+- Open the run in the Executions view: each node badge shows a distinct value reflecting its real cost (e.g. `Switch 0ms`, `getBrokerBalance 240ms`, etc.), not the same `1ms` on every node.
+- Old runs persisted before the backend fix simply show no badge (graceful fallback) instead of a fake uniform number.
+- Failed runs also carry timings (covered by `buildFailureResult` change).

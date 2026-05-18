@@ -436,13 +436,13 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               </div>
             )}
             {/* Execution duration - only in readOnly mode */}
-            {readOnly &&
-              executionDuration !== undefined &&
-              executionDuration > 0 && (
+            {readOnly && typeof executionDuration === "number" && (
                 <div className="absolute top-1 right-1 z-10 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                  {executionDuration < 1000
-                    ? `${executionDuration}ms`
-                    : `${(executionDuration / 1000).toFixed(1)}s`}
+                  {executionDuration < 1
+                    ? `${executionDuration.toFixed(2)}ms`
+                    : executionDuration < 1000
+                      ? `${Math.round(executionDuration)}ms`
+                      : `${(executionDuration / 1000).toFixed(1)}s`}
                 </div>
               )}
             {/* Delete button - appears on hover when selected (NOT in readOnly mode) */}

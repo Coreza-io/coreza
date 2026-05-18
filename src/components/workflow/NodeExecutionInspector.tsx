@@ -136,9 +136,13 @@ export function NodeExecutionInspector({ nodeExecution, onClose }: NodeExecution
         <div className="flex items-center justify-between text-sm mt-2">
           <span className="text-muted-foreground">Duration</span>
           <span className="font-mono text-xs">
-            {nodeExecution.durationMs < 1000 
-              ? `${nodeExecution.durationMs}ms` 
-              : `${(nodeExecution.durationMs / 1000).toFixed(2)}s`}
+            {typeof nodeExecution.durationMs === "number"
+              ? nodeExecution.durationMs < 1
+                ? `${nodeExecution.durationMs.toFixed(2)}ms`
+                : nodeExecution.durationMs < 1000
+                  ? `${Math.round(nodeExecution.durationMs)}ms`
+                  : `${(nodeExecution.durationMs / 1000).toFixed(2)}s`
+              : "—"}
           </span>
         </div>
         <div className="flex items-center justify-between text-sm mt-2">

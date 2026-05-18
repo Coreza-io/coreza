@@ -33,7 +33,7 @@ export interface NodeExecutionLog {
   nodeName: string;
   startedAt: string;
   completedAt: string;
-  durationMs: number;
+  durationMs?: number;
   status: "success" | "failed" | "skipped";
   input: unknown;
   output: unknown;
@@ -570,7 +570,10 @@ export function useExecutionHistory(
           nodeName: nodeId,
           startedAt: execution.started_at,
           completedAt: execution.completed_at ?? execution.started_at,
-          durationMs: Math.max(0, Math.round(timing[nodeId]?.totalMs ?? 0)),
+          durationMs:
+            typeof timing[nodeId]?.totalMs === "number"
+              ? Number(timing[nodeId].totalMs.toFixed(2))
+              : undefined,
           status: output.status,
           input: null,
           output,

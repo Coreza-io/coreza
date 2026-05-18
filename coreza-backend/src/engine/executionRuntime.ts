@@ -390,7 +390,10 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
     this.queue.clear();
     this.enqueuedKeys.clear();
     this.executionOrder.length = 0;
-    if (full) this.edgePayload.clear();
+    if (full) {
+      this.edgePayload.clear();
+      this.nodeTiming.clear();
+    }
   }
 }
 
@@ -460,6 +463,9 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.queue.clear();
     this.satisfiedCounts.clear();
     this.executionOrder.length = 0;
-    if (full) this.execCtx = null;
+    if (full) {
+      this.execCtx = null;
+      this.nodeTiming.clear();
+    }
   }
 }

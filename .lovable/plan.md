@@ -1,56 +1,94 @@
-# Fix per-node execution time badge (same value on every node)
+# Why per-node timing shows for only some nodes
 
-## What's wrong
+## Review of the previous fix
 
-In the execution detail view, every node shows the same duration (e.g. `1ms`, `1ms`, `1ms`). The badge is not the real time the backend spent on that node — it is the total run time divided by the number of nodes, then applied uniformly to all of them.
+The earlier plan was implemented correctly:
 
-## Root cause
+- `coreza-backend/src/engine/workflowRun.ts` — `buildExecutionResult()` and `buildFailureResult()` now include `timing: this.runtime.getNodeTiming()` in the persisted payload.
+- `src/hooks/useExecutionHistory.ts > getNodeExecutions()` — reads `payload.timing?.[nodeId]?.totalMs` instead of the old "total / N" averaging trick.
 
-Two-part bug across backend and frontend:
+Real per-node durations now flow end-to-end. The screenshot confirms it: `getBrokerBalance 264ms`, `createPortfolio 2ms`. That part works.
 
-1. **Backend already measures real per-node timing but never persists it.**
-   - `coreza-backend/src/engine/executionRuntime.ts` records `nodeTiming` per node (`totalMs`, `count`) on every `routeNodeResult` call.
-   - `WorkflowExecutionResult` type (`engine/types/executionError.ts`) already has an optional `timing` field for exactly this.
-   - `coreza-backend/src/engine/workflowRun.ts > buildExecutionResult()` / `buildFailureResult()` build the payload that gets saved into `workflow_runs.result`, but they only include `nodeResults` and `executionOrder` — they never call `this.runtime.getNodeTiming()`. So the saved payload has no per-node timing.
+## Why other nodes show no badge
 
-2. **Frontend fakes per-node duration by averaging total run time.**
-   - `src/hooks/useExecutionHistory.ts > getNodeExecutions()` (lines ~550-585):
-     ```text
-     totalDurationMs = completed_at - started_at
-     estimatedDurationMs = totalDurationMs / executionOrder.length
-     ...
-     nodeExecutions.push({ ..., durationMs: estimatedDurationMs })
-     ```
-     Every node gets the **same** `estimatedDurationMs`, which is why the badge is identical on every node.
-   - `ExecutionDetailView.tsx` passes `nodeExec?.durationMs` straight into `NodeWrapper`'s `executionDuration` prop, which renders the badge.
+Two separate causes are at play.
+
+### Cause 1 — Sub-millisecond timings are rounded to 0 and hidden
+
+In `useExecutionHistory.ts` the duration is stored as:
+```text
+durationMs: Math.max(0, Math.round(timing[nodeId]?.totalMs ?? 0))
+```
+
+The backend measures with `performance.now()` which returns fractional milliseconds. Fast nodes — `Switch`, `syncFills`, `getPosition`/`getOpenOrders` (often a cache hit), `updatePortfolioValue` (an in-memory write), `noOpenOrder` — typically take 0.05–0.4 ms. `Math.round(0.3) = 0`.
+
+Then `NodeWrapper.tsx` hides the badge with this guard:
+```text
+{readOnly && executionDuration !== undefined && executionDuration > 0 && (...)}
+```
+
+So any node faster than ~0.5 ms disappears, which is exactly the pattern in the screenshot: the slow IO nodes (broker call, portfolio create) show badges; the fast in-memory nodes don't.
+
+### Cause 2 — Backtest runtime never records timing at all
+
+`coreza-backend/src/engine/executionRuntime.ts > BacktestExecutionRuntime.routeNodeResult` overrides the base method but drops the timing block:
+
+```text
+protected override routeNodeResult(node, result, _t0, meta) {
+  this.executionOrder.push(node.id);
+  this.store.setNodeResult(node.id, result);
+  // (no nodeTiming.set call — t0 is even prefixed with _ to mark it unused)
+  ...
+}
+```
+
+The base class (used by Standard/manual/live runs) does record into `nodeTiming`, which is why the current manual run shows real timings. But **every backtest run will report 0 for every node** because the override never populates the map.
 
 ## Fix
 
-### Backend (`coreza-backend/`)
-
-1. **`src/engine/workflowRun.ts`** — In both `buildExecutionResult()` and `buildFailureResult()`, include the real timing map:
-   ```text
-   const timing = this.runtime.getNodeTiming();
-   return { success, nodeResults, executionOrder, timing, ... };
-   ```
-   No other shape changes; consumers that ignore `timing` keep working.
-
-2. **No type change needed.** `WorkflowExecutionResult.timing` already exists.
-
-3. **Persistence path.** `RunSyncService` already writes the whole `result` object to `workflow_runs.result`, so once `timing` is in the payload it lands in the DB automatically — no migration, no schema change.
-
 ### Frontend (`src/`)
 
-4. **`src/hooks/useExecutionHistory.ts > getNodeExecutions()`**
-   - Remove the `estimatedDurationMs = totalDurationMs / executionOrder.length` fallback that assigns the same value to every node.
-   - Read real per-node timing from `payload.timing?.[nodeId]`. Use `totalMs` (rounded to ms) as `durationMs` — this matches what the backend actually spent on that node, including all incremental updates for loops/streaming nodes.
-   - When `payload.timing` is missing (older runs persisted before this fix), set `durationMs: 0` so the badge is hidden (the existing `executionDuration > 0` guard in `NodeWrapper.tsx` already does this) instead of showing a misleading uniform value.
+1. **`src/hooks/useExecutionHistory.ts > getNodeExecutions()`** — stop rounding away sub-ms values. Keep the original float (or round to 2 decimals) so the badge can render meaningful sub-ms timings:
+   ```text
+   const totalMs = timing[nodeId]?.totalMs;
+   durationMs: typeof totalMs === "number" ? +totalMs.toFixed(2) : undefined,
+   ```
+   Using `undefined` (instead of `0`) for the "no timing recorded" case keeps the existing "hide badge when missing" behaviour for old runs while letting real sub-ms values through.
 
-5. **No changes to** `NodeWrapper.tsx`, `NodeRouter.tsx`, or `ExecutionDetailView.tsx` — they already consume `durationMs` correctly; they were just being fed a fake value.
+2. **`src/utils/NodeWrapper.tsx`** — update the badge guard and formatter to handle sub-ms values:
+   ```text
+   {readOnly && typeof executionDuration === "number" && (
+     <div className="...badge classes...">
+       {executionDuration < 1
+         ? `${executionDuration.toFixed(2)}ms`   // e.g. "0.32ms"
+         : executionDuration < 1000
+           ? `${Math.round(executionDuration)}ms` // e.g. "264ms"
+           : `${(executionDuration / 1000).toFixed(1)}s`}
+     </div>
+   )}
+   ```
+   Dropping the `> 0` guard means truly-zero (skipped/never-executed) nodes still get no badge because their `durationMs` is `undefined`, not `0`.
+
+3. **`src/hooks/useExecutionHistory.ts`** — update the `NodeExecutionLog.durationMs` type from `number` to `number | undefined`, plus any consumer (`NodeExecutionInspector.tsx`) that formats it (mirror the same `< 1` branch there for consistency).
+
+### Backend (`coreza-backend/`)
+
+4. **`coreza-backend/src/engine/executionRuntime.ts > BacktestExecutionRuntime.routeNodeResult`** — record timing the same way the base class does, before the routing branch:
+   ```text
+   const elapsed = performance.now() - t0;
+   const prev = this.nodeTiming.get(node.id) ?? { totalMs: 0, count: 0 };
+   prev.totalMs += elapsed;
+   prev.count += 1;
+   this.nodeTiming.set(node.id, prev);
+   ```
+   Rename the parameter back from `_t0` to `t0`. With this, backtests get the same per-node timings as manual/live runs (and since backtests iterate the same node many times across bars, `totalMs` correctly accumulates the full cost of that node across the whole backtest, while `count` lets the UI later show "avg per bar" if we ever want that).
 
 ## Verification
 
-- Run a manual workflow with mixed-cost nodes (e.g. a fast `Switch` and a slower `getBrokerBalance`/HTTP node).
-- Open the run in the Executions view: each node badge shows a distinct value reflecting its real cost (e.g. `Switch 0ms`, `getBrokerBalance 240ms`, etc.), not the same `1ms` on every node.
-- Old runs persisted before the backend fix simply show no badge (graceful fallback) instead of a fake uniform number.
-- Failed runs also carry timings (covered by `buildFailureResult` change).
+- Re-run the same workflow. Every node now shows a badge: fast nodes display `0.12ms` / `0.4ms`, slow ones still show `264ms` / `2.1s`. None are silently hidden.
+- Run a backtest from the Backtests page and open the executions view: per-node badges appear with cumulative time across all bars, instead of empty/0 everywhere.
+- Old runs (persisted before the previous fix) still render with no badge because `timing` is absent → `durationMs` is `undefined` → guard hides it.
+
+## Out of scope
+
+- We are not introducing per-call vs per-bar averaging in the UI yet. `count` and `avgMs` are already in the payload; surfacing them is a follow-up if needed.

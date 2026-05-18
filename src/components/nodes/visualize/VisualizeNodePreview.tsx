@@ -33,13 +33,19 @@ const unwrapRow = (row: Record<string, unknown> | number): Record<string, unknow
   return rec;
 };
 
-const readNumeric = (row: Record<string, unknown> | number, key: string): number | null => {
+const readNumeric = (row: Record<string, unknown> | number, key: string, aliases?: string[]): number | null => {
   if (typeof row === "number") return Number.isFinite(row) ? row : null;
   const unwrapped = unwrapRow(row);
   if (typeof unwrapped === "number") return Number.isFinite(unwrapped) ? unwrapped : null;
   const rec = unwrapped as Record<string, unknown>;
-  const value = rec[key] ?? (key === "value" ? rec.v ?? rec.close ?? rec.c : undefined);
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  const readValue = (field: string): unknown => rec[field] ?? (field === "value" ? rec.v ?? rec.close ?? rec.c : undefined);
+  const primary = readValue(key);
+  if (typeof primary === "number" && Number.isFinite(primary)) return primary;
+  for (const alias of aliases ?? []) {
+    const candidate = readValue(alias);
+    if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
+  }
+  return null;
 };
 
 const readTime = (row: Record<string, unknown> | number, fallbackIndex: number): number => {
@@ -53,10 +59,11 @@ const readTime = (row: Record<string, unknown> | number, fallbackIndex: number):
 const buildSeriesPoints = (
   rows: Array<Record<string, unknown> | number>,
   key: string,
+  aliases?: string[],
 ): Array<{ time: number; value: number | null }> =>
   rows.map((item, index) => ({
     time: readTime(item, index),
-    value: readNumeric(item, key),
+    value: readNumeric(item, key, aliases),
   }));
 
 const rowsHaveRealTime = (rows: Array<Record<string, unknown> | number>): boolean =>
@@ -72,12 +79,13 @@ const buildChannelSeries = (
   candles: VisualizeChartViewModel["candles"],
   rows: Array<Record<string, unknown> | number>,
   key: string,
+  aliases?: string[],
 ): SeriesPoint[] => {
   if (rowsHaveRealTime(rows)) {
-    return alignSeriesToCandles(candles, buildSeriesPoints(rows, key));
+    return alignSeriesToCandles(candles, buildSeriesPoints(rows, key, aliases));
   }
   const numeric = rows
-    .map((row) => readNumeric(row, key))
+    .map((row) => readNumeric(row, key, aliases))
     .filter((value): value is number => value !== null);
   return alignSeriesToCandles(candles, numeric);
 };
@@ -139,7 +147,7 @@ const VisualizeNodePreview: React.FC<{
         }
         if (spec.channels?.length) {
           const channels = spec.channels.map((channel, channelIndex) => {
-            const points = buildChannelSeries(candles, seriesRows, channel.key);
+            const points = buildChannelSeries(candles, seriesRows, channel.key, channel.aliases);
             return {
               label: channel.label,
               color: channelIndex === 0 ? color : channel.color,

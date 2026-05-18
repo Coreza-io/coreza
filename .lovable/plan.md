@@ -1,60 +1,71 @@
-# Fix Ichimoku rendering (key-name mismatch)
+# Align `indicatorRegistry.ts` channel keys with backend output
 
-## What you're seeing
+Stop forcing the backend to change. The frontend registry should mirror the exact keys the backend's historical path (which feeds Visualize) emits. Audit every indicator and fix mismatches.
 
-Ichimoku with Indicator = Ichimoku shows no lines on the chart. Input Data shows rows like `{conversion, base, spanA, spanB}`.
+## Backend output shapes (historical / Visualize path)
 
-## Root cause
+| Indicator | File location | Row shape produced |
+|---|---|---|
+| RSI | `indicators.ts` calculateRSI | `number` (plain) |
+| EMA | calculateEMA | `number` |
+| SMA | calculateSMA | `number` |
+| MACD | calculateMACD | `{ macd, signal, histogram }` |
+| Bollinger Bands | calculateBollingerValues | `{ upper, middle, lower, bb_width }` |
+| ADX | calculateADX (library) | `{ adx, pdi, mdi }` |
+| Stochastic | calculateStochastic (library) | `{ k, d }` |
+| Ichimoku | calculateIchimoku (library) | `{ conversion, base, spanA, spanB }` — no chikou |
+| VWAP | calculateVWAP | `{ timestamp, vwap, sessionStart }` |
+| OBV | calculateOBV | `{ timestamp, obv }` |
+| Volume Oscillator | calculateVolumeOscillator | `number` |
+| PVO | (no backend function found) | n/a |
+| Support/Resistance | calculatePivot/Swing/Historical | `{ support: number[], resistance: number[], ... }` |
 
-The Ichimoku backend has two code paths that emit **different keys**:
+## Registry mismatches to fix
 
-- Incremental updater (`coreza-backend/src/nodes/logic/indicators.ts` line 781) returns `{tenkan, kijun, senkouA, senkouB, chikou}`.
-- Historical `calculateIchimoku` (line 1603) delegates to the `technicalindicators` library, which returns `{conversion, base, spanA, spanB}` — no `chikou`.
+In `src/utils/indicatorRegistry.ts`:
 
-The Visualize node receives the historical shape. The registry channels only declare the incremental keys (`tenkan`, `kijun`, ...), so `readNumeric(row, "tenkan")` returns `null` for every row and all five channels render as empty arrays.
-
-Same class of bug as ADX (`pdi`/`mdi` vs `plusDI`/`minusDI`), but here the backend itself is inconsistent. Rather than risk breaking the live/streaming path by renaming backend keys, the frontend registry should accept either spelling.
-
-## Fix
-
-Two small changes, frontend only. No backend changes.
-
-### 1. `src/utils/indicatorRegistry.ts`
-
-Add an optional `aliases?: string[]` to `IndicatorChannel`, and update the Ichimoku spec to list both naming conventions:
-
+### 1. Ichimoku — replace channel keys, drop `chikou`
 ```text
 ichimoku: {
-  id: "ichimoku",
-  label: "Ichimoku",
-  pane: "price",
-  kind: "multi",
+  pane: "price", kind: "multi",
   channels: [
-    { key: "tenkan",  aliases: ["conversion"], label: "Tenkan",  color: "#3b82f6" },
-    { key: "kijun",   aliases: ["base"],       label: "Kijun",   color: "#f59e0b" },
-    { key: "senkouA", aliases: ["spanA"],      label: "Senkou A", color: "#22c55e" },
-    { key: "senkouB", aliases: ["spanB"],      label: "Senkou B", color: "#ef4444" },
-    { key: "chikou",                            label: "Chikou",  color: "#8b5cf6" },
+    { key: "conversion", label: "Tenkan (Conversion)",  color: "#3b82f6" },
+    { key: "base",       label: "Kijun (Base)",         color: "#f59e0b" },
+    { key: "spanA",      label: "Senkou Span A",        color: "#22c55e" },
+    { key: "spanB",      label: "Senkou Span B",        color: "#ef4444" },
   ],
-},
+}
+```
+Remove `aliases`. Chikou not produced by the historical library path — omit it (no point showing an always-empty line).
+
+### 2. VWAP — channel key `vwap`
+```text
+{ key: "vwap", label: "VWAP", color: "#14b8a6" }
 ```
 
-The `chikou` channel will remain empty for the historical path (the library doesn't produce it) — that's expected and matches what the data contains.
+### 3. OBV — channel key `obv`
+```text
+{ key: "obv", label: "OBV", color: "#6366f1" }
+```
 
-### 2. `src/components/nodes/visualize/VisualizeNodePreview.tsx`
+### 4. PVO — no backend function exists
+Either remove the `pvo` entry from the registry/dropdown, or leave it with a note that the backend doesn't emit it yet. Recommend removal until backend is added.
 
-Teach the channel readers to try aliases. Two touch points:
+### Unchanged (already correct)
+- RSI / EMA / SMA / Volume Oscillator — backend returns plain `number`; registry `{ key: "value" }` continues to work because `VisualizeNodePreview` treats numeric rows as the channel value regardless of key.
+- MACD, Bollinger Bands, ADX, Stochastic, Support/Resistance — keys already match.
 
-- `readNumeric(row, key, aliases?)` — after the primary `key` returns `null`, try each alias in order.
-- `buildChannelSeries(candles, rows, key, aliases?)` — pass aliases through. Same for the `rowsHaveRealTime` check (unchanged) and the numeric tail-align branch.
+## Files touched
 
-Wire it in the registry-path loop: `buildChannelSeries(candles, seriesRows, channel.key, channel.aliases)`.
-
-No other indicators need aliases today, but the mechanism is now in place for any future drift.
+- `src/utils/indicatorRegistry.ts` — only file. No backend changes. No chart code changes. No `aliases` mechanism needed.
 
 ## Verification
 
-- Ichimoku with Indicator = Ichimoku → four overlay lines on the price chart (Tenkan blue, Kijun orange, Senkou A green, Senkou B red). Chikou legend entry present but no line (data not provided by backend).
-- ADX with Indicator = ADX → still renders 3 lines (regression check).
-- MACD / BB / RSI / Stochastic / S&R → unchanged.
-- Auto on Ichimoku → falls through to the classifier (existing behavior).
+- Ichimoku → 4 lines on price chart (Tenkan/Kijun/Senkou A/Senkou B), values match the `conversion/base/spanA/spanB` shown in the input panel.
+- VWAP → single line on price chart.
+- OBV → single line on panel chart.
+- MACD / BB / ADX / RSI / Stochastic / S&R remain working.
+
+## Note on the incremental updater divergence
+
+The streaming/incremental path still emits `{tenkan, kijun, senkouA, senkouB, chikou}` for Ichimoku and is consumed by live engine logic — not by Visualize. Leaving it alone here. If you later want a single canonical shape for both paths, that's a separate backend task and would require regenerating golden fixtures and updating `indicatorIncrementalParity.ichimoku.test.ts`.

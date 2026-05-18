@@ -14,6 +14,7 @@ export type IndicatorTypeId =
 
 export type IndicatorChannel = {
   key: string;
+  aliases?: string[];
   label: string;
   color: string;
   style?: "line" | "histogram";

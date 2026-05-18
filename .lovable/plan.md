@@ -1,40 +1,45 @@
-# Why manual stream-node leaves `sub:` keys, but activate/deactivate live doesn't
+# Per-node timing leaks across ticks in live runs
 
-## TL;DR
+## What you're seeing
 
-Both flows use the **same** `SubscriptionService.subscribe` → `MarketControlHandler.handleSubscribe` path, which writes the `sub:userId:..:streams` SET in Redis. The difference is on the **stop/deactivate** side:
+In the latest tick of this live workflow:
+- Overall run badge = `8ms` (wall-clock from `started_at` to `completed_at` on `workflow_runs`)
+- Per-node badges sum to ~`17ms` (e.g. `syncFills` alone shows `14ms`)
 
-- **Live activate then deactivate** runs `WorkflowLifecycleService.deactivate` → `streaming.cleanupWorkflowSubscriptions` (`StreamingLifecycleAdapter.ts:581`). That scans every `sub:userId:..:workflowId:..:streams` key, publishes a proper `controlUnsubscribe` for the streams in it, and finally `del`s the key (line 693). So after deactivation the `sub:` key is *correctly gone*.
-- **Manual stream-node "subscribe" mode** writes the same `sub:` key during start. The only stop hook is `POST /stream/stop` (`routes/stream.ts:1109`-1158) which already calls `SubscriptionService.unsubscribe` for that node's specific streams. That works **only if the UI actually fires the stop endpoint**. If the user just closes the tab, navigates away, or the listener TTL expires, no one publishes `controlUnsubscribe` and the `sub:` key lives until something else evicts it.
+The node badge for a single node (`14ms` on `syncFills`) is already larger than the whole run (`8ms`). That cannot be parallelism — it is a real bug.
 
-So the apparent asymmetry is a perception + missing-fallback issue, not a missing subscribe.
+## Root cause
 
-## What about `md:` channels?
+`WorkflowRunner` (`coreza-backend/src/services/WorkflowRunner.ts:74`) creates **one** `WorkflowEngine` in its constructor and reuses it for every stream tick. Per tick it calls `engine.resetForNextBar(true)` (line 241) to clear results/queues/edge payloads, then `engine.executeFromEntries(...)`.
 
-`md:stream:<stream>` and `md:symbol:<SYMBOL>` are **pub/sub channels**, not Redis keys. They are present in both flows but never show up in `KEYS` / RedisInsight key listings — only in `PUBSUB CHANNELS`. The `sub:` entries are SET keys. Comparing one against the other made the flows look different when they aren't.
+`BaseExecutionRuntime.routeNodeResult` accumulates timing into `this.nodeTiming` (`coreza-backend/src/engine/executionRuntime.ts:291`):
 
-`md:gateway:*` (and `gateway:userId:..:state`) keys are written by `MarketControlHandler.persistState` whenever a gateway becomes active; both flows produce these too.
+```text
+prev.totalMs += elapsed
+prev.count   += 1
+```
 
-## Confirmation in code
+But neither `BaseExecutionRuntime.resetForNextBar` (line 388) nor `BacktestExecutionRuntime.resetForNextBar` (line 456) ever touch `nodeTiming`. There is a `clearNodeTiming()` method, but `WorkflowRunner` never calls it.
 
-- `StreamingLifecycleAdapter.activateStreaming` (`:215`-:375`) calls `SubscriptionService.subscribe` for trading / news / market in sequence and `waitForSubscriptionReady` polls the `sub:` key until `SCARD > 0`. If the key were not being created on activate, that poll would time out and throw `Activation failed: Market subscription readiness timed out ...` — which we are not seeing.
-- `MarketControlHandler.handleSubscribe` (`:641`) is the single writer of `sub:..:streams` via `redisPub.sadd(streamsKey, ...newStreamNames)` (`:748`). Both flows publish to the same control channel and exercise this code.
-- `WorkflowLifecycleService.deactivate` (`:177`) calls `streaming.cleanupWorkflowSubscriptions` unconditionally — that's why the `sub:` key disappears the moment the workflow is turned off.
-- `routes/stream.ts` POST `/stream/execute` registers the listener but does **not** add anything that fires on listener TTL expiry. The only cleanup is the explicit POST `/stream/stop`.
+So every persisted `WorkflowExecutionResult.timing` for a live tick contains the **cumulative** node timings since the runner started — not the per-tick numbers. The first tick of a fresh runner happens to look right; every subsequent tick keeps growing. Backtests have the same bug for any session that goes through `WorkflowEngine` without an explicit clear (`BacktestSession.ts` calls `clearNodeTiming` only at start and finalize, lines 118/855, so within a backtest the badge represents the whole backtest, not a single bar — different but related semantics).
 
-## Fix — make manual and live symmetric
+## Fix
 
-Goal: a manual stream-node listener should leave Redis in the same shape as a deactivated live workflow once it stops, no matter how it stops.
+1. **`coreza-backend/src/services/WorkflowRunner.ts > processMessage`** — call `this.engine.clearNodeTiming()` right after `this.engine.resetForNextBar(true)` on line 241. Now each saved tick result reports only the work done on that tick.
 
-1. **`coreza-backend/src/services/RegistrationService.ts > deleteListener`** — after deleting the listener key, call `streaming.cleanupWorkflowSubscriptions(userId, workflowId)` for the listener's `(userId, workflowId)` pair so the `sub:` key is removed and `controlUnsubscribe` is fanned out. (Today this only runs from `WorkflowLifecycleService.deactivate`.) This makes the explicit `/stream/stop` path idempotent and also covers any other callers of `deleteListener`.
+2. **`coreza-backend/src/engine/executionRuntime.ts`** — make this less foot-gunny by clearing `nodeTiming` inside `BaseExecutionRuntime.resetForNextBar` and `BacktestExecutionRuntime.resetForNextBar` whenever `full === true`. The backtest path still keeps cumulative timing across bars because `BacktestSession` calls `resetForNextBar(false)` between bars (per-bar) and only the explicit `clearNodeTiming` at start of run drops it — confirm by reading `BacktestSession.ts:118/855` and leaving its calls intact.
 
-2. **Listener TTL expiry sweep** — `LISTENER_TTL_SECONDS` is enforced by Redis SETEX, so an abandoned tab silently expires the listener key but never publishes unsubscribe. Add a small reaper in `RegistrationService` (or piggy-back on `cleanupWorkflowListeners` which already iterates `userActiveListeners`): for every entry in `listener:userId:<u>:active` whose detail key no longer exists (`EXISTS` returns 0), run the same cleanup as `deleteListener` for that `(workflowId, nodeId)`. Schedule from the existing periodic cleanup loop in `market-stream-service/src/services/WorkflowCache.ts` or a new lightweight job in the backend — whichever already runs every ~60s.
+3. **Frontend (`src/hooks/useExecutionHistory.ts > getNodeExecutions`)** — no change. Already reads `timing[nodeId].totalMs`; it will simply show the correct per-tick value once the backend stops leaking.
 
-3. **Doc/UX nit (optional)** — update the inline comment on `REDIS_CHANNELS.marketData` / `streamData` to remind that those are pub/sub channels, and add a one-line note in `docs/redis-key-audit-2026-04-05.md` clarifying that `sub:` keys are SETs while `md:*` are channels. Helps the next person debugging this.
+4. **Optional UX nit** — in `NodeWrapper.tsx` badge tooltip, surface `count` from `payload.timing[nodeId]` so users seeing `2ms (x3)` understand a node ran multiple times in this run/tick.
 
 ## Verification
 
-- Manual stream-node test (Binance, ETHUSDT, kline_1m), then click Stop → `KEYS 'sub:userId:<u>:scope:workflow:workflowId:<wf>:*'` returns empty, and `PUBSUB CHANNELS 'md:stream:ethusdt@kline_1m'` shows zero subscribers.
-- Manual stream-node test, then close the tab and wait for TTL → after the reaper tick, same empty state as above. Logs show `🗑️ Removed empty streams key sub:...:streams` and `🔌 No streams left, disconnecting binance gateway`.
-- Live activate then deactivate continues to behave as it does today (already correct).
-- Both flows: `gateway:userId:<u>:binance:state` is present only while at least one stream is active and is deleted when the last stream goes.
+- Open a long-lived live workflow. After the first tick the per-node badge values match the new tick — they no longer grow every refresh.
+- Sum of per-node badges for a tick is ≤ wall-clock + a small scheduler delta. With parallel branches the sum can still be larger than wall-clock; that's correct and expected.
+- Run a fresh backtest: per-node badges accumulate across bars within the run (unchanged behavior).
+- Old runs render exactly as before (we never rewrite stored payloads).
+
+## Out of scope
+
+- Tightening `workflow_runs.started_at` / `completed_at` to wrap only the actual execute call (today `started_at` is the `queued` row insert time). Not needed for the bug above; can be a follow-up if the total badge feels misleading.

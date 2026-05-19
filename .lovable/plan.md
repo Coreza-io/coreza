@@ -1,32 +1,51 @@
-# Stop the moving gradient shade on nodes
+# Add dynamic labels to Switch node handles
 
-Every node in dark mode currently has a gradient that animates from one edge to the other in a 3s loop. The shade you see "transitioning" across the node is the `metallic-shimmer` keyframe applied to all `.dark .bg-gradient-*` utility classes in `src/index.css` (lines ~852–956).
+Same pattern as the AI Agent handle labels, but the labels for Switch come from the user's case configuration instead of being hardcoded in the node JSON. The reference screenshot shows two cases (`market`, `order_update`) plus an `Enable Fallback` toggle — each of these should render its name beside the matching output handle on the right side of the node.
 
-The shimmer is built from three pieces on each node:
+## Where the handles are built
 
-```css
-background: var(--gradient-...);
-background-size: 200% 200%;            /* canvas is 2x the node */
-animation: metallic-shimmer 3s ease infinite;   /* slides 0% -> 100% -> 0% */
-```
+`src/components/nodes/NodeRouter.tsx` (lines ~148–220) already generates Switch output handles dynamically:
 
-We want the gradient to stay, but be static.
+- One `source` handle on the right per entry in the `cases` repeater, with `id = caseItem.outputName || caseN`.
+- One extra `source` handle (`fallbackHandleId`) when `enableFallback` is on.
+- A single `target` handle (`input`) on the left.
+
+Today these handles have no `label` property, so `NodeWrapper` renders them without text. The `HandleConfig` type in `src/utils/NodeWrapper.tsx` already supports `label?: string` (added for AI Agent), so this change is purely about populating it.
 
 ## Change
 
-In `src/index.css`:
+In `src/components/nodes/NodeRouter.tsx`, inside the `handles` `useMemo` for Switch nodes:
 
-1. Remove the `@keyframes metallic-shimmer { ... }` block (lines ~853–865).
-2. For every `.dark .bg-gradient-*` rule (indicators, broker, data, logic, screener, input, visualization, llm, chatmodel, aiagent, email, tool, risk, scheduler, binance — lines ~868–956), drop both:
-   - `background-size: 200% 200%;`
-   - `animation: metallic-shimmer 3s ease infinite;`
-   
-   Keep the `background: var(--gradient-...);` line so each category still gets its colored gradient — it just renders once and stays put at the default `background-size` (100% 100%, no motion).
+1. **Defaults branch (no user cases yet)** — when mapping `defaultCases` into handles, also set:
+   - `label: caseItem.outputName || \`Case ${index + 1}\``
+   And for the fallback entry: `label: "Fallback"`.
 
-Nothing else changes: light mode is unaffected (these rules are `.dark`-scoped), node layout/handles/icons/labels are untouched, and other animations (`animate-pulse`, `animate-stream-data-flash`, electric border, edge animations) keep working because they don't depend on `metallic-shimmer`.
+2. **Main branch (user has configured cases)** — in the `cases.forEach` loop, derive a display label from the same fields used for the handle id, with a friendly fallback:
+   ```ts
+   const handleLabel =
+     caseItem.outputName ||
+     caseItem.caseName ||
+     caseItem.caseValue ||
+     `Case ${index + 1}`;
+   ```
+   Pass it as `label: handleLabel` on the pushed handle object.
+
+3. **Fallback handle** — when `fallbackEnabled`, push with `label: "Fallback"`.
+
+4. The left `input` handle stays unlabeled (matches AI Agent's input/output behavior and the screenshot).
+
+5. Labels update reactively because the `useMemo` already depends on `data.fieldState?.cases` and `data.values?.cases`. Renaming a case's `outputName` re-renders the handle with the new label automatically. No extra dependency needed.
+
+## Rendering
+
+No changes to `NodeWrapper.tsx`. It already renders `h.label` next to each handle along the correct axis (right-side handles get the label to the right of the dot) with `text-[10px] text-muted-foreground pointer-events-none`, so existing drag/connect behavior is unaffected.
 
 ## Verification
 
-- Open the editor in dark mode. Each node shows its category gradient, but the highlight no longer slides across — it's frozen.
-- Switch to light mode: nodes look exactly as before (no `.dark` gradient rules applied).
-- Execution flashing, selected glow, and animated edges still animate normally.
+- Open a Switch node with two cases named `market` and `order_update` and fallback enabled. Right side shows three handle labels stacked vertically: `market`, `order_update`, `Fallback`.
+- Rename a case in the repeater → the handle label updates live.
+- Add a new case → a new labeled handle appears; remove a case → its handle disappears.
+- Disable `Enable Fallback` → the `Fallback` handle and its label disappear.
+- Light and dark themes both readable.
+- AI Agent node and all other nodes unchanged (they don't go through the Switch branch).
+- Existing edges connected by `sourceHandle` keep working because handle `id` values are unchanged — only `label` was added.

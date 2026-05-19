@@ -28,29 +28,35 @@ const toChartTime = (time: number): Time => {
 
 type OverlayRegistry = {
   price: Map<string, OverlayHandles>;
-  panel: Map<string, OverlayHandles>;
+  panels: Map<string, { chart: IChartApi; handles: OverlayHandles }>;
 };
 
-const syncTimeScales = (first: IChartApi, second: IChartApi): (() => void) => {
+const syncTimeScales = (charts: IChartApi[]): (() => void) => {
   let syncing = false;
-  const fromFirst = (range: LogicalRange | null) => {
-    if (!range || syncing) return;
-    syncing = true;
-    second.timeScale().setVisibleLogicalRange(range);
-    syncing = false;
-  };
-  const fromSecond = (range: LogicalRange | null) => {
-    if (!range || syncing) return;
-    syncing = true;
-    first.timeScale().setVisibleLogicalRange(range);
-    syncing = false;
-  };
-  first.timeScale().subscribeVisibleLogicalRangeChange(fromFirst);
-  second.timeScale().subscribeVisibleLogicalRangeChange(fromSecond);
+  const unsubscribers = charts.map((chart, sourceIndex) => {
+    const onRangeChange = (range: LogicalRange | null) => {
+      if (!range || syncing) return;
+      syncing = true;
+      charts.forEach((targetChart, targetIndex) => {
+        if (targetIndex !== sourceIndex) {
+          targetChart.timeScale().setVisibleLogicalRange(range);
+        }
+      });
+      syncing = false;
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+    };
+  });
   return () => {
-    first.timeScale().unsubscribeVisibleLogicalRangeChange(fromFirst);
-    second.timeScale().unsubscribeVisibleLogicalRangeChange(fromSecond);
+    unsubscribers.forEach((unsubscribe) => unsubscribe());
   };
+};
+
+type PanelChartEntry = {
+  container: HTMLDivElement;
+  chart: IChartApi;
 };
 
 const removeOverlayHandles = (chart: IChartApi, handles: OverlayHandles) => {
@@ -74,17 +80,17 @@ const LightweightVisualizeChart: React.FC<{
   viewModel: VisualizeChartViewModel;
 }> = ({ viewModel }) => {
   const priceRef = useRef<HTMLDivElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const panelContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const priceChartRef = useRef<IChartApi | null>(null);
-  const panelChartRef = useRef<IChartApi | null>(null);
+  const panelChartsRef = useRef<Map<string, PanelChartEntry>>(new Map());
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram", Time> | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const registryRef = useRef<OverlayRegistry>({
     price: new Map(),
-    panel: new Map(),
+    panels: new Map(),
   });
   const cleanupSyncRef = useRef<(() => void) | null>(null);
-  const readyTickRef = useRef(0);
 
   const isPanelOverlay = (overlay: VisualizeOverlay): boolean =>
     overlay.kind === "panel" ||
@@ -133,8 +139,6 @@ const LightweightVisualizeChart: React.FC<{
       priceChartRef.current = priceChart;
       candleSeriesRef.current = candleSeries;
       volumeSeriesRef.current = volumeSeries;
-      // Trigger the data effect now that the chart exists.
-      readyTickRef.current += 1;
       // Force a state-less re-render via ref bump by scheduling a microtask.
       // We rely on the data effect's dependency on viewModel; ensure it runs:
       queueMicrotask(() => {
@@ -169,19 +173,23 @@ const LightweightVisualizeChart: React.FC<{
           width: priceRef.current.clientWidth,
         });
       }
-      if (panelRef.current && panelChartRef.current) {
-        panelChartRef.current.applyOptions({
-          width: panelRef.current.clientWidth,
-        });
-      }
+      panelChartsRef.current.forEach(({ chart, container }) => {
+        chart.applyOptions({ width: container.clientWidth });
+      });
     });
+    resizeObserverRef.current = resizeObserver;
     if (priceRef.current) resizeObserver.observe(priceRef.current);
+    panelContainerRefs.current.forEach((container) =>
+      resizeObserver.observe(container),
+    );
 
     const registry = registryRef.current;
+    const panelCharts = panelChartsRef.current;
     return () => {
       cancelled = true;
       if (rafId !== null) cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      resizeObserverRef.current = null;
       cleanupSyncRef.current?.();
       cleanupSyncRef.current = null;
       if (priceChartRef.current) {
@@ -195,19 +203,19 @@ const LightweightVisualizeChart: React.FC<{
           /* ignore */
         }
       }
-      if (panelChartRef.current) {
-        registry.panel.forEach((seriesList) =>
-          removeOverlayHandles(panelChartRef.current!, seriesList),
-        );
-        registry.panel.clear();
+      registry.panels.forEach(({ chart, handles }) => {
+        removeOverlayHandles(chart, handles);
+      });
+      registry.panels.clear();
+      panelCharts.forEach(({ chart }) => {
         try {
-          panelChartRef.current.remove();
+          chart.remove();
         } catch {
           /* ignore */
         }
-      }
+      });
+      panelCharts.clear();
       priceChartRef.current = null;
-      panelChartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
@@ -259,56 +267,61 @@ const LightweightVisualizeChart: React.FC<{
       );
     });
 
-    if (
-      panelOverlays.length > 0 &&
-      panelRef.current &&
-      !panelChartRef.current
-    ) {
-      panelChartRef.current = createChart(panelRef.current, {
-        width: panelRef.current.clientWidth,
-        height: PANEL_HEIGHT,
-        timeScale: { timeVisible: true, secondsVisible: false },
-      });
-      cleanupSyncRef.current = syncTimeScales(
-        priceChart,
-        panelChartRef.current,
-      );
-    }
-
-    if (panelChartRef.current) {
-      const activePanelIds = new Set(
-        panelOverlays.map((overlay) => overlay.id),
-      );
-      for (const [id, seriesList] of registryRef.current.panel.entries()) {
-        if (!activePanelIds.has(id)) {
-          removeOverlayHandles(panelChartRef.current, seriesList);
-          registryRef.current.panel.delete(id);
+    const activePanelIds = new Set(panelOverlays.map((overlay) => overlay.id));
+    for (const [id, panelEntry] of panelChartsRef.current.entries()) {
+      if (!activePanelIds.has(id)) {
+        const panel = registryRef.current.panels.get(id);
+        if (panel) {
+          removeOverlayHandles(panel.chart, panel.handles);
+          registryRef.current.panels.delete(id);
         }
-      }
-      panelOverlays.forEach((overlay) => {
-        const existing = registryRef.current.panel.get(overlay.id);
-        if (existing) removeOverlayHandles(panelChartRef.current!, existing);
-        registryRef.current.panel.set(
-          overlay.id,
-          addOverlaySeries(panelChartRef.current!, overlay),
-        );
-      });
-
-      if (panelOverlays.length === 0) {
-        cleanupSyncRef.current?.();
-        cleanupSyncRef.current = null;
         try {
-          panelChartRef.current.remove();
+          panelEntry.chart.remove();
         } catch {
           /* ignore */
         }
-        panelChartRef.current = null;
+        panelChartsRef.current.delete(id);
       }
     }
 
+    panelOverlays.forEach((overlay) => {
+      const container = panelContainerRefs.current.get(overlay.id);
+      if (!container) return;
+      let panelEntry = panelChartsRef.current.get(overlay.id);
+      if (!panelEntry) {
+        const panelChart = createChart(container, {
+          width: container.clientWidth,
+          height: PANEL_HEIGHT,
+          timeScale: { timeVisible: true, secondsVisible: false },
+        });
+        panelEntry = { container, chart: panelChart };
+        panelChartsRef.current.set(overlay.id, panelEntry);
+      }
+
+      const existing = registryRef.current.panels.get(overlay.id);
+      if (existing) removeOverlayHandles(existing.chart, existing.handles);
+      registryRef.current.panels.set(
+        overlay.id,
+        {
+          chart: panelEntry.chart,
+          handles: addOverlaySeries(panelEntry.chart, overlay),
+        },
+      );
+    });
+
+    cleanupSyncRef.current?.();
+    cleanupSyncRef.current = syncTimeScales([
+      priceChart,
+      ...panelOverlays
+        .map((overlay) => panelChartsRef.current.get(overlay.id)?.chart)
+        .filter((chart): chart is IChartApi => Boolean(chart)),
+    ]);
+
     if (viewModel.options.autoFit) {
       priceChart.timeScale().fitContent();
-      panelChartRef.current?.timeScale().fitContent();
+      panelOverlays.forEach((overlay) => {
+        panelChartsRef.current.get(overlay.id)?.chart.timeScale().fitContent();
+      });
     }
   }, [viewModel, panelOverlays, priceOverlays]);
 
@@ -319,13 +332,25 @@ const LightweightVisualizeChart: React.FC<{
         className="w-full"
         style={{ height: PRICE_HEIGHT, minHeight: PRICE_HEIGHT }}
       />
-      {panelOverlays.length > 0 && (
+      {panelOverlays.map((overlay) => (
         <div
-          ref={panelRef}
+          key={overlay.id}
+          ref={(node) => {
+            if (node) {
+              panelContainerRefs.current.set(overlay.id, node);
+              resizeObserverRef.current?.observe(node);
+            } else {
+              const container = panelContainerRefs.current.get(overlay.id);
+              if (container) {
+                resizeObserverRef.current?.unobserve(container);
+              }
+              panelContainerRefs.current.delete(overlay.id);
+            }
+          }}
           className="w-full"
           style={{ height: PANEL_HEIGHT, minHeight: PANEL_HEIGHT }}
         />
-      )}
+      ))}
       {viewModel.candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm pointer-events-none">
           No candle data

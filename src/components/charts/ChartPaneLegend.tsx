@@ -50,6 +50,15 @@ const channelColor = (
   return overlayColor(overlay);
 };
 
+const formatOverlayName = (overlay: VisualizeOverlay): string => {
+  const cleaned = overlay.name.replace(/^overlay\s+\d+\s*/i, "").trim();
+  if (cleaned.length > 0) return cleaned;
+  if (overlay.kind === "multi" && overlay.channels.length > 0) {
+    return overlay.channels[0].label;
+  }
+  return overlay.name;
+};
+
 const ChartPaneLegend: React.FC<{
   overlays: VisualizeOverlay[];
   values: LegendValues;
@@ -71,7 +80,9 @@ const ChartPaneLegend: React.FC<{
         const entries = Object.entries(channelValues);
         return (
           <div key={overlay.id} className="flex flex-wrap items-center gap-x-2">
-            <span className="font-medium text-slate-200">{overlay.name}</span>
+            <span className="font-medium text-slate-200">
+              {formatOverlayName(overlay)}
+            </span>
             {entries.map(([key, value]) => (
               <span key={key} className="font-mono text-slate-100">
                 <span

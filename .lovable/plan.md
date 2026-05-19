@@ -24,6 +24,11 @@ Stop passing `title` on every overlay series (`line/panel`, `multi` channels, `b
 - Double-check the effect deps: `viewModel`, `panelOverlays`, `priceLegendOverlays`, `priceOverlays` are all memoized now, so the effect only re-runs when overlays/data actually change.
 - No change to the crosshair handler itself — once the effect stops re-firing per render, hovered values stick.
 
+### 3. Build errors in the same file
+
+- Replace `ISeriesApiBase` import (doesn't exist in this version of `lightweight-charts`) with `ISeriesApi` and cast the series to `ISeriesApi<"Line" | "Histogram", Time>` when calling `param.seriesData.get(...)`.
+- Replace the four `arr.findLast(...)` calls in `buildOverlayLastValues` with a small helper `lastValid(points)` that scans from the end with a `for` loop — avoids needing `lib: es2023`.
+
 ## Verification
 
 - Open Visualize with ADX panel → right edge of the panel no longer shows the three colored chips. Only the price-axis numbers remain.

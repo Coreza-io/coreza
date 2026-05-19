@@ -1,36 +1,44 @@
-# Fix: chart blank when node is expanded before data arrives
+# Fix: Visualize chart stays blank until re-expand
 
 ## Root cause
 
-`LightweightVisualizeChart` has two effects:
+The previous chart-ready fix handles the chart initialization timing, but the screenshot shows a second stale-data path:
 
-1. **Init effect** (mount-only, deps `[]`) — creates the price chart, retrying via `requestAnimationFrame` until the container has a non-zero width. On success it inlines `applyData()` for candles/volume but does **not** add overlays.
-2. **Data reconciliation effect** (deps `[viewModel, priceOverlays, panelOverlays, ...]`) — sets candle/volume data and reconciles overlays. The first line is an early-return guard: `if (!priceChart || !candleSeries || !volumeSeries) return;`.
+1. `BaseNode` subscribes to `useExecutionStoreVersion()`, so the outer node re-renders when upstream execution output changes.
+2. `RepeaterNodeLayout` reads the execution store via `useExecutionStore()`, but it does **not** subscribe to the store version directly.
+3. `visualizePreviewContext` is memoized from `getPreviewData()`. Since the `ExecutionContext` object identity does not change when node output changes, the memo can keep the old empty `allNodeData/sourceData` while the Visualize preview remains mounted.
+4. Collapsing/re-expanding remounts/recomputes the preview context, so the same data suddenly renders.
 
-Failure sequence the user is hitting:
-
-1. User expands the empty Visualize node. Init effect starts rAF-polling because container width is still 0 during the expand transition.
-2. User connects ADX. `viewModel` updates → data effect fires → `priceChartRef.current` is still `null` → effect returns early and is never re-queued.
-3. Some time later the container reaches a non-zero width, init effect creates the chart, calls `applyData()` (candles/volume only — but candles are empty so still nothing visible), but **overlays are never added** because the data effect has no signal to re-run.
-4. Any later change (toggling, reconnecting, editing fields) bumps `viewModel`, the data effect fires again, sees the chart exists now, and renders everything. That's why "reconnecting makes it appear".
+So the chart component can be ready, but it is still receiving stale empty preview data until the node panel remounts.
 
 ## Fix
 
-Make the data effect re-run once the chart finishes initializing.
+Make the Visualize preview context react to execution-store updates.
+
+### `src/components/nodes/layout/RepeaterNodeLayout.tsx`
+
+1. Import `useExecutionStoreVersion` from `ExecutionStoreContext`.
+2. Call `const executionStoreVersion = useExecutionStoreVersion();` next to `useExecutionStore()`.
+3. Add `executionStoreVersion` to the dependency list of:
+   - `getPreviewData`
+   - `getOverlayPreviewFor`
+   - `visualizePreviewContext`
+   - any preview resolver callbacks that use `getPreviewData` and depend on runtime output.
+
+This forces the Visualize preview to rebuild `sourceData` and `allNodeData` whenever upstream bars/indicator output is populated, without needing to collapse and expand the node.
 
 ### `src/components/charts/LightweightVisualizeChart.tsx`
 
-1. Add a `const [chartReady, setChartReady] = useState(false);` state.
-2. In the init effect, right after assigning `priceChartRef.current = priceChart`, call `setChartReady(true)`. Remove the `queueMicrotask(() => applyData())` shim — the data effect will handle it.
-3. In the init effect's cleanup, also `setChartReady(false)` so a remount starts clean.
-4. Add `chartReady` to the data effect's dependency array so it re-runs as soon as the chart exists.
-5. Keep the early-return guard as a safety net.
+Keep the current `chartReady` implementation, with one small cleanup:
 
-That's the whole change — no other files touched.
+- In the init effect cleanup, set `chartReady` back to `false` after clearing chart refs.
 
-### Verification
+No chart rendering behavior should otherwise change.
 
-- Collapse a Visualize node, populate ADX upstream, expand the node → chart and ADX panel render immediately.
-- Expand an empty Visualize node, then connect ADX → chart renders as soon as data flows, without needing to reconnect.
-- Existing flow (expand with data already present) still works.
-- Crosshair, OHLC hover, wheel/pinch zoom isolation, top-left legend — all unchanged.
+## Verification
+
+- Expand Visualize first while there is no bar data: chart shows empty state.
+- Run/connect upstream bars and ADX while Visualize stays expanded: candles and ADX panel render immediately.
+- Collapse/re-expand is no longer required.
+- Existing flow still works when data is already available before Visualize expands.
+- Crosshair legends, OHLC values, and chart wheel/pinch behavior remain unchanged.

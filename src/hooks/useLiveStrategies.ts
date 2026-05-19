@@ -2,25 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Backtest, BacktestStatus } from "./useBacktests";
-
-const getNodeMode = (node: any) =>
-  node?.values?.mode ??
-  node?.data?.values?.mode ??
-  node?.data?.config?.mode ??
-  node?.data?.mode;
-
-const isPortfolioNode = (node: any) => {
-  const nodeName =
-    `${node?.type ?? node?.name ?? node?.def ?? node?.node_type ?? ""}`.toLowerCase();
-  return nodeName === "portfolio";
-};
-
-const isBrokerPortfolioWorkflow = (workflow: any) => {
-  const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
-  return nodes.some(
-    (node: any) => isPortfolioNode(node) && getNodeMode(node) === "broker",
-  );
-};
+import { isBrokerPortfolioWorkflow } from "@/utils/liveWorkflowFilter";
 
 /**
  * Returns live (active) workflows with portfolio broker nodes,

@@ -1,62 +1,60 @@
-# Add labels under AI Agent handles
+# Make AI Agent collapsed node wider (n8n-style)
 
-Reference image shows each handle on the AI Agent node carrying a small text tag (e.g. `Chat Model*`, `Memory`, `Tool`) just outside the node, with a red `*` for required slots. Today our handles have no visible label, so users can't tell which bottom port is `chatModel`, `memory`, or `tool`. We'll add an opt-in label per handle and turn it on for AI Agent.
+Today every collapsed node renders in the same square 200×150 footprint, which makes the AI Agent feel cramped — the bot icon and "AI Agent" label are stacked vertically and the bottom-handle labels (`Chat Model*`, `Memory`, `Tool`) sit right under the icon. In n8n the agent card is a wide rectangle with the icon on the left and the title beside it, leaving room below for the three handle labels.
 
 ## Changes
 
-### 1. Handle config supports `label` and `required`
+### 1. Drive collapsed size from the node definition
 
-Extend the `HandleConfig` type read by `NodeWrapper` (`src/utils/NodeWrapper.tsx`) so each handle entry may carry:
-
-- `label?: string` — display text (e.g. "Chat Model"). Falls back to nothing when absent (preserves existing nodes' look).
-- `required?: boolean` — when true, append a red `*` after the label.
-
-No changes to how `id`, `type`, `position` work. Existing handles without `label` render exactly as today.
-
-### 2. Render the label in `NodeWrapper`
-
-Inside the handles map (around line 390 where `<Handle>` is returned), when `h.label` is set, render a small `<span>` positioned just outside the node along the handle's axis:
-
-- `position: "bottom"` → label below the handle, centered horizontally
-- `position: "top"` → label above the handle
-- `position: "left"` → label to the left of the handle, right-aligned
-- `position: "right"` → label to the right of the handle, left-aligned
-
-Styling uses semantic tokens so it themes in both light/dark:
+`src/utils/NodeWrapper.tsx` currently hardcodes the collapsed size:
 
 ```tsx
-<span
-  className="absolute text-[10px] font-medium text-muted-foreground whitespace-nowrap pointer-events-none nodrag select-none"
-  style={positionStyle}
->
-  {h.label}
-  {h.required && <span className="text-destructive ml-0.5">*</span>}
-</span>
+${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
+...
+style={{
+  width: isExpanded ? minWidth : 200,
+  minHeight: isExpanded ? minHeight : 150,
+  height: isExpanded ? "auto" : 150,
+  ...
+}}
 ```
 
-The label is a sibling of `<Handle>` inside the same positioned wrapper (or rendered as a child of `<Handle>` with absolute positioning relative to the handle's 24×24 box). Offset of ~14px keeps the text clear of the plug icon. It uses `pointer-events-none` so it never blocks drag/connect on the handle.
+Add optional `collapsedSize?: { width: number; height: number }` support, sourced from `definition.collapsedSize` (passed down via `NodeRouter` / `BaseNode` as a new prop, alongside the existing `size` used for the expanded view). When present, the collapsed `<Card>` uses those dimensions instead of the 200×150 default. All other nodes keep the current square footprint because they don't define `collapsedSize`.
 
-### 3. Update `src/nodes/AIAgent.json` handles
+### 2. Horizontal (icon-left) collapsed layout for AI Agent
+
+When `collapsedSize` is set and its `width` is meaningfully larger than its `height` (e.g. ratio ≥ 1.6), switch the collapsed body from the existing vertical `flex flex-col items-center justify-center` to a horizontal layout:
+
+```tsx
+<div className="flex flex-row items-center gap-3 h-full px-5 select-none relative group">
+  <div className="text-muted-foreground shrink-0">{icon}</div>
+  <div className="font-semibold text-sm text-foreground leading-tight truncate">
+    {label}
+  </div>
+</div>
+```
+
+Existing overlays (execution status badge top-left, duration top-right, delete button, tool-mode toggle, rename input, TOOL badge, item count) remain absolutely positioned — they don't depend on the inner flex direction, so they keep working unchanged.
+
+### 3. Opt AI Agent in
+
+`src/nodes/AIAgent.json` — add a `collapsedSize` next to the existing expanded `size`:
 
 ```json
-"handles": [
-  { "type": "target", "position": "left",   "id": "input" },
-  { "type": "target", "position": "bottom", "id": "chatModel", "label": "Chat Model", "required": true },
-  { "type": "target", "position": "bottom", "id": "memory",    "label": "Memory" },
-  { "type": "target", "position": "bottom", "id": "tool",      "label": "Tool" },
-  { "type": "source", "position": "right",  "id": "output" }
-]
+"size": { "width": 380, "height": 420 },
+"collapsedSize": { "width": 320, "height": 110 }
 ```
 
-`input` and `output` stay unlabeled to match the reference image (only the bottom slots get tags). If we want them labeled later, the same mechanism applies.
+That gives the n8n-style wide card: ~320px across, ~110px tall, with icon + "AI Agent" on one row and clear space below for the three handle labels.
 
-### 4. Scope
+### 4. Handle positions still derive from percentages
 
-Only AI Agent gets labels in this change. Other nodes are untouched because their handles don't set `label`. We can opt other multi-port nodes in later (e.g. Switch case outputs) by adding `label` to their handle entries.
+Handles in `NodeWrapper` are positioned with `((idx + 1) / (group.length + 1)) * 100%`, so the three bottom handles automatically spread across the wider card and their labels (`Chat Model*`, `Memory`, `Tool`) sit evenly under them without further changes.
 
 ## Verification
 
-- Open the AI Agent node in the editor (collapsed and expanded). Bottom row shows `Chat Model*`, `Memory`, `Tool` directly under their respective handles. `*` is red.
-- Labels remain readable in light and dark themes (use `text-muted-foreground` + `text-destructive`).
-- Dragging from / dropping onto a handle still works (label is `pointer-events-none`).
-- Other nodes (Compute, If, Switch, indicators, brokers) render unchanged — no labels appear because their handle configs don't define `label`.
+- AI Agent collapsed: card is ~320×110, icon on the left, "AI Agent" label beside it, edit pencil still appears when selected.
+- Bottom handles spread evenly across the wider node; labels stay centered under each handle and don't collide.
+- Left input and right output handles still attach to the vertical center of the card.
+- All other nodes (Compute, If, Switch, indicators, brokers, ChatModel, Memory, Tool nodes) render at the existing 200×150 collapsed size — no regressions.
+- Expand/collapse, rename (F2/double-click), delete, tool-mode toggle, execution status badge, duration, TOOL badge, and electric border all still render correctly on the wider AI Agent card.

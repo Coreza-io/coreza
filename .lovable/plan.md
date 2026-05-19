@@ -1,38 +1,49 @@
-# Fix legend: drop right-axis tags, keep crosshair values
+# Make price OHLC track the crosshair
 
-Two follow-ups on the top-left pane legends.
+The pane indicators (RSI, ADX, MACD, etc.) now update correctly as the cursor moves across bars. The price pane's `O / H / L / C` header still shows the last bar's values and never updates on hover.
 
-## Problem
+## Root cause
 
-1. **Stale right-axis tags.** The colored "Overlay 1 ADX / +DI / -DI" labels on the right edge of each panel are still drawn by lightweight-charts. They duplicate the new top-left legend and need to go.
-2. **Crosshair values blink and snap back.** Moving the cursor over the ADX line briefly shows the hovered value, then immediately resets to the last-bar value. The legend never tracks the cursor.
+In `LightweightVisualizeChart.tsx` the price legend's `ohlc` prop is built from `latestCandle = viewModel.candles[viewModel.candles.length - 1]` only. The crosshair handler `bindCrosshairLegend` updates `legendState` for overlay channels but does not write the candle's OHLC anywhere, so the header stays pinned to the last bar.
 
-## Root causes
+## Change
 
-1. The series `title` option (e.g. `"Overlay 1 ADX"`) renders an axis label on the price scale. `lastValueVisible: false` only hides the numeric last-value badge; the title chip is still drawn whenever `title` is set. Need to stop passing `title` for overlay series (we already have a dedicated top-left legend that shows the name).
-2. In `LightweightVisualizeChart.tsx` the data/overlay reconciliation `useEffect` lists `priceLegendOverlays` in its dependency array, but that array is built inline (`priceOverlays.filter(...)`) on every render with no `useMemo`. Every time the crosshair handler calls `setLegendState`, the component re-renders, a new `priceLegendOverlays` reference is produced, the effect re-runs, and the effect's final `setLegendState({ ...last-bar values ... })` overwrites the hovered values. Result: crosshair value flashes for one frame, then snaps back.
+### `src/components/charts/LightweightVisualizeChart.tsx`
 
-## Changes
+1. Add a second piece of state alongside `legendState`:
+   ```ts
+   const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
+   ```
+   Type imported from `ChartPaneLegend` (or redeclared locally with the same shape).
 
-### 1. `src/components/charts/lightweightSeriesBuilder.ts`
+2. In the price-chart crosshair handler (the one bound with `paneKey === "price"`), in addition to updating overlay channel values, look up the candle bar for that timestamp:
+   ```ts
+   const candleData = param.seriesData.get(candleSeriesRef.current!);
+   if (param.time !== undefined && candleData && "open" in candleData) {
+     setHoveredOhlc({
+       open: candleData.open,
+       high: candleData.high,
+       low: candleData.low,
+       close: candleData.close,
+     });
+   } else {
+     setHoveredOhlc(null);
+   }
+   ```
+   The candle series is already available via `candleSeriesRef.current`; pass it into `bindCrosshairLegend` for the price pane (or special-case the price pane inline) so the handler can read the hovered candle each move.
 
-Stop passing `title` on every overlay series (`line/panel`, `multi` channels, `bands` upper/middle/lower, `levels` support/resistance series). The top-left legend already labels them. Keep `lastValueVisible: false` and `priceLineVisible: false` as today. Reference-line `createPriceLine` calls keep their `title` because those are real horizontal levels the user wants labeled (e.g. RSI 30 / 70).
+3. Render the legend with the hovered value when present, falling back to the latest bar:
+   ```tsx
+   ohlc={hoveredOhlc ?? (latestCandle ? { open, high, low, close } : null)}
+   ```
 
-### 2. `src/components/charts/LightweightVisualizeChart.tsx`
+4. No changes needed to `ChartPaneLegend.tsx` — its `ohlc` prop already accepts any `OhlcValues` and re-renders on change.
 
-- Wrap `priceLegendOverlays` in `useMemo(() => priceOverlays.filter(o => o.kind !== "levels"), [priceOverlays])` so its identity is stable across crosshair-driven re-renders.
-- Double-check the effect deps: `viewModel`, `panelOverlays`, `priceLegendOverlays`, `priceOverlays` are all memoized now, so the effect only re-runs when overlays/data actually change.
-- No change to the crosshair handler itself — once the effect stops re-firing per render, hovered values stick.
-
-### 3. Build errors in the same file
-
-- Replace `ISeriesApiBase` import (doesn't exist in this version of `lightweight-charts`) with `ISeriesApi` and cast the series to `ISeriesApi<"Line" | "Histogram", Time>` when calling `param.seriesData.get(...)`.
-- Replace the four `arr.findLast(...)` calls in `buildOverlayLastValues` with a small helper `lastValid(points)` that scans from the end with a `for` loop — avoids needing `lib: es2023`.
+5. Tear-down: nothing extra needed; the existing crosshair unsubscribe in the unmount cleanup already covers this handler.
 
 ## Verification
 
-- Open Visualize with ADX panel → right edge of the panel no longer shows the three colored chips. Only the price-axis numbers remain.
-- Hover the ADX line → the top-left legend's `ADX / +DI / -DI` numbers track the cursor smoothly and stay on the hovered bar's values.
-- Move cursor off the chart → legend snaps back to the latest bar.
-- Add/remove an overlay → reconciliation still happens (legend updates, panes appear/disappear).
-- Reference levels (RSI 30/70, etc.) keep their axis labels.
+- Open Visualize with candles → top-left shows `O / H / L / C` for the last bar.
+- Move cursor across the price chart → those four numbers update bar-by-bar to match the hovered candle.
+- Move cursor off the chart → numbers snap back to the last bar.
+- Indicator panels keep working exactly as before.

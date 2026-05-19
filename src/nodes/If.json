@@ -10,8 +10,8 @@
   "size": { "width": 520, "height": 340 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "true" },
-    { "type": "source", "position": "right", "id": "false" }
+    { "type": "source", "position": "right", "id": "true", "label": "true" },
+    { "type": "source", "position": "right", "id": "false", "label": "false" }
   ],
   "action": {
     "url": "/comparator/if",

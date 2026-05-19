@@ -1,51 +1,29 @@
-# Add dynamic labels to Switch node handles
+# Smooth edges (no orthogonal step turns)
 
-Same pattern as the AI Agent handle labels, but the labels for Switch come from the user's case configuration instead of being hardcoded in the node JSON. The reference screenshot shows two cases (`market`, `order_update`) plus an `Enable Fallback` toggle — each of these should render its name beside the matching output handle on the right side of the node.
+The reference image shows a clean S-curve between two nodes. Today, edges going forward already use a bezier curve, but any "backward" route (target placed behind/above source) falls back to an orthogonal 5-segment path with small rounded corners — that's the visible right-angle "step" the user wants gone.
 
-## Where the handles are built
+## Where the step routing lives
 
-`src/components/nodes/NodeRouter.tsx` (lines ~148–220) already generates Switch output handles dynamically:
+`src/components/workflow/EdgeManager.tsx` — function `calculateSmartPath` (~lines 247–530). For each handle-pair direction (Right→Left, Left→Right, Bottom→Top, Top→Bottom) it branches:
 
-- One `source` handle on the right per entry in the `cases` repeater, with `id = caseItem.outputName || caseN`.
-- One extra `source` handle (`fallbackHandleId`) when `enableFallback` is on.
-- A single `target` handle (`input`) on the left.
+- `isBackward` true → calls `buildOrthogonalPath(...)` (the helper at lines 174–245) producing `M ... L ... Q ... L ...` with right-angle turns.
+- `isBackward` false → already uses `getBezierPath(...)` — smooth.
 
-Today these handles have no `label` property, so `NodeWrapper` renders them without text. The `HandleConfig` type in `src/utils/NodeWrapper.tsx` already supports `label?: string` (added for AI Agent), so this change is purely about populating it.
+The default fallback at line 517 also uses `getBezierPath`.
 
 ## Change
 
-In `src/components/nodes/NodeRouter.tsx`, inside the `handles` `useMemo` for Switch nodes:
+In `EdgeManager.tsx`, replace every `buildOrthogonalPath(...)` branch with a smooth bezier route, so every edge — forward or backward — uses curves only.
 
-1. **Defaults branch (no user cases yet)** — when mapping `defaultCases` into handles, also set:
-   - `label: caseItem.outputName || \`Case ${index + 1}\``
-   And for the fallback entry: `label: "Fallback"`.
-
-2. **Main branch (user has configured cases)** — in the `cases.forEach` loop, derive a display label from the same fields used for the handle id, with a friendly fallback:
-   ```ts
-   const handleLabel =
-     caseItem.outputName ||
-     caseItem.caseName ||
-     caseItem.caseValue ||
-     `Case ${index + 1}`;
-   ```
-   Pass it as `label: handleLabel` on the pushed handle object.
-
-3. **Fallback handle** — when `fallbackEnabled`, push with `label: "Fallback"`.
-
-4. The left `input` handle stays unlabeled (matches AI Agent's input/output behavior and the screenshot).
-
-5. Labels update reactively because the `useMemo` already depends on `data.fieldState?.cases` and `data.values?.cases`. Renaming a case's `outputName` re-renders the handle with the new label automatically. No extra dependency needed.
-
-## Rendering
-
-No changes to `NodeWrapper.tsx`. It already renders `h.label` next to each handle along the correct axis (right-side handles get the label to the right of the dot) with `text-[10px] text-muted-foreground pointer-events-none`, so existing drag/connect behavior is unaffected.
+1. For each of the four backward branches (Right→Left, Left→Right, Bottom→Top, Top→Bottom), drop the orthogonal block and call `getBezierPath` with the same `sourceX/Y/Position` and `targetX/Y/Position`. React Flow's bezier helper already produces a clean S-curve when the target is behind the source (matches the second reference image).
+2. Compute `midX = (sourceX + targetX) / 2` and `midY = (sourceY + targetY) / 2` for the edge label position (same as the existing forward branches).
+3. Delete the now-unused `buildOrthogonalPath` helper (lines 174–245) and the `turnOffset` / `radius` / `nodePadding` locals that only fed it. Keep `sourceNode`/`targetNode` lookups only if still referenced — otherwise simplify the function body.
+4. No changes to the edge component itself (stroke, animation, plug overlays, label rendering) — only the path string source changes.
 
 ## Verification
 
-- Open a Switch node with two cases named `market` and `order_update` and fallback enabled. Right side shows three handle labels stacked vertically: `market`, `order_update`, `Fallback`.
-- Rename a case in the repeater → the handle label updates live.
-- Add a new case → a new labeled handle appears; remove a case → its handle disappears.
-- Disable `Enable Fallback` → the `Fallback` handle and its label disappear.
-- Light and dark themes both readable.
-- AI Agent node and all other nodes unchanged (they don't go through the Switch branch).
-- Existing edges connected by `sourceHandle` keep working because handle `id` values are unchanged — only `label` was added.
+- A backward connection (e.g. Switch `Fallback` handle wrapping back to an earlier node) renders as a smooth curve like reference image 2, with no right-angle segments.
+- Forward connections look identical to before.
+- Edge labels stay roughly centered on the new path.
+- Animated/executing edge styles, plug icons, and hit areas still render correctly because the same `edgePath` string is fed into all `<path d={edgePath}>` elements.
+- No console errors after switching nodes around and creating loops.

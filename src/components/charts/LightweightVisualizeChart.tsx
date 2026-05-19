@@ -339,6 +339,7 @@ const LightweightVisualizeChart: React.FC<{
       priceChartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      setChartReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

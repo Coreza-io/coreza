@@ -23,7 +23,10 @@ import { Loader2, X, Plus } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
-import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import {
+  useExecutionStore,
+  useExecutionStoreVersion,
+} from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
 import { buildPreviewData } from "@/utils/previewDataResolver";
@@ -62,6 +65,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 }) => {
   const { getNodes } = useReactFlow();
   const executionContext = useExecutionStore();
+  const executionStoreVersion = useExecutionStoreVersion();
   const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========
@@ -485,7 +489,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const getPreviewData = useCallback(
     () => buildPreviewData(previousNodes, executionContext, getNodes),
-    [previousNodes, executionContext, getNodes],
+    [previousNodes, executionContext, getNodes, executionStoreVersion],
   );
 
   const getOverlayPreviewFor = useCallback(
@@ -503,7 +507,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
     },
-    [getPreviewData, selectedPrevNodeId, getNodes],
+    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion],
   );
 
   const handleOverlayDrop = useCallback(
@@ -526,7 +530,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       allNodeData,
       sourceData: getSourceData(selectedPrevNodeId),
     };
-  }, [getPreviewData, selectedPrevNodeId]);
+  }, [getPreviewData, selectedPrevNodeId, executionStoreVersion]);
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
@@ -545,7 +549,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
     },
-    [selectedPrevNodeId, sourceMap, getPreviewData, resolveDeep],
+    [selectedPrevNodeId, sourceMap, getPreviewData, resolveDeep, executionStoreVersion],
   );
 
   const getSwitchPreviewFor = useCallback(
@@ -564,7 +568,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
     },
-    [selectedPrevNodeId, getPreviewData, resolveDeep],
+    [selectedPrevNodeId, getPreviewData, resolveDeep, executionStoreVersion],
   );
 
   return (

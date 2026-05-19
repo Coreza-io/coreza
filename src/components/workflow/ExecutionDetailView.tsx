@@ -30,6 +30,7 @@ import NodeRouter from "@/components/nodes/NodeRouter";
 import EdgeManager from "./EdgeManager";
 import { nodeManifest } from "@/nodes/manifest";
 import { StaticExecutionStoreProvider } from "@/contexts/StaticExecutionStoreContext";
+import { StableNodeProvider } from "@/contexts/StableNodeContext";
 
 // Create execution-specific node types using NodeRouter for all node types
 const executionNodeTypes = Object.fromEntries([
@@ -287,44 +288,46 @@ export function ExecutionDetailView({
           {/* Isolated React Flow context + execution store for historical view */}
           {/* Key by execution.id to force remount when switching runs - ensures field state reinitializes */}
           <ReactFlowProvider key={execution.id}>
-            <StaticExecutionStoreProvider
-              nodeExecutions={nodeExecutions.map((exec) => ({
-                nodeId: exec.nodeId,
-                output: exec.output,
-                input: exec.input,
-                status: exec.status,
-              }))}
-            >
-              <ReactFlow
-                nodes={executionNodes}
-                edges={executionEdges}
-                nodeTypes={executionNodeTypes}
-                edgeTypes={executionEdgeTypes}
-                nodesDraggable={false}
-                nodesConnectable={false}
-                elementsSelectable={true}
-                zoomOnDoubleClick={false}
-                fitView
-                className={cn(
-                  "execution-canvas",
-                  resolvedTheme === "dark" && "dark",
-                  loading && "opacity-50 pointer-events-none",
-                )}
-                style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+            <StableNodeProvider>
+              <StaticExecutionStoreProvider
+                nodeExecutions={nodeExecutions.map((exec) => ({
+                  nodeId: exec.nodeId,
+                  output: exec.output,
+                  input: exec.input,
+                  status: exec.status,
+                }))}
               >
-                <Background
-                  variant={BackgroundVariant.Dots}
-                  gap={16}
-                  size={0.8}
-                  color="hsl(var(--muted-foreground) / 0.40)"
-                />
-                <MiniMap
-                  className="!bg-card !border-border"
-                  maskColor="hsl(var(--muted) / 0.6)"
-                />
-                <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
-              </ReactFlow>
-            </StaticExecutionStoreProvider>
+                <ReactFlow
+                  nodes={executionNodes}
+                  edges={executionEdges}
+                  nodeTypes={executionNodeTypes}
+                  edgeTypes={executionEdgeTypes}
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  elementsSelectable={true}
+                  zoomOnDoubleClick={false}
+                  fitView
+                  className={cn(
+                    "execution-canvas",
+                    resolvedTheme === "dark" && "dark",
+                    loading && "opacity-50 pointer-events-none",
+                  )}
+                  style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+                >
+                  <Background
+                    variant={BackgroundVariant.Dots}
+                    gap={16}
+                    size={0.8}
+                    color="hsl(var(--muted-foreground) / 0.40)"
+                  />
+                  <MiniMap
+                    className="!bg-card !border-border"
+                    maskColor="hsl(var(--muted) / 0.6)"
+                  />
+                  <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
+                </ReactFlow>
+              </StaticExecutionStoreProvider>
+            </StableNodeProvider>
           </ReactFlowProvider>
         </div>
       </div>

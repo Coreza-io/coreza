@@ -35,6 +35,13 @@ type OverlayRegistry = {
 type PaneLegendValues = Record<string, Record<string, number | null>>;
 type LegendState = Record<string, PaneLegendValues>;
 
+type OhlcValues = {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
 const syncTimeScales = (charts: IChartApi[]): (() => void) => {
   let syncing = false;
   const unsubscribers = charts.map((chart, sourceIndex) => {
@@ -103,6 +110,7 @@ const LightweightVisualizeChart: React.FC<{
     new Map(),
   );
   const [legendState, setLegendState] = useState<LegendState>({});
+  const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
   const cleanupSyncRef = useRef<(() => void) | null>(null);
 
   const isPanelOverlay = (overlay: VisualizeOverlay): boolean =>
@@ -170,6 +178,7 @@ const LightweightVisualizeChart: React.FC<{
     chart: IChartApi,
     overlays: VisualizeOverlay[],
     resolveHandles: (overlayId: string) => OverlayHandles | undefined,
+    candleSeries?: ISeriesApi<"Candlestick", Time> | null,
   ) => {
     const previous = crosshairSubscriptionsRef.current.get(paneKey);
     if (previous) {
@@ -195,6 +204,20 @@ const LightweightVisualizeChart: React.FC<{
         });
         nextPaneValues[overlay.id] = overlayValues;
       });
+      if (candleSeries) {
+        const candleData = param.seriesData.get(candleSeries);
+        if (param.time !== undefined && candleData && "open" in candleData) {
+          setHoveredOhlc({
+            open: candleData.open,
+            high: candleData.high,
+            low: candleData.low,
+            close: candleData.close,
+          });
+        } else {
+          setHoveredOhlc(null);
+        }
+      }
+
       setLegendState((prev) => ({ ...prev, [paneKey]: nextPaneValues }));
     };
     chart.subscribeCrosshairMove(handler);
@@ -437,8 +460,12 @@ const LightweightVisualizeChart: React.FC<{
       }, {}),
     }));
 
-    bindCrosshairLegend("price", priceChart, priceLegendOverlays, (overlayId) =>
-      registryRef.current.price.get(overlayId),
+    bindCrosshairLegend(
+      "price",
+      priceChart,
+      priceLegendOverlays,
+      (overlayId) => registryRef.current.price.get(overlayId),
+      candleSeries,
     );
     panelOverlays.forEach((overlay) => {
       const panel = registryRef.current.panels.get(overlay.id);
@@ -476,14 +503,15 @@ const LightweightVisualizeChart: React.FC<{
           overlays={priceLegendOverlays}
           values={legendState.price ?? {}}
           ohlc={
-            latestCandle
+            hoveredOhlc ??
+            (latestCandle
               ? {
                   open: latestCandle.open,
                   high: latestCandle.high,
                   low: latestCandle.low,
                   close: latestCandle.close,
                 }
-              : null
+              : null)
           }
         />
       </div>

@@ -1,41 +1,46 @@
-# Scope chart zoom to the chart, not the node
+# Restore chart wheel/touch interactions inside React Flow node
 
-## Problem
+## What broke
 
-When the cursor is over the Visualize chart inside a React Flow node and the user scrolls to zoom, both the chart's time scale **and** the React Flow canvas zoom (which scales the entire node). The wheel event bubbles up from the chart container to React Flow's pane handler.
+The previous fix added four `*Capture` React handlers on the chart root plus `nowheel nodrag` classes:
+
+```tsx
+onWheelCapture={stopPropagation}
+onPointerDownCapture={stopPropagation}
+onMouseDownCapture={stopPropagation}
+onTouchStartCapture={stopPropagation}
+```
+
+Capture-phase handlers run on the way **down** the DOM (root → canvas). Calling `stopPropagation` there halts the event before it reaches lightweight-charts' canvas listeners, so:
+
+- Mouse wheel zoom: dead
+- Two-finger pinch zoom: dead
+- Click-drag pan / left-right scroll: dead
+- Crosshair still works because that's a mousemove with no capture handler.
+
+The only thing still functioning is the native `wheel` listener attached via `useEffect`, which runs in bubble phase and correctly stops propagation **after** the chart has handled it.
 
 ## Fix
 
-Stop wheel + touch gesture propagation at the chart wrapper so React Flow never sees those events when the cursor is inside the chart. Lightweight-charts already handles its own zoom/pan internally on the same events — we just need to prevent bubbling.
+Trust the two mechanisms that actually work and remove the ones that break the chart:
+
+1. **`nowheel nodrag` classes** on the root — React Flow honors these and skips its own wheel/drag handling for any descendant. This alone is sufficient for React Flow's React-level handlers.
+2. **Native bubble-phase `wheel` listener** on the root that calls `stopPropagation` — covers React Flow's native (non-React) wheel listener attached to the pane. Already in place.
 
 ### `src/components/charts/LightweightVisualizeChart.tsx`
 
-1. Wrap the outer returned `<div className="space-y-2 relative">` (or add a new wrapper) with handlers:
-   ```tsx
-   const stopPropagation = (e: React.SyntheticEvent) => e.stopPropagation();
-   ```
-   Attach to the root wrapper:
-   - `onWheelCapture={stopPropagation}` — blocks React Flow's wheel-to-zoom
-   - `onPointerDownCapture` / `onMouseDownCapture` — prevents node drag when click-dragging on chart to pan
-   - `onTouchStartCapture` — same for touch pinch/pan
-   
-   Use `*Capture` variants so the handler fires before any child handlers and propagation is stopped before React Flow's listeners (attached at the pane) see the event.
+- Delete the `stopPropagation` callback and all four `on*Capture` props from the root `<div>`.
+- Keep `className="space-y-2 relative nodrag nowheel"`.
+- Keep the existing `useEffect` that adds `wheel` with `{ passive: false }` and calls `stopPropagation` in bubble phase.
+- Add a matching native bubble-phase listener for `touchstart` / `touchmove` with `stopPropagation` so pinch-zoom doesn't leak up to React Flow's native touch handlers on the pane. Use `{ passive: true }` so we don't block the chart's own touch handling. (No `preventDefault` — lightweight-charts needs the gesture.)
 
-2. Alternative if React Flow uses native listeners (it does for wheel): attach a native non-passive wheel listener via `useEffect` on the root wrapper ref:
-   ```ts
-   const node = rootRef.current;
-   const onWheel = (e: WheelEvent) => e.stopPropagation();
-   node.addEventListener("wheel", onWheel, { passive: false });
-   return () => node.removeEventListener("wheel", onWheel);
-   ```
-   This is the safer path because React's synthetic `onWheel` runs after the native one React Flow listens to. Use this approach.
-
-3. Also add a `nodrag nowheel` className to the root wrapper. React Flow recognizes these built-in classes and will skip its own drag + wheel handling for any descendant — this is the cleanest, library-supported solution and pairs well with the native listener as a belt-and-suspenders fix.
+That's the entire change. Pointer/mouse down events on the node body are already handled by the `nodrag` class, so we don't need any JS for those.
 
 ### Verification
 
-- Hover the price chart, scroll wheel → only the chart time scale zooms; node stays the same size.
-- Hover a panel (RSI/ADX) chart, scroll → same: only that chart zooms.
-- Move cursor outside the chart onto the node header/empty area, scroll → React Flow canvas zooms as before.
-- Click-drag inside the chart → pans the chart, does not drag the node.
-- Click-drag on the node header → still drags the node normally.
+- Scroll wheel inside chart → chart zooms; node size unchanged.
+- Scroll wheel outside chart but inside node → React Flow canvas zooms.
+- Two-finger pinch on chart → chart zooms; node unchanged.
+- Click-drag inside chart → chart pans left/right; node does not move.
+- Click-drag on node header / empty node area → node drags as before.
+- Crosshair hover → legend still updates per bar.

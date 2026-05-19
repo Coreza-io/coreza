@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -94,6 +94,7 @@ const removeOverlayHandles = (chart: IChartApi, handles: OverlayHandles) => {
 const LightweightVisualizeChart: React.FC<{
   viewModel: VisualizeChartViewModel;
 }> = ({ viewModel }) => {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const priceRef = useRef<HTMLDivElement | null>(null);
   const panelContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const priceChartRef = useRef<IChartApi | null>(null);
@@ -112,6 +113,21 @@ const LightweightVisualizeChart: React.FC<{
   const [legendState, setLegendState] = useState<LegendState>({});
   const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
   const cleanupSyncRef = useRef<(() => void) | null>(null);
+  const stopPropagation = useCallback((event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  }, []);
+
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      event.stopPropagation();
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+    };
+  }, []);
 
   const isPanelOverlay = (overlay: VisualizeOverlay): boolean =>
     overlay.kind === "panel" ||
@@ -492,7 +508,14 @@ const LightweightVisualizeChart: React.FC<{
   }, [viewModel, panelOverlays, priceLegendOverlays, priceOverlays]);
 
   return (
-    <div className="space-y-2 relative">
+    <div
+      ref={rootRef}
+      className="space-y-2 relative nodrag nowheel"
+      onWheelCapture={stopPropagation}
+      onPointerDownCapture={stopPropagation}
+      onMouseDownCapture={stopPropagation}
+      onTouchStartCapture={stopPropagation}
+    >
       <div className="relative">
         <div
           ref={priceRef}

@@ -1,29 +1,36 @@
-# Smooth edges (no orthogonal step turns)
+# Performance Chart — total daily P/L across live workflows
 
-The reference image shows a clean S-curve between two nodes. Today, edges going forward already use a bezier curve, but any "backward" route (target placed behind/above source) falls back to an orthogonal 5-segment path with small rounded corners — that's the visible right-angle "step" the user wants gone.
+Replace the mock random data in the Dashboard's Performance Chart with a real series: **total realized P/L per day across all currently-live workflows**, over the last 30 days.
 
-## Where the step routing lives
+## What changes
 
-`src/components/workflow/EdgeManager.tsx` — function `calculateSmartPath` (~lines 247–530). For each handle-pair direction (Right→Left, Left→Right, Bottom→Top, Top→Bottom) it branches:
+`src/pages/Dashboard.tsx`
 
-- `isBackward` true → calls `buildOrthogonalPath(...)` (the helper at lines 174–245) producing `M ... L ... Q ... L ...` with right-angle turns.
-- `isBackward` false → already uses `getBezierPath(...)` — smooth.
+1. Remove the mock generator at lines ~110–114 (`Array.from({ length: 30 } ...)` with `Math.random`).
+2. Add a parallel fetch alongside the existing workflows query:
+   - Identify the user's live workflow IDs: workflows where `is_active = true` AND the nodes JSON contains a Portfolio node in broker mode (reuse the `isBrokerPortfolioWorkflow` check from `src/hooks/useLiveStrategies.ts` — extract it to a small shared helper, e.g. `src/utils/liveWorkflowFilter.ts`, so Dashboard and `useLiveStrategies` share one source of truth).
+   - Query `live_trades` for those workflow IDs with `exitTime >= now - 30 days`, selecting `exitTime` and `net_pnl`. RLS already restricts to the user.
+3. Build a 30-day series in the browser:
+   - Start with a map of the last 30 calendar days (local timezone) → `pnl: 0`.
+   - For each trade, bucket by `exitTime` day and add `net_pnl`.
+   - Output array shape stays `{ date: 'May 19', value: number }` so the existing `<LineChart>` keeps working without prop changes.
+4. Update the chart card header to reflect the new metric: title stays "Performance Chart", description becomes "Total daily P/L across live workflows (last 30 days)".
+5. Empty state: if there are no live workflows or no trades, render a small centered "No live P/L yet" message inside the chart card instead of a flat-zero line.
+6. Color: keep the existing orange stroke; add a subtle horizontal zero baseline (`<ReferenceLine y={0}>`) so wins vs losses are obvious. Y-axis formatter shows currency-ish values (e.g. `$1.2k`, `-$340`).
 
-The default fallback at line 517 also uses `getBezierPath`.
+## Performance card stat (top-right tile)
 
-## Change
+The "Performance — N/A / Coming soon" tile becomes live too: show the **sum of `value` across the 30-day series** as the headline (e.g. `+$1,240.50`), with subtext "Last 30 days · N live workflows". Trend arrow up/down based on sign. This reuses the same fetched data — no extra query.
 
-In `EdgeManager.tsx`, replace every `buildOrthogonalPath(...)` branch with a smooth bezier route, so every edge — forward or backward — uses curves only.
+## Out of scope
 
-1. For each of the four backward branches (Right→Left, Left→Right, Bottom→Top, Top→Bottom), drop the orthogonal block and call `getBezierPath` with the same `sourceX/Y/Position` and `targetX/Y/Position`. React Flow's bezier helper already produces a clean S-curve when the target is behind the source (matches the second reference image).
-2. Compute `midX = (sourceX + targetX) / 2` and `midY = (sourceY + targetY) / 2` for the edge label position (same as the existing forward branches).
-3. Delete the now-unused `buildOrthogonalPath` helper (lines 174–245) and the `turnOffset` / `radius` / `nodePadding` locals that only fed it. Keep `sourceNode`/`targetNode` lookups only if still referenced — otherwise simplify the function body.
-4. No changes to the edge component itself (stroke, animation, plug overlays, label rendering) — only the path string source changes.
+- No new tables, columns, RLS, or edge functions — `live_trades` already exposes `net_pnl` and is RLS-scoped to the user.
+- No realtime subscription on the chart (the dashboard already reloads on mount); can be added later if needed.
+- No per-workflow breakdown lines — single aggregate line per user's choice.
 
 ## Verification
 
-- A backward connection (e.g. Switch `Fallback` handle wrapping back to an earlier node) renders as a smooth curve like reference image 2, with no right-angle segments.
-- Forward connections look identical to before.
-- Edge labels stay roughly centered on the new path.
-- Animated/executing edge styles, plug icons, and hit areas still render correctly because the same `edgePath` string is fed into all `<path d={edgePath}>` elements.
-- No console errors after switching nodes around and creating loops.
+- Open `/dashboard` with at least one live (broker-mode Portfolio) workflow that has closed trades → chart shows a non-flat line summing `net_pnl` per day; Performance tile shows the 30-day total.
+- Disable all live workflows → chart card shows the empty state; Performance tile shows `$0.00 · 0 live workflows`.
+- Cross-check one day's value: sum `net_pnl` in `live_trades` for that day across live workflow IDs equals the plotted point.
+- Light/dark theme both render legibly; no console or network errors.

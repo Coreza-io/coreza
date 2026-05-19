@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createChart,
   HistogramSeries,
   type IChartApi,
+  type ISeriesApiBase,
   type ISeriesApi,
   type LogicalRange,
+  type MouseEventParams,
   type Time,
 } from "lightweight-charts";
 import type {
@@ -18,6 +20,7 @@ import {
   toVolumeData,
   type OverlayHandles,
 } from "./lightweightSeriesBuilder";
+import ChartPaneLegend from "./ChartPaneLegend";
 
 const PRICE_HEIGHT = 320;
 const PANEL_HEIGHT = 140;
@@ -30,6 +33,8 @@ type OverlayRegistry = {
   price: Map<string, OverlayHandles>;
   panels: Map<string, { chart: IChartApi; handles: OverlayHandles }>;
 };
+type PaneLegendValues = Record<string, Record<string, number | null>>;
+type LegendState = Record<string, PaneLegendValues>;
 
 const syncTimeScales = (charts: IChartApi[]): (() => void) => {
   let syncing = false;
@@ -57,6 +62,10 @@ const syncTimeScales = (charts: IChartApi[]): (() => void) => {
 type PanelChartEntry = {
   container: HTMLDivElement;
   chart: IChartApi;
+};
+type CrosshairSubscription = {
+  chart: IChartApi;
+  handler: (param: MouseEventParams<Time>) => void;
 };
 
 const removeOverlayHandles = (chart: IChartApi, handles: OverlayHandles) => {
@@ -90,6 +99,11 @@ const LightweightVisualizeChart: React.FC<{
     price: new Map(),
     panels: new Map(),
   });
+  const latestLegendValuesRef = useRef<LegendState>({});
+  const crosshairSubscriptionsRef = useRef<Map<string, CrosshairSubscription>>(
+    new Map(),
+  );
+  const [legendState, setLegendState] = useState<LegendState>({});
   const cleanupSyncRef = useRef<(() => void) | null>(null);
 
   const isPanelOverlay = (overlay: VisualizeOverlay): boolean =>
@@ -104,6 +118,84 @@ const LightweightVisualizeChart: React.FC<{
     () => viewModel.overlays.filter((overlay) => !isPanelOverlay(overlay)),
     [viewModel.overlays],
   );
+  const priceLegendOverlays = priceOverlays.filter(
+    (overlay) => overlay.kind !== "levels",
+  );
+  const latestCandle = viewModel.candles[viewModel.candles.length - 1];
+
+  const buildOverlayLastValues = (
+    overlay: VisualizeOverlay,
+    handles: OverlayHandles,
+  ): Record<string, number | null> => {
+    const bySeries = new Map(handles.channels.map((channel) => [channel.series, channel]));
+    const overlayValues: Record<string, number | null> = {};
+    handles.channels.forEach((channel) => {
+      let value: number | null = null;
+      if (overlay.kind === "line" || overlay.kind === "panel") {
+        const point = overlay.data.findLast((item) => item.value !== null);
+        value = point?.value ?? null;
+      } else if (overlay.kind === "multi") {
+        const matched = overlay.channels.find((item) => item.label === channel.key);
+        const point = matched?.data.findLast((item) => item.value !== null);
+        value = point?.value ?? null;
+      } else if (overlay.kind === "bands") {
+        const source =
+          channel.key === "upper"
+            ? overlay.upper
+            : channel.key === "middle"
+              ? overlay.middle
+              : overlay.lower;
+        const point = source?.findLast((item) => item.value !== null);
+        value = point?.value ?? null;
+      } else if (overlay.kind === "levels") {
+        const source =
+          channel.key === "support"
+            ? overlay.supportSeries
+            : overlay.resistanceSeries;
+        const point = source?.findLast((item) => item.value !== null);
+        value = point?.value ?? null;
+      }
+      overlayValues[channel.key] = value;
+    });
+    if (bySeries.size === 0) return overlayValues;
+    return overlayValues;
+  };
+
+  const bindCrosshairLegend = (
+    paneKey: string,
+    chart: IChartApi,
+    overlays: VisualizeOverlay[],
+    resolveHandles: (overlayId: string) => OverlayHandles | undefined,
+  ) => {
+    const previous = crosshairSubscriptionsRef.current.get(paneKey);
+    if (previous) {
+      previous.chart.unsubscribeCrosshairMove(previous.handler);
+      crosshairSubscriptionsRef.current.delete(paneKey);
+    }
+    const handler = (param: MouseEventParams<Time>) => {
+      const nextPaneValues: PaneLegendValues = {};
+      overlays.forEach((overlay) => {
+        const handles = resolveHandles(overlay.id);
+        if (!handles) return;
+        const fallback =
+          latestLegendValuesRef.current[paneKey]?.[overlay.id] ?? {};
+        const overlayValues: Record<string, number | null> = {};
+        handles.channels.forEach((channel) => {
+          const raw = param.seriesData.get(channel.series as ISeriesApiBase<Time>);
+          const hoveredValue =
+            raw && "value" in raw && typeof raw.value === "number"
+              ? raw.value
+              : null;
+          overlayValues[channel.key] =
+            param.time !== undefined ? hoveredValue ?? fallback[channel.key] ?? null : fallback[channel.key] ?? null;
+        });
+        nextPaneValues[overlay.id] = overlayValues;
+      });
+      setLegendState((prev) => ({ ...prev, [paneKey]: nextPaneValues }));
+    };
+    chart.subscribeCrosshairMove(handler);
+    crosshairSubscriptionsRef.current.set(paneKey, { chart, handler });
+  };
 
   // Initialize the price chart once the container has a non-zero width.
   // Retries via rAF until the container is measured (handles React Flow expand transitions).
@@ -185,6 +277,7 @@ const LightweightVisualizeChart: React.FC<{
 
     const registry = registryRef.current;
     const panelCharts = panelChartsRef.current;
+    const crosshairSubscriptions = crosshairSubscriptionsRef.current;
     return () => {
       cancelled = true;
       if (rafId !== null) cancelAnimationFrame(rafId);
@@ -192,6 +285,10 @@ const LightweightVisualizeChart: React.FC<{
       resizeObserverRef.current = null;
       cleanupSyncRef.current?.();
       cleanupSyncRef.current = null;
+      crosshairSubscriptions.forEach(({ chart, handler }) => {
+        chart.unsubscribeCrosshairMove(handler);
+      });
+      crosshairSubscriptions.clear();
       if (priceChartRef.current) {
         registry.price.forEach((seriesList) =>
           removeOverlayHandles(priceChartRef.current!, seriesList),
@@ -309,6 +406,44 @@ const LightweightVisualizeChart: React.FC<{
       );
     });
 
+    const nextLatestLegendValues: LegendState = { ...latestLegendValuesRef.current };
+    const nextPriceLegendValues: PaneLegendValues = {};
+    priceLegendOverlays.forEach((overlay) => {
+      const handles = registryRef.current.price.get(overlay.id);
+      if (!handles) return;
+      nextPriceLegendValues[overlay.id] = buildOverlayLastValues(overlay, handles);
+    });
+    nextLatestLegendValues.price = nextPriceLegendValues;
+
+    panelOverlays.forEach((overlay) => {
+      const panel = registryRef.current.panels.get(overlay.id);
+      if (!panel) return;
+      nextLatestLegendValues[overlay.id] = {
+        [overlay.id]: buildOverlayLastValues(overlay, panel.handles),
+      };
+    });
+
+    latestLegendValuesRef.current = nextLatestLegendValues;
+    setLegendState((prev) => ({
+      ...prev,
+      price: nextLatestLegendValues.price ?? {},
+      ...panelOverlays.reduce<LegendState>((acc, overlay) => {
+        acc[overlay.id] = nextLatestLegendValues[overlay.id] ?? {};
+        return acc;
+      }, {}),
+    }));
+
+    bindCrosshairLegend("price", priceChart, priceLegendOverlays, (overlayId) =>
+      registryRef.current.price.get(overlayId),
+    );
+    panelOverlays.forEach((overlay) => {
+      const panel = registryRef.current.panels.get(overlay.id);
+      if (!panel) return;
+      bindCrosshairLegend(overlay.id, panel.chart, [overlay], (overlayId) =>
+        registryRef.current.panels.get(overlayId)?.handles,
+      );
+    });
+
     cleanupSyncRef.current?.();
     cleanupSyncRef.current = syncTimeScales([
       priceChart,
@@ -323,33 +458,54 @@ const LightweightVisualizeChart: React.FC<{
         panelChartsRef.current.get(overlay.id)?.chart.timeScale().fitContent();
       });
     }
-  }, [viewModel, panelOverlays, priceOverlays]);
+  }, [viewModel, panelOverlays, priceLegendOverlays, priceOverlays]);
 
   return (
     <div className="space-y-2 relative">
-      <div
-        ref={priceRef}
-        className="w-full"
-        style={{ height: PRICE_HEIGHT, minHeight: PRICE_HEIGHT }}
-      />
-      {panelOverlays.map((overlay) => (
+      <div className="relative">
         <div
-          key={overlay.id}
-          ref={(node) => {
-            if (node) {
-              panelContainerRefs.current.set(overlay.id, node);
-              resizeObserverRef.current?.observe(node);
-            } else {
-              const container = panelContainerRefs.current.get(overlay.id);
-              if (container) {
-                resizeObserverRef.current?.unobserve(container);
-              }
-              panelContainerRefs.current.delete(overlay.id);
-            }
-          }}
+          ref={priceRef}
           className="w-full"
-          style={{ height: PANEL_HEIGHT, minHeight: PANEL_HEIGHT }}
+          style={{ height: PRICE_HEIGHT, minHeight: PRICE_HEIGHT }}
         />
+        <ChartPaneLegend
+          overlays={priceLegendOverlays}
+          values={legendState.price ?? {}}
+          ohlc={
+            latestCandle
+              ? {
+                  open: latestCandle.open,
+                  high: latestCandle.high,
+                  low: latestCandle.low,
+                  close: latestCandle.close,
+                }
+              : null
+          }
+        />
+      </div>
+      {panelOverlays.map((overlay) => (
+        <div key={overlay.id} className="relative">
+          <div
+            ref={(node) => {
+              if (node) {
+                panelContainerRefs.current.set(overlay.id, node);
+                resizeObserverRef.current?.observe(node);
+              } else {
+                const container = panelContainerRefs.current.get(overlay.id);
+                if (container) {
+                  resizeObserverRef.current?.unobserve(container);
+                }
+                panelContainerRefs.current.delete(overlay.id);
+              }
+            }}
+            className="w-full"
+            style={{ height: PANEL_HEIGHT, minHeight: PANEL_HEIGHT }}
+          />
+          <ChartPaneLegend
+            overlays={[overlay]}
+            values={legendState[overlay.id] ?? {}}
+          />
+        </div>
       ))}
       {viewModel.candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm pointer-events-none">

@@ -26,6 +26,12 @@ type PriceAnchorRange = {
 };
 export type OverlayHandles = {
   series: Array<ISeriesApi<"Line" | "Histogram", Time>>;
+  channels: Array<{
+    key: string;
+    label: string;
+    color: string;
+    series: ISeriesApi<"Line" | "Histogram", Time>;
+  }>;
   priceLines: Array<{
     anchor: ISeriesApi<"Candlestick" | "Line" | "Histogram", Time>;
     line: IPriceLine;
@@ -83,7 +89,7 @@ export const addOverlaySeries = (
   priceAnchor?: ISeriesApi<"Candlestick" | "Line", Time>,
   priceAnchorRange?: PriceAnchorRange,
 ): OverlayHandles => {
-  const handles: OverlayHandles = { series: [], priceLines: [] };
+  const handles: OverlayHandles = { series: [], channels: [], priceLines: [] };
   if (overlay.kind === "line" || overlay.kind === "panel") {
     const series = chart.addSeries(LineSeries, {
       color: overlay.color,
@@ -92,6 +98,12 @@ export const addOverlaySeries = (
     });
     series.setData(toLineData(overlay.data));
     handles.series.push(series);
+    handles.channels.push({
+      key: overlay.id,
+      label: overlay.name,
+      color: overlay.color,
+      series,
+    });
     return handles;
   }
   if (overlay.kind === "multi") {
@@ -111,6 +123,12 @@ export const addOverlaySeries = (
             });
       series.setData(toLineData(channel.data));
       handles.series.push(series);
+      handles.channels.push({
+        key: channel.label,
+        label: channel.label,
+        color: channel.color,
+        series,
+      });
       if (index === 0 && overlay.referenceLines?.length) {
         overlay.referenceLines.forEach((ref) => {
           const line = series.createPriceLine({
@@ -135,6 +153,12 @@ export const addOverlaySeries = (
     });
     upper.setData(toLineData(overlay.upper));
     handles.series.push(upper);
+    handles.channels.push({
+      key: "upper",
+      label: "upper",
+      color: overlay.color,
+      series: upper,
+    });
     if (overlay.middle) {
       const middle = chart.addSeries(LineSeries, {
         color: overlay.color,
@@ -144,6 +168,12 @@ export const addOverlaySeries = (
       });
       middle.setData(toLineData(overlay.middle));
       handles.series.push(middle);
+      handles.channels.push({
+        key: "middle",
+        label: "middle",
+        color: overlay.color,
+        series: middle,
+      });
     }
     const lower = chart.addSeries(LineSeries, {
       color: overlay.color,
@@ -152,6 +182,12 @@ export const addOverlaySeries = (
     });
     lower.setData(toLineData(overlay.lower));
     handles.series.push(lower);
+    handles.channels.push({
+      key: "lower",
+      label: "lower",
+      color: overlay.color,
+      series: lower,
+    });
     return handles;
   }
 
@@ -223,6 +259,12 @@ export const addOverlaySeries = (
     });
     supportSeries.setData(toLineData(overlay.supportSeries));
     handles.series.push(supportSeries);
+    handles.channels.push({
+      key: "support",
+      label: "support",
+      color: "#22c55e",
+      series: supportSeries,
+    });
   }
   if (overlay.resistanceSeries) {
     const resistanceSeries = chart.addSeries(LineSeries, {
@@ -232,6 +274,12 @@ export const addOverlaySeries = (
     });
     resistanceSeries.setData(toLineData(overlay.resistanceSeries));
     handles.series.push(resistanceSeries);
+    handles.channels.push({
+      key: "resistance",
+      label: "resistance",
+      color: "#ef4444",
+      series: resistanceSeries,
+    });
   }
   if (fallbackSeries) {
     handles.series.push(fallbackSeries);

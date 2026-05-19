@@ -175,9 +175,17 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           type: "source",
           position: "right",
           id: caseItem.outputName || `case${index + 1}`,
+          label: caseItem.outputName || `Case ${index + 1}`,
         })),
         ...(fallbackEnabled
-          ? [{ type: "source", position: "right", id: fallbackHandleId }]
+          ? [
+              {
+                type: "source",
+                position: "right",
+                id: fallbackHandleId,
+                label: "Fallback",
+              },
+            ]
           : []),
       ];
     }
@@ -191,11 +199,16 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
         caseItem.caseName ||
         caseItem.caseValue ||
         `case${index + 1}`;
-      console.log(`🔧 Adding Switch handle: ${handleId}`);
+      const handleLabel =
+        caseItem.outputName ||
+        caseItem.caseName ||
+        caseItem.caseValue ||
+        `Case ${index + 1}`;
       handles.push({
         type: "source",
         position: "right",
         id: handleId,
+        label: handleLabel,
       });
     });
 
@@ -205,6 +218,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
         type: "source",
         position: "right",
         id: fallbackHandleId,
+        label: "Fallback",
       });
     }
 

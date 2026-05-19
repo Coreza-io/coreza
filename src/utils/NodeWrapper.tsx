@@ -85,6 +85,7 @@ interface NodeWrapperProps {
   children: React.ReactNode;
   minWidth?: number;
   minHeight?: number;
+  collapsedSize?: { width: number; height: number };
   handles?: HandleConfig[];
   nodeType?: string;
   category?: string;
@@ -125,6 +126,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   children,
   minWidth = 340,
   minHeight = 340,
+  collapsedSize,
   handles = [],
   nodeType,
   category,
@@ -268,6 +270,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const nodeShapeClass = shapeStyles[nodeType ?? "default"];
   const shouldShowHandlesOutside = handles.length > 0;
 
+  const collapsedWidth = collapsedSize?.width ?? 200;
+  const collapsedHeight = collapsedSize?.height ?? 150;
+  const isWideCollapsedLayout =
+    !!collapsedSize && collapsedWidth / collapsedHeight >= 1.6;
+
   return (
     <div className={`relative ${isExpanded ? "node-expanded" : ""}`}>
       {/* Input Data Panel */}
@@ -278,7 +285,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         className={`
           relative shadow-card transition-all duration-300 ease-in-out 
           border-2 hover:shadow-elevated
-          ${isExpanded ? "" : "w-[150px] h-[100px] cursor-pointer group"}
+          ${isExpanded ? "" : "cursor-pointer group"}
           ${nodeShapeClass}
           ${isFlashing ? "animate-stream-data-flash" : ""}
           ${
@@ -306,9 +313,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           }
         }}
         style={{
-          width: isExpanded ? minWidth : 200,
-          minHeight: isExpanded ? minHeight : 150,
-          height: isExpanded ? "auto" : 150,
+          width: isExpanded ? minWidth : collapsedWidth,
+          minHeight: isExpanded ? minHeight : collapsedHeight,
+          height: isExpanded ? "auto" : collapsedHeight,
           overflow:
             shouldShowHandlesOutside ||
             (electricBorder && isExecuting && isDarkMode)
@@ -430,7 +437,13 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Collapsed View */}
         {!isExpanded && (
-          <div className="flex flex-col items-center justify-center h-full p-4 select-none relative group">
+          <div
+            className={`select-none relative group h-full ${
+              isWideCollapsedLayout
+                ? "flex flex-row items-center gap-3 px-5"
+                : "flex flex-col items-center justify-center p-4"
+            }`}
+          >
             {/* Execution status badge - only in readOnly mode */}
             {readOnly && executionStatus && (
               <div className="absolute top-1 left-1 z-10">
@@ -478,7 +491,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 <Trash2 className="h-3 w-3 text-red-500" />
               </Button>
             )}
-            <div className="text-muted-foreground mb-2">
+            <div className={`text-muted-foreground ${isWideCollapsedLayout ? "shrink-0" : "mb-2"}`}>
               {/* Render icon with immediate loading */}
               {typeof icon === "string" && icon.startsWith("/assets/") ? (
                 <img
@@ -492,7 +505,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 icon
               )}
             </div>
-            <div className="font-semibold text-sm text-foreground text-center leading-tight">
+            <div
+              className={`font-semibold text-sm text-foreground leading-tight ${
+                isWideCollapsedLayout ? "truncate" : "text-center"
+              }`}
+            >
               {isEditing && selected && !readOnly ? (
                 <Input
                   ref={editInputRef}

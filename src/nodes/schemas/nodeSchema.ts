@@ -194,6 +194,7 @@ export const NodeConfigSchema = z
     color: z.string().optional(),
     icon: z.string().optional(),
     size: SizeSchema.optional(),
+    collapsedSize: SizeSchema.optional(),
     parentNode: z.string().optional(),
     type: z.string().optional(),
     provider: z.string().optional(),

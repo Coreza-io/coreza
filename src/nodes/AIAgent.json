@@ -5,6 +5,7 @@
   "category": "AIAgent",
   "icon": "/assets/icons/aiagent.svg",
   "size": { "width": 380, "height": 420 },
+  "collapsedSize": { "width": 320, "height": 110 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
     { "type": "target", "position": "bottom", "id": "chatModel", "label": "Chat Model", "required": true },

@@ -3,7 +3,7 @@
   "def": "AI Agent",
   "node_type": "main",
   "category": "AIAgent",
-  "icon": "/assets/icons/openai.svg",
+  "icon": "/assets/icons/aiagent.svg",
   "size": { "width": 380, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },

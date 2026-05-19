@@ -656,9 +656,6 @@ const MarketSubscriptions = () => {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-2xl">
-                            {sourceIcons(source)}
-                          </span>
                           <span className="font-semibold capitalize">
                             {source}
                           </span>

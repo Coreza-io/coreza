@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -113,10 +113,6 @@ const LightweightVisualizeChart: React.FC<{
   const [legendState, setLegendState] = useState<LegendState>({});
   const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
   const cleanupSyncRef = useRef<(() => void) | null>(null);
-  const stopPropagation = useCallback((event: React.SyntheticEvent) => {
-    event.stopPropagation();
-  }, []);
-
   useEffect(() => {
     const node = rootRef.current;
     if (!node) return;
@@ -124,8 +120,15 @@ const LightweightVisualizeChart: React.FC<{
       event.stopPropagation();
     };
     node.addEventListener("wheel", onWheel, { passive: false });
+    const onTouch = (event: TouchEvent) => {
+      event.stopPropagation();
+    };
+    node.addEventListener("touchstart", onTouch, { passive: true });
+    node.addEventListener("touchmove", onTouch, { passive: true });
     return () => {
       node.removeEventListener("wheel", onWheel);
+      node.removeEventListener("touchstart", onTouch);
+      node.removeEventListener("touchmove", onTouch);
     };
   }, []);
 
@@ -511,10 +514,6 @@ const LightweightVisualizeChart: React.FC<{
     <div
       ref={rootRef}
       className="space-y-2 relative nodrag nowheel"
-      onWheelCapture={stopPropagation}
-      onPointerDownCapture={stopPropagation}
-      onMouseDownCapture={stopPropagation}
-      onTouchStartCapture={stopPropagation}
     >
       <div className="relative">
         <div

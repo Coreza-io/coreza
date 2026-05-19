@@ -371,6 +371,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
           label={renderProps.displayName}
           minWidth={dynamicSize.width}
           minHeight={dynamicSize.height}
+          collapsedSize={definition.collapsedSize}
           handles={dynamicHandles}
           nodeType={definition.node_type}
           category={definition.category}

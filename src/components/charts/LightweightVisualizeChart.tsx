@@ -4,7 +4,6 @@ import {
   createChart,
   HistogramSeries,
   type IChartApi,
-  type ISeriesApiBase,
   type ISeriesApi,
   type LogicalRange,
   type MouseEventParams,
@@ -118,8 +117,9 @@ const LightweightVisualizeChart: React.FC<{
     () => viewModel.overlays.filter((overlay) => !isPanelOverlay(overlay)),
     [viewModel.overlays],
   );
-  const priceLegendOverlays = priceOverlays.filter(
-    (overlay) => overlay.kind !== "levels",
+  const priceLegendOverlays = useMemo(
+    () => priceOverlays.filter((overlay) => overlay.kind !== "levels"),
+    [priceOverlays],
   );
   const latestCandle = viewModel.candles[viewModel.candles.length - 1];
 
@@ -127,17 +127,24 @@ const LightweightVisualizeChart: React.FC<{
     overlay: VisualizeOverlay,
     handles: OverlayHandles,
   ): Record<string, number | null> => {
-    const bySeries = new Map(handles.channels.map((channel) => [channel.series, channel]));
+    const lastValid = (
+      points: Array<{ value: number | null }> | undefined,
+    ): number | null => {
+      if (!points) return null;
+      for (let index = points.length - 1; index >= 0; index -= 1) {
+        const point = points[index];
+        if (point && point.value !== null) return point.value;
+      }
+      return null;
+    };
     const overlayValues: Record<string, number | null> = {};
     handles.channels.forEach((channel) => {
       let value: number | null = null;
       if (overlay.kind === "line" || overlay.kind === "panel") {
-        const point = overlay.data.findLast((item) => item.value !== null);
-        value = point?.value ?? null;
+        value = lastValid(overlay.data);
       } else if (overlay.kind === "multi") {
         const matched = overlay.channels.find((item) => item.label === channel.key);
-        const point = matched?.data.findLast((item) => item.value !== null);
-        value = point?.value ?? null;
+        value = lastValid(matched?.data);
       } else if (overlay.kind === "bands") {
         const source =
           channel.key === "upper"
@@ -145,19 +152,16 @@ const LightweightVisualizeChart: React.FC<{
             : channel.key === "middle"
               ? overlay.middle
               : overlay.lower;
-        const point = source?.findLast((item) => item.value !== null);
-        value = point?.value ?? null;
+        value = lastValid(source);
       } else if (overlay.kind === "levels") {
         const source =
           channel.key === "support"
             ? overlay.supportSeries
             : overlay.resistanceSeries;
-        const point = source?.findLast((item) => item.value !== null);
-        value = point?.value ?? null;
+        value = lastValid(source);
       }
       overlayValues[channel.key] = value;
     });
-    if (bySeries.size === 0) return overlayValues;
     return overlayValues;
   };
 
@@ -181,7 +185,7 @@ const LightweightVisualizeChart: React.FC<{
           latestLegendValuesRef.current[paneKey]?.[overlay.id] ?? {};
         const overlayValues: Record<string, number | null> = {};
         handles.channels.forEach((channel) => {
-          const raw = param.seriesData.get(channel.series as ISeriesApiBase<Time>);
+          const raw = param.seriesData.get(channel.series);
           const hoveredValue =
             raw && "value" in raw && typeof raw.value === "number"
               ? raw.value

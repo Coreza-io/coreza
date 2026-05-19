@@ -98,7 +98,6 @@ export const addOverlaySeries = (
     const series = chart.addSeries(LineSeries, {
       color: overlay.color,
       lineWidth: 2,
-      title: overlay.name,
       ...OVERLAY_SERIES_STYLE,
     });
     series.setData(toLineData(overlay.data));
@@ -113,19 +112,16 @@ export const addOverlaySeries = (
   }
   if (overlay.kind === "multi") {
     overlay.channels.forEach((channel, index) => {
-      const title = `${overlay.name} ${channel.label}`;
       const series =
         channel.style === "histogram"
           ? chart.addSeries(HistogramSeries, {
               color: channel.color,
-              title,
               ...OVERLAY_SERIES_STYLE,
             })
           : chart.addSeries(LineSeries, {
               color: channel.color,
               lineWidth: 2,
               lineStyle: channel.dashed ? LINE_STYLE_DASHED : undefined,
-              title,
               ...OVERLAY_SERIES_STYLE,
             });
       series.setData(toLineData(channel.data));
@@ -156,7 +152,6 @@ export const addOverlaySeries = (
     const upper = chart.addSeries(LineSeries, {
       color: overlay.color,
       lineWidth: 1,
-      title: `${overlay.name} upper`,
       ...OVERLAY_SERIES_STYLE,
     });
     upper.setData(toLineData(overlay.upper));
@@ -172,7 +167,6 @@ export const addOverlaySeries = (
         color: overlay.color,
         lineWidth: 1,
         lineStyle: LINE_STYLE_DASHED,
-        title: `${overlay.name} middle`,
         ...OVERLAY_SERIES_STYLE,
       });
       middle.setData(toLineData(overlay.middle));
@@ -187,7 +181,6 @@ export const addOverlaySeries = (
     const lower = chart.addSeries(LineSeries, {
       color: overlay.color,
       lineWidth: 1,
-      title: `${overlay.name} lower`,
       ...OVERLAY_SERIES_STYLE,
     });
     lower.setData(toLineData(overlay.lower));
@@ -265,7 +258,6 @@ export const addOverlaySeries = (
     const supportSeries = chart.addSeries(LineSeries, {
       color: "#22c55e",
       lineWidth: 1,
-      title: `${overlay.name} support`,
       ...OVERLAY_SERIES_STYLE,
     });
     supportSeries.setData(toLineData(overlay.supportSeries));
@@ -281,7 +273,6 @@ export const addOverlaySeries = (
     const resistanceSeries = chart.addSeries(LineSeries, {
       color: "#ef4444",
       lineWidth: 1,
-      title: `${overlay.name} resistance`,
       ...OVERLAY_SERIES_STYLE,
     });
     resistanceSeries.setData(toLineData(overlay.resistanceSeries));

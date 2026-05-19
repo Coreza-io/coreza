@@ -69,6 +69,8 @@ interface HandleConfig {
   id: string;
   type?: "source" | "target" | "input" | "output";
   position: "left" | "right" | "top" | "bottom";
+  label?: string;
+  required?: boolean;
 }
 
 interface NodeWrapperProps {
@@ -387,6 +389,16 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               );
             }
 
+            const labelPositionStyle: React.CSSProperties | null = h.label
+              ? pos === "bottom"
+                ? { top: "100%", left: "50%", transform: "translate(-50%, 14px)" }
+                : pos === "top"
+                ? { bottom: "100%", left: "50%", transform: "translate(-50%, -14px)" }
+                : pos === "left"
+                ? { right: "100%", top: "50%", transform: "translate(-14px, -50%)", textAlign: "right" }
+                : { left: "100%", top: "50%", transform: "translate(14px, -50%)", textAlign: "left" }
+              : null;
+
             return (
               <Handle
                 key={h.id}
@@ -402,6 +414,15 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 className={handleClass}
               >
                 {handleIcon}
+                {h.label && labelPositionStyle && (
+                  <span
+                    className="absolute text-[10px] font-medium text-muted-foreground whitespace-nowrap pointer-events-none nodrag select-none"
+                    style={labelPositionStyle}
+                  >
+                    {h.label}
+                    {h.required && <span className="text-destructive ml-0.5">*</span>}
+                  </span>
+                )}
               </Handle>
             );
           });

@@ -7,9 +7,9 @@
   "size": { "width": 380, "height": 420 },
   "handles": [
     { "type": "target", "position": "left", "id": "input" },
-    { "type": "target", "position": "bottom", "id": "chatModel" },
-    { "type": "target", "position": "bottom", "id": "memory" },
-    { "type": "target", "position": "bottom", "id": "tool" },
+    { "type": "target", "position": "bottom", "id": "chatModel", "label": "Chat Model", "required": true },
+    { "type": "target", "position": "bottom", "id": "memory", "label": "Memory" },
+    { "type": "target", "position": "bottom", "id": "tool", "label": "Tool" },
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": { "url": "/aiagent/execute", "method": "POST" },

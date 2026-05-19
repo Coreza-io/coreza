@@ -30,9 +30,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
   const { timezone, updateTimezone } = useUserPreferences();
+  const { user } = useAuth();
   const [settings, setSettings] = useState({
     notifications: {
       email: true,
@@ -292,16 +294,34 @@ const Settings = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
+              <form
+                autoComplete="off"
+                onSubmit={(event) => event.preventDefault()}
+                className="space-y-2"
+              >
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  value={user?.email ?? ""}
+                  readOnly
+                  hidden
+                />
                 <Label>Change Password</Label>
                 <div className="flex gap-2">
-                  <Input type="password" placeholder="Current password" className="max-w-sm" />
+                  <Input
+                    type="password"
+                    name="current-password"
+                    autoComplete="current-password"
+                    placeholder="Current password"
+                    className="max-w-sm"
+                  />
                   <Button variant="outline">
                     <Key className="h-4 w-4 mr-2" />
                     Update
                   </Button>
                 </div>
-              </div>
+              </form>
 
               <Separator />
 

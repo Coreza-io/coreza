@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/indicators.svg",
   "category": "Indicators",
-  "description": "Warm up all indicators in the workflow with historical data before the loop begins. Similar to QuantConnect's SetWarmUp.",
+  "description": "Warm up all indicators in the workflow with historical data before the loop begins.",
   "color": "text-purple-500",
   "size": { "width": 340, "height": 420 },
   "handles": [

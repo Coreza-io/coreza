@@ -649,7 +649,7 @@ export class SimBroker {
 
   /**
    * Bulk mark-to-market update for all held positions.
-   * Called by engine before strategy code runs each bar (QuantConnect-style).
+   * Called by engine before strategy code runs each bar.
    */
   updateAllPositionsMTM(prices: Record<string, number>): void {
     for (const [symbol, price] of Object.entries(prices)) {

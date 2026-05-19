@@ -1,23 +1,50 @@
-# Fix: IF node left/right fields too narrow
+# Fix: Plug icons misaligned in execution history view
 
 ## Problem
 
-The IF node is fixed at `width: 340` in `src/nodes/If.json`. Each condition row packs `left`, `operator`, `right`, and a delete button into a single grid row, leaving only ~80 px for `left` and `right`. Long dragged-in references like `{{ $('Market Status').json.market_type }}` get truncated to a few characters.
+In the editor, each edge has a clean plug indicator (`ConnectedSwitchIcon`) sitting flush against the node where the cord meets the handle. In the execution history view the same nodes render a tiny offset `FemalePlugIcon` (and the male plug stays visible on outputs), so the cord visually ends in empty space and the row of plug icons looks misaligned.
 
-## Approach
+## Root cause
 
-Just widen the IF node so the existing row layout has enough room for the left/right inputs. No layout/component changes.
+`NodeRouter` reads the live edge list via `useStableNodes()` and passes it to `NodeWrapper`, which decides per handle:
 
-### `src/nodes/If.json`
+```ts
+const isConnected = edges.some(edge =>
+  isInputHandle
+    ? edge.target === nodeId && edge.targetHandle === h.id
+    : edge.source === nodeId && edge.sourceHandle === h.id,
+);
+```
 
-- Change `size.width` from `340` to `520`.
-- Leave `size.height` at `340`.
+- Connected input handle -> `ConnectedSwitchIcon` (the polished, aligned plug).
+- Connected output handle -> icon hidden (cord takes over).
+- Otherwise -> raw `MalePlugIcon` / `FemalePlugIcon`.
 
-That's the only change.
+`useStableNodes()` is implemented via `useReactFlow()` inside `StableNodeProvider`, which is mounted once at the top of `WorkflowEditor` — outside the inner `<ReactFlowProvider key={execution.id}>` that `ExecutionDetailView` creates. So inside the execution canvas, `getEdges()` returns the **editor's** edges, not the execution snapshot's edges. For execution nodes (same IDs as editor in the lucky case, different in others) the `isConnected` check ends up false for the relevant handles, so the wrong icons render and the cord appears to terminate before the plug.
+
+## Fix
+
+Scope a `StableNodeProvider` to the execution canvas so `useStableNodes()` resolves to the inner React Flow instance and sees the execution snapshot's nodes/edges.
+
+### `src/components/workflow/ExecutionDetailView.tsx`
+
+- Import `StableNodeProvider` from `@/contexts/StableNodeContext`.
+- Inside the existing `<ReactFlowProvider key={execution.id}>`, wrap `<StaticExecutionStoreProvider>` and `<ReactFlow>` with `<StableNodeProvider>`. The order becomes:
+
+  ```
+  ReactFlowProvider
+    StableNodeProvider          // new — binds to inner React Flow instance
+      StaticExecutionStoreProvider
+        ReactFlow ...
+  ```
+
+That single change makes `NodeRouter` / `NodeWrapper` read the execution edges in this subtree, so the `isConnected` branch fires and the same `ConnectedSwitchIcon` (and hidden male plug on connected outputs) renders just like the editor.
+
+No changes to `NodeWrapper`, `NodeRouter`, or `StableNodeContext` are needed.
 
 ## Verification
 
-- Open the IF node — node is visibly wider.
-- Drag a long reference into `left` and `right` — the expression is readable without horizontal scrolling for typical values.
-- Operator dropdown, AND/OR selector, delete button, and Execute button still render correctly.
-- Saved condition data and execution behavior unchanged.
+- Open execution history for any workflow with multiple connected nodes.
+- Plug icons on connected handles now match the editor exactly: aligned `ConnectedSwitchIcon` at input side, no stray male plug on connected outputs.
+- Disconnected handles (if any) still show the regular female/male plug at the correct edge.
+- Editor view is unchanged.

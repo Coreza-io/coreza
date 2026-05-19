@@ -1,49 +1,41 @@
-# Make price OHLC track the crosshair
+# Scope chart zoom to the chart, not the node
 
-The pane indicators (RSI, ADX, MACD, etc.) now update correctly as the cursor moves across bars. The price pane's `O / H / L / C` header still shows the last bar's values and never updates on hover.
+## Problem
 
-## Root cause
+When the cursor is over the Visualize chart inside a React Flow node and the user scrolls to zoom, both the chart's time scale **and** the React Flow canvas zoom (which scales the entire node). The wheel event bubbles up from the chart container to React Flow's pane handler.
 
-In `LightweightVisualizeChart.tsx` the price legend's `ohlc` prop is built from `latestCandle = viewModel.candles[viewModel.candles.length - 1]` only. The crosshair handler `bindCrosshairLegend` updates `legendState` for overlay channels but does not write the candle's OHLC anywhere, so the header stays pinned to the last bar.
+## Fix
 
-## Change
+Stop wheel + touch gesture propagation at the chart wrapper so React Flow never sees those events when the cursor is inside the chart. Lightweight-charts already handles its own zoom/pan internally on the same events — we just need to prevent bubbling.
 
 ### `src/components/charts/LightweightVisualizeChart.tsx`
 
-1. Add a second piece of state alongside `legendState`:
-   ```ts
-   const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
-   ```
-   Type imported from `ChartPaneLegend` (or redeclared locally with the same shape).
-
-2. In the price-chart crosshair handler (the one bound with `paneKey === "price"`), in addition to updating overlay channel values, look up the candle bar for that timestamp:
-   ```ts
-   const candleData = param.seriesData.get(candleSeriesRef.current!);
-   if (param.time !== undefined && candleData && "open" in candleData) {
-     setHoveredOhlc({
-       open: candleData.open,
-       high: candleData.high,
-       low: candleData.low,
-       close: candleData.close,
-     });
-   } else {
-     setHoveredOhlc(null);
-   }
-   ```
-   The candle series is already available via `candleSeriesRef.current`; pass it into `bindCrosshairLegend` for the price pane (or special-case the price pane inline) so the handler can read the hovered candle each move.
-
-3. Render the legend with the hovered value when present, falling back to the latest bar:
+1. Wrap the outer returned `<div className="space-y-2 relative">` (or add a new wrapper) with handlers:
    ```tsx
-   ohlc={hoveredOhlc ?? (latestCandle ? { open, high, low, close } : null)}
+   const stopPropagation = (e: React.SyntheticEvent) => e.stopPropagation();
    ```
+   Attach to the root wrapper:
+   - `onWheelCapture={stopPropagation}` — blocks React Flow's wheel-to-zoom
+   - `onPointerDownCapture` / `onMouseDownCapture` — prevents node drag when click-dragging on chart to pan
+   - `onTouchStartCapture` — same for touch pinch/pan
+   
+   Use `*Capture` variants so the handler fires before any child handlers and propagation is stopped before React Flow's listeners (attached at the pane) see the event.
 
-4. No changes needed to `ChartPaneLegend.tsx` — its `ohlc` prop already accepts any `OhlcValues` and re-renders on change.
+2. Alternative if React Flow uses native listeners (it does for wheel): attach a native non-passive wheel listener via `useEffect` on the root wrapper ref:
+   ```ts
+   const node = rootRef.current;
+   const onWheel = (e: WheelEvent) => e.stopPropagation();
+   node.addEventListener("wheel", onWheel, { passive: false });
+   return () => node.removeEventListener("wheel", onWheel);
+   ```
+   This is the safer path because React's synthetic `onWheel` runs after the native one React Flow listens to. Use this approach.
 
-5. Tear-down: nothing extra needed; the existing crosshair unsubscribe in the unmount cleanup already covers this handler.
+3. Also add a `nodrag nowheel` className to the root wrapper. React Flow recognizes these built-in classes and will skip its own drag + wheel handling for any descendant — this is the cleanest, library-supported solution and pairs well with the native listener as a belt-and-suspenders fix.
 
-## Verification
+### Verification
 
-- Open Visualize with candles → top-left shows `O / H / L / C` for the last bar.
-- Move cursor across the price chart → those four numbers update bar-by-bar to match the hovered candle.
-- Move cursor off the chart → numbers snap back to the last bar.
-- Indicator panels keep working exactly as before.
+- Hover the price chart, scroll wheel → only the chart time scale zooms; node stays the same size.
+- Hover a panel (RSI/ADX) chart, scroll → same: only that chart zooms.
+- Move cursor outside the chart onto the node header/empty area, scroll → React Flow canvas zooms as before.
+- Click-drag inside the chart → pans the chart, does not drag the node.
+- Click-drag on the node header → still drags the node normally.

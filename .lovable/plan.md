@@ -1,44 +1,46 @@
-# Fix: Visualize chart stays blank until re-expand
+# Fix: IF node left/right fields too narrow to read
 
-## Root cause
+## Problem
 
-The previous chart-ready fix handles the chart initialization timing, but the screenshot shows a second stale-data path:
+The IF node is fixed at `width: 340` in `src/nodes/If.json`. Each condition row currently uses a single-row grid:
 
-1. `BaseNode` subscribes to `useExecutionStoreVersion()`, so the outer node re-renders when upstream execution output changes.
-2. `RepeaterNodeLayout` reads the execution store via `useExecutionStore()`, but it does **not** subscribe to the store version directly.
-3. `visualizePreviewContext` is memoized from `getPreviewData()`. Since the `ExecutionContext` object identity does not change when node output changes, the memo can keep the old empty `allNodeData/sourceData` while the Visualize preview remains mounted.
-4. Collapsing/re-expanding remounts/recomputes the preview context, so the same data suddenly renders.
+```
+grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto]
+```
 
-So the chart component can be ready, but it is still receiving stale empty preview data until the node panel remounts.
+which packs `left`, `operator`, `right`, and the delete button into one line. With a ~340 px node, that leaves only ~80 px for each of `left` and `right`, so dragged-in references like `{{ $('Market Status').json.market_type }}` get truncated to `{{ $('M`.
 
-## Fix
+## Approach (recommended)
 
-Make the Visualize preview context react to execution-store updates.
+Stack each condition row vertically inside the IF node so `left`, `operator`, and `right` each get the full node width. This avoids forcing every user to widen the node and keeps the IF visually compact when conditions are short.
 
 ### `src/components/nodes/layout/RepeaterNodeLayout.tsx`
 
-1. Import `useExecutionStoreVersion` from `ExecutionStoreContext`.
-2. Call `const executionStoreVersion = useExecutionStoreVersion();` next to `useExecutionStore()`.
-3. Add `executionStoreVersion` to the dependency list of:
-   - `getPreviewData`
-   - `getOverlayPreviewFor`
-   - `visualizePreviewContext`
-   - any preview resolver callbacks that use `getPreviewData` and depend on runtime output.
+Update the condition-row container (around line 680):
 
-This forces the Visualize preview to rebuild `sourceData` and `allNodeData` whenever upstream bars/indicator output is populated, without needing to collapse and expand the node.
+- Change the grid to a vertical stack: `flex flex-col gap-2 p-2 border rounded bg-muted/10`.
+- Put the operator + delete button on their own row so the delete stays inline-right:
+  ```
+  [ left input              ] (full width)
+  [ operator select ] [ x ]  (operator grows, delete fixed)
+  [ right input             ] (full width, when shown)
+  ```
+- Keep all field props as-is — only layout changes.
+- Switch (`cases`) repeater uses a different block further down; leave it untouched unless we see the same issue there.
 
-### `src/components/charts/LightweightVisualizeChart.tsx`
+### `src/nodes/If.json`
 
-Keep the current `chartReady` implementation, with one small cleanup:
+Bump the node `size.width` from `340` to `380` to give a little extra breathing room for long references and the operator dropdown. Height stays `340`.
 
-- In the init effect cleanup, set `chartReady` back to `false` after clearing chart refs.
+## Alternative considered (not chosen)
 
-No chart rendering behavior should otherwise change.
+- Making the IF node user-resizable: bigger change, touches React Flow node wrapper and persistence, and most users won't discover it.
+- Only widening the JSON `size.width` without stacking: helps a bit but still truncates long `{{ $('Node').json.path }}` strings.
 
 ## Verification
 
-- Expand Visualize first while there is no bar data: chart shows empty state.
-- Run/connect upstream bars and ADX while Visualize stays expanded: candles and ADX panel render immediately.
-- Collapse/re-expand is no longer required.
-- Existing flow still works when data is already available before Visualize expands.
-- Crosshair legends, OHLC values, and chart wheel/pinch behavior remain unchanged.
+- Drag a long reference into the `left` field of an IF condition — the full expression is visible (with horizontal scroll inside the input if extra long).
+- Operator dropdown still opens and selects correctly; delete button remains reachable.
+- Adding multiple conditions still renders the AND/OR selector above each extra row.
+- Switch (cases) node visual layout unchanged.
+- No change to saved condition data shape or execution behavior.

@@ -1,46 +1,36 @@
-# Restore chart wheel/touch interactions inside React Flow node
+# Fix: chart blank when node is expanded before data arrives
 
-## What broke
+## Root cause
 
-The previous fix added four `*Capture` React handlers on the chart root plus `nowheel nodrag` classes:
+`LightweightVisualizeChart` has two effects:
 
-```tsx
-onWheelCapture={stopPropagation}
-onPointerDownCapture={stopPropagation}
-onMouseDownCapture={stopPropagation}
-onTouchStartCapture={stopPropagation}
-```
+1. **Init effect** (mount-only, deps `[]`) — creates the price chart, retrying via `requestAnimationFrame` until the container has a non-zero width. On success it inlines `applyData()` for candles/volume but does **not** add overlays.
+2. **Data reconciliation effect** (deps `[viewModel, priceOverlays, panelOverlays, ...]`) — sets candle/volume data and reconciles overlays. The first line is an early-return guard: `if (!priceChart || !candleSeries || !volumeSeries) return;`.
 
-Capture-phase handlers run on the way **down** the DOM (root → canvas). Calling `stopPropagation` there halts the event before it reaches lightweight-charts' canvas listeners, so:
+Failure sequence the user is hitting:
 
-- Mouse wheel zoom: dead
-- Two-finger pinch zoom: dead
-- Click-drag pan / left-right scroll: dead
-- Crosshair still works because that's a mousemove with no capture handler.
-
-The only thing still functioning is the native `wheel` listener attached via `useEffect`, which runs in bubble phase and correctly stops propagation **after** the chart has handled it.
+1. User expands the empty Visualize node. Init effect starts rAF-polling because container width is still 0 during the expand transition.
+2. User connects ADX. `viewModel` updates → data effect fires → `priceChartRef.current` is still `null` → effect returns early and is never re-queued.
+3. Some time later the container reaches a non-zero width, init effect creates the chart, calls `applyData()` (candles/volume only — but candles are empty so still nothing visible), but **overlays are never added** because the data effect has no signal to re-run.
+4. Any later change (toggling, reconnecting, editing fields) bumps `viewModel`, the data effect fires again, sees the chart exists now, and renders everything. That's why "reconnecting makes it appear".
 
 ## Fix
 
-Trust the two mechanisms that actually work and remove the ones that break the chart:
-
-1. **`nowheel nodrag` classes** on the root — React Flow honors these and skips its own wheel/drag handling for any descendant. This alone is sufficient for React Flow's React-level handlers.
-2. **Native bubble-phase `wheel` listener** on the root that calls `stopPropagation` — covers React Flow's native (non-React) wheel listener attached to the pane. Already in place.
+Make the data effect re-run once the chart finishes initializing.
 
 ### `src/components/charts/LightweightVisualizeChart.tsx`
 
-- Delete the `stopPropagation` callback and all four `on*Capture` props from the root `<div>`.
-- Keep `className="space-y-2 relative nodrag nowheel"`.
-- Keep the existing `useEffect` that adds `wheel` with `{ passive: false }` and calls `stopPropagation` in bubble phase.
-- Add a matching native bubble-phase listener for `touchstart` / `touchmove` with `stopPropagation` so pinch-zoom doesn't leak up to React Flow's native touch handlers on the pane. Use `{ passive: true }` so we don't block the chart's own touch handling. (No `preventDefault` — lightweight-charts needs the gesture.)
+1. Add a `const [chartReady, setChartReady] = useState(false);` state.
+2. In the init effect, right after assigning `priceChartRef.current = priceChart`, call `setChartReady(true)`. Remove the `queueMicrotask(() => applyData())` shim — the data effect will handle it.
+3. In the init effect's cleanup, also `setChartReady(false)` so a remount starts clean.
+4. Add `chartReady` to the data effect's dependency array so it re-runs as soon as the chart exists.
+5. Keep the early-return guard as a safety net.
 
-That's the entire change. Pointer/mouse down events on the node body are already handled by the `nodrag` class, so we don't need any JS for those.
+That's the whole change — no other files touched.
 
 ### Verification
 
-- Scroll wheel inside chart → chart zooms; node size unchanged.
-- Scroll wheel outside chart but inside node → React Flow canvas zooms.
-- Two-finger pinch on chart → chart zooms; node unchanged.
-- Click-drag inside chart → chart pans left/right; node does not move.
-- Click-drag on node header / empty node area → node drags as before.
-- Crosshair hover → legend still updates per bar.
+- Collapse a Visualize node, populate ADX upstream, expand the node → chart and ADX panel render immediately.
+- Expand an empty Visualize node, then connect ADX → chart renders as soon as data flows, without needing to reconnect.
+- Existing flow (expand with data already present) still works.
+- Crosshair, OHLC hover, wheel/pinch zoom isolation, top-left legend — all unchanged.

@@ -1,45 +1,49 @@
-# Per-node timing leaks across ticks in live runs
+# Audit: N8N / QuantConnect / hardcoded credentials
 
-## What you're seeing
+## Summary
 
-In the latest tick of this live workflow:
-- Overall run badge = `8ms` (wall-clock from `started_at` to `completed_at` on `workflow_runs`)
-- Per-node badges sum to ~`17ms` (e.g. `syncFills` alone shows `14ms`)
+Full-codebase scan (excluding `node_modules`, `package-lock.json`, `.git`). All hits are in **docs, comments, or test fixtures** — no production code, no real secrets.
 
-The node badge for a single node (`14ms` on `syncFills`) is already larger than the whole run (`8ms`). That cannot be parallelism — it is a real bug.
+## 1. N8N references — 4 hits, all in docs
 
-## Root cause
+Used only as a comparison point in architecture RFCs.
 
-`WorkflowRunner` (`coreza-backend/src/services/WorkflowRunner.ts:74`) creates **one** `WorkflowEngine` in its constructor and reuses it for every stream tick. Per tick it calls `engine.resetForNextBar(true)` (line 241) to clear results/queues/edge payloads, then `engine.executeFromEntries(...)`.
+- `docs/COMPILED_PLAN_ADAPTERS_RFC.md:38, 40` — "Coreza vs n8n / QuantConnect" comparison.
+- `docs/coreza-trading-os-architecture-rfc.md:67` — comparison table row.
+- `docs/coreza-trading-os-rfc.md:46, 48` — comparison table row.
 
-`BaseExecutionRuntime.routeNodeResult` accumulates timing into `this.nodeTiming` (`coreza-backend/src/engine/executionRuntime.ts:291`):
+**Action:** none required. These are positioning docs, not product code. If you want to remove the comparison framing entirely, edit those three markdown files and drop the n8n rows / paragraphs.
 
-```text
-prev.totalMs += elapsed
-prev.count   += 1
-```
+## 2. QuantConnect references — 4 hits
 
-But neither `BaseExecutionRuntime.resetForNextBar` (line 388) nor `BacktestExecutionRuntime.resetForNextBar` (line 456) ever touch `nodeTiming`. There is a `clearNodeTiming()` method, but `WorkflowRunner` never calls it.
+All comparative or descriptive — no QC code, API, or credentials.
 
-So every persisted `WorkflowExecutionResult.timing` for a live tick contains the **cumulative** node timings since the runner started — not the per-tick numbers. The first tick of a fresh runner happens to look right; every subsequent tick keeps growing. Backtests have the same bug for any session that goes through `WorkflowEngine` without an explicit clear (`BacktestSession.ts` calls `clearNodeTiming` only at start and finalize, lines 118/855, so within a backtest the badge represents the whole backtest, not a single bar — different but related semantics).
+- `docs/COMPILED_PLAN_ADAPTERS_RFC.md:38, 41` — "vs QuantConnect" comparison.
+- `docs/coreza-trading-os-architecture-rfc.md:68` — comparison table.
+- `docs/coreza-trading-os-rfc.md:46, 48` — comparison table.
+- `coreza-backend/src/backtest/simBroker/index.ts:652` — code comment: `"Called by engine before strategy code runs each bar (QuantConnect-style)."`
+- `src/nodes/InitializeIndicators.json:7` — node description string: `"Similar to QuantConnect's SetWarmUp."`
 
-## Fix
+**Action:** the two non-doc mentions (`simBroker` comment + `InitializeIndicators.json` description) are user-visible if you ship to public. Recommend rewording to neutral phrasing:
+- `simBroker/index.ts:652` → `"Called by engine before strategy code runs each bar (bulk mark-to-market)."`
+- `InitializeIndicators.json:7` → `"Warm up all indicators in the workflow with historical data before the loop begins."`
 
-1. **`coreza-backend/src/services/WorkflowRunner.ts > processMessage`** — call `this.engine.clearNodeTiming()` right after `this.engine.resetForNextBar(true)` on line 241. Now each saved tick result reports only the work done on that tick.
+## 3. Hardcoded user credentials — none in production
 
-2. **`coreza-backend/src/engine/executionRuntime.ts`** — make this less foot-gunny by clearing `nodeTiming` inside `BaseExecutionRuntime.resetForNextBar` and `BacktestExecutionRuntime.resetForNextBar` whenever `full === true`. The backtest path still keeps cumulative timing across bars because `BacktestSession` calls `resetForNextBar(false)` between bars (per-bar) and only the explicit `clearNodeTiming` at start of run drops it — confirm by reading `BacktestSession.ts:118/855` and leaving its calls intact.
+Scanned for: literal `password|api_key|secret|token|bearer = "..."`, JWT-shaped strings (`eyJ...`), and UUID-shaped `user_id = "..."`.
 
-3. **Frontend (`src/hooks/useExecutionHistory.ts > getNodeExecutions`)** — no change. Already reads `timing[nodeId].totalMs`; it will simply show the correct per-tick value once the backend stops leaking.
+All hits are test fixtures, intentionally fake:
 
-4. **Optional UX nit** — in `NodeWrapper.tsx` badge tooltip, surface `count` from `payload.timing[nodeId]` so users seeing `2ms (x3)` understand a node ran multiple times in this run/tick.
+- `coreza-backend/market-stream-service/tests/binanceAuthMessage.test.ts` — `'api-key'` placeholder.
+- `coreza-backend/src/tests/security.test.ts` — `'PKTEST123456789'` Alpaca paper-test pattern.
+- `tests/integration/trading.test.ts` — `'invalid-key'`, `'test-key'`, `'test-client-secret'`.
 
-## Verification
+No JWTs, no real Supabase keys, no hardcoded `user_id` UUIDs found outside of tests. All runtime credentials flow through `CredentialManager` / `req.user?.id` / `process.env` as expected from the project's core rules.
 
-- Open a long-lived live workflow. After the first tick the per-node badge values match the new tick — they no longer grow every refresh.
-- Sum of per-node badges for a tick is ≤ wall-clock + a small scheduler delta. With parallel branches the sum can still be larger than wall-clock; that's correct and expected.
-- Run a fresh backtest: per-node badges accumulate across bars within the run (unchanged behavior).
-- Old runs render exactly as before (we never rewrite stored payloads).
+## Recommendation
 
-## Out of scope
+1. Leave test files as-is.
+2. Optionally reword the two non-doc QuantConnect mentions (`simBroker/index.ts:652`, `InitializeIndicators.json:7`) to remove brand reference from shipped artifacts.
+3. Optionally scrub the n8n/QC comparison tables in the three RFC docs if you'd rather not position against them publicly.
 
-- Tightening `workflow_runs.started_at` / `completed_at` to wrap only the actual execute call (today `started_at` is the `queued` row insert time). Not needed for the bug above; can be a follow-up if the total badge feels misleading.
+Let me know which of those edits to apply and I'll do them in build mode.

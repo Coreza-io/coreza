@@ -1,48 +1,33 @@
-# Investing.com-style pane legends
+# Fix legend: drop right-axis tags, keep crosshair values
 
-## Goal
+Two follow-ups on the top-left pane legends.
 
-Show each indicator's name and live value(s) as a small overlay in the **top-left of its pane**, matching the Investing.com layout:
+## Problem
 
-- Price pane: `Ichimoku  0.2297  0.2998  0.2290  0.2723  0.3430` (one number per channel, color-matched)
-- Each panel pane: `RSI (14)  42.40`, `ADX (14)  13.18  +DI 22.02  -DI 26.12`, `Volume  4.64M`, etc.
-- When the user moves the crosshair, the numbers update to that bar's values. With no crosshair, show the latest bar.
+1. **Stale right-axis tags.** The colored "Overlay 1 ADX / +DI / -DI" labels on the right edge of each panel are still drawn by lightweight-charts. They duplicate the new top-left legend and need to go.
+2. **Crosshair values blink and snap back.** Moving the cursor over the ADX line briefly shows the hovered value, then immediately resets to the last-bar value. The legend never tracks the cursor.
 
-The numbers stay tied to the pane they belong to — no more mixing.
+## Root causes
+
+1. The series `title` option (e.g. `"Overlay 1 ADX"`) renders an axis label on the price scale. `lastValueVisible: false` only hides the numeric last-value badge; the title chip is still drawn whenever `title` is set. Need to stop passing `title` for overlay series (we already have a dedicated top-left legend that shows the name).
+2. In `LightweightVisualizeChart.tsx` the data/overlay reconciliation `useEffect` lists `priceLegendOverlays` in its dependency array, but that array is built inline (`priceOverlays.filter(...)`) on every render with no `useMemo`. Every time the crosshair handler calls `setLegendState`, the component re-renders, a new `priceLegendOverlays` reference is produced, the effect re-runs, and the effect's final `setLegendState({ ...last-bar values ... })` overwrites the hovered values. Result: crosshair value flashes for one frame, then snaps back.
 
 ## Changes
 
-### 1. New component `src/components/charts/ChartPaneLegend.tsx`
+### 1. `src/components/charts/lightweightSeriesBuilder.ts`
 
-A small presentational overlay:
+Stop passing `title` on every overlay series (`line/panel`, `multi` channels, `bands` upper/middle/lower, `levels` support/resistance series). The top-left legend already labels them. Keep `lastValueVisible: false` and `priceLineVisible: false` as today. Reference-line `createPriceLine` calls keep their `title` because those are real horizontal levels the user wants labeled (e.g. RSI 30 / 70).
 
-- Absolutely positioned `top-2 left-2`, `pointer-events-none`, semi-transparent background, monospace numbers, small text.
-- Props: `overlays: VisualizeOverlay[]`, `values: Record<overlayId, Record<channelKey, number | null>>`.
-- Renders one row per overlay: name (e.g. `RSI`, `ADX`, `Bollinger Bands`), then a chip per channel `[●] label  value` using the overlay's color from `indicatorRegistry` / overlay definition.
-- Number formatter: volume-like values (≥ 1000) → `1.23K / 4.64M / 1.2B`; otherwise fixed 2-4 decimals based on magnitude.
+### 2. `src/components/charts/LightweightVisualizeChart.tsx`
 
-### 2. `src/components/charts/lightweightSeriesBuilder.ts`
-
-Extend `OverlayHandles` with a `channels: Array<{ key: string; label: string; color: string; series: ISeriesApi<...> }>` map so the chart component can resolve "which series renders which channel" without inspecting JSON. Populate it in all three branches (`line/panel`, `multi`, `bands` → upper/middle/lower, `levels` → support/resistance series). Existing `series` / `priceLines` arrays stay unchanged for cleanup.
-
-### 3. `src/components/charts/LightweightVisualizeChart.tsx`
-
-- Wrap the price chart container and each panel container in a `relative` div and mount `<ChartPaneLegend>` inside it.
-- Track legend state with `useState<Record<paneKey, Record<overlayId, Record<channelKey, number | null>>>>`.
-- On data apply: seed each channel's value with the **last** non-null point.
-- Subscribe to `chart.subscribeCrosshairMove` on every chart (price + each panel). When a `param.time` is provided, look up `param.seriesData.get(series)` for each tracked channel series and update the legend state for that pane. When the crosshair leaves (`param.time` is undefined), revert to the last-bar values.
-- Unsubscribe on chart teardown alongside the existing sync/registry cleanup.
-- Price-pane legend includes the candle OHLC summary (optional, small) — keep this minimal so it doesn't clash with overlays.
-
-### 4. No changes needed
-
-- `chartTypes.ts`, `visualizeNormalize.ts`, `indicatorRegistry.ts`, the Visualize node JSON, or any backend code. Colors and labels already flow through `VisualizeOverlay`.
+- Wrap `priceLegendOverlays` in `useMemo(() => priceOverlays.filter(o => o.kind !== "levels"), [priceOverlays])` so its identity is stable across crosshair-driven re-renders.
+- Double-check the effect deps: `viewModel`, `panelOverlays`, `priceLegendOverlays`, `priceOverlays` are all memoized now, so the effect only re-runs when overlays/data actually change.
+- No change to the crosshair handler itself — once the effect stops re-firing per render, hovered values stick.
 
 ## Verification
 
-- Open Visualize with RSI + ADX → each panel shows its own legend in the top-left with the correct values; numbers update as you hover candles.
-- Add MACD → third panel shows `MACD  macd  signal  histogram` colored to match the series.
-- Add Bollinger + EMA on price → price-pane legend lists both with current values.
-- Hover off the chart → legend snaps back to the last bar's values.
-- Resize the node → legends stay pinned to the top-left of their pane.
-- Workflow with no overlays → only the candle OHLC mini-legend appears (or nothing if we opt out).
+- Open Visualize with ADX panel → right edge of the panel no longer shows the three colored chips. Only the price-axis numbers remain.
+- Hover the ADX line → the top-left legend's `ADX / +DI / -DI` numbers track the cursor smoothly and stay on the hovered bar's values.
+- Move cursor off the chart → legend snaps back to the latest bar.
+- Add/remove an overlay → reconciliation still happens (legend updates, panes appear/disappear).
+- Reference levels (RSI 30/70, etc.) keep their axis labels.

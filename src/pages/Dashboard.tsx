@@ -31,8 +31,32 @@ import { TemplateChooserDialog } from "@/components/workflow/TemplateChooserDial
 import type { TemplateId } from "@/templates/workflows";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { useAuth } from "@/contexts/AuthContext";
+import { isBrokerPortfolioWorkflow } from "@/utils/liveWorkflowFilter";
+
+const DAY_COUNT = 30;
+
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 2,
+});
+
+const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+const getDayKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+type PerformancePoint = {
+  date: string;
+  value: number;
+};
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -43,9 +67,11 @@ const Dashboard = () => {
     activeWorkflows: 0,
     totalWorkflows: 0,
     recentWorkflows: [] as any[],
-    performanceData: [] as any[],
+    performanceData: [] as PerformancePoint[],
     successRate: 0,
-    totalRuns: 0
+    totalRuns: 0,
+    liveWorkflowsCount: 0,
+    hasLiveTrades: false,
   });
   const [executionHistory, setExecutionHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -64,12 +90,30 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - (DAY_COUNT - 1));
+
         // Fetch workflows
-        const { data: workflows, error: workflowsError } = await supabase
+        const workflowsQuery = supabase
           .from('workflows')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
+
+        const workflowRunsQuery = supabase
+          .from('workflow_runs')
+          .select(`
+            status,
+            workflow_id,
+            workflows!inner(user_id)
+          `)
+          .eq('workflows.user_id', user.id);
+
+        const [{ data: workflows, error: workflowsError }, { data: workflowRunsStats, error: runsError }] = await Promise.all([
+          workflowsQuery,
+          workflowRunsQuery,
+        ]);
 
         if (workflowsError) {
           console.error('Error fetching workflows:', workflowsError);
@@ -82,16 +126,46 @@ const Dashboard = () => {
         }
 
         const activeWorkflows = workflows?.filter(w => w.is_active) || [];
-        
-        // Fetch workflow runs statistics for success rate calculation
-        const { data: workflowRunsStats, error: runsError } = await supabase
-          .from('workflow_runs')
-          .select(`
-            status,
-            workflow_id,
-            workflows!inner(user_id)
-          `)
-          .eq('workflows.user_id', user.id);
+        const liveWorkflows = activeWorkflows.filter(isBrokerPortfolioWorkflow);
+        const liveWorkflowIds = liveWorkflows.map((workflow) => workflow.id);
+
+        const dayMap = new Map<string, { date: string; value: number }>();
+        for (let offset = DAY_COUNT - 1; offset >= 0; offset -= 1) {
+          const day = new Date();
+          day.setHours(0, 0, 0, 0);
+          day.setDate(day.getDate() - offset);
+          dayMap.set(getDayKey(day), {
+            date: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            value: 0,
+          });
+        }
+
+        let hasLiveTrades = false;
+
+        if (liveWorkflowIds.length > 0) {
+          const { data: liveTrades, error: tradesError } = await supabase
+            .from('live_trades')
+            .select('exitTime, net_pnl')
+            .in('workflow_id', liveWorkflowIds)
+            .gte('exitTime', thirtyDaysAgo.toISOString());
+
+          if (tradesError) {
+            throw tradesError;
+          }
+
+          hasLiveTrades = (liveTrades?.length ?? 0) > 0;
+
+          for (const trade of liveTrades || []) {
+            if (!trade.exitTime) continue;
+            const exitDate = new Date(trade.exitTime);
+            const dayKey = getDayKey(exitDate);
+            const current = dayMap.get(dayKey);
+            if (!current) continue;
+
+            const pnl = typeof trade.net_pnl === 'number' ? trade.net_pnl : Number(trade.net_pnl ?? 0);
+            current.value += Number.isFinite(pnl) ? pnl : 0;
+          }
+        }
 
         if (runsError) {
           console.error('Error fetching workflow runs:', runsError);
@@ -107,11 +181,7 @@ const Dashboard = () => {
           successRate = totalRuns > 0 ? Math.round((successfulRuns / totalRuns) * 100) : 0;
         }
         
-        // Generate mock performance data for now (you can replace this with real data later)
-        const performanceData = Array.from({ length: 30 }, (_, i) => ({
-          date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          value: Math.floor(Math.random() * 1000) + 500
-        }));
+        const performanceData = Array.from(dayMap.values());
 
         setDashboardData({
           activeWorkflows: activeWorkflows.length,
@@ -119,7 +189,9 @@ const Dashboard = () => {
           recentWorkflows: workflows?.slice(0, 3) || [],
           performanceData,
           successRate,
-          totalRuns
+          totalRuns,
+          liveWorkflowsCount: liveWorkflowIds.length,
+          hasLiveTrades,
         });
 
       } catch (error) {
@@ -324,6 +396,10 @@ const Dashboard = () => {
   };
 
   // Calculate dynamic stats based on real data
+  const performanceTotal = dashboardData.performanceData.reduce((sum, point) => sum + point.value, 0);
+  const showChartData = dashboardData.liveWorkflowsCount > 0 && dashboardData.hasLiveTrades;
+  const formattedPerformanceTotal = `${performanceTotal > 0 ? '+' : ''}${currencyFormatter.format(performanceTotal)}`;
+
   const stats = [
     {
       title: "Active Workflows",
@@ -348,10 +424,10 @@ const Dashboard = () => {
     },
     {
       title: "Performance",
-      value: "N/A",
-      change: "Coming soon",
+      value: formattedPerformanceTotal,
+      change: `Last 30 days · ${dashboardData.liveWorkflowsCount || 0} live workflows`,
       icon: PlayCircle,
-      trend: "neutral" as const
+      trend: performanceTotal > 0 ? "up" as const : performanceTotal < 0 ? "down" as const : "neutral" as const
     }
   ];
 
@@ -815,42 +891,51 @@ const Dashboard = () => {
                 Performance Chart
               </CardTitle>
               <CardDescription>
-                P&L over the last 30 days
+                Total daily P/L across live workflows (last 30 days)
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={dashboardData.performanceData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis 
-                      dataKey="date" 
-                      className="text-xs fill-muted-foreground"
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis 
-                      className="text-xs fill-muted-foreground"
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip 
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px'
-                      }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
-                      activeDot={{ r: 6, stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {!showChartData ? (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                    No live P/L yet
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dashboardData.performanceData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis 
+                        dataKey="date" 
+                        className="text-xs fill-muted-foreground"
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis 
+                        className="text-xs fill-muted-foreground"
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value) => compactCurrencyFormatter.format(Number(value))}
+                      />
+                      <Tooltip 
+                        formatter={(value: number | string) => currencyFormatter.format(Number(value))}
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeOpacity={0.25} />
+                      <Line 
+                        type="monotone" 
+                        dataKey="value" 
+                        stroke="hsl(var(--primary))" 
+                        strokeWidth={2}
+                        dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>

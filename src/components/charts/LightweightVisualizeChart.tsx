@@ -112,6 +112,7 @@ const LightweightVisualizeChart: React.FC<{
   );
   const [legendState, setLegendState] = useState<LegendState>({});
   const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
+  const [chartReady, setChartReady] = useState(false);
   const cleanupSyncRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const node = rootRef.current;
@@ -277,30 +278,7 @@ const LightweightVisualizeChart: React.FC<{
       priceChartRef.current = priceChart;
       candleSeriesRef.current = candleSeries;
       volumeSeriesRef.current = volumeSeries;
-      // Force a state-less re-render via ref bump by scheduling a microtask.
-      // We rely on the data effect's dependency on viewModel; ensure it runs:
-      queueMicrotask(() => {
-        // no-op; data effect handles next render. We still want the first
-        // paint right away, so apply data inline:
-        applyData();
-      });
-    };
-
-    const applyData = () => {
-      const priceChart = priceChartRef.current;
-      const candleSeries = candleSeriesRef.current;
-      const volumeSeries = volumeSeriesRef.current;
-      if (!priceChart || !candleSeries || !volumeSeries) return;
-      candleSeries.setData(
-        viewModel.candles.map((candle: CorezaCandle) => ({
-          ...candle,
-          time: toChartTime(candle.time),
-        })),
-      );
-      volumeSeries.setData(toVolumeData(viewModel.candles));
-      if (viewModel.options.autoFit) {
-        priceChart.timeScale().fitContent();
-      }
+      setChartReady(true);
     };
 
     tryInit();
@@ -508,7 +486,7 @@ const LightweightVisualizeChart: React.FC<{
         panelChartsRef.current.get(overlay.id)?.chart.timeScale().fitContent();
       });
     }
-  }, [viewModel, panelOverlays, priceLegendOverlays, priceOverlays]);
+  }, [chartReady, viewModel, panelOverlays, priceLegendOverlays, priceOverlays]);
 
   return (
     <div

@@ -1,36 +1,48 @@
-# Render each panel indicator in its own pane
+# Investing.com-style pane legends
 
-## Problem
+## Goal
 
-In the Visualize node, every overlay whose pane is `panel` (RSI, ADX, MACD, Stochastic, OBV, Volume Oscillator, etc.) is drawn into **one shared sub-chart**. With two panel indicators active (image 1: ADX + RSI), their series and reference lines (RSI 30/70, ADX +DI/-DI) overlap on the same axis, scales are incompatible, and the legend numbers mix together.
+Show each indicator's name and live value(s) as a small overlay in the **top-left of its pane**, matching the Investing.com layout:
 
-Industry-standard charts (image 2: Investing.com) give each panel indicator its own horizontal pane stacked under the price chart with a shared time axis.
+- Price pane: `Ichimoku  0.2297  0.2998  0.2290  0.2723  0.3430` (one number per channel, color-matched)
+- Each panel pane: `RSI (14)  42.40`, `ADX (14)  13.18  +DI 22.02  -DI 26.12`, `Volume  4.64M`, etc.
+- When the user moves the crosshair, the numbers update to that bar's values. With no crosshair, show the latest bar.
 
-## Proposed change
+The numbers stay tied to the pane they belong to — no more mixing.
 
-Switch `src/components/charts/LightweightVisualizeChart.tsx` from "one panel chart" to "one panel chart per panel overlay":
+## Changes
 
-1. Replace the single `panelChartRef` / `panelRef` with a keyed map of `{ overlayId -> { container, chart, handles } }`.
-2. Render one `<div>` per panel overlay below the price chart, each with its own `createChart` instance at `PANEL_HEIGHT` (~140px). Order follows `panelOverlays` order.
-3. Sync every panel chart's visible logical range with the price chart (extend `syncTimeScales` to an N-way sync helper: when any chart's range changes, propagate to all others with a single re-entrancy guard).
-4. Reconciliation:
-   - If a panel overlay is added → create a new chart instance for it.
-   - If removed → tear down its chart, unsubscribe from sync, drop the container.
-   - If data changes → call `addOverlaySeries` on that overlay's own chart (no other overlays share it).
-5. Update `OverlayRegistry` from `{ price, panel }` to `{ price: Map, panels: Map<overlayId, { chart, handles }> }`.
-6. Cleanup on unmount: iterate all panel charts, remove series, call `chart.remove()`.
-7. Resize observer: extend to resize every panel container on width change.
+### 1. New component `src/components/charts/ChartPaneLegend.tsx`
 
-## Out of scope
+A small presentational overlay:
 
-- Price-pane overlays (EMA, SMA, BB, VWAP, Ichimoku, S/R) keep rendering on the candlestick chart — that's already correct.
-- No change to `lightweightSeriesBuilder.ts`, `chartTypes.ts`, `visualizeNormalize.ts`, or the Visualize node JSON.
-- No change to per-overlay color/legend logic; once each indicator owns its pane the legend collisions disappear naturally.
+- Absolutely positioned `top-2 left-2`, `pointer-events-none`, semi-transparent background, monospace numbers, small text.
+- Props: `overlays: VisualizeOverlay[]`, `values: Record<overlayId, Record<channelKey, number | null>>`.
+- Renders one row per overlay: name (e.g. `RSI`, `ADX`, `Bollinger Bands`), then a chip per channel `[●] label  value` using the overlay's color from `indicatorRegistry` / overlay definition.
+- Number formatter: volume-like values (≥ 1000) → `1.23K / 4.64M / 1.2B`; otherwise fixed 2-4 decimals based on magnitude.
+
+### 2. `src/components/charts/lightweightSeriesBuilder.ts`
+
+Extend `OverlayHandles` with a `channels: Array<{ key: string; label: string; color: string; series: ISeriesApi<...> }>` map so the chart component can resolve "which series renders which channel" without inspecting JSON. Populate it in all three branches (`line/panel`, `multi`, `bands` → upper/middle/lower, `levels` → support/resistance series). Existing `series` / `priceLines` arrays stay unchanged for cleanup.
+
+### 3. `src/components/charts/LightweightVisualizeChart.tsx`
+
+- Wrap the price chart container and each panel container in a `relative` div and mount `<ChartPaneLegend>` inside it.
+- Track legend state with `useState<Record<paneKey, Record<overlayId, Record<channelKey, number | null>>>>`.
+- On data apply: seed each channel's value with the **last** non-null point.
+- Subscribe to `chart.subscribeCrosshairMove` on every chart (price + each panel). When a `param.time` is provided, look up `param.seriesData.get(series)` for each tracked channel series and update the legend state for that pane. When the crosshair leaves (`param.time` is undefined), revert to the last-bar values.
+- Unsubscribe on chart teardown alongside the existing sync/registry cleanup.
+- Price-pane legend includes the candle OHLC summary (optional, small) — keep this minimal so it doesn't clash with overlays.
+
+### 4. No changes needed
+
+- `chartTypes.ts`, `visualizeNormalize.ts`, `indicatorRegistry.ts`, the Visualize node JSON, or any backend code. Colors and labels already flow through `VisualizeOverlay`.
 
 ## Verification
 
-- Configure Visualize with overlays RSI + ADX (image 1 scenario) → two separate panels appear under the candles; RSI shows only `RSI`, `RSI 30`, `RSI 70`; ADX shows only `ADX`, `+DI`, `-DI`.
-- Add a third panel (MACD) → third pane stacked below, time-axis stays in lock-step when panning/zooming any pane.
-- Remove an overlay → its pane disappears, others remain aligned.
-- Resize the node → all panes resize together.
-- Switch to a workflow with only price overlays (EMA + BB) → no panel area rendered, layout unchanged from today.
+- Open Visualize with RSI + ADX → each panel shows its own legend in the top-left with the correct values; numbers update as you hover candles.
+- Add MACD → third panel shows `MACD  macd  signal  histogram` colored to match the series.
+- Add Bollinger + EMA on price → price-pane legend lists both with current values.
+- Hover off the chart → legend snaps back to the last bar's values.
+- Resize the node → legends stay pinned to the top-left of their pane.
+- Workflow with no overlays → only the candle OHLC mini-legend appears (or nothing if we opt out).

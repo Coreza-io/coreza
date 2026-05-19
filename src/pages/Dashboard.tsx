@@ -50,8 +50,14 @@ const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 1,
 });
 
-const getDayKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const getDayKeyUtc = (date: Date) => date.toISOString().slice(0, 10);
+
+const formatUtcDayLabel = (utcDayKey: string) =>
+  new Date(`${utcDayKey}T00:00:00.000Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
 
 type PerformancePoint = {
   date: string;
@@ -127,40 +133,53 @@ const Dashboard = () => {
 
         const activeWorkflows = workflows?.filter(w => w.is_active) || [];
         const liveWorkflows = activeWorkflows.filter(isBrokerPortfolioWorkflow);
-        const liveWorkflowIds = liveWorkflows.map((workflow) => workflow.id);
 
         const dayMap = new Map<string, { date: string; value: number }>();
         for (let offset = DAY_COUNT - 1; offset >= 0; offset -= 1) {
           const day = new Date();
-          day.setHours(0, 0, 0, 0);
-          day.setDate(day.getDate() - offset);
-          dayMap.set(getDayKey(day), {
-            date: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          day.setUTCHours(0, 0, 0, 0);
+          day.setUTCDate(day.getUTCDate() - offset);
+          const utcDayKey = getDayKeyUtc(day);
+          dayMap.set(utcDayKey, {
+            date: formatUtcDayLabel(utcDayKey),
             value: 0,
           });
         }
 
+        const activeExecutionMap = new Map<string, string>();
+        for (const workflow of liveWorkflows) {
+          const activeExecutionId = workflow.active_execution_id;
+          if (typeof activeExecutionId === 'string' && activeExecutionId.length > 0) {
+            activeExecutionMap.set(workflow.id, activeExecutionId);
+          }
+        }
+
         let hasLiveTrades = false;
 
-        if (liveWorkflowIds.length > 0) {
+        const liveSessionWorkflowIds = Array.from(activeExecutionMap.keys());
+        const activeExecutionIds = Array.from(new Set(activeExecutionMap.values()));
+
+        if (liveSessionWorkflowIds.length > 0 && activeExecutionIds.length > 0) {
           const { data: liveTrades, error: tradesError } = await supabase
             .from('live_trades')
-            .select('exitTime, net_pnl')
-            .in('workflow_id', liveWorkflowIds)
+            .select('workflow_id, execution_id, exitTime, net_pnl')
+            .in('workflow_id', liveSessionWorkflowIds)
+            .in('execution_id', activeExecutionIds)
             .gte('exitTime', thirtyDaysAgo.toISOString());
 
           if (tradesError) {
             throw tradesError;
           }
 
-          hasLiveTrades = (liveTrades?.length ?? 0) > 0;
-
           for (const trade of liveTrades || []) {
-            if (!trade.exitTime) continue;
-            const exitDate = new Date(trade.exitTime);
-            const dayKey = getDayKey(exitDate);
+            if (!trade.exitTime || !trade.workflow_id) continue;
+            if (activeExecutionMap.get(trade.workflow_id) !== trade.execution_id) continue;
+
+            const dayKey = getDayKeyUtc(new Date(trade.exitTime));
             const current = dayMap.get(dayKey);
             if (!current) continue;
+
+            hasLiveTrades = true;
 
             const pnl = typeof trade.net_pnl === 'number' ? trade.net_pnl : Number(trade.net_pnl ?? 0);
             current.value += Number.isFinite(pnl) ? pnl : 0;
@@ -190,7 +209,7 @@ const Dashboard = () => {
           performanceData,
           successRate,
           totalRuns,
-          liveWorkflowsCount: liveWorkflowIds.length,
+          liveWorkflowsCount: liveSessionWorkflowIds.length,
           hasLiveTrades,
         });
 

@@ -6,6 +6,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)
 [![GitHub Repo stars](https://img.shields.io/github/stars/Coreza-io/coreza?style=social)](https://github.com/Coreza-io/coreza/stargazers)
 [![Sponsor Coreza](https://img.shields.io/badge/Sponsor-Coreza-ff69b4?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/Coreza-io)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/SjeRSj4rJ)
 
 An advanced, open-source trading platform that combines powerful workflow automation with institutional-level security. Built for traders, by traders - featuring multi-broker integration, real-time market data, technical analysis, and visual workflow orchestration.
 

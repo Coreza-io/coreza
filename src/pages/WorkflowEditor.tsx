@@ -193,9 +193,10 @@ const WorkflowEditorContent = () => {
   const isNewWorkflow = id === "new" || !id;
   const projectId = searchParams.get("project"); // Get project ID from URL parameters
 
-  const [workflowId, setWorkflowId] = useState<string | null>(
-    isNewWorkflow ? null : id || null,
+  const [workflowId, setWorkflowId] = useState<string | null>(() =>
+    isNewWorkflow ? crypto.randomUUID() : (id ?? null),
   );
+  const hasPersistedRef = useRef<boolean>(!isNewWorkflow);
   const workflowSessionId = useMemo(() => {
     // Tie lifecycle to workflowId changes (new workflow => new session scope).
     void workflowId;
@@ -204,9 +205,9 @@ const WorkflowEditorContent = () => {
 
   // CRITICAL FIX: Sync workflowId with URL parameter changes
   useEffect(() => {
-    if (!isNewWorkflow && id !== workflowId) {
-      //console.log("🔄 Syncing workflowId with URL:", { oldWorkflowId: workflowId, newId: id });
-      setWorkflowId(id || null);
+    if (!isNewWorkflow && id && id !== workflowId) {
+      setWorkflowId(id);
+      hasPersistedRef.current = true;
     }
   }, [id, isNewWorkflow, workflowId]);
   const [workflowName, setWorkflowName] = useState(
@@ -677,18 +678,25 @@ const WorkflowEditorContent = () => {
   }, [authUser?.id, session?.access_token]);
 
   // Merge base node types with custom Loop node
-  const nodeTypes = useMemo(
-    () => ({
-      ...baseNodeTypes,
+  const nodeTypes = useMemo(() => {
+    const wrappedBaseNodeTypes = Object.fromEntries(
+      Object.entries(baseNodeTypes).map(([key, Component]) => [
+        key,
+        (props: any) => <Component {...props} workflowId={workflowId} />,
+      ]),
+    );
+
+    return {
+      ...wrappedBaseNodeTypes,
       Loop: (props: any) => (
         <LoopNode
           {...props}
+          workflowId={workflowId}
           data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
         />
       ),
-    }),
-    [handleAddNode],
-  );
+    };
+  }, [handleAddNode, workflowId]);
 
   const onConnect = useCallback(
     (params: Connection) =>
@@ -776,7 +784,7 @@ const WorkflowEditorContent = () => {
     }
 
     // For existing workflows, check for significant node reduction (confirmation dialog)
-    if (workflowId && !skipConfirmation) {
+    if (workflowId && hasPersistedRef.current && !skipConfirmation) {
       const { shouldWarn, currentCount } = await checkNodeReduction(
         workflowId,
         nodes.length,
@@ -788,12 +796,14 @@ const WorkflowEditorContent = () => {
       }
     }
 
-    const result = await saveWorkflow(workflowId, workflowName, nodes, edges);
+    const isFirstSave = !hasPersistedRef.current;
+    const result = await saveWorkflow(workflowId, workflowName, nodes, edges, {
+      isNew: isFirstSave,
+    });
 
-    if (result.success && result.newId) {
-      // New workflow created — update local state & URL
-      setWorkflowId(result.newId);
-      const workflowPath = `/dashboard/workflow/${result.newId}`;
+    if (result.success && isFirstSave && workflowId) {
+      hasPersistedRef.current = true;
+      const workflowPath = `/dashboard/workflow/${workflowId}`;
       const newUrl = projectId
         ? `${workflowPath}?project=${projectId}`
         : workflowPath;
@@ -1363,7 +1373,7 @@ const WorkflowEditorContent = () => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         // Auto-save when tab becomes hidden to preserve unsaved changes
-        if (nodes.length > 0 && authUser) {
+        if (nodes.length > 0 && authUser && hasPersistedRef.current) {
           console.log("🔄 Tab hidden - preserving workflow state");
           handleSaveWorkflow(); // Autosave
         }

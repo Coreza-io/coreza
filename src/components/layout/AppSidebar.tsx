@@ -232,7 +232,7 @@ export function AppSidebar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className={`flex items-center gap-3 w-full px-3 py-3 rounded-lg hover:bg-sidebar-accent transition-all ${collapsed ? "justify-center" : ""
+              className={`group flex items-center gap-3 w-full px-3 py-3 rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground transition-all ${collapsed ? "justify-center" : ""
                 }`}
             >
               <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center shrink-0">
@@ -246,11 +246,11 @@ export function AppSidebar() {
                     <span className="text-sm font-medium truncate w-full">
                       {getDisplayName()}
                     </span>
-                    <span className="text-xs text-sidebar-foreground/70 truncate w-full">
+                    <span className="text-xs text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground/80 group-data-[state=open]:text-sidebar-accent-foreground/80 truncate w-full">
                       {user?.email || 'user@example.com'}
                     </span>
                   </div>
-                  <ChevronUp className="h-4 w-4 text-sidebar-foreground/70 shrink-0" />
+                  <ChevronUp className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground/80 group-data-[state=open]:text-sidebar-accent-foreground/80 shrink-0" />
                 </div>
               )}
             </button>

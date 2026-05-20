@@ -678,18 +678,25 @@ const WorkflowEditorContent = () => {
   }, [authUser?.id, session?.access_token]);
 
   // Merge base node types with custom Loop node
-  const nodeTypes = useMemo(
-    () => ({
-      ...baseNodeTypes,
+  const nodeTypes = useMemo(() => {
+    const wrappedBaseNodeTypes = Object.fromEntries(
+      Object.entries(baseNodeTypes).map(([key, Component]) => [
+        key,
+        (props: any) => <Component {...props} workflowId={workflowId} />,
+      ]),
+    );
+
+    return {
+      ...wrappedBaseNodeTypes,
       Loop: (props: any) => (
         <LoopNode
           {...props}
+          workflowId={workflowId}
           data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
         />
       ),
-    }),
-    [handleAddNode],
-  );
+    };
+  }, [handleAddNode, workflowId]);
 
   const onConnect = useCallback(
     (params: Connection) =>

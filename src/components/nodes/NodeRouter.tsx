@@ -22,6 +22,7 @@ import { useStableNodes } from "@/contexts/StableNodeContext";
 interface NodeRouterProps {
   data: any;
   selected: boolean;
+  workflowId?: string | null;
 }
 
 // Tool handle used when node is toggled to tool mode
@@ -32,7 +33,7 @@ const TOOL_INELIGIBLE_CATEGORIES = new Set([
   "Stream", "Scheduler", "Input", "Visualization", "webhook",
 ]);
 
-const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
+const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) => {
   const nodeId = useNodeId();
   const { getNodes, getEdges } = useStableNodes();
   const { setNodes } = useReactFlow();
@@ -311,7 +312,12 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected }) => {
   }
 
   return (
-    <BaseNode data={data} selected={selected} readOnly={data.readOnly}>
+    <BaseNode
+      data={data}
+      selected={selected}
+      readOnly={data.readOnly}
+      workflowId={workflowId ?? undefined}
+    >
       {(renderProps) => {
         // Read nodes/edges imperatively for NodeWrapper - avoids re-render on drag
         const nodes = getNodes();

@@ -41,7 +41,6 @@ interface BaseNodeProps {
   data: any;
   selected: boolean;
   readOnly?: boolean;
-  workflowId?: string;
   children: (props: BaseNodeRenderProps) => React.ReactNode;
 }
 
@@ -108,7 +107,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   data,
   selected,
   readOnly,
-  workflowId: propWorkflowId,
   children,
 }) => {
   const nodeId = useNodeId();
@@ -117,8 +115,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const executionStore = useExecutionStore();
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
-  const { id: routeWorkflowId } = useParams();
-  const workflowId = propWorkflowId ?? routeWorkflowId;
+  const { id: workflowId } = useParams();
   // Subscribe to edge count changes (not position changes)
   const edgeCount = useStore(edgeCountSelector);
 
@@ -451,10 +448,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         typeof stepBody?.replayed === "number" ? stepBody.replayed : 0;
       const hasDirectionalMore =
         mode === "prev"
-          ? (typeof stepBody?.hasPrevious === "boolean"
-              ? stepBody.hasPrevious
-              : undefined)
-          : (typeof stepBody?.hasNext === "boolean" ? stepBody.hasNext : undefined);
+          ? typeof stepBody?.hasPrevious === "boolean"
+            ? stepBody.hasPrevious
+            : undefined
+          : typeof stepBody?.hasNext === "boolean"
+            ? stepBody.hasNext
+            : undefined;
       const hasMore =
         typeof hasDirectionalMore === "boolean"
           ? hasDirectionalMore

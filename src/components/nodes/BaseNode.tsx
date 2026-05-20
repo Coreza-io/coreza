@@ -41,6 +41,7 @@ interface BaseNodeProps {
   data: any;
   selected: boolean;
   readOnly?: boolean;
+  workflowId?: string;
   children: (props: BaseNodeRenderProps) => React.ReactNode;
 }
 
@@ -107,6 +108,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   data,
   selected,
   readOnly,
+  workflowId: propWorkflowId,
   children,
 }) => {
   const nodeId = useNodeId();
@@ -115,7 +117,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const executionStore = useExecutionStore();
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
-  const { id: workflowId } = useParams();
+  const { id: routeWorkflowId } = useParams();
+  const workflowId = propWorkflowId ?? routeWorkflowId;
   // Subscribe to edge count changes (not position changes)
   const edgeCount = useStore(edgeCountSelector);
 

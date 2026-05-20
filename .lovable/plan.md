@@ -1,24 +1,40 @@
-# Fix unreadable text on amber/active backgrounds (dark mode)
+# Update README with structured Core Features section
 
-## The problem
+Replace the current short "Key Features" bullet list in `README.md` with a richer "Core Features" section modeled on the format you shared, but rewritten to match what Coreza actually ships today (no invented endpoints or ports).
 
-In dark mode `--sidebar-accent` is bright amber and `--sidebar-accent-foreground` is dark brown. The active "Live" item already pairs them correctly (dark text on amber).
+## Where it goes
 
-The sidebar **footer user button** only sets `hover:bg-sidebar-accent` — it never switches the text color. When the dropdown is open (or on hover), the bg turns amber but the name, email, and chevron remain white/muted-white, making them very hard to read. This is what your screenshot shows.
+In `README.md`, replace the existing **✨ Key Features** block (between "🔐 Security Features" and "💡 Why Open Source?") with a new **🧩 Core Features** section. Everything else (Quick Start, Architecture, Security, Setup, License, etc.) stays untouched.
 
-## Fix
+## New section structure
 
-**`src/components/layout/AppSidebar.tsx`** — the footer `DropdownMenuTrigger` button (around line 234):
+Three grouped capabilities, each with a short intro line + sub-bullets, mirroring the style of the sample:
 
-- Add `hover:text-sidebar-accent-foreground` and `data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground` to the button.
-- Wrap the name/email/chevron color classes so the muted `text-sidebar-foreground/70` flips to a darker tone (e.g. `text-sidebar-accent-foreground/80`) when the parent is hovered or `data-[state=open]`. Simplest: rely on the parent setting `color`, drop the `/70` opacity on hover/open via `group` utilities — convert the button to `group` and use `group-hover:text-sidebar-accent-foreground/80 group-data-[state=open]:text-sidebar-accent-foreground/80` on the email + chevron spans.
+1. **Unified Broker Integration Layer**
+   - One config-driven interface across Alpaca, Binance, Dhan, Schwab (and pluggable new brokers via `BrokerCapabilities` registry)
+   - Order management: place / modify / cancel, bracket & basket orders, idempotent live orders (SHA-256 param hash)
+   - Portfolio: positions, holdings, order book, trade book, cash & PnL snapshots persisted via Redis → Supabase
+   - Market data: REST quotes, historical bars, symbol search
+   - Built-in risk engine node for position sizing and exposure checks
 
-## Wider sweep
+2. **Real-Time Market Data & Streaming**
+   - Unified WebSocket gateway per broker with normalized `MarketEvent` schema
+   - Redis pub/sub market-data hub fans one upstream feed out to many workflows
+   - Stream types: bars (1m/1d), quotes, trades, order updates, news (Alpaca)
+   - Automatic reconnection, listen-key refresh (Binance), Schwab OAuth pre-connect
+   - Dual Redis topology: `REDIS_QUEUE_URL` (BullMQ) + `REDIS_CACHE_URL` (state)
 
-Search confirmed only two files use `bg-sidebar-accent`: `AppSidebar.tsx` (footer button — this fix) and the shadcn `sidebar.tsx` primitives (menu buttons, already pair bg + foreground correctly).
+3. **Visual Workflow & Strategy Builder**
+   - Node-based editor powered by React Flow with pre-built nodes: market data, 15+ indicators (RSI, MACD, Bollinger, Ichimoku, VWAP, Support/Resistance…), logic (If / Switch / Loop), portfolio, risk, brokers, AI agent, notifications
+   - Webhook trigger node (manual WS preview mode + active BullMQ mode) for TradingView and external signals
+   - `{{ $json.field }}` template interpolation with type-safe resolution
+   - Live execution highlighting, per-node output inspection, execution history with full workflow snapshots
+   - JSON import/export with automatic UUID regeneration for safe sharing
+   - Backtesting engine with QuantConnect-style metrics and equity curve
 
-I also want to grep for the same pattern with the global `--accent` token (which is also dark-amber-ish in dark mode) — any component that does `hover:bg-accent` without `hover:text-accent-foreground` will have the same bug. If found, I will apply the same `hover:text-accent-foreground` fix. No other behavioral changes.
+A short closing line points readers to `/docs` for the deeper architecture notes already linked below.
 
 ## Out of scope
 
-No token/palette changes. No layout changes. Only contrast pairing on interactive states.
+- No claims about specific endpoint counts ("30+ endpoints"), port numbers (8765), or ZeroMQ — those aren't in our stack.
+- No changes to other README sections, no new images, no doc-site edits.

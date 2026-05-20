@@ -53,7 +53,7 @@ export const TemplateChooserDialog: React.FC<TemplateChooserDialogProps> = ({
                 onSelect(tpl.id);
                 onOpenChange(false);
               }}
-              className="text-left rounded-lg border border-border bg-card hover:bg-accent hover:border-primary/40 hover:shadow-card transition-all p-5 flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="text-left rounded-lg border border-border bg-card hover:bg-accent hover:text-accent-foreground hover:border-primary/40 hover:shadow-card transition-all p-5 flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center">
                 <img src={tpl.icon} alt="" className="h-6 w-6" />

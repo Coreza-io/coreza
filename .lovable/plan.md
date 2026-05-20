@@ -1,137 +1,109 @@
-# Pre-generate `workflowId` for new workflows
+# Wire pre-generated `workflowId` end-to-end to BaseNode / useNodeExecution
 
-## Goal
+## Why it's currently `undefined` at the node
 
-On `/dashboard/workflow/new` (and template routes like `?template=custom`), generate a client-side UUID at editor mount so every node — including `AlpacaStreamData` — has a valid `workflowId` to send to the backend, without inserting a row into the `workflows` table until the user clicks Save.
-
-## End-to-end flow
+The UUID is now generated correctly at editor mount, but it never reaches the nodes. Trace:
 
 ```text
-User clicks "New"
-   └─> /dashboard/workflow/new
-        └─> WorkflowEditor mounts
-             ├─ useParams().id = undefined  →  isNewWorkflow = true
-             ├─ useState(() => crypto.randomUUID())  →  workflowId = "uuid-A"
-             ├─ hasPersistedRef = false   (not yet saved)
-             └─ nodeTypes closure passes workflowId to NodeRouter → BaseNode
-
-User drags AlpacaStreamData, clicks Execute
-   └─> POST /stream/alpaca/register  { workflowId: "uuid-A", nodeId, ... }
-        └─> backend 200 OK, Redis keys scoped by "uuid-A"
-        URL still /workflow/new, no DB row
-
-User clicks Save (first time)
-   └─> saveWorkflow(workflowId="uuid-A", isNew=true, ...)
-        └─> INSERT INTO workflows (id, ...) VALUES ('uuid-A', ...)
-        ├─ hasPersistedRef = true
-        └─> navigate("/dashboard/workflow/uuid-A", { replace: true })
-
-User clicks Save again
-   └─> saveWorkflow(workflowId="uuid-A", isNew=false, ...)
-        └─> UPDATE workflows SET ... WHERE id = 'uuid-A'
+WorkflowEditor
+  └─ workflowId = "uuid-A"            ✅ generated
+  └─ nodeTypes = useMemo(() => ({ ...baseNodeTypes, Loop: ... }))
+                                       ❌ does NOT close over workflowId
+       └─ ReactFlow renders <NodeRouter data={...} selected={...} />
+            └─ <BaseNode data={data} selected={selected} readOnly={data.readOnly}>
+                                       ❌ no workflowId prop passed
+                 └─ const workflowId = propWorkflowId ?? useParams().id
+                                       ❌ falls back to "new"  →  backend 400
 ```
 
-## Files to change
+`baseNodeTypes` (line 146) is built once at module top-level by mapping every node key to the raw `NodeRouter` component, so the running `workflowId` state never enters the closure.
+
+## Fix: thread `workflowId` through nodeTypes → NodeRouter → BaseNode
 
 ### 1. `src/pages/WorkflowEditor.tsx`
 
-Replace the current `workflowId` initialization (lines 192–211):
+Rebuild the `nodeTypes` memo so every entry is a wrapper that injects the live `workflowId` as a prop, and add `workflowId` to the dep array so a remount-safe identity is produced once per workflow:
 
 ```ts
-const isNewWorkflow = id === "new" || !id;
+const nodeTypes = useMemo(() => {
+  const wrap = (Comp: any) => (props: any) =>
+    <Comp {...props} workflowId={workflowId} />;
 
-// Always have a workflowId — generate one for new workflows.
-const [workflowId, setWorkflowId] = useState<string | null>(() =>
-  isNewWorkflow ? crypto.randomUUID() : (id ?? null)
-);
+  const wrappedBase = Object.fromEntries(
+    Object.entries(baseNodeTypes).map(([key, Comp]) => [key, wrap(Comp)])
+  );
 
-// Track whether this workflowId has been persisted to the DB.
-const hasPersistedRef = useRef<boolean>(!isNewWorkflow);
-
-// Keep sync logic for URL → state when loading an existing workflow.
-useEffect(() => {
-  if (!isNewWorkflow && id && id !== workflowId) {
-    setWorkflowId(id);
-    hasPersistedRef.current = true;
-  }
-}, [id, isNewWorkflow, workflowId]);
+  return {
+    ...wrappedBase,
+    Loop: (props: any) => (
+      <LoopNode
+        {...props}
+        workflowId={workflowId}
+        data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
+      />
+    ),
+  };
+}, [handleAddNode, workflowId]);
 ```
 
-In `handleSaveWorkflow` (around lines 778–801):
+Note: changing `nodeTypes` identity makes ReactFlow re-register node types. Because `workflowId` is now stable for the entire editor session (generated once in `useState`), this memo only changes when `workflowId` actually changes (new → loaded), which is acceptable.
 
-- Skip `checkNodeReduction` and `shouldBlockEmptySave` when `!hasPersistedRef.current` (no row to compare against).
-- Pass an explicit `isNew` flag (or `presetId`) into `saveWorkflow` so it knows to INSERT with the pre-generated `id` instead of UPDATE.
-- On success of the first save, set `hasPersistedRef.current = true` and navigate to `/dashboard/workflow/${workflowId}`.
+### 2. `src/components/nodes/NodeRouter.tsx`
 
-```ts
-const isFirstSave = !hasPersistedRef.current;
-const result = await saveWorkflow(
-  workflowId,
-  workflowName,
-  nodes,
-  edges,
-  { isNew: isFirstSave }
-);
+Accept and forward `workflowId`:
 
-if (result.success && isFirstSave && workflowId) {
-  hasPersistedRef.current = true;
-  const workflowPath = `/dashboard/workflow/${workflowId}`;
-  navigate(projectId ? `${workflowPath}?project=${projectId}` : workflowPath, {
-    replace: true,
-  });
-}
+```tsx
+const NodeRouter = ({ data, selected, workflowId }: {
+  data: any; selected: boolean; workflowId?: string;
+}) => {
+  ...
+  return (
+    <BaseNode
+      data={data}
+      selected={selected}
+      readOnly={data.readOnly}
+      workflowId={workflowId}
+    >
+      {(renderProps) => ( ... )}
+    </BaseNode>
+  );
+};
 ```
 
-Also: the autosave guard at line 1375 (`if (isNewWorkflow && nodes.length > 1)`) stays — we still do NOT auto-save; persistence only happens on explicit Save.
-
-### 2. `src/hooks/useWorkflowPersistence.ts`
-
-Extend `saveWorkflow` signature (line 158) with an options object:
-
-```ts
-const saveWorkflow = useCallback(
-  async (
-    workflowId: string | null,
-    workflowName: string,
-    nodes: Node[],
-    edges: Edge[],
-    opts: { isNew?: boolean } = {}
-  ): Promise<{ success: boolean; newId?: string }> => {
-    ...
-    if (workflowId && !opts.isNew) {
-      // existing UPDATE path (lines 210–221) unchanged
-    } else {
-      // INSERT — include the pre-generated id if provided
-      const insertPayload = workflowId ? { ...payload, id: workflowId } : payload;
-      const { data, error } = await supabase
-        .from('workflows')
-        .insert([insertPayload])
-        .select()
-        .single();
-      ...
-      return { success: true, newId: data.id };
-    }
-  }
-);
-```
-
-Also gate `shouldBlockEmptySave` / `createVersionBeforeSave` on `!opts.isNew` so first-save doesn't query a non-existent row.
+(Also forward to `LoopNode` if it renders BaseNode internally.)
 
 ### 3. `src/components/nodes/BaseNode.tsx`
 
-No changes — it already reads `propWorkflowId ?? routeWorkflowId`. As long as `WorkflowEditor` passes `workflowId` through the `nodeTypes` closure (which it does at line 1423 and 1591), the new UUID flows down correctly.
+No change needed — it already uses `propWorkflowId ?? routeWorkflowId` and passes `workflowId` into `useNodeExecution` (line ~189). Once NodeRouter sends the prop, `useNodeExecution` receives the real UUID and the backend payload stops being `workflowId: "new"`.
+
+### 4. `src/hooks/useNodeExecution.ts`
+
+Verify it reads `workflowId` from its options and includes it in every outbound request body (it already does — confirm no fallback to `useParams()` inside the hook). No code change expected; this is a verification step.
+
+## End-to-end flow after fix
+
+```text
+WorkflowEditor
+  └─ workflowId = "uuid-A"
+       └─ nodeTypes memo (closure: workflowId)
+            └─ <NodeRouterWrapper workflowId="uuid-A" data=... selected=... />
+                 └─ <NodeRouter workflowId="uuid-A" .../>
+                      └─ <BaseNode workflowId="uuid-A" .../>
+                           └─ useNodeExecution({ workflowId: "uuid-A", ... })
+                                └─ POST /stream/alpaca/register
+                                   body: { workflowId: "uuid-A", nodeId, ... }
+                                   →  200 OK
+```
 
 ## Out of scope
 
 - No backend changes.
-- No auto-save on execute. DB row is only created when the user clicks the Save button.
-- No change to template-loading logic in `Workflows.tsx` — `?template=custom` already navigates to `/workflow/new` which will now have a UUID at mount.
-- Existing workflow load path (`/workflow/:id`) is unchanged.
+- No change to save logic (already covered by previous plan: insert with pre-generated id, navigate on first save).
+- No change to `useParams` fallback in BaseNode — kept as a safety net for any node rendered outside the editor.
 
 ## Verification
 
-1. Open `/dashboard/workflow/new` → in React DevTools, `workflowId` state is a UUID; URL still `new`; no `workflows` row in DB.
-2. Add `AlpacaStreamData` → click Execute. Network tab: `POST /stream/alpaca/register` body contains `workflowId: "<uuid>"`. Backend returns 200 (no more `400 workflowId is required`).
-3. Click Save → `workflows` table gets one row with `id = <uuid>`. URL replaces to `/dashboard/workflow/<uuid>`. Refresh → same workflow loads.
-4. Open same route via `?template=custom` → same behavior: UUID at mount, no DB row until Save.
-5. Click Save a second time → row is UPDATEd in place, no duplicate insert, no new UUID.
+1. Add a `console.log("workflowId in BaseNode:", workflowId)` temporarily in BaseNode → open `/dashboard/workflow/new` → drop AlpacaStreamData → log shows the UUID, not `"new"` or `undefined`.
+2. Click Execute → Network tab: `POST /stream/alpaca/register` body has `workflowId: "<uuid>"`. Backend returns 200.
+3. Refresh after save → URL is `/dashboard/workflow/<uuid>`, same UUID flows down, execute still works.
+4. Open an existing workflow at `/dashboard/workflow/<uuid>` → BaseNode receives the URL UUID via prop (not fallback), behavior unchanged.

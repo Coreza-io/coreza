@@ -1,123 +1,59 @@
-# Fix: workflowId undefined on /workflow/new stream execution
+# Fix: workflowId undefined on /workflow/new
 
-## Diagnosis from scratch
+## Approach
 
-`const { id: workflowId } = useParams()` is `undefined` on `/dashboard/workflow/new` by design.
+Always generate a `workflowId` (UUID) the moment a new workflow editor opens — before the user saves. Do **not** insert any row into the `workflows` table; the id stays purely client-side until the user clicks Save. On first save, that same id is used as the row's primary key so URL, Redis keys, and DB row all match.
 
-The router has two workflow editor routes:
+## Why this works
 
-```text
-/dashboard/workflow/new       -> no :id param
-/dashboard/workflow/:id       -> id param exists
-```
+- Backend `POST /stream/:source/register` only needs a stable `workflowId` string. It does not require the workflow to exist in Supabase to scope Redis streams.
+- A pre-generated UUID survives across stream subscriptions, listener registration, and the eventual save — no id swap, no broken Redis keys.
+- The user keeps the "draft until I press Save" semantic. Nothing hits the DB until they explicitly save.
 
-So `useParams().id` only exists after the workflow has a saved database id and the URL is `/workflow/<uuid>`.
+## Changes
 
-There are two separate issues:
+### 1. `src/pages/WorkflowEditor.tsx`
 
-1. **No id exists yet on `/workflow/new`.**
-   `WorkflowEditor` initializes new workflows with `workflowId = null` and only sets it after `saveWorkflow()` inserts the row and returns `result.newId`.
+- On `/workflow/new`, initialize `workflowId` to `crypto.randomUUID()` instead of `null`:
 
-2. **The earlier BaseNode prop idea is incomplete.**
-   `BaseNode` can accept a `workflowId` prop, but `ReactFlow` renders `NodeRouter` directly from `nodeTypes`, and `NodeRouter` currently calls:
+  ```ts
+  const [workflowId, setWorkflowId] = useState<string | null>(
+    isNewWorkflow ? crypto.randomUUID() : id || null,
+  );
+  ```
 
-   ```tsx
-   <BaseNode data={data} selected={selected} readOnly={data.readOnly}>
-   ```
+- Do **not** navigate the URL to `/workflow/<uuid>` on creation. URL stays `/workflow/new` until first save (keeps "unsaved draft" UX).
+- Keep the existing URL sync effect for the `/workflow/:id` route case.
+- In `handleSaveWorkflow`, when on `/workflow/new`, pass the pre-generated `workflowId` into `saveWorkflow` so the DB row uses the same id. After successful insert, navigate to `/dashboard/workflow/${workflowId}` with `replace: true`.
 
-   So no workflow id is actually injected into node execution. Even if injected, it would still be `null` until the new workflow is saved.
+### 2. `src/hooks/useWorkflowPersistence.ts`
 
-The backend error is correct: `POST /stream/:source/register` requires a real `workflowId` because stream subscriptions/listeners are scoped by workflow in Redis and later live metrics.
+- Update `saveWorkflow` to accept an optional `presetId` (or reuse the existing `workflowId` argument when non-null) and include it in the insert payload as `id: presetId` for new workflows. Postgres accepts a client-supplied UUID for the `id` column.
+- Return `{ success: true, newId: presetId }` so existing caller code keeps working.
 
-## Correct fix
+### 3. Wire `workflowId` into nodes
 
-Add an `ensureWorkflowId` path before any stream node execution.
+`ReactFlow` only passes `data` and `selected` to custom node components, so the prop must flow through the `nodeTypes` closure:
 
-### 1. In `WorkflowEditor.tsx`
+- In `WorkflowEditor.tsx` `nodeTypes` memo, wrap `NodeRouter` so it receives `workflowId` (and `Loop` too) as a prop.
+- Update `NodeRouter` props to accept `workflowId?: string` and forward it to `<BaseNode workflowId={workflowId} …>`.
+- `BaseNode` already has `workflowId?: string` and uses `propWorkflowId ?? routeWorkflowId` — no further change needed there.
 
-Create an `ensureWorkflowId()` callback:
+### 4. `useNodeExecution.ts`
 
-- If `workflowId` already exists, return it.
-- If the editor is on `/workflow/new`, save the workflow first using the existing `saveWorkflow(null, workflowName, nodes, edges)` path.
-- When save returns `newId`:
-  - call `setWorkflowId(newId)`
-  - navigate to `/dashboard/workflow/${newId}` with `replace: true`
-  - return `newId`
-- If saving fails, return `null` and stop execution.
-
-Use this same callback for:
-
-- manual single-node execution
-- double-click / Execute All execution
-- stream node register calls
-
-### 2. Pass workflow context into ReactFlow nodes
-
-Update the `nodeTypes` memo in `WorkflowEditor.tsx` so every `NodeRouter` receives:
-
-```tsx
-workflowId={workflowId ?? undefined}
-ensureWorkflowId={ensureWorkflowId}
-```
-
-This must be done in the `nodeTypes` closure because ReactFlow only passes `data`, `selected`, etc. to custom node components.
-
-### 3. In `NodeRouter.tsx`
-
-Extend `NodeRouterProps` with:
-
-```ts
-workflowId?: string;
-ensureWorkflowId?: () => Promise<string | null>;
-```
-
-Pass both into `BaseNode`.
-
-### 4. In `BaseNode.tsx`
-
-Use the prop first, route param second:
-
-```ts
-const { id: routeWorkflowId } = useParams();
-const workflowId = propWorkflowId ?? routeWorkflowId;
-```
-
-Pass `ensureWorkflowId` into `useNodeExecution`.
-
-### 5. In `useNodeExecution.ts`
-
-Before building/sending the backend payload, resolve the active workflow id:
-
-```ts
-const activeWorkflowId = workflowId ?? (await ensureWorkflowId?.());
-```
-
-For streaming nodes, if `activeWorkflowId` is still missing, show an error and do not call the backend.
-
-Set:
-
-```ts
-payload.workflowId = activeWorkflowId;
-```
-
-and use `activeWorkflowId` for streaming listener config too.
-
-## Important behavior change
-
-Executing a stream node from `/workflow/new` will auto-save the workflow first, then execute the stream node using the newly-created workflow id. That matches the backend requirement and avoids sending `undefined`.
+No logic change. `payload.workflowId = workflowId` will now always have a real UUID for `/workflow/new` because the prop chain delivers it.
 
 ## Out of scope
 
 - No backend changes.
-- No change to Redis key shape or live metrics scoping.
-- No fake/random frontend-only workflow id; the backend should receive a real persisted workflow id.
-- Unrelated `NodeRouter.tsx` TypeScript errors about `label` on dynamic handles are separate build issues and should be fixed separately if implementation mode surfaces them.
+- No automatic save-on-execute. The user still controls when the workflow is persisted.
+- No new DB row at editor open. Only when the user clicks Save.
+- Unrelated `NodeRouter.tsx` TypeScript errors about `label` on dynamic handles are pre-existing and not in scope here.
 
 ## Verification
 
-1. Open `/dashboard/workflow/new`.
-2. Add/configure `AlpacaStreamData`.
-3. Click Execute without manually saving.
-4. Confirm the app first saves/navigates to `/dashboard/workflow/<uuid>`.
-5. Confirm the backend request payload includes `workflowId`.
-6. Confirm `/stream/alpaca/register` no longer returns `400 "workflowId is required"`.
+1. Open `/dashboard/workflow/new`. Confirm a workflowId exists in React state (visible in `🚀 [BACKEND REQUEST] Payload` log when executing a node).
+2. Add `AlpacaStreamData`, click Execute without saving.
+3. Backend request body contains `workflowId: "<uuid>"`. `/stream/alpaca/register` returns 200.
+4. URL still shows `/workflow/new`. No row in `workflows` table yet.
+5. Click Save. The row is inserted with that same UUID. URL navigates to `/dashboard/workflow/<uuid>`. Refresh reloads the same workflow.

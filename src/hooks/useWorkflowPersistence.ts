@@ -161,6 +161,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       workflowName: string,
       nodes: Node[],
       edges: Edge[],
+      opts: { isNew?: boolean } = {},
     ): Promise<{ success: boolean; newId?: string }> => {
       if (!authUser) {
         toast({
@@ -175,7 +176,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
 
       try {
         // Block empty saves for existing workflows
-        if (workflowId) {
+        if (workflowId && !opts.isNew) {
           const shouldBlock = await shouldBlockEmptySave(workflowId, nodes.length);
           if (shouldBlock) {
             toast({
@@ -207,7 +208,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           ...(projectId && { project_id: projectId }),
         };
 
-        if (workflowId) {
+        if (workflowId && !opts.isNew) {
           // Update existing
           const { error } = await supabase
             .from('workflows')
@@ -220,10 +221,11 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           toast({ title: 'Success', description: 'Workflow updated!' });
           return { success: true };
         } else {
-          // Insert new
+          // Insert new (including pre-generated id when provided)
+          const insertPayload = workflowId ? { ...payload, id: workflowId } : payload;
           const { data, error } = await supabase
             .from('workflows')
-            .insert([payload])
+            .insert([insertPayload])
             .select()
             .single();
 

@@ -295,17 +295,19 @@ export class MarketDataSubscriber {
           //   ),
           // );
 
-          // Verify workflow is still active (use cache)
-          const workflow = await this.getWorkflowCache().getWorkflow(
-            registration.workflowId,
-          );
-
-          if (!workflow?.is_active) {
-            console.log(
-              `⚠️  Skipping inactive workflow ${registration.workflowId}`,
+          if (registration.isLive) {
+            // Only live workflows require a persisted active definition.
+            const workflow = await this.getWorkflowCache().getWorkflow(
+              registration.workflowId,
             );
-            await pub.del(key);
-            continue;
+
+            if (!workflow?.is_active) {
+              console.log(
+                `⚠️  Skipping inactive live workflow ${registration.workflowId}`,
+              );
+              await pub.del(key);
+              continue;
+            }
           }
 
           // Restore registration (only restore live registrations on restart)
@@ -787,14 +789,16 @@ export class MarketDataSubscriber {
     const streamKey = RedisKeys.strategyStream(registration.userId, workflowId);
     const orderId = event.orderId || event.clientOrderId;
     try {
-      // Fetch workflow definition from cache (60s TTL)
-      const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
+      if (registration.isLive) {
+        // Only the live runner path needs persisted workflow state.
+        const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
 
-      if (!workflow) {
-        console.error(
-          `❌ [MarketDataSubscriber] Workflow ${workflowId} not found or inactive`,
-        );
-        return;
+        if (!workflow) {
+          console.error(
+            `❌ [MarketDataSubscriber] Live workflow ${workflowId} not found or inactive`,
+          );
+          return;
+        }
       }
 
       // if (!workflow.is_active) {

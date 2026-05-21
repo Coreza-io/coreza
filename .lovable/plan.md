@@ -1,109 +1,85 @@
-# Wire pre-generated `workflowId` end-to-end to BaseNode / useNodeExecution
+# Allow manual (unsaved) workflows to publish market data to frontend
 
-## Why it's currently `undefined` at the node
+## Root cause
 
-The UUID is now generated correctly at editor mount, but it never reaches the nodes. Trace:
+Frontend now sends the pre-generated `workflowId` correctly. The `MarketDataSubscriber.registerWorkflow(...)` call succeeds and Redis subscriptions are set up. But when a market event arrives, the delivery path bails:
 
-```text
-WorkflowEditor
-  └─ workflowId = "uuid-A"            ✅ generated
-  └─ nodeTypes = useMemo(() => ({ ...baseNodeTypes, Loop: ... }))
-                                       ❌ does NOT close over workflowId
-       └─ ReactFlow renders <NodeRouter data={...} selected={...} />
-            └─ <BaseNode data={data} selected={selected} readOnly={data.readOnly}>
-                                       ❌ no workflowId prop passed
-                 └─ const workflowId = propWorkflowId ?? useParams().id
-                                       ❌ falls back to "new"  →  backend 400
-```
-
-`baseNodeTypes` (line 146) is built once at module top-level by mapping every node key to the raw `NodeRouter` component, so the running `workflowId` state never enters the closure.
-
-## Fix: thread `workflowId` through nodeTypes → NodeRouter → BaseNode
-
-### 1. `src/pages/WorkflowEditor.tsx`
-
-Rebuild the `nodeTypes` memo so every entry is a wrapper that injects the live `workflowId` as a prop, and add `workflowId` to the dep array so a remount-safe identity is produced once per workflow:
+`coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts` → `deliverWorkflowEvent` (line ~779):
 
 ```ts
-const nodeTypes = useMemo(() => {
-  const wrap = (Comp: any) => (props: any) =>
-    <Comp {...props} workflowId={workflowId} />;
+const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
+if (!workflow) {
+  console.error(`❌ Workflow ${workflowId} not found or inactive`);
+  return;          // ← exits before publishToFrontend
+}
+```
 
-  const wrappedBase = Object.fromEntries(
-    Object.entries(baseNodeTypes).map(([key, Comp]) => [key, wrap(Comp)])
+`WorkflowCache.getWorkflow` queries `supabase.from("workflows").select("*").eq("id", workflowId).single()`. For an unsaved new workflow there is no row → returns `null` → delivery is dropped → frontend never receives the event over the user channel.
+
+Notice the fetched `workflow` variable is **never read** after the null check in this function — it's only used as a gate.
+
+## Fix: don't require a DB row for the manual (non-live) path
+
+The DB lookup is only meaningful when `registration.isLive === true` (the WorkflowRunner path needs the persisted definition). For `isLive === false` (manual test from the editor), we only need to:
+
+1. Append to the strategy stream (`appendToWorkflowStream`)
+2. Publish to the user's frontend channel (`publishToFrontend`)
+
+Neither step uses the `workflow` object.
+
+### Change in `coreza-backend/market-stream-service/src/services/MarketDataSubscriber.ts`
+
+Inside `deliverWorkflowEvent` (~line 789), gate the cache fetch on `isLive`:
+
+```ts
+// Only the live runner path needs the persisted workflow definition.
+// Manual (unsaved) workflows publish to the frontend without a DB row.
+if (registration.isLive) {
+  const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
+  if (!workflow) {
+    console.error(
+      `❌ [MarketDataSubscriber] Live workflow ${workflowId} not found or inactive`
+    );
+    return;
+  }
+}
+```
+
+Everything below (formatting, `appendToWorkflowStream`, `publishToFrontend`) runs unchanged for both paths.
+
+### Also relax `restoreFromRedis` (line ~299)
+
+Same pattern when restoring persisted registrations on service start:
+
+```ts
+if (registration.isLive) {
+  const workflow = await this.getWorkflowCache().getWorkflow(
+    registration.workflowId,
   );
-
-  return {
-    ...wrappedBase,
-    Loop: (props: any) => (
-      <LoopNode
-        {...props}
-        workflowId={workflowId}
-        data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
-      />
-    ),
-  };
-}, [handleAddNode, workflowId]);
+  if (!workflow) {
+    console.warn(`⚠️ Skipping inactive live workflow ${registration.workflowId}`);
+    continue;
+  }
+}
 ```
 
-Note: changing `nodeTypes` identity makes ReactFlow re-register node types. Because `workflowId` is now stable for the entire editor session (generated once in `useState`), this memo only changes when `workflowId` actually changes (new → loaded), which is acceptable.
+Manual registrations should be restored regardless of DB presence (they're transient anyway, but the existing pattern drops them too).
 
-### 2. `src/components/nodes/NodeRouter.tsx`
+## Why this is safe
 
-Accept and forward `workflowId`:
-
-```tsx
-const NodeRouter = ({ data, selected, workflowId }: {
-  data: any; selected: boolean; workflowId?: string;
-}) => {
-  ...
-  return (
-    <BaseNode
-      data={data}
-      selected={selected}
-      readOnly={data.readOnly}
-      workflowId={workflowId}
-    >
-      {(renderProps) => ( ... )}
-    </BaseNode>
-  );
-};
-```
-
-(Also forward to `LoopNode` if it renders BaseNode internally.)
-
-### 3. `src/components/nodes/BaseNode.tsx`
-
-No change needed — it already uses `propWorkflowId ?? routeWorkflowId` and passes `workflowId` into `useNodeExecution` (line ~189). Once NodeRouter sends the prop, `useNodeExecution` receives the real UUID and the backend payload stops being `workflowId: "new"`.
-
-### 4. `src/hooks/useNodeExecution.ts`
-
-Verify it reads `workflowId` from its options and includes it in every outbound request body (it already does — confirm no fallback to `useParams()` inside the hook). No code change expected; this is a verification step.
-
-## End-to-end flow after fix
-
-```text
-WorkflowEditor
-  └─ workflowId = "uuid-A"
-       └─ nodeTypes memo (closure: workflowId)
-            └─ <NodeRouterWrapper workflowId="uuid-A" data=... selected=... />
-                 └─ <NodeRouter workflowId="uuid-A" .../>
-                      └─ <BaseNode workflowId="uuid-A" .../>
-                           └─ useNodeExecution({ workflowId: "uuid-A", ... })
-                                └─ POST /stream/alpaca/register
-                                   body: { workflowId: "uuid-A", nodeId, ... }
-                                   →  200 OK
-```
+- `isLive=true` activation already requires a saved workflow (the Activate toggle is disabled until save), so the DB row will exist. Gate behavior unchanged.
+- `isLive=false` is the editor's "register so the canvas shows live ticks" path. It writes nothing to DB and only publishes to the per-user frontend channel — `workflow` row is not needed.
+- No schema, no API, no frontend changes.
 
 ## Out of scope
 
-- No backend changes.
-- No change to save logic (already covered by previous plan: insert with pre-generated id, navigate on first save).
-- No change to `useParams` fallback in BaseNode — kept as a safety net for any node rendered outside the editor.
+- No change to `WorkflowCache` (still fetches when called).
+- No backend save-on-execute auto-persistence.
+- No change to `WorkflowRunnerManager` / `WorkflowRunner` (live path still requires the saved definition, by design).
 
 ## Verification
 
-1. Add a `console.log("workflowId in BaseNode:", workflowId)` temporarily in BaseNode → open `/dashboard/workflow/new` → drop AlpacaStreamData → log shows the UUID, not `"new"` or `undefined`.
-2. Click Execute → Network tab: `POST /stream/alpaca/register` body has `workflowId: "<uuid>"`. Backend returns 200.
-3. Refresh after save → URL is `/dashboard/workflow/<uuid>`, same UUID flows down, execute still works.
-4. Open an existing workflow at `/dashboard/workflow/<uuid>` → BaseNode receives the URL UUID via prop (not fallback), behavior unchanged.
+1. Open `/dashboard/workflow/new` → drop AlpacaStreamData → Execute.
+2. Backend log: `📊 Registering workflow <uuid> ... (isLive: false)` then `✅ registered`.
+3. When a tick arrives, log should NO LONGER show `❌ Workflow <uuid> not found or inactive`. Instead `publishToFrontend` runs and the canvas node shows incoming data.
+4. Save the workflow, toggle Activate (isLive=true) → live path still works because the row now exists.

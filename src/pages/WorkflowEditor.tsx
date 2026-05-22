@@ -1566,6 +1566,8 @@ const WorkflowEditorContent = () => {
                 connectionLineComponent={EdgeManager.PlugConnectionLine}
                 connectionLineType={ConnectionLineType.Bezier}
                 fitView
+                minZoom={0.1}
+                maxZoom={4}
                 className={cn(
                   "workflow-canvas",
                   resolvedTheme === "dark" && "dark",

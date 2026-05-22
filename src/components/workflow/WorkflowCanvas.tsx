@@ -8,8 +8,11 @@
  * See the LICENSE file for details.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ConnectionDragContext, DragSource } from "@/contexts/ConnectionDragContext";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ConnectionDragContext,
+  DragSource,
+} from "@/contexts/ConnectionDragContext";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -21,8 +24,8 @@ import {
   Controls,
   Background,
   ConnectionLineType,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
@@ -53,9 +56,12 @@ interface WorkflowCanvasProps {
 // Base node type mapping (excluding custom Loop node)
 const baseNodeTypes = Object.fromEntries([
   ...Object.keys(nodeManifest)
-    .filter((nodeKey) => nodeKey !== 'Loop')
+    .filter((nodeKey) => nodeKey !== "Loop")
     .map((nodeKey) => [nodeKey, NodeRouter]),
-  ...Object.values(nodeManifest).map((nodeDef: any) => [nodeDef.node_type, NodeRouter])
+  ...Object.values(nodeManifest).map((nodeDef: any) => [
+    nodeDef.node_type,
+    NodeRouter,
+  ]),
 ]);
 
 const edgeTypes = {
@@ -85,7 +91,9 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
 
   // Connection drag tracking
   const [dragSource, setDragSource] = useState<DragSource>({
-    nodeId: null, handleId: null, handleType: null,
+    nodeId: null,
+    handleId: null,
+    handleType: null,
   });
   const onConnectStart = useCallback((_: any, params: any) => {
     setDragSource({
@@ -99,72 +107,89 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
   }, []);
 
   // Initialize remove edge callback
-  const removeEdge = useCallback((edgeId: string) => {
-    onEdgesChange(edges.filter(e => e.id !== edgeId));
-  }, [onEdgesChange, edges]);
+  const removeEdge = useCallback(
+    (edgeId: string) => {
+      onEdgesChange(edges.filter((e) => e.id !== edgeId));
+    },
+    [onEdgesChange, edges],
+  );
 
   useEffect(() => {
     removeEdgeCallbackRef.current = removeEdge;
   }, [removeEdge]);
 
   // Handle loop node operations
-  const handleAddNode = useCallback((loopNodeId: string) => {
-    const loopNode = nodes.find(n => n.id === loopNodeId);
-    if (!loopNode) return;
+  const handleAddNode = useCallback(
+    (loopNodeId: string) => {
+      const loopNode = nodes.find((n) => n.id === loopNodeId);
+      if (!loopNode) return;
 
-    const position = {
-      x: loopNode.position.x + 200,
-      y: loopNode.position.y
-    };
+      const position = {
+        x: loopNode.position.x + 200,
+        y: loopNode.position.y,
+      };
 
-    const newNode: Node = {
-      id: `node_${Date.now()}`,
-      type: 'default',
-      position,
-      data: { label: 'New Node' },
-    };
+      const newNode: Node = {
+        id: `node_${Date.now()}`,
+        type: "default",
+        position,
+        data: { label: "New Node" },
+      };
 
-    onNodesChange([...nodes, newNode]);
+      onNodesChange([...nodes, newNode]);
 
-    const edgeId = `edge_${loopNodeId}_${newNode.id}`;
-    const newEdge: Edge = {
-      id: edgeId,
-      source: loopNodeId,
-      sourceHandle: 'done',
-      target: newNode.id,
-      type: 'removable',
-      data: { onRemoveEdge: () => removeEdgeCallbackRef.current?.(edgeId) },
-    };
+      const edgeId = `edge_${loopNodeId}_${newNode.id}`;
+      const newEdge: Edge = {
+        id: edgeId,
+        source: loopNodeId,
+        sourceHandle: "done",
+        target: newNode.id,
+        type: "removable",
+        data: { onRemoveEdge: () => removeEdgeCallbackRef.current?.(edgeId) },
+      };
 
-    onEdgesChange([...edges, newEdge]);
-  }, [nodes, edges, onNodesChange, onEdgesChange]);
+      onEdgesChange([...edges, newEdge]);
+    },
+    [nodes, edges, onNodesChange, onEdgesChange],
+  );
 
-  const handleRemoveLoop = useCallback((loopNodeId: string) => {
-    const filteredEdges = edges.filter(e => e.source !== loopNodeId && e.target !== loopNodeId);
-    onEdgesChange(filteredEdges);
-  }, [edges, onEdgesChange]);
+  const handleRemoveLoop = useCallback(
+    (loopNodeId: string) => {
+      const filteredEdges = edges.filter(
+        (e) => e.source !== loopNodeId && e.target !== loopNodeId,
+      );
+      onEdgesChange(filteredEdges);
+    },
+    [edges, onEdgesChange],
+  );
 
   // Merge base node types with custom Loop node
-  const nodeTypes = React.useMemo(() => ({
-    ...baseNodeTypes,
-    Loop: (props: any) => (
-      <LoopNode
-        {...props}
-        data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
-      />
-    ),
-  }), [handleAddNode]);
+  const nodeTypes = React.useMemo(
+    () => ({
+      ...baseNodeTypes,
+      Loop: (props: any) => (
+        <LoopNode
+          {...props}
+          data={{ ...(props.data as LoopNodeData), onAddNode: handleAddNode }}
+        />
+      ),
+    }),
+    [handleAddNode],
+  );
 
-  const handleConnect = useCallback((params: Connection) => {
-    const id = `edge_${Date.now()}`;
-    const newEdge: Edge = {
-      id,
-      ...params,
-      type: 'removable',
-      data: { onRemoveEdge: () => removeEdgeCallbackRef.current?.(id) },
-    };
-    onConnect(params);
-  }, [onConnect]);
+  const handleConnect = useCallback(
+    (params: Connection) => {
+      const id = `edge_${Date.now()}`;
+      const newEdge: Edge = {
+        id,
+        ...params,
+        type: "removable",
+        data: { onRemoveEdge: () => removeEdgeCallbackRef.current?.(id) },
+      };
+      onConnect(params);
+    },
+    [onConnect],
+  );
 
   const onPaneClick = useCallback(() => {
     if (isPaletteVisible) {
@@ -173,99 +198,116 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
   }, [isPaletteVisible, onTogglePalette]);
 
   return (
-    <div className={`flex flex-1 overflow-hidden ${className || ''}`}>
+    <div className={`flex flex-1 overflow-hidden ${className || ""}`}>
       {/* ReactFlow Canvas */}
       <div className="flex-1 bg-trading-grid relative">
         <ConnectionDragContext.Provider value={dragSource}>
-        <ReactFlow
+          <ReactFlow
             nodes={nodes}
-          edges={edges}
-          onNodesChange={(changes) => {
-            // Convert React Flow changes to direct node updates
-            let updatedNodes = [...nodes];
-            const removedNodeIds: string[] = [];
-            
-            changes.forEach(change => {
-              if (change.type === 'position' && change.position) {
-                const index = updatedNodes.findIndex(n => n.id === change.id);
-                if (index >= 0) {
-                  updatedNodes[index] = { ...updatedNodes[index], position: change.position };
+            edges={edges}
+            onNodesChange={(changes) => {
+              // Convert React Flow changes to direct node updates
+              let updatedNodes = [...nodes];
+              const removedNodeIds: string[] = [];
+
+              changes.forEach((change) => {
+                if (change.type === "position" && change.position) {
+                  const index = updatedNodes.findIndex(
+                    (n) => n.id === change.id,
+                  );
+                  if (index >= 0) {
+                    updatedNodes[index] = {
+                      ...updatedNodes[index],
+                      position: change.position,
+                    };
+                  }
+                } else if (change.type === "select") {
+                  const index = updatedNodes.findIndex(
+                    (n) => n.id === change.id,
+                  );
+                  if (index >= 0) {
+                    updatedNodes[index] = {
+                      ...updatedNodes[index],
+                      selected: change.selected,
+                    };
+                  }
+                } else if (change.type === "remove") {
+                  removedNodeIds.push(change.id);
+                  updatedNodes = updatedNodes.filter((n) => n.id !== change.id);
                 }
-              } else if (change.type === 'select') {
-                const index = updatedNodes.findIndex(n => n.id === change.id);
-                if (index >= 0) {
-                  updatedNodes[index] = { ...updatedNodes[index], selected: change.selected };
-                }
-              } else if (change.type === 'remove') {
-                removedNodeIds.push(change.id);
-                updatedNodes = updatedNodes.filter(n => n.id !== change.id);
+              });
+
+              // Clean up edges connected to removed nodes
+              if (removedNodeIds.length > 0) {
+                const filteredEdges = edges.filter(
+                  (edge) =>
+                    !removedNodeIds.includes(edge.source) &&
+                    !removedNodeIds.includes(edge.target),
+                );
+                onEdgesChange(filteredEdges);
               }
-            });
-            
-            // Clean up edges connected to removed nodes
-            if (removedNodeIds.length > 0) {
-              const filteredEdges = edges.filter(edge => 
-                !removedNodeIds.includes(edge.source) && !removedNodeIds.includes(edge.target)
-              );
-              onEdgesChange(filteredEdges);
-            }
-            
-            onNodesChange(updatedNodes);
-          }}
-          onEdgesChange={(changes) => {
-            // Convert React Flow changes to direct edge updates
-            let updatedEdges = [...edges];
-            changes.forEach(change => {
-              if (change.type === 'select') {
-                const index = updatedEdges.findIndex(e => e.id === change.id);
-                if (index >= 0) {
-                  updatedEdges[index] = { ...updatedEdges[index], selected: change.selected };
+
+              onNodesChange(updatedNodes);
+            }}
+            onEdgesChange={(changes) => {
+              // Convert React Flow changes to direct edge updates
+              let updatedEdges = [...edges];
+              changes.forEach((change) => {
+                if (change.type === "select") {
+                  const index = updatedEdges.findIndex(
+                    (e) => e.id === change.id,
+                  );
+                  if (index >= 0) {
+                    updatedEdges[index] = {
+                      ...updatedEdges[index],
+                      selected: change.selected,
+                    };
+                  }
+                } else if (change.type === "remove") {
+                  updatedEdges = updatedEdges.filter((e) => e.id !== change.id);
                 }
-              } else if (change.type === 'remove') {
-                updatedEdges = updatedEdges.filter(e => e.id !== change.id);
-              }
-            });
-            onEdgesChange(updatedEdges);
-          }}
-          onConnect={handleConnect}
-          onConnectStart={onConnectStart}
-          onConnectEnd={onConnectEnd}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onMouseMove={onMouseMove}
-          onNodeDoubleClick={onNodeDoubleClick}
-          onPaneClick={onPaneClick}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          connectionLineComponent={EdgeManager.PlugConnectionLine}
-          connectionLineType={ConnectionLineType.Bezier}
-          fitView
-          className={cn(
-            "workflow-canvas",
-            resolvedTheme === "dark" && "dark"
-          )}
-          style={{ backgroundColor: 'hsl(var(--trading-grid))' }}
-          nodesDraggable={!disabled}
-          nodesConnectable={!disabled}
-          elementsSelectable={!disabled}
-          selectionOnDrag={!disabled}
-          panOnDrag={disabled ? false : [1, 2]}
-          zoomOnScroll={!disabled}
-        >
-          <Background 
-            variant={BackgroundVariant.Dots} 
-            gap={16} 
-            size={0.8}
-            color="hsl(var(--muted-foreground) / 0.60)"
-          />
-          <MiniMap 
-            className="!bg-card !border-border"
-            maskColor="hsl(var(--muted) / 0.6)"
-          />
-          <Controls 
-            className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-black"
-          />
-        </ReactFlow>
+              });
+              onEdgesChange(updatedEdges);
+            }}
+            onConnect={handleConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onMouseMove={onMouseMove}
+            onNodeDoubleClick={onNodeDoubleClick}
+            onPaneClick={onPaneClick}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            connectionLineComponent={EdgeManager.PlugConnectionLine}
+            connectionLineType={ConnectionLineType.Bezier}
+            fitView
+            minZoom={0.1}
+            maxZoom={4}
+            className={cn(
+              "workflow-canvas",
+              resolvedTheme === "dark" && "dark",
+            )}
+            style={{ backgroundColor: "hsl(var(--trading-grid))" }}
+            nodesDraggable={!disabled}
+            nodesConnectable={!disabled}
+            elementsSelectable={!disabled}
+            selectionOnDrag={!disabled}
+            panOnDrag={disabled ? false : [1, 2]}
+            zoomOnScroll={!disabled}
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={16}
+              size={0.8}
+              color="hsl(var(--muted-foreground) / 0.60)"
+            />
+            <MiniMap
+              className="!bg-card !border-border"
+              maskColor="hsl(var(--muted) / 0.6)"
+            />
+            <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-black" />
+          </ReactFlow>
         </ConnectionDragContext.Provider>
 
         {/* Execution Status Overlay */}
@@ -302,17 +344,17 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-      
+
       {/* Toggle Arrow */}
       <motion.button
         onClick={onTogglePalette}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         className={`fixed top-1/2 -translate-y-1/2 z-50 bg-card border border-border rounded-l-lg p-2 shadow-lg hover:bg-muted transition-all duration-200 palette-toggle-button ${
-          isPaletteVisible ? 'right-80' : 'right-0'
+          isPaletteVisible ? "right-80" : "right-0"
         }`}
         style={{
-          right: isPaletteVisible ? '320px' : '0px',
+          right: isPaletteVisible ? "320px" : "0px",
         }}
       >
         {isPaletteVisible ? (

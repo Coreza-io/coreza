@@ -15,6 +15,7 @@ type DraggableFieldsPanelProps = {
   onDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   parentKey?: string;
   maxItems?: number;
+  draggable?: boolean;
 };
 
 type Entry = { key: string; value: unknown };
@@ -46,6 +47,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   onDragStart,
   parentKey = "",
   maxItems = 25,
+  draggable = true,
 }) => {
   const entriesToShow: Entry[] = useMemo(() => {
     if (!isObjectLike(data)) return [];
@@ -76,9 +78,12 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
           <div key={fullKey} className="flex flex-col ml-2">
             <div className="flex items-center gap-2">
               <div
-                className="nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs cursor-pointer font-semibold w-fit text-primary transition-colors cursor-grab active:cursor-grabbing"
-                draggable
+                className={`nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs font-semibold w-fit text-primary transition-colors ${
+                  draggable ? "cursor-pointer cursor-grab active:cursor-grabbing" : "cursor-default"
+                }`}
+                draggable={draggable}
                 onDragStart={(e) => {
+                  if (!draggable) return;
                   const asString = toStringValue(value);
                   e.dataTransfer.setData(
                     "application/reactflow",
@@ -117,6 +122,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   onDragStart={onDragStart}
                   parentKey={fullKey}
                   maxItems={maxItems}
+                  draggable={draggable}
                 />
               </div>
             )}

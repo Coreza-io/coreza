@@ -15,6 +15,7 @@ import { isStandardNodeOutput } from "@/types/nodeOutput";
 import type { StandardNodeOutput } from "@/types/nodeOutput";
 import { truncateForDisplay } from "./outputTruncation";
 import { VirtualizedArrayBrowser } from "@/components/workflow/VirtualizedArrayBrowser";
+import DraggableFieldsPanel from "./DraggableFieldsPanel";
 
 
 // Props strongly typed, mirroring InputPanel
@@ -245,65 +246,13 @@ const createRenderData = (
     }
     
     if (typeof data === "object" && data !== null) {
-      // Filter out internal truncation metadata
-      const entries = Object.entries(data).filter(([key]) => !key.startsWith('__'));
-      
       return (
-        <div className="flex flex-col gap-2">
-          {entries.map(([key, value]) => {
-            const fullKey = parentKey ? `${parentKey}.${key}` : key;
-            
-            // Check if value is a truncated structure
-            const valueObj = value as any;
-            if (valueObj?.__truncated) {
-              return (
-                <div key={fullKey} className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-primary px-1">{key}</span>
-                  {renderData(value, fullKey)}
-                </div>
-              );
-            }
-            
-            return (
-              <div
-                key={fullKey}
-                className="flex flex-col px-3 py-2 rounded-md bg-background hover:bg-muted/50 transition-colors border border-border/30"
-              >
-                <span className="text-xs font-semibold text-primary">{key}</span>
-                <span className="text-xs text-foreground pl-2 mt-1">
-                  {value === undefined ? (
-                    <span className="text-muted-foreground">undefined</span>
-                  ) : value === null ? (
-                    <span className="text-muted-foreground">null</span>
-                  ) : typeof value === "object" ? (
-                    Array.isArray(value) ? (
-                      <span className="text-muted-foreground">Array[{value.length}]</span>
-                    ) : Object.keys(value).length > 0 ? (
-                      // Check if any nested values contain truncated data
-                      Object.values(value).some((v: any) => v?.__truncated) ? (
-                        <div className="pl-2 mt-1">
-                          {renderData(value, fullKey)}
-                        </div>
-                      ) : (
-                        <span className="font-mono text-muted-foreground bg-muted/20 px-2 py-1 rounded text-xs break-all">
-                          {JSON.stringify(value).slice(0, 200)}
-                          {JSON.stringify(value).length > 200 && '...'}
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-muted-foreground">{'{}'}</span>
-                    )
-                  ) : (
-                    <span className="break-words">
-                      {String(value).slice(0, 500)}
-                      {String(value).length > 500 && '...'}
-                    </span>
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        <DraggableFieldsPanel
+          data={data}
+          parentKey={parentKey}
+          onDragStart={() => {}}
+          draggable={false}
+        />
       );
     }
     

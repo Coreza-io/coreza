@@ -30,7 +30,8 @@ export type OverlayHandles = {
     key: string;
     label: string;
     color: string;
-    series: ISeriesApi<"Line" | "Histogram", Time>;
+    series: ISeriesApi<"Candlestick" | "Line" | "Histogram", Time>;
+    staticValue?: number | null;
   }>;
   priceLines: Array<{
     anchor: ISeriesApi<"Candlestick" | "Line" | "Histogram", Time>;
@@ -45,6 +46,17 @@ const OVERLAY_SERIES_STYLE = {
   priceLineVisible: false,
 } as const;
 
+const getLevelPrecision = (referencePrice: number | undefined): number => {
+  if (!Number.isFinite(referencePrice) || referencePrice <= 0) return 4;
+  const magnitude = Math.floor(Math.log10(referencePrice));
+  return Math.min(8, Math.max(2, 4 - magnitude));
+};
+
+const roundToPrecision = (value: number, precision: number): number => {
+  const factor = 10 ** precision;
+  return Math.round(value * factor) / factor;
+};
+
 const toChartTime = (time: number): Time => {
   return (time > 9999999999 ? Math.floor(time / 1000) : time) as Time;
 };
@@ -56,7 +68,7 @@ const toLineData = (
     .filter((point) => point.value !== null)
     .map((point) => ({
       time: toChartTime(point.time),
-      value: point.value as number,
+      value: point.value,
     }));
 
 const nearestLevels = (
@@ -69,13 +81,13 @@ const nearestLevels = (
     return levels.slice(0, MAX_LEVELS_PER_SIDE);
   const filtered =
     direction === "support"
-      ? levels.filter((x) => x <= (currentClose as number))
-      : levels.filter((x) => x >= (currentClose as number));
+      ? levels.filter((x) => x <= currentClose)
+      : levels.filter((x) => x >= currentClose);
   return filtered
     .sort(
       (a, b) =>
-        Math.abs((currentClose as number) - a) -
-        Math.abs((currentClose as number) - b),
+        Math.abs(currentClose - a) -
+        Math.abs(currentClose - b),
     )
     .slice(0, MAX_LEVELS_PER_SIDE);
 };
@@ -227,16 +239,22 @@ export const addOverlaySeries = (
     ]);
   }
 
+  const levelPrecision = getLevelPrecision(overlay.currentClose);
+  const addLevelPriceLine = (price: number, color: string, title: string, lineStyle: ChartLineStyle) => {
+    const line = priceLineTarget.createPriceLine({
+      price: roundToPrecision(price, levelPrecision),
+      color,
+      lineStyle,
+      lineWidth: 1,
+      axisLabelVisible: true,
+      title,
+    });
+    handles.priceLines.push({ anchor: priceLineTarget, line });
+  };
+
   nearestLevels(overlay.supports, overlay.currentClose, "support").forEach(
     (price) => {
-      const line = priceLineTarget.createPriceLine({
-        price,
-        color: "#22c55e",
-        lineStyle: LINE_STYLE_DASHED,
-        lineWidth: 1,
-        axisLabelVisible: true,
-      });
-      handles.priceLines.push({ anchor: priceLineTarget, line });
+      addLevelPriceLine(price, "#22c55e", "support", LINE_STYLE_DASHED);
     },
   );
   nearestLevels(
@@ -244,15 +262,21 @@ export const addOverlaySeries = (
     overlay.currentClose,
     "resistance",
   ).forEach((price) => {
-    const line = priceLineTarget.createPriceLine({
-      price,
-      color: "#ef4444",
-      lineStyle: LINE_STYLE_DASHED,
-      lineWidth: 1,
-      axisLabelVisible: true,
-    });
-    handles.priceLines.push({ anchor: priceLineTarget, line });
+    addLevelPriceLine(price, "#ef4444", "resistance", LINE_STYLE_DASHED);
   });
+
+  if (overlay.pivot !== null && overlay.pivot !== undefined && Number.isFinite(overlay.pivot)) {
+    addLevelPriceLine(overlay.pivot, "#eab308", "pivot", LINE_STYLE_DASHED);
+    handles.channels.push({ key: "pivot", label: "pivot", color: "#eab308", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.pivot });
+  }
+  if (overlay.highestHigh !== null && overlay.highestHigh !== undefined && Number.isFinite(overlay.highestHigh)) {
+    addLevelPriceLine(overlay.highestHigh, "#ef4444", "HH", 3);
+    handles.channels.push({ key: "highest_high", label: "highest_high", color: "#ef4444", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.highestHigh });
+  }
+  if (overlay.lowestLow !== null && overlay.lowestLow !== undefined && Number.isFinite(overlay.lowestLow)) {
+    addLevelPriceLine(overlay.lowestLow, "#22c55e", "LL", 3);
+    handles.channels.push({ key: "lowest_low", label: "lowest_low", color: "#22c55e", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.lowestLow });
+  }
 
   if (overlay.supportSeries) {
     const supportSeries = chart.addSeries(LineSeries, {

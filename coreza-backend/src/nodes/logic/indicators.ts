@@ -138,6 +138,22 @@ function clampWindow(window: number[], size: number): number[] {
 
 
 
+function roundTo(value: number, digits = 6): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function roundSupportResistanceLevels(levels: { resistance: number[]; support: number[]; pivot?: number; highest_high?: number; lowest_low?: number }) {
+  return {
+    ...levels,
+    resistance: levels.resistance.map((value) => roundTo(value)),
+    support: levels.support.map((value) => roundTo(value)),
+    ...(Number.isFinite(levels.pivot) ? { pivot: roundTo(levels.pivot as number) } : {}),
+    ...(Number.isFinite(levels.highest_high) ? { highest_high: roundTo(levels.highest_high as number) } : {}),
+    ...(Number.isFinite(levels.lowest_low) ? { lowest_low: roundTo(levels.lowest_low as number) } : {}),
+  };
+}
+
 function calculatePivotLevels(high: number, low: number, close: number, numLevels: number) {
   const PP = (high + low + close) / 3;
   const levels = { pivot: PP, resistance: [] as number[], support: [] as number[] };
@@ -836,7 +852,7 @@ export class IndicatorService {
                 const calc = (state: Record<string, any>) => {
           if (state.mode === "pivot") {
             if (!Number.isFinite(state.lastHigh) || !Number.isFinite(state.lastLow) || !Number.isFinite(state.lastClose)) return null;
-            return calculatePivotLevels(state.lastHigh, state.lastLow, state.lastClose, state.numLevels);
+            return roundSupportResistanceLevels(calculatePivotLevels(state.lastHigh, state.lastLow, state.lastClose, state.numLevels));
           }
 
           if (state.highWindow.length < state.lookback || state.lowWindow.length < state.lookback) return null;
@@ -844,12 +860,12 @@ export class IndicatorService {
           const lows = state.lowWindow;
 
           if (state.mode === "historical") {
-            return {
+            return roundSupportResistanceLevels({
               resistance: clusterLevels(highs, state.sensitivity, state.numLevels),
               support: clusterLevels(lows, state.sensitivity, state.numLevels).reverse(),
               highest_high: Math.max(...highs),
               lowest_low: Math.min(...lows),
-            };
+            });
           }
 
           const swingHighs: number[] = [];
@@ -858,9 +874,12 @@ export class IndicatorService {
             if (highs[i] > highs[i - 1] && highs[i] > highs[i - 2] && highs[i] > highs[i + 1] && highs[i] > highs[i + 2]) swingHighs.push(highs[i]);
             if (lows[i] < lows[i - 1] && lows[i] < lows[i - 2] && lows[i] < lows[i + 1] && lows[i] < lows[i + 2]) swingLows.push(lows[i]);
           }
-          return {
+          const levels = roundSupportResistanceLevels({
             resistance: clusterLevels(swingHighs, state.sensitivity, state.numLevels),
             support: clusterLevels(swingLows, state.sensitivity, state.numLevels).reverse(),
+          });
+          return {
+            ...levels,
             swing_highs_count: swingHighs.length,
             swing_lows_count: swingLows.length,
           };
@@ -898,7 +917,7 @@ export class IndicatorService {
               if (state.highWindow.length > state.lookback) state.highWindow.shift();
               if (state.lowWindow.length > state.lookback) state.lowWindow.shift();
               if (state.mode === "pivot" && Number.isFinite(state.prevHigh) && Number.isFinite(state.prevLow) && Number.isFinite(state.prevClose)) {
-                value = calculatePivotLevels(state.prevHigh, state.prevLow, state.prevClose, state.numLevels);
+                value = roundSupportResistanceLevels(calculatePivotLevels(state.prevHigh, state.prevLow, state.prevClose, state.numLevels));
               } else {
                 value = calc(state);
               }
@@ -926,7 +945,7 @@ export class IndicatorService {
             if (state.highWindow.length > state.lookback) state.highWindow.shift();
             if (state.lowWindow.length > state.lookback) state.lowWindow.shift();
             const value = state.mode === "pivot" && Number.isFinite(state.prevHigh) && Number.isFinite(state.prevLow) && Number.isFinite(state.prevClose)
-              ? calculatePivotLevels(state.prevHigh, state.prevLow, state.prevClose, state.numLevels)
+              ? roundSupportResistanceLevels(calculatePivotLevels(state.prevHigh, state.prevLow, state.prevClose, state.numLevels))
               : calc(state);
             state.lastValue = value;
             return { value, internalState: state };
@@ -1806,7 +1825,7 @@ export class IndicatorService {
       }
 
       const numLevels = Math.min(Number(num_levels), 3);
-      const levels = calculatePivotLevels(high, low, close, numLevels)
+      const levels = roundSupportResistanceLevels(calculatePivotLevels(high, low, close, numLevels))
 
       return createSuccessOutput([levels], {
         ...INDICATOR_CONTEXT,
@@ -1904,9 +1923,13 @@ export class IndicatorService {
       const resistanceLevels = clusterLevels(swingHighs);
       const supportLevels = clusterLevels(swingLows).reverse();
 
-      const levels = {
+      const roundedLevels = roundSupportResistanceLevels({
         resistance: resistanceLevels,
         support: supportLevels,
+      });
+
+      const levels = {
+        ...roundedLevels,
         swing_highs_count: swingHighs.length,
         swing_lows_count: swingLows.length,
       };
@@ -1951,12 +1974,12 @@ export class IndicatorService {
       const resistanceLevels = clusterLevels(highs, 0.01, numLevels);
       const supportLevels = clusterLevels(lows, 0.01, numLevels).reverse();
 
-      const levels = {
+      const levels = roundSupportResistanceLevels({
         resistance: resistanceLevels,
         support: supportLevels,
         highest_high: Math.max(...highs),
         lowest_low: Math.min(...lows),
-      };
+      });
 
       return createSuccessOutput([levels], {
         ...INDICATOR_CONTEXT,

@@ -46,6 +46,9 @@ const channelColor = (
   if (overlay.kind === "levels") {
     if (channelKey === "support") return "#22c55e";
     if (channelKey === "resistance") return "#ef4444";
+    if (channelKey === "pivot") return "#eab308";
+    if (channelKey === "highest_high") return "#ef4444";
+    if (channelKey === "lowest_low") return "#22c55e";
   }
   return overlayColor(overlay);
 };

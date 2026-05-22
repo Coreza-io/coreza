@@ -167,6 +167,10 @@ const LightweightVisualizeChart: React.FC<{
     };
     const overlayValues: Record<string, number | null> = {};
     handles.channels.forEach((channel) => {
+      if (channel.staticValue !== undefined) {
+        overlayValues[channel.key] = channel.staticValue;
+        return;
+      }
       let value: number | null = null;
       if (overlay.kind === "line" || overlay.kind === "panel") {
         value = lastValid(overlay.data);
@@ -214,6 +218,10 @@ const LightweightVisualizeChart: React.FC<{
           latestLegendValuesRef.current[paneKey]?.[overlay.id] ?? {};
         const overlayValues: Record<string, number | null> = {};
         handles.channels.forEach((channel) => {
+          if (channel.staticValue !== undefined) {
+            overlayValues[channel.key] = channel.staticValue;
+            return;
+          }
           const raw = param.seriesData.get(channel.series);
           const hoveredValue =
             raw && "value" in raw && typeof raw.value === "number"

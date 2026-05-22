@@ -40,6 +40,9 @@ export type VisualizeOverlay =
       resistances: number[];
       supportSeries?: SeriesPoint[];
       resistanceSeries?: SeriesPoint[];
+      pivot?: number | null;
+      highestHigh?: number | null;
+      lowestLow?: number | null;
       currentClose?: number;
     }
   | {

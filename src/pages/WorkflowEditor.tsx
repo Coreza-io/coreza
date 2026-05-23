@@ -1430,7 +1430,7 @@ const WorkflowEditorContent = () => {
             value={activeTab}
             onValueChange={(v) => setActiveTab(v as "editor" | "executions")}
           >
-            <TabsList className="h-8">
+            <TabsList className="h-8 bg-muted">
               <TabsTrigger value="editor" className="text-xs px-3 h-7">
                 Editor
               </TabsTrigger>
@@ -1499,7 +1499,7 @@ const WorkflowEditorContent = () => {
             onClick={() => (window as any).__workflowFileInput?.click()}
             variant="outline"
             size="icon"
-            className="h-10 w-10 hover:bg-muted/50 transition-colors"
+            className="h-10 w-10 bg-card hover:bg-muted/50 transition-colors"
             title="Upload workflow from JSON"
           >
             <Upload className="h-4 w-4" />
@@ -1508,7 +1508,7 @@ const WorkflowEditorContent = () => {
             onClick={() => exportWorkflow(workflowName, nodes, edges, isActive)}
             variant="outline"
             size="icon"
-            className="h-10 w-10 hover:bg-muted/50 transition-colors"
+            className="h-10 w-10 bg-card hover:bg-muted/50 transition-colors"
             title="Download workflow as JSON"
           >
             <Download className="h-4 w-4" />
@@ -1518,7 +1518,7 @@ const WorkflowEditorContent = () => {
             onClick={() => handleSaveWorkflow()}
             disabled={loading || persistSaving}
             variant="outline"
-            className="h-10 px-4 font-medium hover:bg-muted/50 transition-colors"
+            className="h-10 px-4 font-medium bg-card hover:bg-muted/50 transition-colors"
           >
             <Save className="h-4 w-4 mr-2" />
             {persistSaving ? "Saving..." : "Save"}

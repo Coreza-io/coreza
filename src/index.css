@@ -81,8 +81,8 @@
     --warning: 38 92% 50%;
     --warning-foreground: 224 12% 8%;
 
-    --border: 224 12% 20%;
-    --input: 224 12% 15%;
+    --border: 224 14% 24%;
+    --input: 224 14% 26%;
     --ring: 217 91% 60%;
 
     /* Trading platform specific colors - Dark */
@@ -546,16 +546,30 @@
   }
 
   .plug-edge__glow {
-    opacity: 0.7;
-    filter: blur(0.5px);
+    opacity: 0;
+    filter: none;
     transition:
       opacity 0.3s ease,
       filter 0.3s ease;
   }
 
-  .plug-edge__glow--active {
+  .dark .plug-edge__glow {
+    opacity: 0.55;
+    filter: blur(0.5px);
+  }
+
+  .dark .plug-edge__glow--active {
     opacity: 0.45;
     filter: blur(12px);
+  }
+
+  .plug-edge__halo {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .dark .plug-edge__halo {
+    opacity: 1;
   }
 
   .plug-edge__cord {
@@ -575,7 +589,7 @@
       plug-edge-cyan-pulse 1.6s ease-in-out infinite;
   }
 
-  .plug-edge__cord.executing-edge {
+  .dark .plug-edge__cord.executing-edge {
     filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 0 14px currentColor);
   }
 
@@ -587,6 +601,10 @@
   }
 
   .plug-edge__spark--active {
+    opacity: 0.3;
+  }
+
+  .dark .plug-edge__spark--active {
     opacity: 0.5;
   }
 
@@ -633,15 +651,23 @@
       fill 0.3s ease;
   }
 
-  .plug-edge__cord.executing-edge
+  .dark .plug-edge__cord.executing-edge
     ~ .plug-edge__plug
     .plug-edge__plug-shape
     path {
     filter: drop-shadow(0 0 8px currentColor);
   }
 
+  .plug-edge__plug-path {
+    filter: none;
+  }
+
+  .dark .plug-edge__plug-path {
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+
   /* Connection line animation styles */
-  .plug-edge--connection .plug-edge__glow--connecting {
+  .dark .plug-edge--connection .plug-edge__glow--connecting {
     opacity: 0.7;
     filter: blur(12px);
     animation: plug-edge-spark 1.2s ease-in-out infinite;

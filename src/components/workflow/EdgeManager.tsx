@@ -567,7 +567,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         targetY={targetY}
         sourcePosition={sourcePosition}
         targetPosition={targetPosition}
-        style={{ stroke: "#6366f1", strokeWidth: 2, ...style }}
+        style={{ stroke: "#38bdf8", strokeWidth: 2, ...style }}
         markerEnd={markerEnd}
         data={data}
         controls={computedControls}
@@ -582,13 +582,13 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   delete customStyle.stroke;
   delete customStyle.strokeWidth;
 
-  const cordColor = typeof strokeValue === "string" ? strokeValue : "#64748b";
+  const cordColor = typeof strokeValue === "string" ? strokeValue : "#38bdf8";
   const strokeWidth =
     typeof strokeWidthValue === "number"
       ? strokeWidthValue
       : strokeWidthValue
-        ? Number.parseFloat(String(strokeWidthValue)) || 3
-        : 3;
+        ? Number.parseFloat(String(strokeWidthValue)) || 2
+        : 2;
 
   const glowColor = lightenHex(cordColor, 0.5);
   const sparkColor = lightenHex(cordColor, 0.7);
@@ -694,7 +694,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           executing ? " plug-edge__glow--active" : ""
         }`}
         stroke={glowColor}
-        strokeWidth={strokeWidth + 6}
+        strokeWidth={strokeWidth + 10}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -722,10 +722,28 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           pointerEvents: "none",
         }}
       />
+      <circle cx={sourceX} cy={sourceY} r={5} fill={cordColor} opacity={0.95} />
+      <circle
+        cx={sourceX}
+        cy={sourceY}
+        r={10}
+        fill={cordColor}
+        opacity={0.3}
+        style={{ pointerEvents: "none" }}
+      />
+      <circle cx={targetX} cy={targetY} r={5} fill={cordColor} opacity={0.95} />
+      <circle
+        cx={targetX}
+        cy={targetY}
+        r={10}
+        fill={cordColor}
+        opacity={0.3}
+        style={{ pointerEvents: "none" }}
+      />
       <circle
         cx={midX}
         cy={midY}
-        r={6}
+        r={7}
         fill={`url(#${sparkId})`}
         className={`plug-edge__spark${
           executing ? " plug-edge__spark--active" : ""
@@ -841,14 +859,14 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
       ? style.stroke
       : connectionStatus === "invalid"
         ? "#ef4444"
-        : "#64748b";
+        : "#38bdf8";
 
   const strokeWidth =
     typeof style.strokeWidth === "number"
       ? style.strokeWidth
       : style.strokeWidth
-        ? Number.parseFloat(String(style.strokeWidth)) || 3
-        : 3;
+        ? Number.parseFloat(String(style.strokeWidth)) || 2
+        : 2;
 
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
   const glowColor = lightenHex(cordColor, 0.5);
@@ -897,7 +915,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         d={edgePath}
         className="plug-edge__glow plug-edge__glow--connecting"
         stroke={glowColor}
-        strokeWidth={strokeWidth + 6}
+        strokeWidth={strokeWidth + 10}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"

@@ -100,6 +100,7 @@ interface NodeWrapperProps {
   // Electric border props
   electricBorder?: boolean;
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
+  neonColor?: string;
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
   // Stream data received flash
@@ -141,6 +142,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   // Electric border props
   electricBorder = true,
   electricColor = "cyan",
+  neonColor = "#22d3ee",
   isExecuting = false,
   isStreamingWaiting = false,
   // Stream data received flash
@@ -200,34 +202,6 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     setIsDeleteDialogOpen(false);
   };
 
-  // Map category to gradient class name
-  const getCategoryGradientClass = (category?: string): string => {
-    if (!category) return "";
-
-    const normalizedCategory = category.toLowerCase().replace(/\s+/g, "");
-
-    const categoryMap: Record<string, string> = {
-      indicators: "bg-gradient-indicators",
-      broker: "bg-gradient-broker",
-      data: "bg-gradient-data",
-      logic: "bg-gradient-logic",
-      screener: "bg-gradient-screener",
-      input: "bg-gradient-input",
-      visualization: "bg-gradient-visualization",
-      llm: "bg-gradient-llm",
-      chatmodel: "bg-gradient-chatmodel",
-      aiagent: "bg-gradient-aiagent",
-      email: "bg-gradient-email",
-      tool: "bg-gradient-tool",
-      riskmanagement: "bg-gradient-risk",
-      scheduler: "bg-gradient-scheduler",
-    };
-
-    return categoryMap[normalizedCategory] || "";
-  };
-
-  const categoryGradientClass = getCategoryGradientClass(category);
-
   const streamingClasses = isStreamingWaiting
     ? "border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.4)] animate-pulse"
     : "";
@@ -274,6 +248,25 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const collapsedHeight = collapsedSize?.height ?? 150;
   const isWideCollapsedLayout =
     !!collapsedSize && collapsedWidth / collapsedHeight >= 1.6;
+  const nodeCardStyle: React.CSSProperties & { "--node-neon-color"?: string } =
+    {
+      width: isExpanded ? minWidth : collapsedWidth,
+      minHeight: isExpanded ? minHeight : collapsedHeight,
+      height: isExpanded ? "auto" : collapsedHeight,
+      overflow:
+        shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+          ? "visible"
+          : "hidden",
+      ...(isDarkMode
+        ? {
+            "--node-neon-color": neonColor,
+            background: "hsl(222 47% 8% / 0.92)",
+            borderColor: neonColor,
+            borderWidth: "1.5px",
+            boxShadow: `0 0 0 1px rgb(255 255 255 / 0.08) inset, 0 0 12px ${neonColor}8c, 0 0 28px ${neonColor}40`,
+          }
+        : {}),
+    };
 
   return (
     <div className={`relative ${isExpanded ? "node-expanded" : ""}`}>
@@ -297,12 +290,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           }
           ${streamingClasses}
           ${getExecutionStatusClass()}
-          ${
-            isDarkMode && categoryGradientClass
-              ? //!isExpanded && isDarkMode && categoryGradientClass
-                categoryGradientClass
-              : "bg-card"
-          }
+          ${isDarkMode ? "" : "bg-card"}
         `}
         onDoubleClick={(e) => {
           e.preventDefault();
@@ -312,31 +300,14 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             onDoubleClick(e);
           }
         }}
-        style={{
-          width: isExpanded ? minWidth : collapsedWidth,
-          minHeight: isExpanded ? minHeight : collapsedHeight,
-          height: isExpanded ? "auto" : collapsedHeight,
-          overflow:
-            shouldShowHandlesOutside ||
-            (electricBorder && isExecuting && isDarkMode)
-              ? "visible"
-              : "hidden",
-        }}
+        style={nodeCardStyle}
       >
         {/* Electric Border SVG Overlay */}
         {!isExpanded && electricBorder && isExecuting && isDarkMode && (
           <ElectricBorderSVG
             isExpanded={isExpanded}
             color={
-              electricColor === "cyan"
-                ? "#00ffff"
-                : electricColor === "orange"
-                ? "#ff8c00"
-                : electricColor === "blue"
-                ? "#3b82f6"
-                : electricColor === "purple"
-                ? "#a855f7"
-                : "#00ff00"
+              neonColor
             }
           />
         )}

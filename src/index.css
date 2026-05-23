@@ -667,9 +667,10 @@
     height: 10px;
     border-radius: 9999px;
     background: var(--node-neon-color, #22d3ee);
+    border: 1px solid var(--node-border-color, var(--node-neon-color, #22d3ee));
     box-shadow:
-      0 0 8px var(--node-neon-color, #22d3ee),
-      0 0 18px var(--node-neon-color, #22d3ee);
+      0 0 8px var(--node-glow-color, var(--node-neon-color, #22d3ee)),
+      0 0 18px var(--node-glow-color, var(--node-neon-color, #22d3ee));
   }
 
   .plug-edge--connection .plug-edge__cord--connecting {

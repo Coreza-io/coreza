@@ -641,7 +641,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Expanded View */}
         {isExpanded && (
-          <CardContent className="space-y-3 p-4">
+          <CardContent className="space-y-3 p-4 relative" style={{ zIndex: 2 }}>
             <div className="absolute top-2 right-2 z-10 flex gap-1">
               {/* <Button
                 variant="ghost"

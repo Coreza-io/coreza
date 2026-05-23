@@ -305,7 +305,10 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             />
             <MiniMap
               className="!bg-card !border-border"
-              maskColor="hsl(var(--muted) / 0.6)"
+              bgColor="hsl(var(--card))"
+              nodeColor="hsl(var(--node-neon-color, var(--primary)))"
+              nodeStrokeColor="hsl(var(--border))"
+              maskColor="hsl(var(--background) / 0.6)"
             />
             <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted text-foreground" />
           </ReactFlow>

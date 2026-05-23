@@ -1,11 +1,6 @@
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License v3.0.
- *
- * See the LICENSE file for details.
  */
 
 import React, { memo } from "react";
@@ -20,34 +15,13 @@ import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRen
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import type { BaseNodeRenderProps } from "../BaseNode";
+import {
+  NODE_VISUAL_THEMES,
+  DEFAULT_NODE_VISUAL_THEME,
+} from "@/components/nodes/constants/nodeVisualThemes";
+import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 
-interface BasicNodeLayoutProps extends BaseNodeRenderProps {
-  definition: any;
-  fieldState: Record<string, any>;
-  error: string;
-  isSending: boolean;
-  loadingSelect: Record<string, boolean>;
-  selectOptions: Record<string, any[]>;
-  showAuth: boolean;
-  selectedInputData: any;
-  workflowId?: string;
-  nodeId?: string;
-  readOnly?: boolean;
-  handleChange: (key: string, value: any) => void;
-  handleFieldStateBatch: (updates: Record<string, any>) => void;
-  handleSubmit: (e?: React.FormEvent) => void;
-  handleDrop: (
-    fieldKey: string,
-    setter: React.Dispatch<React.SetStateAction<string>>,
-    e: React.DragEvent,
-    currentValue: string,
-  ) => void;
-  getFieldPreview: (fieldKey: string) => string | null;
-  setShowAuth: (show: boolean) => void;
-  fetchCredentials: (fieldKey: string) => void;
-  fetchDependentOptions: (field: any, parentValue: string) => void;
-  referenceStyle: React.CSSProperties;
-}
+interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
 
 const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,
@@ -74,62 +48,92 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 }) => {
   const { user } = useAuth();
   const isDarkMode = useResolvedTheme() === "dark";
+
+  const visualCategory = resolveNodeVisualCategory(definition);
+  const theme =
+    NODE_VISUAL_THEMES[visualCategory] ?? DEFAULT_NODE_VISUAL_THEME;
+  const iconMode = theme.iconMode;
+
+  // AI yellow "A" badge
+  const renderAiBadge = () => (
+    <div
+      className="w-10 h-10 rounded-lg flex items-center justify-center font-extrabold text-black"
+      style={{
+        background: "linear-gradient(145deg, #fde047, #facc15)",
+        boxShadow:
+          "0 0 0 1px rgba(255,255,255,0.4) inset, 0 0 14px rgba(250,204,21,0.6)",
+        fontSize: 20,
+      }}
+    >
+      A
+    </div>
+  );
+
+  const iconTileClass = `w-10 h-10 rounded-lg flex items-center justify-center ring-1 ${
+    isDarkMode
+      ? "bg-[color:var(--node-neon-color)]/12 ring-[color:var(--node-border-color)]/50 shadow-[0_0_14px_var(--node-glow-color)]"
+      : "bg-muted/40 ring-border"
+  }`;
+
+  const renderIcon = () => {
+    if (isDarkMode && iconMode === "ai-badge") return renderAiBadge();
+
+    const IconComponent =
+      IconRegistry[definition?.name as keyof typeof IconRegistry];
+
+    if (IconComponent && typeof IconComponent === "function") {
+      return (
+        <div className={iconTileClass}>
+          {React.createElement(IconComponent, {
+            className:
+              "w-6 h-6 text-[color:var(--node-neon-color,#22d3ee)] drop-shadow-[0_0_10px_var(--node-glow-color,rgba(34,211,238,0.5))]",
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={iconTileClass}
+        style={
+          isDarkMode
+            ? {
+                mixBlendMode: "screen",
+                filter:
+                  "drop-shadow(0 0 8px var(--node-glow-color, rgba(34,211,238,0.5)))",
+              }
+            : undefined
+        }
+      >
+        {definition?.icon ? (
+          <CachedIcon
+            src={definition.icon}
+            alt="Node icon"
+            className="w-6 h-6"
+            fallback={
+              <div className="w-6 h-6 bg-transparent rounded flex items-center justify-center text-[color:var(--node-neon-color,#22d3ee)]">
+                <span className="text-xs">{definition.name?.[0] || "?"}</span>
+              </div>
+            }
+          />
+        ) : (
+          <span className="text-xs text-[color:var(--node-neon-color,#22d3ee)]">
+            {definition?.name?.[0] || "?"}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="mb-4">
         <div className="flex items-center gap-2">
-          {definition?.icon &&
-            (() => {
-              const IconComponent =
-                IconRegistry[definition.name as keyof typeof IconRegistry];
-              const iconTileClass = `w-10 h-10 rounded-lg flex items-center justify-center ring-1 ${
-                isDarkMode
-                  ? "bg-[color:var(--node-neon-color)]/10 ring-[color:var(--node-neon-color)]/40 shadow-[0_0_12px_var(--node-neon-color)]"
-                  : "bg-muted/40 ring-border"
-              }`;
-              if (IconComponent && typeof IconComponent === "function") {
-                return (
-                  <div className={iconTileClass}>
-                    {React.createElement(IconComponent, {
-                      className:
-                        "w-6 h-6 text-[var(--node-neon-color,#22d3ee)] drop-shadow-[0_0_10px_var(--node-neon-color,#22d3ee)]",
-                    })}
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  className={iconTileClass}
-                  style={
-                    isDarkMode
-                      ? {
-                          mixBlendMode: "screen",
-                          filter:
-                            "drop-shadow(0 0 8px var(--node-neon-color,#22d3ee))",
-                        }
-                      : undefined
-                  }
-                >
-                  <CachedIcon
-                    src={definition.icon}
-                    alt="Node icon"
-                    className="w-6 h-6"
-                    fallback={
-                      <div className="w-6 h-6 bg-transparent rounded flex items-center justify-center text-[var(--node-neon-color,#22d3ee)]">
-                        <span className="text-xs">
-                          {definition.name?.[0] || "?"}
-                        </span>
-                      </div>
-                    }
-                  />
-                </div>
-              );
-            })()}
+          {renderIcon()}
           <h2
             className={`font-semibold text-base flex-1 ${
               isDarkMode
-                ? "text-[color:var(--node-neon-color,#22d3ee)]"
+                ? "text-[color:var(--node-title-color,#ffffff)]"
                 : "text-foreground"
             }`}
           >
@@ -139,77 +143,77 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
-          {(definition.fields || []).map((f: any) => (
-            <NodeFieldRenderer
-              key={f.key}
-              field={f}
-              definition={definition}
-              fieldState={fieldState}
-              value={fieldState[f.key]}
-              selectOptions={selectOptions}
-              loadingSelect={loadingSelect}
-              onChange={handleChange}
-              onBatchChange={handleFieldStateBatch}
-              onDrop={(fieldDef, e, currentValue) =>
-                handleDrop(
-                  fieldDef.key,
-                  (val: string) => handleChange(fieldDef.key, val),
-                  e,
-                  currentValue,
-                )
-              }
-              getPreview={getFieldPreview}
-              referenceStyle={referenceStyle}
-              fetchDependentOptions={fetchDependentOptions}
-              setShowAuth={setShowAuth}
-              workflowId={workflowId}
-              nodeId={nodeId}
-              userId={user?.id || ""}
-              readOnly={readOnly}
-            />
-          ))}
+        {(definition.fields || []).map((f: any) => (
+          <NodeFieldRenderer
+            key={f.key}
+            field={f}
+            definition={definition}
+            fieldState={fieldState}
+            value={fieldState[f.key]}
+            selectOptions={selectOptions}
+            loadingSelect={loadingSelect}
+            onChange={handleChange}
+            onBatchChange={handleFieldStateBatch}
+            onDrop={(fieldDef, e, currentValue) =>
+              handleDrop(
+                fieldDef.key,
+                (val: string) => handleChange(fieldDef.key, val),
+                e,
+                currentValue,
+              )
+            }
+            getPreview={getFieldPreview}
+            referenceStyle={referenceStyle}
+            fetchDependentOptions={fetchDependentOptions}
+            setShowAuth={setShowAuth}
+            workflowId={workflowId}
+            nodeId={nodeId}
+            userId={user?.id || ""}
+            readOnly={readOnly}
+          />
+        ))}
 
-          {error && (
-            <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
+            {error}
+          </div>
+        )}
 
-          {!readOnly && incomingEdgeCount >= 2 && (
-            <div className="flex items-center justify-between pt-1">
-              <Label
-                htmlFor="check-dependency"
-                className="text-xs text-muted-foreground cursor-pointer"
-              >
-                Skip dependency check
-              </Label>
-              <Switch
-                id="check-dependency"
-                checked={Boolean(fieldState.checkDependency)}
-                onCheckedChange={(checked) =>
-                  handleChange("checkDependency", checked)
-                }
-                disabled={readOnly}
-              />
-            </div>
-          )}
-
-          {!readOnly && (
-            <Button
-              type="submit"
-              className="w-full bg-success hover:bg-success/90 text-success-foreground"
-              disabled={isSending}
+        {!readOnly && incomingEdgeCount >= 2 && (
+          <div className="flex items-center justify-between pt-1">
+            <Label
+              htmlFor="check-dependency"
+              className="text-xs text-muted-foreground cursor-pointer"
             >
-              {isSending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Running...
-                </>
-              ) : (
-                "Run"
-              )}
-            </Button>
-          )}
+              Skip dependency check
+            </Label>
+            <Switch
+              id="check-dependency"
+              checked={Boolean(fieldState.checkDependency)}
+              onCheckedChange={(checked) =>
+                handleChange("checkDependency", checked)
+              }
+              disabled={readOnly}
+            />
+          </div>
+        )}
+
+        {!readOnly && (
+          <Button
+            type="submit"
+            className="w-full bg-success hover:bg-success/90 text-success-foreground"
+            disabled={isSending}
+          >
+            {isSending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Running...
+              </>
+            ) : (
+              "Run"
+            )}
+          </Button>
+        )}
       </form>
 
       <LayoutAuthModal

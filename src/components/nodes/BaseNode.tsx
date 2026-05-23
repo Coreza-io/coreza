@@ -36,7 +36,13 @@ import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
-import { resolveNodeNeonTheme } from "@/components/nodes/constants/neonColors";
+import {
+  NODE_VISUAL_THEMES,
+  DEFAULT_NODE_VISUAL_THEME,
+  type NodeVisualCategory,
+  type NodeVisualTheme,
+} from "@/components/nodes/constants/nodeVisualThemes";
+import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 
 interface BaseNodeProps {
   data: any;
@@ -102,6 +108,8 @@ export interface BaseNodeRenderProps {
   referenceStyle: React.CSSProperties;
   neonColor: string;
   nodeSurfaceGradient: string;
+  visualCategory: NodeVisualCategory;
+  nodeTheme: NodeVisualTheme;
 }
 
 const TAILWIND_NEON_COLORS: Record<string, string> = {
@@ -147,13 +155,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const replaySessionRef = useRef(0);
 
   const definition = data.definition;
-  const { neonColor, nodeSurfaceGradient } = useMemo(() => {
-    const colorToken = typeof data.color === "string" ? data.color : "";
-    const matchedTailwindColor = Object.entries(TAILWIND_NEON_COLORS).find(
-      ([key]) => colorToken.includes(key),
-    )?.[1];
-    return resolveNodeNeonTheme(definition?.category, matchedTailwindColor);
-  }, [data.color, definition?.category]);
+  const { visualCategory, nodeTheme, neonColor, nodeSurfaceGradient } = useMemo(() => {
+    const cat = resolveNodeVisualCategory(definition);
+    const theme = NODE_VISUAL_THEMES[cat] ?? DEFAULT_NODE_VISUAL_THEME;
+    return {
+      visualCategory: cat,
+      nodeTheme: theme,
+      neonColor: theme.neon,
+      nodeSurfaceGradient: theme.background,
+    };
+  }, [definition?.name, definition?.category, definition?.def]);
 
   // Get display name - use stable access to avoid re-renders on drag
   const displayName = useMemo(() => {
@@ -572,6 +583,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     referenceStyle: referencesHook.referenceStyle,
     neonColor,
     nodeSurfaceGradient,
+    visualCategory,
+    nodeTheme,
   };
 
   return <>{children(renderProps)}</>;

@@ -34,6 +34,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DEFAULT_NODE_VISUAL_THEME,
+  type NodeVisualTheme,
+} from "@/components/nodes/constants/nodeVisualThemes";
 
 type HandlePosition = "left" | "right" | "top" | "bottom";
 
@@ -102,6 +106,7 @@ interface NodeWrapperProps {
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   neonColor?: string;
   nodeSurfaceGradient?: string;
+  nodeTheme?: NodeVisualTheme;
   description?: string;
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
@@ -146,6 +151,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricColor = "cyan",
   neonColor = "#22d3ee",
   nodeSurfaceGradient,
+  nodeTheme,
   description,
   isExecuting = false,
   isStreamingWaiting = false,
@@ -252,27 +258,47 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const collapsedHeight = collapsedSize?.height ?? 150;
   const isWideCollapsedLayout =
     !!collapsedSize && collapsedWidth / collapsedHeight >= 1.6;
-  const nodeCardStyle: React.CSSProperties & { "--node-neon-color"?: string } =
-    {
-      width: isExpanded ? minWidth : collapsedWidth,
-      minHeight: isExpanded ? minHeight : collapsedHeight,
-      height: isExpanded ? "auto" : collapsedHeight,
-      overflow:
-        shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
-          ? "visible"
-          : "hidden",
-      ...(isDarkMode
-        ? {
-            "--node-neon-color": neonColor,
-            background:
-              nodeSurfaceGradient ??
-              "radial-gradient(circle at 85% 0%, rgb(34 211 238 / 0.24), transparent 58%), linear-gradient(150deg, #122131 0%, #101b2a 52%, #0c1522 100%)",
-            border: `1px solid ${neonColor}`,
-            boxShadow: `0 0 0 1px ${neonColor}73 inset, 0 0 18px ${neonColor}cc, 0 0 46px ${neonColor}59, inset 0 1px 0 rgb(255 255 255 / 0.16)`,
-            filter: selected ? "brightness(1.15)" : undefined,
-          }
-        : {}),
-    };
+  const theme: NodeVisualTheme = nodeTheme ?? {
+    ...DEFAULT_NODE_VISUAL_THEME,
+    neon: neonColor,
+    border: neonColor,
+    glow: `${neonColor}80`,
+    background:
+      nodeSurfaceGradient ?? DEFAULT_NODE_VISUAL_THEME.background,
+  };
+
+  const nodeCardStyle: React.CSSProperties & {
+    "--node-neon-color"?: string;
+    "--node-border-color"?: string;
+    "--node-glow-color"?: string;
+    "--node-title-color"?: string;
+  } = {
+    width: isExpanded ? minWidth : collapsedWidth,
+    minHeight: isExpanded ? minHeight : collapsedHeight,
+    height: isExpanded ? "auto" : collapsedHeight,
+    overflow:
+      shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+        ? "visible"
+        : "hidden",
+    ...(isDarkMode
+      ? {
+          "--node-neon-color": theme.neon,
+          "--node-border-color": theme.border,
+          "--node-glow-color": theme.glow,
+          "--node-title-color": theme.titleColor,
+          background: theme.background,
+          border: `1.5px solid ${theme.border}`,
+          boxShadow: `
+            inset 0 1px 0 rgba(255,255,255,0.18),
+            inset 0 -1px 0 rgba(0,0,0,0.35),
+            0 0 0 1px ${theme.glow},
+            0 0 18px ${theme.glow},
+            0 0 46px ${theme.glow}
+          `,
+          filter: selected ? "brightness(1.16)" : undefined,
+        }
+      : {}),
+  };
 
   return (
     <div className={`relative ${isExpanded ? "node-expanded" : ""}`}>
@@ -294,7 +320,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               ? isDarkMode
                 ? ""
                 : "border-primary shadow-glow"
-              : "border-border"
+              : isDarkMode
+                ? ""
+                : "border-border"
           }
           ${streamingClasses}
           ${getExecutionStatusClass()}
@@ -310,6 +338,28 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         }}
         style={nodeCardStyle}
       >
+        {/* Glass reflection overlays (dark mode only) */}
+        {isDarkMode && (
+          <>
+            <div
+              className="pointer-events-none absolute inset-0 rounded-lg opacity-70"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 18%, transparent 44%)",
+                mixBlendMode: "screen",
+                zIndex: 1,
+              }}
+            />
+            <div
+              className="pointer-events-none absolute inset-0 rounded-lg"
+              style={{
+                background:
+                  "radial-gradient(circle at 50% -20%, rgba(255,255,255,0.10), transparent 42%)",
+                zIndex: 1,
+              }}
+            />
+          </>
+        )}
         {/* Electric Border SVG Overlay */}
         {!isExpanded && electricBorder && isExecuting && isDarkMode && (
           <ElectricBorderSVG
@@ -422,6 +472,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 ? "flex flex-row items-center gap-3 px-5"
                 : "flex flex-col items-center justify-center p-4"
             }`}
+            style={{ zIndex: 2 }}
           >
             {/* Execution status badge - only in readOnly mode */}
             {readOnly && executionStatus && (
@@ -475,8 +526,20 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 isDarkMode ? "text-[color:var(--node-neon-color)]" : "text-muted-foreground"
               }`}
             >
-              {/* Render icon with immediate loading */}
-              {typeof icon === "string" && icon.startsWith("/assets/") ? (
+              {isDarkMode && theme.iconMode === "ai-badge" ? (
+                <div
+                  className={`${
+                    isWideCollapsedLayout ? "w-8 h-8 text-base" : "w-10 h-10 text-xl"
+                  } rounded-lg flex items-center justify-center font-extrabold text-black`}
+                  style={{
+                    background: "linear-gradient(145deg, #fde047, #facc15)",
+                    boxShadow:
+                      "0 0 0 1px rgba(255,255,255,0.4) inset, 0 0 14px rgba(250,204,21,0.65)",
+                  }}
+                >
+                  A
+                </div>
+              ) : typeof icon === "string" && icon.startsWith("/assets/") ? (
                 <img
                   src={icon}
                   alt="Node icon"
@@ -590,7 +653,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Expanded View */}
         {isExpanded && (
-          <CardContent className="space-y-3 p-4">
+          <CardContent className="space-y-3 p-4 relative" style={{ zIndex: 2 }}>
             <div className="absolute top-2 right-2 z-10 flex gap-1">
               {/* <Button
                 variant="ghost"

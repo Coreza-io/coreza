@@ -191,7 +191,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
       ];
     }
 
-    const handles = [{ type: "target", position: "left", id: "input" }];
+    const handles: Array<{ type: string; position: string; id: string; label?: string }> = [{ type: "target", position: "left", id: "input" }];
 
     // Add handle for each case - ensure stable IDs
     cases.forEach((caseItem: any, index: number) => {
@@ -394,11 +394,12 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           collapsedSize={definition.collapsedSize}
           handles={dynamicHandles}
           nodeType={definition.node_type}
-          category={definition.category}
           electricBorder={true}
           electricColor="cyan"
           neonColor={renderProps.neonColor}
           nodeSurfaceGradient={renderProps.nodeSurfaceGradient}
+          nodeTheme={renderProps.nodeTheme}
+          category={renderProps.visualCategory}
           description={definition.description}
           isStreamingWaiting={data.isStreamingWaiting}
           streamDataReceived={data.streamDataReceived}

@@ -19,7 +19,8 @@ import {
   Position,
 } from "@xyflow/react";
 import { Plus, Trash2 } from "lucide-react";
-import { CATEGORY_NEON_COLORS } from "@/components/nodes/constants/neonColors";
+import { NODE_VISUAL_THEMES, DEFAULT_NODE_VISUAL_THEME } from "@/components/nodes/constants/nodeVisualThemes";
+import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 
 export interface EdgeControl {
   icon: React.ReactNode;
@@ -583,15 +584,12 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   delete customStyle.stroke;
   delete customStyle.strokeWidth;
 
-  const sourceCategory = String(
-    nodes.find((node) => node.id === source)?.data?.definition?.category ?? "",
-  )
-    .toLowerCase()
-    .replace(/\s+/g, "");
-  const categoryCordColor =
-    Object.entries(CATEGORY_NEON_COLORS).find(([key]) =>
-      sourceCategory.includes(key),
-    )?.[1] ?? "#22d3ee";
+  const sourceNode = nodes.find((node) => node.id === source) as any;
+  const sourceDefinition = sourceNode?.data?.definition;
+  const sourceVisualCategory = resolveNodeVisualCategory(sourceDefinition);
+  const sourceTheme =
+    NODE_VISUAL_THEMES[sourceVisualCategory] ?? DEFAULT_NODE_VISUAL_THEME;
+  const categoryCordColor = sourceTheme.edgeColor ?? "#22d3ee";
   const cordColor =
     typeof strokeValue === "string" ? strokeValue : categoryCordColor;
   const strokeWidth =
@@ -601,7 +599,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         ? Number.parseFloat(String(strokeWidthValue)) || 2
         : 2;
 
-  const glowColor = lightenHex(cordColor, 0.5);
+  const glowColor = sourceTheme.glow;
   const sparkColor = lightenHex(cordColor, 0.7);
   const sparkOuter = lightenHex(cordColor, 0.85);
   const executing = isExecutingClass(className);
@@ -705,12 +703,12 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           executing ? " plug-edge__glow--active" : ""
         }`}
         stroke={glowColor}
-        strokeWidth={strokeWidth + 10}
-        opacity={0.75}
+        strokeWidth={strokeWidth + 8}
+        opacity={0.55}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
-        style={{ pointerEvents: "none" }}
+        style={{ pointerEvents: "none", filter: "blur(0.5px)" }}
       />
       <path
         id={id}

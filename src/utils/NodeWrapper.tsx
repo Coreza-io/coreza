@@ -34,6 +34,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DEFAULT_NODE_VISUAL_THEME,
+  type NodeVisualTheme,
+} from "@/components/nodes/constants/nodeVisualThemes";
 
 type HandlePosition = "left" | "right" | "top" | "bottom";
 
@@ -102,6 +106,7 @@ interface NodeWrapperProps {
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   neonColor?: string;
   nodeSurfaceGradient?: string;
+  nodeTheme?: NodeVisualTheme;
   description?: string;
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
@@ -146,6 +151,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricColor = "cyan",
   neonColor = "#22d3ee",
   nodeSurfaceGradient,
+  nodeTheme,
   description,
   isExecuting = false,
   isStreamingWaiting = false,

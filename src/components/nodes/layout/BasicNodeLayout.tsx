@@ -18,6 +18,7 @@ import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
+import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import type { BaseNodeRenderProps } from "../BaseNode";
 
 interface BasicNodeLayoutProps extends BaseNodeRenderProps {
@@ -72,6 +73,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   referenceStyle,
 }) => {
   const { user } = useAuth();
+  const isDarkMode = useResolvedTheme() === "dark";
   return (
     <>
       <div className="mb-4">
@@ -80,28 +82,57 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             (() => {
               const IconComponent =
                 IconRegistry[definition.name as keyof typeof IconRegistry];
+              const iconTileClass = `w-10 h-10 rounded-lg flex items-center justify-center ring-1 ${
+                isDarkMode
+                  ? "bg-[color:var(--node-neon-color)]/10 ring-[color:var(--node-neon-color)]/40 shadow-[0_0_12px_var(--node-neon-color)]"
+                  : "bg-muted/40 ring-border"
+              }`;
               if (IconComponent && typeof IconComponent === "function") {
-                return React.createElement(IconComponent, {
-                  className: "w-6 h-6 text-[var(--node-neon-color,#22d3ee)] drop-shadow-[0_0_10px_var(--node-neon-color,#22d3ee)]",
-                });
+                return (
+                  <div className={iconTileClass}>
+                    {React.createElement(IconComponent, {
+                      className:
+                        "w-6 h-6 text-[var(--node-neon-color,#22d3ee)] drop-shadow-[0_0_10px_var(--node-neon-color,#22d3ee)]",
+                    })}
+                  </div>
+                );
               }
 
               return (
-                <CachedIcon
-                  src={definition.icon}
-                  alt="Node icon"
-                  className="w-6 h-6 drop-shadow-[0_0_10px_var(--node-neon-color,#22d3ee)]"
-                  fallback={
-                    <div className="w-6 h-6 bg-transparent rounded flex items-center justify-center text-[var(--node-neon-color,#22d3ee)]">
-                      <span className="text-xs">
-                        {definition.name?.[0] || "?"}
-                      </span>
-                    </div>
+                <div
+                  className={iconTileClass}
+                  style={
+                    isDarkMode
+                      ? {
+                          mixBlendMode: "screen",
+                          filter:
+                            "drop-shadow(0 0 8px var(--node-neon-color,#22d3ee))",
+                        }
+                      : undefined
                   }
-                />
+                >
+                  <CachedIcon
+                    src={definition.icon}
+                    alt="Node icon"
+                    className="w-6 h-6"
+                    fallback={
+                      <div className="w-6 h-6 bg-transparent rounded flex items-center justify-center text-[var(--node-neon-color,#22d3ee)]">
+                        <span className="text-xs">
+                          {definition.name?.[0] || "?"}
+                        </span>
+                      </div>
+                    }
+                  />
+                </div>
               );
             })()}
-          <h2 className="font-semibold text-base text-foreground flex-1">
+          <h2
+            className={`font-semibold text-base flex-1 ${
+              isDarkMode
+                ? "text-[color:var(--node-neon-color,#22d3ee)]"
+                : "text-foreground"
+            }`}
+          >
             {definition?.def || definition?.name || "Node"}
           </h2>
         </div>

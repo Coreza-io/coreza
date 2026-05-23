@@ -260,10 +260,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       ...(isDarkMode
         ? {
             "--node-neon-color": neonColor,
-            background: "hsl(222 47% 8% / 0.92)",
-            borderColor: neonColor,
-            borderWidth: "1.5px",
-            boxShadow: `0 0 0 1px rgb(255 255 255 / 0.08) inset, 0 0 12px ${neonColor}8c, 0 0 28px ${neonColor}40`,
+            background:
+              "linear-gradient(180deg, hsl(230 45% 8% / 0.95), hsl(230 45% 6% / 0.95))",
+            border: `1.5px solid ${neonColor}`,
+            boxShadow: `0 0 0 1px ${neonColor}33 inset, 0 0 14px ${neonColor}cc, 0 0 36px ${neonColor}66, 0 0 72px ${neonColor}33`,
+            filter: selected ? "brightness(1.15)" : undefined,
           }
         : {}),
     };
@@ -276,8 +277,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Main Node Card */}
       <Card
         className={`
-          relative shadow-card transition-all duration-300 ease-in-out 
-          border-2 hover:shadow-elevated
+          relative transition-all duration-300 ease-in-out 
+          ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}
           ${isExpanded ? "" : "cursor-pointer group"}
           ${nodeShapeClass}
           ${isFlashing ? "animate-stream-data-flash" : ""}
@@ -285,7 +286,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             isExecuting && electricBorder && isDarkMode
               ? `electric-border electric-border-${electricColor} border-transparent`
               : selected
-              ? "border-primary shadow-glow"
+              ? isDarkMode
+                ? ""
+                : "border-primary shadow-glow"
               : "border-border"
           }
           ${streamingClasses}

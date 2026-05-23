@@ -101,6 +101,8 @@ interface NodeWrapperProps {
   electricBorder?: boolean;
   electricColor?: "cyan" | "orange" | "blue" | "purple" | "green";
   neonColor?: string;
+  nodeSurfaceGradient?: string;
+  description?: string;
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
   // Stream data received flash
@@ -143,6 +145,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   electricBorder = true,
   electricColor = "cyan",
   neonColor = "#22d3ee",
+  nodeSurfaceGradient,
+  description,
   isExecuting = false,
   isStreamingWaiting = false,
   // Stream data received flash
@@ -261,9 +265,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         ? {
             "--node-neon-color": neonColor,
             background:
-              "linear-gradient(180deg, hsl(230 45% 8% / 0.95), hsl(230 45% 6% / 0.95))",
-            border: `1.5px solid ${neonColor}`,
-            boxShadow: `0 0 0 1px ${neonColor}33 inset, 0 0 14px ${neonColor}cc, 0 0 36px ${neonColor}66, 0 0 72px ${neonColor}33`,
+              nodeSurfaceGradient ??
+              "radial-gradient(circle at 85% 0%, rgb(34 211 238 / 0.24), transparent 58%), linear-gradient(150deg, #122131 0%, #101b2a 52%, #0c1522 100%)",
+            border: `1px solid ${neonColor}`,
+            boxShadow: `0 0 0 1px ${neonColor}73 inset, 0 0 18px ${neonColor}cc, 0 0 46px ${neonColor}59, inset 0 1px 0 rgb(255 255 255 / 0.16)`,
             filter: selected ? "brightness(1.15)" : undefined,
           }
         : {}),
@@ -465,13 +470,17 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 <Trash2 className="h-3 w-3 text-red-500" />
               </Button>
             )}
-            <div className={`text-muted-foreground ${isWideCollapsedLayout ? "shrink-0" : "mb-2"}`}>
+            <div
+              className={`${isWideCollapsedLayout ? "shrink-0" : "mb-3"} ${
+                isDarkMode ? "text-[color:var(--node-neon-color)]" : "text-muted-foreground"
+              }`}
+            >
               {/* Render icon with immediate loading */}
               {typeof icon === "string" && icon.startsWith("/assets/") ? (
                 <img
                   src={icon}
                   alt="Node icon"
-                  className="w-6 h-6"
+                  className={isWideCollapsedLayout ? "w-8 h-8" : "w-10 h-10"}
                   loading="eager"
                   style={{ imageRendering: "auto" }}
                 />
@@ -480,8 +489,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               )}
             </div>
             <div
-              className={`font-semibold text-sm text-foreground leading-tight ${
-                isWideCollapsedLayout ? "truncate" : "text-center"
+              className={`font-semibold ${
+                isWideCollapsedLayout ? "text-sm truncate" : "text-base text-center"
+              } leading-tight ${
+                isDarkMode ? "text-white" : "text-foreground"
               }`}
             >
               {isEditing && selected && !readOnly ? (
@@ -536,6 +547,15 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 </div>
               )}
             </div>
+            {!isWideCollapsedLayout && description && (
+              <p
+                className={`mt-2 text-xs text-center line-clamp-2 ${
+                  isDarkMode ? "text-white/75" : "text-muted-foreground"
+                }`}
+              >
+                {description}
+              </p>
+            )}
             {/* Item count badge - only in readOnly mode */}
             {readOnly && itemCount !== undefined && itemCount > 0 && (
               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">

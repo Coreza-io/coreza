@@ -36,7 +36,7 @@ import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
-import { CATEGORY_NEON_COLORS } from "@/components/nodes/constants/neonColors";
+import { resolveNodeNeonTheme } from "@/components/nodes/constants/neonColors";
 
 interface BaseNodeProps {
   data: any;
@@ -101,6 +101,7 @@ export interface BaseNodeRenderProps {
   // Style constants
   referenceStyle: React.CSSProperties;
   neonColor: string;
+  nodeSurfaceGradient: string;
 }
 
 const TAILWIND_NEON_COLORS: Record<string, string> = {
@@ -146,20 +147,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const replaySessionRef = useRef(0);
 
   const definition = data.definition;
-  const neonColor = useMemo(() => {
-    const category = String(definition?.category ?? "")
-      .toLowerCase()
-      .replace(/\s+/g, "");
-    const matchedCategory = Object.entries(CATEGORY_NEON_COLORS).find(([key]) =>
-      category.includes(key),
-    )?.[1];
-    if (matchedCategory) return matchedCategory;
-
+  const { neonColor, nodeSurfaceGradient } = useMemo(() => {
     const colorToken = typeof data.color === "string" ? data.color : "";
-    const matchedTailwind = Object.entries(TAILWIND_NEON_COLORS).find(([key]) =>
-      colorToken.includes(key),
+    const matchedTailwindColor = Object.entries(TAILWIND_NEON_COLORS).find(
+      ([key]) => colorToken.includes(key),
     )?.[1];
-    return matchedTailwind ?? "#22d3ee";
+    return resolveNodeNeonTheme(definition?.category, matchedTailwindColor);
   }, [data.color, definition?.category]);
 
   // Get display name - use stable access to avoid re-renders on drag
@@ -578,6 +571,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     // Style constants
     referenceStyle: referencesHook.referenceStyle,
     neonColor,
+    nodeSurfaceGradient,
   };
 
   return <>{children(renderProps)}</>;

@@ -773,24 +773,10 @@
     z-index: 6;
   }
 
-  /* React Flow Edge Overrides - More specific selectors */
-  .react-flow__edges .react-flow__edge path,
-  .react-flow__edge path,
-  .react-flow__edge-path,
-  .react-flow .react-flow__edges .react-flow__edge path {
-    stroke: #6b7280 !important;
-  }
-
   .react-flow__edge.animated path,
   .react-flow__edge.animated .react-flow__edge-path {
-    stroke: #6b7280 !important;
     stroke-dasharray: 5;
     animation: dashdraw 0.5s linear infinite;
-  }
-
-  .react-flow__edge.selected path,
-  .react-flow__edge.selected .react-flow__edge-path {
-    stroke: #6b7280 !important;
   }
 
   @keyframes dashdraw {

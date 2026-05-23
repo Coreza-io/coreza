@@ -41,10 +41,6 @@ export type VisualizeOverlay =
       supportSeries?: SeriesPoint[];
       resistanceSeries?: SeriesPoint[];
       pivot?: number | null;
-      highestHigh?: number | null;
-      lowestLow?: number | null;
-      swingHighsCount?: number | null;
-      swingLowsCount?: number | null;
       currentClose?: number;
     }
   | {

@@ -47,10 +47,6 @@ const channelColor = (
     if (channelKey === "support") return "#22c55e";
     if (channelKey === "resistance") return "#ef4444";
     if (channelKey === "pivot") return "#eab308";
-    if (channelKey === "highest_high") return "#ef4444";
-    if (channelKey === "lowest_low") return "#22c55e";
-    if (channelKey === "swing_highs") return "#94a3b8";
-    if (channelKey === "swing_lows") return "#94a3b8";
   }
   return overlayColor(overlay);
 };
@@ -64,12 +60,9 @@ const formatOverlayName = (overlay: VisualizeOverlay): string => {
   return overlay.name;
 };
 
-const shouldFormatAsInteger = (channelKey: string): boolean =>
-  channelKey === "swing_highs" || channelKey === "swing_lows";
 
-const formatChannelValue = (channelKey: string, value: number | null): string => {
+const formatChannelValue = (_channelKey: string, value: number | null): string => {
   if (value === null || Number.isNaN(value)) return "—";
-  if (shouldFormatAsInteger(channelKey)) return Math.round(value).toString();
   return formatNumber(value);
 };
 
@@ -93,10 +86,7 @@ const ChartPaneLegend: React.FC<{
         const channelValues = values[overlay.id] ?? {};
         const entries = Object.entries(channelValues);
         return (
-          <div key={overlay.id} className="flex flex-wrap items-center gap-x-2">
-            <span className="font-medium text-slate-200">
-              {formatOverlayName(overlay)}
-            </span>
+          <div key={overlay.id} data-overlay={formatOverlayName(overlay)} className="flex flex-wrap items-center gap-x-2">
             {entries.map(([key, value]) => (
               <span key={key} className="font-mono text-slate-100">
                 <span

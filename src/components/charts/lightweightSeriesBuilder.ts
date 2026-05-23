@@ -270,20 +270,6 @@ export const addOverlaySeries = (
     addLevelPriceLine(overlay.pivot, "#eab308", "pivot", LINE_STYLE_DASHED);
     handles.channels.push({ key: "pivot", label: "pivot", color: "#eab308", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.pivot });
   }
-  if (overlay.highestHigh !== null && overlay.highestHigh !== undefined && Number.isFinite(overlay.highestHigh)) {
-    addLevelPriceLine(overlay.highestHigh, "#ef4444", "HH", 3);
-    handles.channels.push({ key: "highest_high", label: "highest_high", color: "#ef4444", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.highestHigh });
-  }
-  if (overlay.lowestLow !== null && overlay.lowestLow !== undefined && Number.isFinite(overlay.lowestLow)) {
-    addLevelPriceLine(overlay.lowestLow, "#22c55e", "LL", 3);
-    handles.channels.push({ key: "lowest_low", label: "lowest_low", color: "#22c55e", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.lowestLow });
-  }
-  if (overlay.swingHighsCount !== null && overlay.swingHighsCount !== undefined && Number.isFinite(overlay.swingHighsCount)) {
-    handles.channels.push({ key: "swing_highs", label: "swing_highs", color: "#94a3b8", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.swingHighsCount });
-  }
-  if (overlay.swingLowsCount !== null && overlay.swingLowsCount !== undefined && Number.isFinite(overlay.swingLowsCount)) {
-    handles.channels.push({ key: "swing_lows", label: "swing_lows", color: "#94a3b8", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.swingLowsCount });
-  }
 
   if (overlay.supportSeries) {
     const supportSeries = chart.addSeries(LineSeries, {

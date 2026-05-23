@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,6 +17,22 @@
     <meta name="twitter:title" content="Coreza - Visual Trading Workflow Automation" />
     <meta name="twitter:description" content="Build automated trading strategies with visual workflows." />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <script>
+      (() => {
+        const storageKey = "coreza-ui-theme";
+        const root = document.documentElement;
+        const storedTheme = localStorage.getItem(storageKey);
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = storedTheme === "light" || storedTheme === "dark"
+          ? storedTheme
+          : prefersDark
+            ? "dark"
+            : "light";
+
+        root.classList.remove("light", "dark");
+        root.classList.add(theme);
+      })();
+    </script>
   </head>
 
   <body>

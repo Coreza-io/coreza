@@ -258,27 +258,47 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const collapsedHeight = collapsedSize?.height ?? 150;
   const isWideCollapsedLayout =
     !!collapsedSize && collapsedWidth / collapsedHeight >= 1.6;
-  const nodeCardStyle: React.CSSProperties & { "--node-neon-color"?: string } =
-    {
-      width: isExpanded ? minWidth : collapsedWidth,
-      minHeight: isExpanded ? minHeight : collapsedHeight,
-      height: isExpanded ? "auto" : collapsedHeight,
-      overflow:
-        shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
-          ? "visible"
-          : "hidden",
-      ...(isDarkMode
-        ? {
-            "--node-neon-color": neonColor,
-            background:
-              nodeSurfaceGradient ??
-              "radial-gradient(circle at 85% 0%, rgb(34 211 238 / 0.24), transparent 58%), linear-gradient(150deg, #122131 0%, #101b2a 52%, #0c1522 100%)",
-            border: `1px solid ${neonColor}`,
-            boxShadow: `0 0 0 1px ${neonColor}73 inset, 0 0 18px ${neonColor}cc, 0 0 46px ${neonColor}59, inset 0 1px 0 rgb(255 255 255 / 0.16)`,
-            filter: selected ? "brightness(1.15)" : undefined,
-          }
-        : {}),
-    };
+  const theme: NodeVisualTheme = nodeTheme ?? {
+    ...DEFAULT_NODE_VISUAL_THEME,
+    neon: neonColor,
+    border: neonColor,
+    glow: `${neonColor}80`,
+    background:
+      nodeSurfaceGradient ?? DEFAULT_NODE_VISUAL_THEME.background,
+  };
+
+  const nodeCardStyle: React.CSSProperties & {
+    "--node-neon-color"?: string;
+    "--node-border-color"?: string;
+    "--node-glow-color"?: string;
+    "--node-title-color"?: string;
+  } = {
+    width: isExpanded ? minWidth : collapsedWidth,
+    minHeight: isExpanded ? minHeight : collapsedHeight,
+    height: isExpanded ? "auto" : collapsedHeight,
+    overflow:
+      shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
+        ? "visible"
+        : "hidden",
+    ...(isDarkMode
+      ? {
+          "--node-neon-color": theme.neon,
+          "--node-border-color": theme.border,
+          "--node-glow-color": theme.glow,
+          "--node-title-color": theme.titleColor,
+          background: theme.background,
+          border: `1.5px solid ${theme.border}`,
+          boxShadow: `
+            inset 0 1px 0 rgba(255,255,255,0.18),
+            inset 0 -1px 0 rgba(0,0,0,0.35),
+            0 0 0 1px ${theme.glow},
+            0 0 18px ${theme.glow},
+            0 0 46px ${theme.glow}
+          `,
+          filter: selected ? "brightness(1.16)" : undefined,
+        }
+      : {}),
+  };
 
   return (
     <div className={`relative ${isExpanded ? "node-expanded" : ""}`}>

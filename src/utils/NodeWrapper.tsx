@@ -410,9 +410,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             if (isInputHandle) {
               // For input handles: show ConnectedSwitchIcon if connected, otherwise FemalePlugIcon
               handleIcon = isConnected ? (
-                <ConnectedSwitchIcon size={20} style={iconStyle} />
+                <ConnectedSwitchIcon size={20} color={theme.neon} style={iconStyle} />
               ) : (
-                <FemalePlugIcon size={20} style={iconStyle} />
+                <FemalePlugIcon size={20} color={theme.neon} style={iconStyle} />
               );
             } else {
               // For output handles: hide icon if connected or currently dragging from this handle
@@ -421,7 +421,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 dragSource.nodeId === nodeId &&
                 dragSource.handleId === h.id;
               handleIcon = (isConnected || isDraggingFromThis) ? null : (
-                <MalePlugIcon size={20} style={iconStyle} />
+                <MalePlugIcon size={20} color={theme.neon} style={iconStyle} />
               );
             }
 

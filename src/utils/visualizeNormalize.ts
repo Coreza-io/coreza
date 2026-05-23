@@ -10,7 +10,7 @@ export type OverlayClassification =
   | { kind: "line" }
   | { kind: "panel" }
   | { kind: "bands"; upper: unknown; middle?: unknown; lower: unknown }
-  | { kind: "levels"; supports: number[]; resistances: number[]; supportSeries?: Array<{ time: UTCTimestamp; value: number }>; resistanceSeries?: Array<{ time: UTCTimestamp; value: number }>; pivot?: number | null; highestHigh?: number | null; lowestLow?: number | null; swingHighsCount?: number | null; swingLowsCount?: number | null };
+  | { kind: "levels"; supports: number[]; resistances: number[]; supportSeries?: Array<{ time: UTCTimestamp; value: number }>; resistanceSeries?: Array<{ time: UTCTimestamp; value: number }>; pivot?: number | null };
 
 const asDict = (value: unknown): Dict | null => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Dict) : null);
 const toFiniteNumber = (value: unknown): number | null => {
@@ -152,7 +152,7 @@ const parseLevelsArray = (entries: unknown[]) => {
   return { supports, resistances, supportSeries: supportSeries.length ? supportSeries : undefined, resistanceSeries: resistanceSeries.length ? resistanceSeries : undefined };
 };
 
-const parseLevelsSummaryRow = (value: unknown): { supports: number[]; resistances: number[]; pivot?: number | null; highestHigh?: number | null; lowestLow?: number | null; swingHighsCount?: number | null; swingLowsCount?: number | null } | null => {
+const parseLevelsSummaryRow = (value: unknown): { supports: number[]; resistances: number[]; pivot?: number | null } | null => {
   const row = asDict(value);
   if (!row) return null;
 
@@ -163,11 +163,7 @@ const parseLevelsSummaryRow = (value: unknown): { supports: number[]; resistance
   const supports = (supportsRaw ?? []).map(toFiniteNumber).filter((level): level is number => level !== null);
   const resistances = (resistancesRaw ?? []).map(toFiniteNumber).filter((level): level is number => level !== null);
   const pivot = toFiniteNumber(row.pivot);
-  const highestHigh = toFiniteNumber(row.highest_high ?? row.highestHigh);
-  const lowestLow = toFiniteNumber(row.lowest_low ?? row.lowestLow);
-  const swingHighsCount = toFiniteNumber(row.swing_highs_count ?? row.swingHighsCount);
-  const swingLowsCount = toFiniteNumber(row.swing_lows_count ?? row.swingLowsCount);
-  return { supports, resistances, pivot, highestHigh, lowestLow, swingHighsCount, swingLowsCount };
+  return { supports, resistances, pivot };
 };
 
 const hasNonOverlappingRange = (candles: CorezaCandle[], resolved: unknown): boolean => {

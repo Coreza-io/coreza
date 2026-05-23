@@ -143,14 +143,12 @@ function roundTo(value: number, digits = 6): number {
   return Math.round(value * factor) / factor;
 }
 
-function roundSupportResistanceLevels(levels: { resistance: number[]; support: number[]; pivot?: number; highest_high?: number; lowest_low?: number }) {
+function roundSupportResistanceLevels(levels: { resistance: number[]; support: number[]; pivot?: number }) {
   return {
     ...levels,
     resistance: levels.resistance.map((value) => roundTo(value)),
     support: levels.support.map((value) => roundTo(value)),
     ...(Number.isFinite(levels.pivot) ? { pivot: roundTo(levels.pivot as number) } : {}),
-    ...(Number.isFinite(levels.highest_high) ? { highest_high: roundTo(levels.highest_high as number) } : {}),
-    ...(Number.isFinite(levels.lowest_low) ? { lowest_low: roundTo(levels.lowest_low as number) } : {}),
   };
 }
 
@@ -863,8 +861,6 @@ export class IndicatorService {
             return roundSupportResistanceLevels({
               resistance: clusterLevels(highs, state.sensitivity, state.numLevels),
               support: clusterLevels(lows, state.sensitivity, state.numLevels).reverse(),
-              highest_high: Math.max(...highs),
-              lowest_low: Math.min(...lows),
             });
           }
 
@@ -880,8 +876,6 @@ export class IndicatorService {
           });
           return {
             ...levels,
-            swing_highs_count: swingHighs.length,
-            swing_lows_count: swingLows.length,
           };
         };
 
@@ -1930,8 +1924,6 @@ export class IndicatorService {
 
       const levels = {
         ...roundedLevels,
-        swing_highs_count: swingHighs.length,
-        swing_lows_count: swingLows.length,
       };
 
       return createSuccessOutput([levels], {
@@ -1977,8 +1969,6 @@ export class IndicatorService {
       const levels = roundSupportResistanceLevels({
         resistance: resistanceLevels,
         support: supportLevels,
-        highest_high: Math.max(...highs),
-        lowest_low: Math.min(...lows),
       });
 
       return createSuccessOutput([levels], {

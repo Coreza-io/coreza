@@ -150,10 +150,6 @@ const VisualizeNodePreview: React.FC<{
             supports,
             resistances,
             pivot: toFinite(source.pivot),
-            highestHigh: toFinite(source.highest_high ?? source.highestHigh),
-            lowestLow: toFinite(source.lowest_low ?? source.lowestLow),
-            swingHighsCount: toFinite(source.swing_highs_count ?? source.swingHighsCount),
-            swingLowsCount: toFinite(source.swing_lows_count ?? source.swingLowsCount),
             currentClose,
           });
           return acc;
@@ -188,7 +184,7 @@ const VisualizeNodePreview: React.FC<{
       }
 
       if (classification.kind === "levels") {
-        acc.push({ kind: "levels", id, name, supports: classification.supports, resistances: classification.resistances, supportSeries: toHistoricalSeries(candles, classification.supportSeries), resistanceSeries: toHistoricalSeries(candles, classification.resistanceSeries), pivot: classification.pivot, highestHigh: classification.highestHigh, lowestLow: classification.lowestLow, swingHighsCount: classification.swingHighsCount, swingLowsCount: classification.swingLowsCount, currentClose });
+        acc.push({ kind: "levels", id, name, supports: classification.supports, resistances: classification.resistances, supportSeries: toHistoricalSeries(candles, classification.supportSeries), resistanceSeries: toHistoricalSeries(candles, classification.resistanceSeries), pivot: classification.pivot, currentClose });
         return acc;
       }
 

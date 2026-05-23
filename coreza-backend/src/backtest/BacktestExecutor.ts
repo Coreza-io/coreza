@@ -257,6 +257,29 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       const supabaseClient = supabase;
+      const { data: workflow, error: workflowLookupError } = await supabaseClient
+        .from("workflows")
+        .select("id")
+        .eq("id", workflowId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (workflowLookupError) {
+        return toNodeResult(
+          createErrorOutput(
+            `Failed to validate workflow before backtest: ${workflowLookupError.message}`,
+          ),
+        );
+      }
+
+      if (!workflow) {
+        return toNodeResult(
+          createErrorOutput(
+            "Workflow not found. Please save the workflow before running a backtest.",
+          ),
+        );
+      }
+
       const { data: backtest, error: insertError } = await supabaseClient
         .from("backtests")
         .insert({

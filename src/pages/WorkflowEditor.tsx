@@ -1589,7 +1589,7 @@ const WorkflowEditorContent = () => {
             onClick={() => (window as any).__workflowFileInput?.click()}
             variant="outline"
             size="icon"
-            className="h-10 w-10 bg-card hover:bg-muted/50 transition-colors"
+            className="h-10 w-10"
             title="Upload workflow from JSON"
           >
             <Upload className="h-4 w-4" />
@@ -1598,7 +1598,7 @@ const WorkflowEditorContent = () => {
             onClick={() => exportWorkflow(workflowName, nodes, edges, isActive)}
             variant="outline"
             size="icon"
-            className="h-10 w-10 bg-card hover:bg-muted/50 transition-colors"
+            className="h-10 w-10"
             title="Download workflow as JSON"
           >
             <Download className="h-4 w-4" />
@@ -1608,7 +1608,7 @@ const WorkflowEditorContent = () => {
             onClick={() => handleSaveWorkflow()}
             disabled={loading || persistSaving}
             variant="outline"
-            className="h-10 px-4 font-medium bg-card hover:bg-muted/50 transition-colors"
+            className="h-10 px-4 font-medium"
           >
             <Save className="h-4 w-4 mr-2" />
             {persistSaving ? "Saving..." : "Save"}

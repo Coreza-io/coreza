@@ -191,7 +191,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
       ];
     }
 
-    const handles = [{ type: "target", position: "left", id: "input" }];
+    const handles: Array<{ type: string; position: string; id: string; label?: string }> = [{ type: "target", position: "left", id: "input" }];
 
     // Add handle for each case - ensure stable IDs
     cases.forEach((caseItem: any, index: number) => {

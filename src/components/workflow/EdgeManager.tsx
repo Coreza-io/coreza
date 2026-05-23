@@ -744,7 +744,8 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         cy={extendedSourceY}
         r={10}
         fill={cordColor}
-        opacity={0.35}
+        className="plug-edge__halo"
+        opacity={1}
         style={{ pointerEvents: "none", filter: "blur(14px)" }}
       />
       <circle
@@ -759,7 +760,8 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         cy={adjustedTargetY}
         r={10}
         fill={cordColor}
-        opacity={0.35}
+        className="plug-edge__halo"
+        opacity={1}
         style={{ pointerEvents: "none", filter: "blur(14px)" }}
       />
       <circle
@@ -965,8 +967,8 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
       >
         <path
           d={MALE_PLUG_PATH}
+          className="plug-edge__plug-path"
           fill={cordColor}
-          style={{ filter: "drop-shadow(0 0 6px currentColor)" }}
         />
       </g>
     </g>

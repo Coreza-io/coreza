@@ -49,6 +49,8 @@ const channelColor = (
     if (channelKey === "pivot") return "#eab308";
     if (channelKey === "highest_high") return "#ef4444";
     if (channelKey === "lowest_low") return "#22c55e";
+    if (channelKey === "swing_highs") return "#94a3b8";
+    if (channelKey === "swing_lows") return "#94a3b8";
   }
   return overlayColor(overlay);
 };

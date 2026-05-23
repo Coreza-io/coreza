@@ -145,10 +145,7 @@ const LightweightVisualizeChart: React.FC<{
     () => viewModel.overlays.filter((overlay) => !isPanelOverlay(overlay)),
     [viewModel.overlays],
   );
-  const priceLegendOverlays = useMemo(
-    () => priceOverlays.filter((overlay) => overlay.kind !== "levels"),
-    [priceOverlays],
-  );
+  const priceLegendOverlays = priceOverlays;
   const latestCandle = viewModel.candles[viewModel.candles.length - 1];
 
   const buildOverlayLastValues = (

@@ -49,6 +49,8 @@ const channelColor = (
     if (channelKey === "pivot") return "#eab308";
     if (channelKey === "highest_high") return "#ef4444";
     if (channelKey === "lowest_low") return "#22c55e";
+    if (channelKey === "swing_highs") return "#94a3b8";
+    if (channelKey === "swing_lows") return "#94a3b8";
   }
   return overlayColor(overlay);
 };
@@ -60,6 +62,15 @@ const formatOverlayName = (overlay: VisualizeOverlay): string => {
     return overlay.channels[0].label;
   }
   return overlay.name;
+};
+
+const shouldFormatAsInteger = (channelKey: string): boolean =>
+  channelKey === "swing_highs" || channelKey === "swing_lows";
+
+const formatChannelValue = (channelKey: string, value: number | null): string => {
+  if (value === null || Number.isNaN(value)) return "—";
+  if (shouldFormatAsInteger(channelKey)) return Math.round(value).toString();
+  return formatNumber(value);
 };
 
 const ChartPaneLegend: React.FC<{
@@ -92,7 +103,7 @@ const ChartPaneLegend: React.FC<{
                   className="mr-1 inline-block h-1.5 w-1.5 rounded-full"
                   style={{ backgroundColor: channelColor(overlay, key) }}
                 />
-                {key} {formatNumber(value)}
+                {key} {formatChannelValue(key, value)}
               </span>
             ))}
           </div>

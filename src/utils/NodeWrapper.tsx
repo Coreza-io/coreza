@@ -526,8 +526,20 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 isDarkMode ? "text-[color:var(--node-neon-color)]" : "text-muted-foreground"
               }`}
             >
-              {/* Render icon with immediate loading */}
-              {typeof icon === "string" && icon.startsWith("/assets/") ? (
+              {isDarkMode && theme.iconMode === "ai-badge" ? (
+                <div
+                  className={`${
+                    isWideCollapsedLayout ? "w-8 h-8 text-base" : "w-10 h-10 text-xl"
+                  } rounded-lg flex items-center justify-center font-extrabold text-black`}
+                  style={{
+                    background: "linear-gradient(145deg, #fde047, #facc15)",
+                    boxShadow:
+                      "0 0 0 1px rgba(255,255,255,0.4) inset, 0 0 14px rgba(250,204,21,0.65)",
+                  }}
+                >
+                  A
+                </div>
+              ) : typeof icon === "string" && icon.startsWith("/assets/") ? (
                 <img
                   src={icon}
                   alt="Node icon"

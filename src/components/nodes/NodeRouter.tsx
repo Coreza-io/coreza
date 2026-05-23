@@ -394,7 +394,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           collapsedSize={definition.collapsedSize}
           handles={dynamicHandles}
           nodeType={definition.node_type}
-          category={definition.category}
           electricBorder={true}
           electricColor="cyan"
           neonColor={renderProps.neonColor}

@@ -40,7 +40,7 @@
   :root,
   .dark {
     /* Dark theme - Professional trading platform */
-    --background: 220 1% 18%;
+    --background: 222 47% 6%;
     --foreground: 210 20% 85%;
 
     --card: 224 12% 10%;
@@ -77,7 +77,7 @@
     --ring: 217 91% 60%;
 
     /* Trading platform specific colors - Dark */
-    --trading-grid: 220 1% 18%;
+    --trading-grid: 222 47% 6%;
     --trading-node: 224 12% 15%;
     --trading-edge: 107 114 128;
     --sidebar-background: 224 12% 6%;
@@ -102,8 +102,8 @@
     );
     --gradient-glow: radial-gradient(
       circle at center,
-      hsl(217 91% 60% / 0.15),
-      transparent 70%
+      hsl(188 94% 52% / 0.18),
+      transparent 72%
     );
 
     /* Shadows - Dark */
@@ -628,8 +628,18 @@
     }
   }
 
+  @keyframes plug-edge-cyan-pulse {
+    0%,
+    100% {
+      opacity: 0.65;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
   .plug-edge__glow {
-    opacity: 0.2;
+    opacity: 0.7;
     filter: blur(10px);
     transition:
       opacity 0.3s ease,
@@ -648,6 +658,14 @@
   .plug-edge__cord--animated {
     stroke-dasharray: 12 12;
     animation: plug-edge-flow 1.4s linear infinite;
+  }
+
+  .dark .plug-edge__cord--animated {
+    stroke: #22d3ee;
+    filter: drop-shadow(0 0 6px rgb(56 189 248 / 0.65));
+    animation:
+      plug-edge-flow 1.4s linear infinite,
+      plug-edge-cyan-pulse 1.6s ease-in-out infinite;
   }
 
   .plug-edge__cord.executing-edge {
@@ -717,9 +735,25 @@
 
   /* Connection line animation styles */
   .plug-edge--connection .plug-edge__glow--connecting {
-    opacity: 0.4;
+    opacity: 0.7;
     filter: blur(12px);
     animation: plug-edge-spark 1.2s ease-in-out infinite;
+  }
+
+  .dark .plug-handle {
+    width: 8px !important;
+    height: 8px !important;
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 9999px;
+    background: #38bdf8;
+    box-shadow:
+      0 0 0 12px rgb(56 189 248 / 0.2),
+      0 0 12px rgb(56 189 248 / 0.8);
+  }
+
+  .dark .plug-handle svg {
+    display: none;
   }
 
   .plug-edge--connection .plug-edge__cord--connecting {

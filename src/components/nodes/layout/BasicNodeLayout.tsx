@@ -82,7 +82,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                 IconRegistry[definition.name as keyof typeof IconRegistry];
               if (IconComponent && typeof IconComponent === "function") {
                 return React.createElement(IconComponent, {
-                  className: "w-6 h-6",
+                  className: "w-6 h-6 text-[var(--node-neon-color,#22d3ee)] drop-shadow-[0_0_10px_var(--node-neon-color,#22d3ee)]",
                 });
               }
 
@@ -90,9 +90,9 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                 <CachedIcon
                   src={definition.icon}
                   alt="Node icon"
-                  className="w-6 h-6"
+                  className="w-6 h-6 drop-shadow-[0_0_10px_var(--node-neon-color,#22d3ee)]"
                   fallback={
-                    <div className="w-6 h-6 bg-muted rounded flex items-center justify-center">
+                    <div className="w-6 h-6 bg-transparent rounded flex items-center justify-center text-[var(--node-neon-color,#22d3ee)]">
                       <span className="text-xs">
                         {definition.name?.[0] || "?"}
                       </span>

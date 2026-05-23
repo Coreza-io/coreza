@@ -397,6 +397,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           category={definition.category}
           electricBorder={true}
           electricColor="cyan"
+          neonColor={renderProps.neonColor}
           isStreamingWaiting={data.isStreamingWaiting}
           streamDataReceived={data.streamDataReceived}
           // Node name editing props

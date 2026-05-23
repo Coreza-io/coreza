@@ -472,6 +472,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 ? "flex flex-row items-center gap-3 px-5"
                 : "flex flex-col items-center justify-center p-4"
             }`}
+            style={{ zIndex: 2 }}
           >
             {/* Execution status badge - only in readOnly mode */}
             {readOnly && executionStatus && (

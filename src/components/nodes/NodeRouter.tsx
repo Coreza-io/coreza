@@ -399,6 +399,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           electricColor="cyan"
           neonColor={renderProps.neonColor}
           nodeSurfaceGradient={renderProps.nodeSurfaceGradient}
+          nodeTheme={renderProps.nodeTheme}
+          category={renderProps.visualCategory}
           description={definition.description}
           isStreamingWaiting={data.isStreamingWaiting}
           streamDataReceived={data.streamDataReceived}

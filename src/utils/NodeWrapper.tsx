@@ -107,7 +107,6 @@ interface NodeWrapperProps {
   neonColor?: string;
   nodeSurfaceGradient?: string;
   nodeTheme?: NodeVisualTheme;
-  description?: string;
   isExecuting?: boolean;
   isStreamingWaiting?: boolean;
   // Stream data received flash
@@ -152,7 +151,6 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   neonColor = "#22d3ee",
   nodeSurfaceGradient,
   nodeTheme,
-  description,
   isExecuting = false,
   isStreamingWaiting = false,
   // Stream data received flash
@@ -290,12 +288,17 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           "--node-title-color": theme.titleColor,
           background: theme.background,
           border: `1.5px solid ${theme.border}`,
-          boxShadow: `
-            0 0 0 1px var(--node-border-color),
-            0 4px 18px rgba(0,0,0,0.55),
-            0 0 14px var(--node-glow-color)
-          `,
-          filter: selected ? "brightness(1.08)" : undefined,
+          boxShadow: selected
+            ? `
+                0 0 0 1px var(--node-border-color),
+                0 4px 18px rgba(0,0,0,0.55),
+                0 0 18px var(--node-glow-color),
+                0 0 36px var(--node-glow-color)
+              `
+            : `
+                0 0 0 1px var(--node-border-color),
+                0 4px 18px rgba(0,0,0,0.55)
+              `,
         }
       : {}),
   };
@@ -610,15 +613,6 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 </div>
               )}
             </div>
-            {!isWideCollapsedLayout && description && (
-              <p
-                className={`mt-2 text-xs text-center line-clamp-2 ${
-                  isDarkMode ? "text-white/75" : "text-muted-foreground"
-                }`}
-              >
-                {description}
-              </p>
-            )}
             {/* Item count badge - only in readOnly mode */}
             {readOnly && itemCount !== undefined && itemCount > 0 && (
               <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">

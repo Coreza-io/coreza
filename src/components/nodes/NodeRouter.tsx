@@ -400,7 +400,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           nodeSurfaceGradient={renderProps.nodeSurfaceGradient}
           nodeTheme={renderProps.nodeTheme}
           category={renderProps.visualCategory}
-          description={definition.description}
           isStreamingWaiting={data.isStreamingWaiting}
           streamDataReceived={data.streamDataReceived}
           // Node name editing props

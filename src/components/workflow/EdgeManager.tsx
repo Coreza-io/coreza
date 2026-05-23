@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   ConnectionLineComponentProps,
   EdgeProps,
@@ -563,7 +563,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const [hovered, setHovered] = useState(false);
   const computedControls = controls.length > 0 ? controls : buildControls(data);
   const isSelfLoop = source === target;
-  const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
   const nodes = useNodes();
   const isDarkMode = useResolvedTheme() === "dark";
 
@@ -608,11 +607,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       : strokeWidthValue
         ? Number.parseFloat(String(strokeWidthValue)) || 2
         : 2;
-
-  const glowColor = isDarkMode ? sourceTheme.glow : "transparent";
-  const sparkColor = isDarkMode ? lightenHex(cordColor, 0.7) : cordColor;
-  const sparkOuter = isDarkMode ? lightenHex(cordColor, 0.85) : cordColor;
-  const executing = isExecutingClass(className);
 
   const extensionDistance = -25;
   const topHandleVisualOffset = 35;
@@ -686,19 +680,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
       onMouseLeave={() => setHovered(false)}
       className="plug-edge p-2"
     >
-      <defs>
-        <radialGradient
-          id={sparkId}
-          cx="0"
-          cy="0"
-          r="1"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0" stopColor={sparkOuter} stopOpacity={0.95} />
-          <stop offset="0.55" stopColor={sparkColor} stopOpacity={0.85} />
-          <stop offset="1" stopColor={sparkColor} stopOpacity={0} />
-        </radialGradient>
-      </defs>
       {/* Invisible wider path for better hover detection */}
       <path
         d={edgePath}
@@ -706,19 +687,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         strokeWidth={3}
         fill="none"
         style={{ pointerEvents: "stroke" }}
-      />
-      <path
-        d={edgePath}
-        className={`plug-edge__glow${
-          executing ? " plug-edge__glow--active" : ""
-        }`}
-        stroke={glowColor}
-        strokeWidth={strokeWidth + 8}
-        opacity={0.55}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        style={{ pointerEvents: "none", filter: "blur(0.5px)" }}
       />
       <path
         id={id}
@@ -749,43 +717,12 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill={cordColor}
         opacity={0.98}
       />
-      {isDarkMode && (
-        <circle
-          cx={extendedSourceX}
-          cy={extendedSourceY}
-          r={10}
-          fill={cordColor}
-          className="plug-edge__halo"
-          opacity={1}
-          style={{ pointerEvents: "none", filter: "blur(14px)" }}
-        />
-      )}
       <circle
         cx={adjustedTargetX}
         cy={adjustedTargetY}
         r={4}
         fill={cordColor}
         opacity={0.98}
-      />
-      {isDarkMode && (
-        <circle
-          cx={adjustedTargetX}
-          cy={adjustedTargetY}
-          r={10}
-          fill={cordColor}
-          className="plug-edge__halo"
-          opacity={1}
-          style={{ pointerEvents: "none", filter: "blur(14px)" }}
-        />
-      )}
-      <circle
-        cx={midX}
-        cy={midY}
-        r={7}
-        fill={`url(#${sparkId})`}
-        className={`plug-edge__spark${
-          executing ? " plug-edge__spark--active" : ""
-        }`}
       />
       {data?.label && (
         <text className="react-flow__edge-text">
@@ -914,8 +851,6 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         : 2;
 
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
-  const glowColor = isDarkMode ? lightenHex(cordColor, 0.5) : "transparent";
-
   const fromType = fromHandle?.type ?? "source";
   const draggingFromSource = fromType === "source";
 
@@ -946,26 +881,6 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   // const degrees = (angle * 180) / Math.PI;
   return (
     <g className="plug-edge plug-edge--connection">
-      <defs>
-        <filter id="plug-glow">
-          <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-          <feMerge>
-            <feMergeNode in="coloredBlur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
-      <path
-        d={edgePath}
-        className="plug-edge__glow plug-edge__glow--connecting"
-        stroke={glowColor}
-        strokeWidth={strokeWidth + 10}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        style={{ pointerEvents: "none" }}
-      />
       <path
         d={edgePath}
         className="plug-edge__cord plug-edge__cord--connecting"

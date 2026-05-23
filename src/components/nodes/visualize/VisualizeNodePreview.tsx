@@ -142,7 +142,20 @@ const VisualizeNodePreview: React.FC<{
           const source = typeof latest === "object" && latest !== null ? (unwrapRow(latest) as Record<string, unknown>) : {};
           const supports = Array.isArray(source[spec.levels.supports]) ? (source[spec.levels.supports] as number[]) : [];
           const resistances = Array.isArray(source[spec.levels.resistances]) ? (source[spec.levels.resistances] as number[]) : [];
-          acc.push({ kind: "levels", id, name, supports, resistances, currentClose });
+          const toFinite = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+          acc.push({
+            kind: "levels",
+            id,
+            name,
+            supports,
+            resistances,
+            pivot: toFinite(source.pivot),
+            highestHigh: toFinite(source.highest_high ?? source.highestHigh),
+            lowestLow: toFinite(source.lowest_low ?? source.lowestLow),
+            swingHighsCount: toFinite(source.swing_highs_count ?? source.swingHighsCount),
+            swingLowsCount: toFinite(source.swing_lows_count ?? source.swingLowsCount),
+            currentClose,
+          });
           return acc;
         }
         if (spec.channels?.length) {

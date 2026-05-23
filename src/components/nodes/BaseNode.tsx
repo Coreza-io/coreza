@@ -99,7 +99,48 @@ export interface BaseNodeRenderProps {
   fetchDependentOptions: (field: any, parentValue: string) => void;
   // Style constants
   referenceStyle: React.CSSProperties;
+  neonColor: string;
 }
+
+const CATEGORY_NEON_COLORS: Record<string, string> = {
+  backtest: "#a78bfa",
+  scheduler: "#a78bfa",
+  trigger: "#a78bfa",
+  data: "#22d3ee",
+  indicator: "#22d3ee",
+  indicators: "#22d3ee",
+  stream: "#22d3ee",
+  input: "#22d3ee",
+  logic: "#fb923c",
+  switch: "#fb923c",
+  if: "#fb923c",
+  compute: "#fb923c",
+  broker: "#34d399",
+  portfolio: "#34d399",
+  screener: "#34d399",
+  ai: "#f472b6",
+  llm: "#f472b6",
+  chatmodel: "#f472b6",
+  risk: "#f87171",
+  destructive: "#f87171",
+};
+
+const TAILWIND_NEON_COLORS: Record<string, string> = {
+  "text-violet-": "#a78bfa",
+  "text-purple-": "#a78bfa",
+  "text-cyan-": "#22d3ee",
+  "text-sky-": "#22d3ee",
+  "text-blue-": "#22d3ee",
+  "text-orange-": "#fb923c",
+  "text-amber-": "#fb923c",
+  "text-yellow-": "#fb923c",
+  "text-emerald-": "#34d399",
+  "text-green-": "#34d399",
+  "text-pink-": "#f472b6",
+  "text-fuchsia-": "#f472b6",
+  "text-rose-": "#f472b6",
+  "text-red-": "#f87171",
+};
 
 // Selector for edge count - only re-renders when number of edges changes
 const edgeCountSelector = (state: any) => state.edges?.length ?? 0;
@@ -127,6 +168,21 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const replaySessionRef = useRef(0);
 
   const definition = data.definition;
+  const neonColor = useMemo(() => {
+    const category = String(definition?.category ?? "")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+    const matchedCategory = Object.entries(CATEGORY_NEON_COLORS).find(([key]) =>
+      category.includes(key),
+    )?.[1];
+    if (matchedCategory) return matchedCategory;
+
+    const colorToken = typeof data.color === "string" ? data.color : "";
+    const matchedTailwind = Object.entries(TAILWIND_NEON_COLORS).find(([key]) =>
+      colorToken.includes(key),
+    )?.[1];
+    return matchedTailwind ?? "#22d3ee";
+  }, [data.color, definition?.category]);
 
   // Get display name - use stable access to avoid re-renders on drag
   const displayName = useMemo(() => {
@@ -543,6 +599,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     fetchDependentOptions: credentialsHook.fetchDependentOptions,
     // Style constants
     referenceStyle: referencesHook.referenceStyle,
+    neonColor,
   };
 
   return <>{children(renderProps)}</>;

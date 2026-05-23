@@ -703,12 +703,12 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           executing ? " plug-edge__glow--active" : ""
         }`}
         stroke={glowColor}
-        strokeWidth={strokeWidth + 10}
-        opacity={0.75}
+        strokeWidth={strokeWidth + 8}
+        opacity={0.55}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
-        style={{ pointerEvents: "none" }}
+        style={{ pointerEvents: "none", filter: "blur(0.5px)" }}
       />
       <path
         id={id}

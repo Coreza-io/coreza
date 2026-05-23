@@ -15,11 +15,6 @@ import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRen
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import type { BaseNodeRenderProps } from "../BaseNode";
-import {
-  NODE_VISUAL_THEMES,
-  DEFAULT_NODE_VISUAL_THEME,
-} from "@/components/nodes/constants/nodeVisualThemes";
-import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 
 interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
 
@@ -49,26 +44,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   const { user } = useAuth();
   const isDarkMode = useResolvedTheme() === "dark";
 
-  const visualCategory = resolveNodeVisualCategory(definition);
-  const theme =
-    NODE_VISUAL_THEMES[visualCategory] ?? DEFAULT_NODE_VISUAL_THEME;
-  const iconMode = theme.iconMode;
-
-  // AI yellow "A" badge
-  const renderAiBadge = () => (
-    <div
-      className="w-10 h-10 rounded-lg flex items-center justify-center font-extrabold text-black"
-      style={{
-        background: "linear-gradient(145deg, #fde047, #facc15)",
-        boxShadow:
-          "0 0 0 1px rgba(255,255,255,0.4) inset, 0 0 6px rgba(250,204,21,0.35)",
-        fontSize: 20,
-      }}
-    >
-      A
-    </div>
-  );
-
   const iconTileClass = `w-10 h-10 rounded-lg flex items-center justify-center ring-1 ${
     isDarkMode
       ? "bg-[color:var(--node-neon-color)]/12 ring-[color:var(--node-border-color)]/50 shadow-[0_0_14px_var(--node-glow-color)]"
@@ -76,14 +51,14 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   }`;
 
   const renderIcon = () => {
-    if (isDarkMode && iconMode === "ai-badge") return renderAiBadge();
-
     const IconComponent =
       IconRegistry[definition?.name as keyof typeof IconRegistry];
 
     if (IconComponent && typeof IconComponent === "function") {
       return (
-        <div className={iconTileClass}>
+        <div
+          className={`${iconTileClass} text-[color:var(--node-neon-color,#22d3ee)]`}
+        >
           {React.createElement(IconComponent, {
             className:
               "w-6 h-6 text-[color:var(--node-neon-color,#22d3ee)] drop-shadow-[0_0_10px_var(--node-glow-color,rgba(34,211,238,0.5))]",
@@ -94,13 +69,12 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
     return (
       <div
-        className={iconTileClass}
+        className={`${iconTileClass} text-[color:var(--node-neon-color,#22d3ee)]`}
         style={
           isDarkMode
             ? {
-                mixBlendMode: "screen",
                 filter:
-                  "drop-shadow(0 0 8px var(--node-glow-color, rgba(34,211,238,0.5)))",
+                  "drop-shadow(0 0 6px var(--node-glow-color, rgba(34,211,238,0.45)))",
               }
             : undefined
         }

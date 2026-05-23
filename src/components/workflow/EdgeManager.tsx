@@ -19,6 +19,7 @@ import {
   Position,
 } from "@xyflow/react";
 import { Plus, Trash2 } from "lucide-react";
+import { CATEGORY_NEON_COLORS } from "@/components/nodes/constants/neonColors";
 
 export interface EdgeControl {
   icon: React.ReactNode;
@@ -582,7 +583,17 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   delete customStyle.stroke;
   delete customStyle.strokeWidth;
 
-  const cordColor = typeof strokeValue === "string" ? strokeValue : "#38bdf8";
+  const sourceCategory = String(
+    nodes.find((node) => node.id === source)?.data?.definition?.category ?? "",
+  )
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  const categoryCordColor =
+    Object.entries(CATEGORY_NEON_COLORS).find(([key]) =>
+      sourceCategory.includes(key),
+    )?.[1] ?? "#22d3ee";
+  const cordColor =
+    typeof strokeValue === "string" ? strokeValue : categoryCordColor;
   const strokeWidth =
     typeof strokeWidthValue === "number"
       ? strokeWidthValue
@@ -695,6 +706,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         }`}
         stroke={glowColor}
         strokeWidth={strokeWidth + 10}
+        opacity={0.75}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -722,23 +734,35 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           pointerEvents: "none",
         }}
       />
-      <circle cx={sourceX} cy={sourceY} r={5} fill={cordColor} opacity={0.95} />
       <circle
-        cx={sourceX}
-        cy={sourceY}
-        r={10}
+        cx={extendedSourceX}
+        cy={extendedSourceY}
+        r={4}
         fill={cordColor}
-        opacity={0.3}
-        style={{ pointerEvents: "none" }}
+        opacity={0.98}
       />
-      <circle cx={targetX} cy={targetY} r={5} fill={cordColor} opacity={0.95} />
       <circle
-        cx={targetX}
-        cy={targetY}
+        cx={extendedSourceX}
+        cy={extendedSourceY}
         r={10}
         fill={cordColor}
-        opacity={0.3}
-        style={{ pointerEvents: "none" }}
+        opacity={0.35}
+        style={{ pointerEvents: "none", filter: "blur(14px)" }}
+      />
+      <circle
+        cx={adjustedTargetX}
+        cy={adjustedTargetY}
+        r={4}
+        fill={cordColor}
+        opacity={0.98}
+      />
+      <circle
+        cx={adjustedTargetX}
+        cy={adjustedTargetY}
+        r={10}
+        fill={cordColor}
+        opacity={0.35}
+        style={{ pointerEvents: "none", filter: "blur(14px)" }}
       />
       <circle
         cx={midX}
@@ -1181,7 +1205,7 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
       {...props}
       controls={controls}
       data={data}
-      style={{ stroke: "#64748b", strokeWidth: 3, ...props.style }}
+      style={{ stroke: "#22d3ee", strokeWidth: 3, ...props.style }}
     />
   );
 };

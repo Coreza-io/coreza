@@ -36,6 +36,7 @@ import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
+import { resolveNodeNeonTheme } from "@/components/nodes/constants/neonColors";
 
 interface BaseNodeProps {
   data: any;
@@ -100,30 +101,8 @@ export interface BaseNodeRenderProps {
   // Style constants
   referenceStyle: React.CSSProperties;
   neonColor: string;
+  nodeSurfaceGradient: string;
 }
-
-const CATEGORY_NEON_COLORS: Record<string, string> = {
-  backtest: "#a78bfa",
-  scheduler: "#a78bfa",
-  trigger: "#a78bfa",
-  data: "#22d3ee",
-  indicator: "#22d3ee",
-  indicators: "#22d3ee",
-  stream: "#22d3ee",
-  input: "#22d3ee",
-  logic: "#fb923c",
-  switch: "#fb923c",
-  if: "#fb923c",
-  compute: "#fb923c",
-  broker: "#34d399",
-  portfolio: "#34d399",
-  screener: "#34d399",
-  ai: "#f472b6",
-  llm: "#f472b6",
-  chatmodel: "#f472b6",
-  risk: "#f87171",
-  destructive: "#f87171",
-};
 
 const TAILWIND_NEON_COLORS: Record<string, string> = {
   "text-violet-": "#a78bfa",
@@ -168,20 +147,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const replaySessionRef = useRef(0);
 
   const definition = data.definition;
-  const neonColor = useMemo(() => {
-    const category = String(definition?.category ?? "")
-      .toLowerCase()
-      .replace(/\s+/g, "");
-    const matchedCategory = Object.entries(CATEGORY_NEON_COLORS).find(([key]) =>
-      category.includes(key),
-    )?.[1];
-    if (matchedCategory) return matchedCategory;
-
+  const { neonColor, nodeSurfaceGradient } = useMemo(() => {
     const colorToken = typeof data.color === "string" ? data.color : "";
-    const matchedTailwind = Object.entries(TAILWIND_NEON_COLORS).find(([key]) =>
-      colorToken.includes(key),
+    const matchedTailwindColor = Object.entries(TAILWIND_NEON_COLORS).find(
+      ([key]) => colorToken.includes(key),
     )?.[1];
-    return matchedTailwind ?? "#22d3ee";
+    return resolveNodeNeonTheme(definition?.category, matchedTailwindColor);
   }, [data.color, definition?.category]);
 
   // Get display name - use stable access to avoid re-renders on drag
@@ -600,6 +571,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     // Style constants
     referenceStyle: referencesHook.referenceStyle,
     neonColor,
+    nodeSurfaceGradient,
   };
 
   return <>{children(renderProps)}</>;

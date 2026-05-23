@@ -21,6 +21,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { NODE_VISUAL_THEMES, DEFAULT_NODE_VISUAL_THEME } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
+import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 
 export interface EdgeControl {
   icon: React.ReactNode;
@@ -564,6 +565,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const isSelfLoop = source === target;
   const sparkId = useMemo(() => `plug-edge-spark-${id}`, [id]);
   const nodes = useNodes();
+  const isDarkMode = useResolvedTheme() === "dark";
 
   if (isSelfLoop) {
     const sourceTheme = getSourceNodeTheme(source, nodes);
@@ -578,7 +580,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         targetY={targetY}
         sourcePosition={sourcePosition}
         targetPosition={targetPosition}
-        style={{ stroke: sourceTheme.edgeColor, strokeWidth: 2, ...style }}
+        style={{ ...style, stroke: isDarkMode ? sourceTheme.edgeColor : "#9ca3af", strokeWidth: 2 }}
         markerEnd={markerEnd}
         data={data}
         controls={computedControls}
@@ -595,8 +597,11 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
 
   const sourceTheme = getSourceNodeTheme(source, nodes);
   const categoryCordColor = sourceTheme.edgeColor ?? "#22d3ee";
+  const defaultCordColor = isDarkMode ? categoryCordColor : "#9ca3af";
   const cordColor =
-    typeof strokeValue === "string" ? strokeValue : categoryCordColor;
+    isDarkMode && typeof strokeValue === "string"
+      ? strokeValue
+      : defaultCordColor;
   const strokeWidth =
     typeof strokeWidthValue === "number"
       ? strokeWidthValue
@@ -604,9 +609,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         ? Number.parseFloat(String(strokeWidthValue)) || 2
         : 2;
 
-  const glowColor = sourceTheme.glow;
-  const sparkColor = lightenHex(cordColor, 0.7);
-  const sparkOuter = lightenHex(cordColor, 0.85);
+  const glowColor = isDarkMode ? sourceTheme.glow : "transparent";
+  const sparkColor = isDarkMode ? lightenHex(cordColor, 0.7) : cordColor;
+  const sparkOuter = isDarkMode ? lightenHex(cordColor, 0.85) : cordColor;
   const executing = isExecutingClass(className);
 
   const extensionDistance = -25;
@@ -744,15 +749,17 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill={cordColor}
         opacity={0.98}
       />
-      <circle
-        cx={extendedSourceX}
-        cy={extendedSourceY}
-        r={10}
-        fill={cordColor}
-        className="plug-edge__halo"
-        opacity={1}
-        style={{ pointerEvents: "none", filter: "blur(14px)" }}
-      />
+      {isDarkMode && (
+        <circle
+          cx={extendedSourceX}
+          cy={extendedSourceY}
+          r={10}
+          fill={cordColor}
+          className="plug-edge__halo"
+          opacity={1}
+          style={{ pointerEvents: "none", filter: "blur(14px)" }}
+        />
+      )}
       <circle
         cx={adjustedTargetX}
         cy={adjustedTargetY}
@@ -760,15 +767,17 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill={cordColor}
         opacity={0.98}
       />
-      <circle
-        cx={adjustedTargetX}
-        cy={adjustedTargetY}
-        r={10}
-        fill={cordColor}
-        className="plug-edge__halo"
-        opacity={1}
-        style={{ pointerEvents: "none", filter: "blur(14px)" }}
-      />
+      {isDarkMode && (
+        <circle
+          cx={adjustedTargetX}
+          cy={adjustedTargetY}
+          r={10}
+          fill={cordColor}
+          className="plug-edge__halo"
+          opacity={1}
+          style={{ pointerEvents: "none", filter: "blur(14px)" }}
+        />
+      )}
       <circle
         cx={midX}
         cy={midY}
@@ -883,6 +892,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
 }) => {
   const style: React.CSSProperties = { ...(connectionLineStyle || {}) };
   const nodes = useNodes();
+  const isDarkMode = useResolvedTheme() === "dark";
   const sourceNodeId = fromHandle?.nodeId;
   const sourceTheme =
     sourceNodeId ? getSourceNodeTheme(sourceNodeId, nodes) : DEFAULT_NODE_VISUAL_THEME;
@@ -892,7 +902,9 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
       ? style.stroke
       : connectionStatus === "invalid"
         ? "#ef4444"
-        : sourceTheme.edgeColor;
+        : isDarkMode
+          ? sourceTheme.edgeColor
+          : "#9ca3af";
 
   const strokeWidth =
     typeof style.strokeWidth === "number"
@@ -902,7 +914,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         : 2;
 
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
-  const glowColor = lightenHex(cordColor, 0.5);
+  const glowColor = isDarkMode ? lightenHex(cordColor, 0.5) : "transparent";
 
   const fromType = fromHandle?.type ?? "source";
   const draggingFromSource = fromType === "source";
@@ -1176,6 +1188,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
 // Generic Self-Loop Edge for any node
 export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
   const { data, source, target } = props;
+  const isDarkMode = useResolvedTheme() === "dark";
 
   // Only apply self-loop styling if it's actually a self-loop
   if (source !== target) {
@@ -1194,7 +1207,10 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
           (data?.direction as "top" | "right" | "bottom" | "left") || "right",
       }}
       style={{
-        stroke: (data?.loopColor as string) || "#6366f1",
+        stroke:
+          isDarkMode
+            ? (data?.loopColor as string) || "#6366f1"
+            : "#9ca3af",
         strokeWidth: 2,
         strokeDasharray: "5,5",
       }}
@@ -1214,7 +1230,7 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
       {...props}
       controls={controls}
       data={data}
-      style={{ stroke: "#22d3ee", strokeWidth: 3, ...props.style }}
+      style={{ strokeWidth: 3, ...props.style }}
     />
   );
 };
@@ -1222,13 +1238,14 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
 // Keep LoopEdge for backward compatibility with existing Loop nodes
 export const LoopEdge: React.FC<EdgeProps> = (props) => {
   const { data } = props;
+  const isDarkMode = useResolvedTheme() === "dark";
   const controls = buildControls(data);
 
   return (
     <InteractiveEdge
       {...props}
       selfLoopConfig={{ offsetX: 20, offsetY: 80, direction: "right" }}
-      style={{ stroke: "#22c55e", strokeWidth: 3 }}
+      style={{ stroke: isDarkMode ? "#22c55e" : "#9ca3af", strokeWidth: 3 }}
       markerEnd={MarkerType.ArrowClosed}
       controls={controls}
       data={{ label: data?.label }}

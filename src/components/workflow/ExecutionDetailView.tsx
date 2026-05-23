@@ -307,6 +307,7 @@ export function ExecutionDetailView({
                   elementsSelectable={true}
                   zoomOnDoubleClick={false}
                   fitView
+                  fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.4 }}
                   className={cn(
                     "execution-canvas",
                     resolvedTheme === "dark" && "dark",

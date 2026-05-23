@@ -282,6 +282,7 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             connectionLineComponent={EdgeManager.PlugConnectionLine}
             connectionLineType={ConnectionLineType.Bezier}
             fitView
+            fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.4 }}
             minZoom={0.1}
             maxZoom={4}
             className={cn(

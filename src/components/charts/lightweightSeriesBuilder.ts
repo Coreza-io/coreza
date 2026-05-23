@@ -83,7 +83,8 @@ const nearestLevels = (
     direction === "support"
       ? levels.filter((x) => x <= currentClose)
       : levels.filter((x) => x >= currentClose);
-  return filtered
+  const pool = filtered.length ? filtered : levels;
+  return [...pool]
     .sort(
       (a, b) =>
         Math.abs(currentClose - a) -
@@ -276,6 +277,12 @@ export const addOverlaySeries = (
   if (overlay.lowestLow !== null && overlay.lowestLow !== undefined && Number.isFinite(overlay.lowestLow)) {
     addLevelPriceLine(overlay.lowestLow, "#22c55e", "LL", 3);
     handles.channels.push({ key: "lowest_low", label: "lowest_low", color: "#22c55e", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.lowestLow });
+  }
+  if (overlay.swingHighsCount !== null && overlay.swingHighsCount !== undefined && Number.isFinite(overlay.swingHighsCount)) {
+    handles.channels.push({ key: "swing_highs", label: "swing_highs", color: "#94a3b8", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.swingHighsCount });
+  }
+  if (overlay.swingLowsCount !== null && overlay.swingLowsCount !== undefined && Number.isFinite(overlay.swingLowsCount)) {
+    handles.channels.push({ key: "swing_lows", label: "swing_lows", color: "#94a3b8", series: fallbackSeries ?? priceLineTarget, staticValue: overlay.swingLowsCount });
   }
 
   if (overlay.supportSeries) {

@@ -320,7 +320,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               ? isDarkMode
                 ? ""
                 : "border-primary shadow-glow"
-              : "border-border"
+              : isDarkMode
+                ? ""
+                : "border-border"
           }
           ${streamingClasses}
           ${getExecutionStatusClass()}
@@ -336,6 +338,28 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         }}
         style={nodeCardStyle}
       >
+        {/* Glass reflection overlays (dark mode only) */}
+        {isDarkMode && (
+          <>
+            <div
+              className="pointer-events-none absolute inset-0 rounded-lg opacity-70"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 18%, transparent 44%)",
+                mixBlendMode: "screen",
+                zIndex: 1,
+              }}
+            />
+            <div
+              className="pointer-events-none absolute inset-0 rounded-lg"
+              style={{
+                background:
+                  "radial-gradient(circle at 50% -20%, rgba(255,255,255,0.10), transparent 42%)",
+                zIndex: 1,
+              }}
+            />
+          </>
+        )}
         {/* Electric Border SVG Overlay */}
         {!isExpanded && electricBorder && isExecuting && isDarkMode && (
           <ElectricBorderSVG

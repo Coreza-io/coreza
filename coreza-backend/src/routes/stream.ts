@@ -1030,6 +1030,10 @@ router.post("/:source/register", async (req, res) => {
       success: true,
       status: "listening",
       symbols: parsedSymbols || [],
+      streamType: streamType || [],
+      source: sourceId,
+      scope: scope,
+      mode: mode,
     };
 
     console.log(`✅ [ExecuteStreamNode] Complete - testKey: ${listenerKey}`);

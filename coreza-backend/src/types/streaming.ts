@@ -44,6 +44,10 @@ export interface StreamExecutionResponse {
   success: boolean;
   status: "listening" | "error";
   symbols: string[];
+  streamType: string[];
+  source: string;
+  mode: "listen" | "subscribe";
+  scope: "workflow" | "global";
   message?: string;
   error?: string;
 }

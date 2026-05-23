@@ -267,6 +267,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       nodeSurfaceGradient ?? DEFAULT_NODE_VISUAL_THEME.background,
   };
 
+  const plugIconColor = isDarkMode ? theme.neon : "#9ca3af";
+
   const nodeCardStyle: React.CSSProperties & {
     "--node-neon-color"?: string;
     "--node-border-color"?: string;
@@ -289,13 +291,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           background: theme.background,
           border: `1.5px solid ${theme.border}`,
           boxShadow: `
-            inset 0 1px 0 rgba(255,255,255,0.18),
-            inset 0 -1px 0 rgba(0,0,0,0.35),
-            0 0 0 1px ${theme.glow},
-            0 0 18px ${theme.glow},
-            0 0 46px ${theme.glow}
+            0 0 0 1px var(--node-border-color),
+            0 4px 18px rgba(0,0,0,0.55),
+            0 0 14px var(--node-glow-color)
           `,
-          filter: selected ? "brightness(1.16)" : undefined,
+          filter: selected ? "brightness(1.08)" : undefined,
         }
       : {}),
   };
@@ -342,10 +342,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         {isDarkMode && (
           <>
             <div
-              className="pointer-events-none absolute inset-0 rounded-lg opacity-70"
+              className="pointer-events-none absolute inset-0 rounded-lg opacity-100"
               style={{
                 background:
-                  "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 18%, transparent 44%)",
+                  "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 18%, transparent 44%)",
                 mixBlendMode: "screen",
                 zIndex: 1,
               }}
@@ -354,7 +354,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               className="pointer-events-none absolute inset-0 rounded-lg"
               style={{
                 background:
-                  "radial-gradient(circle at 50% -20%, rgba(255,255,255,0.10), transparent 42%)",
+                  "radial-gradient(circle at 50% -18%, rgba(255,255,255,0.15), transparent 28%)",
                 zIndex: 1,
               }}
             />
@@ -410,9 +410,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             if (isInputHandle) {
               // For input handles: show ConnectedSwitchIcon if connected, otherwise FemalePlugIcon
               handleIcon = isConnected ? (
-                <ConnectedSwitchIcon size={20} color={theme.neon} style={iconStyle} />
+                <ConnectedSwitchIcon size={20} color={plugIconColor} style={iconStyle} />
               ) : (
-                <FemalePlugIcon size={20} color={theme.neon} style={iconStyle} />
+                <FemalePlugIcon size={20} color={plugIconColor} style={iconStyle} />
               );
             } else {
               // For output handles: hide icon if connected or currently dragging from this handle
@@ -421,7 +421,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 dragSource.nodeId === nodeId &&
                 dragSource.handleId === h.id;
               handleIcon = (isConnected || isDraggingFromThis) ? null : (
-                <MalePlugIcon size={20} color={theme.neon} style={iconStyle} />
+                <MalePlugIcon size={20} color={plugIconColor} style={iconStyle} />
               );
             }
 

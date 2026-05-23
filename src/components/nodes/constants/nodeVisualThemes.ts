@@ -35,9 +35,9 @@ export const NODE_VISUAL_THEMES: Record<NodeVisualCategory, NodeVisualTheme> = {
   action: {
     neon: "#c084fc",
     border: "#d946ef",
-    glow: "rgba(217,70,239,0.55)",
+    glow: "rgba(217,70,239,0.28)",
     background:
-      "radial-gradient(circle at 50% 0%, rgba(217,70,239,0.32), transparent 58%), linear-gradient(145deg, rgba(58,18,112,0.96), rgba(19,8,48,0.98))",
+      "radial-gradient(circle at 50% 0%, rgba(217,70,239,0.15), transparent 45%), linear-gradient(145deg, rgba(40,14,82,0.98), rgba(14,6,36,0.99))",
     titleColor: "#ffffff",
     iconMode: "ai-badge",
     edgeColor: "#c084fc",
@@ -45,9 +45,9 @@ export const NODE_VISUAL_THEMES: Record<NodeVisualCategory, NodeVisualTheme> = {
   utility: {
     neon: "#22d3ee",
     border: "#22d3ee",
-    glow: "rgba(34,211,238,0.45)",
+    glow: "rgba(34,211,238,0.22)",
     background:
-      "radial-gradient(circle at 50% 0%, rgba(34,211,238,0.28), transparent 58%), linear-gradient(145deg, rgba(9,72,86,0.95), rgba(4,23,34,0.98))",
+      "radial-gradient(circle at 50% 0%, rgba(34,211,238,0.12), transparent 45%), linear-gradient(145deg, rgba(7,54,64,0.98), rgba(3,18,28,0.99))",
     titleColor: "#ffffff",
     iconMode: "toolbox",
     edgeColor: "#22d3ee",
@@ -55,9 +55,9 @@ export const NODE_VISUAL_THEMES: Record<NodeVisualCategory, NodeVisualTheme> = {
   indicator: {
     neon: "#38bdf8",
     border: "#0ea5e9",
-    glow: "rgba(14,165,233,0.50)",
+    glow: "rgba(14,165,233,0.24)",
     background:
-      "radial-gradient(circle at 50% 0%, rgba(56,189,248,0.28), transparent 58%), linear-gradient(145deg, rgba(13,49,126,0.96), rgba(4,15,55,0.98))",
+      "radial-gradient(circle at 50% 0%, rgba(56,189,248,0.12), transparent 45%), linear-gradient(145deg, rgba(10,39,96,0.98), rgba(3,12,42,0.99))",
     titleColor: "#ffffff",
     iconMode: "indicator",
     edgeColor: "#38bdf8",
@@ -65,9 +65,9 @@ export const NODE_VISUAL_THEMES: Record<NodeVisualCategory, NodeVisualTheme> = {
   logic: {
     neon: "#f59e0b",
     border: "#fbbf24",
-    glow: "rgba(245,158,11,0.50)",
+    glow: "rgba(245,158,11,0.24)",
     background:
-      "radial-gradient(circle at 50% 0%, rgba(245,158,11,0.30), transparent 58%), linear-gradient(145deg, rgba(92,49,7,0.96), rgba(30,16,5,0.98))",
+      "radial-gradient(circle at 50% 0%, rgba(245,158,11,0.14), transparent 45%), linear-gradient(145deg, rgba(72,38,6,0.98), rgba(24,13,4,0.99))",
     titleColor: "#ffffff",
     iconMode: "branch",
     edgeColor: "#f59e0b",
@@ -75,9 +75,9 @@ export const NODE_VISUAL_THEMES: Record<NodeVisualCategory, NodeVisualTheme> = {
   output: {
     neon: "#fb7185",
     border: "#f43f5e",
-    glow: "rgba(244,63,94,0.50)",
+    glow: "rgba(244,63,94,0.26)",
     background:
-      "radial-gradient(circle at 50% 0%, rgba(244,63,94,0.30), transparent 58%), linear-gradient(145deg, rgba(94,12,40,0.96), rgba(32,6,17,0.98))",
+      "radial-gradient(circle at 50% 0%, rgba(244,63,94,0.14), transparent 45%), linear-gradient(145deg, rgba(74,10,32,0.98), rgba(24,5,13,0.99))",
     titleColor: "#ffffff",
     iconMode: "chart",
     edgeColor: "#fb7185",

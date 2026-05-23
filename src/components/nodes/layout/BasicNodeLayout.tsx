@@ -61,7 +61,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       style={{
         background: "linear-gradient(145deg, #fde047, #facc15)",
         boxShadow:
-          "0 0 0 1px rgba(255,255,255,0.4) inset, 0 0 14px rgba(250,204,21,0.6)",
+          "0 0 0 1px rgba(255,255,255,0.4) inset, 0 0 6px rgba(250,204,21,0.35)",
         fontSize: 20,
       }}
     >

@@ -299,9 +299,9 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
           >
             <Background
               variant={BackgroundVariant.Dots}
-              gap={16}
-              size={0.8}
-              color="hsl(var(--muted-foreground) / 0.60)"
+              gap={24}
+              size={1}
+              color="hsl(var(--canvas-grid-dot))"
             />
             <MiniMap
               className="!bg-card !border-border"

@@ -36,6 +36,7 @@ import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
+import { CATEGORY_NEON_COLORS } from "@/components/nodes/constants/neonColors";
 
 interface BaseNodeProps {
   data: any;
@@ -101,29 +102,6 @@ export interface BaseNodeRenderProps {
   referenceStyle: React.CSSProperties;
   neonColor: string;
 }
-
-const CATEGORY_NEON_COLORS: Record<string, string> = {
-  backtest: "#a78bfa",
-  scheduler: "#a78bfa",
-  trigger: "#a78bfa",
-  data: "#22d3ee",
-  indicator: "#22d3ee",
-  indicators: "#22d3ee",
-  stream: "#22d3ee",
-  input: "#22d3ee",
-  logic: "#fb923c",
-  switch: "#fb923c",
-  if: "#fb923c",
-  compute: "#fb923c",
-  broker: "#34d399",
-  portfolio: "#34d399",
-  screener: "#34d399",
-  ai: "#f472b6",
-  llm: "#f472b6",
-  chatmodel: "#f472b6",
-  risk: "#f87171",
-  destructive: "#f87171",
-};
 
 const TAILWIND_NEON_COLORS: Record<string, string> = {
   "text-violet-": "#a78bfa",

@@ -174,6 +174,42 @@ function clusterLevels(prices: number[], sensitivity: number, numLevels: number)
   return clusters.sort((a, b) => b.length - a.length).slice(0, numLevels).map((c) => c.reduce((sum, p) => sum + p, 0) / c.length).sort((a, b) => b - a);
 }
 
+
+function pickExtremeLevels(
+  prices: number[],
+  numLevels: number,
+  sensitivity: number,
+  direction: "desc" | "asc",
+): number[] {
+  if (!prices.length) return [];
+
+  const sorted = [...prices].sort(
+    direction === "desc" ? (a, b) => b - a : (a, b) => a - b,
+  );
+  const picked: number[] = [];
+
+  for (const price of sorted) {
+    if (picked.length >= numLevels) break;
+    const tooClose = picked.some((existing) => Math.abs(price - existing) / existing <= sensitivity);
+    if (!tooClose) picked.push(price);
+  }
+
+  return picked;
+}
+
+function clampLevelsToClose(
+  levels: { resistance: number[]; support: number[]; pivot?: number },
+  close: number,
+): { resistance: number[]; support: number[]; pivot?: number } {
+  if (!Number.isFinite(close)) return levels;
+
+  return {
+    ...levels,
+    resistance: levels.resistance.filter((value) => value >= close),
+    support: levels.support.filter((value) => value <= close),
+  };
+}
+
 const INDICATOR_CONTEXT = { category: "indicators" };
 
 export class IndicatorService {
@@ -858,10 +894,10 @@ export class IndicatorService {
           const lows = state.lowWindow;
 
           if (state.mode === "historical") {
-            return roundSupportResistanceLevels({
-              resistance: clusterLevels(highs, state.sensitivity, state.numLevels),
-              support: clusterLevels(lows, state.sensitivity, state.numLevels).reverse(),
-            });
+            return roundSupportResistanceLevels(clampLevelsToClose({
+              resistance: pickExtremeLevels(highs, state.numLevels, state.sensitivity, "desc"),
+              support: pickExtremeLevels(lows, state.numLevels, state.sensitivity, "asc"),
+            }, state.lastClose));
           }
 
           const swingHighs: number[] = [];
@@ -870,10 +906,10 @@ export class IndicatorService {
             if (highs[i] > highs[i - 1] && highs[i] > highs[i - 2] && highs[i] > highs[i + 1] && highs[i] > highs[i + 2]) swingHighs.push(highs[i]);
             if (lows[i] < lows[i - 1] && lows[i] < lows[i - 2] && lows[i] < lows[i + 1] && lows[i] < lows[i + 2]) swingLows.push(lows[i]);
           }
-          const levels = roundSupportResistanceLevels({
+          const levels = roundSupportResistanceLevels(clampLevelsToClose({
             resistance: clusterLevels(swingHighs, state.sensitivity, state.numLevels),
             support: clusterLevels(swingLows, state.sensitivity, state.numLevels).reverse(),
-          });
+          }, state.lastClose));
           return {
             ...levels,
           };
@@ -1914,13 +1950,11 @@ export class IndicatorService {
           .sort((a, b) => b - a);
       };
 
-      const resistanceLevels = clusterLevels(swingHighs);
-      const supportLevels = clusterLevels(swingLows).reverse();
-
-      const roundedLevels = roundSupportResistanceLevels({
-        resistance: resistanceLevels,
-        support: supportLevels,
-      });
+      const lastClose = Number(recentCandles[recentCandles.length - 1]?.c ?? recentCandles[recentCandles.length - 1]?.close);
+      const roundedLevels = roundSupportResistanceLevels(clampLevelsToClose({
+        resistance: clusterLevels(swingHighs),
+        support: clusterLevels(swingLows).reverse(),
+      }, lastClose));
 
       const levels = {
         ...roundedLevels,
@@ -1942,7 +1976,7 @@ export class IndicatorService {
     input: IndicatorInput,
   ): Promise<IndicatorResult> {
     try {
-      const { candle_data: rawCandles, lookback_period, num_levels } = input;
+      const { candle_data: rawCandles, lookback_period, num_levels, sensitivity } = input;
       const candles = parseArray<any>(rawCandles, "candle_data");
 
       if (!lookback_period)
@@ -1960,16 +1994,12 @@ export class IndicatorService {
       const highs = recentCandles.map((c: any) => Number(c.h ?? c.high));
       const lows = recentCandles.map((c: any) => Number(c.l ?? c.low));
 
-      const sortedHighs = [...highs].sort((a, b) => b - a);
-      const sortedLows = [...lows].sort((a, b) => a - b);
-
-      const resistanceLevels = clusterLevels(highs, 0.01, numLevels);
-      const supportLevels = clusterLevels(lows, 0.01, numLevels).reverse();
-
-      const levels = roundSupportResistanceLevels({
-        resistance: resistanceLevels,
-        support: supportLevels,
-      });
+      const lastClose = Number(recentCandles[recentCandles.length - 1]?.c ?? recentCandles[recentCandles.length - 1]?.close);
+      const sens = Number(sensitivity ?? 1) / 100;
+      const levels = roundSupportResistanceLevels(clampLevelsToClose({
+        resistance: pickExtremeLevels(highs, numLevels, sens, "desc"),
+        support: pickExtremeLevels(lows, numLevels, sens, "asc"),
+      }, lastClose));
 
       return createSuccessOutput([levels], {
         ...INDICATOR_CONTEXT,

@@ -57,6 +57,14 @@ const buildControls = (data?: any): EdgeControl[] => {
   return controls;
 };
 
+
+const getSourceNodeTheme = (nodeId: string, nodes: ReturnType<typeof useNodes>) => {
+  const sourceNode = nodes.find((node) => node.id === nodeId);
+  const sourceData = sourceNode?.data as { definition?: unknown } | undefined;
+  const sourceVisualCategory = resolveNodeVisualCategory(sourceData?.definition);
+  return NODE_VISUAL_THEMES[sourceVisualCategory] ?? DEFAULT_NODE_VISUAL_THEME;
+};
+
 const normalizeHex = (hex: string): string | null => {
   const match = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex.trim());
   if (!match) return null;
@@ -558,6 +566,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const nodes = useNodes();
 
   if (isSelfLoop) {
+    const sourceTheme = getSourceNodeTheme(source, nodes);
     return (
       <InteractiveEdge
         id={id}
@@ -569,7 +578,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         targetY={targetY}
         sourcePosition={sourcePosition}
         targetPosition={targetPosition}
-        style={{ stroke: "#38bdf8", strokeWidth: 2, ...style }}
+        style={{ stroke: sourceTheme.edgeColor, strokeWidth: 2, ...style }}
         markerEnd={markerEnd}
         data={data}
         controls={computedControls}
@@ -584,11 +593,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   delete customStyle.stroke;
   delete customStyle.strokeWidth;
 
-  const sourceNode = nodes.find((node) => node.id === source) as any;
-  const sourceDefinition = sourceNode?.data?.definition;
-  const sourceVisualCategory = resolveNodeVisualCategory(sourceDefinition);
-  const sourceTheme =
-    NODE_VISUAL_THEMES[sourceVisualCategory] ?? DEFAULT_NODE_VISUAL_THEME;
+  const sourceTheme = getSourceNodeTheme(source, nodes);
   const categoryCordColor = sourceTheme.edgeColor ?? "#22d3ee";
   const cordColor =
     typeof strokeValue === "string" ? strokeValue : categoryCordColor;
@@ -877,13 +882,17 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   fromHandle,
 }) => {
   const style: React.CSSProperties = { ...(connectionLineStyle || {}) };
+  const nodes = useNodes();
+  const sourceNodeId = fromHandle?.nodeId;
+  const sourceTheme =
+    sourceNodeId ? getSourceNodeTheme(sourceNodeId, nodes) : DEFAULT_NODE_VISUAL_THEME;
 
   const baseStroke =
     typeof style.stroke === "string"
       ? style.stroke
       : connectionStatus === "invalid"
         ? "#ef4444"
-        : "#38bdf8";
+        : sourceTheme.edgeColor;
 
   const strokeWidth =
     typeof style.strokeWidth === "number"

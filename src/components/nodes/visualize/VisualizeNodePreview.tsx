@@ -175,7 +175,7 @@ const VisualizeNodePreview: React.FC<{
       }
 
       if (classification.kind === "levels") {
-        acc.push({ kind: "levels", id, name, supports: classification.supports, resistances: classification.resistances, supportSeries: toHistoricalSeries(candles, classification.supportSeries), resistanceSeries: toHistoricalSeries(candles, classification.resistanceSeries), pivot: classification.pivot, highestHigh: classification.highestHigh, lowestLow: classification.lowestLow, currentClose });
+        acc.push({ kind: "levels", id, name, supports: classification.supports, resistances: classification.resistances, supportSeries: toHistoricalSeries(candles, classification.supportSeries), resistanceSeries: toHistoricalSeries(candles, classification.resistanceSeries), pivot: classification.pivot, highestHigh: classification.highestHigh, lowestLow: classification.lowestLow, swingHighsCount: classification.swingHighsCount, swingLowsCount: classification.swingLowsCount, currentClose });
         return acc;
       }
 

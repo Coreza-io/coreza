@@ -64,6 +64,15 @@ const formatOverlayName = (overlay: VisualizeOverlay): string => {
   return overlay.name;
 };
 
+const shouldFormatAsInteger = (channelKey: string): boolean =>
+  channelKey === "swing_highs" || channelKey === "swing_lows";
+
+const formatChannelValue = (channelKey: string, value: number | null): string => {
+  if (value === null || Number.isNaN(value)) return "—";
+  if (shouldFormatAsInteger(channelKey)) return Math.round(value).toString();
+  return formatNumber(value);
+};
+
 const ChartPaneLegend: React.FC<{
   overlays: VisualizeOverlay[];
   values: LegendValues;
@@ -94,7 +103,7 @@ const ChartPaneLegend: React.FC<{
                   className="mr-1 inline-block h-1.5 w-1.5 rounded-full"
                   style={{ backgroundColor: channelColor(overlay, key) }}
                 />
-                {key} {formatNumber(value)}
+                {key} {formatChannelValue(key, value)}
               </span>
             ))}
           </div>

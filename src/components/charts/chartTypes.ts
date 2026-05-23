@@ -43,6 +43,8 @@ export type VisualizeOverlay =
       pivot?: number | null;
       highestHigh?: number | null;
       lowestLow?: number | null;
+      swingHighsCount?: number | null;
+      swingLowsCount?: number | null;
       currentClose?: number;
     }
   | {

@@ -36,7 +36,13 @@ import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
 import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
-import { resolveNodeNeonTheme } from "@/components/nodes/constants/neonColors";
+import {
+  NODE_VISUAL_THEMES,
+  DEFAULT_NODE_VISUAL_THEME,
+  type NodeVisualCategory,
+  type NodeVisualTheme,
+} from "@/components/nodes/constants/nodeVisualThemes";
+import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 
 interface BaseNodeProps {
   data: any;

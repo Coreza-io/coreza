@@ -8,7 +8,14 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type ComponentType,
+} from "react";
 import {
   ConnectionDragContext,
   DragSource,
@@ -680,9 +687,15 @@ const WorkflowEditorContent = () => {
   // Merge base node types with custom Loop node
   const nodeTypes = useMemo(() => {
     const wrappedBaseNodeTypes = Object.fromEntries(
-      Object.entries(baseNodeTypes).map(([key, Component]) => [
+      Object.entries(baseNodeTypes).map(([key, component]) => [
         key,
-        (props: any) => <Component {...props} workflowId={workflowId} />,
+        (props: Record<string, unknown>) => {
+          const WrappedComponent = component as ComponentType<
+            Record<string, unknown>
+          >;
+
+          return <WrappedComponent {...props} workflowId={workflowId} />;
+        },
       ]),
     );
 

@@ -79,7 +79,11 @@ type MenuItem = {
 
 const menuItems: MenuItem[] = [
   { title: "Dashboard", url: DASHBOARD_BASE_PATH, icon: BarChart3 },
-  { title: "Projects", url: `${DASHBOARD_BASE_PATH}/projects`, icon: FolderOpen },
+  {
+    title: "Projects",
+    url: `${DASHBOARD_BASE_PATH}/projects`,
+    icon: FolderOpen,
+  },
   {
     title: "Workflows",
     url: `${DASHBOARD_BASE_PATH}/workflows`,
@@ -98,7 +102,11 @@ const menuItems: MenuItem[] = [
     icon: Zap,
     matchPaths: [`${DASHBOARD_BASE_PATH}/live`],
   },
-  { title: "Market Data", url: `${DASHBOARD_BASE_PATH}/market-subscriptions`, icon: Radio },
+  {
+    title: "Market Data",
+    url: `${DASHBOARD_BASE_PATH}/market-subscriptions`,
+    icon: Radio,
+  },
 ];
 
 export function AppSidebar() {
@@ -108,16 +116,19 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [profile, setProfile] = useState<{ first_name?: string; last_name?: string } | null>(null);
+  const [profile, setProfile] = useState<{
+    first_name?: string;
+    last_name?: string;
+  } | null>(null);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   useEffect(() => {
     if (user) {
       const fetchProfile = async () => {
         const { data } = await supabase
-          .from('users')
-          .select('first_name, last_name')
-          .eq('user_id', user.id)
+          .from("users")
+          .select("first_name, last_name")
+          .eq("user_id", user.id)
           .single();
 
         if (data) {
@@ -133,7 +144,7 @@ export function AppSidebar() {
     if (profile?.first_name && profile?.last_name) {
       return `${profile.first_name} ${profile.last_name}`;
     }
-    return user?.email?.split('@')[0] || 'User';
+    return user?.email?.split("@")[0] || "User";
   };
 
   const getInitials = (name: string) => {
@@ -150,7 +161,7 @@ export function AppSidebar() {
   const confirmLogout = async () => {
     await signOut();
     setShowLogoutDialog(false);
-    navigate('/login');
+    navigate("/login");
   };
 
   const isActive = (path: string, matchPaths: string[] = []) => {
@@ -158,12 +169,15 @@ export function AppSidebar() {
       return location.pathname === path;
     }
 
-    if (location.pathname === path || location.pathname.startsWith(`${path}/`)) {
+    if (
+      location.pathname === path ||
+      location.pathname.startsWith(`${path}/`)
+    ) {
       return true;
     }
 
     return matchPaths.some((matchPath) =>
-      location.pathname.startsWith(matchPath)
+      location.pathname.startsWith(matchPath),
     );
   };
 
@@ -172,8 +186,10 @@ export function AppSidebar() {
       className={`${collapsed ? "w-16" : "w-64"} transition-all duration-300`}
     >
       <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-3 px-4 py-4 cursor-pointer"
-        onClick={() => navigate('/dashboard')}>
+        <div
+          className="flex items-center gap-3 px-4 py-4 cursor-pointer"
+          onClick={() => navigate("/dashboard")}
+        >
           <div className="p-2 bg-gradient-primary rounded-lg shadow-glow">
             <TrendingUp className="h-6 w-6 text-primary-foreground" />
           </div>
@@ -202,10 +218,11 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <Link
                       to={item.url}
-                      className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:bg-sidebar-accent ${isActive(item.url, item.matchPaths)
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
-                        }`}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:bg-sidebar-accent ${
+                        isActive(item.url, item.matchPaths)
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
+                      }`}
                     >
                       <item.icon className="h-5 w-5" />
                       {!collapsed && <span>{item.title}</span>}
@@ -224,7 +241,10 @@ export function AppSidebar() {
             <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
             <span className="text-sm text-muted-foreground">Markets Open</span>
           </div>
-          <Badge variant="outline" className="hidden md:flex items-center gap-1">
+          <Badge
+            variant="outline"
+            className="hidden md:flex items-center gap-1"
+          >
             <TrendingUp className="h-3 w-3 text-success" />
             +2.4% today
           </Badge>
@@ -232,8 +252,9 @@ export function AppSidebar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className={`group flex items-center gap-3 w-full px-3 py-3 rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground transition-all ${collapsed ? "justify-center" : ""
-                }`}
+              className={`group flex items-center gap-3 w-full px-3 py-3 rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground transition-all ${
+                collapsed ? "justify-center" : ""
+              }`}
             >
               <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center shrink-0">
                 <span className="text-sm font-medium text-primary-foreground">
@@ -246,11 +267,11 @@ export function AppSidebar() {
                     <span className="text-sm font-medium truncate w-full">
                       {getDisplayName()}
                     </span>
-                    <span className="text-xs text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground/80 group-data-[state=open]:text-sidebar-accent-foreground/80 truncate w-full">
-                      {user?.email || 'user@example.com'}
+                    <span className="text-xs opacity-70 truncate w-full">
+                      {user?.email || "user@example.com"}
                     </span>
                   </div>
-                  <ChevronUp className="h-4 w-4 text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground/80 group-data-[state=open]:text-sidebar-accent-foreground/80 shrink-0" />
+                  <ChevronUp className="h-4 w-4 opacity-70 shrink-0" />
                 </div>
               )}
             </button>
@@ -264,7 +285,7 @@ export function AppSidebar() {
               <div className="flex flex-col">
                 <span className="text-sm font-medium">{getDisplayName()}</span>
                 <span className="text-xs text-muted-foreground font-normal">
-                  {user?.email || 'user@example.com'}
+                  {user?.email || "user@example.com"}
                 </span>
               </div>
             </DropdownMenuLabel>
@@ -307,7 +328,7 @@ export function AppSidebar() {
 
             {/* Profile */}
             <DropdownMenuItem
-              onClick={() => navigate('/dashboard/profile')}
+              onClick={() => navigate("/dashboard/profile")}
               className="cursor-pointer"
             >
               <User className="h-4 w-4 mr-2" />
@@ -316,7 +337,7 @@ export function AppSidebar() {
 
             {/* Settings */}
             <DropdownMenuItem
-              onClick={() => navigate('/dashboard/settings')}
+              onClick={() => navigate("/dashboard/settings")}
               className="cursor-pointer"
             >
               <Settings className="h-4 w-4 mr-2" />
@@ -343,12 +364,16 @@ export function AppSidebar() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Logout</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to log out? Any unsaved changes will be lost.
+              Are you sure you want to log out? Any unsaved changes will be
+              lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmLogout} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={confirmLogout}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Logout
             </AlertDialogAction>
           </AlertDialogFooter>

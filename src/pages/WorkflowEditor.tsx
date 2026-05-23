@@ -248,6 +248,7 @@ const WorkflowEditorContent = () => {
     saveWorkflow,
     loadWorkflow: persistLoadWorkflow,
     generateNewWorkflowName,
+    hasUnsavedChanges,
     checkNodeReduction,
   } = useWorkflowPersistence({ projectId });
 
@@ -749,6 +750,75 @@ const WorkflowEditorContent = () => {
     executionStore,
   ]);
 
+  const ensureBacktestExecutionReady = useCallback(async (): Promise<boolean> => {
+    if (!session || !authUser) {
+      toast({
+        title: "Login required",
+        description: "Please log in to run a backtest",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (!workflowId) {
+      toast({
+        title: "Error",
+        description: "Workflow ID is missing. Please save the workflow first.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    const requiresSave =
+      !hasPersistedRef.current || hasUnsavedChanges(nodes, edges, workflowName);
+
+    if (!requiresSave) {
+      return true;
+    }
+
+    const saveResult = await saveWorkflow(workflowId, workflowName, nodes, edges, {
+      isNew: !hasPersistedRef.current,
+    });
+
+    if (!saveResult.success) {
+      toast({
+        title: "Error",
+        description: "Could not save workflow — please try again",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (!hasPersistedRef.current) {
+      hasPersistedRef.current = true;
+      const workflowPath = `/dashboard/workflow/${workflowId}`;
+      const newUrl = projectId ? `${workflowPath}?project=${projectId}` : workflowPath;
+      navigate(newUrl, { replace: true });
+    }
+
+    return true;
+  }, [
+    session,
+    authUser,
+    workflowId,
+    hasUnsavedChanges,
+    nodes,
+    edges,
+    workflowName,
+    saveWorkflow,
+    toast,
+    projectId,
+    navigate,
+  ]);
+
+  const hasBacktestInitNode = useCallback(
+    (candidateNodes: Node[]) =>
+      candidateNodes.some(
+        (candidate) => (candidate.data?.definition as any)?.name === "BacktestInit",
+      ),
+    [],
+  );
+
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
     if (!workflowExecutor) {
@@ -760,19 +830,39 @@ const WorkflowEditorContent = () => {
       return;
     }
 
+    if (hasBacktestInitNode(nodes)) {
+      const canExecute = await ensureBacktestExecutionReady();
+      if (!canExecute) return;
+    }
+
     setIsAutoExecuting(true);
     await workflowExecutor.executeAllNodes();
     setIsAutoExecuting(false);
-  }, [workflowExecutor, toast]);
+  }, [workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady]);
 
   // Handle node double click to execute
   // Double click to execute one node only (optional: show highlight/animation)
   const onNodeDoubleClick = useCallback(
     async (event: React.MouseEvent, node: Node) => {
       event.preventDefault();
+
+      if (!workflowExecutor) {
+        toast({
+          title: "Error",
+          description: "No workflow to execute",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if ((node.data?.definition as any)?.name === "BacktestInit") {
+        const canExecute = await ensureBacktestExecutionReady();
+        if (!canExecute) return;
+      }
+
       await workflowExecutor.executeNode(node.id, new Set());
     },
-    [workflowExecutor],
+    [workflowExecutor, ensureBacktestExecutionReady, toast],
   );
 
   // Save workflow via persistence hook

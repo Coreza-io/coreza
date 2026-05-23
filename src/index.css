@@ -483,34 +483,15 @@
     filter: drop-shadow(0 0 6px currentColor);
   }
 
-  .dark .plug-handle {
-    width: 10px !important;
-    height: 10px !important;
-    min-width: 10px;
-    min-height: 10px;
-    border-radius: 9999px;
-    background: transparent;
-    box-shadow: none;
-  }
-
   .dark .plug-handle svg {
-    display: none;
+    filter: drop-shadow(0 0 4px var(--node-glow-color, rgba(34, 211, 238, 0.35)));
+    transition: filter 0.2s ease;
   }
 
-  .dark .plug-handle::after {
-    content: "";
-    width: 10px;
-    height: 10px;
-    border-radius: 9999px;
-    background: var(--node-neon-color, #22d3ee);
-    border: 1px solid var(--node-border-color, var(--node-neon-color, #22d3ee));
-    box-shadow: none;
-  }
-
-  .dark .react-flow__node.selected .plug-handle::after {
-    box-shadow:
-      0 0 6px var(--node-glow-color, var(--node-neon-color, #22d3ee)),
-      0 0 12px var(--node-glow-color, var(--node-neon-color, #22d3ee));
+  .dark .react-flow__node.selected .plug-handle svg {
+    filter:
+      drop-shadow(0 0 6px var(--node-glow-color, rgba(34, 211, 238, 0.55)))
+      drop-shadow(0 0 12px var(--node-glow-color, rgba(34, 211, 238, 0.45)));
   }
 
   .plug-edge--connection .plug-edge__cord--connecting {

@@ -546,7 +546,7 @@ const LightweightVisualizeChart: React.FC<{
         </div>
       ))}
       {viewModel.candles.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm pointer-events-none">
           No candle data
         </div>
       )}

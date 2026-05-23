@@ -73,9 +73,9 @@ const ChartPaneLegend: React.FC<{
 }> = ({ overlays, values, ohlc }) => {
   if (overlays.length === 0 && !ohlc) return null;
   return (
-    <div className="absolute top-2 left-2 z-10 pointer-events-none rounded bg-slate-900/60 px-2 py-1 text-[11px] leading-5 text-slate-100 backdrop-blur-sm">
+    <div className="absolute top-2 left-2 z-10 pointer-events-none rounded border border-border bg-card/70 px-2 py-1 text-[11px] leading-5 text-foreground backdrop-blur-sm">
       {ohlc && (
-        <div className="mb-0.5 flex items-center gap-2 font-mono text-slate-200">
+        <div className="mb-0.5 flex items-center gap-2 font-mono text-muted-foreground">
           <span>O {formatNumber(ohlc.open)}</span>
           <span>H {formatNumber(ohlc.high)}</span>
           <span>L {formatNumber(ohlc.low)}</span>
@@ -88,7 +88,7 @@ const ChartPaneLegend: React.FC<{
         return (
           <div key={overlay.id} data-overlay={formatOverlayName(overlay)} className="flex flex-wrap items-center gap-x-2">
             {entries.map(([key, value]) => (
-              <span key={key} className="font-mono text-slate-100">
+              <span key={key} className="font-mono text-foreground">
                 <span
                   className="mr-1 inline-block h-1.5 w-1.5 rounded-full"
                   style={{ backgroundColor: channelColor(overlay, key) }}

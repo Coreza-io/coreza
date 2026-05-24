@@ -505,14 +505,14 @@ export class BacktestExecutor implements INodeExecutor {
           );
       }
 
-      if (
-        barEvents.length === 0 ||
-        strategyNodes.length === 0 ||
-        entryNodeIds.length === 0
-      ) {
-        await this.portfolioFinalize(simBroker, backtestId);
-        BacktestSessionManager.getInstance().deleteSession(backtestId);
-      }
+      // if (
+      //   barEvents.length === 0 ||
+      //   strategyNodes.length === 0 ||
+      //   entryNodeIds.length === 0
+      // ) {
+      //   await this.portfolioFinalize(simBroker, backtestId);
+      //   BacktestSessionManager.getInstance().deleteSession(backtestId);
+      // }
 
       return toNodeResult(
         createSuccessOutput({

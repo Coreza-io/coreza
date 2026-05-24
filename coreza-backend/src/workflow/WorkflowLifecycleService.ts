@@ -61,6 +61,24 @@ export class WorkflowLifecycleService {
     }
   }
 
+  async deactivateAfterCompletion(
+    userId: string,
+    workflowId: string,
+  ): Promise<void> {
+    const workflow = (await this.workflowRepo.getOwnedWorkflow(
+      userId,
+      workflowId,
+      "id,user_id,nodes,edges,is_active",
+    )) as any;
+
+    if (!workflow?.is_active) {
+      return;
+    }
+
+    const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
+    await this.deactivate(workflow, trigger, userId);
+  }
+
   private async activate(
     workflow: any,
     trigger: ClassifiedTrigger,

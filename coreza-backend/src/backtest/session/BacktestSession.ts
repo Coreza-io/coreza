@@ -9,6 +9,7 @@ import { compilePlan, runBar, CompiledPlan } from "../compiled";
 import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
 import { RedisKeys } from "../../infra/redisKeys";
+import { createWorkflowLifecycleService } from "../../workflow/lifecycleServiceInstance";
 
 export interface BarEvent {
   bar: any;
@@ -891,6 +892,19 @@ export class BacktestSession {
     try {
       const backtestExecutor = new BacktestExecutor();
       await backtestExecutor.finalizeBacktestById(this.backtestId);
+
+      try {
+        const lifecycleService = createWorkflowLifecycleService();
+        await lifecycleService.deactivateAfterCompletion(
+          this.userId,
+          this.workflowId,
+        );
+      } catch (error) {
+        console.error(
+          `[BacktestSession] Auto-deactivate failed for workflow ${this.workflowId}:`,
+          error,
+        );
+      }
     } catch (error) {
       console.error(
         `[BacktestSession] Finalization failed for ${this.backtestId}:`,

@@ -60,8 +60,6 @@ import {
   Pause,
   ChevronLeft,
   ChevronRight,
-  Loader2,
-  Zap,
   Download,
   Upload,
 } from "lucide-react";
@@ -104,6 +102,7 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
+import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -839,6 +838,10 @@ const WorkflowEditorContent = () => {
     await workflowExecutor.executeAllNodes();
     setIsAutoExecuting(false);
   }, [workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady]);
+
+  const handleStopExecution = useCallback(() => {
+    workflowExecutor?.stop();
+  }, [workflowExecutor]);
 
   // Handle node double click to execute
   // Double click to execute one node only (optional: show highlight/animation)
@@ -1615,25 +1618,6 @@ const WorkflowEditorContent = () => {
           </Button>
 
           <Button
-            onClick={executeAllNodes}
-            disabled={loading || isAutoExecuting || nodes.length === 0}
-            variant="secondary"
-            className="h-10 px-4 font-medium bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 transition-all duration-200"
-          >
-            {isAutoExecuting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Executing...
-              </>
-            ) : (
-              <>
-                <Zap className="h-4 w-4 mr-2" />
-                Execute All
-              </>
-            )}
-          </Button>
-
-          <Button
             onClick={handleActivate}
             disabled={loading}
             className="h-10 px-6 font-medium bg-success hover:bg-success/90 text-success-foreground shadow-sm transition-all duration-200"
@@ -1649,7 +1633,7 @@ const WorkflowEditorContent = () => {
         // Editor View
         <div className="flex flex-1 overflow-hidden">
           {/* ReactFlow Canvas */}
-          <div className="flex-1 bg-trading-grid">
+          <div className="relative flex-1 bg-trading-grid">
             <ConnectionDragContext.Provider value={dragSource}>
               <ReactFlow
                 nodes={nodes}
@@ -1694,6 +1678,14 @@ const WorkflowEditorContent = () => {
                 <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
               </ReactFlow>
             </ConnectionDragContext.Provider>
+            <div className="pointer-events-auto absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
+              <ExecuteAllControl
+                isExecuting={isAutoExecuting}
+                disabled={loading || nodes.length === 0}
+                onExecute={executeAllNodes}
+                onStop={handleStopExecution}
+              />
+            </div>
           </div>
 
           {/* Right Sidebar - Node Palette */}

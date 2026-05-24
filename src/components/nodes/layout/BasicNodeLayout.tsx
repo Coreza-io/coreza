@@ -16,7 +16,7 @@ import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModa
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import type { BaseNodeRenderProps } from "../BaseNode";
 
-interface BasicNodeLayoutProps extends BaseNodeRenderProps {}
+type BasicNodeLayoutProps = BaseNodeRenderProps;
 
 const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,

@@ -37,7 +37,7 @@ import { buildIndicatorKey, IndicatorStateManager } from "../engine";
 import { parseBar, parsePrices, toPercent } from "../utils/barParser";
 import { formatPositionWithPnlPercent } from "../utils/portfolioHelpers";
 
-import { BacktestSessionManager } from "./session";
+import { BacktestSessionManager, MultiBarEvent } from "./session";
 
 interface DiscoveredIndicator {
   nodeId: string;
@@ -257,12 +257,13 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       const supabaseClient = supabase;
-      const { data: workflow, error: workflowLookupError } = await supabaseClient
-        .from("workflows")
-        .select("id")
-        .eq("id", workflowId)
-        .eq("user_id", userId)
-        .maybeSingle();
+      const { data: workflow, error: workflowLookupError } =
+        await supabaseClient
+          .from("workflows")
+          .select("id")
+          .eq("id", workflowId)
+          .eq("user_id", userId)
+          .maybeSingle();
 
       if (workflowLookupError) {
         return toNodeResult(
@@ -295,7 +296,7 @@ export class BacktestExecutor implements INodeExecutor {
             params.start_date || new Date().toISOString().split("T")[0],
           end_date: params.end_date || new Date().toISOString().split("T")[0],
           started_at: new Date().toISOString(),
-        })
+        } as any)
         .select("id")
         .single();
 
@@ -307,7 +308,7 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const backtestId = backtest.id;
+      const backtestId = (backtest as { id: string }).id;
       BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
@@ -632,8 +633,9 @@ export class BacktestExecutor implements INodeExecutor {
     symbols: string[],
     interval: string,
     barsBySymbol: Map<string, any[]>,
-  ) {
+  ): MultiBarEvent[] {
     const timestamps = new Set<number>();
+
     for (const bars of barsBySymbol.values()) {
       for (const bar of bars) {
         timestamps.add(bar.time as number);
@@ -643,13 +645,8 @@ export class BacktestExecutor implements INodeExecutor {
     const orderedTimestamps = [...timestamps].sort((a, b) => a - b);
     const indexes = new Map<string, number>();
     const previousBars = new Map<string, any>();
-    const events: Array<{
-      timestamp: number;
-      barIndex: number;
-      interval: string;
-      symbols: string[];
-      bars: Record<string, any>;
-    }> = [];
+
+    const events: MultiBarEvent[] = [];
 
     for (const symbol of symbols) {
       indexes.set(symbol, 0);
@@ -673,15 +670,19 @@ export class BacktestExecutor implements INodeExecutor {
         }
 
         const previousBar = previousBars.get(symbol);
+
         if (previousBar) {
-          alignedBars[symbol] = { ...previousBar, time: timestamp };
+          alignedBars[symbol] = {
+            ...previousBar,
+            time: timestamp,
+          };
           activeSymbols.push(symbol);
         }
       }
 
       if (activeSymbols.length > 0) {
         events.push({
-          timestamp,
+          timestamp: new Date(timestamp).toISOString(),
           barIndex,
           interval,
           symbols: activeSymbols,
@@ -934,7 +935,7 @@ export class BacktestExecutor implements INodeExecutor {
     const supabaseClient = supabase;
 
     // Update backtest status
-    await supabaseClient
+    await (supabaseClient as any)
       .from("backtests")
       .update({
         status: "completed",
@@ -979,7 +980,7 @@ export class BacktestExecutor implements INodeExecutor {
             ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
               trades.length
             : 0,
-      });
+      } as any);
     if (resultsError) {
       console.error(
         "[BacktestExecutor] Failed to insert backtest_results:",
@@ -1005,7 +1006,7 @@ export class BacktestExecutor implements INodeExecutor {
         portfolio_value_after: null,
       }));
 
-      const { error: tradesError } = await supabaseClient
+      const { error: tradesError } = ((await supabaseClient) as any)
         .from("backtest_trades")
         .insert(tradeRows);
       if (tradesError) {
@@ -1039,7 +1040,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       for (let i = 0; i < snapshots.length; i += 500) {
-        const { error: snapshotError } = await supabaseClient
+        const { error: snapshotError } = ((await supabaseClient) as any)
           .from("backtest_portfolio_snapshots")
           .insert(snapshots.slice(i, i + 500));
         if (snapshotError) {
@@ -1189,7 +1190,7 @@ export class BacktestExecutor implements INodeExecutor {
       ? formatPositionWithPnlPercent(position)
       : null;
     const positionCostBasis = position
-      ? Math.abs(position.avgEntryPrice * position.quantity)
+      ? Math.abs(position.avgFillPrice * position.quantity)
       : 0;
     const unrealizedPnlValue = position?.unrealizedPnl || 0;
     const realizedPnlValue = position?.realizedPnl || 0;

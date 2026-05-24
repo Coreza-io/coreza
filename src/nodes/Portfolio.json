@@ -99,31 +99,11 @@
         },
         {
           "id": "register_order_intent",
-          "name": "Register Order Intent"
-        },
-        {
-          "id": "apply_order_update",
-          "name": "Apply Order Update"
-        },
-        {
-          "id": "apply_execution",
-          "name": "Apply Execution"
+          "name": "Register Order"
         },
         {
           "id": "sync_order_event",
-          "name": "Sync Order Event"
-        },
-        {
-          "id": "reconcile_position",
-          "name": "Reconcile Position"
-        },
-        {
-          "id": "reconcile_balances",
-          "name": "Reconcile Balances"
-        },
-        {
-          "id": "cancel_order",
-          "name": "Cancel Order"
+          "name": "Sync Order Update"
         },
         {
           "id": "get_open_orders",

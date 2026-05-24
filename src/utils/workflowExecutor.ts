@@ -810,6 +810,11 @@ export class WorkflowExecutor {
 
     const runInnerQueue = async () => {
       while (queue.length) {
+        if (!this.isAutoExecuting) {
+          queue.length = 0;
+          break;
+        }
+
         const id = queue.shift()!;
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find((n) => n.id === id);
@@ -1040,12 +1045,19 @@ export class WorkflowExecutor {
       }
     };
 
+    let wasStopped = false;
+
     try {
       // Phase 1: Full DAG execution (BacktestInit → OnBar → downstream)
       await runInnerQueue();
 
       // Phase 2: Bar iteration loop (OnBar → downstream only)
       while (barState.onBarNodeId && barState.onBarHasMore) {
+        if (!this.isAutoExecuting) {
+          wasStopped = true;
+          break;
+        }
+
         const downstream = this.getDownstreamNodes(
           barState.onBarNodeId,
           new Set(),
@@ -1064,6 +1076,10 @@ export class WorkflowExecutor {
         barState.onBarHasMore = false;
 
         await runInnerQueue();
+      }
+
+      if (!this.isAutoExecuting) {
+        wasStopped = true;
       }
 
       const totalTime = performance.now() - metrics.startTime;
@@ -1088,12 +1104,19 @@ export class WorkflowExecutor {
         );
       }
 
-      this.context.toast({
-        title: "Workflow Execution Complete",
-        description: `${successCount} nodes succeeded${
-          failureCount > 0 ? `, ${failureCount} failed` : ""
-        }`,
-      });
+      if (wasStopped) {
+        this.context.toast({
+          title: "Workflow execution stopped",
+          description: `${successCount} nodes completed before stop`,
+        });
+      } else {
+        this.context.toast({
+          title: "Workflow Execution Complete",
+          description: `${successCount} nodes succeeded${
+            failureCount > 0 ? `, ${failureCount} failed` : ""
+          }`,
+        });
+      }
     } catch (err: any) {
       console.error("❌ [WORKFLOW EXECUTOR] Critical execution error:", err);
       this.context.toast({
@@ -1129,6 +1152,10 @@ export class WorkflowExecutor {
 
   setAutoExecuting(val: boolean): void {
     this.isAutoExecuting = val;
+  }
+
+  stop(): void {
+    this.setAutoExecuting(false);
   }
 
   getIsAutoExecuting(): boolean {

@@ -53,13 +53,6 @@ export type Database = {
             referencedRelation: "backtests"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "fk_backtest_portfolio_snapshots_backtest_id"
-            columns: ["backtest_id"]
-            isOneToOne: false
-            referencedRelation: "backtests"
-            referencedColumns: ["id"]
-          },
         ]
       }
       backtest_results: {
@@ -152,13 +145,6 @@ export type Database = {
             referencedRelation: "backtests"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "fk_backtest_results_backtest_id"
-            columns: ["backtest_id"]
-            isOneToOne: false
-            referencedRelation: "backtests"
-            referencedColumns: ["id"]
-          },
         ]
       }
       backtest_trades: {
@@ -230,13 +216,6 @@ export type Database = {
             referencedRelation: "backtests"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "fk_backtest_trades_backtest_id"
-            columns: ["backtest_id"]
-            isOneToOne: false
-            referencedRelation: "backtests"
-            referencedColumns: ["id"]
-          },
         ]
       }
       backtests: {
@@ -297,13 +276,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "backtests_workflow_id_fkey"
-            columns: ["workflow_id"]
-            isOneToOne: false
-            referencedRelation: "workflows"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fk_backtests_workflow_id"
             columns: ["workflow_id"]
             isOneToOne: false
             referencedRelation: "workflows"

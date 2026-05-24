@@ -647,3 +647,24 @@
 .plug-edge--connection {
   cursor: crosshair !important;
 }
+
+/* Dark mode React Flow controls legibility fix */
+.dark .react-flow__controls {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: none;
+}
+
+.dark .react-flow__controls-button {
+  background: transparent;
+  border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.dark .react-flow__controls-button:hover {
+  background: hsl(var(--muted));
+}
+
+.dark .react-flow__controls-button svg {
+  fill: currentColor;
+}

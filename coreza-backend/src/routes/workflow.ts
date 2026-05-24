@@ -2,14 +2,12 @@ import express, { Request } from "express";
 import { z } from "zod";
 import { createError } from "../middleware/errorHandler";
 import { requireAuth } from "../middleware/jwtAuth";
-import { BacktestLifecycleAdapter } from "../backtest";
 import { WorkflowExecutionService } from "../workflow/WorkflowExecutionService";
-import { WorkflowLifecycleService } from "../workflow/WorkflowLifecycleService";
 import { WorkflowQueryService } from "../workflow/WorkflowQueryService";
 import { WorkflowRepository } from "../workflow/WorkflowRepository";
 import { WorkflowRunRepository } from "../workflow/WorkflowRunRepository";
 import { SchedulerLifecycleAdapter } from "../workflow/SchedulerLifecycleAdapter";
-import { StreamingLifecycleAdapter } from "../workflow/StreamingLifecycleAdapter";
+import { createWorkflowLifecycleService } from "../workflow/lifecycleServiceInstance";
 import {
   createWorkflowSchema,
   executeWorkflowSchema,
@@ -19,17 +17,8 @@ import {
 
 const workflowRepo = new WorkflowRepository();
 const runRepo = new WorkflowRunRepository();
-const streaming = new StreamingLifecycleAdapter();
 const scheduler = new SchedulerLifecycleAdapter();
-const backtestAdapter = new BacktestLifecycleAdapter();
-
-const lifecycleService = new WorkflowLifecycleService(
-  workflowRepo,
-  runRepo,
-  streaming,
-  scheduler,
-  backtestAdapter,
-);
+const lifecycleService = createWorkflowLifecycleService();
 const executionService = new WorkflowExecutionService(workflowRepo, runRepo);
 const queryService = new WorkflowQueryService(workflowRepo, runRepo, scheduler);
 

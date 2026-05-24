@@ -56,7 +56,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Save,
-  Play,
   Pause,
   ChevronLeft,
   ChevronRight,
@@ -103,6 +102,7 @@ import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
+import { ActivateControl } from "@/components/workflow/ActivateControl";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -946,6 +946,47 @@ const WorkflowEditorContent = () => {
     }
   };
 
+  useEffect(() => {
+    if (!workflowId) return;
+
+    const channel = supabase
+      .channel(`workflow-active-${workflowId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "workflows",
+          filter: `id=eq.${workflowId}`,
+        },
+        (payload) => {
+          if (
+            typeof payload.new !== "object" ||
+            payload.new === null ||
+            !("is_active" in payload.new)
+          ) {
+            return;
+          }
+
+          const next = Boolean(payload.new.is_active);
+          setIsActive((prev) => {
+            if (prev && !next) {
+              toast({
+                title: "Workflow completed",
+                description: "Backtest finished — workflow auto-deactivated.",
+              });
+            }
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [workflowId, toast]);
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
@@ -1617,14 +1658,11 @@ const WorkflowEditorContent = () => {
             {persistSaving ? "Saving..." : "Save"}
           </Button>
 
-          <Button
-            onClick={handleActivate}
-            disabled={loading}
-            className="h-10 px-6 font-medium bg-success hover:bg-success/90 text-success-foreground shadow-sm transition-all duration-200"
-          >
-            <Play className="h-4 w-4 mr-2" />
-            {isActive ? "Deactivate" : "Activate"}
-          </Button>
+          <ActivateControl
+            isActive={isActive}
+            loading={loading}
+            onToggle={handleActivate}
+          />
         </div>
       </div>
 

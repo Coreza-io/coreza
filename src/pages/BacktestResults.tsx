@@ -28,32 +28,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export type BacktestResultsMode = "backtest" | "live";
 
-const DAY_MS = 86_400_000;
+const FLAT_EQUITY_EPSILON = 1e-6;
 
-const getDailyReturnsCount = (snapshots: Array<{ date: string; total_value: number }>): number => {
-  if (snapshots.length < 2) return 0;
+const isFlatEquityCurve = (snapshots: Array<{ total_value: number }>): boolean => {
+  if (snapshots.length < 2) return false;
 
-  const dailyCloses: number[] = [];
-  let currentDay = Math.floor(new Date(snapshots[0].date).getTime() / DAY_MS);
-  let lastEquityOfDay = snapshots[0].total_value;
+  let minEquity = snapshots[0].total_value;
+  let maxEquity = snapshots[0].total_value;
 
   for (let i = 1; i < snapshots.length; i++) {
-    const day = Math.floor(new Date(snapshots[i].date).getTime() / DAY_MS);
-    if (day !== currentDay) {
-      dailyCloses.push(lastEquityOfDay);
-      currentDay = day;
-    }
-    lastEquityOfDay = snapshots[i].total_value;
+    const totalValue = snapshots[i].total_value;
+    if (totalValue < minEquity) minEquity = totalValue;
+    if (totalValue > maxEquity) maxEquity = totalValue;
   }
 
-  dailyCloses.push(lastEquityOfDay);
-
-  let returnsCount = 0;
-  for (let i = 1; i < dailyCloses.length; i++) {
-    if (dailyCloses[i - 1] > 0) returnsCount += 1;
-  }
-
-  return returnsCount;
+  return maxEquity - minEquity < FLAT_EQUITY_EPSILON;
 };
 
 const statusVariants: Record<
@@ -135,9 +124,14 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     );
   };
 
-  const dailyReturnsCount = getDailyReturnsCount(snapshots);
-  const showSharpeInsufficientData = metrics?.sharpe_ratio === 0 && dailyReturnsCount < 30;
-  const showSortinoInsufficientData = metrics?.sortino_ratio === 0 && dailyReturnsCount < 30;
+  const dailyCount = snapshots.length;
+  const isFlatEquity = isFlatEquityCurve(snapshots);
+  const showSharpeInsufficientData =
+    (metrics?.sharpe_ratio === 0 || metrics?.sharpe_ratio == null) &&
+    (dailyCount < 30 || isFlatEquity);
+  const showSortinoInsufficientData =
+    (metrics?.sortino_ratio === 0 || metrics?.sortino_ratio == null) &&
+    (dailyCount < 30 || isFlatEquity);
 
   const metricCards = [
     {
@@ -154,7 +148,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     },
     {
       label: "Sharpe Ratio",
-      value: metrics?.sharpe_ratio,
+      value: showSharpeInsufficientData ? undefined : metrics?.sharpe_ratio,
       format: "number" as const,
     },
     { label: "Win Rate", value: metrics?.win_rate, format: "percent" as const },

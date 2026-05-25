@@ -891,17 +891,24 @@ export class SimBroker {
 
   private calculateSharpeRatio(
     returns: number[],
-    riskFreeRate: number = 0.02,
+    riskFreeRate: number = 0,
   ): number {
     if (returns.length < 30) return 0;
 
-    const dailyRf = Math.pow(1 + riskFreeRate, 1 / 252) - 1;
-    const excessReturns = returns.map((r) => r - dailyRf);
-    const avgExcessReturn =
-      excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
-    const stdDev = this.standardDeviation(excessReturns);
+    const dailyRf = riskFreeRate === 0 ? 0 : Math.pow(1 + riskFreeRate, 1 / 252) - 1;
+    const excessReturns = new Array<number>(returns.length);
+    let sum = 0;
 
-    if (stdDev === 0) return 0;
+    for (let i = 0; i < returns.length; i++) {
+      const excessReturn = returns[i] - dailyRf;
+      excessReturns[i] = excessReturn;
+      sum += excessReturn;
+    }
+
+    const avgExcessReturn = sum / excessReturns.length;
+    const stdDev = this.standardDeviation(excessReturns);
+    const EPSILON = 1e-8;
+    if (stdDev < EPSILON) return 0;
 
     // Annualize
     return (avgExcessReturn / stdDev) * Math.sqrt(252);
@@ -909,25 +916,36 @@ export class SimBroker {
 
   private calculateSortinoRatio(
     returns: number[],
-    riskFreeRate: number = 0.02,
+    riskFreeRate: number = 0,
   ): number {
     if (returns.length < 30) return 0;
 
-    const dailyRf = Math.pow(1 + riskFreeRate, 1 / 252) - 1;
-    const excessReturns = returns.map((r) => r - dailyRf);
-    const avgExcessReturn =
-      excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
+    const dailyRf = riskFreeRate === 0 ? 0 : Math.pow(1 + riskFreeRate, 1 / 252) - 1;
+    const excessReturns = new Array<number>(returns.length);
+    let sum = 0;
+
+    for (let i = 0; i < returns.length; i++) {
+      const excessReturn = returns[i] - dailyRf;
+      excessReturns[i] = excessReturn;
+      sum += excessReturn;
+    }
+
+    const avgExcessReturn = sum / excessReturns.length;
 
     // Downside deviation (only negative returns)
-    const negativeReturns = excessReturns.filter((r) => r < 0);
+    const negativeReturns: number[] = [];
+    for (let i = 0; i < excessReturns.length; i++) {
+      if (excessReturns[i] < 0) negativeReturns.push(excessReturns[i]);
+    }
     if (negativeReturns.length === 0) return avgExcessReturn > 0 ? Infinity : 0;
 
     const downsideDeviation = Math.sqrt(
-      negativeReturns.reduce((sum, r) => sum + r * r, 0) /
+      negativeReturns.reduce((downsideSum, r) => downsideSum + r * r, 0) /
         negativeReturns.length,
     );
 
-    if (downsideDeviation === 0) return 0;
+    const EPSILON = 1e-8;
+    if (downsideDeviation < EPSILON) return 0;
 
     // Annualize
     return (avgExcessReturn / downsideDeviation) * Math.sqrt(252);

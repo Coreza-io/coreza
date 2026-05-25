@@ -708,11 +708,6 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
               <span className="text-sm text-foreground">{field.label}</span>
-              {field.description && shouldShowDescription && (
-                <span className="text-xs text-muted-foreground">
-                  {field.description}
-                </span>
-              )}
             </div>
             <Switch
               checked={

@@ -1,78 +1,54 @@
-## Re-confirmed against attached guide (v2)
-The second PDF is identical to the first. The existing plan already covers every section: §3 target colors, §4 file responsibilities, §5 full `NodeVisualTheme` token shape, §6 exact-name resolver, §7 BaseNode integration, §8 NodeWrapper background/border/glow + CSS variables, §9 two glass reflection overlays, §10 AI yellow `A` badge + category iconModes, §11 edge tuning (Option B with `sourceTheme.edgeColor` + glow), §12 circular ports using `--node-border-color`/`--node-glow-color`, §13 step order, §14 QA checklist.
+## Goal
 
-No additions required — proceeding with the previously approved plan below.
+Apply the selected **"Glass obsidian"** direction to the form fields rendered inside expanded node cards (Volume Oscillator screenshot is the reference), and remove the muted helper paragraphs that appear under every field. Light mode stays exactly as it is today.
 
----
+## Design tokens (copied verbatim from the selected prototype)
 
-## Step 1 — `src/components/nodes/constants/nodeVisualThemes.ts` (new)
-Exact token shape from the doc:
+| Slot | Class chain |
+|------|-------------|
+| Input / select / textarea surface | `dark:bg-white/[0.03] dark:border-white/10 dark:text-blue-100 dark:placeholder-white/20` |
+| Number / select text color | `dark:text-white` (overrides `text-blue-100` for these two field types) |
+| Radius + padding | `rounded-xl px-3 py-2.5` |
+| Focus state | `focus:outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all duration-200` |
+| Field label | `text-[11px] font-bold uppercase tracking-wider text-slate-400` (dark only — light keeps current `<Label>`) |
+| Expression-style text inputs (`text` / `string` types whose value is a `{{ }}` reference) | add `font-mono text-xs truncate` |
+| Select dropdown chevron | absolute right-3 icon, `text-white/30` in dark |
+
+All classes are gated with the `dark:` prefix so the light theme renders identically to today.
+
+## Files to change
+
+Single file: `src/components/nodes/layout/components/NodeFieldRenderer.tsx`.
+
+### Step 1 — Remove in-node field descriptions
+- In the final `<FieldWrapper>` (≈ lines 840–857) pass `description={undefined}` unconditionally. The `field.description` prop is still consumed elsewhere (docs panel, AI tooling), so leave the schema field alone.
+- In the `toggle` branch (≈ lines 696–715) delete the `{field.description && shouldShowDescription && (...)}` block. Keep the label and switch.
+
+### Step 2 — Centralise the glass-input class chain
+Add a single constant near the top of `renderField()`:
 ```ts
-export type NodeVisualCategory = "action" | "utility" | "indicator" | "logic" | "output";
-export interface NodeVisualTheme {
-  neon: string; border: string; glow: string; background: string;
-  titleColor: string;
-  iconMode: "ai-badge" | "toolbox" | "indicator" | "branch" | "chart";
-  edgeColor: string;
-}
+const glassInput =
+  "dark:bg-white/[0.03] dark:border-white/10 dark:text-blue-100 " +
+  "dark:placeholder:text-white/20 dark:focus:border-blue-500/50 " +
+  "dark:focus:ring-4 dark:focus:ring-blue-500/10 transition-all duration-200 " +
+  "rounded-xl";
 ```
-Use the document’s exact hex values for action/utility/indicator/logic/output (purple/teal/cobalt/amber/maroon).
+Then thread it through:
+- `commonInputProps.className` becomes `cn("nodrag", glassInput, isReference && "font-mono text-xs truncate")`. This catches the `text` / `string` / `number` / `password` `<Input>` at line 404 and the `<textarea>` at line 427.
+- `<textarea>` className: drop the existing hard-coded `border border-input bg-background text-foreground placeholder:text-muted-foreground` chain and reuse `cn("w-full p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none", glassInput)`.
+- `<SelectTrigger className="w-full">` (line 381) → `cn("w-full nodrag", glassInput, "dark:text-white")`.
+- `<SelectContent>` → add `className="dark:bg-popover dark:border-white/10"` so the open dropdown stays on a dark surface when it portals out.
+- Webhook URL `<Input>` (line 340) keeps `bg-muted` for the read-only feel but also gets `dark:bg-white/[0.05] dark:border-white/10 dark:text-blue-100 rounded-xl`.
 
-## Step 2 — `resolveNodeVisualCategory.ts` (new)
-Exact node-name mapping first (Buy/Sell/Place Order/getBrokerBalance/getBrokerPosition/Alpaca/AlpacaStreamListener → action; getPortfolio/createPortfolio/updatePortfolioValue/getPosition/getOpenOrders/Register Buy Order/Register Sell Order/Asset Registry → utility; RSI/EMA/Bollinger Bands/Volume Oscillator → indicator; underValued/If Undervalued/noPosition/noOpenOrder/isLongPosition/portfolioNotExist/switch → logic; Visualize/Performance → output), then broad-category fallback per §6.
+### Step 3 — Tighten the label style in dark mode
+`FieldWrapper` already renders `<Label>` from shadcn. Inside `NodeFieldRenderer`, wrap the label string passed into `<FieldWrapper>` with a span carrying `dark:text-slate-400 dark:font-bold dark:uppercase dark:tracking-wider dark:text-[11px]`. Light mode keeps the default Label styling because every class is `dark:`-prefixed.
 
-## Step 3 — `BaseNode.tsx`
-Resolve `visualCategory` + `nodeTheme`, expose both on render props, keep `neonColor = nodeTheme.neon` for back-compat.
+### Step 4 — Visual QA
+- Volume Oscillator node in dark mode → inputs are translucent (`white/[0.03]`) with thin borders, labels are tiny uppercase slate, expression fields render in mono, dropdown opens onto a dark popover, no helper paragraphs anywhere.
+- Toggle to light mode → fields look identical to current production (white inputs, normal labels), proving every override is `dark:`-scoped.
+- Other node types (EMA, RollingWindow, AlpacaOrder) inherit the same treatment because the renderer is shared.
 
-## Step 4 — `NodeRouter.tsx`
-Pass `nodeTheme={renderProps.nodeTheme}` and `category={renderProps.visualCategory}` to NodeWrapper.
-
-## Step 5 — `NodeWrapper.tsx`
-Dark-mode card style sourced entirely from `nodeTheme`:
-- CSS vars: `--node-neon-color`, `--node-border-color`, `--node-glow-color`, `--node-title-color`
-- `background: theme.background`
-- `border: 1.5px solid ${theme.border}`
-- `boxShadow`: inner highlight + inner shadow + outer rim + 18px + 46px glow rings
-- `selected` → `brightness(1.16)` only (no blue ring)
-
-## Step 6 — Two glass reflection overlays in `NodeWrapper`
-Inside `<Card>`, before handles/content, dark-mode only:
-1. Diagonal: `linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 18%, transparent 44%)`, `mix-blend-mode: screen`, opacity 0.7
-2. Top radial: `radial-gradient(circle at 50% -20%, rgba(255,255,255,0.10), transparent 42%)`
-Both `pointer-events-none`, `absolute inset-0 rounded-lg`. Ensure handles/content z-index sits above.
-
-## Step 7 — `BasicNodeLayout.tsx` icon modes
-- `iconMode === "ai-badge"`: yellow rounded-square tile with bold black `A`, soft yellow glow
-- Other modes: glass tile using `color-mix(in srgb, var(--node-neon-color) 12%, transparent)` background, `var(--node-border-color)` ring, `var(--node-glow-color)` shadow
-- Title uses `var(--node-title-color, #fff)` in dark mode (white, not neon)
-
-Collapsed view (`NodeWrapper.tsx`): big icon + white bold title + 2-line description, matching reference card.
-
-## Step 8 — `EdgeManager.tsx` (doc Option B)
-Replace `CATEGORY_NEON_COLORS` lookup with resolver:
-```ts
-const sourceTheme = NODE_VISUAL_THEMES[resolveNodeVisualCategory(sourceDef)];
-const cordColor = sourceTheme.edgeColor ?? "#22d3ee";
-const glowColor = sourceTheme.glow;
-```
-Cord 2px, glow 10–12px @ ~0.5 opacity, endpoint dots in `cordColor`, branch labels light/readable.
-
-## Step 9 — `index.css` port styling
-Dark `.plug-handle::after` uses:
-```css
-border-color: var(--node-border-color);
-box-shadow: 0 0 10px var(--node-glow-color);
-background: var(--node-neon-color);
-```
-
-## Step 10 — Light mode untouched
-All theme-driven styling gated on `isDarkMode`.
-
-## Step 11 — QA checklist (from doc §14)
-Per-category body gradients distinct; AI nodes show yellow `A`; utility teal; indicator cobalt; logic amber; output maroon; selected/executing don’t overpower; collapsed + expanded both show glass/reflection; edges connect cleanly; light mode unaffected.
-
-## Files
-- new: `src/components/nodes/constants/nodeVisualThemes.ts`
-- new: `src/components/nodes/constants/resolveNodeVisualCategory.ts`
-- modify: `src/components/nodes/BaseNode.tsx`, `NodeRouter.tsx`, `src/utils/NodeWrapper.tsx`, `src/components/nodes/layout/BasicNodeLayout.tsx`, `src/components/workflow/EdgeManager.tsx`, `src/index.css`
-- `src/components/nodes/constants/neonColors.ts` kept only as a thin re-export wrapper for any remaining callers.
+## Out of scope
+- Node card header, neon border, handles, gradient body, and Run button — untouched.
+- `FieldWrapper.tsx`, `Input.tsx`, `Select.tsx`, and `index.css` tokens — untouched.
+- No backend, schema, or memory changes.

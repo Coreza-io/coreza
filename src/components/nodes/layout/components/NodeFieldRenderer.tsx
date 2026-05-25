@@ -1,5 +1,15 @@
 import React from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/lib/utils";
+
+const glassInput =
+  "rounded-xl transition-all duration-200 " +
+  "dark:bg-white/[0.03] dark:border-white/10 dark:text-blue-100 " +
+  "dark:placeholder:text-white/20 dark:focus-visible:border-blue-500/50 " +
+  "dark:focus-visible:ring-4 dark:focus-visible:ring-blue-500/10";
+
+const glassLabelClass =
+  "dark:text-[11px] dark:font-bold dark:uppercase dark:tracking-wider dark:text-slate-400";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -210,7 +220,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(field.key, e.target.value),
     placeholder: field.placeholder,
-    className: "nodrag",
+    className: cn("nodrag", glassInput, isReference && "font-mono text-xs truncate"),
     style: isReference ? referenceStyle : undefined,
     onClick: handleInputClick,
     onFocus: handleInputFocus,
@@ -340,7 +350,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               <Input
                 value={webhookUrl}
                 readOnly
-                className="text-xs font-mono bg-muted"
+                className={cn("text-xs font-mono bg-muted rounded-xl", "dark:bg-white/[0.05] dark:border-white/10 dark:text-blue-100")}
               />
               <Button
                 size="sm"
@@ -378,12 +388,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               onValueChange={(val) => onChange(field.key, val)}
               disabled={readOnly}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className={cn("w-full nodrag", glassInput, "dark:text-white")}>
                 <SelectValue
                   placeholder={field.placeholder || "Select option"}
                 />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="dark:bg-popover dark:border-white/10">
                 {optionList.map((opt: any) => (
                   <SelectItem key={opt.value ?? opt.label} value={opt.value}>
                     {opt.label ?? opt.value}
@@ -426,7 +436,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           >
             <textarea
               {...commonInputProps}
-              className="w-full border border-input bg-background text-foreground placeholder:text-muted-foreground rounded p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={cn("w-full border border-input bg-background text-foreground placeholder:text-muted-foreground p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", glassInput)}
             />
             {renderPreviewCard()}
           </div>
@@ -698,11 +708,6 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col">
               <span className="text-sm text-foreground">{field.label}</span>
-              {field.description && shouldShowDescription && (
-                <span className="text-xs text-muted-foreground">
-                  {field.description}
-                </span>
-              )}
             </div>
             <Switch
               checked={
@@ -840,18 +845,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     <FieldWrapper
       key={field.key}
       label={
-        field.type === "checkbox" || field.type === "toggle"
-          ? undefined
-          : displayLabel
+        field.type === "checkbox" || field.type === "toggle" ? undefined : (
+          <span className={glassLabelClass}>{displayLabel}</span>
+        )
       }
       hideLabel={field.type === "checkbox" || field.type === "toggle"}
-      description={
-        field.type === "checkbox" || field.type === "toggle"
-          ? undefined
-          : shouldShowDescription
-            ? field.description
-            : undefined
-      }
+      description={undefined}
     >
       {renderField()}
     </FieldWrapper>

@@ -1,54 +1,113 @@
-## Goal
+## Three follow-up fixes
 
-Apply the selected **"Glass obsidian"** direction to the form fields rendered inside expanded node cards (Volume Oscillator screenshot is the reference), and remove the muted helper paragraphs that appear under every field. Light mode stays exactly as it is today.
+The "Glass obsidian" pass landed for basic-node inputs, but three real issues remain in the user's preview:
 
-## Design tokens (copied verbatim from the selected prototype)
+1. **Short Period / Long Period stack vertically** — the chosen prototype paired them in a `grid grid-cols-2`. Our renderer maps fields one-by-one with no pairing concept.
+2. **Field text invisible (white on white)** — the value text shows up but the input surface stays white/light. Root cause: shadcn's `<Input>` carries `bg-background` and the existing `useNodeReferences.ts` injects an **inline** `style={{ backgroundColor: "hsl(var(--muted))" }}` for any `{{ }}` reference field. Inline style beats every Tailwind class, so `dark:bg-white/[0.03]` never wins for the most common case (reference inputs). Number inputs like "12" then also look mismatched because the same fields sit beside the white reference inputs.
+3. **If / Switch (RepeaterNodeLayout) ignored** — it routes its inner fields through `NodeFieldRenderer` (good) but the surrounding chrome — `bg-muted/10` row wrappers, the inline `AND/OR` `<SelectTrigger>`, the dashed `<hr>` — are hand-rolled JSX that never received the dark-mode treatment.
 
-| Slot | Class chain |
-|------|-------------|
-| Input / select / textarea surface | `dark:bg-white/[0.03] dark:border-white/10 dark:text-blue-100 dark:placeholder-white/20` |
-| Number / select text color | `dark:text-white` (overrides `text-blue-100` for these two field types) |
-| Radius + padding | `rounded-xl px-3 py-2.5` |
-| Focus state | `focus:outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all duration-200` |
-| Field label | `text-[11px] font-bold uppercase tracking-wider text-slate-400` (dark only — light keeps current `<Label>`) |
-| Expression-style text inputs (`text` / `string` types whose value is a `{{ }}` reference) | add `font-mono text-xs truncate` |
-| Select dropdown chevron | absolute right-3 icon, `text-white/30` in dark |
+## Root-cause shift
 
-All classes are gated with the `dark:` prefix so the light theme renders identically to today.
+Instead of gating styling on the global `dark:` selector (fragile — inline `referenceStyle`, light-mode users with dark node bodies, and Repeater chrome all break it), tie it to the node card itself.
 
-## Files to change
+`NodeWrapper.tsx` already knows whether the card is rendered with the dark gradient (`isDarkMode`). Add `data-node-surface="dark"` to the `<Card>` when the dark gradient applies. Then write a small set of CSS rules in `src/index.css` scoped to `[data-node-surface="dark"] …` that always win — no `dark:` prefix needed, and they target inputs inside the card regardless of whether their value came from inline `style` (we'll specifically zero the `referenceStyle.backgroundColor` so the CSS rule wins).
 
-Single file: `src/components/nodes/layout/components/NodeFieldRenderer.tsx`.
+## Plan
 
-### Step 1 — Remove in-node field descriptions
-- In the final `<FieldWrapper>` (≈ lines 840–857) pass `description={undefined}` unconditionally. The `field.description` prop is still consumed elsewhere (docs panel, AI tooling), so leave the schema field alone.
-- In the `toggle` branch (≈ lines 696–715) delete the `{field.description && shouldShowDescription && (...)}` block. Keep the label and switch.
+### Step 1 — Mark the dark node surface
+`src/utils/NodeWrapper.tsx`
+- On the `<Card>` (line ≈312), add `data-node-surface={isDarkMode ? "dark" : "light"}`. No visual change yet.
 
-### Step 2 — Centralise the glass-input class chain
-Add a single constant near the top of `renderField()`:
-```ts
-const glassInput =
-  "dark:bg-white/[0.03] dark:border-white/10 dark:text-blue-100 " +
-  "dark:placeholder:text-white/20 dark:focus:border-blue-500/50 " +
-  "dark:focus:ring-4 dark:focus:ring-blue-500/10 transition-all duration-200 " +
-  "rounded-xl";
+### Step 2 — Move glass styling to scoped CSS
+`src/index.css` — append a new block:
+```css
+[data-node-surface="dark"] input,
+[data-node-surface="dark"] textarea,
+[data-node-surface="dark"] [data-slot="select-trigger"],
+[data-node-surface="dark"] button[role="combobox"] {
+  background-color: hsl(224 18% 14%) !important;
+  border-color: hsl(0 0% 100% / 0.10) !important;
+  color: hsl(210 40% 96%) !important;
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+}
+[data-node-surface="dark"] input::placeholder,
+[data-node-surface="dark"] textarea::placeholder {
+  color: hsl(0 0% 100% / 0.25);
+}
+[data-node-surface="dark"] input:focus-visible,
+[data-node-surface="dark"] textarea:focus-visible,
+[data-node-surface="dark"] [data-slot="select-trigger"]:focus-visible {
+  border-color: hsl(217 91% 60% / 0.55) !important;
+  box-shadow: 0 0 0 4px hsl(217 91% 60% / 0.12);
+  outline: none;
+}
+[data-node-surface="dark"] label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(215 16% 65%);
+}
+/* Reference-field tint (drag-and-drop expression chip) */
+[data-node-surface="dark"] input[data-is-reference="true"],
+[data-node-surface="dark"] textarea[data-is-reference="true"] {
+  background-color: hsl(224 18% 18%) !important;
+  border-bottom: 1px dashed hsl(217 91% 60%) !important;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+}
 ```
-Then thread it through:
-- `commonInputProps.className` becomes `cn("nodrag", glassInput, isReference && "font-mono text-xs truncate")`. This catches the `text` / `string` / `number` / `password` `<Input>` at line 404 and the `<textarea>` at line 427.
-- `<textarea>` className: drop the existing hard-coded `border border-input bg-background text-foreground placeholder:text-muted-foreground` chain and reuse `cn("w-full p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none", glassInput)`.
-- `<SelectTrigger className="w-full">` (line 381) → `cn("w-full nodrag", glassInput, "dark:text-white")`.
-- `<SelectContent>` → add `className="dark:bg-popover dark:border-white/10"` so the open dropdown stays on a dark surface when it portals out.
-- Webhook URL `<Input>` (line 340) keeps `bg-muted` for the read-only feel but also gets `dark:bg-white/[0.05] dark:border-white/10 dark:text-blue-100 rounded-xl`.
+`!important` is intentional and necessary to beat inline `style` set elsewhere.
 
-### Step 3 — Tighten the label style in dark mode
-`FieldWrapper` already renders `<Label>` from shadcn. Inside `NodeFieldRenderer`, wrap the label string passed into `<FieldWrapper>` with a span carrying `dark:text-slate-400 dark:font-bold dark:uppercase dark:tracking-wider dark:text-[11px]`. Light mode keeps the default Label styling because every class is `dark:`-prefixed.
+### Step 3 — Stop fighting with inline `referenceStyle`
+`src/hooks/useNodeReferences.ts`
+- Replace the inline `backgroundColor` / `borderBottom` with nothing — return `referenceStyle = {}` so the new CSS rules take over. Keep the prop signature unchanged for backward compat.
 
-### Step 4 — Visual QA
-- Volume Oscillator node in dark mode → inputs are translucent (`white/[0.03]`) with thin borders, labels are tiny uppercase slate, expression fields render in mono, dropdown opens onto a dark popover, no helper paragraphs anywhere.
-- Toggle to light mode → fields look identical to current production (white inputs, normal labels), proving every override is `dark:`-scoped.
-- Other node types (EMA, RollingWindow, AlpacaOrder) inherit the same treatment because the renderer is shared.
+`src/components/nodes/layout/components/NodeFieldRenderer.tsx`
+- On the `<Input>` and `<textarea>` add `data-is-reference={isReference || undefined}` so the CSS rule above can target them precisely.
+- Remove the now-redundant `dark:` class chain (`glassInput`, `glassLabelClass`, the `cn(...)` wraps on Input/textarea/SelectTrigger/SelectContent/webhook input/label span). Restore the simpler classNames; the new CSS layer handles theming.
 
-## Out of scope
-- Node card header, neon border, handles, gradient body, and Run button — untouched.
-- `FieldWrapper.tsx`, `Input.tsx`, `Select.tsx`, and `index.css` tokens — untouched.
-- No backend, schema, or memory changes.
+### Step 4 — Side-by-side field pairing
+Schema convention: add `width: "half"` to field defs that should sit on a half-row.
+
+- `src/nodes/VolumeOscillator.json` — add `"width": "half"` to `short_period` and `long_period`.
+- `src/nodes/schemas/nodeSchema.ts` — add optional `width: z.enum(["full","half"]).optional()` to the field schema.
+
+`src/components/nodes/layout/BasicNodeLayout.tsx` (line 120 map)
+- Replace the flat `.map((f) => <NodeFieldRenderer …/>)` with a small grouping pass that collects consecutive `width === "half"` fields and wraps each pair in `<div className="grid grid-cols-2 gap-3">`. Pseudocode:
+  ```ts
+  const groups = [];
+  let buffer = [];
+  for (const f of definition.fields ?? []) {
+    if (f.width === "half") { buffer.push(f); if (buffer.length === 2) { groups.push({type:"row", fields: buffer}); buffer = []; } }
+    else { if (buffer.length) { groups.push({type:"row", fields: buffer}); buffer = []; } groups.push({type:"single", field: f}); }
+  }
+  if (buffer.length) groups.push({type:"row", fields: buffer});
+  ```
+- Render each `row` group inside a grid wrapper.
+
+### Step 5 — Bring RepeaterNodeLayout chrome under the same roof
+`src/components/nodes/layout/RepeaterNodeLayout.tsx`
+- The inner fields already route through `NodeFieldRenderer`, so they inherit the new CSS automatically.
+- For hand-rolled chrome:
+  - Row container (lines 680, 792, 912): change `bg-muted/10` → `bg-white/[0.03] border-white/10` (these classes resolve correctly because the parent `[data-node-surface="dark"]` keeps everything readable; light mode keeps `bg-muted/10`-equivalent via a `light:` companion if needed — but since these wrappers render inside the dark card, scope it with `[data-node-surface='dark']`-friendly classes).
+  - The inline `<SelectTrigger className="w-20 h-8 text-xs">` for AND/OR (line 668) and any other inline trigger pick up the CSS rule from Step 2 automatically (they're `<button data-slot="select-trigger">`).
+  - The `<hr className="flex-1 border-t" />` (line 676): change to `border-white/10`.
+
+### Step 6 — QA
+- Open Volume Oscillator in dark mode: text values are readable (light slate-200 on `#1f2540`-ish surface), Short / Long Period sit side-by-side, labels are tiny uppercase slate, reference inputs show the mono dashed-underline treatment.
+- Open If or Switch: AND/OR pill, condition rows, and inputs all read against the dark card the same way.
+- Switch to light mode: `data-node-surface="light"` so the CSS block from Step 2 doesn't fire, light theme renders exactly as before.
+
+## Files touched
+- `src/utils/NodeWrapper.tsx` — add `data-node-surface` attr (1 line).
+- `src/index.css` — append scoped CSS block (~40 lines).
+- `src/hooks/useNodeReferences.ts` — empty `referenceStyle` object.
+- `src/components/nodes/layout/components/NodeFieldRenderer.tsx` — strip the `dark:`/`glassInput`/`glassLabelClass` layer, add `data-is-reference` attr.
+- `src/components/nodes/layout/BasicNodeLayout.tsx` — half-width grouping.
+- `src/components/nodes/layout/RepeaterNodeLayout.tsx` — recolour hand-rolled chrome (`bg-muted/10`, `<hr>`).
+- `src/nodes/VolumeOscillator.json` — add `width: "half"` to short/long period.
+- `src/nodes/schemas/nodeSchema.ts` — allow optional `width` enum.
+
+No backend, no DB, no migrations.

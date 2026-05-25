@@ -673,11 +673,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             <SelectItem value="OR">OR</SelectItem>
                           </SelectContent>
                         </Select>
-                        <hr className="flex-1 border-t" />
+                        <hr className="flex-1 border-t border-white/10" />
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-muted/10">
+                    <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-white/[0.03] border-white/10">
                       {leftField && (
                         <NodeFieldRenderer
                           field={leftField}
@@ -789,7 +789,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               overlays.map((overlayRow: any, rowIndex: number) => (
                 <div
                   key={overlayRow?.id || rowIndex}
-                  className="space-y-2 p-2 border rounded bg-muted/10"
+                  className="space-y-2 p-2 border rounded bg-white/[0.03] border-white/10"
                 >
                   {repeaterField.subFields?.map((subField: any) => (
                     <NodeFieldRenderer
@@ -909,7 +909,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
               return (
                 <div key={i} className="space-y-2">
-                  <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-muted/10">
+                  <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-white/[0.03] border-white/10">
                     {leftField && (
                       <NodeFieldRenderer
                         field={leftField}

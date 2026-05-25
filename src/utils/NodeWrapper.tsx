@@ -310,6 +310,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
       {/* Main Node Card */}
       <Card
+        data-node-surface={isDarkMode ? "dark" : "light"}
         className={`
           relative transition-all duration-300 ease-in-out 
           ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}

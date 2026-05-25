@@ -350,7 +350,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               <Input
                 value={webhookUrl}
                 readOnly
-                className="text-xs font-mono bg-muted"
+                className={cn("text-xs font-mono bg-muted rounded-xl", "dark:bg-white/[0.05] dark:border-white/10 dark:text-blue-100")}
               />
               <Button
                 size="sm"

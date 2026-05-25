@@ -399,21 +399,22 @@ export class SimBroker {
 
   recordEquitySnapshot(timestamp: string | number): void {
     const positionsValue = this.positionsValue;
-    const totalEquity = this.state.cash + positionsValue;
+    const currentEquity = this.state.cash + positionsValue;
 
-    if (totalEquity > this.state.peakEquity) {
-      this.state.peakEquity = totalEquity;
+    if (currentEquity > this.state.peakEquity) {
+      this.state.peakEquity = currentEquity;
     }
     const drawdownPct =
       this.state.peakEquity > 0
-        ? ((this.state.peakEquity - totalEquity) / this.state.peakEquity) * 100
+        ? ((this.state.peakEquity - currentEquity) / this.state.peakEquity) *
+          100
         : 0;
 
     this.recordEquityPoint(
       timestamp,
       this.state.cash,
       positionsValue,
-      totalEquity,
+      currentEquity,
       drawdownPct,
     );
   }
@@ -684,14 +685,26 @@ export class SimBroker {
     const totalReturn = finalEquity - initialCapital;
     const totalReturnPct = (totalReturn / initialCapital) * 100;
 
-    // Max drawdown from TypedArray (no .map() needed)
+    // Max drawdown from equity curve (peak-relative, time-correct)
+    let runningPeak = initialCapital;
+    let maxDrawdown = 0;
     let maxDrawdownPct = 0;
     for (let i = 0; i < ecIdx; i++) {
-      if (ecData.drawdownPct[i] > maxDrawdownPct) {
-        maxDrawdownPct = ecData.drawdownPct[i];
+      const currentEquity = ecData.totalEquity[i];
+      if (currentEquity > runningPeak) {
+        runningPeak = currentEquity;
+      }
+
+      const drawdown = runningPeak - currentEquity;
+      const drawdownPct = runningPeak > 0 ? (drawdown / runningPeak) * 100 : 0;
+
+      if (drawdown > maxDrawdown) {
+        maxDrawdown = drawdown;
+      }
+      if (drawdownPct > maxDrawdownPct) {
+        maxDrawdownPct = drawdownPct;
       }
     }
-    const maxDrawdown = (maxDrawdownPct / 100) * this.state.peakEquity;
 
     // Trade statistics
     const totalTrades = trades.length;
@@ -740,9 +753,8 @@ export class SimBroker {
         ? (Math.pow(finalEquity / initialCapital, 1 / yearsElapsed) - 1) * 100
         : totalReturnPct;
 
-    // Calmar uses decimal return units divided by decimal max drawdown
     const calmarRatio =
-      maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : 0;
+      maxDrawdownPct > 0 ? annualizedReturn / maxDrawdownPct : 0;
 
     // Timestamps from TypedArrays
     const startDate =

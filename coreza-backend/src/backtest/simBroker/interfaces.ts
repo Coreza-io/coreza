@@ -81,7 +81,7 @@ export interface Position {
   realizedPnl: number;
   marketValue: number;
   openCostBasis: number;
-  totalPnl: number;
+  //totalPnl: number;
 }
 
 // ============== TRADES (Closed Positions) ==============

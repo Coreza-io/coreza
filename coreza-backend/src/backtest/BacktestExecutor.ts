@@ -1006,14 +1006,17 @@ export class BacktestExecutor implements INodeExecutor {
         portfolio_value_after: null,
       }));
 
-      const { error: tradesError } = ((await supabaseClient) as any)
-        .from("backtest_trades")
-        .insert(tradeRows);
-      if (tradesError) {
-        console.error(
-          "[BacktestExecutor] Failed to insert backtest_trades:",
-          tradesError,
-        );
+      if (tradeRows.length > 0) {
+        const { error: tradesError } = await (supabaseClient as any)
+          .from("backtest_trades")
+          .insert(tradeRows);
+
+        if (tradesError) {
+          console.error(
+            "[BacktestExecutor] Failed to insert backtest_trades:",
+            tradesError,
+          );
+        }
       }
     }
 
@@ -1040,7 +1043,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       for (let i = 0; i < snapshots.length; i += 500) {
-        const { error: snapshotError } = ((await supabaseClient) as any)
+        const { error: snapshotError } = await (supabaseClient as any)
           .from("backtest_portfolio_snapshots")
           .insert(snapshots.slice(i, i + 500));
         if (snapshotError) {

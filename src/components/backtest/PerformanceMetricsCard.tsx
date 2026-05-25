@@ -3,6 +3,8 @@ import { BacktestResultMetrics } from "@/hooks/useBacktestResults";
 
 interface PerformanceMetricsCardProps {
   metrics?: BacktestResultMetrics | null;
+  showSharpeInsufficientData?: boolean;
+  showSortinoInsufficientData?: boolean;
 }
 
 const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' | 'integer' | 'duration' }) => {
@@ -47,7 +49,11 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
   </div>
 );
 
-export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps) => {
+export const PerformanceMetricsCard = ({
+  metrics,
+  showSharpeInsufficientData = false,
+  showSortinoInsufficientData = false,
+}: PerformanceMetricsCardProps) => {
   const isIntradaySessionReturn = metrics?.annualized_return !== undefined && metrics?.total_return !== undefined && Math.abs(metrics.annualized_return - metrics.total_return) < 1e-9;
   const annualizedLabel = isIntradaySessionReturn ? "Session Return" : "Annualized Return";
 
@@ -67,8 +73,14 @@ export const PerformanceMetricsCard = ({ metrics }: PerformanceMetricsCardProps)
             </Section>
 
             <Section title="Risk Metrics">
-              <MetricItem label="Sharpe Ratio" value={metrics.sharpe_ratio} />
-              <MetricItem label="Sortino Ratio" value={metrics.sortino_ratio} />
+              <MetricItem
+                label={showSharpeInsufficientData ? "Sharpe Ratio (Not enough data)" : "Sharpe Ratio"}
+                value={showSharpeInsufficientData ? undefined : metrics.sharpe_ratio}
+              />
+              <MetricItem
+                label={showSortinoInsufficientData ? "Sortino Ratio (Not enough data)" : "Sortino Ratio"}
+                value={showSortinoInsufficientData ? undefined : metrics.sortino_ratio}
+              />
               <MetricItem label="Calmar Ratio" value={metrics.calmar_ratio} />
               <MetricItem label="Max Drawdown" value={metrics.max_drawdown} format="percent" />
             </Section>

@@ -38,10 +38,10 @@ const toFiniteNumber = (value: unknown): number | undefined => {
 };
 
 const stdDev = (values: number[]): number => {
-  if (values.length === 0) return 0;
+  if (values.length < 2) return 0;
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
   const variance =
-    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
   return Math.sqrt(variance);
 };
 
@@ -90,6 +90,7 @@ const resampleToReturnSeries = (points: { ts: number; equity: number }[]): Retur
 };
 
 const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[], baselineCapital?: number) => {
+  const EPSILON = 1e-8;
   if (equityPoints.length < 2) return { max_drawdown: undefined, annualized_return: undefined, sharpe_ratio: undefined, sortino_ratio: undefined, calmar_ratio: undefined };
   const firstEquity = equityPoints[0].equity;
   const lastEquity = equityPoints[equityPoints.length - 1].equity;
@@ -118,19 +119,19 @@ const calculateRiskMetrics = (equityPoints: { ts: number; equity: number }[], ba
 
   const enoughForRatios = returns.length >= minSamplesForRatios;
   if (!enoughForRatios || annualizedReturn === undefined) {
-    return { max_drawdown: maxDrawdownPct, annualized_return: annualizedReturn, sharpe_ratio: undefined, sortino_ratio: undefined, calmar_ratio: annualizedReturn !== undefined && maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : undefined };
+    return { max_drawdown: maxDrawdownPct, annualized_return: annualizedReturn, sharpe_ratio: undefined, sortino_ratio: undefined, calmar_ratio: annualizedReturn !== undefined && maxDrawdownPct > 0 ? annualizedReturn / maxDrawdownPct : undefined };
   }
 
-  const periodRf = periodsPerYear > 0 ? Math.pow(1 + 0.02, 1 / periodsPerYear) - 1 : 0;
+  const periodRf = 0;
   const excessReturns = returns.map((r) => r - periodRf);
   const avgExcess = excessReturns.reduce((a, b) => a + b, 0) / excessReturns.length;
   const volatility = stdDev(excessReturns);
   const annualizationFactor = periodsPerYear > 0 ? Math.sqrt(periodsPerYear) : 1;
-  const sharpeRatio = volatility > 0 ? (avgExcess / volatility) * annualizationFactor : 0;
+  const sharpeRatio = volatility > EPSILON ? (avgExcess / volatility) * annualizationFactor : 0;
   const downside = excessReturns.filter((r) => r < 0);
   const downsideDeviation = downside.length > 0 ? Math.sqrt(downside.reduce((sum, r) => sum + r * r, 0) / downside.length) : 0;
-  const sortinoRatio = downside.length === 0 ? (avgExcess > 0 ? Infinity : 0) : downsideDeviation > 0 ? (avgExcess / downsideDeviation) * annualizationFactor : 0;
-  const calmarRatio = annualizedReturn !== undefined && maxDrawdownPct > 0 ? annualizedReturn / 100 / maxDrawdownPct : undefined;
+  const sortinoRatio = downside.length === 0 ? (avgExcess > 0 ? Infinity : 0) : downsideDeviation > EPSILON ? (avgExcess / downsideDeviation) * annualizationFactor : 0;
+  const calmarRatio = annualizedReturn !== undefined && maxDrawdownPct > 0 ? annualizedReturn / maxDrawdownPct : undefined;
 
   return {
     max_drawdown: maxDrawdownPct,

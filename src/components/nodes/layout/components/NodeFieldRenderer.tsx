@@ -220,7 +220,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(field.key, e.target.value),
     placeholder: field.placeholder,
-    className: "nodrag",
+    className: cn("nodrag", glassInput, isReference && "font-mono text-xs truncate"),
     style: isReference ? referenceStyle : undefined,
     onClick: handleInputClick,
     onFocus: handleInputFocus,

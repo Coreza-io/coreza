@@ -394,9 +394,6 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                 />
               </SelectTrigger>
               <SelectContent className="dark:bg-popover dark:border-white/10">
-                {/* fragment moved below */}
-              </SelectContent>
-              <SelectContent>
                 {optionList.map((opt: any) => (
                   <SelectItem key={opt.value ?? opt.label} value={opt.value}>
                     {opt.label ?? opt.value}

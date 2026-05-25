@@ -117,35 +117,67 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
-        {(definition.fields || []).map((f: any) => (
-          <NodeFieldRenderer
-            key={f.key}
-            field={f}
-            definition={definition}
-            fieldState={fieldState}
-            value={fieldState[f.key]}
-            selectOptions={selectOptions}
-            loadingSelect={loadingSelect}
-            onChange={handleChange}
-            onBatchChange={handleFieldStateBatch}
-            onDrop={(fieldDef, e, currentValue) =>
-              handleDrop(
-                fieldDef.key,
-                (val: string) => handleChange(fieldDef.key, val),
-                e,
-                currentValue,
-              )
+        {(() => {
+          const fields = (definition.fields || []) as any[];
+          const groups: Array<{ type: "row" | "single"; fields: any[] }> = [];
+          let buffer: any[] = [];
+          const flushBuffer = () => {
+            if (buffer.length) {
+              groups.push({ type: "row", fields: buffer });
+              buffer = [];
             }
-            getPreview={getFieldPreview}
-            referenceStyle={referenceStyle}
-            fetchDependentOptions={fetchDependentOptions}
-            setShowAuth={setShowAuth}
-            workflowId={workflowId}
-            nodeId={nodeId}
-            userId={user?.id || ""}
-            readOnly={readOnly}
-          />
-        ))}
+          };
+          for (const f of fields) {
+            if (f.width === "half") {
+              buffer.push(f);
+              if (buffer.length === 2) flushBuffer();
+            } else {
+              flushBuffer();
+              groups.push({ type: "single", fields: [f] });
+            }
+          }
+          flushBuffer();
+
+          const renderField = (f: any) => (
+            <NodeFieldRenderer
+              key={f.key}
+              field={f}
+              definition={definition}
+              fieldState={fieldState}
+              value={fieldState[f.key]}
+              selectOptions={selectOptions}
+              loadingSelect={loadingSelect}
+              onChange={handleChange}
+              onBatchChange={handleFieldStateBatch}
+              onDrop={(fieldDef, e, currentValue) =>
+                handleDrop(
+                  fieldDef.key,
+                  (val: string) => handleChange(fieldDef.key, val),
+                  e,
+                  currentValue,
+                )
+              }
+              getPreview={getFieldPreview}
+              referenceStyle={referenceStyle}
+              fetchDependentOptions={fetchDependentOptions}
+              setShowAuth={setShowAuth}
+              workflowId={workflowId}
+              nodeId={nodeId}
+              userId={user?.id || ""}
+              readOnly={readOnly}
+            />
+          );
+
+          return groups.map((g, idx) =>
+            g.type === "row" && g.fields.length > 1 ? (
+              <div key={`row-${idx}`} className="grid grid-cols-2 gap-3">
+                {g.fields.map(renderField)}
+              </div>
+            ) : (
+              renderField(g.fields[0])
+            ),
+          );
+        })()}
 
         {error && (
           <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">

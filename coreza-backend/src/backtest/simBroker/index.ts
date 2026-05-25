@@ -934,10 +934,20 @@ export class SimBroker {
   }
 
   private standardDeviation(values: number[]): number {
-    if (values.length === 0) return 0;
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const squaredDiffs = values.map((v) => Math.pow(v - mean, 2));
-    return Math.sqrt(squaredDiffs.reduce((a, b) => a + b, 0) / values.length);
+    if (values.length < 2) return 0;
+
+    const n = values.length;
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += values[i];
+    const mean = sum / n;
+
+    let sumSq = 0;
+    for (let i = 0; i < n; i++) {
+      const d = values[i] - mean;
+      sumSq += d * d;
+    }
+
+    return Math.sqrt(sumSq / (n - 1));
   }
 
   // ============== GETTERS - ALL SYNCHRONOUS ==============

@@ -845,18 +845,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     <FieldWrapper
       key={field.key}
       label={
-        field.type === "checkbox" || field.type === "toggle"
-          ? undefined
-          : displayLabel
+        field.type === "checkbox" || field.type === "toggle" ? undefined : (
+          <span className={glassLabelClass}>{displayLabel}</span>
+        )
       }
       hideLabel={field.type === "checkbox" || field.type === "toggle"}
-      description={
-        field.type === "checkbox" || field.type === "toggle"
-          ? undefined
-          : shouldShowDescription
-            ? field.description
-            : undefined
-      }
+      description={undefined}
     >
       {renderField()}
     </FieldWrapper>

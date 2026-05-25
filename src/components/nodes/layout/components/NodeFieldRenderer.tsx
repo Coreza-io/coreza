@@ -1,5 +1,15 @@
 import React from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/lib/utils";
+
+const glassInput =
+  "rounded-xl transition-all duration-200 " +
+  "dark:bg-white/[0.03] dark:border-white/10 dark:text-blue-100 " +
+  "dark:placeholder:text-white/20 dark:focus-visible:border-blue-500/50 " +
+  "dark:focus-visible:ring-4 dark:focus-visible:ring-blue-500/10";
+
+const glassLabelClass =
+  "dark:text-[11px] dark:font-bold dark:uppercase dark:tracking-wider dark:text-slate-400";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {

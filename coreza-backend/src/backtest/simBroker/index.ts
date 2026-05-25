@@ -76,7 +76,14 @@ export class SimBroker {
   private tradeIdCounter = 0;
   private currentEntryMap = new Map<
     string,
-    { orderId: string; filledAt: string; barIndex: number }
+    {
+      orderId: string;
+      filledAt: string;
+      barIndex: number;
+      entryQuantity: number;
+      entryCommission: number;
+      entrySlippagePerUnit: number;
+    }
   >();
   private pendingTicketsBySymbol = new Map<string, Set<string>>();
   private equityCurveData: {
@@ -492,7 +499,7 @@ export class SimBroker {
       this.untrackPendingTicket(order.symbol, order.id);
     }
 
-    //this.updatePositionMTM(order.symbol, bar.close);
+    this.updatePositionMTM(order.symbol, bar.close);
 
     return event;
   }
@@ -532,6 +539,9 @@ export class SimBroker {
         orderId: order.id,
         filledAt: asIsoTimestamp(timestamp),
         barIndex: this.equityCurveIndex,
+        entryQuantity: Math.abs(signedQuantity),
+        entryCommission: commission,
+        entrySlippagePerUnit: Math.abs(slippage),
       });
       return;
     }
@@ -543,6 +553,18 @@ export class SimBroker {
       (existingQty <= 0 && signedQuantity <= 0);
 
     if (sameDirection) {
+      const entry = this.currentEntryMap.get(order.symbol);
+      const existingEntryQuantity = Math.max(0, entry?.entryQuantity ?? 0);
+      const addedQuantity = Math.abs(signedQuantity);
+      const updatedEntryQuantity = existingEntryQuantity + addedQuantity;
+      const updatedEntryCommission = (entry?.entryCommission ?? 0) + commission;
+      const updatedEntrySlippagePerUnit =
+        updatedEntryQuantity > 0
+          ? ((entry?.entrySlippagePerUnit ?? 0) * existingEntryQuantity +
+              Math.abs(slippage) * addedQuantity) /
+            updatedEntryQuantity
+          : 0;
+
       const totalQty = existingQty + signedQuantity;
       const totalCostBasis =
         existing.avgFillPrice * Math.abs(existingQty) +
@@ -555,6 +577,14 @@ export class SimBroker {
       existing.openCostBasis = Math.abs(totalQty) * existing.avgFillPrice;
       existing.unrealizedPnl = (price - existing.avgFillPrice) * totalQty;
       this.positionsValue += existing.marketValue - oldMarketValue;
+      this.currentEntryMap.set(order.symbol, {
+        orderId: entry?.orderId ?? order.id,
+        filledAt: entry?.filledAt ?? asIsoTimestamp(timestamp),
+        barIndex: entry?.barIndex ?? this.equityCurveIndex,
+        entryQuantity: updatedEntryQuantity,
+        entryCommission: updatedEntryCommission,
+        entrySlippagePerUnit: updatedEntrySlippagePerUnit,
+      });
       return;
     }
 
@@ -566,13 +596,23 @@ export class SimBroker {
     const grossPnl = isClosingLong
       ? (price - existing.avgFillPrice) * closingQty
       : (existing.avgFillPrice - price) * closingQty;
-    const commissionForClose =
-      commission * (closingQty / Math.abs(signedQuantity));
-    const netPnl = grossPnl - commissionForClose;
+    const exitCommission = commission * (closingQty / Math.abs(signedQuantity));
+    const exitSlippageCost = Math.abs(slippage) * closingQty;
     const fillTimeIso = asIsoTimestamp(timestamp);
     const entry = this.currentEntryMap.get(order.symbol);
     const entryOrderId = entry?.orderId ?? order.id;
     const entryTime = entry?.filledAt ?? fillTimeIso;
+    const entryQuantity = Math.max(1, entry?.entryQuantity ?? closingQty);
+    const entryFraction = closingQty / entryQuantity;
+    const allocatedEntryCommission =
+      (entry?.entryCommission ?? 0) * entryFraction;
+    const entrySlippagePerUnit = entry?.entrySlippagePerUnit ?? 0;
+    const allocatedEntrySlippageCost = entrySlippagePerUnit * closingQty;
+    const totalCommissionForTrade = allocatedEntryCommission + exitCommission;
+    const totalSlippageForTrade =
+      allocatedEntrySlippageCost + exitSlippageCost;
+    const netPnl =
+      grossPnl - totalCommissionForTrade - totalSlippageForTrade;
     const holdingPeriodBars = Math.max(
       0,
       this.equityCurveIndex - (entry?.barIndex ?? this.equityCurveIndex),
@@ -590,8 +630,8 @@ export class SimBroker {
       exitPrice: price,
       quantity: closingQty,
       grossPnl,
-      commission: commissionForClose,
-      slippage: Math.abs(slippage),
+      commission: totalCommissionForTrade,
+      slippage: totalSlippageForTrade,
       netPnl,
       entryTime,
       exitTime: fillTimeIso,
@@ -615,6 +655,17 @@ export class SimBroker {
       existing.openCostBasis = Math.abs(newQty) * existing.avgFillPrice;
       existing.unrealizedPnl = (price - existing.avgFillPrice) * newQty;
       this.positionsValue += existing.marketValue - oldMarketValue;
+      const remainingEntryQuantity = Math.max(0, entryQuantity - closingQty);
+      if (entry && remainingEntryQuantity > 0) {
+        this.currentEntryMap.set(order.symbol, {
+          ...entry,
+          entryQuantity: remainingEntryQuantity,
+          entryCommission: Math.max(
+            0,
+            (entry.entryCommission ?? 0) - allocatedEntryCommission,
+          ),
+        });
+      }
       return;
     }
 
@@ -631,6 +682,9 @@ export class SimBroker {
       orderId: order.id,
       filledAt: fillTimeIso,
       barIndex: this.equityCurveIndex,
+      entryQuantity: Math.abs(newQty),
+      entryCommission: commission * (Math.abs(newQty) / Math.abs(signedQuantity)),
+      entrySlippagePerUnit: Math.abs(slippage),
     });
   }
 
@@ -736,9 +790,15 @@ export class SimBroker {
     const profitFactor =
       totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? Infinity : 0;
 
-    // Commission & Slippage
-    const totalCommission = trades.reduce((sum, t) => sum + t.commission, 0);
-    const totalSlippage = trades.reduce((sum, t) => sum + t.slippage, 0);
+    // Commission & Slippage from all fills/tickets
+    let totalCommission = 0;
+    let totalSlippage = 0;
+    for (const ticket of Object.values(this.state.tickets)) {
+      totalCommission += ticket.totalFees ?? 0;
+      for (const event of ticket.orderEvents) {
+        totalSlippage += Math.abs(event.slippage ?? 0) * (event.fillQuantity ?? 0);
+      }
+    }
 
     // Risk metrics — resample directly from TypedArrays (no sort, no object creation)
     const dailyReturns = this.resampleToDailyReturns();
@@ -801,21 +861,31 @@ export class SimBroker {
     if (this.equityCurveIndex < 2) return [];
 
     const DAY_MS = 86_400_000;
-    const returns: number[] = [];
-    let prevDayBucket = Math.floor(this.equityCurveData.timestamps[0] / DAY_MS);
-    let prevEquity = this.equityCurveData.totalEquity[0];
+    const timestamps = this.equityCurveData.timestamps;
+    const totalEquity = this.equityCurveData.totalEquity;
+    const dailyCloses: number[] = [];
+
+    let currentDay = Math.floor(timestamps[0] / DAY_MS);
+    let lastEquityOfDay = totalEquity[0];
 
     for (let i = 1; i < this.equityCurveIndex; i++) {
-      const dayBucket = Math.floor(this.equityCurveData.timestamps[i] / DAY_MS);
-      if (dayBucket !== prevDayBucket) {
-        const equity = this.equityCurveData.totalEquity[i];
-        if (prevEquity > 0) {
-          returns.push((equity - prevEquity) / prevEquity);
-        }
-        prevEquity = equity;
-        prevDayBucket = dayBucket;
+      const day = Math.floor(timestamps[i] / DAY_MS);
+      if (day !== currentDay) {
+        dailyCloses.push(lastEquityOfDay);
+        currentDay = day;
+      }
+      lastEquityOfDay = totalEquity[i];
+    }
+    dailyCloses.push(lastEquityOfDay);
+
+    const returns: number[] = [];
+    for (let i = 1; i < dailyCloses.length; i++) {
+      const previousClose = dailyCloses[i - 1];
+      if (previousClose > 0) {
+        returns.push((dailyCloses[i] - previousClose) / previousClose);
       }
     }
+
     return returns;
   }
 

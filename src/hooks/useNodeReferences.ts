@@ -164,10 +164,9 @@ export function useNodeReferences({
     ]
   );
 
-  const referenceStyle: React.CSSProperties = {
-    backgroundColor: "hsl(var(--muted))",
-    borderBottom: "1px dashed hsl(var(--primary))",
-  };
+  // Visual styling now handled via [data-node-surface="dark"] CSS rules
+  // targeting [data-is-reference="true"]. Kept as no-op for backward compat.
+  const referenceStyle: React.CSSProperties = {};
 
   return {
     handleDragStart,

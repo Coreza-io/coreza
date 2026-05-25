@@ -135,6 +135,7 @@ export const FieldSchema = z.object({
   condition: ConditionSchema.optional(),
   description: z.string().optional(),
   groupedOptions: GroupedOptionsSchema.optional(),
+  width: z.enum(["full", "half"]).optional(),
 });
 
 export const AuthFieldSchema = z.object({

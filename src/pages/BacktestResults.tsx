@@ -28,6 +28,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export type BacktestResultsMode = "backtest" | "live";
 
+const FLAT_EQUITY_EPSILON = 1e-6;
+
+const isFlatEquityCurve = (snapshots: Array<{ total_value: number }>): boolean => {
+  if (snapshots.length < 2) return false;
+
+  let minEquity = snapshots[0].total_value;
+  let maxEquity = snapshots[0].total_value;
+
+  for (let i = 1; i < snapshots.length; i++) {
+    const totalValue = snapshots[i].total_value;
+    if (totalValue < minEquity) minEquity = totalValue;
+    if (totalValue > maxEquity) maxEquity = totalValue;
+  }
+
+  return maxEquity - minEquity < FLAT_EQUITY_EPSILON;
+};
+
 const statusVariants: Record<
   string,
   "default" | "secondary" | "destructive" | "outline"
@@ -107,6 +124,15 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     );
   };
 
+  const dailyCount = snapshots.length;
+  const isFlatEquity = isFlatEquityCurve(snapshots);
+  const showSharpeInsufficientData =
+    (metrics?.sharpe_ratio === 0 || metrics?.sharpe_ratio == null) &&
+    (dailyCount < 30 || isFlatEquity);
+  const showSortinoInsufficientData =
+    (metrics?.sortino_ratio === 0 || metrics?.sortino_ratio == null) &&
+    (dailyCount < 30 || isFlatEquity);
+
   const metricCards = [
     {
       label: "Net Profit",
@@ -122,7 +148,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     },
     {
       label: "Sharpe Ratio",
-      value: metrics?.sharpe_ratio,
+      value: showSharpeInsufficientData ? undefined : metrics?.sharpe_ratio,
       format: "number" as const,
     },
     { label: "Win Rate", value: metrics?.win_rate, format: "percent" as const },
@@ -190,7 +216,11 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         </TabsList>
 
         <TabsContent value="performance" className="space-y-4">
-          <PerformanceMetricsCard metrics={metrics} />
+          <PerformanceMetricsCard
+            metrics={metrics}
+            showSharpeInsufficientData={showSharpeInsufficientData}
+            showSortinoInsufficientData={showSortinoInsufficientData}
+          />
         </TabsContent>
 
         <TabsContent value="trades">

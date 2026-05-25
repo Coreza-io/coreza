@@ -388,11 +388,14 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               onValueChange={(val) => onChange(field.key, val)}
               disabled={readOnly}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className={cn("w-full nodrag", glassInput, "dark:text-white")}>
                 <SelectValue
                   placeholder={field.placeholder || "Select option"}
                 />
               </SelectTrigger>
+              <SelectContent className="dark:bg-popover dark:border-white/10">
+                {/* fragment moved below */}
+              </SelectContent>
               <SelectContent>
                 {optionList.map((opt: any) => (
                   <SelectItem key={opt.value ?? opt.label} value={opt.value}>

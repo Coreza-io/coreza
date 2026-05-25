@@ -436,7 +436,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           >
             <textarea
               {...commonInputProps}
-              className="w-full border border-input bg-background text-foreground placeholder:text-muted-foreground rounded p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={cn("w-full border border-input bg-background text-foreground placeholder:text-muted-foreground p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", glassInput)}
             />
             {renderPreviewCard()}
           </div>

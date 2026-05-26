@@ -752,13 +752,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       {conditions.length > 1 && (
                         <Button
                           type="button"
-                          size="sm"
-                          variant="ghost"
+                          variant="nodeIconGhost"
+                          size="icon"
                           onClick={() => removeCondition(i)}
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          className="h-7 w-7"
                           disabled={readOnly}
                         >
-                          <X className="w-3 h-3" />
+                          <X className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>
@@ -824,13 +824,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   <div className="flex justify-end">
                     <Button
                       type="button"
-                      size="sm"
-                      variant="ghost"
+                      variant="nodeIconGhost"
+                      size="icon"
                       onClick={() => removeOverlay(rowIndex)}
-                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      className="h-7 w-7"
                       disabled={readOnly}
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -838,13 +838,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
             <Button
               type="button"
+              variant="nodeAction"
               size="sm"
-              variant="outline"
               onClick={isOverlays ? addOverlay : addCondition}
               className="flex items-center gap-2"
               disabled={readOnly}
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
               Add{" "}
               {isConditional ? "Condition" : isOverlays ? "Overlay" : "Field"}
             </Button>
@@ -875,20 +875,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {/* --------- SWITCH REPEATER (Cases) --------- */}
         {isSwitch && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold">Cases</h4>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={addCase}
-                className="h-7 px-2"
-                disabled={readOnly}
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Add Case
-              </Button>
-            </div>
+            <h4 className="font-semibold">Cases</h4>
 
             {cases.map((caseItem, i) => {
               const leftField = repeaterField?.subFields?.find(
@@ -992,13 +979,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     {cases.length > 1 && (
                       <Button
                         type="button"
-                        size="sm"
-                        variant="ghost"
+                        variant="nodeIconGhost"
+                        size="icon"
                         onClick={() => removeCase(i)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                        className="h-7 w-7 flex-shrink-0"
                         disabled={readOnly}
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5" />
                       </Button>
                     )}
                   </div>
@@ -1031,6 +1018,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 </div>
               );
             })}
+
+            <Button
+              type="button"
+              variant="nodeAction"
+              size="sm"
+              onClick={addCase}
+              className="flex items-center gap-2"
+              disabled={readOnly}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Case
+            </Button>
+
 
             {fallbackField && (
               <NodeFieldRenderer
@@ -1084,9 +1084,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           <div className="pt-2">
             <Button
               type="submit"
-              size="sm"
+              variant="nodeExecute"
               disabled={isSending}
-              className="w-full"
             >
               {isSending ? (
                 <>

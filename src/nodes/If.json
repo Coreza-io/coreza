@@ -25,11 +25,13 @@
       "subFields": [
         {
           "key": "left",
+          "label": "Value 1",
           "type": "string",
           "placeholder": "{{ $('Market Status').json.market_type }}"
         },
         {
           "key": "operator",
+          "label": "Operator",
           "type": "grouped-select",
           "groupedOptions": {
             "string": {
@@ -126,7 +128,7 @@
             }
           }
         },
-        { "key": "right", "type": "string", "placeholder": "stocks" }
+        { "key": "right", "label": "Value 2", "type": "string", "placeholder": "stocks" }
       ],
       "default": { "left": "", "operator": "===", "right": "" }
     },

@@ -28,6 +28,12 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        nodeAction:
+          "bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 hover:border-primary/50 backdrop-blur-sm shadow-sm",
+        nodeIconGhost:
+          "text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md",
+        nodeExecute:
+          "w-full bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-semibold tracking-wide shadow-[0_4px_20px_-4px_hsl(var(--primary)/0.5)] hover:shadow-[0_6px_24px_-4px_hsl(var(--primary)/0.7)] hover:from-primary hover:to-primary transition-all",
       },
       size: {
         default: "h-10 px-4 py-2",

@@ -207,16 +207,16 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         {!readOnly && (
           <Button
             type="submit"
-            className="w-full bg-success hover:bg-success/90 text-success-foreground"
+            variant="nodeExecute"
             disabled={isSending}
           >
             {isSending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Running...
+                Executing...
               </>
             ) : (
-              "Run"
+              "Execute"
             )}
           </Button>
         )}

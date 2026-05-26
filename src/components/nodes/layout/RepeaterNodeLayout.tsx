@@ -1019,6 +1019,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               );
             })}
 
+            <Button
+              type="button"
+              variant="nodeAction"
+              size="sm"
+              onClick={addCase}
+              className="flex items-center gap-2"
+              disabled={readOnly}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Case
+            </Button>
+
+
             {fallbackField && (
               <NodeFieldRenderer
                 field={fallbackField}

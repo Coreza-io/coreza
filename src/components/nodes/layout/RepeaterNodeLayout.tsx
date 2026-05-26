@@ -752,13 +752,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       {conditions.length > 1 && (
                         <Button
                           type="button"
-                          size="sm"
-                          variant="ghost"
+                          variant="nodeIconGhost"
+                          size="icon"
                           onClick={() => removeCondition(i)}
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          className="h-7 w-7"
                           disabled={readOnly}
                         >
-                          <X className="w-3 h-3" />
+                          <X className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>

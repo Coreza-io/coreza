@@ -277,11 +277,13 @@
         },
         {
           "key": "right",
+          "label": "Value 2",
           "type": "string",
           "placeholder": "stocks"
         },
         {
           "key": "outputName",
+          "label": "Output Name",
           "type": "string",
           "placeholder": "Output label"
         }

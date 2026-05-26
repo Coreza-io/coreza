@@ -979,13 +979,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     {cases.length > 1 && (
                       <Button
                         type="button"
-                        size="sm"
-                        variant="ghost"
+                        variant="nodeIconGhost"
+                        size="icon"
                         onClick={() => removeCase(i)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                        className="h-7 w-7 flex-shrink-0"
                         disabled={readOnly}
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5" />
                       </Button>
                     )}
                   </div>

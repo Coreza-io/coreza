@@ -22,6 +22,7 @@ export type NodeVisualCategory =
   | "Indicators"
   | "Logic"
   | "Tool"
+  | "Memory"
   | "Screener"
   | "Communication"
   | "Visualization";
@@ -170,6 +171,15 @@ export const NODE_VISUAL_THEMES: Record<NodeVisualCategory, NodeVisualTheme> = {
       "radial-gradient(circle at 50% 0%, #94a3b826, transparent 45%), linear-gradient(145deg, #2a3340f0, #11161dfa)",
     titleColor: "#ffffff",
     edgeColor: "#94a3b8",
+  },
+  Memory: {
+    neon: "#fbbf24",
+    border: "#f59e0b",
+    glow: "#f59e0b44",
+    background:
+      "radial-gradient(circle at 50% 0%, #fbbf2426, transparent 45%), linear-gradient(145deg, #4b3207f0, #1e1404fa)",
+    titleColor: "#ffffff",
+    edgeColor: "#fbbf24",
   },
   Tool: {
     neon: "#a3e635",

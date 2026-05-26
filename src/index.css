@@ -711,3 +711,15 @@
 [data-node-surface="dark"] hr {
   border-color: hsl(0 0% 100% / 0.10);
 }
+[data-node-surface="dark"] h1,
+[data-node-surface="dark"] h2,
+[data-node-surface="dark"] h3,
+[data-node-surface="dark"] h4,
+[data-node-surface="dark"] h5,
+[data-node-surface="dark"] h6 {
+  color: hsl(210 40% 96%);
+}
+[data-node-surface="dark"] p,
+[data-node-surface="dark"] span:not([class*="text-"]) {
+  color: hsl(215 20% 80%);
+}

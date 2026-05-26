@@ -1084,9 +1084,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           <div className="pt-2">
             <Button
               type="submit"
-              size="sm"
+              variant="nodeExecute"
               disabled={isSending}
-              className="w-full"
             >
               {isSending ? (
                 <>

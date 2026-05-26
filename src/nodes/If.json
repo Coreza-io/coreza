@@ -128,7 +128,7 @@
             }
           }
         },
-        { "key": "right", "type": "string", "placeholder": "stocks" }
+        { "key": "right", "label": "Value 2", "type": "string", "placeholder": "stocks" }
       ],
       "default": { "left": "", "operator": "===", "right": "" }
     },

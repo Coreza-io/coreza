@@ -875,20 +875,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {/* --------- SWITCH REPEATER (Cases) --------- */}
         {isSwitch && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold">Cases</h4>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={addCase}
-                className="h-7 px-2"
-                disabled={readOnly}
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Add Case
-              </Button>
-            </div>
+            <h4 className="font-semibold">Cases</h4>
 
             {cases.map((caseItem, i) => {
               const leftField = repeaterField?.subFields?.find(

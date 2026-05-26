@@ -579,7 +579,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             <img src={definition.icon} alt="icon" className="w-6 h-6" />
           )}
           <h2 className="font-semibold text-base text-foreground flex-1">
-            {definition?.def || definition?.name || "Node"}
+            {definition?.label || definition?.name || "Node"}
           </h2>
         </div>
       </div>

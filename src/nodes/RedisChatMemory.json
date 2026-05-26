@@ -1,0 +1,54 @@
+{
+  "name": "RedisChatMemory",
+  "def": "Redis Chat Memory",
+  "node_type": "sub",
+  "category": "Memory",
+  "icon": "/assets/icons/store.svg",
+  "description": "Connects to a Redis instance you manage.",
+  "size": {
+    "width": 320,
+    "height": 320
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "top",
+      "id": "memory"
+    }
+  ],
+  "auth": "GenericAuthModal",
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "sessionKey",
+      "label": "Session Key",
+      "type": "string",
+      "default": "{{ $json.sessionId }}",
+      "required": true,
+      "description": "Identifier that scopes history to one chat/user."
+    },
+    {
+      "key": "contextWindowLength",
+      "label": "Context Window Length",
+      "type": "number",
+      "default": 5,
+      "required": true,
+      "description": "Number of most recent user/assistant turns loaded into the prompt (\u2248 2\u00d7 messages)."
+    },
+    {
+      "key": "sessionTTL",
+      "label": "Session TTL (seconds)",
+      "type": "number",
+      "default": 0,
+      "required": true,
+      "description": "Time to live for session history in seconds. Use 0 to never expire."
+    }
+  ]
+}

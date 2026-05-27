@@ -7,7 +7,7 @@
   "description": "Connects to a Postgres database you manage. Create the table yourself before using this node.",
   "size": {
     "width": 320,
-    "height": 300
+    "height": 260
   },
   "handles": [
     {
@@ -29,10 +29,8 @@
     {
       "key": "sessionKey",
       "label": "Session Key",
-      "type": "string",
-      "default": "{{ $json.sessionId }}",
-      "required": true,
-      "description": "Identifier that scopes history to one chat/user."
+      "type": "hidden",
+      "default": ""
     },
     {
       "key": "tableName",

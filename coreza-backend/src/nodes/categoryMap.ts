@@ -20,6 +20,9 @@ export const CATEGORY_MAP: Record<string, string> = {
   LLM: "LLM",
   AIAgent: "AIAgent",
   InitializeIndicators: "Indicators",
+  SimpleMemory: "Memory",
+  PostgresChatMemory: "Memory",
+  RedisChatMemory: "Memory",
 };
 
 export function resolveCategory(node: WorkflowNode): string {

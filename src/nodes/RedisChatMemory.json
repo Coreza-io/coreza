@@ -7,7 +7,7 @@
   "description": "Connects to a Redis instance you manage.",
   "size": {
     "width": 320,
-    "height": 320
+    "height": 280
   },
   "handles": [
     {
@@ -29,10 +29,8 @@
     {
       "key": "sessionKey",
       "label": "Session Key",
-      "type": "string",
-      "default": "{{ $json.sessionId }}",
-      "required": true,
-      "description": "Identifier that scopes history to one chat/user."
+      "type": "hidden",
+      "default": ""
     },
     {
       "key": "contextWindowLength",

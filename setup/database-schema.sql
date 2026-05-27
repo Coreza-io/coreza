@@ -493,3 +493,29 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.workflows;
   END IF;
 END$$;
+
+
+-- =====================================================
+-- AI AGENT CHAT MEMORY
+-- =====================================================
+CREATE TABLE IF NOT EXISTS public.coreza_chat_history (
+  id BIGSERIAL PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  message JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_coreza_chat_history_session
+  ON public.coreza_chat_history (session_id, id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.coreza_chat_history TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE public.coreza_chat_history_id_seq TO authenticated;
+GRANT ALL ON public.coreza_chat_history TO service_role;
+GRANT ALL ON SEQUENCE public.coreza_chat_history_id_seq TO service_role;
+
+ALTER TABLE public.coreza_chat_history ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role manages chat history"
+  ON public.coreza_chat_history FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');

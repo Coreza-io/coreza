@@ -4,7 +4,7 @@
   "node_type": "sub",
   "category": "Memory",
   "icon": "/assets/icons/store.svg",
-  "description": "Stores chat history in a Supabase table you create. Required columns: `id bigserial primary key`, `session_id text not null`, `message jsonb not null`, `created_at timestamptz default now()`. Recommended index: `(session_id, id)`. Use a Supabase Secret Key (`sb_secret_…`) — legacy `service_role` JWTs are also accepted.",
+  "description": "Stores chat history in the auto-provisioned `public.coreza_chat_history` Supabase table. Run `setup/setup.js` (or `setup/database-schema.sql`) if the table is missing. Use a Supabase Secret Key (`sb_secret_…`) — legacy `service_role` JWTs are also accepted.",
   "size": {
     "width": 320,
     "height": 260
@@ -67,8 +67,10 @@
       "key": "tableName",
       "label": "Table Name",
       "type": "string",
+      "default": "coreza_chat_history",
       "required": true,
-      "description": "Name of the chat history table you created in your Postgres database. The table must have columns: `id`, `session_id`, `message` (jsonb), `created_at`."
+      "disabled": true,
+      "description": "Managed table for chat history. Provisioned by setup with columns: `id`, `session_id`, `message` (jsonb), `created_at`."
     },
     {
       "key": "contextWindowLength",

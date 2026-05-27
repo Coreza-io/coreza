@@ -7,7 +7,7 @@ import {
 } from "@langchain/core/messages";
 import { RedisChatMessageHistory } from "@langchain/community/stores/message/ioredis";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import Redis from "ioredis";
+import { getUserRedisConnection } from "../../services/storage/helpers/redisConnection";
 import CredentialManager from "../../utils/credentialManager";
 import { NodeInput, WorkflowEdge, WorkflowNode } from "../types";
 
@@ -84,6 +84,7 @@ class SupabaseChatMessageHistory extends BaseListChatMessageHistory {
 
 type MemoryLoaderContext = {
   userId?: string;
+  workflowId?: string;
   executionId?: string;
   resolveNodeParameters?: (node: WorkflowNode, input: NodeInput) => Record<string, unknown>;
 };
@@ -138,6 +139,8 @@ export async function loadMemoryFromEdges(
   }
 
   const userId = String(context.userId ?? "").trim();
+  const workflowId = String(context.workflowId ?? "unknown").trim() || "unknown";
+  const scopedRedisSessionId = `coreza_chat_history:userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}`;
   const credentialId = String(values.credential_id ?? "").trim();
   if (!userId || !credentialId) {
     throw new Error(`${memoryNode.name} requires userId and credential_id`);
@@ -160,23 +163,14 @@ export async function loadMemoryFromEdges(
   const clientJson = credentials?.client_json as Record<string, unknown> | undefined;
 
   if (memoryNode.name === "RedisChatMemory") {
-    if (!clientJson?.host || !clientJson?.port) {
-      throw new Error("Redis Chat Memory credential is invalid");
-    }
-
     const sessionTTL = Number(values.sessionTTL ?? 0);
-    const client = new Redis({
-      host: String(clientJson.host),
-      port: Number(clientJson.port),
-      username: clientJson.username ? String(clientJson.username) : undefined,
-      password: clientJson.password ? String(clientJson.password) : undefined,
-      db: clientJson.db !== undefined ? Number(clientJson.db) : undefined,
-      tls: clientJson.tls ? {} : undefined,
+    const client = await getUserRedisConnection(userId, credentialId, {
+      client_json: clientJson,
     });
 
     return {
       history: new RedisChatMessageHistory({
-        sessionId,
+        sessionId: scopedRedisSessionId,
         client,
         sessionTTL: sessionTTL > 0 ? sessionTTL : undefined,
       }),

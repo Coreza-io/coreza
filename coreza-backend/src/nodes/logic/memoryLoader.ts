@@ -84,6 +84,7 @@ class SupabaseChatMessageHistory extends BaseListChatMessageHistory {
 
 type MemoryLoaderContext = {
   userId?: string;
+  workflowId?: string;
   executionId?: string;
   resolveNodeParameters?: (node: WorkflowNode, input: NodeInput) => Record<string, unknown>;
 };
@@ -138,6 +139,8 @@ export async function loadMemoryFromEdges(
   }
 
   const userId = String(context.userId ?? "").trim();
+  const workflowId = String(context.workflowId ?? "unknown").trim() || "unknown";
+  const scopedRedisSessionId = `coreza_chat_history:userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}`;
   const credentialId = String(values.credential_id ?? "").trim();
   if (!userId || !credentialId) {
     throw new Error(`${memoryNode.name} requires userId and credential_id`);
@@ -167,7 +170,7 @@ export async function loadMemoryFromEdges(
 
     return {
       history: new RedisChatMessageHistory({
-        sessionId,
+        sessionId: scopedRedisSessionId,
         client,
         sessionTTL: sessionTTL > 0 ? sessionTTL : undefined,
       }),

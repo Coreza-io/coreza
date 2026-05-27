@@ -122,42 +122,6 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
   }
 });
 
-// Generic storage operation
-// POST /storage/:service/:operation
-router.post("/:service/:operation", async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
-    }
-
-    const { service } = req.params;
-    const { credential_id, operation, ...params } = req.body;
-
-    console.log(`📦 [STORAGE-ROUTE] ${service}/${operation} request`);
-
-    const storageService = getStorageService(service);
-    if (!storageService) {
-      return res.status(400).json({
-        success: false,
-        error: `Unsupported storage service: ${service}`,
-      });
-    }
-
-    const result = await storageService.execute({
-      user_id: userId,
-      credential_id,
-      operation,
-      ...params,
-    });
-
-    res.json(result);
-  } catch (error: any) {
-    console.error("[STORAGE-ROUTE] Error:", error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Get credentials for a storage service
 // GET /storage/:service/credentials
 router.get("/:service/credentials", async (req: Request, res: Response) => {
@@ -352,6 +316,43 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error({ err: error }, "Error saving storage credentials");
     res.status(500).json({ error: error.message });
+  }
+});
+
+
+// Generic storage operation
+// POST /storage/:service/:operation
+router.post("/:service/:operation", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const { service } = req.params;
+    const { credential_id, operation, ...params } = req.body;
+
+    console.log(`📦 [STORAGE-ROUTE] ${service}/${operation} request`);
+
+    const storageService = getStorageService(service);
+    if (!storageService) {
+      return res.status(400).json({
+        success: false,
+        error: `Unsupported storage service: ${service}`,
+      });
+    }
+
+    const result = await storageService.execute({
+      user_id: userId,
+      credential_id,
+      operation,
+      ...params,
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    console.error("[STORAGE-ROUTE] Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

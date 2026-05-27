@@ -15,6 +15,7 @@ import CredentialManager from "../utils/credentialManager";
 import { testRedisConnection } from "../services/storage/helpers/redisConnection";
 import { CredentialValidator } from "../utils/credentialValidator";
 import { supabase } from "../config/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { getRedisCache } from "../config/redis";
 import { buildStoreKey, extractVariableNameFromKey } from "../utils/store";
 import logger from "../utils/logger";
@@ -203,7 +204,7 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "credential_name is required" });
     }
 
-    // Only redis-based services need validation
+    // Only redis/supabase services need validation
     if (service === "redis" || service === "redisTrigger") {
       if (!host) {
         return res.status(400).json({ error: "host is required" });
@@ -256,6 +257,81 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
         success: true,
         credential_id: credentialId,
         message: "Redis connection validated and saved successfully",
+      });
+    } else if (service === "supabase") {
+      const supabaseUrl = String(req.body.supabase_url ?? "").trim();
+      const legacyServiceRoleKey = String(req.body.service_role_key ?? "").trim();
+      const secretKey = String(req.body.secret_key ?? legacyServiceRoleKey).trim();
+
+      if (!supabaseUrl) {
+        return res.status(400).json({ error: "supabase_url is required" });
+      }
+
+      if (!secretKey) {
+        return res.status(400).json({ error: "secret_key is required" });
+      }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(supabaseUrl);
+      } catch {
+        return res.status(400).json({ error: "supabase_url must be a valid URL" });
+      }
+
+      if (parsedUrl.protocol !== "https:") {
+        return res.status(400).json({ error: "supabase_url must use HTTPS" });
+      }
+
+      const looksLikeJwt = /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/.test(secretKey);
+      if (!secretKey.startsWith("sb_secret_") && !looksLikeJwt) {
+        return res.status(400).json({
+          error:
+            "secret_key must start with sb_secret_ or be a legacy service_role JWT",
+        });
+      }
+
+      const client = createClient(supabaseUrl, secretKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+      const { error: probeError } = await client
+        .from("_coreza_auth_probe")
+        .select("*")
+        .limit(1);
+
+      if (probeError) {
+        if (probeError.code === "PGRST205" || probeError.code === "42P01") {
+          // Valid URL/key; probe table is expected to not exist.
+        } else if (
+          probeError.code === "PGRST301" ||
+          probeError.message.includes("401") ||
+          probeError.message.includes("403")
+        ) {
+          return res
+            .status(400)
+            .json({ error: "Invalid Supabase URL or Secret Key" });
+        } else {
+          return res.status(400).json({
+            error: `Supabase connection test failed: ${probeError.message}`,
+          });
+        }
+      }
+
+      const credentialId = await CredentialManager.saveCredentials(
+        userId,
+        "supabase",
+        credential_name,
+        {
+          supabase_url: supabaseUrl,
+          secret_key: secretKey,
+        },
+        "api",
+      );
+
+      res.json({
+        success: true,
+        credential_id: credentialId,
+        message: "Supabase connection validated and saved successfully",
       });
     } else {
       // For non-Redis services, just save the credentials

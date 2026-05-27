@@ -16,7 +16,12 @@ import {
 import { DynamicStructuredTool } from "@langchain/core/tools";
 
 import { createAgent } from "langchain";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  BaseMessage,
+  SystemMessage,
+  HumanMessage,
+} from "@langchain/core/messages";
 import CredentialManager from "../../utils/credentialManager";
 import { z, ZodTypeAny } from "zod";
 import {
@@ -35,6 +40,7 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { getLLM, LLMConfig } from "../../config/llmProviders";
+import { loadMemoryFromEdges } from "../logic/memoryLoader";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
@@ -196,6 +202,21 @@ export class AIAgentExecutor implements INodeExecutor {
       });
 
       console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
+      const loadedMemory = await loadMemoryFromEdges(
+        node,
+        edges,
+        allNodes,
+        {
+          ...context,
+          dataContext,
+        },
+        input,
+      );
+      const priorMessages: BaseMessage[] = loadedMemory
+        ? (await loadedMemory.history.getMessages()).slice(
+            -loadedMemory.windowMessages,
+          )
+        : [];
 
       // Create agent using the new LangChain agent API
       const agent = createAgent({
@@ -209,6 +230,7 @@ export class AIAgentExecutor implements INodeExecutor {
         {
           messages: [
             new SystemMessage(systemPrompt),
+            ...priorMessages,
             new HumanMessage(userPrompt),
           ],
         },
@@ -230,6 +252,12 @@ export class AIAgentExecutor implements INodeExecutor {
       );
 
       const agentOutput = this.getAgentOutput(result);
+      if (loadedMemory) {
+        await loadedMemory.history.addMessages([
+          new HumanMessage(userPrompt),
+          new AIMessage(agentOutput),
+        ]);
+      }
       const successOutput = createSuccessOutput(agentOutput);
       return toNodeResult(successOutput);
     } catch (error: any) {

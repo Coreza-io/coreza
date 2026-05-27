@@ -4,10 +4,10 @@
   "node_type": "sub",
   "category": "Memory",
   "icon": "/assets/icons/store.svg",
-  "description": "Connects to a Postgres database you manage. Create the table yourself before using this node.",
+  "description": "Stores chat history in a Supabase table you create. Required columns: `id bigserial primary key`, `session_id text not null`, `message jsonb not null`, `created_at timestamptz default now()`. Recommended index: `(session_id, id)`. Use a Supabase Secret Key (`sb_secret_…`) — legacy `service_role` JWTs are also accepted.",
   "size": {
     "width": 320,
-    "height": 300
+    "height": 260
   },
   "handles": [
     {
@@ -17,22 +17,51 @@
     }
   ],
   "auth": "GenericAuthModal",
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Supabase",
+      "placeholder": "e.g., Production Supabase"
+    },
+    {
+      "key": "supabase_url",
+      "label": "Supabase URL",
+      "type": "text",
+      "placeholder": "https://xxxx.supabase.co",
+      "required": true
+    },
+    {
+      "key": "secret_key",
+      "label": "Supabase Secret Key",
+      "type": "password",
+      "placeholder": "sb_secret_… (or legacy service_role JWT)",
+      "required": true
+    }
+  ],
+  "authAction": {
+    "url": "/storage/supabase/auth",
+    "method": "POST"
+  },
+  "subCategory": "Supabase",
   "fields": [
     {
       "key": "credential_id",
       "label": "Credential",
       "type": "select",
       "optionsSource": "credentialsApi",
+      "optionsSourceParams": {
+        "service_type": "supabase"
+      },
       "placeholder": "Select credential",
       "required": true
     },
     {
       "key": "sessionKey",
       "label": "Session Key",
-      "type": "string",
-      "default": "{{ $json.sessionId }}",
-      "required": true,
-      "description": "Identifier that scopes history to one chat/user."
+      "type": "hidden",
+      "default": ""
     },
     {
       "key": "tableName",

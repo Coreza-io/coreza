@@ -5,16 +5,14 @@
   "category": "Memory",
   "icon": "/assets/icons/store.svg",
   "description": "Single-worker, non-persistent. History is lost on restart.",
-  "size": { "width": 300, "height": 220 },
+  "size": { "width": 300, "height": 180 },
   "handles": [{ "type": "source", "position": "top", "id": "memory" }],
   "fields": [
     {
       "key": "sessionKey",
       "label": "Session Key",
-      "type": "string",
-      "default": "{{ $json.sessionId }}",
-      "required": true,
-      "description": "Identifier that scopes history to one chat/user."
+      "type": "hidden",
+      "default": ""
     },
     {
       "key": "contextWindowLength",

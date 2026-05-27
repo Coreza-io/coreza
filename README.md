@@ -179,7 +179,7 @@ cd ..
 
 ### 3. Database Setup
 
-The database schema is already configured through migrations. If needed, you can apply it manually using the Supabase dashboard or CLI.
+The database schema is already configured through migrations (including `public.coreza_chat_history` for AI Agent memory). If needed, you can apply it manually using the Supabase dashboard or CLI.
 
 ### 4. Start Development Servers
 

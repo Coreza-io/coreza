@@ -186,10 +186,7 @@ export async function loadMemoryFromEdges(
   }
 
   if (memoryNode.name === "PostgresChatMemory") {
-    const tableName = String(values.tableName ?? "").trim();
-    if (!tableName) {
-      throw new Error("Postgres Chat Memory requires tableName");
-    }
+    const tableName = String(values.tableName ?? "").trim() || "coreza_chat_history";
     const url = typeof clientJson?.supabase_url === "string" ? clientJson.supabase_url : "";
     const key =
       typeof clientJson?.secret_key === "string"

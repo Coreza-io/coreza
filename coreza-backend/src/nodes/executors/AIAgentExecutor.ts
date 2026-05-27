@@ -252,12 +252,14 @@ export class AIAgentExecutor implements INodeExecutor {
       );
 
       const agentOutput = this.getAgentOutput(result);
-      if (loadedMemory) {
+
+      if (loadedMemory && agentOutput.trim()) {
         await loadedMemory.history.addMessages([
-          new HumanMessage(userPrompt),
+          new HumanMessage(String(userPrompt)),
           new AIMessage(agentOutput),
         ]);
       }
+
       const successOutput = createSuccessOutput(agentOutput);
       return toNodeResult(successOutput);
     } catch (error: any) {

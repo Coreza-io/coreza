@@ -3,6 +3,7 @@
   "def": "Redis Chat Memory",
   "node_type": "sub",
   "category": "Memory",
+  "subCategory": "Redis",
   "icon": "/assets/icons/store.svg",
   "description": "Connects to a Redis instance you manage.",
   "size": {
@@ -24,7 +25,10 @@
       "type": "select",
       "optionsSource": "credentialsApi",
       "placeholder": "Select credential",
-      "required": true
+      "required": true,
+      "optionsSourceParams": {
+        "service_type": "redis"
+      }
     },
     {
       "key": "sessionKey",
@@ -48,5 +52,67 @@
       "required": true,
       "description": "Time to live for session history in seconds. Use 0 to never expire."
     }
-  ]
+  ],
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "default": "My Redis",
+      "placeholder": "e.g., Production Redis"
+    },
+    {
+      "key": "host",
+      "label": "Host",
+      "type": "text",
+      "placeholder": "localhost or redis-12345.cloud.redislabs.com",
+      "required": true
+    },
+    {
+      "key": "port",
+      "label": "Port",
+      "type": "text",
+      "default": "6379",
+      "placeholder": "6379"
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "type": "password",
+      "placeholder": "Redis password (leave blank if none)"
+    },
+    {
+      "key": "user",
+      "label": "User (optional)",
+      "type": "text",
+      "placeholder": "Leave blank for password-only auth"
+    },
+    {
+      "key": "database",
+      "label": "Database Number",
+      "type": "text",
+      "default": "0",
+      "placeholder": "0"
+    },
+    {
+      "key": "tls",
+      "label": "Use TLS",
+      "type": "select",
+      "options": [
+        {
+          "label": "No",
+          "value": "false"
+        },
+        {
+          "label": "Yes",
+          "value": "true"
+        }
+      ],
+      "default": "false"
+    }
+  ],
+  "authAction": {
+    "url": "/storage/redis/auth",
+    "method": "POST"
+  }
 }

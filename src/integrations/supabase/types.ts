@@ -340,6 +340,27 @@ export type Database = {
         }
         Relationships: []
       }
+      coreza_chat_history: {
+        Row: {
+          created_at: string
+          id: number
+          message: Json
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          message: Json
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          message?: Json
+          session_id?: string
+        }
+        Relationships: []
+      }
       live_fills: {
         Row: {
           algo_id: string | null

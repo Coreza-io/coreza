@@ -96,19 +96,19 @@
     },
     {
       "key": "tls",
-      "label": "Use TLS/SSL",
+      "label": "Use TLS",
       "type": "select",
       "options": [
         {
-          "label": "Yes (recommended for cloud)",
-          "value": "true"
-        },
-        {
           "label": "No",
           "value": "false"
+        },
+        {
+          "label": "Yes",
+          "value": "true"
         }
       ],
-      "default": "true"
+      "default": "false"
     }
   ],
   "authAction": {

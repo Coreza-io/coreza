@@ -7,7 +7,7 @@ import {
 } from "@langchain/core/messages";
 import { RedisChatMessageHistory } from "@langchain/community/stores/message/ioredis";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import Redis from "ioredis";
+import { getUserRedisConnection } from "../../services/storage/helpers/redisConnection";
 import CredentialManager from "../../utils/credentialManager";
 import { NodeInput, WorkflowEdge, WorkflowNode } from "../types";
 
@@ -160,18 +160,9 @@ export async function loadMemoryFromEdges(
   const clientJson = credentials?.client_json as Record<string, unknown> | undefined;
 
   if (memoryNode.name === "RedisChatMemory") {
-    if (!clientJson?.host || !clientJson?.port) {
-      throw new Error("Redis Chat Memory credential is invalid");
-    }
-
     const sessionTTL = Number(values.sessionTTL ?? 0);
-    const client = new Redis({
-      host: String(clientJson.host),
-      port: Number(clientJson.port),
-      username: clientJson.username ? String(clientJson.username) : undefined,
-      password: clientJson.password ? String(clientJson.password) : undefined,
-      db: clientJson.db !== undefined ? Number(clientJson.db) : undefined,
-      tls: clientJson.tls ? {} : undefined,
+    const client = await getUserRedisConnection(userId, credentialId, {
+      client_json: clientJson,
     });
 
     return {

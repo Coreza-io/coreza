@@ -1,8 +1,13 @@
 import { BaseChatMessageHistory, BaseListChatMessageHistory } from "@langchain/core/chat_history";
-import { BaseMessage, mapChatMessagesToStoredMessages, mapStoredMessagesToChatMessages } from "@langchain/core/messages";
+import {
+  BaseMessage,
+  StoredMessage,
+  mapChatMessagesToStoredMessages,
+  mapStoredMessagesToChatMessages,
+} from "@langchain/core/messages";
 import { RedisChatMessageHistory } from "@langchain/community/stores/message/ioredis";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import Redis from "ioredis";
-import { Pool } from "pg";
 import CredentialManager from "../../utils/credentialManager";
 import { NodeInput, WorkflowEdge, WorkflowNode } from "../types";
 
@@ -29,38 +34,51 @@ class SimpleMemoryHistory extends BaseListChatMessageHistory {
   }
 }
 
-class PostgresNoInitHistory extends BaseListChatMessageHistory {
-  lc_namespace = ["coreza", "memory", "postgres"];
+class SupabaseChatMessageHistory extends BaseListChatMessageHistory {
+  lc_namespace = ["coreza", "memory", "supabase"];
   constructor(
-    private readonly pool: Pool,
+    private readonly client: SupabaseClient,
     private readonly tableName: string,
     private readonly sessionId: string,
   ) {
     super();
   }
   async getMessages(): Promise<BaseMessage[]> {
-    const query = `SELECT message FROM ${this.tableName} WHERE session_id = $1 ORDER BY id`;
-    const res = await this.pool.query<{ message: Record<string, unknown> }>(query, [this.sessionId]);
-    const storedMessages = res.rows.map((row: { message: Record<string, unknown> }) => {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select("message")
+      .eq("session_id", this.sessionId)
+      .order("id", { ascending: true });
+    if (error) {
+      throw new Error(`Supabase memory read failed: ${error.message}`);
+    }
+    const storedMessages: StoredMessage[] = (data ?? []).map((row: { message: Record<string, unknown> }) => {
       const { type, ...data } = row.message as { type: string; [k: string]: unknown };
-      return { type, data };
+      return { type, data } as StoredMessage;
     });
     return mapStoredMessagesToChatMessages(storedMessages);
   }
   async addMessage(message: BaseMessage): Promise<void> {
     const [stored] = mapChatMessagesToStoredMessages([message]);
-    const query = `INSERT INTO ${this.tableName} (session_id, message) VALUES ($1, $2)`;
-    await this.pool.query(query, [
-      this.sessionId,
-      {
+    const { error } = await this.client.from(this.tableName).insert({
+      session_id: this.sessionId,
+      message: {
         ...stored.data,
         type: stored.type,
       },
-    ]);
+    });
+    if (error) {
+      throw new Error(`Supabase memory write failed: ${error.message}`);
+    }
   }
   async clear(): Promise<void> {
-    const query = `DELETE FROM ${this.tableName} WHERE session_id = $1`;
-    await this.pool.query(query, [this.sessionId]);
+    const { error } = await this.client
+      .from(this.tableName)
+      .delete()
+      .eq("session_id", this.sessionId);
+    if (error) {
+      throw new Error(`Supabase memory clear failed: ${error.message}`);
+    }
   }
 }
 
@@ -125,9 +143,18 @@ export async function loadMemoryFromEdges(
     throw new Error(`${memoryNode.name} requires userId and credential_id`);
   }
 
+  const serviceTypeByNode: Record<string, string> = {
+    RedisChatMemory: "redis",
+    PostgresChatMemory: "supabase",
+  };
+  const serviceType = serviceTypeByNode[memoryNode.name ?? ""];
+  if (!serviceType) {
+    throw new Error(`Unsupported Memory node type: ${memoryNode.name}`);
+  }
+
   const { credentials } = await CredentialManager.getCredentials(
     userId,
-    memoryNode.name?.toLowerCase?.() ?? "",
+    serviceType,
     credentialId,
   );
   const clientJson = credentials?.client_json as Record<string, unknown> | undefined;
@@ -163,21 +190,23 @@ export async function loadMemoryFromEdges(
     if (!tableName) {
       throw new Error("Postgres Chat Memory requires tableName");
     }
-    if (!clientJson?.host || !clientJson?.port || !clientJson?.database) {
-      throw new Error("Postgres Chat Memory credential is invalid");
+    const url = typeof clientJson?.supabase_url === "string" ? clientJson.supabase_url : "";
+    const key =
+      typeof clientJson?.secret_key === "string"
+        ? clientJson.secret_key
+        : typeof clientJson?.service_role_key === "string"
+          ? clientJson.service_role_key
+          : "";
+    if (!url || !key) {
+      throw new Error("Supabase credential is invalid");
     }
 
-    const pool = new Pool({
-      host: String(clientJson.host),
-      port: Number(clientJson.port),
-      user: clientJson.user ? String(clientJson.user) : undefined,
-      password: clientJson.password ? String(clientJson.password) : undefined,
-      database: String(clientJson.database),
-      ssl: clientJson.ssl ? { rejectUnauthorized: false } : undefined,
+    const client = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
 
     return {
-      history: new PostgresNoInitHistory(pool, tableName, sessionId),
+      history: new SupabaseChatMessageHistory(client, tableName, sessionId),
       sessionId,
       windowMessages,
     };

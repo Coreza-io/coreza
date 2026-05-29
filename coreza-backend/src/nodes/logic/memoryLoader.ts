@@ -1,4 +1,7 @@
-import { BaseChatMessageHistory, BaseListChatMessageHistory } from "@langchain/core/chat_history";
+import {
+  BaseChatMessageHistory,
+  BaseListChatMessageHistory,
+} from "@langchain/core/chat_history";
 import {
   BaseMessage,
   StoredMessage,
@@ -49,13 +52,15 @@ class SupabaseChatMessageHistory extends BaseListChatMessageHistory {
       .select("message")
       .eq("session_id", this.sessionId)
       .order("id", { ascending: true });
+
     if (error) {
-      throw new Error(`Supabase memory read failed: ${error.message}`);
+      throw new Error(`Failed to get messages: ${error.message}`);
     }
-    const storedMessages: StoredMessage[] = (data ?? []).map((row: { message: Record<string, unknown> }) => {
-      const { type, ...data } = row.message as { type: string; [k: string]: unknown };
-      return { type, data } as StoredMessage;
+
+    const storedMessages: StoredMessage[] = (data ?? []).map((row) => {
+      return row.message as unknown as StoredMessage;
     });
+
     return mapStoredMessagesToChatMessages(storedMessages);
   }
   async addMessage(message: BaseMessage): Promise<void> {
@@ -86,7 +91,10 @@ type MemoryLoaderContext = {
   userId?: string;
   workflowId?: string;
   executionId?: string;
-  resolveNodeParameters?: (node: WorkflowNode, input: NodeInput) => Record<string, unknown>;
+  resolveNodeParameters?: (
+    node: WorkflowNode,
+    input: NodeInput,
+  ) => Record<string, unknown>;
 };
 
 export type LoadedMemory = {
@@ -139,7 +147,8 @@ export async function loadMemoryFromEdges(
   }
 
   const userId = String(context.userId ?? "").trim();
-  const workflowId = String(context.workflowId ?? "unknown").trim() || "unknown";
+  const workflowId =
+    String(context.workflowId ?? "unknown").trim() || "unknown";
   const scopedRedisSessionId = `coreza_chat_history:userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}`;
   const credentialId = String(values.credential_id ?? "").trim();
   if (!userId || !credentialId) {
@@ -160,7 +169,9 @@ export async function loadMemoryFromEdges(
     serviceType,
     credentialId,
   );
-  const clientJson = credentials?.client_json as Record<string, unknown> | undefined;
+  const clientJson = credentials?.client_json as
+    | Record<string, unknown>
+    | undefined;
 
   if (memoryNode.name === "RedisChatMemory") {
     const sessionTTL = Number(values.sessionTTL ?? 0);
@@ -180,14 +191,14 @@ export async function loadMemoryFromEdges(
   }
 
   if (memoryNode.name === "PostgresChatMemory") {
-    const tableName = String(values.tableName ?? "").trim() || "coreza_chat_history";
-    const url = typeof clientJson?.supabase_url === "string" ? clientJson.supabase_url : "";
+    const tableName =
+      String(values.tableName ?? "").trim() || "coreza_chat_history";
+    const url =
+      typeof clientJson?.supabase_url === "string"
+        ? clientJson.supabase_url
+        : "";
     const key =
-      typeof clientJson?.secret_key === "string"
-        ? clientJson.secret_key
-        : typeof clientJson?.service_role_key === "string"
-          ? clientJson.service_role_key
-          : "";
+      typeof clientJson?.secret_key === "string" ? clientJson.secret_key : "";
     if (!url || !key) {
       throw new Error("Supabase credential is invalid");
     }

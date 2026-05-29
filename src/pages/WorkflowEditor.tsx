@@ -107,6 +107,10 @@ import { ActivateControl } from "@/components/workflow/ActivateControl";
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
+const BACKTEST_INIT_NODE_TYPE = "BacktestInit";
+const ON_BAR_NODE_TYPE = "OnBar";
+const ON_BAR_COMPANION_OFFSET_X = 450;
+
 const resolveWebSocketUrl = (): string | null => {
   const explicit = import.meta.env.VITE_WS_URL as string | undefined;
   if (explicit) {
@@ -1004,16 +1008,21 @@ const WorkflowEditorContent = () => {
     (nodeType: string, position: { x: number; y: number }) => {
       const nodeDefinition = nodeManifest[nodeType];
 
-      // Generate collision-safe human-readable ID
       const existingIds = new Set(nodes.map((node) => node.id));
-      let nodeId = nodeType;
-      let suffix = 1;
+      const getCollisionSafeNodeId = (baseId: string): string => {
+        let nodeId = baseId;
+        let suffix = 1;
 
-      while (existingIds.has(nodeId)) {
-        nodeId = `${nodeType}${suffix}`;
-        suffix += 1;
-      }
+        while (existingIds.has(nodeId)) {
+          nodeId = `${baseId}${suffix}`;
+          suffix += 1;
+        }
 
+        existingIds.add(nodeId);
+        return nodeId;
+      };
+
+      const nodeId = getCollisionSafeNodeId(nodeType);
       const newNode: Node = {
         id: nodeId,
         type: nodeType,
@@ -1025,9 +1034,54 @@ const WorkflowEditorContent = () => {
         },
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      const nodesToAdd = [newNode];
+      const shouldAddOnBar =
+        nodeType === BACKTEST_INIT_NODE_TYPE &&
+        !nodes.some((node) => node.type === ON_BAR_NODE_TYPE) &&
+        Boolean(nodeManifest[ON_BAR_NODE_TYPE]);
+
+      if (shouldAddOnBar) {
+        const onBarNodeId = getCollisionSafeNodeId(ON_BAR_NODE_TYPE);
+        const onBarDefinition = nodeManifest[ON_BAR_NODE_TYPE];
+        const onBarNode: Node = {
+          id: onBarNodeId,
+          type: ON_BAR_NODE_TYPE,
+          position: {
+            x: position.x + ON_BAR_COMPANION_OFFSET_X,
+            y: position.y,
+          },
+          data: {
+            label: onBarDefinition.name || "OnBar node",
+            definition: onBarDefinition,
+            workflowSessionId,
+          },
+        };
+
+        nodesToAdd.push(onBarNode);
+
+        const edgeId = `edge_${Date.now()}`;
+        const newEdge: Edge = {
+          id: edgeId,
+          source: nodeId,
+          target: onBarNodeId,
+          sourceHandle: "output",
+          targetHandle: "input",
+          type: "removable",
+          data: { onRemoveEdge: () => removeEdge(edgeId) },
+        };
+
+        setEdges((eds) => addEdge(newEdge, eds));
+      }
+
+      setNodes((nds) => nds.concat(nodesToAdd));
     },
-    [setNodes, nodes, workflowSessionId],
+    [
+      setNodes,
+      setEdges,
+      nodes,
+      workflowSessionId,
+      removeEdge,
+    ],
   );
 
   const onDrop = useCallback(

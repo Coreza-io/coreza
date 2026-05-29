@@ -20,7 +20,7 @@ An advanced, open-source trading platform that combines powerful workflow automa
 
 ## 📺 Introduction Video
 
-<a href="https://www.youtube.com/watch?v=QQSBB3aKPKM">
+<a href="https://youtu.be/QQSBB3aKPKM">
   <img src="https://img.youtube.com/vi/QQSBB3aKPKM/0.jpg" alt="Coreza Introduction Video" width="480">
 </a>
 

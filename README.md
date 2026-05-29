@@ -18,6 +18,10 @@ An advanced, open-source trading platform that combines powerful workflow automa
 - **Real-Time Analytics**: Live market data, technical indicators, and risk management in one unified interface
 - **100% Open Source**: Fully transparent codebase under AGPL-3.0 - audit, customize, and extend freely
 
+## 📺 Introduction Video
+
+[![Watch the Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-red?logo=youtube)](https://www.youtube.com/watch?v=QQSBB3aKPKM)
+
 ## Scheduler
 
 <img width="1915" height="1036" alt="Scheduler" src="https://github.com/user-attachments/assets/8cbb443e-d220-48c3-8aa7-3bce7186251c" />

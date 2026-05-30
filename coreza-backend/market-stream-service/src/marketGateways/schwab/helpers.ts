@@ -1,12 +1,29 @@
 import type { CorezaMarketEvent } from '../../types/marketEvent';
+import type { GatewayPreConnectContext } from '../types';
+import { OAuthRefreshProviderConfig, refreshOAuthTokenIfNeeded } from '../../utils/oauthTokenManager';
 import {
   buildSchwabLoginMessage,
   fetchSchwabStreamingConfig,
   parseSchwabStreamingMessage,
 } from '../../utils/schwabStreamingSetup';
 
-export async function preConnectSchwab(creds: any) {
-  return fetchSchwabStreamingConfig(creds.access_token);
+export async function preConnectSchwab(
+  creds: any,
+  context: GatewayPreConnectContext,
+  oauthRefreshConfig: OAuthRefreshProviderConfig,
+) {
+  const readyCreds = await refreshOAuthTokenIfNeeded(
+    creds,
+    context.userId,
+    context.credentialId,
+    oauthRefreshConfig,
+  );
+
+  if (!readyCreds.access_token) {
+    throw new Error("Schwab access token is missing after refresh readiness check");
+  }
+
+  return fetchSchwabStreamingConfig(readyCreds.access_token);
 }
 
 export function buildSchwabAuthMessage(creds: any) {

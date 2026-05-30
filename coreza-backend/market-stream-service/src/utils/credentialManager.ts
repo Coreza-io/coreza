@@ -150,16 +150,27 @@ class CredentialManager {
   static async getDecryptedCredentials(
     userId: string,
     serviceType: string,
-    credentialName?: string
-  ): Promise<{ credentials?: any; error?: string }> {
+    credentialName?: string,
+    options?: {
+      useCache?: boolean;
+    }
+  ): Promise<{ credentials?: any; created_at?: string; error?: string }> {
     try {
-      const cache = CredentialCache.getInstance();
-      const cached = await cache.get(userId, serviceType, credentialName);
-      if (cached !== null) {
+      const useCache = options?.useCache ?? true;
+
+      if (useCache) {
+        const cache = CredentialCache.getInstance();
+        const cached = await cache.get(userId, serviceType, credentialName);
+        if (cached !== null) {
+          console.log(
+            `📦 Cache HIT: ${serviceType}:${credentialName || "_default"}`
+          );
+          return { credentials: cached };
+        }
+      } else {
         console.log(
-          `📦 Cache HIT: ${serviceType}:${credentialName || "_default"}`
+          `📦 Cache BYPASS: ${serviceType}:${credentialName || "_default"}`
         );
-        return { credentials: cached };
       }
 
       console.log(
@@ -206,8 +217,15 @@ class CredentialManager {
 
       if (!credentials) return { error: "No valid credential data found" };
 
-      await cache.set(userId, serviceType, credentialName, credentials);
-      return { credentials };
+      if (useCache) {
+        await CredentialCache.getInstance().set(
+          userId,
+          serviceType,
+          credentialName,
+          credentials
+        );
+      }
+      return { credentials, created_at: credential.created_at };
     } catch (error: any) {
       return { error: error?.message ?? "Unknown error" };
     }
@@ -279,26 +297,37 @@ class CredentialManager {
   static async getCredentials(
     userId: string,
     serviceType: string,
-    credentialName: string
+    credentialName: string,
+    options?: {
+      useCache?: boolean;
+    }
   ): Promise<{
     credentials: {
       client_json: Record<string, any>;
       token_json: Record<string, any>;
     } | null;
+    created_at?: string;
   }> {
     try {
-      const cache = CredentialCache.getInstance();
-      const cached = await cache.get(userId, serviceType, credentialName);
-      if (cached !== null) {
-        console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
-        return { credentials: { client_json: cached, token_json: {} } };
+      const useCache = options?.useCache ?? true;
+
+      if (useCache) {
+        const cache = CredentialCache.getInstance();
+        const cached = await cache.get(userId, serviceType, credentialName);
+        if (cached !== null) {
+          console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
+          return { credentials: { client_json: cached, token_json: {} } };
+        }
+      } else {
+        console.log(`📦 Cache BYPASS: ${serviceType}:${credentialName}`);
       }
 
       console.log(`📦 Cache MISS: ${serviceType}:${credentialName}`);
       const result = await this.getDecryptedCredentials(
         userId,
         serviceType,
-        credentialName
+        credentialName,
+        { useCache }
       );
 
       if (result.error || !result.credentials) {
@@ -307,6 +336,7 @@ class CredentialManager {
 
       return {
         credentials: { client_json: result.credentials, token_json: {} },
+        created_at: result.created_at,
       };
     } catch (e: any) {
       throw new Error(

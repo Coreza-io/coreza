@@ -1,6 +1,12 @@
 import type { CorezaMarketEvent, MarketSource } from '../types/marketEvent';
 import type WebSocket from "ws";
 
+export interface GatewayPreConnectContext {
+  userId: string;
+  credentialId: string;
+  source: string;
+}
+
 export interface SubscribeOptions {
   klineInterval?: string;
   depthLevels?: string;
@@ -44,7 +50,7 @@ export interface GatewayConfig {
   // Protocol flags
   isBinary?: boolean;
   requiresPreConnect?: boolean | ((source?: string, creds?: any) => boolean);
-  preConnect?: (creds: any, source?: string) => Promise<any>;
+  preConnect?: (creds: any, context: GatewayPreConnectContext) => Promise<any>;
   validateOutbound?: (msg: any, source?: string) => boolean;
   encodeOutboundBinary?: (msg: any) => Buffer | string;
   onServiceStart?: () => Promise<void>;

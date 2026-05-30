@@ -12,6 +12,7 @@ import axios, { AxiosRequestConfig } from "axios";
 import { ScreenerInput, ScreenerResult, IScreenerService } from "./types";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
+import { isBrokerAuthError } from "../../utils/brokerAuthError";
 
 export type HttpMethod = "get" | "post" | "put" | "delete";
 
@@ -117,6 +118,16 @@ export class ScreenerService implements IScreenerService {
       const data = await handler.call(this, input);
       return { success: true, data };
     } catch (error) {
+      if (isBrokerAuthError(error)) {
+        return {
+          success: false,
+          error: error.message,
+          code: error.code,
+          provider: error.provider,
+          recoverable: error.recoverable,
+        };
+      }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",

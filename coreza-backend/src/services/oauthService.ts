@@ -40,7 +40,7 @@ class OAuthService {
     return provider?.toLowerCase();
   }
 
-  private static getProviderConfig(provider: string): OAuthProviderConfig {
+  static getProviderConfig(provider: string): OAuthProviderConfig {
     const normalized = this.normalizeProvider(provider);
     const config = normalized ? OAUTH_CONFIGS[normalized] : undefined;
 
@@ -77,6 +77,10 @@ class OAuthService {
       state: body.state,
       expires: Date.now() + 10 * 60 * 1000,
     };
+  }
+
+  static getTokenLifecycleConfig(provider: string) {
+    return this.getProviderConfig(provider).tokenLifecycle;
   }
 
   static async generateAuthUrl(provider: string, userId: string, body: any) {

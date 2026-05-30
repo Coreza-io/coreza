@@ -4,6 +4,7 @@ import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
   GatewayConfig,
   GATEWAY_CONFIGS,
+  GatewayPreConnectContext,
   SubscribeOptions,
 } from "../marketGateways";
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
@@ -41,6 +42,7 @@ export class MarketDataGateway {
   private config: GatewayConfig;
   private source: string; // Full source_id for behavior routing (e.g., 'alpaca_news')
   private credentials: any = null;
+  private preConnectContext: GatewayPreConnectContext | null = null;
   // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
   private subscribedStreams = new Set<string>();
   private isAuthenticated = false;
@@ -79,10 +81,16 @@ export class MarketDataGateway {
     return this.instances.get(key)!;
   }
 
-  async connect(credentials: any): Promise<void> {
+  async connect(
+    credentials: any,
+    preConnectContext?: GatewayPreConnectContext,
+  ): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     this.credentials = credentials;
+    if (preConnectContext) {
+      this.preConnectContext = preConnectContext;
+    }
 
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch, Binance listenKey)
     const needsPreConnect =
@@ -90,8 +98,17 @@ export class MarketDataGateway {
         ? this.config.requiresPreConnect(this.source, credentials)
         : this.config.requiresPreConnect;
     if (needsPreConnect && this.config.preConnect) {
+      if (!this.preConnectContext) {
+        throw new Error(
+          `Missing pre-connect context for ${this.source} gateway`,
+        );
+      }
+
       this.logger.info({ source: this.source }, "Running pre-connect setup");
-      this.credentials = await this.config.preConnect(credentials, this.source);
+      this.credentials = await this.config.preConnect(
+        credentials,
+        this.preConnectContext,
+      );
     }
 
     // Pass source to wsUrl function for behavior routing (e.g., alpaca_news uses different URL)
@@ -102,7 +119,7 @@ export class MarketDataGateway {
 
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url, {
-        headers: this.config.makeAuthHeaders?.(credentials),
+        headers: this.config.makeAuthHeaders?.(this.credentials),
       });
 
       this.ws.on("open", () => {
@@ -499,7 +516,9 @@ export class MarketDataGateway {
     );
 
     setTimeout(() => {
-      if (this.credentials) this.connect(this.credentials);
+      if (this.credentials) {
+        this.connect(this.credentials, this.preConnectContext ?? undefined);
+      }
     }, delay);
   }
 

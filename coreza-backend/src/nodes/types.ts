@@ -23,6 +23,9 @@ export interface NodeResult {
   isLastBatch?: boolean;
   callback_url?: string;
   error?: string;
+  code?: string;
+  provider?: string;
+  recoverable?: boolean;
   /**
    * Execution context metadata (e.g., error summaries, timing info).
    * For loop iteration context, use IterMeta in QueueItem.

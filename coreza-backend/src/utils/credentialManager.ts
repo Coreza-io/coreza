@@ -164,7 +164,7 @@ class CredentialManager {
     options?: {
       useCache?: boolean;
     },
-  ): Promise<{ credentials?: any; error?: string }> {
+  ): Promise<{ credentials?: any; created_at?: string; error?: string }> {
     try {
       let query = supabase
         .from("user_credentials")
@@ -204,7 +204,7 @@ class CredentialManager {
         const cache = CredentialCache.getInstance();
         await cache.set(userId, serviceType, credentialName, credentials);
       }
-      return { credentials };
+      return { credentials, created_at: credential.created_at };
     } catch (error: any) {
       return { error: error?.message ?? "Unknown error" };
     }
@@ -287,6 +287,7 @@ class CredentialManager {
       client_json: Record<string, any>;
       token_json: Record<string, any>;
     } | null;
+    created_at?: string;
   }> {
     try {
       const useCache = options?.useCache ?? true;
@@ -321,12 +322,14 @@ class CredentialManager {
         return {
           bot_token: null,
           credentials: { client_json: result.credentials, token_json: {} },
+          created_at: result.created_at,
         };
       }
 
       return {
         bot_token: null,
         credentials: { client_json: result.credentials, token_json: {} },
+        created_at: result.created_at,
       };
     } catch (e: any) {
       throw new Error(

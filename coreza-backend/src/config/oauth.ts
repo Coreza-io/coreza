@@ -10,7 +10,10 @@
 
 import axios from "axios";
 import { google } from "googleapis";
-import { OAuthTokenLifecycleConfig, unixNowSeconds } from "../utils/oauthTokenLifecycle";
+import {
+  OAuthTokenLifecycleConfig,
+  unixNowSeconds,
+} from "../utils/oauthTokenLifecycle";
 
 export interface OAuthSessionData {
   provider: string;
@@ -19,6 +22,7 @@ export interface OAuthSessionData {
   redirectUri?: string;
   scope?: string[];
   state?: string;
+  callbackSession?: string;
 }
 
 export interface OAuthTokenResult {
@@ -64,8 +68,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
         session.redirectUri || SCHWAB_REDIRECT_URI,
       )}`,
     exchangeCode: async ({ code, session }) => {
-      const codeFromUrl = session.redirectUri?.match(/code=([^&]+)/)?.[1];
-      const authCode = decodeURIComponent(code || codeFromUrl || "").trim();
+      const authCode = decodeURIComponent(code || "").trim();
 
       if (!authCode) {
         throw new Error(

@@ -20,6 +20,11 @@ interface TempSession extends OAuthSessionData {
   expires: number;
 }
 
+interface OAuthCodeResolution {
+  code: string;
+  callbackSession?: string;
+}
+
 class OAuthService {
   private static tempSessions = new Map<string, TempSession>();
 
@@ -38,6 +43,35 @@ class OAuthService {
 
   private static normalizeProvider(provider: string) {
     return provider?.toLowerCase();
+  }
+
+  private static resolveAuthorizationCode(
+    body: Record<string, unknown>,
+  ): OAuthCodeResolution {
+    const directCode = typeof body.code === "string" ? body.code.trim() : "";
+    let codeFromRedirect = "";
+    let callbackSession: string | undefined;
+
+    if (typeof body.redirect_url === "string" && body.redirect_url.trim()) {
+      try {
+        const redirectUrl = new URL(body.redirect_url.trim());
+        codeFromRedirect = redirectUrl.searchParams.get("code")?.trim() || "";
+        callbackSession =
+          redirectUrl.searchParams.get("session")?.trim() || undefined;
+      } catch {
+        // Ignore malformed callback URLs so callers get the same clear missing-code error.
+      }
+    }
+
+    const code = directCode || codeFromRedirect;
+
+    if (!code) {
+      throw new Error(
+        "Authorization code is required. Please provide code or redirect_url containing the code.",
+      );
+    }
+
+    return { code, callbackSession };
   }
 
   static getProviderConfig(provider: string): OAuthProviderConfig {
@@ -119,9 +153,14 @@ class OAuthService {
       );
     }
 
+    const { code, callbackSession } = this.resolveAuthorizationCode(body);
+    const exchangeSession = callbackSession
+      ? { ...session, callbackSession }
+      : session;
+
     const tokenData: OAuthTokenResult = await config.exchangeCode({
-      code: body.code,
-      session,
+      code,
+      session: exchangeSession,
     });
 
     const payload = {

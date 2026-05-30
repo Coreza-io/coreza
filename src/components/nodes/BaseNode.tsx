@@ -229,6 +229,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const credentialsHook = useNodeCredentials({
     definition,
     fieldState: fieldStateHook.fieldState,
+    workflowId,
+    workflowSessionId: data?.workflowSessionId,
   });
 
   // Output management

@@ -15,6 +15,8 @@ import { apiClient } from "@/lib/apiClient";
 interface UseNodeCredentialsProps {
   definition: any;
   fieldState: Record<string, any>;
+  workflowId?: string;
+  workflowSessionId?: string;
 }
 
 interface UseNodeCredentialsReturn {
@@ -33,6 +35,8 @@ interface UseNodeCredentialsReturn {
 export function useNodeCredentials({
   definition,
   fieldState,
+  workflowId,
+  workflowSessionId,
 }: UseNodeCredentialsProps): UseNodeCredentialsReturn {
   const { user, session, loading } = useAuth();
   const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>(
@@ -190,10 +194,16 @@ export function useNodeCredentials({
       }
 
       const fieldKey = field.key;
+      const requestBody = {
+        user_id: userId,
+        credential_id: parentValue,
+        workflowId,
+        workflowSessionId,
+      };
+
       console.log(`[DEPENDENT-API] Fetching options for ${fieldKey}`, {
         url: field.optionsApiUrl,
-        user_id: user?.id,
-        credential_id: parentValue,
+        ...requestBody,
       });
 
       setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
@@ -201,7 +211,7 @@ export function useNodeCredentials({
       try {
         const response = await apiClient.post(
           field.optionsApiUrl,
-          { user_id: user?.id, credential_id: parentValue },
+          requestBody,
           session?.access_token,
         );
 
@@ -232,7 +242,7 @@ export function useNodeCredentials({
         setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
       }
     },
-    [user?.id, session?.access_token],
+    [userId, session?.access_token, workflowId, workflowSessionId],
   );
 
   // Load credentials and static options on mount (wait for auth to be ready)

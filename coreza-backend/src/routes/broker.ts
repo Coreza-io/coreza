@@ -115,10 +115,10 @@ router.post("/:broker/:operation", async (req, res, next) => {
       node_id,
       node_type,
       nodeName,
-      operation,
       category,
       subCategory,
     } = req.body;
+    const operation = req.params.operation || req.body.operation;
     const userId = req.user?.id;
 
     if (!userId || !credential_id) {
@@ -137,19 +137,21 @@ router.post("/:broker/:operation", async (req, res, next) => {
       }
     }
 
+    const brokerInput = {
+      ...req.body,
+      operation,
+    };
+
     const node: WorkflowNode = {
       id: node_id,
       name: nodeName,
       node_type,
       category,
       subCategory: subCategory,
-      values: {
-        operation: operation,
-        ...req.body,
-      },
+      values: brokerInput,
     };
 
-    const result = await brokerExecutor.execute(node, req.body, {
+    const result = await brokerExecutor.execute(node, brokerInput, {
       userId,
       workflowId,
       executionMode: "manual",

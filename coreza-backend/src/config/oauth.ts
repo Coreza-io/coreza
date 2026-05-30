@@ -10,6 +10,7 @@
 
 import axios from "axios";
 import { google } from "googleapis";
+import { OAuthTokenLifecycleConfig, unixNowSeconds } from "../utils/oauthTokenLifecycle";
 
 export interface OAuthSessionData {
   provider: string;
@@ -42,15 +43,20 @@ export interface OAuthProviderConfig {
     session: OAuthSessionData;
   }) => Promise<OAuthTokenResult>;
   refreshToken?: (params: { credentials: any }) => Promise<OAuthTokenResult>;
+  tokenLifecycle?: OAuthTokenLifecycleConfig;
 }
 
 const SCHWAB_REDIRECT_URI = "https://127.0.0.1";
+const SCHWAB_REFRESH_TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
 
 export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
   schwab: {
     clientIdField: "app_key",
     clientSecretField: "app_secret",
     defaultRedirectUri: SCHWAB_REDIRECT_URI,
+    tokenLifecycle: {
+      refreshTokenLifetimeSeconds: SCHWAB_REFRESH_TOKEN_LIFETIME_SECONDS,
+    },
     generateAuthUrl: async (session) =>
       `https://api.schwabapi.com/v1/oauth/authorize?client_id=${encodeURIComponent(
         session.clientId,
@@ -86,7 +92,8 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
       );
 
       const { access_token, refresh_token, expires_in } = tokenResponse.data;
-      const token_expires_at = Math.floor(Date.now() / 1000) + expires_in;
+      const now = unixNowSeconds();
+      const token_expires_at = now + expires_in;
 
       return {
         client: {
@@ -97,6 +104,8 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
           access_token,
           refresh_token,
           token_expires_at,
+          refresh_token_created_at: now,
+          refresh_token_expires_at: now + SCHWAB_REFRESH_TOKEN_LIFETIME_SECONDS,
         },
       };
     },
@@ -120,7 +129,8 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
       );
 
       const { access_token, expires_in } = tokenResponse.data;
-      const token_expires_at = Math.floor(Date.now() / 1000) + expires_in;
+      const now = unixNowSeconds();
+      const token_expires_at = now + expires_in;
 
       return {
         client: {
@@ -131,6 +141,9 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
           access_token,
           refresh_token: credentials.refresh_token,
           token_expires_at,
+          refresh_token_created_at: credentials.refresh_token_created_at,
+          refresh_token_expires_at: credentials.refresh_token_expires_at,
+          last_refreshed_at: now,
         },
       };
     },

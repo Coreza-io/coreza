@@ -1080,7 +1080,11 @@ export class MarketControlHandler {
       );
 
       // Connect gateway with credentials
-      await gateway.connect(creds);
+      await gateway.connect(creds, {
+        userId,
+        credentialId: credentialId || "default",
+        source,
+      });
 
       // Track state with streams (single source of truth)
       this.sourceStates.set(this.getStateKey(userId, source), {

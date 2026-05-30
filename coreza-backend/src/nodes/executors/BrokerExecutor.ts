@@ -17,6 +17,7 @@ import {
 } from "../../brokers";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
+import { isBrokerAuthError } from "../../utils/brokerAuthError";
 import {
   cacheOrderIntent,
   generateIdempotencyKey,
@@ -343,6 +344,16 @@ export class BrokerExecutor implements INodeExecutor {
               ? enrichedError.message
               : String(enrichedError),
         });
+      }
+
+      if (isBrokerAuthError(error)) {
+        return {
+          success: false,
+          error: error.message,
+          code: error.code,
+          provider: error.provider,
+          recoverable: error.recoverable,
+        };
       }
 
       if (preRegisteredClientOrderId && operation === "place_order") {

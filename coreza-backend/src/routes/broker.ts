@@ -14,6 +14,8 @@ import CredentialManager from "../utils/credentialManager";
 import { requireAuth } from "../middleware/jwtAuth";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import { WorkflowNode } from "../nodes/types";
+import { deriveOAuthCredentialStatus } from "../utils/oauthTokenLifecycle";
+import { OAUTH_CONFIGS } from "../config/oauth";
 
 const router = express.Router();
 
@@ -40,17 +42,20 @@ router.get("/:broker/credentials", async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const credentials = await CredentialManager.listCredentials(
-      userId,
-      brokerKey,
-    );
+    const credentials =
+      brokerKey === "schwab"
+        ? await CredentialManager.getCredentialRecords(userId, brokerKey)
+        : await CredentialManager.listCredentials(userId, brokerKey);
 
     const formattedCredentials =
       brokerKey === "schwab"
         ? credentials.map((c: any) => ({
             id: c.name,
             name: c.name,
-            account_number: c.client_json?.account_number,
+            account_number: c.credentials?.account_number,
+            ...deriveOAuthCredentialStatus(c.credentials ?? {}, {
+              created_at: c.created_at,
+            }, OAUTH_CONFIGS.schwab.tokenLifecycle),
           }))
         : credentials.map((c: any) => ({
             id: c.name,
@@ -155,7 +160,13 @@ router.post("/:broker/:operation", async (req, res, next) => {
       return res.json({ success: true, data: result.data, meta: result.meta });
     }
 
-    res.status(400).json({ success: false, error: result.error });
+    res.status(400).json({
+      success: false,
+      error: result.error,
+      code: result.code,
+      provider: result.provider,
+      recoverable: result.recoverable,
+    });
   } catch (err: any) {
     const status = err.response?.status;
     let message =

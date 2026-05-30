@@ -1,12 +1,26 @@
 import type { MarketEvent } from '../../../types/marketEvent';
+import type { GatewayPreConnectContext } from '../../gatewayTypes';
+import { refreshOAuthTokenIfNeeded } from '../../../utils/oauthTokenManager';
 import {
   buildSchwabLoginMessage,
   fetchSchwabStreamingConfig,
   parseSchwabStreamingMessage,
 } from '../../../utils/schwabStreamingSetup';
 
-export async function preConnectSchwab(creds: any) {
-  return fetchSchwabStreamingConfig(creds.access_token);
+export async function preConnectSchwab(
+  creds: any,
+  context?: GatewayPreConnectContext,
+) {
+  const readyCreds = context
+    ? await refreshOAuthTokenIfNeeded(
+        "schwab",
+        creds,
+        context.userId,
+        context.credentialId,
+      )
+    : creds;
+
+  return fetchSchwabStreamingConfig(readyCreds.access_token);
 }
 
 export function buildSchwabAuthMessage(creds: any) {

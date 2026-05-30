@@ -18,6 +18,8 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/jwtAuth";
 import CredentialManager from "../utils/credentialManager";
 import CredentialCache from "../utils/credentialCache";
+import { deriveOAuthCredentialStatus } from "../utils/oauthTokenLifecycle";
+import { OAUTH_CONFIGS } from "../config/oauth";
 
 const router = express.Router();
 
@@ -40,10 +42,24 @@ router.get("/list", async (req, res) => {
 
     const serviceType = req.query.service_type as string;
 
-    const credentials = await CredentialManager.listCredentials(
-      userId,
-      serviceType
-    );
+    const credentials =
+      serviceType === "schwab"
+        ? (await CredentialManager.getCredentialRecords(userId, serviceType)).map(
+            (credential) => ({
+              id: credential.id,
+              name: credential.name,
+              service_type: credential.service_type,
+              created_at: credential.created_at,
+              updated_at: credential.updated_at,
+              is_encrypted: credential.is_encrypted,
+              enc_version: credential.enc_version,
+              key_ref: credential.key_ref,
+              ...deriveOAuthCredentialStatus(credential.credentials, {
+                created_at: credential.created_at,
+              }, OAUTH_CONFIGS.schwab.tokenLifecycle),
+            }),
+          )
+        : await CredentialManager.listCredentials(userId, serviceType);
 
     res.json({
       credentials,

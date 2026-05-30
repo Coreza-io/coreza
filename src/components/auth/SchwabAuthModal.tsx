@@ -265,6 +265,12 @@ export function SchwabAuthModal({
                       developer.schwab.com
                     </a>
                   </p>
+                  <p className="text-muted-foreground mt-2">
+                    After connection, access tokens are auto-managed. Schwab
+                    refresh tokens expire after 7 days, so reconnect before the
+                    warning becomes required to keep live orders and streams
+                    running.
+                  </p>
                 </div>
               </div>
             </div>
@@ -357,7 +363,8 @@ export function SchwabAuthModal({
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
                   You can now use this credential in your workflows. Access
-                  tokens will be automatically refreshed.
+                  token: auto-managed. Reconnect within Schwab's refresh-token
+                  window to keep live orders and streams available.
                 </p>
               </div>
             </div>

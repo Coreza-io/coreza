@@ -1,5 +1,11 @@
 import type { MarketEvent } from '../types/marketEvent';
 
+export interface GatewayPreConnectContext {
+  userId: string;
+  credentialId: string;
+  source: string;
+}
+
 export interface GatewayConfig<TSource extends string = string> {
   id: TSource;
   wsUrl: string | ((creds: any) => string);
@@ -27,5 +33,5 @@ export interface GatewayConfig<TSource extends string = string> {
   // Protocol flags
   isBinary?: boolean; // Uses binary WebSocket protocol (Dhan)
   requiresPreConnect?: boolean; // Needs setup before connect (Schwab OAuth)
-  preConnect?: (creds: any) => Promise<any>; // Pre-connection setup hook
+  preConnect?: (creds: any, context?: GatewayPreConnectContext) => Promise<any>; // Pre-connection setup hook
 }

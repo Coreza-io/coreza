@@ -13,7 +13,7 @@ import {
 export const schwabGatewayConfig: GatewayConfig<'schwab'> = {
   id: 'schwab',
   wsUrl: (creds) => creds.streamerSocketUrl,
-  preConnect: async (creds) => preConnectSchwab(creds),
+  preConnect: async (creds, context) => preConnectSchwab(creds, context),
   makeAuthMessage: (creds) => buildSchwabAuthMessage(creds),
   makeSubscribeMessage: (symbols) => buildSchwabSubscribeMessage(symbols),
   makeUnsubscribeMessage: (symbols) => buildSchwabUnsubscribeMessage(symbols),

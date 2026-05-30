@@ -81,6 +81,7 @@ export function useNodeCredentials({
         const json = await res.json();
         console.log("Credentials response:", json);
         const credentials = (json.credentials || []).map((credential: any) => ({
+          ...credential,
           id: credential.id || credential.name,
           name: credential.name || credential.id || "Unnamed Credential",
         }));

@@ -26,6 +26,9 @@ export interface ScreenerResult {
     metadata?: any;
   };
   error?: string;
+  code?: string;
+  provider?: string;
+  recoverable?: boolean;
 }
 
 export interface IScreenerService {

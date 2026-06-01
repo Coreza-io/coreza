@@ -1,0 +1,171 @@
+{
+  "name": "SchwabStreamSubscribe",
+  "broker": "schwab",
+  "def": "Schwab Stream Subscribe",
+  "node_type": "main",
+  "icon": "/assets/icons/schwab.svg",
+  "category": "Stream",
+  "subCategory": "schwab",
+  "description": "Subscribe or unsubscribe to Schwab real-time equity quote data. Subscriptions persist and can be received by any activated SchwabStreamListener trigger.",
+  "color": "text-blue-500",
+  "size": {
+    "width": 380,
+    "height": 420
+  },
+  "handles": [
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "auth": "SchwabAuthModal",
+  "authAction": {
+    "url": "/oauth/schwab/generate-auth-url",
+    "method": "POST"
+  },
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g., My Schwab Account"
+    },
+    {
+      "key": "app_key",
+      "label": "App Key",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Key"
+    },
+    {
+      "key": "app_secret",
+      "label": "App Secret",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Secret"
+    },
+    {
+      "key": "account_number",
+      "label": "Account Number (Optional)",
+      "type": "text",
+      "required": false,
+      "placeholder": "For reference only - will be fetched dynamically"
+    }
+  ],
+  "action": {
+    "url": "/stream/schwab/{{operation}}",
+    "method": "POST"
+  },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "assetType",
+      "label": "Asset Type",
+      "type": "hidden",
+      "default": "equity"
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "hidden",
+      "default": "live"
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "id": "subscribe",
+          "name": "Subscribe"
+        },
+        {
+          "id": "unsubscribe",
+          "name": "Unsubscribe"
+        }
+      ],
+      "default": "subscribe",
+      "required": true
+    },
+    {
+      "key": "stream_type",
+      "label": "Stream Type",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "quote",
+          "name": "Quotes"
+        }
+      ],
+      "default": [
+        "quote"
+      ],
+      "description": "Schwab streaming currently supports LEVELONE_EQUITIES quotes.",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
+      "placeholder": "AAPL, MSFT, SPY",
+      "description": "Comma-separated equity symbols to subscribe or unsubscribe.",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "scope",
+      "label": "Scope",
+      "type": "select",
+      "options": [
+        {
+          "id": "workflow",
+          "name": "Specific Workflow Only"
+        },
+        {
+          "id": "global",
+          "name": "Global (All Workflows)"
+        }
+      ],
+      "default": "workflow",
+      "description": "Choose whether this subscription is scoped to the current workflow or available globally.",
+      "required": true,
+      "showDescription": false
+    },
+    {
+      "key": "targetWorkflowId",
+      "label": "Target Workflow",
+      "type": "select",
+      "options": [
+        {
+          "id": "__current__",
+          "name": "This Workflow (Current)"
+        }
+      ],
+      "optionsSource": "storeWorkflowsApi",
+      "placeholder": "Select workflow to receive data",
+      "displayOptions": {
+        "show": {
+          "scope": [
+            "workflow"
+          ]
+        }
+      },
+      "default": "__current__"
+    }
+  ]
+}

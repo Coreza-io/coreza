@@ -75,8 +75,19 @@
     {
       "key": "assetType",
       "label": "Asset Type",
-      "type": "hidden",
-      "default": "equity"
+      "type": "select",
+      "options": [
+        {
+          "id": "equity",
+          "name": "Equity"
+        },
+        {
+          "id": "future",
+          "name": "Future"
+        }
+      ],
+      "default": "equity",
+      "required": true
     },
     {
       "key": "environment",
@@ -109,12 +120,16 @@
         {
           "id": "quote",
           "name": "Quotes"
+        },
+        {
+          "id": "chart",
+          "name": "Chart Bars"
         }
       ],
       "default": [
         "quote"
       ],
-      "description": "Schwab streaming currently supports LEVELONE_EQUITIES quotes.",
+      "description": "Select Schwab quote and chart streams to subscribe to.",
       "required": true,
       "showDescription": false
     },
@@ -122,8 +137,8 @@
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
-      "placeholder": "AAPL, MSFT, SPY",
-      "description": "Comma-separated equity symbols to subscribe or unsubscribe.",
+      "placeholder": "AAPL, MSFT, /ES",
+      "description": "Comma-separated symbols to subscribe or unsubscribe.",
       "required": true,
       "showDescription": false
     },

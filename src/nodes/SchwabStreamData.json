@@ -73,8 +73,19 @@
     {
       "key": "assetType",
       "label": "Asset Type",
-      "type": "hidden",
-      "default": "equity"
+      "type": "select",
+      "options": [
+        {
+          "id": "equity",
+          "name": "Equity"
+        },
+        {
+          "id": "future",
+          "name": "Future"
+        }
+      ],
+      "default": "equity",
+      "required": true
     },
     {
       "key": "environment",
@@ -119,8 +130,8 @@
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
-      "placeholder": "AAPL, MSFT, SPY",
-      "description": "Equity symbols to subscribe and stream.",
+      "placeholder": "AAPL, MSFT, /ES",
+      "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
           "mode": [
@@ -139,6 +150,10 @@
         {
           "id": "quote",
           "name": "Quotes"
+        },
+        {
+          "id": "chart",
+          "name": "Chart Bars"
         }
       ],
       "default": [
@@ -201,6 +216,10 @@
         {
           "id": "quote",
           "name": "Quotes"
+        },
+        {
+          "id": "chart",
+          "name": "Chart Bars"
         }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",

@@ -14,6 +14,7 @@ export type MarketEventType =
   | "trade"
   | "aggTrade"
   | "quote"
+  | "chart"
   | "bar"
   | "daily_bar"
   | "news"

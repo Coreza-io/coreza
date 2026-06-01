@@ -195,6 +195,9 @@ export function useNodeCredentials({
 
       const fieldKey = field.key;
       const requestBody = {
+        nodeName: definition.name,
+        category: definition.category,
+        subCategory: definition.subCategory,
         user_id: userId,
         credential_id: parentValue,
         workflowId,

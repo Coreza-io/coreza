@@ -53,9 +53,13 @@ router.get("/:broker/credentials", async (req, res, next) => {
             id: c.name,
             name: c.name,
             account_number: c.credentials?.account_number,
-            ...deriveOAuthCredentialStatus(c.credentials ?? {}, {
-              created_at: c.created_at,
-            }, OAUTH_CONFIGS.schwab.tokenLifecycle),
+            ...deriveOAuthCredentialStatus(
+              c.credentials ?? {},
+              {
+                created_at: c.created_at,
+              },
+              OAUTH_CONFIGS.schwab.tokenLifecycle,
+            ),
           }))
         : credentials.map((c: any) => ({
             id: c.name,
@@ -111,6 +115,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const { broker } = req.params;
     const {
       workflowId,
+      workflowSessionId,
       credential_id,
       node_id,
       node_type,
@@ -155,7 +160,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       userId,
       workflowId,
       executionMode: "manual",
-      executionId: req.body.workflowSessionId || workflowId,
+      executionId: workflowSessionId || workflowId,
     });
 
     if (result.success) {

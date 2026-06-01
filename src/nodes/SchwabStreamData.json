@@ -1,0 +1,217 @@
+{
+  "name": "SchwabStreamListener",
+  "broker": "schwab",
+  "def": "Schwab Stream Listener",
+  "node_type": "trigger",
+  "icon": "/assets/icons/schwab.svg",
+  "category": "Stream",
+  "subCategory": "schwab",
+  "executionMode": "streaming",
+  "action": {
+    "url": "/stream/schwab/register",
+    "method": "POST"
+  },
+  "streamingConfig": {
+    "waitForFirstEvent": false,
+    "timeout": 300000,
+    "listeningFlag": "isTestListening",
+    "subscribeListeningFlag": "isStreamingWaiting",
+    "recoveryPolling": {
+      "endpoint": "/market/stream-test-result/{{workflow_id}}/{{node_id}}",
+      "interval": 10000
+    }
+  },
+  "description": "Register to receive Schwab real-time equity quote data. Use Listen mode to receive pre-subscribed symbols, or Subscribe mode to subscribe and stream in one node.",
+  "color": "text-blue-500",
+  "size": {
+    "width": 320,
+    "height": 320
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "auth": "SchwabAuthModal",
+  "authAction": {
+    "url": "/oauth/schwab/generate-auth-url",
+    "method": "POST"
+  },
+  "authFields": [
+    {
+      "key": "credential_name",
+      "label": "Credential Label",
+      "type": "text",
+      "required": true,
+      "placeholder": "e.g., My Schwab Account"
+    },
+    {
+      "key": "app_key",
+      "label": "App Key",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Key"
+    },
+    {
+      "key": "app_secret",
+      "label": "App Secret",
+      "type": "password",
+      "required": true,
+      "placeholder": "Your Schwab App Secret"
+    },
+    {
+      "key": "account_number",
+      "label": "Account Number (Optional)",
+      "type": "text",
+      "required": false,
+      "placeholder": "For reference only - will be fetched dynamically"
+    }
+  ],
+  "fields": [
+    {
+      "key": "assetType",
+      "label": "Asset Type",
+      "type": "hidden",
+      "default": "equity"
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "hidden",
+      "default": "live"
+    },
+    {
+      "key": "mode",
+      "label": "Mode",
+      "type": "select",
+      "options": [
+        {
+          "id": "listen",
+          "name": "Register"
+        },
+        {
+          "id": "subscribe",
+          "name": "Subscribe & Register"
+        }
+      ],
+      "default": "listen",
+      "description": "Listen mode uses symbols from Subscribe nodes. Subscribe mode subscribes symbols directly.",
+      "showDescription": false
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "required": true
+    },
+    {
+      "key": "symbols",
+      "label": "Symbols",
+      "type": "text",
+      "placeholder": "AAPL, MSFT, SPY",
+      "description": "Equity symbols to subscribe and stream.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "showDescription": false,
+      "required": true
+    },
+    {
+      "key": "stream_type",
+      "label": "Stream Type",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "quote",
+          "name": "Quotes"
+        }
+      ],
+      "default": [
+        "quote"
+      ],
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "required": true
+    },
+    {
+      "key": "scope",
+      "label": "Scope",
+      "type": "select",
+      "options": [
+        {
+          "id": "workflow",
+          "name": "Only This Workflow's Subscriptions"
+        },
+        {
+          "id": "global",
+          "name": "All My Subscriptions"
+        }
+      ],
+      "default": "workflow",
+      "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "filter_symbols",
+      "label": "Filter Symbols (Optional)",
+      "type": "text",
+      "placeholder": "AAPL, MSFT (leave empty for all)",
+      "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed symbols.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
+    },
+    {
+      "key": "filter_types",
+      "label": "Filter Event Types (Optional)",
+      "type": "multiselect",
+      "options": [
+        {
+          "id": "quote",
+          "name": "Quotes"
+        }
+      ],
+      "description": "Filter specific event types. Leave empty to receive all types.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "listen"
+          ]
+        }
+      },
+      "showDescription": false
+    }
+  ]
+}

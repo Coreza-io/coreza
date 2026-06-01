@@ -8,6 +8,8 @@ export const schwabCapabilities: BrokerCapabilities = {
     data: "Schwab",
     trade: "SchwabTrade",
     screener: "SchwabScreener",
+    streamData: "SchwabStreamListener",
+    subscribe: "SchwabStreamSubscribe",
   },
 
   streaming: {

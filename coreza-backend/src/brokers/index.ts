@@ -1,21 +1,21 @@
-import { alpacaConfig } from './alpaca/http/config';
-import { alpacaGatewayConfig } from './alpaca/ws/config';
-import { alpacaNewsGatewayConfig } from './alpacaNews/ws/config';
-import { binanceConfig } from './binance/http/config';
-import { binanceGatewayConfig } from './binance/ws/config';
-import { dhanConfig } from './dhan/http/config';
-import { dhanGatewayConfig } from './dhan/ws/config';
-import { schwabConfig } from './schwab/http/config';
-import { schwabGatewayConfig } from './schwab/ws/config';
-import { GatewayConfig } from './gatewayTypes';
-import { BrokerConfig } from './types';
+import { alpacaConfig } from "./alpaca/http/config";
+import { alpacaGatewayConfig } from "./alpaca/ws/config";
+import { alpacaNewsGatewayConfig } from "./alpacaNews/ws/config";
+import { binanceConfig } from "./binance/http/config";
+import { binanceGatewayConfig } from "./binance/ws/config";
+import { dhanConfig } from "./dhan/http/config";
+import { dhanGatewayConfig } from "./dhan/ws/config";
+import { schwabConfig } from "./schwab/http/config";
+import { schwabGatewayConfig } from "./schwab/ws/config";
+import { GatewayConfig } from "./gatewayTypes";
+import { BrokerConfig } from "./types";
 
 // Import and register capabilities
-import { registerBrokerCapabilities } from './capabilities';
-import { alpacaCapabilities } from './alpaca/capabilities';
-import { binanceCapabilities } from './binance/capabilities';
-import { dhanCapabilities } from './dhan/capabilities';
-import { schwabCapabilities } from './schwab/capabilities';
+import { registerBrokerCapabilities } from "./capabilities";
+import { alpacaCapabilities } from "./alpaca/capabilities";
+import { binanceCapabilities } from "./binance/capabilities";
+import { dhanCapabilities } from "./dhan/capabilities";
+import { schwabCapabilities } from "./schwab/capabilities";
 
 // Register all broker capabilities at module load
 registerBrokerCapabilities(alpacaCapabilities);
@@ -70,24 +70,25 @@ export interface SourceMapping {
 }
 
 export const SOURCE_MAPPING: Record<string, SourceMapping> = Object.keys(
-  GATEWAY_CONFIGS
-).reduce((mapping, key) => {
-  const base = key.split('_')[0];
-  const gatewaySource = key as MarketSource;
+  GATEWAY_CONFIGS,
+).reduce(
+  (mapping, key) => {
+    const base = key.split("_")[0];
+    const gatewaySource = key as MarketSource;
 
-  mapping[key] = { credentialServiceType: base, gatewaySource };
+    mapping[key] = { credentialServiceType: base, gatewaySource };
 
-  if (key === base) {
-    mapping[`${base}_stream`] = { credentialServiceType: base, gatewaySource };
-  }
+    if (key === base) {
+      mapping[`${base}_stream`] = {
+        credentialServiceType: base,
+        gatewaySource,
+      };
+    }
 
-  return mapping;
-}, {} as Record<string, SourceMapping>);
-
-SOURCE_MAPPING.schwab_trading = {
-  credentialServiceType: 'schwab',
-  gatewaySource: 'schwab',
-};
+    return mapping;
+  },
+  {} as Record<string, SourceMapping>,
+);
 
 /**
  * Get source mapping for a given source ID.
@@ -102,6 +103,6 @@ export function getSourceMapping(source: string): SourceMapping {
   );
 }
 
-export * from './types';
-export * from './gatewayTypes';
-export * from './capabilities';
+export * from "./types";
+export * from "./gatewayTypes";
+export * from "./capabilities";

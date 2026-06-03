@@ -31,7 +31,7 @@ const TRADING_LIFECYCLE_EVENTS = new Set([
   "trade_updates",
   "ORDER_TRADE_UPDATE",
   "executionReport",
-  "order_update",
+  "account_activity ",
   "listen_key_expired",
 ]);
 
@@ -304,7 +304,7 @@ export class MarketDataGateway {
         // Trading sources use fixed stream names to match subscriber expectations
 
         const stream = isTradingLifecycleEvent
-          ? this.resolveTradingRoutingKey(event)
+          ? event.type
           : event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
@@ -340,19 +340,16 @@ export class MarketDataGateway {
     }
   }
 
-  private resolveTradingRoutingKey(event: CorezaMarketEvent): string {
-    const sourceForRouting =
-      event.rawService === "ACCT_ACTIVITY" ? "schwab_trading" : this.source;
-    const nativeEventType =
-      event.rawOrderData?.e ||
-      event.rawService ||
-      (event.type === "algo_update"
-        ? "ALGO_UPDATE"
-        : event.type === "listen_key_expired"
-          ? "listenKeyExpired"
-          : "ORDER_TRADE_UPDATE");
-    return tradingRoutingKey(sourceForRouting, nativeEventType);
-  }
+  // private resolveTradingRoutingKey(event: CorezaMarketEvent): string {
+  //   const nativeEventType =
+  //     event.rawOrderData?.e ||
+  //     (event.type === "algo_update"
+  //       ? "ALGO_UPDATE"
+  //       : event.type === "listen_key_expired"
+  //         ? "listenKeyExpired"
+  //         : "ORDER_TRADE_UPDATE");
+  //   return tradingRoutingKey(this.source, nativeEventType);
+  // }
 
   /**
    * Publish to Redis with circuit breaker and fallback buffering
@@ -376,7 +373,7 @@ export class MarketDataGateway {
    * Subscribe to streams using native stream names directly
    * This is the primary subscription method
    */
-  subscribeStreams(streamNames: string[], sourceOverride?: string): void {
+  subscribeStreams(streamNames: string[]): void {
     const newStreams = streamNames.filter(
       (name) => !this.subscribedStreams.has(name),
     );
@@ -389,16 +386,14 @@ export class MarketDataGateway {
       return;
     }
 
-    const requestSource = sourceOverride || this.source;
-
     // Add to tracking
     newStreams.forEach((name) => {
       this.subscribedStreams.add(name);
-      this.subscribedStreamSources.set(name, requestSource);
+      this.subscribedStreamSources.set(name, this.source);
     });
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
-      const msg = this.config.makeSubscribeMessage(newStreams, requestSource);
+      const msg = this.config.makeSubscribeMessage(newStreams, this.source);
       if (msg !== null && msg !== undefined) {
         const payload = this.encodeMessage(msg);
         if (this.assertSocketBoundary(msg, "send")) {
@@ -415,22 +410,20 @@ export class MarketDataGateway {
   /**
    * Unsubscribe from streams using native stream names
    */
-  unsubscribeStreams(streamNames: string[], sourceOverride?: string): void {
+  unsubscribeStreams(streamNames: string[]): void {
     const existingStreams = streamNames.filter((name) =>
       this.subscribedStreams.has(name),
     );
 
     if (existingStreams.length === 0) return;
 
-    const requestSource = sourceOverride || this.source;
-
     existingStreams.forEach((name) => {
       this.subscribedStreams.delete(name);
-      this.subscribedStreamSources.delete(name);
+      this.subscribedStreamSources.delete(this.source);
     });
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const msg = this.config.makeUnsubscribeMessage(streamNames, requestSource);
+      const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
       if (msg !== null && msg !== undefined) {
         const payload = this.encodeMessage(msg);
         if (this.assertSocketBoundary(msg, "send")) {
@@ -449,7 +442,8 @@ export class MarketDataGateway {
 
     const streamsBySource = new Map<string, string[]>();
     for (const stream of this.subscribedStreams) {
-      const streamSource = this.subscribedStreamSources.get(stream) || this.source;
+      const streamSource =
+        this.subscribedStreamSources.get(stream) || this.source;
       const streams = streamsBySource.get(streamSource) || [];
       streams.push(stream);
       streamsBySource.set(streamSource, streams);
@@ -486,7 +480,8 @@ export class MarketDataGateway {
   ): boolean {
     if (!msg || typeof msg !== "object") return true;
 
-    if (this.config.validateOutbound) return this.config.validateOutbound(msg, this.source);
+    if (this.config.validateOutbound)
+      return this.config.validateOutbound(msg, this.source);
     const method = typeof msg.method === "string" ? msg.method : "";
     const isSubscribePayload =
       method === "SUBSCRIBE" || method === "UNSUBSCRIBE";

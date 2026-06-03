@@ -74,13 +74,6 @@ function getUnifiedSocketStateSource(source: string): string {
   return cfg.unifiedSocket || baseCfg.unifiedSocket ? baseSource : source;
 }
 
-function isSchwabAccountActivitySource(source: string, streamType?: string[]): boolean {
-  return (
-    source === "schwab_trading" &&
-    (streamType || []).includes("account_activity")
-  );
-}
-
 export class MarketControlHandler {
   private static instance: MarketControlHandler;
   private redisSub: Redis;
@@ -708,14 +701,8 @@ export class MarketControlHandler {
 
         const tradingSource = isTradingSource(source);
 
-        const schwabAccountActivity = isSchwabAccountActivitySource(
-          source,
-          streamType,
-        );
         const requestedStreamNames = tradingSource
-          ? schwabAccountActivity
-            ? symbols.map((symbol) => `${symbol}@account_activity`)
-            : (streamType ?? [])
+          ? (streamType ?? [])
           : buildStreamNames(
               source,
               symbols,
@@ -723,9 +710,6 @@ export class MarketControlHandler {
               interval || "",
               contractType,
             );
-        const deliveryStreamNames = schwabAccountActivity
-          ? ["account_activity"]
-          : requestedStreamNames;
 
         // Check which stream names are NEW (not already in state.streams)
         const newStreamNames = requestedStreamNames.filter(
@@ -768,9 +752,9 @@ export class MarketControlHandler {
                   environment,
                 );
 
-          await this.redisPub.sadd(streamsKey, ...deliveryStreamNames);
+          await this.redisPub.sadd(streamsKey, ...newStreamNames);
           console.log(
-            `💾 [MarketControl] Stored ${deliveryStreamNames.length} stream names in ${streamsKey}`,
+            `💾 [MarketControl] Stored ${newStreamNames.length} stream names in ${streamsKey}`,
           );
 
           // Extract symbols from new stream names for workflow notification
@@ -783,7 +767,7 @@ export class MarketControlHandler {
           // Notify active streaming workflows about new symbols (respecting scope)
           await this.updateActiveStreamingWorkflows(
             userId,
-            deliveryStreamNames,
+            newStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -801,7 +785,7 @@ export class MarketControlHandler {
 
           await this.updateActiveStreamingWorkflows(
             userId,
-            deliveryStreamNames,
+            requestedStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -875,14 +859,8 @@ export class MarketControlHandler {
 
         const tradingSource = isTradingSource(source);
 
-        const schwabAccountActivity = isSchwabAccountActivitySource(
-          source,
-          streamType,
-        );
         let streamNamesToRemove = tradingSource
-          ? schwabAccountActivity
-            ? symbols.map((symbol) => `${symbol}@account_activity`)
-            : (streamType ?? [])
+          ? (streamType ?? [])
           : buildStreamNames(
               source,
               symbols,
@@ -890,9 +868,6 @@ export class MarketControlHandler {
               interval || "",
               contractType,
             );
-        const deliveryStreamNamesToRemove = schwabAccountActivity
-          ? ["account_activity"]
-          : streamNamesToRemove;
 
         if (streamNamesToRemove.length === 0) {
           streamNamesToRemove = Array.from(
@@ -947,9 +922,9 @@ export class MarketControlHandler {
                   environment,
                 );
 
-          await this.redisPub.srem(streamsKey, ...deliveryStreamNamesToRemove);
+          await this.redisPub.srem(streamsKey, ...streamNamesToRemove);
           console.log(
-            `🗑️ [MarketControl] Removed ${deliveryStreamNamesToRemove.length} stream names from ${streamsKey}`,
+            `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
           );
 
           const remainingStreamsCount = await this.redisPub.scard(streamsKey);
@@ -977,7 +952,7 @@ export class MarketControlHandler {
             await subscriber.removeStreamsFromRegistration(
               userId,
               workflowId,
-              deliveryStreamNamesToRemove,
+              streamNamesToRemove,
             );
             // }
             console.log(

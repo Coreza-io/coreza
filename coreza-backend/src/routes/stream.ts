@@ -41,9 +41,24 @@ const ORDER_UPDATE_MARKERS = new Set([
   "ALGO_UPDATE",
   "executionReport",
   "account_activity",
+  "order_alert",
 ]);
 
 const NEWS_MARKERS = new Set(["news"]);
+
+function normalizeStreamTypeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((streamType) => String(streamType).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((streamType) => streamType.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function getTradingCompanionSource(source: string): string {
+  return `${String(source || "").split("_")[0]}_trading`;
+}
 
 /**
  * Replay paused stream events from Redis stream cursor.
@@ -326,6 +341,7 @@ router.post("/:source/subscribe", async (req, res) => {
       workflowId,
       assetType,
       stream_type,
+      stream_types,
       crypto_base,
       crypto_quote,
       feed,
@@ -347,12 +363,8 @@ router.post("/:source/subscribe", async (req, res) => {
 
     const sourceId = resolveStreamSourceId(source, category, assetType);
 
-    // Parse stream_type into array
-    const streamType: string[] = stream_type
-      ? typeof stream_type === "string"
-        ? stream_type.split(",").map((s: string) => s.trim())
-        : stream_type
-      : [];
+    // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
+    const streamType = normalizeStreamTypeList(stream_type ?? stream_types);
 
     const hasOrderUpdate = streamType.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
@@ -397,14 +409,14 @@ router.post("/:source/subscribe", async (req, res) => {
     // }
 
     if (hasOrderUpdate) {
-      const tradingSourceId = `${source}_trading`;
+      const tradingSourceId = getTradingCompanionSource(source);
       await SubscriptionService.subscribe({
         source: tradingSourceId as any,
         userId,
         workflowId: workflowId,
         nodeId: node_id,
         credentialId: credential_id,
-        symbols: resolvedSymbols,
+        symbols: ["*"],
         streamType: tradingstreamType,
         environment,
         assetType: assetType,
@@ -509,6 +521,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       assetType,
       marketType,
       stream_type,
+      stream_types,
       crypto_base,
       crypto_quote,
       feed,
@@ -528,12 +541,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(400).json({ error: `Unknown source: ${sourceId}` });
     }
 
-    // Parse stream_type into array
-    const streamTypes: string[] = stream_type
-      ? typeof stream_type === "string"
-        ? stream_type.split(",").map((s: string) => s.trim())
-        : stream_type
-      : [];
+    // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
+    const streamTypes = normalizeStreamTypeList(stream_type ?? stream_types);
 
     // If order_update is included, also unsubscribe from trading source
     const ORDER_UPDATE_MARKERS = new Set([
@@ -542,6 +551,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       "ALGO_UPDATE",
       "executionReport",
       "account_activity",
+      "order_alert",
     ]);
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamTypes.some((streamName) =>
@@ -577,9 +587,9 @@ router.post("/:source/unsubscribe", async (req, res) => {
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
     if (hasOrderUpdate) {
-      //const tradingSourceId = `${source}_trading`;
+      const tradingSourceId = getTradingCompanionSource(source);
       await SubscriptionService.unsubscribe({
-        source: `${source}_trading` as any,
+        source: tradingSourceId as any,
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
@@ -751,6 +761,7 @@ router.post("/:source/register", async (req, res) => {
       crypto_base,
       crypto_quote,
       stream_type,
+      stream_types,
       credential_id,
       environment,
       marketType,
@@ -760,7 +771,7 @@ router.post("/:source/register", async (req, res) => {
       depth_levels,
       scope = "workflow",
       onlyClosedBars,
-    } = req.body as StreamExecutionRequest;
+    } = req.body as StreamExecutionRequest & { stream_types?: string[] | string };
     const { account_id, accountHash } = req.body as {
       account_id?: string;
       accountHash?: string;
@@ -791,12 +802,8 @@ router.post("/:source/register", async (req, res) => {
     const parsedSymbols: string[] =
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
-    // Parse stream_type into array
-    const streamType: string[] = stream_type
-      ? typeof stream_type === "string"
-        ? stream_type.split(",").map((s: string) => s.trim())
-        : stream_type
-      : [];
+    // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
+    const streamType = normalizeStreamTypeList(stream_type ?? stream_types);
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
     //const hasOrderUpdate = parsedstreamType.includes("ORDER_TRADE_UPDATE");
@@ -806,6 +813,7 @@ router.post("/:source/register", async (req, res) => {
       "ALGO_UPDATE",
       "executionReport",
       "account_activity",
+      "order_alert",
     ]);
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamType.some((streamName) =>
@@ -849,7 +857,7 @@ router.post("/:source/register", async (req, res) => {
 
       // Subscribe to trading source for order updates
       if (hasOrderUpdate) {
-        const tradingSourceId = `${source}_trading`;
+        const tradingSourceId = getTradingCompanionSource(source);
         const tradingResult = await SubscriptionService.subscribe({
           source: tradingSourceId,
           userId,
@@ -1106,13 +1114,14 @@ router.post("/unregister", async (req, res) => {
     // Derive trading companion source from source family (not hardcoded list)
     if (listener?.source) {
       const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
-      const tradingSource = `${sourceFamily}_trading`;
+      const tradingSource = getTradingCompanionSource(sourceFamily);
       const ORDER_UPDATE_MARKERS = new Set([
         "trade_updates",
         "ORDER_TRADE_UPDATE",
         "ALGO_UPDATE",
         "executionReport",
         "account_activity",
+        "order_alert",
       ]);
       const streamTypes = listener.streamTypes ?? [];
 

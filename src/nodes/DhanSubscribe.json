@@ -41,6 +41,22 @@
       "key": "api_key",
       "label": "API Key",
       "type": "password"
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "live",
+          "name": "Live"
+        },
+        {
+          "id": "sandbox",
+          "name": "Sandbox"
+        }
+      ],
+      "default": "live"
     }
   ],
   "authAction": {
@@ -55,7 +71,8 @@
     {
       "key": "data_type",
       "type": "hidden",
-      "default": "market"
+      "default": "market",
+      "label": "Data Type"
     },
     {
       "key": "credential_id",
@@ -139,12 +156,16 @@
         {
           "id": "full",
           "name": "Full (OHLC + Depth)"
+        },
+        {
+          "id": "account_activity",
+          "name": "Order Updates (Fills)"
         }
       ],
       "default": [
         "ticker"
       ],
-      "description": "Select Dhan stream types to subscribe to",
+      "description": "Select Dhan market streams or order updates to subscribe to.",
       "required": true,
       "showDescription": false
     },
@@ -174,7 +195,7 @@
       "label": "Security IDs",
       "type": "text",
       "placeholder": "1333, 11536",
-      "description": "Comma-separated security IDs",
+      "description": "Comma-separated security IDs. Not required when only Order Updates is selected.",
       "displayOptions": {
         "show": {
           "symbolSource": [

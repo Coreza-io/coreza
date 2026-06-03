@@ -113,7 +113,7 @@
     },
     {
       "key": "exchange",
-      "label": "Exchange Segment",
+      "label": "Exchange",
       "type": "select",
       "options": [
         {

@@ -96,11 +96,24 @@ export const schwabOperations: Record<string, BrokerOperation> = {
 
       return orderPayload;
     },
-    transformResult: (raw: any) => ({
-      success: true,
-      message: 'Order placed successfully',
-      orderId: raw.orderId || 'Order submitted',
-    }),
+    transformResult: (raw: any, input: any, response) => {
+      const locationHeader = response?.headers?.location ?? response?.headers?.Location;
+      const location = Array.isArray(locationHeader)
+        ? locationHeader[0]
+        : typeof locationHeader === 'string'
+          ? locationHeader
+          : undefined;
+      const orderIdFromLocation = location?.split('/').filter(Boolean).pop();
+      const orderId = raw?.orderId || orderIdFromLocation;
+
+      return {
+        success: true,
+        message: 'Order placed successfully',
+        orderId,
+        accountHash: input.accountHash || input.account_hash,
+        location,
+      };
+    },
   },
   cancel_order: {
     method: 'delete',

@@ -84,6 +84,11 @@ export const SOURCE_MAPPING: Record<string, SourceMapping> = Object.keys(
   return mapping;
 }, {} as Record<string, SourceMapping>);
 
+SOURCE_MAPPING.schwab_trading = {
+  credentialServiceType: 'schwab',
+  gatewaySource: 'schwab',
+};
+
 /**
  * Get source mapping for a given source ID.
  * Maps frontend/control message source IDs to credential service types and gateway sources.

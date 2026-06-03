@@ -93,6 +93,15 @@ export interface CorezaMarketEvent {
   feeAmount?: number; // Broker-reported commission/fee amount for executions
   feeAsset?: string; // Asset/currency used to charge the commission
   rawOrderData?: Record<string, any>; // Full broker payload for downstream consumers
+  rawService?: string;
+  streamType?: string;
+  status?: string;
+  quantity?: number;
+  remainingQty?: number;
+  avgFillPrice?: number;
+  lastFillPrice?: number;
+  accountId?: string;
+  brokerAccountHash?: string;
 
   // Algo (Binance conditional) order lifecycle fields
   algoId?: string;

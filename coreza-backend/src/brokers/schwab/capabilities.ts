@@ -1,4 +1,5 @@
 import { BrokerCapabilities } from "../capabilities";
+import { extractSchwabOrderOwnerIds } from "./orderOwnerExtract";
 
 export const schwabCapabilities: BrokerCapabilities = {
   id: "schwab",
@@ -14,12 +15,18 @@ export const schwabCapabilities: BrokerCapabilities = {
 
   streaming: {
     sourceId: "schwab_stream",
+    tradingSourceId: "schwab_trading",
+    tradingStreams: ["account_activity"],
   },
 
   streamParser: {
     separator: "@",
     symbolFirst: true,
   },
+
+  orderOwnerExtract: extractSchwabOrderOwnerIds,
+
+  tradingRoutingKey: () => "account_activity",
 
   supportsAlgoOrders: false,
 

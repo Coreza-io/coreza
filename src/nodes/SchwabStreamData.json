@@ -119,9 +119,7 @@
       "placeholder": "Select credential",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": true
@@ -134,9 +132,7 @@
       "description": "Symbols to subscribe and stream.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false,
@@ -156,14 +152,10 @@
           "name": "Chart Bars"
         }
       ],
-      "default": [
-        "quote"
-      ],
+      "default": ["chart"],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": true
@@ -186,9 +178,7 @@
       "description": "Receive only symbols subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -201,9 +191,7 @@
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed symbols.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -225,9 +213,7 @@
       "description": "Filter specific event types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false

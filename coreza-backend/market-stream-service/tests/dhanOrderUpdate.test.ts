@@ -2,14 +2,34 @@ import { dhanGatewayConfig } from '../src/marketGateways/dhan/config';
 import { buildDhanSubscribeMessage, normalizeDhanMessage, parseDhanMessage } from '../src/marketGateways/dhan/helpers';
 import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from '../src/config/brokerStreamConfig';
 import { SOURCE_MAPPING } from '../src/marketGateways';
+import {
+  getDhanMarketWsUrl,
+  getDhanOrderUpdateWsUrl,
+  getDhanRestBaseUrl,
+  resolveDhanEnvironment,
+} from '../src/marketGateways/dhan/environment';
 
 describe('Dhan order-update stream', () => {
   it('builds LoginReq auth and does not send subscribe payloads for dhan_trading', () => {
     const creds = { client_id: 'client-1', api_key: 'token-1' };
 
+    expect(resolveDhanEnvironment({})).toBe('live');
+    expect(resolveDhanEnvironment({ environment: 'sandbox' })).toBe('sandbox');
+    expect(resolveDhanEnvironment({ environment: 'unknown' })).toBe('live');
+    expect(getDhanRestBaseUrl('live')).toBe('https://api.dhan.co/v2');
+    expect(getDhanRestBaseUrl('sandbox')).toBe('https://sandbox.dhan.co/v2');
+    expect(getDhanMarketWsUrl('live')).toBe('wss://api-feed.dhan.co');
+    expect(getDhanOrderUpdateWsUrl('live')).toBe('wss://api-order-update.dhan.co');
+    expect(getDhanMarketWsUrl('sandbox')).toBe('wss://api-feed.dhan.co');
+    expect(getDhanOrderUpdateWsUrl('sandbox')).toBe('wss://api-order-update.dhan.co');
     expect(typeof dhanGatewayConfig.wsUrl === 'function' ? dhanGatewayConfig.wsUrl(creds, 'dhan_trading') : '').toBe(
       'wss://api-order-update.dhan.co',
     );
+    expect(
+      typeof dhanGatewayConfig.wsUrl === 'function'
+        ? dhanGatewayConfig.wsUrl({ ...creds, environment: 'sandbox' }, 'dhan')
+        : '',
+    ).toBe('wss://api-feed.dhan.co?version=2&token=token-1&clientId=client-1&authType=2');
     expect(dhanGatewayConfig.makeAuthMessage?.(creds, 'dhan_trading')).toEqual({
       LoginReq: {
         MsgCode: 42,

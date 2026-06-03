@@ -52,6 +52,22 @@
       "key": "api_key",
       "label": "API Key",
       "type": "password"
+    },
+    {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "live",
+          "name": "Live"
+        },
+        {
+          "id": "sandbox",
+          "name": "Sandbox"
+        }
+      ],
+      "default": "live"
     }
   ],
   "authAction": {

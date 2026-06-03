@@ -1,8 +1,11 @@
 import { parseDhanBinaryPacket } from '../../../utils/dhanBinaryParser';
+import {
+  getDhanMarketWsUrl,
+  getDhanOrderUpdateWsUrl,
+  resolveDhanEnvironment,
+} from '../environment';
 import type { MarketEvent } from '../../../types/marketEvent';
 
-const DHAN_MARKET_WS_URL = 'wss://api-feed.dhan.co';
-const DHAN_ORDER_UPDATE_WS_URL = 'wss://api-order-update.dhan.co';
 const DHAN_TRADING_SOURCE = 'dhan_trading';
 const DHAN_ORDER_ALERT_TYPE = 'order_alert';
 
@@ -88,8 +91,13 @@ function extractDhanSymbols(streamNames: string[]): string[] {
 }
 
 export function getDhanWsUrl(creds: DhanCredentials, source?: string): string {
-  if (isDhanTradingSource(source)) return DHAN_ORDER_UPDATE_WS_URL;
-  return `${DHAN_MARKET_WS_URL}?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`;
+  const environment = resolveDhanEnvironment(creds);
+  if (isDhanTradingSource(source)) {
+    return getDhanOrderUpdateWsUrl(environment);
+  }
+
+  const baseUrl = getDhanMarketWsUrl(environment);
+  return `${baseUrl}?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`;
 }
 
 export function buildDhanAuthMessage(creds: DhanCredentials, source?: string) {

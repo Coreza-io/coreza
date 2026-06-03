@@ -86,27 +86,27 @@
         {
           "id": "get_account",
           "name": "Get Account",
-          "method": "GET"
+          "method": "POST"
         },
         {
           "id": "get_positions",
           "name": "Get Positions",
-          "method": "GET"
+          "method": "POST"
         },
         {
           "id": "get_orders",
           "name": "Get Orders",
-          "method": "GET"
+          "method": "POST"
         },
         {
           "id": "cancel_order",
           "name": "Cancel Orders",
-          "method": "POST"
+          "method": "POSt"
         },
         {
           "id": "get_candle",
           "name": "Get Historical Bars",
-          "method": "POST"
+          "method": "POSt"
         },
         {
           "id": "place_order",
@@ -136,9 +136,7 @@
       "default": "",
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle"
-          ]
+          "operation": ["get_candle"]
         }
       }
     },
@@ -150,10 +148,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "place_order"
-          ]
+          "operation": ["get_candle", "place_order"]
         }
       },
       "description": "NSE/BSE stock symbol (e.g., RELIANCE, TCS, INFY)."
@@ -188,9 +183,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle"
-          ]
+          "operation": ["get_candle"]
         }
       }
     },
@@ -202,9 +195,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle"
-          ]
+          "operation": ["get_candle"]
         }
       }
     },
@@ -234,9 +225,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Exchange and segment: NSE/BSE for equities, FNO for futures & options."
@@ -259,9 +248,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Buy to open/add position, Sell to close/reduce position."
@@ -274,9 +261,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Number of shares/lots to trade."
@@ -299,9 +284,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Market executes immediately at best price, Limit waits for specified price."
@@ -324,9 +307,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Day order valid until market close, IOC fills immediately or cancels."
@@ -339,9 +320,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Limit price for the order."

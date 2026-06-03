@@ -40,6 +40,7 @@ const ORDER_UPDATE_MARKERS = new Set([
   "ORDER_TRADE_UPDATE",
   "ALGO_UPDATE",
   "executionReport",
+  "account_activity",
 ]);
 
 const NEWS_MARKERS = new Set(["news"]);
@@ -335,6 +336,8 @@ router.post("/:source/subscribe", async (req, res) => {
       depth_levels,
       scope,
       targetWorkflowId,
+      account_id,
+      accountHash,
     } = req.body;
 
     if (!credential_id)
@@ -383,6 +386,16 @@ router.post("/:source/subscribe", async (req, res) => {
     );
     const resolvedSymbols =
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+    const parsedMarketSymbols = normalizeSymbolList(resolvedSymbols);
+    if (marketstreamType.length > 0 && parsedMarketSymbols.length === 0) {
+      return res.status(400).json({
+        error: "At least one symbol is required for market streams",
+      });
+    }
+    if (tradingstreamType.includes("account_activity") && !account_id && !accountHash) {
+      return res.status(400).json({ error: "account_id is required for account_activity" });
+    }
+    const accountActivitySymbols = account_id || accountHash ? [String(account_id || accountHash)] : ["*"];
     if (hasOrderUpdate) {
       const tradingSourceId = `${source}_trading`;
       await SubscriptionService.subscribe({
@@ -391,7 +404,9 @@ router.post("/:source/subscribe", async (req, res) => {
         workflowId: workflowId,
         nodeId: node_id,
         credentialId: credential_id,
-        symbols: resolvedSymbols,
+        symbols: tradingstreamType.includes("account_activity")
+          ? accountActivitySymbols
+          : resolvedSymbols,
         streamType: tradingstreamType,
         environment,
         assetType: assetType,
@@ -505,6 +520,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
       depth_levels,
       scope,
       targetWorkflowId,
+      account_id,
+      accountHash,
     } = req.body;
 
     const sourceId = resolveStreamSourceId(source, category, assetType);
@@ -524,7 +541,9 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const ORDER_UPDATE_MARKERS = new Set([
       "trade_updates",
       "ORDER_TRADE_UPDATE",
+      "ALGO_UPDATE",
       "executionReport",
+      "account_activity",
     ]);
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamTypes.some((streamName) =>
@@ -558,6 +577,10 @@ router.post("/:source/unsubscribe", async (req, res) => {
     );
     const resolvedSymbols =
       normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+    if (tradingstreamType.includes("account_activity") && !account_id && !accountHash) {
+      return res.status(400).json({ error: "account_id is required for account_activity" });
+    }
+    const accountActivitySymbols = account_id || accountHash ? [String(account_id || accountHash)] : ["*"];
 
     if (hasOrderUpdate) {
       //const tradingSourceId = `${source}_trading`;
@@ -566,7 +589,9 @@ router.post("/:source/unsubscribe", async (req, res) => {
         userId,
         workflowId: workflowId,
         credentialId: credential_id,
-        symbols: ["*"],
+        symbols: tradingstreamType.includes("account_activity")
+          ? accountActivitySymbols
+          : ["*"],
         streamType: tradingstreamType,
         scope,
         environment,
@@ -744,6 +769,10 @@ router.post("/:source/register", async (req, res) => {
       scope = "workflow",
       onlyClosedBars,
     } = req.body as StreamExecutionRequest;
+    const { account_id, accountHash } = req.body as {
+      account_id?: string;
+      accountHash?: string;
+    };
 
     if (!workflowId) {
       return res.status(400).json({ error: "workflowId is required" });
@@ -782,7 +811,9 @@ router.post("/:source/register", async (req, res) => {
     const ORDER_UPDATE_MARKERS = new Set([
       "trade_updates",
       "ORDER_TRADE_UPDATE",
+      "ALGO_UPDATE",
       "executionReport",
+      "account_activity",
     ]);
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamType.some((streamName) =>
@@ -812,11 +843,16 @@ router.post("/:source/register", async (req, res) => {
 
     // If subscribe mode, subscribe first and WAIT for readiness
     if (mode === "subscribe") {
-      if (parsedSymbols.length === 0) {
+      if (marketstreamType.length > 0 && parsedSymbols.length === 0) {
         return res
           .status(400)
-          .json({ error: "Subscribe mode requires at least one symbol" });
+          .json({ error: "Subscribe mode requires at least one symbol for market streams" });
       }
+      if (tradingstreamType.includes("account_activity") && !account_id && !accountHash) {
+        return res.status(400).json({ error: "account_id is required for account_activity" });
+      }
+      const accountActivitySymbols =
+        account_id || accountHash ? [String(account_id || accountHash)] : ["*"];
 
       console.log(
         `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
@@ -832,7 +868,9 @@ router.post("/:source/register", async (req, res) => {
           workflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
-          symbols: ["*"],
+          symbols: tradingstreamType.includes("account_activity")
+            ? accountActivitySymbols
+            : ["*"],
           streamType: tradingstreamType,
           environment: requiredEnvironment,
           assetType: assetType,
@@ -1086,7 +1124,9 @@ router.post("/unregister", async (req, res) => {
       const ORDER_UPDATE_MARKERS = new Set([
         "trade_updates",
         "ORDER_TRADE_UPDATE",
+        "ALGO_UPDATE",
         "executionReport",
+        "account_activity",
       ]);
       const streamTypes = listener.streamTypes ?? [];
 

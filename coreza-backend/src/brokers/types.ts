@@ -6,12 +6,16 @@ export interface PaginationConfig {
   mergeStrategy: 'concat' | 'merge'; // How to merge pages
 }
 
+export interface BrokerHttpResponse {
+  headers?: Record<string, unknown>;
+}
+
 export interface BrokerOperation {
   method: 'get' | 'post' | 'put' | 'delete';
   path: string | ((input: any, creds?: any) => string);
   makeParams?: (input: any, creds?: any) => Record<string, any>;
   makeBody?: (input: any, creds?: any) => any | Promise<any>;
-  transformResult?: (data: any, input: any) => any;
+  transformResult?: (data: any, input: any, response?: BrokerHttpResponse) => any;
   pagination?: PaginationConfig;
 }
 

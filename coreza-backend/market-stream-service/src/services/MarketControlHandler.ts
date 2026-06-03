@@ -67,6 +67,20 @@ function computeTradingNativeStreams(
   return computeTradingNativeStreamsFromConfig(source, marketType);
 }
 
+function getUnifiedSocketStateSource(source: string): string {
+  const cfg = getBrokerStreamConfig(source);
+  const baseSource = source.split("_")[0];
+  const baseCfg = getBrokerStreamConfig(baseSource);
+  return cfg.unifiedSocket || baseCfg.unifiedSocket ? baseSource : source;
+}
+
+function isSchwabAccountActivitySource(source: string, streamType?: string[]): boolean {
+  return (
+    source === "schwab_trading" &&
+    (streamType || []).includes("account_activity")
+  );
+}
+
 export class MarketControlHandler {
   private static instance: MarketControlHandler;
   private redisSub: Redis;
@@ -89,8 +103,8 @@ export class MarketControlHandler {
     return MarketControlHandler.instance;
   }
 
-  private getStateKey(userId: string, source: MarketSource): string {
-    return `${userId}:${source}`;
+  private getStateKey(userId: string, source: MarketSource | string): string {
+    return `${userId}:${getUnifiedSocketStateSource(source)}`;
   }
 
   /**
@@ -694,8 +708,14 @@ export class MarketControlHandler {
 
         const tradingSource = isTradingSource(source);
 
+        const schwabAccountActivity = isSchwabAccountActivitySource(
+          source,
+          streamType,
+        );
         const requestedStreamNames = tradingSource
-          ? (streamType ?? [])
+          ? schwabAccountActivity
+            ? symbols.map((symbol) => `${symbol}@account_activity`)
+            : (streamType ?? [])
           : buildStreamNames(
               source,
               symbols,
@@ -703,6 +723,9 @@ export class MarketControlHandler {
               interval || "",
               contractType,
             );
+        const deliveryStreamNames = schwabAccountActivity
+          ? ["account_activity"]
+          : requestedStreamNames;
 
         // Check which stream names are NEW (not already in state.streams)
         const newStreamNames = requestedStreamNames.filter(
@@ -725,7 +748,7 @@ export class MarketControlHandler {
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
           // Subscribe gateway with stream names directly
-          state.gateway.subscribeStreams(newStreamNames);
+          state.gateway.subscribeStreams(newStreamNames, source);
 
           // Persist to Redis
           await this.persistState(userId, source);
@@ -745,9 +768,9 @@ export class MarketControlHandler {
                   environment,
                 );
 
-          await this.redisPub.sadd(streamsKey, ...newStreamNames);
+          await this.redisPub.sadd(streamsKey, ...deliveryStreamNames);
           console.log(
-            `💾 [MarketControl] Stored ${newStreamNames.length} stream names in ${streamsKey}`,
+            `💾 [MarketControl] Stored ${deliveryStreamNames.length} stream names in ${streamsKey}`,
           );
 
           // Extract symbols from new stream names for workflow notification
@@ -760,7 +783,7 @@ export class MarketControlHandler {
           // Notify active streaming workflows about new symbols (respecting scope)
           await this.updateActiveStreamingWorkflows(
             userId,
-            newStreamNames,
+            deliveryStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -778,7 +801,7 @@ export class MarketControlHandler {
 
           await this.updateActiveStreamingWorkflows(
             userId,
-            requestedStreamNames,
+            deliveryStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -852,8 +875,14 @@ export class MarketControlHandler {
 
         const tradingSource = isTradingSource(source);
 
+        const schwabAccountActivity = isSchwabAccountActivitySource(
+          source,
+          streamType,
+        );
         let streamNamesToRemove = tradingSource
-          ? (streamType ?? [])
+          ? schwabAccountActivity
+            ? symbols.map((symbol) => `${symbol}@account_activity`)
+            : (streamType ?? [])
           : buildStreamNames(
               source,
               symbols,
@@ -861,6 +890,9 @@ export class MarketControlHandler {
               interval || "",
               contractType,
             );
+        const deliveryStreamNamesToRemove = schwabAccountActivity
+          ? ["account_activity"]
+          : streamNamesToRemove;
 
         if (streamNamesToRemove.length === 0) {
           streamNamesToRemove = Array.from(
@@ -894,7 +926,7 @@ export class MarketControlHandler {
 
         if (shouldRemoveGatewayStreams) {
           streamNamesToRemove.forEach((name) => state.streams.delete(name));
-          state.gateway.unsubscribeStreams(streamNamesToRemove);
+          state.gateway.unsubscribeStreams(streamNamesToRemove, source);
         }
 
         if (
@@ -915,9 +947,9 @@ export class MarketControlHandler {
                   environment,
                 );
 
-          await this.redisPub.srem(streamsKey, ...streamNamesToRemove);
+          await this.redisPub.srem(streamsKey, ...deliveryStreamNamesToRemove);
           console.log(
-            `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
+            `🗑️ [MarketControl] Removed ${deliveryStreamNamesToRemove.length} stream names from ${streamsKey}`,
           );
 
           const remainingStreamsCount = await this.redisPub.scard(streamsKey);
@@ -945,7 +977,7 @@ export class MarketControlHandler {
             await subscriber.removeStreamsFromRegistration(
               userId,
               workflowId,
-              streamNamesToRemove,
+              deliveryStreamNamesToRemove,
             );
             // }
             console.log(
@@ -982,7 +1014,12 @@ export class MarketControlHandler {
         );
         state.gateway.disconnect();
         this.sourceStates.delete(stateKey);
-        await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, source));
+        await this.redisPub.del(
+          REDIS_CHANNELS.gatewayState(
+            userId,
+            getUnifiedSocketStateSource(source),
+          ),
+        );
         console.log(`✅ [MarketControl] Disconnected ${source} gateway`);
       }
     } catch (error) {
@@ -1073,9 +1110,10 @@ export class MarketControlHandler {
 
       // Get or create gateway instance using mapped gateway source
       // Pass original source (e.g., 'alpaca_news') for behavior routing
+      const gatewayInstanceSource = getUnifiedSocketStateSource(source);
       const gateway = MarketDataGateway.getInstance(
         gatewaySource,
-        source,
+        gatewayInstanceSource,
         this.getStateKey(userId, source),
       );
 
@@ -1083,12 +1121,12 @@ export class MarketControlHandler {
       await gateway.connect(creds, {
         userId,
         credentialId: credentialId || "default",
-        source,
+        source: gatewayInstanceSource,
       });
 
       // Track state with streams (single source of truth)
       this.sourceStates.set(this.getStateKey(userId, source), {
-        source,
+        source: gatewayInstanceSource as MarketSource,
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
@@ -1118,6 +1156,8 @@ export class MarketControlHandler {
     const state = this.sourceStates.get(this.getStateKey(userId, source));
     if (!state) return;
 
+    const persistedSource = getUnifiedSocketStateSource(source);
+
     const stateData = {
       userId: state.connectedUserId,
       credentialId: state.credentialId,
@@ -1134,11 +1174,17 @@ export class MarketControlHandler {
 
     try {
       await redisSetBreaker.fire(
-        REDIS_CHANNELS.gatewayState(userId, source),
+        REDIS_CHANNELS.gatewayState(userId, persistedSource),
         JSON.stringify(stateData),
       );
 
-      console.log(`💾 [MarketControl] Persisted state for ${source}`);
+      if (persistedSource !== source) {
+        await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, source));
+      }
+
+      console.log(
+        `💾 [MarketControl] Persisted state for ${source} as ${persistedSource}`,
+      );
     } catch (error) {
       console.warn(
         `⚠️ [MarketControl] Failed to persist state for ${source}, continuing with in-memory state`,
@@ -1176,18 +1222,25 @@ export class MarketControlHandler {
               workflowCount: persistedWorkflowStreams.length || 0,
             });
 
-            // Reconnect gateway
-            await this.connectGateway(
-              source as MarketSource,
+            const restoredStateKey = this.getStateKey(
               userId,
-              stateData.credentialId,
-              stateData.feed,
-              stateData.marketType,
-              stateData.environment,
+              source as MarketSource,
             );
-            const state = this.sourceStates.get(
-              this.getStateKey(userId, source as MarketSource),
-            )!;
+            let state = this.sourceStates.get(restoredStateKey);
+
+            if (!state || !state.gateway.getStats().connected) {
+              // Reconnect gateway. unifiedSocket aliases (for example, schwab_trading)
+              // deliberately collapse to the base gateway state key.
+              await this.connectGateway(
+                source as MarketSource,
+                userId,
+                stateData.credentialId,
+                stateData.feed,
+                stateData.marketType,
+                stateData.environment,
+              );
+              state = this.sourceStates.get(restoredStateKey)!;
+            }
 
             // Restore streams directly - no conversion needed!
             if (stateData.streams && Array.isArray(stateData.streams)) {

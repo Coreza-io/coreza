@@ -22,7 +22,9 @@ import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
 const ORDER_UPDATE_MARKERS = new Set([
   "trade_updates",
   "ORDER_TRADE_UPDATE",
+  "ALGO_UPDATE",
   "executionReport",
+  "account_activity",
 ]);
 
 const NEWS_MARKERS = new Set(["news"]);

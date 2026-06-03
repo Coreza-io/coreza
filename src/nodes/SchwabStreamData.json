@@ -125,18 +125,40 @@
       "required": true
     },
     {
+      "key": "account_id",
+      "label": "Account",
+      "type": "select",
+      "optionsSource": "dependentApi",
+      "optionsApiUrl": "/broker/schwab/get_account_numbers",
+      "dependsOn": "credential_id",
+      "placeholder": "Select an account",
+      "description": "Required for Account Activity / Order Updates.",
+      "displayOptions": {
+        "show": {
+          "stream_type": [
+            "account_activity"
+          ],
+          "mode": [
+            "subscribe"
+          ]
+        }
+      },
+      "required": true,
+      "showDescription": false
+    },
+    {
       "key": "symbols",
       "label": "Symbols",
       "type": "text",
       "placeholder": "AAPL, MSFT, /ES",
-      "description": "Symbols to subscribe and stream.",
+      "description": "Comma-separated symbols for market streams. Not required when only Account Activity is selected.",
       "displayOptions": {
         "show": {
           "mode": ["subscribe"]
         }
       },
       "showDescription": false,
-      "required": true
+      "required": false
     },
     {
       "key": "stream_type",
@@ -150,6 +172,10 @@
         {
           "id": "chart",
           "name": "Chart Bars"
+        },
+        {
+          "id": "account_activity",
+          "name": "Account Activity / Order Updates"
         }
       ],
       "default": ["chart"],
@@ -158,7 +184,8 @@
           "mode": ["subscribe"]
         }
       },
-      "required": true
+      "required": true,
+      "description": "Select Schwab market streams or account activity order updates to subscribe to."
     },
     {
       "key": "scope",
@@ -208,6 +235,10 @@
         {
           "id": "chart",
           "name": "Chart Bars"
+        },
+        {
+          "id": "account_activity",
+          "name": "Account Activity / Order Updates"
         }
       ],
       "description": "Filter specific event types. Leave empty to receive all types.",

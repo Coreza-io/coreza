@@ -53,6 +53,7 @@ export const SOURCE_MAPPING: Record<string, SourceMapping> = {
   // Schwab
   schwab_market: { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
   schwab_stream: { credentialServiceType: 'schwab', gatewaySource: 'schwab' }, // Legacy support
+  schwab_trading: { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
   schwab: { credentialServiceType: 'schwab', gatewaySource: 'schwab' },
 };
 

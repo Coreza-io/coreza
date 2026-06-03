@@ -19,6 +19,7 @@ export const NATIVE_TRADING_STREAM_NAMES = new Set([
   "outboundAccountPosition",
   "balanceUpdate",
   "order_update",
+  "account_activity",
 ]);
 
 export function tradingRoutingKey(source: string, eventType: string): string {

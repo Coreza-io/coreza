@@ -11,12 +11,13 @@ import {
 } from '../../utils/schwabStreamingSetup';
 
 type SchwabAssetType = 'equity' | 'future';
-type SchwabStreamType = 'quote' | 'chart';
+type SchwabStreamType = 'quote' | 'chart' | 'account_activity';
 type SchwabService =
   | 'LEVELONE_EQUITIES'
   | 'LEVELONE_FUTURES'
   | 'CHART_EQUITY'
-  | 'CHART_FUTURES';
+  | 'CHART_FUTURES'
+  | 'ACCT_ACTIVITY';
 
 const DEFAULT_ASSET_TYPE: SchwabAssetType = 'equity';
 
@@ -39,6 +40,7 @@ const SCHWAB_SERVICE_REVERSE: Record<SchwabService, SchwabStreamType> = {
   LEVELONE_FUTURES: 'quote',
   CHART_EQUITY: 'chart',
   CHART_FUTURES: 'chart',
+  ACCT_ACTIVITY: 'account_activity',
 };
 
 const SCHWAB_SERVICE_FIELDS: Record<SchwabService, string> = {
@@ -46,6 +48,7 @@ const SCHWAB_SERVICE_FIELDS: Record<SchwabService, string> = {
   LEVELONE_FUTURES: '0,1,2,3,4,5,8,10,11,12,13,14,18',
   CHART_EQUITY: '0,1,2,3,4,5,6,7,8',
   CHART_FUTURES: '0,1,2,3,4,5,6,7,8',
+  ACCT_ACTIVITY: '0,1,2,3',
 };
 
 function toNumber(value: unknown): number | undefined {
@@ -73,9 +76,15 @@ function parseSchwabStreamName(streamName: string): {
   streamType: SchwabStreamType;
 } {
   const [rawSymbol, rawStreamType = 'quote'] = streamName.split('@');
-  const normalizedStreamType = rawStreamType.split('_')[0] as SchwabStreamType;
+  const normalizedStreamType = (rawStreamType === 'account_activity'
+    ? 'account_activity'
+    : rawStreamType.split('_')[0]) as SchwabStreamType;
 
-  if (normalizedStreamType !== 'quote' && normalizedStreamType !== 'chart') {
+  if (
+    normalizedStreamType !== 'quote' &&
+    normalizedStreamType !== 'chart' &&
+    normalizedStreamType !== 'account_activity'
+  ) {
     throw new Error(`Unsupported Schwab stream type: ${rawStreamType}`);
   }
 
@@ -98,6 +107,16 @@ function resolveSchwabService(
   return service;
 }
 
+function isAccountActivityRequest(streamNames: string[], source?: string): boolean {
+  return (
+    source === 'schwab_trading' ||
+    streamNames.some((streamName) => {
+      const [, rawStreamType = streamName] = streamName.split('@');
+      return rawStreamType.split('_').slice(0, 2).join('_') === 'account_activity';
+    })
+  );
+}
+
 function buildSchwabRequest(
   streamNames: string[],
   command: 'SUBS' | 'UNSUBS',
@@ -105,10 +124,21 @@ function buildSchwabRequest(
 ) {
   const assetType = parseSchwabAssetType(source);
   const symbolsByService = new Map<SchwabService, Set<string>>();
+  const accountActivity = isAccountActivityRequest(streamNames, source);
 
   for (const streamName of streamNames) {
-    const { symbol, streamType } = parseSchwabStreamName(streamName);
-    const service = resolveSchwabService(streamType, assetType);
+    const { symbol, streamType } = accountActivity
+      ? {
+          symbol: streamName.includes('@')
+            ? streamName.split('@')[0].toUpperCase()
+            : streamName.toUpperCase(),
+          streamType: 'account_activity' as SchwabStreamType,
+        }
+      : parseSchwabStreamName(streamName);
+    const service =
+      streamType === 'account_activity'
+        ? 'ACCT_ACTIVITY'
+        : resolveSchwabService(streamType, assetType);
     if (!symbolsByService.has(service)) {
       symbolsByService.set(service, new Set());
     }
@@ -215,6 +245,239 @@ export function shouldPublishSchwabMessage(msg: any): boolean {
   );
 }
 
+function parseJsonObject(value: unknown): Record<string, any> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, any>;
+  }
+
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, any>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function toMessageText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return '';
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function pickTextField(
+  messageText: string,
+  fieldNames: string[],
+): string | undefined {
+  if (!messageText) return undefined;
+
+  for (const fieldName of fieldNames) {
+    const escaped = escapeRegExp(fieldName);
+    const patterns = [
+      new RegExp(`<${escaped}[^>]*>([^<]*)</${escaped}>`, 'i'),
+      new RegExp(`${escaped}=["']([^"']+)["']`, 'i'),
+      new RegExp(`"${escaped}"\\s*:\\s*"([^"]+)"`, 'i'),
+      new RegExp(`"${escaped}"\\s*:\\s*([^,}\\s]+)`, 'i'),
+    ];
+
+    for (const pattern of patterns) {
+      const match = messageText.match(pattern);
+      const value = match?.[1]?.trim();
+      if (value) return value;
+    }
+  }
+
+  return undefined;
+}
+
+function pickString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}
+
+function normalizeSchwabOrderStatus(status: unknown): string {
+  const normalized = String(status || '').toUpperCase().replace(/[ -]/g, '_');
+
+  if (['PENDING_ACTIVATION', 'PENDING_SUBMIT', 'AWAITING_PARENT_ORDER'].includes(normalized)) {
+    return 'submitted';
+  }
+  if (['QUEUED', 'WORKING', 'ACCEPTED', 'PENDING_REPLACE'].includes(normalized)) {
+    return 'working';
+  }
+  if (['PARTIAL_FILL', 'PARTIALLY_FILLED'].includes(normalized)) {
+    return 'partially_filled';
+  }
+  if (['FILLED', 'FILL'].includes(normalized)) return 'filled';
+  if (['CANCELED', 'CANCELLED', 'PENDING_CANCEL'].includes(normalized)) return 'cancelled';
+  if (['REJECTED', 'DENIED'].includes(normalized)) return 'rejected';
+  if (['EXPIRED'].includes(normalized)) return 'expired';
+
+  return 'unknown';
+}
+
+function normalizeSchwabAccountActivityMessage(
+  msg: any,
+): CorezaMarketEvent | null {
+  const content = msg.content?.[0];
+  if (!content) return null;
+
+  const rawMessageData =
+    content['3'] ?? content.messageData ?? content.MessageData;
+  const rawMessageText = toMessageText(rawMessageData);
+  const messageData =
+    parseJsonObject(rawMessageData) ||
+    {};
+  const order =
+    parseJsonObject(messageData.order) ||
+    parseJsonObject(messageData.Order) ||
+    messageData;
+  const orderLeg = Array.isArray(order.orderLegCollection)
+    ? order.orderLegCollection[0]
+    : Array.isArray(order.OrderLegCollection)
+      ? order.OrderLegCollection[0]
+      : undefined;
+
+  const orderId = pickString(
+    order.orderId,
+    order.order_id,
+    order.OrderId,
+    order.OrderID,
+    messageData.orderId,
+    messageData.OrderId,
+    content.orderId,
+    content.OrderId,
+    pickTextField(rawMessageText, [
+      'orderId',
+      'OrderId',
+      'OrderID',
+      'OrderKey',
+      'orderKey',
+    ]),
+  );
+  const rawStatus = pickString(
+    order.status,
+    order.Status,
+    messageData.status,
+    messageData.Status,
+    content.status,
+    content.Status,
+    pickTextField(rawMessageText, ['status', 'Status', 'OrderStatus']),
+  );
+  const quantity =
+    toNumber(order.quantity) ??
+    toNumber(order.quantityRequested) ??
+    toNumber(orderLeg?.quantity) ??
+    toNumber(
+      pickTextField(rawMessageText, [
+        'quantity',
+        'Quantity',
+        'quantityRequested',
+      ]),
+    );
+  const filledQty =
+    toNumber(order.filledQuantity) ??
+    toNumber(order.filledQty) ??
+    toNumber(pickTextField(rawMessageText, ['filledQuantity', 'filledQty']));
+
+  return {
+    source: 'schwab',
+    symbol: toSymbol(
+      pickString(
+        order.symbol,
+        order.Symbol,
+        orderLeg?.instrument?.symbol,
+        orderLeg?.Instrument?.Symbol,
+        content.symbol,
+        content.Symbol,
+        pickTextField(rawMessageText, ['symbol', 'Symbol']),
+      ),
+    ),
+    type: 'order_update',
+    orderEvent: pickString(content['2'], content.messageType, content.MessageType),
+    rawService: 'ACCT_ACTIVITY',
+    streamType: 'account_activity',
+    orderId,
+    clientOrderId: pickString(
+      order.clientOrderId,
+      order.client_order_id,
+      pickTextField(rawMessageText, ['clientOrderId', 'client_order_id']),
+    ),
+    side: pickString(
+      order.instruction,
+      order.Instruction,
+      orderLeg?.instruction,
+      pickTextField(rawMessageText, [
+        'instruction',
+        'Instruction',
+        'side',
+        'Side',
+      ]),
+    ),
+    status: normalizeSchwabOrderStatus(rawStatus),
+    orderStatus: normalizeSchwabOrderStatus(rawStatus),
+    quantity,
+    requestedQty: quantity,
+    filledQty,
+    remainingQty:
+      quantity !== undefined && filledQty !== undefined
+        ? Math.max(quantity - filledQty, 0)
+        : toNumber(order.remainingQuantity) ??
+          toNumber(
+            pickTextField(rawMessageText, [
+              'remainingQuantity',
+              'remainingQty',
+            ]),
+          ),
+    avgFillPrice:
+      toNumber(order.averagePrice) ??
+      toNumber(order.averageFillPrice) ??
+      toNumber(
+        pickTextField(rawMessageText, [
+          'averagePrice',
+          'averageFillPrice',
+        ]),
+      ),
+    filledAvgPrice:
+      toNumber(order.averagePrice) ??
+      toNumber(order.averageFillPrice) ??
+      toNumber(
+        pickTextField(rawMessageText, [
+          'averagePrice',
+          'averageFillPrice',
+        ]),
+      ),
+    lastFillPrice:
+      toNumber(order.lastFillPrice) ??
+      toNumber(pickTextField(rawMessageText, ['lastFillPrice'])),
+    accountId: pickString(
+      content['1'],
+      content.accountId,
+      content.accountNumber,
+      messageData.accountId,
+      pickTextField(rawMessageText, ['accountId', 'accountNumber', 'Account']),
+    ),
+    brokerAccountHash: pickString(
+      content.key,
+      content['0'],
+      content.accountHash,
+      messageData.accountHash,
+      pickTextField(rawMessageText, ['accountHash', 'brokerAccountHash']),
+    ),
+    t: toNumber(order.enteredTime) ?? toNumber(order.closeTime) ?? Date.now(),
+    rawOrderData: msg,
+  };
+}
+
 function normalizeSchwabQuoteMessage(
   msg: any,
   service: SchwabService,
@@ -268,6 +531,7 @@ export function normalizeSchwabMessage(msg: any): CorezaMarketEvent | null {
 
   if (streamType === 'quote') return normalizeSchwabQuoteMessage(msg, service);
   if (streamType === 'chart') return normalizeSchwabChartMessage(msg);
+  if (streamType === 'account_activity') return normalizeSchwabAccountActivityMessage(msg);
 
   return null;
 }

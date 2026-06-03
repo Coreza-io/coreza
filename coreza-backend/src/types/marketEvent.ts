@@ -99,6 +99,15 @@ export interface MarketEvent {
   orderType?: string;
   assetClass?: string;
   rawOrderData?: Record<string, any>;
+  rawService?: string;
+  streamType?: string;
+  status?: string;
+  quantity?: number;
+  remainingQty?: number;
+  avgFillPrice?: number;
+  lastFillPrice?: number;
+  accountId?: string;
+  brokerAccountHash?: string;
 
   // Metadata
   timeframe?: string;

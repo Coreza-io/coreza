@@ -10,6 +10,7 @@ export interface BrokerStreamConfig {
   normalizeOrderSymbol?: (symbol: string) => string;
   resolveSourceForSymbol?: (symbol: string, defaultSource: string) => string;
   normalizeStreamType?: (streamType: string) => string;
+  unifiedSocket?: boolean;
 }
 
 const DEFAULT_STREAM_CONFIG: BrokerStreamConfig = {
@@ -42,11 +43,27 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
           ? "continuousKline"
           : streamType,
   },
+
+  schwab: {
+    separator: "@",
+    symbolFirst: true,
+    companionSources: ["schwab_trading"],
+    tradingRoutingKey: () => "account_activity",
+    unifiedSocket: true,
+  },
   alpaca_trading: {
     separator: "@",
     symbolFirst: true,
     tradingRoutingKey: () => "trade_updates",
     tradingStreams: { account: ["trade_updates"] },
+  },
+
+  schwab_trading: {
+    separator: "@",
+    symbolFirst: true,
+    tradingRoutingKey: () => "account_activity",
+    tradingStreams: { account: ["account_activity"] },
+    unifiedSocket: true,
   },
   binance_trading: {
     separator: "@",

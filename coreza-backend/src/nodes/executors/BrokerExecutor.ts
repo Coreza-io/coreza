@@ -268,7 +268,7 @@ export class BrokerExecutor implements INodeExecutor {
         });
 
         data = op.transformResult
-          ? op.transformResult(response.data, resolvedParams)
+          ? op.transformResult(response.data, resolvedParams, response)
           : response.data;
       }
 

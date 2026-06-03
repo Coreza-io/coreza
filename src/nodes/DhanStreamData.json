@@ -4,7 +4,7 @@
   "def": "Dhan Stream Listener",
   "node_type": "trigger",
   "icon": "/assets/icons/dhan.svg",
-  "category": "Broker",
+  "category": "Stream",
   "subCategory": "dhan",
   "executionMode": "streaming",
   "action": {
@@ -88,11 +88,11 @@
       "options": [
         {
           "id": "listen",
-          "name": "Listen (Use Pre-subscribed Security IDs)"
+          "name": "Register"
         },
         {
           "id": "subscribe",
-          "name": "Subscribe & Stream (Self-contained)"
+          "name": "Subscribe & Register"
         }
       ],
       "default": "listen",
@@ -106,9 +106,7 @@
       "optionsSource": "credentialsApi",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "required": false
@@ -153,9 +151,7 @@
       ],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       }
     },
@@ -167,9 +163,7 @@
       "description": "Comma-separated security IDs. Not required when only Order Updates is selected.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "showDescription": false,
@@ -197,21 +191,17 @@
           "name": "Order Updates (Fills)"
         }
       ],
-      "default": [
-        "ticker"
-      ],
+      "default": ["ticker"],
       "displayOptions": {
         "show": {
-          "mode": [
-            "subscribe"
-          ]
+          "mode": ["subscribe"]
         }
       },
       "description": "Select Dhan market streams or order updates to subscribe to."
     },
     {
-      "key": "subscriptionMode",
-      "label": "Subscription Mode",
+      "key": "scope",
+      "label": "scope",
       "type": "select",
       "options": [
         {
@@ -227,9 +217,7 @@
       "description": "Receive only security IDs subscribed targeting this workflow, or all your global subscriptions.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -242,9 +230,7 @@
       "description": "Only receive data for specific security IDs. Leave empty to receive all pre-subscribed.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false
@@ -274,9 +260,7 @@
       "description": "Filter specific stream types. Leave empty to receive all types.",
       "displayOptions": {
         "show": {
-          "mode": [
-            "listen"
-          ]
+          "mode": ["listen"]
         }
       },
       "showDescription": false

@@ -723,3 +723,6 @@
 [data-node-surface="dark"] span:not([class*="text-"]) {
   color: hsl(215 20% 80%);
 }
+[data-node-surface="dark"] span.text-foreground {
+  color: hsl(210 40% 96%);
+}

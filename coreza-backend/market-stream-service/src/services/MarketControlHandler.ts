@@ -732,7 +732,7 @@ export class MarketControlHandler {
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
           // Subscribe gateway with stream names directly
-          state.gateway.subscribeStreams(newStreamNames, source);
+          state.gateway.subscribeStreams(newStreamNames);
 
           // Persist to Redis
           await this.persistState(userId, source);
@@ -901,7 +901,7 @@ export class MarketControlHandler {
 
         if (shouldRemoveGatewayStreams) {
           streamNamesToRemove.forEach((name) => state.streams.delete(name));
-          state.gateway.unsubscribeStreams(streamNamesToRemove, source);
+          state.gateway.unsubscribeStreams(streamNamesToRemove);
         }
 
         if (

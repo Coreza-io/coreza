@@ -25,9 +25,20 @@ const ORDER_UPDATE_MARKERS = new Set([
   "ALGO_UPDATE",
   "executionReport",
   "account_activity",
+  "order_alert",
 ]);
 
 const NEWS_MARKERS = new Set(["news"]);
+
+function normalizeStreamTypeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((streamType) => String(streamType).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((streamType) => streamType.trim()).filter(Boolean);
+  }
+  return [];
+}
 
 function toMarketSource(
   source: MarketSource | `${MarketSource}_${string}` | null,
@@ -126,6 +137,7 @@ export class StreamingLifecycleAdapter {
           onlyClosedBars?: boolean;
           symbols?: unknown;
           stream_type?: string[] | string;
+          stream_types?: string[] | string;
           credential_id?: string;
           feed?: string;
           environment?: string;
@@ -144,6 +156,7 @@ export class StreamingLifecycleAdapter {
       onlyClosedBars?: boolean;
       symbols?: unknown;
       stream_type?: string[] | string;
+      stream_types?: string[] | string;
       credential_id?: string;
       feed?: string;
       environment?: string;
@@ -176,13 +189,9 @@ export class StreamingLifecycleAdapter {
       );
     }
 
-    const streamType = Array.isArray(nodeValues.stream_type)
-      ? nodeValues.stream_type
-      : typeof nodeValues.stream_type === "string"
-        ? nodeValues.stream_type
-            .split(",")
-            .map((streamType) => streamType.trim())
-        : [];
+    const streamType = normalizeStreamTypeList(
+      nodeValues.stream_type ?? nodeValues.stream_types,
+    );
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamType.some((streamName) =>
       ORDER_UPDATE_MARKERS.has(streamName),
@@ -396,7 +405,7 @@ export class StreamingLifecycleAdapter {
       scope: nodeValues.scope || "workflow",
       environment,
       symbols: symbols,
-      streamTypes: nodeValues.stream_type as any[],
+      streamTypes: streamType,
       assetType: nodeValues.assetType,
       marketType: nodeValues.marketType,
       contractType: nodeValues.contractType as
@@ -422,7 +431,7 @@ export class StreamingLifecycleAdapter {
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
       isLive: true,
       symbols: symbols,
-      streamTypes: nodeValues.stream_type as any[],
+      streamTypes: streamType,
     });
 
     await this.clearSessionData(userId, workflowId);
@@ -474,13 +483,9 @@ export class StreamingLifecycleAdapter {
         continue;
       }
 
-      const streamTypes = Array.isArray(nodeValues.stream_type)
-        ? nodeValues.stream_type
-        : typeof nodeValues.stream_type === "string"
-          ? nodeValues.stream_type
-              .split(",")
-              .map((streamType: string) => streamType.trim())
-          : [];
+      const streamTypes = normalizeStreamTypeList(
+        nodeValues.stream_type ?? nodeValues.stream_types,
+      );
       // If order_update is included, also unsubscribe from trading source
       // Split trading lifecycle marker from market stream types
       const hasOrderUpdate = streamTypes.some((streamName) =>

@@ -35,7 +35,7 @@ export interface GatewayConfig {
   makeUnsubscribeMessage: (streamNames: string[], source?: string) => any;
 
   // Message processing - source param for routing behavior
-  parseMessage: (buffer: Buffer) => any[];
+  parseMessage: (buffer: Buffer, source?: string) => unknown[];
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any, source?: string) => boolean;
   handleControlMessage?: (msg: any, logger: any, source?: string) => void;
@@ -48,7 +48,8 @@ export interface GatewayConfig {
   maxReconnectAttempts?: number;
 
   // Protocol flags
-  isBinary?: boolean;
+  isBinary?: boolean | ((source?: string) => boolean);
+  authCompletesOnSend?: boolean | ((source?: string) => boolean);
   requiresPreConnect?: boolean | ((source?: string, creds?: any) => boolean);
   preConnect?: (creds: any, context: GatewayPreConnectContext) => Promise<any>;
   validateOutbound?: (msg: any, source?: string) => boolean;

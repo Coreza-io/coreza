@@ -90,6 +90,12 @@ export const SOURCE_MAPPING: Record<string, SourceMapping> = Object.keys(
   {} as Record<string, SourceMapping>,
 );
 
+
+SOURCE_MAPPING.dhan_trading = {
+  credentialServiceType: "dhan",
+  gatewaySource: "dhan",
+};
+
 /**
  * Get source mapping for a given source ID.
  * Maps frontend/control message source IDs to credential service types and gateway sources.

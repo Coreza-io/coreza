@@ -16,6 +16,7 @@ import {
   buildStreamNames,
   extractSymbol,
   parseStreamName,
+  tradingRoutingKey,
 } from "../utils/streamName";
 import {
   computeTradingNativeStreamsFromConfig,
@@ -702,7 +703,7 @@ export class MarketControlHandler {
         const tradingSource = isTradingSource(source);
 
         const requestedStreamNames = tradingSource
-          ? (streamType ?? [])
+          ? (streamType ?? []).map((eventType) => tradingRoutingKey(source, eventType))
           : buildStreamNames(
               source,
               symbols,
@@ -860,7 +861,7 @@ export class MarketControlHandler {
         const tradingSource = isTradingSource(source);
 
         let streamNamesToRemove = tradingSource
-          ? (streamType ?? [])
+          ? (streamType ?? []).map((eventType) => tradingRoutingKey(source, eventType))
           : buildStreamNames(
               source,
               symbols,

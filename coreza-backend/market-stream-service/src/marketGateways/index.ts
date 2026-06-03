@@ -48,6 +48,7 @@ export const SOURCE_MAPPING: Record<string, SourceMapping> = {
   // Dhan
   dhan_market: { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
   dhan_stream: { credentialServiceType: 'dhan', gatewaySource: 'dhan' }, // Legacy support
+  dhan_trading: { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
   dhan: { credentialServiceType: 'dhan', gatewaySource: 'dhan' },
 
   // Schwab

@@ -1,8 +1,11 @@
 import { GatewayConfig } from '../../gatewayTypes';
 import {
+  buildDhanAuthMessage,
   buildDhanSubscribeMessage,
   buildDhanUnsubscribeMessage,
+  getDhanWsUrl,
   identifyDhanMessageType,
+  isDhanBinarySource,
   normalizeDhanMessage,
   parseDhanMessage,
   shouldPublishDhanMessage,
@@ -10,16 +13,17 @@ import {
 
 export const dhanGatewayConfig: GatewayConfig<'dhan'> = {
   id: 'dhan',
-  wsUrl: (creds) =>
-    `wss://api-feed.dhan.co?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`,
-  makeAuthMessage: undefined,
-  makeSubscribeMessage: (symbols) => buildDhanSubscribeMessage(symbols),
-  makeUnsubscribeMessage: (symbols) => buildDhanUnsubscribeMessage(symbols),
-  parseMessage: (buffer) => parseDhanMessage(buffer),
+  wsUrl: (creds, source) => getDhanWsUrl(creds, source),
+  makeAuthMessage: (creds, source) => buildDhanAuthMessage(creds, source),
+  makeSubscribeMessage: (symbols, _types, source) =>
+    buildDhanSubscribeMessage(symbols, source),
+  makeUnsubscribeMessage: (symbols, _types, source) =>
+    buildDhanUnsubscribeMessage(symbols, source),
+  parseMessage: (buffer, source) => parseDhanMessage(buffer, source),
   identifyMessageType: (msg) => identifyDhanMessageType(msg),
-  shouldPublish: (msg) => shouldPublishDhanMessage(msg),
-  normalize: (msg) => normalizeDhanMessage(msg),
+  shouldPublish: (msg, source) => shouldPublishDhanMessage(msg, source),
+  normalize: (msg, source) => normalizeDhanMessage(msg, source),
   reconnectDelay: 2000,
   maxReconnectAttempts: 5,
-  isBinary: true,
+  isBinary: (source) => isDhanBinarySource(source),
 };

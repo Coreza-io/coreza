@@ -26,6 +26,8 @@ const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
   "ORDER_TRADE_UPDATE",
   "executionReport",
   "order_update",
+  "order_alert",
+  "account_activity",
   "listen_key_expired",
 ]);
 const ORDER_OWNER_PREFIX = "orderowner";

@@ -62,7 +62,8 @@
     {
       "key": "data_type",
       "type": "hidden",
-      "default": "market"
+      "default": "market",
+      "label": "Data Type"
     },
     {
       "key": "mode",
@@ -147,7 +148,7 @@
       "label": "Security IDs",
       "type": "text",
       "placeholder": "1333, 11536",
-      "description": "Security IDs to subscribe and stream.",
+      "description": "Comma-separated security IDs. Not required when only Order Updates is selected.",
       "displayOptions": {
         "show": {
           "mode": [
@@ -155,7 +156,8 @@
           ]
         }
       },
-      "showDescription": false
+      "showDescription": false,
+      "required": false
     },
     {
       "key": "stream_types",
@@ -173,6 +175,10 @@
         {
           "id": "full",
           "name": "Full (OHLC + Depth)"
+        },
+        {
+          "id": "account_activity",
+          "name": "Order Updates (Fills)"
         }
       ],
       "default": [
@@ -184,7 +190,8 @@
             "subscribe"
           ]
         }
-      }
+      },
+      "description": "Select Dhan market streams or order updates to subscribe to."
     },
     {
       "key": "subscriptionMode",
@@ -242,6 +249,10 @@
         {
           "id": "full",
           "name": "Full"
+        },
+        {
+          "id": "account_activity",
+          "name": "Order Updates (Fills)"
         }
       ],
       "description": "Filter specific stream types. Leave empty to receive all types.",

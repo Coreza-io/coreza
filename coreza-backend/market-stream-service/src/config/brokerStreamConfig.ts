@@ -44,6 +44,12 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
           : streamType,
   },
 
+  dhan: {
+    separator: "@",
+    symbolFirst: true,
+    companionSources: ["dhan_trading"],
+  },
+
   schwab: {
     separator: "@",
     symbolFirst: true,
@@ -56,6 +62,13 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     tradingRoutingKey: () => "trade_updates",
     tradingStreams: { account: ["trade_updates"] },
+  },
+
+  dhan_trading: {
+    separator: "@",
+    symbolFirst: true,
+    tradingRoutingKey: () => "order_alert",
+    tradingStreams: { account: ["order_alert"] },
   },
 
   schwab_trading: {

@@ -101,6 +101,7 @@ export interface MarketEvent {
   accountId?: string;
   brokerAccountHash?: string;
   rawOrderData?: Record<string, any>;
+  rejectReason?: string;
 
   // Metadata
   timeframe?: string;

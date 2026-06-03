@@ -31,7 +31,10 @@ const TRADING_LIFECYCLE_EVENTS = new Set([
   "trade_updates",
   "ORDER_TRADE_UPDATE",
   "executionReport",
+  "account_activity",
   "account_activity ",
+  "order_update",
+  "order_alert",
   "listen_key_expired",
 ]);
 
@@ -134,11 +137,17 @@ export class MarketDataGateway {
           this.source,
         );
         if (authMsg) {
-          const payload = this.config.isBinary
-            ? this.encodeMessage(authMsg)
-            : JSON.stringify(authMsg);
-          if (this.assertSocketBoundary(authMsg, "send"))
+          const payload = this.encodeMessage(authMsg);
+          if (this.assertSocketBoundary(authMsg, "send")) {
+            this.logger.info(
+              { source: this.source, authMessage: this.redactAuthMessage(authMsg) },
+              "Sending gateway authentication message",
+            );
             this.ws!.send(payload);
+            if (this.authCompletesOnSend()) {
+              this.markConnectionReady(resolve);
+            }
+          }
         } else {
           this.isAuthenticated = true;
           this.resubscribeAll();
@@ -182,7 +191,7 @@ export class MarketDataGateway {
   ): Promise<void> {
     try {
       const startTime = Date.now();
-      const messages = this.config.parseMessage(buffer);
+      const messages = this.config.parseMessage(buffer, this.source);
 
       // Debug log ALL incoming messages
       this.logger.debug(
@@ -506,11 +515,33 @@ export class MarketDataGateway {
     return true;
   }
 
+  private redactAuthMessage(msg: any): any {
+    if (!msg || typeof msg !== "object") return msg;
+    const clone = JSON.parse(JSON.stringify(msg));
+    if (clone.LoginReq?.Token) clone.LoginReq.Token = "[REDACTED]";
+    if (clone.action === "auth" && clone.key) clone.key = "[REDACTED]";
+    if (clone.action === "auth" && clone.secret) clone.secret = "[REDACTED]";
+    return clone;
+  }
+
+  private isBinaryProtocol(source = this.source): boolean {
+    return typeof this.config.isBinary === "function"
+      ? this.config.isBinary(source)
+      : Boolean(this.config.isBinary);
+  }
+
+  private authCompletesOnSend(source = this.source): boolean {
+    return typeof this.config.authCompletesOnSend === "function"
+      ? this.config.authCompletesOnSend(source)
+      : Boolean(this.config.authCompletesOnSend);
+  }
+
   private encodeMessage(msg: any): Buffer | string {
-    if (this.config.encodeOutboundBinary) {
-      return this.config.encodeOutboundBinary(msg);
+    if (this.isBinaryProtocol()) {
+      return this.config.encodeOutboundBinary
+        ? this.config.encodeOutboundBinary(msg)
+        : Buffer.from(JSON.stringify(msg));
     }
-    if (this.config.isBinary) return Buffer.from(JSON.stringify(msg));
 
     // JSON protocol (default)
     return JSON.stringify(msg);
@@ -568,9 +599,7 @@ export class MarketDataGateway {
         );
         if (!keepaliveMsg) return;
 
-        const payload = this.config.isBinary
-          ? this.encodeMessage(keepaliveMsg)
-          : JSON.stringify(keepaliveMsg);
+        const payload = this.encodeMessage(keepaliveMsg);
         if (this.assertSocketBoundary(keepaliveMsg, "send")) {
           this.ws.send(payload);
           this.logger.debug(

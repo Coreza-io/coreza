@@ -19,6 +19,8 @@ export interface ParsedStream {
 export const KNOWN_TRADING_STREAMS = new Set([
   "trade_updates",
   "order_update",
+  "account_activity",
+  "order_alert",
   "order_trade_update",
   "algo_update",
   "account_update",

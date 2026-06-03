@@ -1,4 +1,5 @@
 import { BrokerCapabilities } from "../capabilities";
+import { extractDhanOrderOwnerIds } from "./orderOwnerExtract";
 
 export const dhanCapabilities: BrokerCapabilities = {
   id: "dhan",
@@ -13,6 +14,8 @@ export const dhanCapabilities: BrokerCapabilities = {
 
   streaming: {
     sourceId: "dhan_stream",
+    tradingSourceId: "dhan_trading",
+    tradingStreams: ["order_alert"],
   },
 
   streamParser: {
@@ -26,6 +29,10 @@ export const dhanCapabilities: BrokerCapabilities = {
       { key: "api_key", label: "Dhan access token" },
     ],
   },
+
+  orderOwnerExtract: extractDhanOrderOwnerIds,
+
+  tradingRoutingKey: () => "order_alert",
 
   supportsAlgoOrders: false,
 

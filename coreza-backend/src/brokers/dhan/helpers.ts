@@ -149,11 +149,11 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
   const {
     symbol,
     exchange_segment = "NSE_EQ",
-    transactionType = "BUY",
-    orderType = "MARKET",
+    side = "buy",
+    type = "market",
     productType = "CNC",
     validity = "DAY",
-    quantity = 1,
+    qty = 1,
     disclosedQuantity = 0,
     price = "",
     triggerPrice = "",
@@ -165,6 +165,9 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
     drvOptionType = "",
     drvStrikePrice = 0,
   } = input;
+  const transactionType = String(input.transactionType ?? side).toUpperCase();
+  const orderType = String(input.orderType ?? type).toUpperCase();
+  const quantity = input.quantity ?? qty;
 
   if (!symbol || !quantity || !transactionType) {
     throw new Error(
@@ -185,15 +188,14 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
     );
   }
 
-  const priceVal = orderType === "LIMIT" ? String(price || "0") : "";
-  const triggerPriceVal = [
-    "STOP_LOSS",
-    "STOP_LOSS_MARKET",
-    "SL",
-    "SLM",
-  ].includes(orderType)
-    ? String(triggerPrice || "0")
-    : "";
+  const priceVal = ["LIMIT", "STOP_LOSS"].includes(orderType)
+    ? Number(price) || 0
+    : 0;
+  const triggerPriceVal = ["STOP_LOSS", "STOP_LOSS_MARKET"].includes(
+    orderType,
+  )
+    ? Number(triggerPrice) || 0
+    : 0;
 
   return {
     dhanClientId: creds.client_id,
@@ -204,12 +206,12 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
     orderType,
     validity,
     securityId,
-    quantity,
-    disclosedQuantity,
+    quantity: Number(quantity),
+    disclosedQuantity: Number(disclosedQuantity) || 0,
     price: priceVal,
     triggerPrice: triggerPriceVal,
     afterMarketOrder,
-    amoTime,
+    ...(afterMarketOrder === true && { amoTime }),
     boProfitValue,
     boStopLossValue,
     drvExpiryDate,

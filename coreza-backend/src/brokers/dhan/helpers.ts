@@ -1,8 +1,7 @@
-import { v4 as uuidv4 } from 'uuid';
-import { lookupSecurityId } from './scripMaster';
-import type { Bar, BarSeriesOutput } from '../types';
-import { toBarSeries } from '../types';
-
+import { v4 as uuidv4 } from "uuid";
+import { lookupSecurityId } from "./scripMaster";
+import type { Bar, BarSeriesOutput } from "../types";
+import { toBarSeries } from "../types";
 
 export interface DhanBar {
   time: number;
@@ -27,41 +26,52 @@ export function fromDhanBar(b: DhanBar): Bar {
 export async function buildDhanPlaceOrder(input: any, creds: any) {
   const {
     symbol,
-    exchange_segment = 'NSE_EQ',
-    transactionType = 'BUY',
-    orderType = 'MARKET',
-    productType = 'CNC',
-    validity = 'DAY',
+    exchange_segment = "NSE_EQ",
+    transactionType = "BUY",
+    orderType = "MARKET",
+    productType = "CNC",
+    validity = "DAY",
     quantity = 1,
     disclosedQuantity = 0,
-    price = '',
-    triggerPrice = '',
+    price = "",
+    triggerPrice = "",
     afterMarketOrder = false,
-    amoTime = '',
+    amoTime = "",
     boProfitValue = 0,
     boStopLossValue = 0,
-    drvExpiryDate = '',
-    drvOptionType = '',
+    drvExpiryDate = "",
+    drvOptionType = "",
     drvStrikePrice = 0,
   } = input;
 
   if (!symbol || !quantity || !transactionType) {
-    throw new Error('Symbol, quantity, and transactionType are required for place_order');
+    throw new Error(
+      "Symbol, quantity, and transactionType are required for place_order",
+    );
   }
 
   const securityId = await lookupSecurityId(symbol, exchange_segment);
   if (!securityId) {
-    throw new Error(`Security ID not found for symbol="${symbol}" segment="${exchange_segment}"`);
+    throw new Error(
+      `Security ID not found for symbol="${symbol}" segment="${exchange_segment}"`,
+    );
   }
 
   if (!creds.client_id) {
-    throw new Error('Dhan client_id missing in credentials (required for order)');
+    throw new Error(
+      "Dhan client_id missing in credentials (required for order)",
+    );
   }
 
-  const priceVal = orderType === 'LIMIT' ? String(price || '0') : '';
-  const triggerPriceVal = ['STOP_LOSS', 'STOP_LOSS_MARKET', 'SL', 'SLM'].includes(orderType)
-    ? String(triggerPrice || '0')
-    : '';
+  const priceVal = orderType === "LIMIT" ? String(price || "0") : "";
+  const triggerPriceVal = [
+    "STOP_LOSS",
+    "STOP_LOSS_MARKET",
+    "SL",
+    "SLM",
+  ].includes(orderType)
+    ? String(triggerPrice || "0")
+    : "";
 
   return {
     dhanClientId: creds.client_id,
@@ -89,51 +99,59 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
 export async function buildDhanHistoricalBody(input: any) {
   const {
     symbol,
-    exchange_segment = 'NSE_EQ',
-    from_date,
-    to_date,
+    exchange_segment = "NSE_EQ",
+    start,
+    end,
     lookback,
-    timeframe = '1',
+    interval = "1",
   } = input;
 
-  if (!symbol) throw new Error('Symbol is required for get_candle');
+  if (!symbol) throw new Error("Symbol is required for get_candle");
 
   const securityId = await lookupSecurityId(symbol, exchange_segment);
   if (!securityId) {
-    throw new Error(`Security ID not found for symbol="${symbol}" segment="${exchange_segment}"`);
+    throw new Error(
+      `Security ID not found for symbol="${symbol}" segment="${exchange_segment}"`,
+    );
   }
 
-  let startDate = from_date;
-  let endDate = to_date;
+  let startDate = start;
+  let endDate = end;
   const lb = Number(lookback) || 0;
 
   if ((!startDate || !endDate) && lb > 0) {
     const now = new Date();
     const sd = new Date(now);
 
-    if (timeframe.endsWith('Min')) {
+    if (interval.endsWith("Min")) {
       sd.setMinutes(now.getMinutes() - lb);
-    } else if (timeframe.endsWith('Hour')) {
+    } else if (interval.endsWith("Hour")) {
       sd.setHours(now.getHours() - lb);
     } else {
       sd.setDate(now.getDate() - lb);
     }
+    const formatDhanDateTime = (date: Date) =>
+      new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
 
-    startDate = startDate || sd.toISOString();
-    endDate = endDate || now.toISOString();
+    startDate = startDate || formatDhanDateTime(sd);
+    endDate = endDate || formatDhanDateTime(now);
   }
 
   if (!startDate || !endDate) {
-    throw new Error('Either lookback or both from_date and to_date must be provided');
+    throw new Error(
+      "Either lookback or both from_date and to_date must be provided",
+    );
   }
 
   return {
     securityId,
     exchangeSegment: exchange_segment,
-    instrument: 'EQUITY',
+    instrument: "EQUITY",
     fromDate: startDate,
     toDate: endDate,
-    expiryCode: 0,
     oi: false,
   };
 }
@@ -148,7 +166,14 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
 
   let candles: any[] = [];
 
-  if (Array.isArray(open) && Array.isArray(high) && Array.isArray(low) && Array.isArray(close) && Array.isArray(volume) && Array.isArray(ts)) {
+  if (
+    Array.isArray(open) &&
+    Array.isArray(high) &&
+    Array.isArray(low) &&
+    Array.isArray(close) &&
+    Array.isArray(volume) &&
+    Array.isArray(ts)
+  ) {
     for (let i = 0; i < open.length; ++i) {
       candles.push({
         t: ts[i],
@@ -171,7 +196,7 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
   }
 
   const dhanBars: DhanBar[] = candles.map((c) => ({
-    time: typeof c.t === 'string' ? Date.parse(c.t) : c.t,
+    time: typeof c.t === "string" ? Date.parse(c.t) : c.t,
     open: c.o,
     high: c.h,
     low: c.l,
@@ -179,5 +204,9 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
     volume: c.v,
   }));
 
-  return toBarSeries(input.symbol, input.timeframe || '1', dhanBars.map(fromDhanBar));
+  return toBarSeries(
+    input.symbol,
+    input.timeframe || "1",
+    dhanBars.map(fromDhanBar),
+  );
 }

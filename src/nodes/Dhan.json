@@ -118,27 +118,60 @@
       "required": true
     },
     {
-      "key": "exchange",
-      "label": "Exchange",
+      "key": "instrument",
+      "label": "Instrument Type",
       "type": "select",
       "options": [
         {
-          "id": "NSE_EQ",
-          "name": "NSE"
+          "id": "INDEX",
+          "name": "Index"
         },
         {
-          "id": "BSE_EQ",
-          "name": "BSE"
+          "id": "FUTIDX",
+          "name": "Futures - Index"
+        },
+        {
+          "id": "OPTIDX",
+          "name": "Options - Index"
+        },
+        {
+          "id": "EQUITY",
+          "name": "Equity"
+        },
+        {
+          "id": "FUTSTK",
+          "name": "Futures - Stock"
+        },
+        {
+          "id": "OPTSTK",
+          "name": "Options - Stock"
+        },
+        {
+          "id": "FUTCOM",
+          "name": "Futures - Commodity"
+        },
+        {
+          "id": "OPTFUT",
+          "name": "Options - Futures"
+        },
+        {
+          "id": "FUTCUR",
+          "name": "Futures - Currency"
+        },
+        {
+          "id": "OPTCUR",
+          "name": "Options - Currency"
         }
       ],
-      "placeholder": "Select exchange",
+      "placeholder": "Select instrument type",
       "required": true,
-      "default": "",
+      "default": "EQUITY",
       "displayOptions": {
         "show": {
           "operation": ["get_candle"]
         }
-      }
+      },
+      "description": "Dhan instrument type. Example: EQUITY for stocks, INDEX for indices, FUTIDX for index futures, OPTIDX for index options."
     },
     {
       "key": "symbol",
@@ -154,29 +187,114 @@
       "description": "NSE/BSE stock symbol (e.g., RELIANCE, TCS, INFY)."
     },
     {
+      "key": "exchangeSegment",
+      "label": "Exchange Segment",
+      "type": "select",
+      "options": [
+        {
+          "id": "NSE_EQ",
+          "name": "NSE - Equity Cash"
+        },
+        {
+          "id": "NSE_FNO",
+          "name": "NSE - Futures & Options"
+        },
+        {
+          "id": "NSE_CURRENCY",
+          "name": "NSE - Currency"
+        },
+        {
+          "id": "BSE_EQ",
+          "name": "BSE - Equity Cash"
+        },
+        {
+          "id": "BSE_FNO",
+          "name": "BSE - Futures & Options"
+        },
+        {
+          "id": "BSE_CURRENCY",
+          "name": "BSE - Currency"
+        },
+        {
+          "id": "MCX_COMM",
+          "name": "MCX - Commodity"
+        },
+        {
+          "id": "IDX_I",
+          "name": "INDEX - Indices"
+        }
+      ],
+      "placeholder": "Select exchange segment",
+      "required": true,
+      "default": "NSE_EQ",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
+        }
+      },
+      "description": "Dhan exchange segment. Example: NSE_EQ for NSE Equity, NSE_FNO for NSE Futures & Options, IDX_I for indices."
+    },
+    {
+      "key": "expiryCode",
+      "label": "Expiry",
+      "type": "select",
+      "options": [
+        {
+          "id": 0,
+          "name": "Current / Near Expiry"
+        },
+        {
+          "id": 1,
+          "name": "Next Expiry"
+        },
+        {
+          "id": 2,
+          "name": "Far Expiry"
+        }
+      ],
+      "default": 0,
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"],
+          "instrument": [
+            "FUTIDX",
+            "OPTIDX",
+            "FUTSTK",
+            "OPTSTK",
+            "FUTCOM",
+            "OPTFUT",
+            "FUTCUR",
+            "OPTCUR"
+          ]
+        }
+      },
+      "description": "Used only for derivative instruments. 0 = current/near expiry, 1 = next expiry, 2 = far expiry."
+    },
+    {
       "key": "interval",
       "label": "Interval",
       "type": "select",
       "options": [
         {
-          "id": "1Min",
+          "id": "1",
           "name": "1 min"
         },
         {
-          "id": "5Min",
+          "id": "5",
           "name": "5 min"
         },
         {
-          "id": "15Min",
+          "id": "15",
           "name": "15 min"
         },
         {
-          "id": "1Hour",
-          "name": "1 hour"
+          "id": "25",
+          "name": "25 min"
         },
         {
-          "id": "1Day",
-          "name": "1 day"
+          "id": "60",
+          "name": "1 hour"
         }
       ],
       "placeholder": "Select interval",
@@ -188,11 +306,37 @@
       }
     },
     {
+      "key": "start",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "2024-01-03 09:15:00",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
+        }
+      },
+      "description": "Optional. Start date/time for candle data. Format: YYYY-MM-DD HH:mm:ss. Example: 2024-01-03 09:15:00."
+    },
+    {
+      "key": "end",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "2024-01-04 15:30:00",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"]
+        }
+      },
+      "description": "Optional. End date/time for candle data. Format: YYYY-MM-DD HH:mm:ss. Example: 2024-01-04 15:30:00."
+    },
+    {
       "key": "lookback",
       "label": "Bars to Fetch",
       "type": "text",
       "placeholder": "e.g. 100",
-      "required": true,
+      "required": false,
       "displayOptions": {
         "show": {
           "operation": ["get_candle"]

@@ -12,20 +12,8 @@ export interface DhanBar {
   volume: number;
 }
 
-const DERIVATIVE_INSTRUMENTS = new Set([
-  "FUTIDX",
-  "OPTIDX",
-  "FUTSTK",
-  "OPTSTK",
-  "FUTCOM",
-  "OPTFUT",
-  "FUTCUR",
-  "OPTCUR",
-]);
-
 type DhanCandleInput = {
   symbol?: string;
-  exchange_segment?: string;
   exchangeSegment?: string;
   start?: string;
   end?: string;
@@ -33,7 +21,6 @@ type DhanCandleInput = {
   interval?: string | number;
   instrument?: string;
   expiryCode?: string | number;
-  timeframe?: string;
 };
 
 type DhanCredentials = {
@@ -124,37 +111,11 @@ type DhanModifyOrderBody = {
   legName?: string;
 };
 
-function getExchangeSegment(input: DhanCandleInput): string {
-  return input.exchange_segment ?? input.exchangeSegment ?? "NSE_EQ";
-}
-
-function getInstrument(input: DhanCandleInput): string {
-  return input.instrument ?? "EQUITY";
-}
-
-function addExpiryCodeIfDerivative<T extends DhanCandleBaseBody>(
-  body: T,
-  input: DhanCandleInput,
-): T {
-  if (DERIVATIVE_INSTRUMENTS.has(getInstrument(input))) {
-    return {
-      ...body,
-      expiryCode: Number(input.expiryCode ?? 0),
-    };
-  }
-
-  return body;
-}
-
 function formatDhanDateTime(date: Date): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 19)
     .replace("T", " ");
-}
-
-function getIntervalValue(input: DhanCandleInput): string {
-  return String(input.interval ?? "1");
 }
 
 function resolveDateRange(input: DhanCandleInput): {
@@ -168,15 +129,10 @@ function resolveDateRange(input: DhanCandleInput): {
   if ((!startDate || !endDate) && lb > 0) {
     const now = new Date();
     const sd = new Date(now);
-    const interval = getIntervalValue(input);
-    const numericInterval = Number(interval);
+    const interval = Number(input.interval);
 
-    if (Number.isFinite(numericInterval) && numericInterval > 0) {
-      sd.setMinutes(now.getMinutes() - lb * numericInterval);
-    } else if (interval.endsWith("Min")) {
-      sd.setMinutes(now.getMinutes() - lb);
-    } else if (interval.endsWith("Hour")) {
-      sd.setHours(now.getHours() - lb);
+    if (Number.isFinite(interval) && interval > 0) {
+      sd.setMinutes(now.getMinutes() - lb * interval);
     } else {
       sd.setDate(now.getDate() - lb);
     }
@@ -200,7 +156,7 @@ async function buildDhanCandleBaseBody(
   const { symbol } = input;
   if (!symbol) throw new Error("Symbol is required for get_candle");
 
-  const exchangeSegment = getExchangeSegment(input);
+  const exchangeSegment = input.exchangeSegment || "NSE_EQ";
   const securityId = await lookupSecurityId(symbol, exchangeSegment);
   if (!securityId) {
     throw new Error(
@@ -210,17 +166,14 @@ async function buildDhanCandleBaseBody(
 
   const { fromDate, toDate } = resolveDateRange(input);
 
-  return addExpiryCodeIfDerivative(
-    {
-      securityId,
-      exchangeSegment,
-      instrument: getInstrument(input),
-      fromDate,
-      toDate,
-      oi: false,
-    },
-    input,
-  );
+  return {
+    securityId,
+    exchangeSegment,
+    instrument: input.instrument || "",
+    fromDate,
+    toDate,
+    oi: false,
+  };
 }
 
 function hasProvidedValue(value: unknown): boolean {
@@ -338,7 +291,7 @@ export async function buildDhanIntradayBody(
 
   return {
     ...body,
-    interval: getIntervalValue(input),
+    interval: String(input.interval || ""),
   };
 }
 

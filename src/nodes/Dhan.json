@@ -94,19 +94,39 @@
           "method": "POST"
         },
         {
+          "id": "get_holdings",
+          "name": "Get Holdings",
+          "method": "POST"
+        },
+        {
           "id": "get_orders",
           "name": "Get Orders",
           "method": "POST"
         },
         {
+          "id": "get_trades",
+          "name": "Get Trades",
+          "method": "POST"
+        },
+        {
+          "id": "get_order_by_id",
+          "name": "Get Order By ID",
+          "method": "POST"
+        },
+        {
+          "id": "modify_order",
+          "name": "Modify Order",
+          "method": "POST"
+        },
+        {
           "id": "cancel_order",
-          "name": "Cancel Orders",
-          "method": "POSt"
+          "name": "Cancel Order",
+          "method": "POST"
         },
         {
           "id": "get_candle",
           "name": "Get Historical Bars",
-          "method": "POSt"
+          "method": "POST"
         },
         {
           "id": "place_order",
@@ -116,6 +136,23 @@
       ],
       "placeholder": "Select operation",
       "required": true
+    },
+    {
+      "key": "orderId",
+      "label": "Order ID",
+      "type": "text",
+      "placeholder": "Dhan order ID",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_order_by_id",
+            "modify_order",
+            "cancel_order"
+          ]
+        }
+      },
+      "description": "Dhan order ID for lookup, modification, or cancellation."
     },
     {
       "key": "instrument",
@@ -168,7 +205,9 @@
       "default": "EQUITY",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       },
       "description": "Dhan instrument type. Example: EQUITY for stocks, INDEX for indices, FUTIDX for index futures, OPTIDX for index options."
@@ -181,7 +220,10 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle", "place_order"]
+          "operation": [
+            "get_candle",
+            "place_order"
+          ]
         }
       },
       "description": "NSE/BSE stock symbol (e.g., RELIANCE, TCS, INFY)."
@@ -229,7 +271,9 @@
       "default": "NSE_EQ",
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       },
       "description": "Dhan exchange segment. Example: NSE_EQ for NSE Equity, NSE_FNO for NSE Futures & Options, IDX_I for indices."
@@ -240,15 +284,15 @@
       "type": "select",
       "options": [
         {
-          "id": 0,
+          "id": "0",
           "name": "Current / Near Expiry"
         },
         {
-          "id": 1,
+          "id": "1",
           "name": "Next Expiry"
         },
         {
-          "id": 2,
+          "id": "2",
           "name": "Far Expiry"
         }
       ],
@@ -256,7 +300,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"],
+          "operation": [
+            "get_candle"
+          ],
           "instrument": [
             "FUTIDX",
             "OPTIDX",
@@ -295,13 +341,19 @@
         {
           "id": "60",
           "name": "1 hour"
+        },
+        {
+          "id": "1Day",
+          "name": "Day (Daily)"
         }
       ],
       "placeholder": "Select interval",
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -313,7 +365,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       },
       "description": "Optional. Start date/time for candle data. Format: YYYY-MM-DD HH:mm:ss. Example: 2024-01-03 09:15:00."
@@ -326,7 +380,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       },
       "description": "Optional. End date/time for candle data. Format: YYYY-MM-DD HH:mm:ss. Example: 2024-01-04 15:30:00."
@@ -339,7 +395,9 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["get_candle"]
+          "operation": [
+            "get_candle"
+          ]
         }
       }
     },
@@ -369,7 +427,9 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["place_order"]
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "description": "Exchange and segment: NSE/BSE for equities, FNO for futures & options."
@@ -392,7 +452,9 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["place_order"]
+          "operation": [
+            "place_order"
+          ]
         }
       },
       "description": "Buy to open/add position, Sell to close/reduce position."
@@ -405,7 +467,10 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["place_order"]
+          "operation": [
+            "place_order",
+            "modify_order"
+          ]
         }
       },
       "description": "Number of shares/lots to trade."
@@ -428,7 +493,10 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["place_order"]
+          "operation": [
+            "place_order",
+            "modify_order"
+          ]
         }
       },
       "description": "Market executes immediately at best price, Limit waits for specified price."
@@ -451,7 +519,10 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": ["place_order"]
+          "operation": [
+            "place_order",
+            "modify_order"
+          ]
         }
       },
       "description": "Day order valid until market close, IOC fills immediately or cancels."
@@ -464,7 +535,10 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": ["place_order"]
+          "operation": [
+            "place_order",
+            "modify_order"
+          ]
         }
       },
       "description": "Limit price for the order."

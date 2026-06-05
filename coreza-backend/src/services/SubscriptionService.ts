@@ -10,6 +10,7 @@
 
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
+import { lookupSecurityId } from "../brokers/dhan/scripMaster";
 import { MarketSource } from "../types/marketEvent";
 
 export interface SubscriptionParams {
@@ -24,6 +25,7 @@ export interface SubscriptionParams {
   initialInput?: { symbols?: string | string[] };
   // Stream configuration
   streamType?: string[];
+  exchange?: string;
   // Alpaca-specific
   feed?: string;
   // Binance-specific
@@ -60,6 +62,7 @@ const SUBSCRIPTION_READY_POLL_MS = parseInt(
   process.env.SUBSCRIPTION_READY_POLL_MS || "250",
   10,
 );
+const DEFAULT_DHAN_EXCHANGE_SEGMENT = "NSE_EQ";
 
 /**
  * Centralized service for managing market data subscriptions.
@@ -86,6 +89,7 @@ export class SubscriptionService {
         operation,
         symbols,
         streamType,
+        exchange,
         feed,
         environment,
         assetType,
@@ -149,7 +153,7 @@ export class SubscriptionService {
 
         return [];
       }
-      const symbolArray = normalizeSymbols(symbols);
+      let symbolArray = normalizeSymbols(symbols);
 
       // For unsubscribe, allow empty symbols if workflowId is provided (workflow cleanup)
       if (symbolArray.length === 0 && operation === "subscribe") {
@@ -157,6 +161,34 @@ export class SubscriptionService {
           success: false,
           error: "No symbols provided for subscription",
         };
+      }
+
+      const baseBroker = String(source).split("_")[0];
+      const isCompanionSource =
+        String(source).endsWith("_trading") || String(source).endsWith("_news");
+
+      if (baseBroker === "dhan" && !isCompanionSource) {
+        const exchangeSegment = exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
+        const resolvedSymbols: string[] = [];
+
+        for (const symbol of symbolArray) {
+          if (symbol === "*" || /^\d+$/.test(symbol)) {
+            resolvedSymbols.push(symbol);
+            continue;
+          }
+
+          const securityId = await lookupSecurityId(symbol, exchangeSegment);
+          if (!securityId) {
+            return {
+              success: false,
+              error: `Security ID not found for symbol="${symbol}" segment="${exchangeSegment}"`,
+            };
+          }
+
+          resolvedSymbols.push(securityId);
+        }
+
+        symbolArray = resolvedSymbols;
       }
 
       // Build control message with RAW data

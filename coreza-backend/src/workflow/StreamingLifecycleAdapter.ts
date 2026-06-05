@@ -139,6 +139,7 @@ export class StreamingLifecycleAdapter {
           stream_type?: string[] | string;
           stream_types?: string[] | string;
           credential_id?: string;
+          exchange?: string;
           feed?: string;
           environment?: string;
           assetType?: string;
@@ -158,6 +159,7 @@ export class StreamingLifecycleAdapter {
       stream_type?: string[] | string;
       stream_types?: string[] | string;
       credential_id?: string;
+      exchange?: string;
       feed?: string;
       environment?: string;
       assetType?: string;
@@ -327,6 +329,7 @@ export class StreamingLifecycleAdapter {
         credentialId: nodeValues.credential_id || "",
         symbols,
         streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
+        exchange: nodeValues.exchange,
         feed: nodeValues.feed,
         environment,
         assetType: nodeValues.assetType,
@@ -532,6 +535,7 @@ export class StreamingLifecycleAdapter {
           credentialId: nodeValues.credential_id as string,
           symbols: symbolArray,
           streamType: marketstreamType,
+          exchange: nodeValues.exchange as string,
           feed: nodeValues.feed as string,
           environment: nodeValues.environment as string,
           assetType: nodeValues.assetType as string,

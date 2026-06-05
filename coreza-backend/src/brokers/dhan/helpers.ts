@@ -12,6 +12,175 @@ export interface DhanBar {
   volume: number;
 }
 
+const DERIVATIVE_INSTRUMENTS = new Set([
+  "FUTIDX",
+  "OPTIDX",
+  "FUTSTK",
+  "OPTSTK",
+  "FUTCOM",
+  "OPTFUT",
+  "FUTCUR",
+  "OPTCUR",
+]);
+
+type DhanCandleInput = {
+  symbol?: string;
+  exchange_segment?: string;
+  exchangeSegment?: string;
+  start?: string;
+  end?: string;
+  lookback?: string | number;
+  interval?: string | number;
+  instrument?: string;
+  expiryCode?: string | number;
+  timeframe?: string;
+};
+
+type DhanCredentials = {
+  client_id?: string;
+};
+
+type DhanCandleBaseBody = {
+  securityId: string;
+  exchangeSegment: string;
+  instrument: string;
+  fromDate: string;
+  toDate: string;
+  oi: false;
+  expiryCode?: number;
+};
+
+type DhanIntradayBody = DhanCandleBaseBody & {
+  interval: string;
+};
+
+type DhanModifyOrderInput = {
+  orderId?: string | number;
+  orderType?: string;
+  type?: string;
+  quantity?: string | number;
+  qty?: string | number;
+  price?: string | number;
+  triggerPrice?: string | number;
+  validity?: string;
+  disclosedQuantity?: string | number;
+  legName?: string;
+};
+
+type DhanModifyOrderBody = {
+  dhanClientId: string;
+  orderType?: string;
+  quantity?: string | number;
+  price?: string | number;
+  triggerPrice?: string | number;
+  validity?: string;
+  disclosedQuantity?: string | number;
+  legName?: string;
+};
+
+function getExchangeSegment(input: DhanCandleInput): string {
+  return input.exchange_segment ?? input.exchangeSegment ?? "NSE_EQ";
+}
+
+function getInstrument(input: DhanCandleInput): string {
+  return input.instrument ?? "EQUITY";
+}
+
+function addExpiryCodeIfDerivative<T extends DhanCandleBaseBody>(
+  body: T,
+  input: DhanCandleInput,
+): T {
+  if (DERIVATIVE_INSTRUMENTS.has(getInstrument(input))) {
+    return {
+      ...body,
+      expiryCode: Number(input.expiryCode ?? 0),
+    };
+  }
+
+  return body;
+}
+
+function formatDhanDateTime(date: Date): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
+}
+
+function getIntervalValue(input: DhanCandleInput): string {
+  return String(input.interval ?? "1");
+}
+
+function resolveDateRange(input: DhanCandleInput): {
+  fromDate: string;
+  toDate: string;
+} {
+  let startDate = input.start;
+  let endDate = input.end;
+  const lb = Number(input.lookback) || 0;
+
+  if ((!startDate || !endDate) && lb > 0) {
+    const now = new Date();
+    const sd = new Date(now);
+    const interval = getIntervalValue(input);
+    const numericInterval = Number(interval);
+
+    if (Number.isFinite(numericInterval) && numericInterval > 0) {
+      sd.setMinutes(now.getMinutes() - lb * numericInterval);
+    } else if (interval.endsWith("Min")) {
+      sd.setMinutes(now.getMinutes() - lb);
+    } else if (interval.endsWith("Hour")) {
+      sd.setHours(now.getHours() - lb);
+    } else {
+      sd.setDate(now.getDate() - lb);
+    }
+
+    startDate = startDate || formatDhanDateTime(sd);
+    endDate = endDate || formatDhanDateTime(now);
+  }
+
+  if (!startDate || !endDate) {
+    throw new Error(
+      "Either lookback or both from_date and to_date must be provided",
+    );
+  }
+
+  return { fromDate: startDate, toDate: endDate };
+}
+
+async function buildDhanCandleBaseBody(
+  input: DhanCandleInput,
+): Promise<DhanCandleBaseBody> {
+  const { symbol } = input;
+  if (!symbol) throw new Error("Symbol is required for get_candle");
+
+  const exchangeSegment = getExchangeSegment(input);
+  const securityId = await lookupSecurityId(symbol, exchangeSegment);
+  if (!securityId) {
+    throw new Error(
+      `Security ID not found for symbol="${symbol}" segment="${exchangeSegment}"`,
+    );
+  }
+
+  const { fromDate, toDate } = resolveDateRange(input);
+
+  return addExpiryCodeIfDerivative(
+    {
+      securityId,
+      exchangeSegment,
+      instrument: getInstrument(input),
+      fromDate,
+      toDate,
+      oi: false,
+    },
+    input,
+  );
+}
+
+function hasProvidedValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
+}
+
 export function fromDhanBar(b: DhanBar): Bar {
   return {
     time: b.time,
@@ -96,64 +265,60 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
   };
 }
 
-export async function buildDhanHistoricalBody(input: any) {
-  const {
-    symbol,
-    exchange_segment = "NSE_EQ",
-    start,
-    end,
-    lookback,
-    interval = "1",
-  } = input;
+export async function buildDhanHistoricalBody(
+  input: DhanCandleInput,
+): Promise<DhanCandleBaseBody> {
+  return buildDhanCandleBaseBody(input);
+}
 
-  if (!symbol) throw new Error("Symbol is required for get_candle");
-
-  const securityId = await lookupSecurityId(symbol, exchange_segment);
-  if (!securityId) {
-    throw new Error(
-      `Security ID not found for symbol="${symbol}" segment="${exchange_segment}"`,
-    );
-  }
-
-  let startDate = start;
-  let endDate = end;
-  const lb = Number(lookback) || 0;
-
-  if ((!startDate || !endDate) && lb > 0) {
-    const now = new Date();
-    const sd = new Date(now);
-
-    if (interval.endsWith("Min")) {
-      sd.setMinutes(now.getMinutes() - lb);
-    } else if (interval.endsWith("Hour")) {
-      sd.setHours(now.getHours() - lb);
-    } else {
-      sd.setDate(now.getDate() - lb);
-    }
-    const formatDhanDateTime = (date: Date) =>
-      new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 19)
-        .replace("T", " ");
-
-    startDate = startDate || formatDhanDateTime(sd);
-    endDate = endDate || formatDhanDateTime(now);
-  }
-
-  if (!startDate || !endDate) {
-    throw new Error(
-      "Either lookback or both from_date and to_date must be provided",
-    );
-  }
+export async function buildDhanIntradayBody(
+  input: DhanCandleInput,
+): Promise<DhanIntradayBody> {
+  const body = await buildDhanCandleBaseBody(input);
 
   return {
-    securityId,
-    exchangeSegment: exchange_segment,
-    instrument: "EQUITY",
-    fromDate: startDate,
-    toDate: endDate,
-    oi: false,
+    ...body,
+    interval: getIntervalValue(input),
   };
+}
+
+export function buildDhanModifyOrder(
+  input: DhanModifyOrderInput,
+  creds: DhanCredentials,
+): DhanModifyOrderBody {
+  if (!input.orderId) {
+    throw new Error("orderId is required for modify_order");
+  }
+
+  if (!creds.client_id) {
+    throw new Error(
+      "Dhan client_id missing in credentials (required for order modification)",
+    );
+  }
+
+  const body: DhanModifyOrderBody = {
+    dhanClientId: creds.client_id,
+  };
+  const orderType = input.orderType ?? input.type;
+  const quantity = input.quantity ?? input.qty;
+
+  if (hasProvidedValue(orderType)) {
+    body.orderType = String(orderType).toUpperCase();
+  }
+  if (hasProvidedValue(quantity)) body.quantity = quantity;
+  if (hasProvidedValue(input.price)) body.price = input.price;
+  if (hasProvidedValue(input.triggerPrice)) {
+    body.triggerPrice = input.triggerPrice;
+  }
+  if (hasProvidedValue(input.validity)) {
+    body.validity = String(input.validity).toUpperCase();
+  }
+  if (hasProvidedValue(input.disclosedQuantity)) {
+    body.disclosedQuantity = input.disclosedQuantity;
+  }
+  if (hasProvidedValue(input.legName)) body.legName = input.legName;
+
+  return body;
 }
 
 export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
@@ -206,7 +371,7 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
 
   return toBarSeries(
     input.symbol,
-    input.timeframe || "1",
+    input.timeframe || input.interval || "1",
     dhanBars.map(fromDhanBar),
   );
 }

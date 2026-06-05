@@ -68,13 +68,20 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     ? Object.entries(field.displayOptions.show).every(
         ([depKey, allowedValues]) => {
           const currentValue = fieldState[depKey];
-          if (!currentValue) return false;
-          if (Array.isArray(currentValue)) {
-            return currentValue.some((v: string) =>
-              (allowedValues as string[]).includes(v),
-            );
+          if (
+            currentValue === undefined ||
+            currentValue === null ||
+            currentValue === ""
+          ) {
+            return false;
           }
-          return (allowedValues as string[]).includes(currentValue);
+          const values = Array.isArray(allowedValues)
+            ? allowedValues
+            : [allowedValues];
+          if (Array.isArray(currentValue)) {
+            return currentValue.some((v: string) => values.includes(v));
+          }
+          return values.includes(currentValue);
         },
       )
     : true;

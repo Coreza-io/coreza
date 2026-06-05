@@ -34,6 +34,7 @@ interface ControlMessage {
   source: MarketSource;
   credentialId?: string;
   streamType?: string[];
+  exchange?: string;
   feed?: string;
   environment?: string; // For Binance: testnet/live
   assetType?: string; // For Binance: spot/futures
@@ -653,6 +654,7 @@ export class MarketControlHandler {
       workflowId,
       symbols,
       streamType,
+      exchange,
       feed,
       environment,
       assetType,
@@ -703,7 +705,9 @@ export class MarketControlHandler {
         const tradingSource = isTradingSource(source);
 
         const requestedStreamNames = tradingSource
-          ? (streamType ?? []).map((eventType) => tradingRoutingKey(source, eventType))
+          ? (streamType ?? []).map((eventType) =>
+              tradingRoutingKey(source, eventType),
+            )
           : buildStreamNames(
               source,
               symbols,
@@ -861,7 +865,9 @@ export class MarketControlHandler {
         const tradingSource = isTradingSource(source);
 
         let streamNamesToRemove = tradingSource
-          ? (streamType ?? []).map((eventType) => tradingRoutingKey(source, eventType))
+          ? (streamType ?? []).map((eventType) =>
+              tradingRoutingKey(source, eventType),
+            )
           : buildStreamNames(
               source,
               symbols,

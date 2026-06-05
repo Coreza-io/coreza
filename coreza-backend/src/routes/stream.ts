@@ -51,7 +51,10 @@ function normalizeStreamTypeList(value: unknown): string[] {
     return value.map((streamType) => String(streamType).trim()).filter(Boolean);
   }
   if (typeof value === "string") {
-    return value.split(",").map((streamType) => streamType.trim()).filter(Boolean);
+    return value
+      .split(",")
+      .map((streamType) => streamType.trim())
+      .filter(Boolean);
   }
   return [];
 }
@@ -762,6 +765,7 @@ router.post("/:source/register", async (req, res) => {
       mode = "subscribe",
       symbols,
       assetType,
+      exchange,
       crypto_base,
       crypto_quote,
       stream_type,
@@ -775,7 +779,9 @@ router.post("/:source/register", async (req, res) => {
       depth_levels,
       scope = "workflow",
       onlyClosedBars,
-    } = req.body as StreamExecutionRequest & { stream_types?: string[] | string };
+    } = req.body as StreamExecutionRequest & {
+      stream_types?: string[] | string;
+    };
     const { account_id, accountHash } = req.body as {
       account_id?: string;
       accountHash?: string;
@@ -807,7 +813,7 @@ router.post("/:source/register", async (req, res) => {
       cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
     // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
-    const streamType = normalizeStreamTypeList(stream_type ?? stream_types);
+    const streamType = normalizeStreamTypeList(stream_type);
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
     //const hasOrderUpdate = parsedstreamType.includes("ORDER_TRADE_UPDATE");
@@ -870,6 +876,7 @@ router.post("/:source/register", async (req, res) => {
           credentialId: credential_id || "",
           symbols: ["*"],
           streamType: tradingstreamType,
+          exchange,
           environment: requiredEnvironment,
           assetType: assetType,
           marketType: marketType,
@@ -919,6 +926,7 @@ router.post("/:source/register", async (req, res) => {
           symbols: parsedSymbols,
           //symbols: ["*"],
           streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
+          exchange,
           environment: requiredEnvironment,
           assetType: assetType,
           marketType: marketType,
@@ -956,6 +964,7 @@ router.post("/:source/register", async (req, res) => {
           symbols: parsedSymbols,
           streamType:
             marketstreamType.length > 0 ? marketstreamType : undefined,
+          exchange,
           feed,
           environment: requiredEnvironment,
           assetType: assetType,
@@ -1032,6 +1041,7 @@ router.post("/:source/register", async (req, res) => {
       symbols: parsedSymbols,
       //symbols: ["*"],
       streamTypes: streamType,
+      exchange,
       assetType: assetType,
       marketType: marketType,
       contractType,
@@ -1128,6 +1138,7 @@ router.post("/unregister", async (req, res) => {
         "order_alert",
       ]);
       const streamTypes = listener.streamTypes ?? [];
+      const exchange = listener.exchange;
 
       // Split trading lifecycle marker from market stream types
       const hasOrderUpdate = streamTypes.some((streamName) =>
@@ -1159,6 +1170,7 @@ router.post("/unregister", async (req, res) => {
           nodeId: node_id,
           symbols: ["*"],
           streamType: tradingstreamType,
+          exchange,
           marketType: listener.marketType,
           scope:
             listener.scope === "global" || listener.scope === "workflow"
@@ -1176,7 +1188,7 @@ router.post("/unregister", async (req, res) => {
         nodeId: node_id,
         symbols: listener.symbols,
         streamType: marketstreamType,
-        //assetType: listener.assetType,
+        exchange,
         assetType: listener.assetType,
         marketType: listener.marketType,
         contractType: listener.contractType,

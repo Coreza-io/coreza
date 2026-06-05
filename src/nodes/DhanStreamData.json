@@ -8,11 +8,10 @@
   "subCategory": "dhan",
   "executionMode": "streaming",
   "action": {
-    "url": "/market/execute-stream-node",
+    "url": "/stream/dhan/register",
     "method": "POST"
   },
   "streamingConfig": {
-    "sourceId": "dhan_market",
     "waitForFirstEvent": false,
     "timeout": 300000,
     "listeningFlag": "isTestListening",
@@ -157,21 +156,21 @@
     },
     {
       "key": "symbols",
-      "label": "Security IDs",
+      "label": "Ticker Symbols",
       "type": "text",
-      "placeholder": "1333, 11536",
-      "description": "Comma-separated security IDs. Not required when only Order Updates is selected.",
+      "placeholder": "HDFCBANK, RELIANCE",
+      "description": "Comma-separated ticker symbols (resolved to Dhan security IDs automatically). Not required when only Order Updates is selected.",
       "displayOptions": {
         "show": {
           "mode": ["subscribe"]
         }
       },
-      "showDescription": false,
-      "required": false
+      "required": false,
+      "showDescription": false
     },
     {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "stream_type",
+      "label": "Stream Type",
       "type": "multiselect",
       "options": [
         {
@@ -191,7 +190,7 @@
           "name": "Order Updates (Fills)"
         }
       ],
-      "default": ["ticker"],
+      "default": ["full"],
       "displayOptions": {
         "show": {
           "mode": ["subscribe"]

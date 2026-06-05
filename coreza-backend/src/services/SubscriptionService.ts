@@ -62,7 +62,6 @@ const SUBSCRIPTION_READY_POLL_MS = parseInt(
   process.env.SUBSCRIPTION_READY_POLL_MS || "250",
   10,
 );
-const DEFAULT_DHAN_EXCHANGE_SEGMENT = "NSE_EQ";
 
 /**
  * Centralized service for managing market data subscriptions.
@@ -168,7 +167,7 @@ export class SubscriptionService {
         String(source).endsWith("_trading") || String(source).endsWith("_news");
 
       if (baseBroker === "dhan" && !isCompanionSource) {
-        const exchangeSegment = exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
+        const exchangeSegment = exchange || "NSE_EQ";
         const resolvedSymbols: string[] = [];
 
         for (const symbol of symbolArray) {
@@ -223,6 +222,7 @@ export class SubscriptionService {
       if (environment) controlMessage.environment = environment;
       if (assetType) controlMessage.assetType = assetType;
       if (marketType) controlMessage.marketType = marketType;
+      if (exchange) controlMessage.exchange = exchange;
 
       // Publish to appropriate control channel
       // NOTE: Stream name building and Redis storage is handled by MarketControlHandler

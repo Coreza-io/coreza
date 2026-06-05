@@ -64,7 +64,7 @@
     "method": "POST"
   },
   "action": {
-    "url": "/market/dhan_market/{{operation}}",
+    "url": "/stream/dhan/{{operation}}",
     "method": "POST"
   },
   "fields": [
@@ -141,8 +141,8 @@
       "required": true
     },
     {
-      "key": "stream_types",
-      "label": "Stream Types",
+      "key": "stream_type",
+      "label": "Stream Type",
       "type": "multiselect",
       "options": [
         {
@@ -162,33 +162,10 @@
           "name": "Order Updates (Fills)"
         }
       ],
-      "default": [
-        "ticker"
-      ],
+      "default": ["ticker"],
       "description": "Select Dhan market streams or order updates to subscribe to.",
       "required": true,
       "showDescription": false
-    },
-    {
-      "key": "symbolSource",
-      "label": "Symbol Source",
-      "type": "select",
-      "options": [
-        {
-          "id": "manual",
-          "name": "Enter Manually"
-        },
-        {
-          "id": "store",
-          "name": "From Store Variable"
-        },
-        {
-          "id": "input",
-          "name": "From Input"
-        }
-      ],
-      "default": "manual",
-      "required": true
     },
     {
       "key": "symbols",
@@ -198,9 +175,7 @@
       "description": "Comma-separated ticker symbols (resolved to Dhan security IDs automatically). Not required when only Order Updates is selected.",
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "manual"
-          ]
+          "mode": ["manual"]
         }
       },
       "required": false,
@@ -214,30 +189,13 @@
       "placeholder": "Select workflow containing symbols",
       "displayOptions": {
         "show": {
-          "symbolSource": [
-            "store"
-          ]
+          "symbolSource": ["store"]
         }
       }
     },
     {
-      "key": "sourceVariable",
-      "label": "Variable Name",
-      "type": "select",
-      "optionsSource": "storeVariablesApi",
-      "dependsOn": "sourceWorkflowId",
-      "placeholder": "Select stored variable",
-      "displayOptions": {
-        "show": {
-          "symbolSource": [
-            "store"
-          ]
-        }
-      }
-    },
-    {
-      "key": "subscriptionScope",
-      "label": "Subscription Scope",
+      "key": "scope",
+      "label": "scope",
       "type": "select",
       "options": [
         {
@@ -268,9 +226,7 @@
       "placeholder": "Select workflow to receive data",
       "displayOptions": {
         "show": {
-          "subscriptionScope": [
-            "workflow"
-          ]
+          "subscriptionScope": ["workflow"]
         }
       },
       "default": "__current__"

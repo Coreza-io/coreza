@@ -51,6 +51,7 @@ export interface ListenerParams {
 }
 
 export interface ListenerData {
+  exchange: any;
   userId: string;
   workflowId: string;
   nodeId: string;
@@ -79,7 +80,6 @@ export interface CleanupResult {
 // ============================================
 
 export class RegistrationService {
-
   /**
    * Delete user active listeners SET key when empty.
    */

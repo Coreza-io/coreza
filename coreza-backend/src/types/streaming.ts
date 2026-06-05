@@ -23,6 +23,7 @@ export interface StreamExecutionRequest {
   // For subscribe mode
   symbols?: string[] | string;
   assetType?: "stock" | "crypto" | "news";
+  exchange?: string;
   crypto_base?: string;
   crypto_quote?: string;
   stream_type: string;
@@ -45,6 +46,7 @@ export interface StreamExecutionResponse {
   status: "listening" | "error";
   symbols: string[];
   streamType: string[];
+  exchange?: string;
   source: string;
   mode: "listen" | "subscribe";
   scope: "workflow" | "global";

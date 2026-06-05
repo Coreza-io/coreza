@@ -176,6 +176,13 @@ async function buildDhanCandleBaseBody(
   };
 }
 
+const DHAN_MAX_CORRELATION_ID_LENGTH = 25;
+
+function buildDhanCorrelationId(idempotencyKey?: string): string {
+  const candidate = idempotencyKey?.trim() || uuidv4().replace(/-/g, "");
+  return candidate.slice(0, DHAN_MAX_CORRELATION_ID_LENGTH);
+}
+
 function hasProvidedValue(value: unknown): boolean {
   return value !== undefined && value !== null && value !== "";
 }
@@ -242,7 +249,7 @@ export async function buildDhanPlaceOrder(
 
   const body: DhanPlaceOrderBody = {
     dhanClientId: creds.client_id,
-    correlationId: input._idempotencyKey || uuidv4(),
+    correlationId: buildDhanCorrelationId(input._idempotencyKey),
     transactionType,
     exchangeSegment: exchange_segment,
     productType,

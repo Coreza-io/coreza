@@ -58,6 +58,7 @@ export const SubFieldSchema = z.object({
 
 const DisplayValueSchema = z.union([
   z.string(),
+  z.boolean(),
   OptionSchema,
   z.record(z.string(), z.any()),
 ]);

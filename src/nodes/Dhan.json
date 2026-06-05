@@ -460,6 +460,81 @@
       "description": "Buy to open/add position, Sell to close/reduce position."
     },
     {
+      "key": "productType",
+      "label": "Product Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "CNC",
+          "name": "CNC - Delivery"
+        },
+        {
+          "id": "INTRADAY",
+          "name": "Intraday"
+        },
+        {
+          "id": "MARGIN",
+          "name": "Margin / Carry Forward"
+        },
+        {
+          "id": "MTF",
+          "name": "MTF - Margin Trading Facility"
+        },
+        {
+          "id": "CO",
+          "name": "Cover Order"
+        },
+        {
+          "id": "BO",
+          "name": "Bracket Order"
+        }
+      ],
+      "default": "CNC",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      },
+      "description": "Dhan product type. CO and BO are intraday-only order types."
+    },
+    {
+      "key": "type",
+      "label": "Order Type",
+      "type": "select",
+      "options": [
+        {
+          "id": "market",
+          "name": "Market"
+        },
+        {
+          "id": "limit",
+          "name": "Limit"
+        },
+        {
+          "id": "stop_loss",
+          "name": "Stop Loss Limit"
+        },
+        {
+          "id": "stop_loss_market",
+          "name": "Stop Loss Market"
+        }
+      ],
+      "default": "market",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order",
+            "modify_order"
+          ]
+        }
+      },
+      "description": "Order type. Dhan values are mapped by the backend helper."
+    },
+    {
       "key": "qty",
       "label": "Quantity",
       "type": "text",
@@ -476,30 +551,20 @@
       "description": "Number of shares/lots to trade."
     },
     {
-      "key": "type",
-      "label": "Order Type",
-      "type": "select",
-      "options": [
-        {
-          "id": "market",
-          "name": "Market"
-        },
-        {
-          "id": "limit",
-          "name": "Limit"
-        }
-      ],
-      "default": "market",
-      "required": true,
+      "key": "disclosedQuantity",
+      "label": "Disclosed Quantity",
+      "type": "text",
+      "placeholder": "e.g. 0",
+      "default": "0",
+      "required": false,
       "displayOptions": {
         "show": {
           "operation": [
-            "place_order",
-            "modify_order"
+            "place_order"
           ]
         }
       },
-      "description": "Market executes immediately at best price, Limit waits for specified price."
+      "description": "Quantity disclosed to the market. Use 0 when not applicable."
     },
     {
       "key": "validity",
@@ -507,15 +572,15 @@
       "type": "select",
       "options": [
         {
-          "id": "day",
+          "id": "DAY",
           "name": "Day"
         },
         {
-          "id": "ioc",
+          "id": "IOC",
           "name": "Immediate Or Cancel"
         }
       ],
-      "default": "day",
+      "default": "DAY",
       "required": true,
       "displayOptions": {
         "show": {
@@ -531,17 +596,88 @@
       "key": "price",
       "label": "Price",
       "type": "text",
-      "placeholder": "Required for limit orders",
+      "placeholder": "Required for limit and stop-loss limit orders",
       "required": false,
       "displayOptions": {
         "show": {
           "operation": [
             "place_order",
             "modify_order"
+          ],
+          "type": [
+            "limit",
+            "stop_loss"
           ]
         }
       },
-      "description": "Limit price for the order."
+      "description": "Limit price for limit and stop-loss limit orders."
+    },
+    {
+      "key": "triggerPrice",
+      "label": "Trigger Price",
+      "type": "text",
+      "placeholder": "Required for stop-loss orders",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ],
+          "type": [
+            "stop_loss",
+            "stop_loss_market"
+          ]
+        }
+      },
+      "description": "Trigger price for stop-loss orders."
+    },
+    {
+      "key": "afterMarketOrder",
+      "label": "After Market Order",
+      "type": "checkbox",
+      "default": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      },
+      "description": "Place the order as an after-market order."
+    },
+    {
+      "key": "amoTime",
+      "label": "AMO Time",
+      "type": "select",
+      "options": [
+        {
+          "id": "PRE_OPEN",
+          "name": "Pre Open"
+        },
+        {
+          "id": "OPEN",
+          "name": "Market Open"
+        },
+        {
+          "id": "OPEN_30",
+          "name": "30 Minutes After Open"
+        },
+        {
+          "id": "OPEN_60",
+          "name": "60 Minutes After Open"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ],
+          "afterMarketOrder": [
+            true
+          ]
+        }
+      },
+      "description": "Dhan after-market order execution window."
     }
   ]
 }

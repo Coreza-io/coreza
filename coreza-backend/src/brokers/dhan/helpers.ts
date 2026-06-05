@@ -54,6 +54,52 @@ type DhanIntradayBody = DhanCandleBaseBody & {
   interval: string;
 };
 
+type DhanPlaceOrderInput = {
+  symbol?: string;
+  exchange_segment?: string;
+  side?: string;
+  type?: string;
+  transactionType?: string;
+  orderType?: string;
+  productType?: string;
+  validity?: string;
+  quantity?: string | number;
+  qty?: string | number;
+  disclosedQuantity?: string | number;
+  price?: string | number;
+  triggerPrice?: string | number;
+  afterMarketOrder?: boolean;
+  amoTime?: string;
+  boProfitValue?: string | number;
+  boStopLossValue?: string | number;
+  drvExpiryDate?: string;
+  drvOptionType?: string;
+  drvStrikePrice?: string | number;
+  _idempotencyKey?: string;
+};
+
+type DhanPlaceOrderBody = {
+  dhanClientId: string;
+  correlationId: string;
+  transactionType: string;
+  exchangeSegment: string;
+  productType: string;
+  orderType: string;
+  validity: string;
+  securityId: string;
+  quantity: number;
+  disclosedQuantity: number;
+  price: number;
+  triggerPrice: number;
+  afterMarketOrder: boolean;
+  amoTime?: string;
+  boProfitValue?: number;
+  boStopLossValue?: number;
+  drvExpiryDate?: string;
+  drvOptionType?: string;
+  drvStrikePrice?: number;
+};
+
 type DhanModifyOrderInput = {
   orderId?: string | number;
   orderType?: string;
@@ -192,26 +238,26 @@ export function fromDhanBar(b: DhanBar): Bar {
   };
 }
 
-export async function buildDhanPlaceOrder(input: any, creds: any) {
+export async function buildDhanPlaceOrder(
+  input: DhanPlaceOrderInput,
+  creds: DhanCredentials,
+): Promise<DhanPlaceOrderBody> {
   const {
     symbol,
     exchange_segment = "NSE_EQ",
-    transactionType = "BUY",
-    orderType = "MARKET",
-    productType = "CNC",
+    side = "buy",
+    type = "market",
     validity = "DAY",
-    quantity = 1,
+    qty = 1,
     disclosedQuantity = 0,
     price = "",
     triggerPrice = "",
     afterMarketOrder = false,
-    amoTime = "",
-    boProfitValue = 0,
-    boStopLossValue = 0,
-    drvExpiryDate = "",
-    drvOptionType = "",
-    drvStrikePrice = 0,
   } = input;
+  const transactionType = String(input.transactionType ?? side).toUpperCase();
+  const orderType = String(input.orderType ?? type).toUpperCase();
+  const productType = String(input.productType || "CNC").toUpperCase();
+  const quantity = Number(input.quantity ?? qty);
 
   if (!symbol || !quantity || !transactionType) {
     throw new Error(
@@ -232,17 +278,16 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
     );
   }
 
-  const priceVal = orderType === "LIMIT" ? String(price || "0") : "";
-  const triggerPriceVal = [
-    "STOP_LOSS",
-    "STOP_LOSS_MARKET",
-    "SL",
-    "SLM",
-  ].includes(orderType)
-    ? String(triggerPrice || "0")
-    : "";
+  const priceVal = ["LIMIT", "STOP_LOSS"].includes(orderType)
+    ? Number(price) || 0
+    : 0;
+  const triggerPriceVal = ["STOP_LOSS", "STOP_LOSS_MARKET"].includes(
+    orderType,
+  )
+    ? Number(triggerPrice) || 0
+    : 0;
 
-  return {
+  const body: DhanPlaceOrderBody = {
     dhanClientId: creds.client_id,
     correlationId: input._idempotencyKey || uuidv4(),
     transactionType,
@@ -252,17 +297,32 @@ export async function buildDhanPlaceOrder(input: any, creds: any) {
     validity,
     securityId,
     quantity,
-    disclosedQuantity,
+    disclosedQuantity: Number(disclosedQuantity) || 0,
     price: priceVal,
     triggerPrice: triggerPriceVal,
     afterMarketOrder,
-    amoTime,
-    boProfitValue,
-    boStopLossValue,
-    drvExpiryDate,
-    drvOptionType,
-    drvStrikePrice,
   };
+
+  if (afterMarketOrder === true) {
+    body.amoTime = input.amoTime || "OPEN";
+  }
+
+  if (productType === "BO") {
+    body.boProfitValue = Number(input.boProfitValue) || 0;
+    body.boStopLossValue = Number(input.boStopLossValue) || 0;
+  }
+
+  if (hasProvidedValue(input.drvExpiryDate)) {
+    body.drvExpiryDate = input.drvExpiryDate;
+  }
+  if (hasProvidedValue(input.drvOptionType)) {
+    body.drvOptionType = input.drvOptionType;
+  }
+  if (hasProvidedValue(input.drvStrikePrice)) {
+    body.drvStrikePrice = Number(input.drvStrikePrice) || 0;
+  }
+
+  return body;
 }
 
 export async function buildDhanHistoricalBody(

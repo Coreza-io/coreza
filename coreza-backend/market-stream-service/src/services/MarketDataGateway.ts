@@ -27,10 +27,6 @@ import {
   tradingRoutingKey,
 } from "../utils/streamName";
 
-function isDhanMarketGatewaySource(source: string): boolean {
-  return source.split("_")[0] === "dhan" && !source.endsWith("_trading");
-}
-
 const TRADING_LIFECYCLE_EVENTS = new Set([
   "algo_update",
   "trade_updates",
@@ -311,24 +307,6 @@ export class MarketDataGateway {
             });
           }
 
-          continue;
-        }
-
-        // Dhan market registrations intentionally key StreamData by SecurityId only;
-        // exchange/mode metadata is used only for broker subscription payloads.
-        if (isDhanMarketGatewaySource(this.source)) {
-          const stream = String(event.symbol);
-          const channel = REDIS_CHANNELS.streamData(stream);
-          await this.publishToRedis(channel, JSON.stringify(event));
-          console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
-          console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
-
-          marketMessagesCounter.inc({
-            source: this.source,
-            stream,
-          });
-          const latency = (Date.now() - startTime) / 1000;
-          marketMessageLatencyHistogram.observe({ source: this.source }, latency);
           continue;
         }
 

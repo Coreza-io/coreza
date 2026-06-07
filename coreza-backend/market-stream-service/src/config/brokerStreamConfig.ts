@@ -35,15 +35,14 @@ function buildMetadataStreamNames(
   exchange?: string,
 ): string[] {
   const exchangeSegment = String(exchange || "NSE_EQ").trim() || "NSE_EQ";
-  const modes = streamTypes.length > 0 ? streamTypes : ["ticker"];
   const streamNames: string[] = [];
 
   for (const symbol of symbols) {
     const securityId = String(symbol).trim();
     if (!securityId) continue;
 
-    for (const mode of modes) {
-      streamNames.push(`${securityId}@${exchangeSegment}@${mode}`);
+    for (const streamType of streamTypes) {
+      streamNames.push(`${securityId}@${exchangeSegment}@${streamType}`);
     }
   }
 
@@ -53,9 +52,9 @@ function buildMetadataStreamNames(
 function toDhanRoutingStreamName(streamName: string): string {
   const parts = streamName.split("@");
   const securityId = parts[0];
-  const mode = parts.length >= 2 ? parts[parts.length - 1] : "";
+  const streamType = parts.length >= 2 ? parts[parts.length - 1] : "";
 
-  return mode ? `${securityId}@${mode}` : securityId;
+  return streamType ? `${securityId}@${streamType}` : securityId;
 }
 
 function redactLoginToken(msg: unknown): unknown {
@@ -114,7 +113,6 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     separator: "@",
     symbolFirst: true,
     companionSources: ["schwab_trading"],
-    tradingRoutingKey: () => "account_activity",
     unifiedSocket: true,
   },
   alpaca_trading: {

@@ -83,6 +83,27 @@
       "required": true
     },
     {
+      "key": "environment",
+      "label": "Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "sandbox",
+          "name": "sandbox"
+        },
+        {
+          "id": "live",
+          "name": "Live"
+        }
+      ],
+      "default": "sandbox",
+      "displayOptions": {
+        "show": {
+          "mode": ["subscribe"]
+        }
+      }
+    },
+    {
       "key": "exchange",
       "label": "Exchange Segment",
       "type": "select",

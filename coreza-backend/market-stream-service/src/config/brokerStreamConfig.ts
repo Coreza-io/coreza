@@ -50,9 +50,12 @@ function buildMetadataStreamNames(
   return streamNames;
 }
 
-function toSecurityIdStreamName(streamName: string): string {
-  const separatorIndex = streamName.indexOf("@");
-  return separatorIndex > 0 ? streamName.slice(0, separatorIndex) : streamName;
+function toDhanRoutingStreamName(streamName: string): string {
+  const parts = streamName.split("@");
+  const securityId = parts[0];
+  const mode = parts.length >= 2 ? parts[parts.length - 1] : "";
+
+  return mode ? `${securityId}@${mode}` : securityId;
 }
 
 function redactLoginToken(msg: unknown): unknown {
@@ -103,7 +106,7 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     companionSources: ["dhan_trading"],
     buildStreamNames: buildMetadataStreamNames,
-    toRoutingStreamName: toSecurityIdStreamName,
+    toRoutingStreamName: toDhanRoutingStreamName,
     redactAuthMessage: redactLoginToken,
   },
 

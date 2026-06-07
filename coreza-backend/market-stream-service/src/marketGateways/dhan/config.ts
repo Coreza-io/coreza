@@ -1,4 +1,3 @@
-import { encodeDhanSubscribeMessage, encodeDhanUnsubscribeMessage } from "../../utils/dhanBinaryParser";
 import { GatewayConfig } from '../types';
 import {
   buildDhanAuthMessage,
@@ -6,7 +5,6 @@ import {
   buildDhanUnsubscribeMessage,
   getDhanWsUrl,
   identifyDhanMessageType,
-  isDhanBinarySource,
   normalizeDhanMessage,
   parseDhanMessage,
   shouldPublishDhanMessage,
@@ -25,14 +23,5 @@ export const dhanGatewayConfig: GatewayConfig = {
   normalize: (msg, source) => normalizeDhanMessage(msg, source),
   reconnectDelay: 2000,
   maxReconnectAttempts: 5,
-  isBinary: (source) => isDhanBinarySource(source),
-  encodeOutboundBinary: (msg) => {
-    const instruments = Array.isArray(msg?.InstrumentList) ? msg.InstrumentList : [];
-    const securityIds = instruments.map((instrument: { SecurityId: string }) => instrument.SecurityId);
-    const exchangeSegment = instruments[0]?.ExchangeSegment || "NSE_EQ";
-
-    if (msg?.RequestCode === 15) return encodeDhanSubscribeMessage(securityIds, exchangeSegment);
-    if (msg?.RequestCode === 16) return encodeDhanUnsubscribeMessage(securityIds, exchangeSegment);
-    return Buffer.from(JSON.stringify(msg));
-  },
+  isBinary: () => false,
 };

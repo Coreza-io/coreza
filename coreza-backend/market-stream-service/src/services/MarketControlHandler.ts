@@ -58,7 +58,7 @@ interface SourceState {
   workflowStreams: Map<string, Set<string>>; // workflowId → streams (for reference counting)
 }
 
-function isTradingSource(source: MarketSource): boolean {
+function isTradingSource(source: string): boolean {
   return source.endsWith("_trading");
 }
 
@@ -74,6 +74,65 @@ function getUnifiedSocketStateSource(source: string): string {
   const baseSource = source.split("_")[0];
   const baseCfg = getBrokerStreamConfig(baseSource);
   return cfg.unifiedSocket || baseCfg.unifiedSocket ? baseSource : source;
+}
+
+function isDhanMarketSource(source: string): boolean {
+  return source.split("_")[0] === "dhan" && !isTradingSource(source);
+}
+
+function buildDhanMarketStreamNames(
+  symbols: string[],
+  streamTypes: string[] = [],
+  exchange?: string,
+): string[] {
+  const exchangeSegment = String(exchange || "NSE_EQ").trim() || "NSE_EQ";
+  const modes = streamTypes.length > 0 ? streamTypes : ["ticker"];
+  const streamNames: string[] = [];
+
+  for (const symbol of symbols) {
+    const securityId = String(symbol).trim();
+    if (!securityId) continue;
+
+    for (const mode of modes) {
+      streamNames.push(`${securityId}@${exchangeSegment}@${mode}`);
+    }
+  }
+
+  return streamNames;
+}
+
+function getDhanRoutingStreamName(streamName: string): string {
+  const separatorIndex = streamName.indexOf("@");
+  return separatorIndex > 0 ? streamName.slice(0, separatorIndex) : streamName;
+}
+
+function getRoutingStreamNamesForControlMessage(
+  source: MarketSource,
+  streamNames: string[],
+): string[] {
+  if (!isDhanMarketSource(source)) return streamNames;
+  return [...new Set(streamNames.map(getDhanRoutingStreamName))];
+}
+
+function buildMarketStreamNamesForControlMessage(
+  source: MarketSource,
+  symbols: string[],
+  streamType: string[] | undefined,
+  interval: string | undefined,
+  contractType: string | undefined,
+  exchange?: string,
+): string[] {
+  if (isDhanMarketSource(source)) {
+    return buildDhanMarketStreamNames(symbols, streamType || [], exchange);
+  }
+
+  return buildStreamNames(
+    source,
+    symbols,
+    streamType || [],
+    interval || "",
+    contractType,
+  );
 }
 
 export class MarketControlHandler {
@@ -708,12 +767,13 @@ export class MarketControlHandler {
           ? (streamType ?? []).map((eventType) =>
               tradingRoutingKey(source, eventType),
             )
-          : buildStreamNames(
+          : buildMarketStreamNamesForControlMessage(
               source,
               symbols,
-              streamType || [],
-              interval || "",
+              streamType,
+              interval,
               contractType,
+              exchange,
             );
 
         // Check which stream names are NEW (not already in state.streams)
@@ -739,10 +799,15 @@ export class MarketControlHandler {
           // Subscribe gateway with stream names directly
           state.gateway.subscribeStreams(newStreamNames);
 
+          const routingStreamNames = getRoutingStreamNamesForControlMessage(
+            source,
+            newStreamNames,
+          );
+
           // Persist to Redis
           await this.persistState(userId, source);
 
-          // Store stream names in Redis (:streams key)
+          // Store routing stream names in Redis (:streams key)
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -757,9 +822,9 @@ export class MarketControlHandler {
                   environment,
                 );
 
-          await this.redisPub.sadd(streamsKey, ...newStreamNames);
+          await this.redisPub.sadd(streamsKey, ...routingStreamNames);
           console.log(
-            `💾 [MarketControl] Stored ${newStreamNames.length} stream names in ${streamsKey}`,
+            `💾 [MarketControl] Stored ${routingStreamNames.length} routing stream names in ${streamsKey}`,
           );
 
           // Extract symbols from new stream names for workflow notification
@@ -772,7 +837,7 @@ export class MarketControlHandler {
           // Notify active streaming workflows about new symbols (respecting scope)
           await this.updateActiveStreamingWorkflows(
             userId,
-            newStreamNames,
+            routingStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -790,7 +855,7 @@ export class MarketControlHandler {
 
           await this.updateActiveStreamingWorkflows(
             userId,
-            requestedStreamNames,
+            getRoutingStreamNamesForControlMessage(source, requestedStreamNames),
             // symbols,
             scope,
             targetWorkflowId,
@@ -822,6 +887,7 @@ export class MarketControlHandler {
       symbols,
       streamType,
       interval,
+      exchange,
       assetType,
       marketType,
       depthLevels,
@@ -868,12 +934,13 @@ export class MarketControlHandler {
           ? (streamType ?? []).map((eventType) =>
               tradingRoutingKey(source, eventType),
             )
-          : buildStreamNames(
+          : buildMarketStreamNamesForControlMessage(
               source,
               symbols,
-              streamType || [],
-              interval || "",
+              streamType,
+              interval,
               contractType,
+              exchange,
             );
 
         if (streamNamesToRemove.length === 0) {
@@ -915,6 +982,10 @@ export class MarketControlHandler {
           streamNamesToRemove.length > 0 &&
           (!tradingSource || shouldRemoveGatewayStreams)
         ) {
+          const routingStreamNamesToRemove = getRoutingStreamNamesForControlMessage(
+            source,
+            streamNamesToRemove,
+          );
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -929,9 +1000,9 @@ export class MarketControlHandler {
                   environment,
                 );
 
-          await this.redisPub.srem(streamsKey, ...streamNamesToRemove);
+          await this.redisPub.srem(streamsKey, ...routingStreamNamesToRemove);
           console.log(
-            `🗑️ [MarketControl] Removed ${streamNamesToRemove.length} stream names from ${streamsKey}`,
+            `🗑️ [MarketControl] Removed ${routingStreamNamesToRemove.length} routing stream names from ${streamsKey}`,
           );
 
           const remainingStreamsCount = await this.redisPub.scard(streamsKey);
@@ -959,7 +1030,7 @@ export class MarketControlHandler {
             await subscriber.removeStreamsFromRegistration(
               userId,
               workflowId,
-              streamNamesToRemove,
+              routingStreamNamesToRemove,
             );
             // }
             console.log(

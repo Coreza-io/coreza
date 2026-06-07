@@ -63,7 +63,9 @@ describe('Dhan order-update stream', () => {
       '2885@BSE_EQ@ticker',
       '2885@BSE_EQ@quote',
     ]);
-    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('2885');
+    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('2885@quote');
+    expect(marketConfig.toRoutingStreamName?.('2885@quote')).toBe('2885@quote');
+    expect(marketConfig.toRoutingStreamName?.('2885')).toBe('2885');
     expect(tradingConfig.redactAuthMessage?.(authMessage)).toEqual({
       LoginReq: {
         MsgCode: 42,
@@ -256,6 +258,7 @@ describe('Dhan order-update stream', () => {
     });
     expect(normalizeDhanMessage(message, 'dhan')).toMatchObject({
       symbol: '35000',
+      type: 'full',
       p: 101.5,
       o: expect.closeTo(99.1),
       h: expect.closeTo(102.3),

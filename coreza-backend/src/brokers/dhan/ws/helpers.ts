@@ -84,6 +84,23 @@ function normalizeDhanDepth(value: unknown): {
   };
 }
 
+function normalizeDhanMarketEventType(value: unknown): MarketEvent["type"] {
+  const type = toStringValue(value);
+
+  switch (type) {
+    case 'ticker':
+    case 'quote':
+    case 'full':
+    case 'index':
+    case 'oi':
+    case 'prev_close':
+    case 'market_status':
+      return type;
+    default:
+      return 'trade';
+  }
+}
+
 function normalizeDhanSide(value: unknown): string | undefined {
   const side = toStringValue(value)?.toUpperCase();
   if (side === 'B') return 'buy';
@@ -181,7 +198,7 @@ function parseDhanStreamName(streamName: string): DhanStreamMetadata {
   };
 }
 
-// Routing keys stay pure security IDs even when stream names carry exchange/mode metadata.
+// Routing keys include mode, while broker payload symbols remain pure security IDs.
 export function extractDhanSymbols(streamNames: string[]): string[] {
   return streamNames.map((name) => {
     const atIndex = name.indexOf('@');
@@ -323,7 +340,7 @@ export function normalizeDhanMessage(msg: unknown, source?: string): MarketEvent
   return {
     source: 'dhan',
     symbol: toStringValue(record.TradingSymbol) ?? toStringValue(record.SecurityId) ?? '',
-    type: 'trade',
+    type: normalizeDhanMarketEventType(record.type),
     t: Date.now(),
     p: toNumberValue(record.LTP),
     b: toNumberValue(record.BidPrice),

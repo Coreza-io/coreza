@@ -38,6 +38,52 @@ function toNumberValue(value: unknown): number | undefined {
   return Number.isFinite(normalized) ? normalized : undefined;
 }
 
+type DhanDepthPayload = {
+  BidPrice?: unknown;
+  BidQty?: unknown;
+  AskPrice?: unknown;
+  AskQty?: unknown;
+};
+
+function normalizeDhanDepth(value: unknown): {
+  bids?: Array<{ p: number; q: number }>;
+  asks?: Array<{ p: number; q: number }>;
+} {
+  if (!Array.isArray(value)) return {};
+
+  const bids: Array<{ p: number; q: number }> = [];
+  const asks: Array<{ p: number; q: number }> = [];
+
+  for (const level of value) {
+    if (!level || typeof level !== 'object') continue;
+    const depth = level as DhanDepthPayload;
+    const bidPrice = toNumberValue(depth.BidPrice);
+    const bidQty = toNumberValue(depth.BidQty);
+    const askPrice = toNumberValue(depth.AskPrice);
+    const askQty = toNumberValue(depth.AskQty);
+
+    if (
+      bidPrice !== undefined &&
+      bidQty !== undefined &&
+      (bidPrice > 0 || bidQty > 0)
+    ) {
+      bids.push({ p: bidPrice, q: bidQty });
+    }
+    if (
+      askPrice !== undefined &&
+      askQty !== undefined &&
+      (askPrice > 0 || askQty > 0)
+    ) {
+      asks.push({ p: askPrice, q: askQty });
+    }
+  }
+
+  return {
+    ...(bids.length > 0 ? { bids } : {}),
+    ...(asks.length > 0 ? { asks } : {}),
+  };
+}
+
 function normalizeDhanSide(value: unknown): string | undefined {
   const side = toStringValue(value)?.toUpperCase();
   if (side === 'B') return 'buy';
@@ -81,13 +127,107 @@ function normalizeDhanOrderStatus(status: unknown, data: DhanOrderAlertData): st
 }
 
 // ============ STREAM NAME PARSING ============
-// Dhan stream names are just security IDs (e.g., "1234")
-function extractDhanSymbols(streamNames: string[]): string[] {
+const DHAN_INSTRUMENTS_PER_MESSAGE = 100;
+const DEFAULT_DHAN_EXCHANGE_SEGMENT = 'NSE_EQ';
+const DEFAULT_DHAN_MARKET_MODE = 'ticker';
+
+type DhanMarketMode = 'ticker' | 'quote' | 'full' | 'market_depth';
+
+type DhanRequestCodes = {
+  sub: number;
+  unsub: number;
+};
+
+type DhanInstrument = {
+  ExchangeSegment: string;
+  SecurityId: string;
+};
+
+type DhanSubscriptionMessage = {
+  RequestCode: number;
+  InstrumentCount: number;
+  InstrumentList: DhanInstrument[];
+};
+
+type DhanStreamMetadata = DhanInstrument & {
+  mode: DhanMarketMode;
+};
+
+const DHAN_REQUEST_CODES: Record<DhanMarketMode, DhanRequestCodes> = {
+  ticker: { sub: 15, unsub: 16 },
+  quote: { sub: 17, unsub: 18 },
+  full: { sub: 21, unsub: 22 },
+  market_depth: { sub: 23, unsub: 24 },
+};
+
+function normalizeDhanMarketMode(value?: string): DhanMarketMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'quote') return 'quote';
+  if (normalized === 'full') return 'full';
+  if (normalized === 'market_depth' || normalized === 'depth') return 'market_depth';
+  return DEFAULT_DHAN_MARKET_MODE;
+}
+
+function parseDhanStreamName(streamName: string): DhanStreamMetadata {
+  const [securityId, exchangeOrMode, mode] = streamName.split('@');
+  const hasExchangeSegment = Boolean(mode);
+
+  return {
+    SecurityId: securityId,
+    ExchangeSegment: hasExchangeSegment
+      ? exchangeOrMode
+      : DEFAULT_DHAN_EXCHANGE_SEGMENT,
+    mode: normalizeDhanMarketMode(hasExchangeSegment ? mode : exchangeOrMode),
+  };
+}
+
+// Routing keys stay pure security IDs even when stream names carry exchange/mode metadata.
+export function extractDhanSymbols(streamNames: string[]): string[] {
   return streamNames.map((name) => {
-    // If stream name contains metadata separator, extract symbol
     const atIndex = name.indexOf('@');
     return atIndex > 0 ? name.substring(0, atIndex) : name;
   });
+}
+
+function chunkInstruments(instruments: DhanInstrument[]): DhanInstrument[][] {
+  const chunks: DhanInstrument[][] = [];
+  for (let i = 0; i < instruments.length; i += DHAN_INSTRUMENTS_PER_MESSAGE) {
+    chunks.push(instruments.slice(i, i + DHAN_INSTRUMENTS_PER_MESSAGE));
+  }
+  return chunks;
+}
+
+function buildDhanMarketMessages(
+  streamNames: string[],
+  action: keyof DhanRequestCodes,
+): DhanSubscriptionMessage[] {
+  const instrumentsByRequestCode = new Map<number, DhanInstrument[]>();
+
+  for (const streamName of streamNames) {
+    const parsed = parseDhanStreamName(streamName);
+    if (!parsed.SecurityId) continue;
+
+    const requestCode = DHAN_REQUEST_CODES[parsed.mode][action];
+    const instruments = instrumentsByRequestCode.get(requestCode) || [];
+    instruments.push({
+      ExchangeSegment: parsed.ExchangeSegment,
+      SecurityId: parsed.SecurityId,
+    });
+    instrumentsByRequestCode.set(requestCode, instruments);
+  }
+
+  const messages: DhanSubscriptionMessage[] = [];
+  for (const [requestCode, instruments] of instrumentsByRequestCode.entries()) {
+    for (const chunk of chunkInstruments(instruments)) {
+      messages.push({
+        RequestCode: requestCode,
+        InstrumentCount: chunk.length,
+        InstrumentList: chunk,
+      });
+    }
+  }
+
+  return messages;
 }
 
 export function getDhanWsUrl(creds: DhanCredentials, source?: string): string {
@@ -114,30 +254,12 @@ export function buildDhanAuthMessage(creds: DhanCredentials, source?: string) {
 
 export function buildDhanSubscribeMessage(streamNames: string[], source?: string) {
   if (isDhanTradingSource(source)) return null;
-
-  const symbols = extractDhanSymbols(streamNames);
-  return {
-    RequestCode: 15,
-    InstrumentCount: symbols.length,
-    InstrumentList: symbols.map((s) => ({
-      ExchangeSegment: 'NSE_EQ',
-      SecurityId: s,
-    })),
-  };
+  return buildDhanMarketMessages(streamNames, 'sub');
 }
 
 export function buildDhanUnsubscribeMessage(streamNames: string[], source?: string) {
   if (isDhanTradingSource(source)) return null;
-
-  const symbols = extractDhanSymbols(streamNames);
-  return {
-    RequestCode: 16,
-    InstrumentCount: symbols.length,
-    InstrumentList: symbols.map((s) => ({
-      ExchangeSegment: 'NSE_EQ',
-      SecurityId: s,
-    })),
-  };
+  return buildDhanMarketMessages(streamNames, 'unsub');
 }
 
 export function parseDhanMessage(buffer: Buffer, source?: string): unknown[] {
@@ -196,6 +318,8 @@ export function normalizeDhanMessage(msg: unknown, source?: string): CorezaMarke
 
   const record = msg as Record<string, unknown>;
   if (!record.SecurityId) return null;
+  const depth = normalizeDhanDepth(record.Depth);
+
   return {
     source: 'dhan',
     symbol: toStringValue(record.TradingSymbol) ?? toStringValue(record.SecurityId) ?? '',
@@ -211,9 +335,6 @@ export function normalizeDhanMessage(msg: unknown, source?: string): CorezaMarke
     l: toNumberValue(record.Low),
     c: toNumberValue(record.Close),
     v: toNumberValue(record.Volume),
+    ...depth,
   };
-}
-
-export function isDhanBinarySource(source?: string): boolean {
-  return !isDhanTradingSource(source);
 }

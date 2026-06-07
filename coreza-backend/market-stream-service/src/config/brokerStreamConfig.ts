@@ -3,6 +3,13 @@ import type { MarketSource } from "../types/marketEvent";
 export interface BrokerStreamConfig {
   separator: string;
   symbolFirst: boolean;
+  buildStreamNames?: (
+    symbols: string[],
+    streamTypes: string[],
+    exchange?: string,
+  ) => string[];
+  toRoutingStreamName?: (streamName: string) => string;
+  redactAuthMessage?: (msg: unknown) => unknown;
   tradingStreams?: Partial<Record<"spot" | "futures" | "account", string[]>>;
   tradingRoutingKey?: (eventType: string) => string;
   companionSources?: string[];
@@ -11,6 +18,53 @@ export interface BrokerStreamConfig {
   resolveSourceForSymbol?: (symbol: string, defaultSource: string) => string;
   normalizeStreamType?: (streamType: string) => string;
   unifiedSocket?: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const cloned: unknown = JSON.parse(JSON.stringify(value));
+  return isRecord(cloned) ? cloned : {};
+}
+
+function buildMetadataStreamNames(
+  symbols: string[],
+  streamTypes: string[],
+  exchange?: string,
+): string[] {
+  const exchangeSegment = String(exchange || "NSE_EQ").trim() || "NSE_EQ";
+  const modes = streamTypes.length > 0 ? streamTypes : ["ticker"];
+  const streamNames: string[] = [];
+
+  for (const symbol of symbols) {
+    const securityId = String(symbol).trim();
+    if (!securityId) continue;
+
+    for (const mode of modes) {
+      streamNames.push(`${securityId}@${exchangeSegment}@${mode}`);
+    }
+  }
+
+  return streamNames;
+}
+
+function toSecurityIdStreamName(streamName: string): string {
+  const separatorIndex = streamName.indexOf("@");
+  return separatorIndex > 0 ? streamName.slice(0, separatorIndex) : streamName;
+}
+
+function redactLoginToken(msg: unknown): unknown {
+  if (!isRecord(msg)) return msg;
+  const clone = cloneRecord(msg);
+  const loginReq = clone.LoginReq;
+
+  if (isRecord(loginReq)) {
+    loginReq.Token = "[REDACTED]";
+  }
+
+  return clone;
 }
 
 const DEFAULT_STREAM_CONFIG: BrokerStreamConfig = {
@@ -48,6 +102,9 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     separator: "@",
     symbolFirst: true,
     companionSources: ["dhan_trading"],
+    buildStreamNames: buildMetadataStreamNames,
+    toRoutingStreamName: toSecurityIdStreamName,
+    redactAuthMessage: redactLoginToken,
   },
 
   schwab: {
@@ -69,6 +126,7 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     tradingRoutingKey: () => "order_alert",
     tradingStreams: { account: ["order_alert"] },
+    redactAuthMessage: redactLoginToken,
   },
 
   schwab_trading: {

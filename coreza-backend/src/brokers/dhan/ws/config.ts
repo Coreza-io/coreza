@@ -5,7 +5,6 @@ import {
   buildDhanUnsubscribeMessage,
   getDhanWsUrl,
   identifyDhanMessageType,
-  isDhanBinarySource,
   normalizeDhanMessage,
   parseDhanMessage,
   shouldPublishDhanMessage,
@@ -25,5 +24,5 @@ export const dhanGatewayConfig: GatewayConfig<'dhan'> = {
   normalize: (msg, source) => normalizeDhanMessage(msg, source),
   reconnectDelay: 2000,
   maxReconnectAttempts: 5,
-  isBinary: (source) => isDhanBinarySource(source),
+  isBinary: () => false,
 };

@@ -1,5 +1,10 @@
 import { dhanGatewayConfig } from '../src/marketGateways/dhan/config';
-import { buildDhanSubscribeMessage, normalizeDhanMessage, parseDhanMessage } from '../src/marketGateways/dhan/helpers';
+import {
+  buildDhanSubscribeMessage,
+  buildDhanUnsubscribeMessage,
+  normalizeDhanMessage,
+  parseDhanMessage,
+} from '../src/marketGateways/dhan/helpers';
 import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from '../src/config/brokerStreamConfig';
 import { SOURCE_MAPPING } from '../src/marketGateways';
 import {
@@ -21,7 +26,7 @@ describe('Dhan order-update stream', () => {
     expect(getDhanMarketWsUrl('live')).toBe('wss://api-feed.dhan.co');
     expect(getDhanOrderUpdateWsUrl('live')).toBe('wss://api-order-update.dhan.co');
     expect(getDhanMarketWsUrl('sandbox')).toBe('wss://api-feed.dhan.co');
-    expect(getDhanOrderUpdateWsUrl('sandbox')).toBe('wss://api-order-update.dhan.co');
+    expect(getDhanOrderUpdateWsUrl('sandbox')).toBe('wss://sandbox-api-order-update.dhan.co');
     expect(typeof dhanGatewayConfig.wsUrl === 'function' ? dhanGatewayConfig.wsUrl(creds, 'dhan_trading') : '').toBe(
       'wss://api-order-update.dhan.co',
     );
@@ -40,6 +45,34 @@ describe('Dhan order-update stream', () => {
     });
     expect(dhanGatewayConfig.makeSubscribeMessage(['order_alert'], 'dhan_trading')).toBeNull();
     expect(buildDhanSubscribeMessage(['order_alert'], 'dhan_trading')).toBeNull();
+  });
+
+  it('drives Dhan stream metadata, routing keys, and auth redaction from broker config', () => {
+    const marketConfig = getBrokerStreamConfig('dhan_stream');
+    const tradingConfig = getBrokerStreamConfig('dhan_trading');
+    const authMessage = {
+      LoginReq: {
+        MsgCode: 42,
+        ClientId: 'client-1',
+        Token: 'token-1',
+      },
+      UserType: 'SELF',
+    };
+
+    expect(marketConfig.buildStreamNames?.(['2885'], ['ticker', 'quote'], 'BSE_EQ')).toEqual([
+      '2885@BSE_EQ@ticker',
+      '2885@BSE_EQ@quote',
+    ]);
+    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('2885');
+    expect(tradingConfig.redactAuthMessage?.(authMessage)).toEqual({
+      LoginReq: {
+        MsgCode: 42,
+        ClientId: 'client-1',
+        Token: '[REDACTED]',
+      },
+      UserType: 'SELF',
+    });
+    expect(authMessage.LoginReq.Token).toBe('token-1');
   });
 
   it('normalizes Dhan order_alert JSON to a Coreza order_update event', () => {
@@ -82,32 +115,155 @@ describe('Dhan order-update stream', () => {
     });
   });
 
-  it('keeps the binary market parser path unchanged for dhan market sources', () => {
-    const buffer = Buffer.alloc(13);
-    buffer.writeUInt16LE(15, 0);
-    buffer.writeUInt16LE(1, 2);
-    buffer.writeUInt8(1, 4);
-    buffer.writeUInt32LE(2885, 5);
-    buffer.writeFloatLE(2500.5, 9);
+  it('sends Dhan market subscriptions as grouped JSON payloads and parses binary responses', () => {
+    const subscribeMessages = buildDhanSubscribeMessage(
+      ['2885@NSE_EQ@ticker', '500325@BSE_EQ@quote', '35000@NSE_FNO@full'],
+      'dhan',
+    );
 
+    expect(subscribeMessages).toEqual([
+      {
+        RequestCode: 15,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '2885' }],
+      },
+      {
+        RequestCode: 17,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'BSE_EQ', SecurityId: '500325' }],
+      },
+      {
+        RequestCode: 21,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_FNO', SecurityId: '35000' }],
+      },
+    ]);
     expect(
       typeof dhanGatewayConfig.isBinary === 'function'
         ? dhanGatewayConfig.isBinary('dhan')
         : dhanGatewayConfig.isBinary,
-    ).toBe(true);
-    expect(
-      typeof dhanGatewayConfig.isBinary === 'function'
-        ? dhanGatewayConfig.isBinary('dhan_trading')
-        : dhanGatewayConfig.isBinary,
     ).toBe(false);
+
+    const buffer = Buffer.alloc(16);
+    buffer.writeUInt8(2, 0);
+    buffer.writeInt16LE(16, 1);
+    buffer.writeUInt8(1, 3);
+    buffer.writeInt32LE(2885, 4);
+    buffer.writeFloatLE(2500.5, 8);
+    buffer.writeInt32LE(1700000000, 12);
+
     expect(parseDhanMessage(buffer, 'dhan')).toEqual([
       {
         type: 'ticker',
         SecurityId: '2885',
         ExchangeSegment: 'NSE_EQ',
         LTP: 2500.5,
+        LTT: 1700000000,
       },
     ]);
+  });
+
+  it('chunks Dhan market requests at 100 instruments and uses matching unsubscribe codes', () => {
+    const streamNames = Array.from(
+      { length: 101 },
+      (_, index) => `${1000 + index}@NSE_EQ@quote`,
+    );
+
+    expect(buildDhanSubscribeMessage(streamNames, 'dhan')).toEqual([
+      {
+        RequestCode: 17,
+        InstrumentCount: 100,
+        InstrumentList: streamNames.slice(0, 100).map((streamName) => ({
+          ExchangeSegment: 'NSE_EQ',
+          SecurityId: streamName.split('@')[0],
+        })),
+      },
+      {
+        RequestCode: 17,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1100' }],
+      },
+    ]);
+    expect(
+      buildDhanUnsubscribeMessage(
+        ['2885@NSE_EQ@ticker', '500325@BSE_EQ@quote', '35000@NSE_FNO@full'],
+        'dhan',
+      ),
+    ).toEqual([
+      {
+        RequestCode: 16,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '2885' }],
+      },
+      {
+        RequestCode: 18,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'BSE_EQ', SecurityId: '500325' }],
+      },
+      {
+        RequestCode: 22,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_FNO', SecurityId: '35000' }],
+      },
+    ]);
+  });
+
+  it('decodes Dhan full packets with OI, OHLC, and 5-level depth', () => {
+    const buffer = Buffer.alloc(162);
+    buffer.writeUInt8(8, 0);
+    buffer.writeInt16LE(162, 1);
+    buffer.writeUInt8(2, 3);
+    buffer.writeInt32LE(35000, 4);
+
+    buffer.writeFloatLE(101.5, 8);
+    buffer.writeInt16LE(25, 12);
+    buffer.writeInt32LE(1700000100, 14);
+    buffer.writeFloatLE(100.75, 18);
+    buffer.writeInt32LE(123456, 22);
+    buffer.writeInt32LE(5000, 26);
+    buffer.writeInt32LE(7000, 30);
+    buffer.writeInt32LE(900, 34);
+    buffer.writeInt32LE(1200, 38);
+    buffer.writeInt32LE(800, 42);
+    buffer.writeFloatLE(99.1, 46);
+    buffer.writeFloatLE(98.2, 50);
+    buffer.writeFloatLE(102.3, 54);
+    buffer.writeFloatLE(97.4, 58);
+
+    buffer.writeInt32LE(10, 62);
+    buffer.writeInt32LE(20, 66);
+    buffer.writeInt16LE(2, 70);
+    buffer.writeInt16LE(3, 72);
+    buffer.writeFloatLE(101.4, 74);
+    buffer.writeFloatLE(101.6, 78);
+
+    const [message] = parseDhanMessage(buffer, 'dhan');
+    expect(message).toMatchObject({
+      type: 'full',
+      SecurityId: '35000',
+      ExchangeSegment: 'NSE_FNO',
+      LTP: 101.5,
+      LTQ: 25,
+      OI: 900,
+      HighOI: 1200,
+      LowOI: 800,
+      Open: expect.closeTo(99.1),
+      Close: expect.closeTo(98.2),
+      High: expect.closeTo(102.3),
+      Low: expect.closeTo(97.4),
+      BidQty: 10,
+      AskQty: 20,
+    });
+    expect(normalizeDhanMessage(message, 'dhan')).toMatchObject({
+      symbol: '35000',
+      p: 101.5,
+      o: expect.closeTo(99.1),
+      h: expect.closeTo(102.3),
+      l: expect.closeTo(97.4),
+      c: expect.closeTo(98.2),
+      bids: [{ p: expect.closeTo(101.4), q: 10 }],
+      asks: [{ p: expect.closeTo(101.6), q: 20 }],
+    });
   });
 
   it('wires dhan_trading as Dhan companion trading source', () => {

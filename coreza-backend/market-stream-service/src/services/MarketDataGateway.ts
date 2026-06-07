@@ -10,6 +10,7 @@ import {
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 import { redisPublishBreaker } from "../utils/redisCircuitBreaker";
 import { RedisBuffer } from "./RedisBuffer";
+import { getBrokerStreamConfig } from "../config/brokerStreamConfig";
 import { createLogger } from "../utils/logger";
 import {
   marketMessagesCounter,
@@ -312,7 +313,7 @@ export class MarketDataGateway {
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
 
-        const stream = isTradingLifecycleEvent
+        const rawStream = isTradingLifecycleEvent
           ? event.type
           : event.timeframe
             ? event.contractType
@@ -321,6 +322,10 @@ export class MarketDataGateway {
             : event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
               : `${event.symbol.toLowerCase()}@${event.type}`;
+        const streamConfig = getBrokerStreamConfig(this.source);
+        const stream = streamConfig.toRoutingStreamName
+          ? streamConfig.toRoutingStreamName(rawStream)
+          : rawStream;
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
@@ -378,6 +383,18 @@ export class MarketDataGateway {
     }
   }
 
+  private sendGatewayMessages(msg: unknown): void {
+    const messages = Array.isArray(msg) ? msg : [msg];
+
+    for (const message of messages) {
+      if (message === null || message === undefined) continue;
+      const payload = this.encodeMessage(message);
+      if (this.assertSocketBoundary(message, "send")) {
+        this.ws?.send(payload);
+      }
+    }
+  }
+
   /**
    * Subscribe to streams using native stream names directly
    * This is the primary subscription method
@@ -403,12 +420,7 @@ export class MarketDataGateway {
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.config.makeSubscribeMessage(newStreams, this.source);
-      if (msg !== null && msg !== undefined) {
-        const payload = this.encodeMessage(msg);
-        if (this.assertSocketBoundary(msg, "send")) {
-          this.ws.send(payload);
-        }
-      }
+      this.sendGatewayMessages(msg);
       this.logger.info(
         { source: this.source, streams: newStreams },
         "Subscribed to streams",
@@ -428,17 +440,15 @@ export class MarketDataGateway {
 
     existingStreams.forEach((name) => {
       this.subscribedStreams.delete(name);
-      this.subscribedStreamSources.delete(this.source);
+      this.subscribedStreamSources.delete(name);
     });
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
-      if (msg !== null && msg !== undefined) {
-        const payload = this.encodeMessage(msg);
-        if (this.assertSocketBoundary(msg, "send")) {
-          this.ws.send(payload);
-        }
-      }
+      const msg = this.config.makeUnsubscribeMessage(
+        existingStreams,
+        this.source,
+      );
+      this.sendGatewayMessages(msg);
       this.logger.info(
         { source: this.source, streams: existingStreams },
         "Unsubscribed from streams",
@@ -460,12 +470,7 @@ export class MarketDataGateway {
 
     for (const [streamSource, streams] of streamsBySource.entries()) {
       const msg = this.config.makeSubscribeMessage(streams, streamSource);
-      if (msg !== null && msg !== undefined) {
-        const payload = this.encodeMessage(msg);
-        if (this.assertSocketBoundary(msg, "send")) {
-          this.ws?.send(payload);
-        }
-      }
+      this.sendGatewayMessages(msg);
       this.logger.info(
         { source: this.source, streamSource, streams },
         "Resubscribed to streams",
@@ -515,10 +520,15 @@ export class MarketDataGateway {
     return true;
   }
 
-  private redactAuthMessage(msg: any): any {
+  private redactAuthMessage(msg: unknown): unknown {
     if (!msg || typeof msg !== "object") return msg;
+
+    const streamConfig = getBrokerStreamConfig(this.source);
+    if (streamConfig.redactAuthMessage) {
+      return streamConfig.redactAuthMessage(msg);
+    }
+
     const clone = JSON.parse(JSON.stringify(msg));
-    if (clone.LoginReq?.Token) clone.LoginReq.Token = "[REDACTED]";
     if (clone.action === "auth" && clone.key) clone.key = "[REDACTED]";
     if (clone.action === "auth" && clone.secret) clone.secret = "[REDACTED]";
     return clone;

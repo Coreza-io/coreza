@@ -26,6 +26,10 @@ import {
   tradingRoutingKey,
 } from "../utils/streamName";
 
+function isDhanMarketGatewaySource(source: string): boolean {
+  return source.split("_")[0] === "dhan" && !source.endsWith("_trading");
+}
+
 const TRADING_LIFECYCLE_EVENTS = new Set([
   "algo_update",
   "trade_updates",
@@ -309,6 +313,24 @@ export class MarketDataGateway {
           continue;
         }
 
+        // Dhan market registrations intentionally key StreamData by SecurityId only;
+        // exchange/mode metadata is used only for broker subscription payloads.
+        if (isDhanMarketGatewaySource(this.source)) {
+          const stream = String(event.symbol);
+          const channel = REDIS_CHANNELS.streamData(stream);
+          await this.publishToRedis(channel, JSON.stringify(event));
+          console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
+          console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
+
+          marketMessagesCounter.inc({
+            source: this.source,
+            stream,
+          });
+          const latency = (Date.now() - startTime) / 1000;
+          marketMessageLatencyHistogram.observe({ source: this.source }, latency);
+          continue;
+        }
+
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
 
@@ -378,6 +400,18 @@ export class MarketDataGateway {
     }
   }
 
+  private sendGatewayMessages(msg: unknown): void {
+    const messages = Array.isArray(msg) ? msg : [msg];
+
+    for (const message of messages) {
+      if (message === null || message === undefined) continue;
+      const payload = this.encodeMessage(message);
+      if (this.assertSocketBoundary(message, "send")) {
+        this.ws?.send(payload);
+      }
+    }
+  }
+
   /**
    * Subscribe to streams using native stream names directly
    * This is the primary subscription method
@@ -403,12 +437,7 @@ export class MarketDataGateway {
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.config.makeSubscribeMessage(newStreams, this.source);
-      if (msg !== null && msg !== undefined) {
-        const payload = this.encodeMessage(msg);
-        if (this.assertSocketBoundary(msg, "send")) {
-          this.ws.send(payload);
-        }
-      }
+      this.sendGatewayMessages(msg);
       this.logger.info(
         { source: this.source, streams: newStreams },
         "Subscribed to streams",
@@ -428,17 +457,15 @@ export class MarketDataGateway {
 
     existingStreams.forEach((name) => {
       this.subscribedStreams.delete(name);
-      this.subscribedStreamSources.delete(this.source);
+      this.subscribedStreamSources.delete(name);
     });
 
     if (this.ws?.readyState === WebSocket.OPEN) {
-      const msg = this.config.makeUnsubscribeMessage(streamNames, this.source);
-      if (msg !== null && msg !== undefined) {
-        const payload = this.encodeMessage(msg);
-        if (this.assertSocketBoundary(msg, "send")) {
-          this.ws.send(payload);
-        }
-      }
+      const msg = this.config.makeUnsubscribeMessage(
+        existingStreams,
+        this.source,
+      );
+      this.sendGatewayMessages(msg);
       this.logger.info(
         { source: this.source, streams: existingStreams },
         "Unsubscribed from streams",
@@ -460,12 +487,7 @@ export class MarketDataGateway {
 
     for (const [streamSource, streams] of streamsBySource.entries()) {
       const msg = this.config.makeSubscribeMessage(streams, streamSource);
-      if (msg !== null && msg !== undefined) {
-        const payload = this.encodeMessage(msg);
-        if (this.assertSocketBoundary(msg, "send")) {
-          this.ws?.send(payload);
-        }
-      }
+      this.sendGatewayMessages(msg);
       this.logger.info(
         { source: this.source, streamSource, streams },
         "Resubscribed to streams",

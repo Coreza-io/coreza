@@ -323,9 +323,11 @@ export class MarketDataGateway {
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
               : `${event.symbol.toLowerCase()}@${event.type}`;
         const streamConfig = getBrokerStreamConfig(this.source);
-        const stream = streamConfig.toRoutingStreamName
-          ? streamConfig.toRoutingStreamName(rawStream)
-          : rawStream;
+        const stream = streamConfig.buildRoutingKeyFromEvent
+          ? streamConfig.buildRoutingKeyFromEvent(event)
+          : streamConfig.toRoutingStreamName
+            ? streamConfig.toRoutingStreamName(rawStream)
+            : rawStream;
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));

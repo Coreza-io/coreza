@@ -43,6 +43,8 @@ export interface CorezaMarketEvent {
   // Identification
   source: MarketSource;
   symbol: string; // Normalized: "AAPL", "BTCUSD", "RELIANCE"
+  securityId?: string;
+  exchange?: string;
   type: MarketEventType;
 
   // Timing (Unix timestamp ms or ISO string)

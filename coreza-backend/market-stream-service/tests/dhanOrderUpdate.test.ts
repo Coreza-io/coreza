@@ -47,6 +47,34 @@ describe('Dhan order-update stream', () => {
     expect(buildDhanSubscribeMessage(['order_alert'], 'dhan_trading')).toBeNull();
   });
 
+  it('drives Dhan stream metadata, routing keys, and auth redaction from broker config', () => {
+    const marketConfig = getBrokerStreamConfig('dhan_stream');
+    const tradingConfig = getBrokerStreamConfig('dhan_trading');
+    const authMessage = {
+      LoginReq: {
+        MsgCode: 42,
+        ClientId: 'client-1',
+        Token: 'token-1',
+      },
+      UserType: 'SELF',
+    };
+
+    expect(marketConfig.buildStreamNames?.(['2885'], ['ticker', 'quote'], 'BSE_EQ')).toEqual([
+      '2885@BSE_EQ@ticker',
+      '2885@BSE_EQ@quote',
+    ]);
+    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('2885');
+    expect(tradingConfig.redactAuthMessage?.(authMessage)).toEqual({
+      LoginReq: {
+        MsgCode: 42,
+        ClientId: 'client-1',
+        Token: '[REDACTED]',
+      },
+      UserType: 'SELF',
+    });
+    expect(authMessage.LoginReq.Token).toBe('token-1');
+  });
+
   it('normalizes Dhan order_alert JSON to a Coreza order_update event', () => {
     const payload = {
       Type: 'order_alert',

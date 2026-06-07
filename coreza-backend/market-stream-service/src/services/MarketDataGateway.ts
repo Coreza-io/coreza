@@ -10,6 +10,7 @@ import {
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 import { redisPublishBreaker } from "../utils/redisCircuitBreaker";
 import { RedisBuffer } from "./RedisBuffer";
+import { getBrokerStreamConfig } from "../config/brokerStreamConfig";
 import { createLogger } from "../utils/logger";
 import {
   marketMessagesCounter,
@@ -334,7 +335,7 @@ export class MarketDataGateway {
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
 
-        const stream = isTradingLifecycleEvent
+        const rawStream = isTradingLifecycleEvent
           ? event.type
           : event.timeframe
             ? event.contractType
@@ -343,6 +344,10 @@ export class MarketDataGateway {
             : event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
               : `${event.symbol.toLowerCase()}@${event.type}`;
+        const streamConfig = getBrokerStreamConfig(this.source);
+        const stream = streamConfig.toRoutingStreamName
+          ? streamConfig.toRoutingStreamName(rawStream)
+          : rawStream;
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
@@ -537,10 +542,15 @@ export class MarketDataGateway {
     return true;
   }
 
-  private redactAuthMessage(msg: any): any {
+  private redactAuthMessage(msg: unknown): unknown {
     if (!msg || typeof msg !== "object") return msg;
+
+    const streamConfig = getBrokerStreamConfig(this.source);
+    if (streamConfig.redactAuthMessage) {
+      return streamConfig.redactAuthMessage(msg);
+    }
+
     const clone = JSON.parse(JSON.stringify(msg));
-    if (clone.LoginReq?.Token) clone.LoginReq.Token = "[REDACTED]";
     if (clone.action === "auth" && clone.key) clone.key = "[REDACTED]";
     if (clone.action === "auth" && clone.secret) clone.secret = "[REDACTED]";
     return clone;

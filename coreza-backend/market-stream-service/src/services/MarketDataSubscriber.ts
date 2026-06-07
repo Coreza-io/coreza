@@ -46,11 +46,11 @@ interface WorkflowRegistration {
   nodeId: string;
   userId: string;
   streams: Set<string>;
-  // tradingNativeStreams: Set<string>;
+  tradingNativeStreams: Set<string>;
   source: MarketSource;
   environment: string;
-  // allowedSymbols: Set<string>;
-  // symbolMatchMode: "exact" | "wildcard";
+  allowedSymbols: Set<string>;
+  symbolMatchMode: "exact" | "wildcard";
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
   isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
 }
@@ -64,9 +64,9 @@ interface PersistedRegistration {
   environment: string;
   onlyClosedBars?: boolean;
   isLive?: boolean;
-  // filterSymbols?: string[];
-  // symbolMatchMode?: "exact" | "wildcard";
-  // tradingNativeStreams?: string[];
+  filterSymbols?: string[];
+  symbolMatchMode?: "exact" | "wildcard";
+  tradingNativeStreams?: string[];
   marketType?: string;
 }
 
@@ -126,9 +126,9 @@ export class MarketDataSubscriber {
     environment: string,
     onlyClosedBars?: boolean,
     isLive?: boolean,
-    // filterSymbols: string[] = [],
-    // symbolMatchMode: "exact" | "wildcard" = "exact",
-    // tradingNativeStreams: string[] = [],
+    filterSymbols: string[] = [],
+    symbolMatchMode: "exact" | "wildcard" = "exact",
+    tradingNativeStreams: string[] = [],
   ): Promise<void> {
     try {
       console.log(
@@ -140,20 +140,23 @@ export class MarketDataSubscriber {
         throw new Error("registerWorkflow requires non-empty source");
       }
 
-      // const normalizedSymbols = filterSymbols.map((symbol) =>
-      //   normalizeOrderSymbol(symbol, String(source).split("_")[0]),
-      // );
+      const normalizedSymbols = filterSymbols.map((symbol) =>
+        normalizeOrderSymbol(symbol, String(source).split("_")[0]),
+      );
+      const nativeTradingStreams = tradingNativeStreams.map((s) => String(s));
+      const allStreams = [...streams.map((s) => s), ...nativeTradingStreams];
+
       // Create registration object
       const registration: WorkflowRegistration = {
         workflowId,
         nodeId,
         userId,
-        streams: new Set(streams.map((s) => s)),
-        // tradingNativeStreams: new Set(tradingNativeStreams),
+        streams: new Set(allStreams),
+        tradingNativeStreams: new Set(nativeTradingStreams),
         source,
         environment,
-        // allowedSymbols: new Set(normalizedSymbols),
-        // symbolMatchMode,
+        allowedSymbols: new Set(normalizedSymbols),
+        symbolMatchMode,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
         isLive: isLive ?? false,
       };
@@ -290,13 +293,13 @@ export class MarketDataSubscriber {
                 .concat(inferredTradingNativeStreams),
             ),
           );
-          // const cleanedTradingNativeStreams = Array.from(
-          //   new Set(
-          //     (registration.tradingNativeStreams || []).concat(
-          //       inferredTradingNativeStreams,
-          //     ),
-          //   ),
-          // );
+          const cleanedTradingNativeStreams = Array.from(
+            new Set(
+              (registration.tradingNativeStreams || []).concat(
+                inferredTradingNativeStreams,
+              ),
+            ),
+          );
 
           if (registration.isLive) {
             // Only live workflows require a persisted active definition.
@@ -323,9 +326,9 @@ export class MarketDataSubscriber {
             registration.environment,
             registration.onlyClosedBars,
             registration.isLive,
-            //registration.filterSymbols || [],
-            // registration.symbolMatchMode || "exact",
-            // cleanedTradingNativeStreams,
+            registration.filterSymbols || [],
+            registration.symbolMatchMode || "exact",
+            cleanedTradingNativeStreams,
           );
 
           restored++;
@@ -935,14 +938,14 @@ export class MarketDataSubscriber {
       }
       this.streamWorkflows.get(stream)!.add(workflowId);
 
-      // if (TRADING_LIFECYCLE_EVENT_TYPES.has(stream)) {
-      //   registration.tradingNativeStreams.add(stream);
-      // }
+      if (TRADING_LIFECYCLE_EVENT_TYPES.has(stream)) {
+        registration.tradingNativeStreams.add(stream);
+      }
     }
 
-    // newTradingNativeStreams.forEach((stream) =>
-    //   registration.tradingNativeStreams.add(stream),
-    // );
+    newTradingNativeStreams.forEach((stream) =>
+      registration.tradingNativeStreams.add(stream),
+    );
 
     // Persist updated registration to Redis
     await this.persistRegistration(registration);
@@ -952,35 +955,35 @@ export class MarketDataSubscriber {
     );
   }
 
-  // async addAllowedSymbolsToRegistration(
-  //   workflowId: string,
-  //   symbols: string[],
-  // ): Promise<void> {
-  //   const registration = this.registrations.get(workflowId);
-  //   if (!registration) return;
+  async addAllowedSymbolsToRegistration(
+    workflowId: string,
+    symbols: string[],
+  ): Promise<void> {
+    const registration = this.registrations.get(workflowId);
+    if (!registration) return;
 
-  //   const broker = String(registration.source).split("_")[0];
-  //   symbols
-  //     .map((symbol) => normalizeOrderSymbol(symbol, broker))
-  //     .forEach((symbol) => registration.allowedSymbols.add(symbol));
+    const broker = String(registration.source).split("_")[0];
+    symbols
+      .map((symbol) => normalizeOrderSymbol(symbol, broker))
+      .forEach((symbol) => registration.allowedSymbols.add(symbol));
 
-  //   await this.persistRegistration(registration);
-  // }
+    await this.persistRegistration(registration);
+  }
 
-  // async removeAllowedSymbolsFromRegistration(
-  //   workflowId: string,
-  //   symbols: string[],
-  // ): Promise<void> {
-  //   const registration = this.registrations.get(workflowId);
-  //   if (!registration) return;
+  async removeAllowedSymbolsFromRegistration(
+    workflowId: string,
+    symbols: string[],
+  ): Promise<void> {
+    const registration = this.registrations.get(workflowId);
+    if (!registration) return;
 
-  //   const broker = String(registration.source).split("_")[0];
-  //   symbols
-  //     .map((symbol) => normalizeOrderSymbol(symbol, broker))
-  //     .forEach((symbol) => registration.allowedSymbols.delete(symbol));
+    const broker = String(registration.source).split("_")[0];
+    symbols
+      .map((symbol) => normalizeOrderSymbol(symbol, broker))
+      .forEach((symbol) => registration.allowedSymbols.delete(symbol));
 
-  //   await this.persistRegistration(registration);
-  // }
+    await this.persistRegistration(registration);
+  }
 
   /**
    * Remove specific streams from an existing workflow registration.
@@ -1011,7 +1014,7 @@ export class MarketDataSubscriber {
       }
 
       registration.streams.delete(stream);
-      // registration.tradingNativeStreams.delete(stream);
+      registration.tradingNativeStreams.delete(stream);
 
       const workflows = this.streamWorkflows.get(stream);
       if (workflows) {
@@ -1056,9 +1059,9 @@ export class MarketDataSubscriber {
       userId: registration.userId,
       streams: Array.from(registration.streams),
       source: registration.source,
-      // filterSymbols: Array.from(registration.allowedSymbols),
-      // symbolMatchMode: registration.symbolMatchMode,
-      // tradingNativeStreams: Array.from(registration.tradingNativeStreams),
+      filterSymbols: Array.from(registration.allowedSymbols),
+      symbolMatchMode: registration.symbolMatchMode,
+      tradingNativeStreams: Array.from(registration.tradingNativeStreams),
       onlyClosedBars: registration.onlyClosedBars,
       isLive: registration.isLive,
     });

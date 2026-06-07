@@ -76,42 +76,13 @@ function getUnifiedSocketStateSource(source: string): string {
   return cfg.unifiedSocket || baseCfg.unifiedSocket ? baseSource : source;
 }
 
-function isDhanMarketSource(source: string): boolean {
-  return source.split("_")[0] === "dhan" && !isTradingSource(source);
-}
-
-function buildDhanMarketStreamNames(
-  symbols: string[],
-  streamTypes: string[] = [],
-  exchange?: string,
-): string[] {
-  const exchangeSegment = String(exchange || "NSE_EQ").trim() || "NSE_EQ";
-  const modes = streamTypes.length > 0 ? streamTypes : ["ticker"];
-  const streamNames: string[] = [];
-
-  for (const symbol of symbols) {
-    const securityId = String(symbol).trim();
-    if (!securityId) continue;
-
-    for (const mode of modes) {
-      streamNames.push(`${securityId}@${exchangeSegment}@${mode}`);
-    }
-  }
-
-  return streamNames;
-}
-
-function getDhanRoutingStreamName(streamName: string): string {
-  const separatorIndex = streamName.indexOf("@");
-  return separatorIndex > 0 ? streamName.slice(0, separatorIndex) : streamName;
-}
-
 function getRoutingStreamNamesForControlMessage(
   source: MarketSource,
   streamNames: string[],
 ): string[] {
-  if (!isDhanMarketSource(source)) return streamNames;
-  return [...new Set(streamNames.map(getDhanRoutingStreamName))];
+  const cfg = getBrokerStreamConfig(source);
+  if (!cfg.toRoutingStreamName) return streamNames;
+  return [...new Set(streamNames.map(cfg.toRoutingStreamName))];
 }
 
 function buildMarketStreamNamesForControlMessage(
@@ -122,8 +93,9 @@ function buildMarketStreamNamesForControlMessage(
   contractType: string | undefined,
   exchange?: string,
 ): string[] {
-  if (isDhanMarketSource(source)) {
-    return buildDhanMarketStreamNames(symbols, streamType || [], exchange);
+  const cfg = getBrokerStreamConfig(source);
+  if (cfg.buildStreamNames) {
+    return cfg.buildStreamNames(symbols, streamType || [], exchange);
   }
 
   return buildStreamNames(
@@ -490,11 +462,27 @@ export class MarketControlHandler {
   private async updateActiveStreamingWorkflows(
     userId: string,
     newStreamNames: string[],
-    // newSymbols: string[],
-    scope: string,
-    targetWorkflowId?: string,
-    // tradingNativeStreams: string[] = [],
+    newSymbolsOrScope: string[] | string,
+    scopeOrTargetWorkflowId?: string,
+    targetWorkflowIdOrTradingStreams?: string | string[],
+    maybeTradingNativeStreams: string[] = [],
   ): Promise<void> {
+    const legacySignature = Array.isArray(newSymbolsOrScope);
+    const newSymbols = legacySignature ? newSymbolsOrScope : [];
+    const scope = legacySignature
+      ? String(scopeOrTargetWorkflowId || "global")
+      : newSymbolsOrScope;
+    const targetWorkflowId = legacySignature
+      ? typeof targetWorkflowIdOrTradingStreams === "string"
+        ? targetWorkflowIdOrTradingStreams
+        : undefined
+      : scopeOrTargetWorkflowId;
+    const tradingNativeStreams = legacySignature
+      ? Array.isArray(targetWorkflowIdOrTradingStreams)
+        ? targetWorkflowIdOrTradingStreams
+        : maybeTradingNativeStreams
+      : [];
+
     try {
       const subscriber = MarketDataSubscriber.getInstance();
 
@@ -506,12 +494,14 @@ export class MarketControlHandler {
         await subscriber.addStreamsToRegistration(
           targetWorkflowId,
           newStreamNames,
-          // tradingNativeStreams,
+          tradingNativeStreams,
         );
-        // await subscriber.addAllowedSymbolsToRegistration(
-        //   targetWorkflowId,
-        //   newSymbols,
-        // );
+        if (newSymbols.length > 0) {
+          await subscriber.addAllowedSymbolsToRegistration(
+            targetWorkflowId,
+            newSymbols,
+          );
+        }
 
         const fallbackWorkflowIds =
           subscriber.getRegisteredWorkflowIdsForUser(userId);
@@ -536,12 +526,14 @@ export class MarketControlHandler {
               await subscriber.addStreamsToRegistration(
                 workflowId,
                 newStreamNames,
-                // tradingNativeStreams,
+                tradingNativeStreams,
               );
-              // await subscriber.addAllowedSymbolsToRegistration(
-              //   workflowId,
-              //   newSymbols,
-              // );
+              if (newSymbols.length > 0) {
+                await subscriber.addAllowedSymbolsToRegistration(
+                  workflowId,
+                  newSymbols,
+                );
+              }
               console.log(
                 `🧪 [MarketControl] Updated test listener ${workflowStreamListener} with ${newStreamNames.length} streams`,
               );
@@ -596,12 +588,14 @@ export class MarketControlHandler {
           await subscriber.addStreamsToRegistration(
             activeStreamingWorkflow,
             streamsToAdd,
-            // tradingNativeStreams,
+            tradingNativeStreams,
           );
-          // await subscriber.addAllowedSymbolsToRegistration(
-          //   activeStreamingWorkflow,
-          //   newSymbols,
-          // );
+          if (newSymbols.length > 0) {
+            await subscriber.addAllowedSymbolsToRegistration(
+              activeStreamingWorkflow,
+              newSymbols,
+            );
+          }
 
           console.log(
             `✅ [MarketControl] Added ${streamsToAdd.length} streams to workflow ${activeStreamingWorkflow}`,

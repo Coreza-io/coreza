@@ -1,4 +1,4 @@
-import type { MarketSource } from "../types/marketEvent";
+import type { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 
 export interface BrokerStreamConfig {
   separator: string;
@@ -9,6 +9,7 @@ export interface BrokerStreamConfig {
     exchange?: string,
   ) => string[];
   toRoutingStreamName?: (streamName: string) => string;
+  buildRoutingKeyFromEvent?: (event: CorezaMarketEvent) => string;
   redactAuthMessage?: (msg: unknown) => unknown;
   tradingStreams?: Partial<Record<"spot" | "futures" | "account", string[]>>;
   tradingRoutingKey?: (eventType: string) => string;
@@ -29,20 +30,88 @@ function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
   return isRecord(cloned) ? cloned : {};
 }
 
+const DEFAULT_DHAN_EXCHANGE_SEGMENT = "NSE_EQ";
+const DEFAULT_DHAN_MARKET_MODE = "ticker";
+
+function splitDhanCompositeSymbolToken(token: string): {
+  symbol: string;
+  securityId: string;
+} {
+  const normalized = token.trim();
+  const separatorIndex = normalized.lastIndexOf(":");
+  if (separatorIndex <= 0 || separatorIndex === normalized.length - 1) {
+    return { symbol: normalized, securityId: normalized };
+  }
+
+  return {
+    symbol: normalized.substring(0, separatorIndex),
+    securityId: normalized.substring(separatorIndex + 1),
+  };
+}
+
+function parseDhanNativeStreamName(streamName: string): {
+  symbol: string;
+  securityId: string;
+  exchange: string;
+  mode: string;
+} {
+  const parts = streamName.split("@");
+
+  if (parts.length >= 4) {
+    return {
+      symbol: parts[0],
+      securityId: parts[1],
+      exchange: parts[2] || DEFAULT_DHAN_EXCHANGE_SEGMENT,
+      mode: parts[3] || DEFAULT_DHAN_MARKET_MODE,
+    };
+  }
+
+  if (parts.length >= 3) {
+    return {
+      symbol: parts[0],
+      securityId: parts[0],
+      exchange: parts[1] || DEFAULT_DHAN_EXCHANGE_SEGMENT,
+      mode: parts[2] || DEFAULT_DHAN_MARKET_MODE,
+    };
+  }
+
+  if (parts.length >= 2) {
+    return {
+      symbol: parts[0],
+      securityId: parts[0],
+      exchange: DEFAULT_DHAN_EXCHANGE_SEGMENT,
+      mode: parts[1] || DEFAULT_DHAN_MARKET_MODE,
+    };
+  }
+
+  return {
+    symbol: streamName,
+    securityId: streamName,
+    exchange: DEFAULT_DHAN_EXCHANGE_SEGMENT,
+    mode: DEFAULT_DHAN_MARKET_MODE,
+  };
+}
+
 function buildMetadataStreamNames(
   symbols: string[],
   streamTypes: string[],
   exchange?: string,
 ): string[] {
-  const exchangeSegment = String(exchange || "NSE_EQ").trim() || "NSE_EQ";
+  const exchangeSegment =
+    String(exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).trim() ||
+    DEFAULT_DHAN_EXCHANGE_SEGMENT;
   const streamNames: string[] = [];
 
-  for (const symbol of symbols) {
-    const securityId = String(symbol).trim();
-    if (!securityId) continue;
+  for (const symbolToken of symbols) {
+    const { symbol, securityId } = splitDhanCompositeSymbolToken(
+      String(symbolToken),
+    );
+    if (!symbol || !securityId) continue;
 
     for (const streamType of streamTypes) {
-      streamNames.push(`${securityId}@${exchangeSegment}@${streamType}`);
+      streamNames.push(
+        `${symbol}@${securityId}@${exchangeSegment}@${streamType}`,
+      );
     }
   }
 
@@ -50,11 +119,16 @@ function buildMetadataStreamNames(
 }
 
 function toDhanRoutingStreamName(streamName: string): string {
-  const parts = streamName.split("@");
-  const securityId = parts[0];
-  const streamType = parts.length >= 2 ? parts[parts.length - 1] : "";
+  const { securityId, exchange, mode } = parseDhanNativeStreamName(streamName);
+  return mode
+    ? `${exchange.toLowerCase()}:${securityId}@${mode}`
+    : `${exchange.toLowerCase()}:${securityId}`;
+}
 
-  return streamType ? `${securityId}@${streamType}` : securityId;
+function buildDhanRoutingKeyFromEvent(event: CorezaMarketEvent): string {
+  const securityId = event.securityId || event.symbol;
+  const exchange = event.exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
+  return `${exchange.toLowerCase()}:${securityId}@${event.type}`;
 }
 
 function redactLoginToken(msg: unknown): unknown {
@@ -106,6 +180,7 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     companionSources: ["dhan_trading"],
     buildStreamNames: buildMetadataStreamNames,
     toRoutingStreamName: toDhanRoutingStreamName,
+    buildRoutingKeyFromEvent: buildDhanRoutingKeyFromEvent,
     redactAuthMessage: redactLoginToken,
   },
 

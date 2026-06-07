@@ -184,7 +184,7 @@ export class SubscriptionService {
             };
           }
 
-          resolvedSymbols.push(securityId);
+          resolvedSymbols.push(`${symbol}:${securityId}`);
         }
 
         symbolArray = resolvedSymbols;

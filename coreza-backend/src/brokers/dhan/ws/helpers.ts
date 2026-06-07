@@ -166,9 +166,26 @@ type DhanSubscriptionMessage = {
   InstrumentList: DhanInstrument[];
 };
 
-type DhanStreamMetadata = DhanInstrument & {
+type DhanInstrumentMeta = {
+  symbol: string;
+  securityId: string;
+  exchange: string;
+};
+
+type DhanStreamMetadata = DhanInstrument & DhanInstrumentMeta & {
   mode: DhanMarketMode;
 };
+
+const symbolToSecurityId = new Map<string, DhanInstrumentMeta>();
+const securityIdToSymbol = new Map<string, DhanInstrumentMeta>();
+
+function dhanSymbolKey(exchange: string, symbol: string): string {
+  return `${exchange}:${symbol}`;
+}
+
+function dhanSecurityIdKey(exchange: string, securityId: string): string {
+  return `${exchange}:${securityId}`;
+}
 
 const DHAN_REQUEST_CODES: Record<DhanMarketMode, DhanRequestCodes> = {
   ticker: { sub: 15, unsub: 16 },
@@ -186,19 +203,37 @@ function normalizeDhanMarketMode(value?: string): DhanMarketMode {
 }
 
 function parseDhanStreamName(streamName: string): DhanStreamMetadata {
-  const [securityId, exchangeOrMode, mode] = streamName.split('@');
+  const parts = streamName.split('@');
+
+  if (parts.length >= 4) {
+    const [symbol, securityId, exchange, mode] = parts;
+    const exchangeSegment = exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
+    return {
+      symbol,
+      securityId,
+      exchange: exchangeSegment,
+      SecurityId: securityId,
+      ExchangeSegment: exchangeSegment,
+      mode: normalizeDhanMarketMode(mode),
+    };
+  }
+
+  const [securityId, exchangeOrMode, mode] = parts;
   const hasExchangeSegment = Boolean(mode);
+  const exchangeSegment = hasExchangeSegment
+    ? exchangeOrMode
+    : DEFAULT_DHAN_EXCHANGE_SEGMENT;
 
   return {
+    symbol: securityId,
+    securityId,
+    exchange: exchangeSegment,
     SecurityId: securityId,
-    ExchangeSegment: hasExchangeSegment
-      ? exchangeOrMode
-      : DEFAULT_DHAN_EXCHANGE_SEGMENT,
+    ExchangeSegment: exchangeSegment,
     mode: normalizeDhanMarketMode(hasExchangeSegment ? mode : exchangeOrMode),
   };
 }
 
-// Routing keys include mode, while broker payload symbols remain pure security IDs.
 export function extractDhanSymbols(streamNames: string[]): string[] {
   return streamNames.map((name) => {
     const atIndex = name.indexOf('@');
@@ -223,6 +258,29 @@ function buildDhanMarketMessages(
   for (const streamName of streamNames) {
     const parsed = parseDhanStreamName(streamName);
     if (!parsed.SecurityId) continue;
+
+    const meta: DhanInstrumentMeta = {
+      symbol: parsed.symbol,
+      securityId: parsed.SecurityId,
+      exchange: parsed.ExchangeSegment,
+    };
+    const symbolKey = dhanSymbolKey(meta.exchange, meta.symbol);
+    const securityIdKey = dhanSecurityIdKey(meta.exchange, meta.securityId);
+
+    if (action === 'sub') {
+      symbolToSecurityId.set(symbolKey, meta);
+      securityIdToSymbol.set(securityIdKey, meta);
+    } else {
+      const existingMeta = securityIdToSymbol.get(securityIdKey);
+      if (existingMeta) {
+        symbolToSecurityId.delete(
+          dhanSymbolKey(existingMeta.exchange, existingMeta.symbol),
+        );
+      } else {
+        symbolToSecurityId.delete(symbolKey);
+      }
+      securityIdToSymbol.delete(securityIdKey);
+    }
 
     const requestCode = DHAN_REQUEST_CODES[parsed.mode][action];
     const instruments = instrumentsByRequestCode.get(requestCode) || [];
@@ -334,12 +392,20 @@ export function normalizeDhanMessage(msg: unknown, source?: string): MarketEvent
   }
 
   const record = msg as Record<string, unknown>;
-  if (!record.SecurityId) return null;
+  const securityId = toStringValue(record.SecurityId);
+  if (!securityId) return null;
+  const exchange =
+    toStringValue(record.ExchangeSegment) ?? DEFAULT_DHAN_EXCHANGE_SEGMENT;
+  const meta = securityIdToSymbol.get(
+    dhanSecurityIdKey(exchange, securityId),
+  );
   const depth = normalizeDhanDepth(record.Depth);
 
   return {
     source: 'dhan',
-    symbol: toStringValue(record.TradingSymbol) ?? toStringValue(record.SecurityId) ?? '',
+    symbol: meta?.symbol ?? toStringValue(record.TradingSymbol) ?? securityId,
+    securityId,
+    exchange,
     type: normalizeDhanMarketEventType(record.type),
     t: Date.now(),
     p: toNumberValue(record.LTP),

@@ -59,13 +59,26 @@ describe('Dhan order-update stream', () => {
       UserType: 'SELF',
     };
 
-    expect(marketConfig.buildStreamNames?.(['2885'], ['ticker', 'quote'], 'BSE_EQ')).toEqual([
-      '2885@BSE_EQ@ticker',
-      '2885@BSE_EQ@quote',
+    expect(marketConfig.buildStreamNames?.(['HDFCBANK:1333'], ['ticker', 'quote'], 'NSE_EQ')).toEqual([
+      'HDFCBANK@1333@NSE_EQ@ticker',
+      'HDFCBANK@1333@NSE_EQ@quote',
     ]);
-    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('2885@quote');
-    expect(marketConfig.toRoutingStreamName?.('2885@quote')).toBe('2885@quote');
-    expect(marketConfig.toRoutingStreamName?.('2885')).toBe('2885');
+    expect(marketConfig.buildStreamNames?.(['2885'], ['ticker'], 'BSE_EQ')).toEqual([
+      '2885@2885@BSE_EQ@ticker',
+    ]);
+    expect(marketConfig.toRoutingStreamName?.('HDFCBANK@1333@NSE_EQ@ticker')).toBe('nse_eq:1333@ticker');
+    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('bse_eq:2885@quote');
+    expect(marketConfig.toRoutingStreamName?.('2885@quote')).toBe('nse_eq:2885@quote');
+    expect(marketConfig.toRoutingStreamName?.('2885')).toBe('nse_eq:2885@ticker');
+    expect(
+      marketConfig.buildRoutingKeyFromEvent?.({
+        source: 'dhan',
+        symbol: 'HDFCBANK',
+        securityId: '1333',
+        exchange: 'NSE_EQ',
+        type: 'ticker',
+      }),
+    ).toBe('nse_eq:1333@ticker');
     expect(tradingConfig.redactAuthMessage?.(authMessage)).toEqual({
       LoginReq: {
         MsgCode: 42,
@@ -119,7 +132,7 @@ describe('Dhan order-update stream', () => {
 
   it('sends Dhan market subscriptions as grouped JSON payloads and parses binary responses', () => {
     const subscribeMessages = buildDhanSubscribeMessage(
-      ['2885@NSE_EQ@ticker', '500325@BSE_EQ@quote', '35000@NSE_FNO@full'],
+      ['RELIANCE@2885@NSE_EQ@ticker', '500325@BSE_EQ@quote', '35000@NSE_FNO@full'],
       'dhan',
     );
 
@@ -154,6 +167,9 @@ describe('Dhan order-update stream', () => {
     buffer.writeFloatLE(2500.5, 8);
     buffer.writeInt32LE(1700000000, 12);
 
+    const [message] = parseDhanMessage(buffer, 'dhan');
+    const normalized = normalizeDhanMessage(message, 'dhan');
+
     expect(parseDhanMessage(buffer, 'dhan')).toEqual([
       {
         type: 'ticker',
@@ -163,6 +179,50 @@ describe('Dhan order-update stream', () => {
         LTT: 1700000000,
       },
     ]);
+    expect(normalized).toMatchObject({
+      symbol: 'RELIANCE',
+      securityId: '2885',
+      exchange: 'NSE_EQ',
+      type: 'ticker',
+      p: 2500.5,
+    });
+    expect(
+      getBrokerStreamConfig('dhan').buildRoutingKeyFromEvent?.(normalized!),
+    ).toBe('nse_eq:2885@ticker');
+  });
+
+  it('enriches Dhan ticks from composite subscription metadata', () => {
+    const marketConfig = getBrokerStreamConfig('dhan');
+    const nativeStreams = marketConfig.buildStreamNames?.(['HDFCBANK:1333'], ['ticker'], 'NSE_EQ') ?? [];
+
+    expect(nativeStreams).toEqual(['HDFCBANK@1333@NSE_EQ@ticker']);
+    expect(buildDhanSubscribeMessage(nativeStreams, 'dhan')).toEqual([
+      {
+        RequestCode: 15,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
+      },
+    ]);
+    expect(marketConfig.toRoutingStreamName?.(nativeStreams[0])).toBe('nse_eq:1333@ticker');
+
+    const event = normalizeDhanMessage(
+      {
+        type: 'ticker',
+        SecurityId: '1333',
+        ExchangeSegment: 'NSE_EQ',
+        LTP: 1500.25,
+      },
+      'dhan',
+    );
+
+    expect(event).toMatchObject({
+      symbol: 'HDFCBANK',
+      securityId: '1333',
+      exchange: 'NSE_EQ',
+      type: 'ticker',
+      p: 1500.25,
+    });
+    expect(marketConfig.buildRoutingKeyFromEvent?.(event!)).toBe('nse_eq:1333@ticker');
   });
 
   it('chunks Dhan market requests at 100 instruments and uses matching unsubscribe codes', () => {

@@ -180,11 +180,69 @@ const symbolToSecurityId = new Map<string, DhanInstrumentMeta>();
 const securityIdToSymbol = new Map<string, DhanInstrumentMeta>();
 
 function dhanSymbolKey(exchange: string, symbol: string): string {
-  return `${exchange}:${symbol}`;
+  return `${String(exchange).toUpperCase()}:${String(symbol).toUpperCase()}`;
 }
 
 function dhanSecurityIdKey(exchange: string, securityId: string): string {
-  return `${exchange}:${securityId}`;
+  return `${String(exchange).toUpperCase()}:${String(securityId)}`;
+}
+
+/**
+ * Seed the in-memory symbol <-> securityId map once at subscribe time.
+ * Never called per tick. Module-level maps survive reconnect; restart
+ * durability is provided by the snapshot helpers below.
+ */
+export function registerDhanInstrument(
+  exchange: string,
+  symbol: string,
+  securityId: string,
+): void {
+  const exch =
+    String(exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase() ||
+    DEFAULT_DHAN_EXCHANGE_SEGMENT;
+  const sym = String(symbol).toUpperCase();
+  const secId = String(securityId);
+  if (!sym || !secId) return;
+
+  const meta: DhanInstrumentMeta = {
+    symbol: sym,
+    securityId: secId,
+    exchange: exch,
+  };
+  symbolToSecurityId.set(dhanSymbolKey(exch, sym), meta);
+  securityIdToSymbol.set(dhanSecurityIdKey(exch, secId), meta);
+}
+
+/** Snapshot the map for Redis persistence (one-time, never per tick). */
+export function getDhanInstrumentSnapshot(): Record<string, string> {
+  const snapshot: Record<string, string> = {};
+  for (const [key, meta] of securityIdToSymbol.entries()) {
+    snapshot[key] = JSON.stringify(meta);
+  }
+  return snapshot;
+}
+
+/** Rehydrate the map from a Redis snapshot at startup. */
+export function loadDhanInstrumentSnapshot(
+  snapshot: Record<string, string> | null | undefined,
+): void {
+  if (!snapshot) return;
+  for (const value of Object.values(snapshot)) {
+    try {
+      const meta = JSON.parse(value) as DhanInstrumentMeta;
+      registerDhanInstrument(meta.exchange, meta.symbol, meta.securityId);
+    } catch {
+      // ignore malformed entries
+    }
+  }
+}
+
+function resolveDhanSecurityId(exchange: string, symbol: string): string {
+  const meta = symbolToSecurityId.get(dhanSymbolKey(exchange, symbol));
+  if (meta) return meta.securityId;
+  // A numeric symbol is already the securityId.
+  if (/^\d+$/.test(symbol)) return symbol;
+  return '';
 }
 
 const DHAN_REQUEST_CODES: Record<DhanMarketMode, DhanRequestCodes> = {

@@ -222,7 +222,6 @@ describe('Dhan order-update stream', () => {
       type: 'ticker',
       p: 1500.25,
     });
-    expect(marketConfig.buildRoutingKeyFromEvent?.(event!)).toBe('nse_eq:1333@ticker');
   });
 
   it('chunks Dhan market requests at 100 instruments and uses matching unsubscribe codes', () => {

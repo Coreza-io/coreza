@@ -37,6 +37,7 @@ export function buildStreamName(
   streamType: string,
   interval?: string,
   contractType?: string,
+  exchange?: string,
 ): string {
   if (source.endsWith("_trading")) return tradingRoutingKey(source, streamType);
   const cfg = getBrokerStreamConfig(source);
@@ -52,9 +53,12 @@ export function buildStreamName(
   const typePart = interval
     ? `${normalizedStreamType}_${interval}`
     : normalizedStreamType;
+  const exchangePart = exchange
+    ? `${cfg.separator}${exchange.toLowerCase()}`
+    : "";
   return cfg.symbolFirst
-    ? `${symbol}${cfg.separator}${typePart}`
-    : `${typePart}${cfg.separator}${symbol}`;
+    ? `${symbol}${exchangePart}${cfg.separator}${typePart}`
+    : `${typePart}${cfg.separator}${symbol}${exchangePart}`;
 }
 
 export function parseStreamName(

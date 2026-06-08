@@ -847,7 +847,7 @@ export class MarketControlHandler {
 
           await this.updateActiveStreamingWorkflows(
             userId,
-            getRoutingStreamNamesForControlMessage(source, requestedStreamNames),
+            requestedStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -926,7 +926,7 @@ export class MarketControlHandler {
           ? (streamType ?? []).map((eventType) =>
               tradingRoutingKey(source, eventType),
             )
-          : buildMarketStreamNamesForControlMessage(
+          : buildNativeStreamNames(
               source,
               symbols,
               streamType,
@@ -974,10 +974,8 @@ export class MarketControlHandler {
           streamNamesToRemove.length > 0 &&
           (!tradingSource || shouldRemoveGatewayStreams)
         ) {
-          const routingStreamNamesToRemove = getRoutingStreamNamesForControlMessage(
-            source,
-            streamNamesToRemove,
-          );
+          // Routing keys are identical to native stream names.
+          const routingStreamNamesToRemove = streamNamesToRemove;
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(

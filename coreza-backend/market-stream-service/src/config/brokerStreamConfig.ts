@@ -1,15 +1,27 @@
-import type { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
+import type { MarketSource } from "../types/marketEvent";
+import {
+  registerDhanInstrument,
+  getDhanInstrumentSnapshot,
+  loadDhanInstrumentSnapshot,
+} from "../marketGateways/dhan/helpers";
 
 export interface BrokerStreamConfig {
   separator: string;
   symbolFirst: boolean;
-  buildStreamNames?: (
+  /**
+   * Optional, broker-agnostic hook to transform the requested subscription
+   * symbols before generic stream-name building. Used by Dhan to split
+   * composite `SYMBOL:securityId` tokens, seed the in-memory resolution map,
+   * and return plain symbols. Defaults to identity.
+   */
+  preprocessSubscriptionSymbols?: (
     symbols: string[],
-    streamTypes: string[],
     exchange?: string,
   ) => string[];
-  toRoutingStreamName?: (streamName: string) => string;
-  buildRoutingKeyFromEvent?: (event: CorezaMarketEvent) => string;
+  /** Optional snapshot of broker resolution state for Redis persistence. */
+  persistSubscriptionState?: () => Record<string, string> | null;
+  /** Optional rehydration of broker resolution state at startup. */
+  restoreSubscriptionState?: (snapshot: Record<string, string>) => void;
   redactAuthMessage?: (msg: unknown) => unknown;
   tradingStreams?: Partial<Record<"spot" | "futures" | "account", string[]>>;
   tradingRoutingKey?: (eventType: string) => string;
@@ -31,7 +43,6 @@ function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
 }
 
 const DEFAULT_DHAN_EXCHANGE_SEGMENT = "NSE_EQ";
-const DEFAULT_DHAN_MARKET_MODE = "ticker";
 
 function splitDhanCompositeSymbolToken(token: string): {
   symbol: string;
@@ -49,86 +60,35 @@ function splitDhanCompositeSymbolToken(token: string): {
   };
 }
 
-function parseDhanNativeStreamName(streamName: string): {
-  symbol: string;
-  securityId: string;
-  exchange: string;
-  mode: string;
-} {
-  const parts = streamName.split("@");
-
-  if (parts.length >= 4) {
-    return {
-      symbol: parts[0],
-      securityId: parts[1],
-      exchange: parts[2] || DEFAULT_DHAN_EXCHANGE_SEGMENT,
-      mode: parts[3] || DEFAULT_DHAN_MARKET_MODE,
-    };
-  }
-
-  if (parts.length >= 3) {
-    return {
-      symbol: parts[0],
-      securityId: parts[0],
-      exchange: parts[1] || DEFAULT_DHAN_EXCHANGE_SEGMENT,
-      mode: parts[2] || DEFAULT_DHAN_MARKET_MODE,
-    };
-  }
-
-  if (parts.length >= 2) {
-    return {
-      symbol: parts[0],
-      securityId: parts[0],
-      exchange: DEFAULT_DHAN_EXCHANGE_SEGMENT,
-      mode: parts[1] || DEFAULT_DHAN_MARKET_MODE,
-    };
-  }
-
-  return {
-    symbol: streamName,
-    securityId: streamName,
-    exchange: DEFAULT_DHAN_EXCHANGE_SEGMENT,
-    mode: DEFAULT_DHAN_MARKET_MODE,
-  };
-}
-
-function buildMetadataStreamNames(
+/**
+ * Resolve Dhan `SYMBOL:securityId` tokens once at subscribe time: seed the
+ * in-memory resolution map and return plain symbols for the generic stream-name
+ * builder. `*` and numeric-only tokens pass through unchanged.
+ */
+function preprocessDhanSubscriptionSymbols(
   symbols: string[],
-  streamTypes: string[],
   exchange?: string,
 ): string[] {
   const exchangeSegment =
     String(exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).trim() ||
     DEFAULT_DHAN_EXCHANGE_SEGMENT;
-  const streamNames: string[] = [];
+  const resolved: string[] = [];
 
   for (const symbolToken of symbols) {
-    const { symbol, securityId } = splitDhanCompositeSymbolToken(
-      String(symbolToken),
-    );
-    if (!symbol || !securityId) continue;
-
-    for (const streamType of streamTypes) {
-      streamNames.push(
-        `${symbol}@${securityId}@${exchangeSegment}@${streamType}`,
-      );
+    const raw = String(symbolToken).trim();
+    if (!raw) continue;
+    if (raw === "*") {
+      resolved.push(raw);
+      continue;
     }
+
+    const { symbol, securityId } = splitDhanCompositeSymbolToken(raw);
+    if (!symbol || !securityId) continue;
+    registerDhanInstrument(exchangeSegment, symbol, securityId);
+    resolved.push(symbol);
   }
 
-  return streamNames;
-}
-
-function toDhanRoutingStreamName(streamName: string): string {
-  const { securityId, exchange, mode } = parseDhanNativeStreamName(streamName);
-  return mode
-    ? `${exchange.toLowerCase()}:${securityId}@${mode}`
-    : `${exchange.toLowerCase()}:${securityId}`;
-}
-
-function buildDhanRoutingKeyFromEvent(event: CorezaMarketEvent): string {
-  const securityId = event.securityId || event.symbol;
-  const exchange = event.exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
-  return `${exchange.toLowerCase()}:${securityId}@${event.type}`;
+  return resolved;
 }
 
 function redactLoginToken(msg: unknown): unknown {
@@ -178,9 +138,9 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     separator: "@",
     symbolFirst: true,
     companionSources: ["dhan_trading"],
-    buildStreamNames: buildMetadataStreamNames,
-    toRoutingStreamName: toDhanRoutingStreamName,
-    buildRoutingKeyFromEvent: buildDhanRoutingKeyFromEvent,
+    preprocessSubscriptionSymbols: preprocessDhanSubscriptionSymbols,
+    persistSubscriptionState: getDhanInstrumentSnapshot,
+    restoreSubscriptionState: loadDhanInstrumentSnapshot,
     redactAuthMessage: redactLoginToken,
   },
 

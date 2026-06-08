@@ -76,16 +76,13 @@ function getUnifiedSocketStateSource(source: string): string {
   return cfg.unifiedSocket || baseCfg.unifiedSocket ? baseSource : source;
 }
 
-function getRoutingStreamNamesForControlMessage(
-  source: MarketSource,
-  streamNames: string[],
-): string[] {
-  const cfg = getBrokerStreamConfig(source);
-  if (!cfg.toRoutingStreamName) return streamNames;
-  return [...new Set(streamNames.map(cfg.toRoutingStreamName))];
-}
-
-function buildMarketStreamNamesForControlMessage(
+/**
+ * Build native market stream names for a control message using the generic
+ * builder. Brokers may optionally preprocess the requested symbols (e.g. Dhan
+ * splits `SYMBOL:securityId` tokens and seeds its in-memory resolution map).
+ * Routing keys are identical to these native names for every broker.
+ */
+function buildNativeStreamNames(
   source: MarketSource,
   symbols: string[],
   streamType: string[] | undefined,
@@ -94,18 +91,21 @@ function buildMarketStreamNamesForControlMessage(
   exchange?: string,
 ): string[] {
   const cfg = getBrokerStreamConfig(source);
-  if (cfg.buildStreamNames) {
-    return cfg.buildStreamNames(symbols, streamType || [], exchange);
-  }
+  const resolvedSymbols = cfg.preprocessSubscriptionSymbols
+    ? cfg.preprocessSubscriptionSymbols(symbols, exchange)
+    : symbols;
 
   return buildStreamNames(
     source,
-    symbols,
+    resolvedSymbols,
     streamType || [],
     interval || "",
     contractType,
+    exchange,
   );
 }
+
+
 
 export class MarketControlHandler {
   private static instance: MarketControlHandler;
@@ -761,7 +761,7 @@ export class MarketControlHandler {
           ? (streamType ?? []).map((eventType) =>
               tradingRoutingKey(source, eventType),
             )
-          : buildMarketStreamNamesForControlMessage(
+          : buildNativeStreamNames(
               source,
               symbols,
               streamType,
@@ -793,10 +793,8 @@ export class MarketControlHandler {
           // Subscribe gateway with stream names directly
           state.gateway.subscribeStreams(newStreamNames);
 
-          const routingStreamNames = getRoutingStreamNamesForControlMessage(
-            source,
-            newStreamNames,
-          );
+          // Routing keys are identical to native stream names.
+          const routingStreamNames = newStreamNames;
 
           // Persist to Redis
           await this.persistState(userId, source);
@@ -820,6 +818,16 @@ export class MarketControlHandler {
           console.log(
             `💾 [MarketControl] Stored ${routingStreamNames.length} routing stream names in ${streamsKey}`,
           );
+
+          // Persist broker resolution state (e.g. Dhan symbol->securityId map)
+          // for one-time rehydration on process restart (never per tick).
+          const subCfg = getBrokerStreamConfig(source);
+          if (subCfg.persistSubscriptionState) {
+            const snapshot = subCfg.persistSubscriptionState();
+            if (snapshot && Object.keys(snapshot).length > 0) {
+              await this.redisPub.hset(`md:resolution:${source}`, snapshot);
+            }
+          }
 
           // Extract symbols from new stream names for workflow notification
           // const newSymbols = [
@@ -849,7 +857,7 @@ export class MarketControlHandler {
 
           await this.updateActiveStreamingWorkflows(
             userId,
-            getRoutingStreamNamesForControlMessage(source, requestedStreamNames),
+            requestedStreamNames,
             // symbols,
             scope,
             targetWorkflowId,
@@ -928,7 +936,7 @@ export class MarketControlHandler {
           ? (streamType ?? []).map((eventType) =>
               tradingRoutingKey(source, eventType),
             )
-          : buildMarketStreamNamesForControlMessage(
+          : buildNativeStreamNames(
               source,
               symbols,
               streamType,
@@ -976,10 +984,8 @@ export class MarketControlHandler {
           streamNamesToRemove.length > 0 &&
           (!tradingSource || shouldRemoveGatewayStreams)
         ) {
-          const routingStreamNamesToRemove = getRoutingStreamNamesForControlMessage(
-            source,
-            streamNamesToRemove,
-          );
+          // Routing keys are identical to native stream names.
+          const routingStreamNamesToRemove = streamNamesToRemove;
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -1289,12 +1295,26 @@ export class MarketControlHandler {
               state = this.sourceStates.get(restoredStateKey)!;
             }
 
+            // Rehydrate broker resolution state (e.g. Dhan symbol->securityId
+            // map) before resubscribing so native names without securityId can
+            // still be resolved. One-time lookup, never per tick.
+            const restoreCfg = getBrokerStreamConfig(source as MarketSource);
+            if (restoreCfg.restoreSubscriptionState) {
+              const snapshot = await this.redisPub.hgetall(
+                `md:resolution:${source}`,
+              );
+              if (snapshot && Object.keys(snapshot).length > 0) {
+                restoreCfg.restoreSubscriptionState(snapshot);
+              }
+            }
+
             // Restore streams directly - no conversion needed!
             if (stateData.streams && Array.isArray(stateData.streams)) {
               stateData.streams.forEach((s: string) => state.streams.add(s));
 
               // Subscribe gateway with stored stream names
               state.gateway.subscribeStreams(stateData.streams);
+
 
               console.log(
                 `🔄 [MarketControl] Restored ${stateData.streams.length} streams on ${source}`,

@@ -313,21 +313,18 @@ export class MarketDataGateway {
         // Publish to Redis symbol channel with circuit breaker
         // Trading sources use fixed stream names to match subscriber expectations
 
-        const rawStream = isTradingLifecycleEvent
+        const exchangePart = event.exchange
+          ? `@${event.exchange.toLowerCase()}`
+          : "";
+        const stream = isTradingLifecycleEvent
           ? event.type
           : event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
-              : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+              : `${event.symbol.toLowerCase()}${exchangePart}@${event.type}_${event.timeframe}`
             : event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
-              : `${event.symbol.toLowerCase()}@${event.type}`;
-        const streamConfig = getBrokerStreamConfig(this.source);
-        const stream = streamConfig.buildRoutingKeyFromEvent
-          ? streamConfig.buildRoutingKeyFromEvent(event)
-          : streamConfig.toRoutingStreamName
-            ? streamConfig.toRoutingStreamName(rawStream)
-            : rawStream;
+              : `${event.symbol.toLowerCase()}${exchangePart}@${event.type}`;
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));

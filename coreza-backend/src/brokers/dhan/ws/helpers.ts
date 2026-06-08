@@ -180,11 +180,69 @@ const symbolToSecurityId = new Map<string, DhanInstrumentMeta>();
 const securityIdToSymbol = new Map<string, DhanInstrumentMeta>();
 
 function dhanSymbolKey(exchange: string, symbol: string): string {
-  return `${exchange}:${symbol}`;
+  return `${String(exchange).toUpperCase()}:${String(symbol).toUpperCase()}`;
 }
 
 function dhanSecurityIdKey(exchange: string, securityId: string): string {
-  return `${exchange}:${securityId}`;
+  return `${String(exchange).toUpperCase()}:${String(securityId)}`;
+}
+
+/**
+ * Seed the in-memory symbol <-> securityId map once at subscribe time.
+ * Never called per tick. Module-level maps survive reconnect; restart
+ * durability is provided by the snapshot helpers below.
+ */
+export function registerDhanInstrument(
+  exchange: string,
+  symbol: string,
+  securityId: string,
+): void {
+  const exch =
+    String(exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase() ||
+    DEFAULT_DHAN_EXCHANGE_SEGMENT;
+  const sym = String(symbol).toUpperCase();
+  const secId = String(securityId);
+  if (!sym || !secId) return;
+
+  const meta: DhanInstrumentMeta = {
+    symbol: sym,
+    securityId: secId,
+    exchange: exch,
+  };
+  symbolToSecurityId.set(dhanSymbolKey(exch, sym), meta);
+  securityIdToSymbol.set(dhanSecurityIdKey(exch, secId), meta);
+}
+
+/** Snapshot the map for Redis persistence (one-time, never per tick). */
+export function getDhanInstrumentSnapshot(): Record<string, string> {
+  const snapshot: Record<string, string> = {};
+  for (const [key, meta] of securityIdToSymbol.entries()) {
+    snapshot[key] = JSON.stringify(meta);
+  }
+  return snapshot;
+}
+
+/** Rehydrate the map from a Redis snapshot at startup. */
+export function loadDhanInstrumentSnapshot(
+  snapshot: Record<string, string> | null | undefined,
+): void {
+  if (!snapshot) return;
+  for (const value of Object.values(snapshot)) {
+    try {
+      const meta = JSON.parse(value) as DhanInstrumentMeta;
+      registerDhanInstrument(meta.exchange, meta.symbol, meta.securityId);
+    } catch {
+      // ignore malformed entries
+    }
+  }
+}
+
+function resolveDhanSecurityId(exchange: string, symbol: string): string {
+  const meta = symbolToSecurityId.get(dhanSymbolKey(exchange, symbol));
+  if (meta) return meta.securityId;
+  // A numeric symbol is already the securityId.
+  if (/^\d+$/.test(symbol)) return symbol;
+  return '';
 }
 
 const DHAN_REQUEST_CODES: Record<DhanMarketMode, DhanRequestCodes> = {
@@ -205,9 +263,10 @@ function normalizeDhanMarketMode(value?: string): DhanMarketMode {
 function parseDhanStreamName(streamName: string): DhanStreamMetadata {
   const parts = streamName.split('@');
 
+  // Legacy 4-part: symbol@securityId@exchange@mode (backward compatible)
   if (parts.length >= 4) {
     const [symbol, securityId, exchange, mode] = parts;
-    const exchangeSegment = exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
+    const exchangeSegment = (exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase();
     return {
       symbol,
       securityId,
@@ -218,19 +277,30 @@ function parseDhanStreamName(streamName: string): DhanStreamMetadata {
     };
   }
 
-  const [securityId, exchangeOrMode, mode] = parts;
-  const hasExchangeSegment = Boolean(mode);
-  const exchangeSegment = hasExchangeSegment
-    ? exchangeOrMode
-    : DEFAULT_DHAN_EXCHANGE_SEGMENT;
+  // Canonical 3-part: symbol@exchange@mode
+  if (parts.length === 3) {
+    const [symbol, exchange, mode] = parts;
+    const exchangeSegment = (exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase();
+    const securityId = resolveDhanSecurityId(exchangeSegment, symbol);
+    return {
+      symbol,
+      securityId,
+      exchange: exchangeSegment,
+      SecurityId: securityId,
+      ExchangeSegment: exchangeSegment,
+      mode: normalizeDhanMarketMode(mode),
+    };
+  }
 
+  // Legacy 2-part: securityId@mode
+  const [securityId, mode] = parts;
   return {
     symbol: securityId,
     securityId,
-    exchange: exchangeSegment,
+    exchange: DEFAULT_DHAN_EXCHANGE_SEGMENT,
     SecurityId: securityId,
-    ExchangeSegment: exchangeSegment,
-    mode: normalizeDhanMarketMode(hasExchangeSegment ? mode : exchangeOrMode),
+    ExchangeSegment: DEFAULT_DHAN_EXCHANGE_SEGMENT,
+    mode: normalizeDhanMarketMode(mode),
   };
 }
 
@@ -258,29 +328,6 @@ function buildDhanMarketMessages(
   for (const streamName of streamNames) {
     const parsed = parseDhanStreamName(streamName);
     if (!parsed.SecurityId) continue;
-
-    const meta: DhanInstrumentMeta = {
-      symbol: parsed.symbol,
-      securityId: parsed.SecurityId,
-      exchange: parsed.ExchangeSegment,
-    };
-    const symbolKey = dhanSymbolKey(meta.exchange, meta.symbol);
-    const securityIdKey = dhanSecurityIdKey(meta.exchange, meta.securityId);
-
-    if (action === 'sub') {
-      symbolToSecurityId.set(symbolKey, meta);
-      securityIdToSymbol.set(securityIdKey, meta);
-    } else {
-      const existingMeta = securityIdToSymbol.get(securityIdKey);
-      if (existingMeta) {
-        symbolToSecurityId.delete(
-          dhanSymbolKey(existingMeta.exchange, existingMeta.symbol),
-        );
-      } else {
-        symbolToSecurityId.delete(symbolKey);
-      }
-      securityIdToSymbol.delete(securityIdKey);
-    }
 
     const requestCode = DHAN_REQUEST_CODES[parsed.mode][action];
     const instruments = instrumentsByRequestCode.get(requestCode) || [];

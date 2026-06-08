@@ -5,6 +5,7 @@ export interface StreamIdentifier {
   streamType: string;
   interval?: string;
   contractType?: string;
+  exchange?: string;
 }
 
 export const NATIVE_TRADING_STREAM_NAMES = new Set([
@@ -36,6 +37,7 @@ export function buildStreamName(
   streamType: string,
   interval?: string,
   contractType?: string,
+  exchange?: string,
 ): string {
   if (source.endsWith("_trading")) return tradingRoutingKey(source, streamType);
   const cfg = getBrokerStreamConfig(source);
@@ -51,9 +53,12 @@ export function buildStreamName(
   const typePart = interval
     ? `${normalizedStreamType}_${interval}`
     : normalizedStreamType;
+  const exchangePart = exchange
+    ? `${cfg.separator}${exchange.toLowerCase()}`
+    : "";
   return cfg.symbolFirst
-    ? `${symbol}${cfg.separator}${typePart}`
-    : `${typePart}${cfg.separator}${symbol}`;
+    ? `${symbol}${exchangePart}${cfg.separator}${typePart}`
+    : `${typePart}${cfg.separator}${symbol}${exchangePart}`;
 }
 
 export function parseStreamName(
@@ -63,6 +68,19 @@ export function parseStreamName(
   if (NATIVE_TRADING_STREAM_NAMES.has(streamName))
     return { symbol: "*", streamType: streamName };
   const cfg = getBrokerStreamConfig(source);
+
+  // Exchange-qualified names: symbol@exchange@type[_interval] (e.g. dhan)
+  if (cfg.symbolFirst && !streamName.includes("continuous")) {
+    const parts = streamName.split(cfg.separator);
+    if (parts.length === 3) {
+      const [rawSymbol, exchange, typeWithInterval] = parts;
+      return {
+        ...parseTypeWithInterval(rawSymbol, typeWithInterval),
+        exchange,
+      };
+    }
+  }
+
   const idx = streamName.indexOf(cfg.separator);
   if (idx === -1)
     return { symbol: streamName.toUpperCase(), streamType: "unknown" };
@@ -70,7 +88,13 @@ export function parseStreamName(
   const right = streamName.slice(idx + cfg.separator.length);
   const rawSymbol = cfg.symbolFirst ? left : right;
   const typeWithInterval = cfg.symbolFirst ? right : left;
+  return parseTypeWithInterval(rawSymbol, typeWithInterval);
+}
 
+function parseTypeWithInterval(
+  rawSymbol: string,
+  typeWithInterval: string,
+): StreamIdentifier {
   if (typeWithInterval.startsWith("depth")) {
     const d = typeWithInterval.slice(5);
     return {
@@ -105,6 +129,7 @@ export function buildStreamNames(
   streamTypes: string[],
   interval: string,
   contractType?: string,
+  exchange?: string,
 ): string[] {
   const streamNames: string[] = [];
   for (const symbol of symbols)
@@ -116,6 +141,7 @@ export function buildStreamNames(
           streamType,
           interval,
           contractType,
+          exchange,
         ),
       );
   return streamNames;

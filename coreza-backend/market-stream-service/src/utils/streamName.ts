@@ -129,6 +129,7 @@ export function buildStreamNames(
   streamTypes: string[],
   interval: string,
   contractType?: string,
+  exchange?: string,
 ): string[] {
   const streamNames: string[] = [];
   for (const symbol of symbols)
@@ -140,6 +141,7 @@ export function buildStreamNames(
           streamType,
           interval,
           contractType,
+          exchange,
         ),
       );
   return streamNames;

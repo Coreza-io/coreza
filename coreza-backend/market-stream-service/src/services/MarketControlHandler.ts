@@ -1295,12 +1295,26 @@ export class MarketControlHandler {
               state = this.sourceStates.get(restoredStateKey)!;
             }
 
+            // Rehydrate broker resolution state (e.g. Dhan symbol->securityId
+            // map) before resubscribing so native names without securityId can
+            // still be resolved. One-time lookup, never per tick.
+            const restoreCfg = getBrokerStreamConfig(source as MarketSource);
+            if (restoreCfg.restoreSubscriptionState) {
+              const snapshot = await this.redisPub.hgetall(
+                `md:resolution:${source}`,
+              );
+              if (snapshot && Object.keys(snapshot).length > 0) {
+                restoreCfg.restoreSubscriptionState(snapshot);
+              }
+            }
+
             // Restore streams directly - no conversion needed!
             if (stateData.streams && Array.isArray(stateData.streams)) {
               stateData.streams.forEach((s: string) => state.streams.add(s));
 
               // Subscribe gateway with stored stream names
               state.gateway.subscribeStreams(stateData.streams);
+
 
               console.log(
                 `🔄 [MarketControl] Restored ${stateData.streams.length} streams on ${source}`,

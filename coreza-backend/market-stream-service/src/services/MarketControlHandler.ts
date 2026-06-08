@@ -761,7 +761,7 @@ export class MarketControlHandler {
           ? (streamType ?? []).map((eventType) =>
               tradingRoutingKey(source, eventType),
             )
-          : buildMarketStreamNamesForControlMessage(
+          : buildNativeStreamNames(
               source,
               symbols,
               streamType,

@@ -68,6 +68,19 @@ export function parseStreamName(
   if (NATIVE_TRADING_STREAM_NAMES.has(streamName))
     return { symbol: "*", streamType: streamName };
   const cfg = getBrokerStreamConfig(source);
+
+  // Exchange-qualified names: symbol@exchange@type[_interval] (e.g. dhan)
+  if (cfg.symbolFirst && !streamName.includes("continuous")) {
+    const parts = streamName.split(cfg.separator);
+    if (parts.length === 3) {
+      const [rawSymbol, exchange, typeWithInterval] = parts;
+      return {
+        ...parseTypeWithInterval(rawSymbol, typeWithInterval),
+        exchange,
+      };
+    }
+  }
+
   const idx = streamName.indexOf(cfg.separator);
   if (idx === -1)
     return { symbol: streamName.toUpperCase(), streamType: "unknown" };
@@ -75,7 +88,13 @@ export function parseStreamName(
   const right = streamName.slice(idx + cfg.separator.length);
   const rawSymbol = cfg.symbolFirst ? left : right;
   const typeWithInterval = cfg.symbolFirst ? right : left;
+  return parseTypeWithInterval(rawSymbol, typeWithInterval);
+}
 
+function parseTypeWithInterval(
+  rawSymbol: string,
+  typeWithInterval: string,
+): StreamIdentifier {
   if (typeWithInterval.startsWith("depth")) {
     const d = typeWithInterval.slice(5);
     return {

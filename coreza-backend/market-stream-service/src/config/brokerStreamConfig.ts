@@ -138,9 +138,9 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     separator: "@",
     symbolFirst: true,
     companionSources: ["dhan_trading"],
-    buildStreamNames: buildMetadataStreamNames,
-    toRoutingStreamName: toDhanRoutingStreamName,
-    buildRoutingKeyFromEvent: buildDhanRoutingKeyFromEvent,
+    preprocessSubscriptionSymbols: preprocessDhanSubscriptionSymbols,
+    persistSubscriptionState: getDhanInstrumentSnapshot,
+    restoreSubscriptionState: loadDhanInstrumentSnapshot,
     redactAuthMessage: redactLoginToken,
   },
 

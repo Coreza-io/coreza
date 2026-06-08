@@ -329,29 +329,6 @@ function buildDhanMarketMessages(
     const parsed = parseDhanStreamName(streamName);
     if (!parsed.SecurityId) continue;
 
-    const meta: DhanInstrumentMeta = {
-      symbol: parsed.symbol,
-      securityId: parsed.SecurityId,
-      exchange: parsed.ExchangeSegment,
-    };
-    const symbolKey = dhanSymbolKey(meta.exchange, meta.symbol);
-    const securityIdKey = dhanSecurityIdKey(meta.exchange, meta.securityId);
-
-    if (action === 'sub') {
-      symbolToSecurityId.set(symbolKey, meta);
-      securityIdToSymbol.set(securityIdKey, meta);
-    } else {
-      const existingMeta = securityIdToSymbol.get(securityIdKey);
-      if (existingMeta) {
-        symbolToSecurityId.delete(
-          dhanSymbolKey(existingMeta.exchange, existingMeta.symbol),
-        );
-      } else {
-        symbolToSecurityId.delete(symbolKey);
-      }
-      securityIdToSymbol.delete(securityIdKey);
-    }
-
     const requestCode = DHAN_REQUEST_CODES[parsed.mode][action];
     const instruments = instrumentsByRequestCode.get(requestCode) || [];
     instruments.push({

@@ -59,26 +59,22 @@ describe('Dhan order-update stream', () => {
       UserType: 'SELF',
     };
 
-    expect(marketConfig.buildStreamNames?.(['HDFCBANK:1333'], ['ticker', 'quote'], 'NSE_EQ')).toEqual([
-      'HDFCBANK@1333@NSE_EQ@ticker',
-      'HDFCBANK@1333@NSE_EQ@quote',
-    ]);
-    expect(marketConfig.buildStreamNames?.(['2885'], ['ticker'], 'BSE_EQ')).toEqual([
-      '2885@2885@BSE_EQ@ticker',
-    ]);
-    expect(marketConfig.toRoutingStreamName?.('HDFCBANK@1333@NSE_EQ@ticker')).toBe('nse_eq:1333@ticker');
-    expect(marketConfig.toRoutingStreamName?.('2885@BSE_EQ@quote')).toBe('bse_eq:2885@quote');
-    expect(marketConfig.toRoutingStreamName?.('2885@quote')).toBe('nse_eq:2885@quote');
-    expect(marketConfig.toRoutingStreamName?.('2885')).toBe('nse_eq:2885@ticker');
+    // Preprocess seeds the symbol<->securityId map and returns plain symbols.
     expect(
-      marketConfig.buildRoutingKeyFromEvent?.({
-        source: 'dhan',
-        symbol: 'HDFCBANK',
-        securityId: '1333',
-        exchange: 'NSE_EQ',
-        type: 'ticker',
-      }),
-    ).toBe('nse_eq:1333@ticker');
+      marketConfig.preprocessSubscriptionSymbols?.(['HDFCBANK:1333'], 'NSE_EQ'),
+    ).toEqual(['HDFCBANK']);
+    expect(marketConfig.preprocessSubscriptionSymbols?.(['2885'], 'BSE_EQ')).toEqual([
+      '2885',
+    ]);
+
+    // Native names ride the generic builder: symbol@exchange@type (lowercased).
+    expect(
+      buildStreamNames('dhan_stream', ['HDFCBANK'], ['ticker', 'quote'], '', undefined, 'NSE_EQ'),
+    ).toEqual(['hdfcbank@nse_eq@ticker', 'hdfcbank@nse_eq@quote']);
+    expect(
+      buildStreamNames('dhan_stream', ['2885'], ['ticker'], '', undefined, 'BSE_EQ'),
+    ).toEqual(['2885@bse_eq@ticker']);
+
     expect(tradingConfig.redactAuthMessage?.(authMessage)).toEqual({
       LoginReq: {
         MsgCode: 42,

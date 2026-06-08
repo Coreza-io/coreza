@@ -6,6 +6,7 @@ import {
   parseDhanMessage,
 } from '../src/marketGateways/dhan/helpers';
 import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from '../src/config/brokerStreamConfig';
+import { buildStreamNames } from '../src/utils/streamName';
 import { SOURCE_MAPPING } from '../src/marketGateways';
 import {
   getDhanMarketWsUrl,

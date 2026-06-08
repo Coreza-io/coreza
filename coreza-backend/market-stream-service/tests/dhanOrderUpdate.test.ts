@@ -183,9 +183,8 @@ describe('Dhan order-update stream', () => {
       type: 'ticker',
       p: 2500.5,
     });
-    expect(
-      getBrokerStreamConfig('dhan').buildRoutingKeyFromEvent?.(normalized!),
-    ).toBe('nse_eq:2885@ticker');
+    expect(normalized?.symbol).toBe('RELIANCE');
+    expect(normalized?.exchange).toBe('NSE_EQ');
   });
 
   it('enriches Dhan ticks from composite subscription metadata', () => {

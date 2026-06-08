@@ -793,10 +793,8 @@ export class MarketControlHandler {
           // Subscribe gateway with stream names directly
           state.gateway.subscribeStreams(newStreamNames);
 
-          const routingStreamNames = getRoutingStreamNamesForControlMessage(
-            source,
-            newStreamNames,
-          );
+          // Routing keys are identical to native stream names.
+          const routingStreamNames = newStreamNames;
 
           // Persist to Redis
           await this.persistState(userId, source);

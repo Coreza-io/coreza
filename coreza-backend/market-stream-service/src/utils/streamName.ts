@@ -5,6 +5,7 @@ export interface StreamIdentifier {
   streamType: string;
   interval?: string;
   contractType?: string;
+  exchange?: string;
 }
 
 export const NATIVE_TRADING_STREAM_NAMES = new Set([

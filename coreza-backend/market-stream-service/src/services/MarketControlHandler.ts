@@ -76,16 +76,13 @@ function getUnifiedSocketStateSource(source: string): string {
   return cfg.unifiedSocket || baseCfg.unifiedSocket ? baseSource : source;
 }
 
-function getRoutingStreamNamesForControlMessage(
-  source: MarketSource,
-  streamNames: string[],
-): string[] {
-  const cfg = getBrokerStreamConfig(source);
-  if (!cfg.toRoutingStreamName) return streamNames;
-  return [...new Set(streamNames.map(cfg.toRoutingStreamName))];
-}
-
-function buildMarketStreamNamesForControlMessage(
+/**
+ * Build native market stream names for a control message using the generic
+ * builder. Brokers may optionally preprocess the requested symbols (e.g. Dhan
+ * splits `SYMBOL:securityId` tokens and seeds its in-memory resolution map).
+ * Routing keys are identical to these native names for every broker.
+ */
+function buildNativeStreamNames(
   source: MarketSource,
   symbols: string[],
   streamType: string[] | undefined,
@@ -94,18 +91,21 @@ function buildMarketStreamNamesForControlMessage(
   exchange?: string,
 ): string[] {
   const cfg = getBrokerStreamConfig(source);
-  if (cfg.buildStreamNames) {
-    return cfg.buildStreamNames(symbols, streamType || [], exchange);
-  }
+  const resolvedSymbols = cfg.preprocessSubscriptionSymbols
+    ? cfg.preprocessSubscriptionSymbols(symbols, exchange)
+    : symbols;
 
   return buildStreamNames(
     source,
-    symbols,
+    resolvedSymbols,
     streamType || [],
     interval || "",
     contractType,
+    exchange,
   );
 }
+
+
 
 export class MarketControlHandler {
   private static instance: MarketControlHandler;

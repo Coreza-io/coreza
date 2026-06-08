@@ -263,9 +263,10 @@ function normalizeDhanMarketMode(value?: string): DhanMarketMode {
 function parseDhanStreamName(streamName: string): DhanStreamMetadata {
   const parts = streamName.split('@');
 
+  // Legacy 4-part: symbol@securityId@exchange@mode (backward compatible)
   if (parts.length >= 4) {
     const [symbol, securityId, exchange, mode] = parts;
-    const exchangeSegment = exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT;
+    const exchangeSegment = (exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase();
     return {
       symbol,
       securityId,
@@ -276,19 +277,30 @@ function parseDhanStreamName(streamName: string): DhanStreamMetadata {
     };
   }
 
-  const [securityId, exchangeOrMode, mode] = parts;
-  const hasExchangeSegment = Boolean(mode);
-  const exchangeSegment = hasExchangeSegment
-    ? exchangeOrMode
-    : DEFAULT_DHAN_EXCHANGE_SEGMENT;
+  // Canonical 3-part: symbol@exchange@mode
+  if (parts.length === 3) {
+    const [symbol, exchange, mode] = parts;
+    const exchangeSegment = (exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase();
+    const securityId = resolveDhanSecurityId(exchangeSegment, symbol);
+    return {
+      symbol,
+      securityId,
+      exchange: exchangeSegment,
+      SecurityId: securityId,
+      ExchangeSegment: exchangeSegment,
+      mode: normalizeDhanMarketMode(mode),
+    };
+  }
 
+  // Legacy 2-part: securityId@mode
+  const [securityId, mode] = parts;
   return {
     symbol: securityId,
     securityId,
-    exchange: exchangeSegment,
+    exchange: DEFAULT_DHAN_EXCHANGE_SEGMENT,
     SecurityId: securityId,
-    ExchangeSegment: exchangeSegment,
-    mode: normalizeDhanMarketMode(hasExchangeSegment ? mode : exchangeOrMode),
+    ExchangeSegment: DEFAULT_DHAN_EXCHANGE_SEGMENT,
+    mode: normalizeDhanMarketMode(mode),
   };
 }
 

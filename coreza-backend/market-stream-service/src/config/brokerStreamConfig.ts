@@ -1,15 +1,27 @@
-import type { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
+import type { MarketSource } from "../types/marketEvent";
+import {
+  registerDhanInstrument,
+  getDhanInstrumentSnapshot,
+  loadDhanInstrumentSnapshot,
+} from "../marketGateways/dhan/helpers";
 
 export interface BrokerStreamConfig {
   separator: string;
   symbolFirst: boolean;
-  buildStreamNames?: (
+  /**
+   * Optional, broker-agnostic hook to transform the requested subscription
+   * symbols before generic stream-name building. Used by Dhan to split
+   * composite `SYMBOL:securityId` tokens, seed the in-memory resolution map,
+   * and return plain symbols. Defaults to identity.
+   */
+  preprocessSubscriptionSymbols?: (
     symbols: string[],
-    streamTypes: string[],
     exchange?: string,
   ) => string[];
-  toRoutingStreamName?: (streamName: string) => string;
-  buildRoutingKeyFromEvent?: (event: CorezaMarketEvent) => string;
+  /** Optional snapshot of broker resolution state for Redis persistence. */
+  persistSubscriptionState?: () => Record<string, string> | null;
+  /** Optional rehydration of broker resolution state at startup. */
+  restoreSubscriptionState?: (snapshot: Record<string, string>) => void;
   redactAuthMessage?: (msg: unknown) => unknown;
   tradingStreams?: Partial<Record<"spot" | "futures" | "account", string[]>>;
   tradingRoutingKey?: (eventType: string) => string;

@@ -18,6 +18,7 @@ export interface StreamIdentifier {
   eventType: string;
   interval?: string;
   contractType?: string;
+  exchange?: string;
 }
 
 export interface CredentialField {
@@ -329,6 +330,62 @@ export function resolveStreamSourceFromBroker(
   return source;
 }
 
+function parseSymbolFirstAtStreamName(
+  rawSymbol: string,
+  typeWithInterval: string,
+  normalizeEventType?: (eventType: string) => string,
+  exchange?: string,
+  allowContinuousKline = true,
+): StreamIdentifier {
+  const baseIdentifier: Pick<StreamIdentifier, "symbol" | "exchange"> = {
+    symbol: rawSymbol.toUpperCase(),
+  };
+  if (exchange !== undefined) {
+    baseIdentifier.exchange = exchange;
+  }
+
+  if (typeWithInterval.startsWith("depth")) {
+    const interval = typeWithInterval.slice(5);
+    return {
+      ...baseIdentifier,
+      eventType: "depth",
+      interval: interval || "20",
+    };
+  }
+
+  const underscoreIndex = typeWithInterval.indexOf("_");
+  if (underscoreIndex !== -1) {
+    let eventType = typeWithInterval.slice(0, underscoreIndex);
+    const interval = typeWithInterval.slice(underscoreIndex + 1);
+
+    if (normalizeEventType) {
+      eventType = normalizeEventType(eventType);
+    }
+
+    if (
+      allowContinuousKline &&
+      (eventType === "continuous_kline" || eventType === "continuousKline")
+    ) {
+      const [symbolPart, ...contractParts] = rawSymbol.split("_");
+      return {
+        symbol: symbolPart.toUpperCase(),
+        eventType: "continuousKline",
+        interval,
+        contractType: contractParts.length
+          ? contractParts.join("_")
+          : "perpetual",
+      };
+    }
+
+    return { ...baseIdentifier, eventType, interval };
+  }
+
+  const resolvedEventType = normalizeEventType
+    ? normalizeEventType(typeWithInterval)
+    : typeWithInterval;
+  return { ...baseIdentifier, eventType: resolvedEventType };
+}
+
 /** Parse a stream name using broker-specific rules */
 export function parseStreamNameBySource(
   source: string,
@@ -393,43 +450,27 @@ export function parseStreamNameBySource(
   // Normalize event type if broker provides normalizer
   const normalizeEventType = cap.streamParser.normalizeEventType;
 
-  if (typeWithInterval.startsWith("depth")) {
-    const interval = typeWithInterval.slice(5);
-    return {
-      symbol: rawSymbol.toUpperCase(),
-      eventType: "depth",
-      interval: interval || "20",
-    };
+  const segments = streamName.split("@");
+  if (
+    segments.length === 3 &&
+    !streamName.includes("@continuous_kline") &&
+    !streamName.includes("@continuousKline")
+  ) {
+    const [rawExchangeSymbol, exchange, exchangeTypeWithInterval] = segments;
+    return parseSymbolFirstAtStreamName(
+      rawExchangeSymbol,
+      exchangeTypeWithInterval,
+      normalizeEventType,
+      exchange,
+      false,
+    );
   }
 
-  const underscoreIndex = typeWithInterval.indexOf("_");
-  if (underscoreIndex !== -1) {
-    let eventType = typeWithInterval.slice(0, underscoreIndex);
-    const interval = typeWithInterval.slice(underscoreIndex + 1);
-
-    if (normalizeEventType) {
-      eventType = normalizeEventType(eventType);
-    }
-
-    if (eventType === "continuous_kline" || eventType === "continuousKline") {
-      const [symbolPart, ...contractParts] = rawSymbol.split("_");
-      return {
-        symbol: symbolPart.toUpperCase(),
-        eventType: "continuousKline",
-        interval,
-        contractType: contractParts.length
-          ? contractParts.join("_")
-          : "perpetual",
-      };
-    }
-
-    return { symbol: rawSymbol.toUpperCase(), eventType, interval };
-  }
-
-  const resolvedEventType = normalizeEventType
-    ? normalizeEventType(typeWithInterval)
-    : typeWithInterval;
-  return { symbol: rawSymbol.toUpperCase(), eventType: resolvedEventType };
+  return parseSymbolFirstAtStreamName(
+    rawSymbol,
+    typeWithInterval,
+    normalizeEventType,
+  );
 }
 
 /** Build a stream name using broker-specific rules */
@@ -439,6 +480,7 @@ export function buildStreamNameBySource(
   eventType: string,
   interval?: string,
   contractType?: string,
+  exchange?: string,
 ): string {
   const brokerKey = source.split("_")[0];
   const cap = BROKER_CAPABILITIES[brokerKey];
@@ -468,6 +510,13 @@ export function buildStreamNameBySource(
     resolvedEventType === "continuous_kline"
       ? `${symbol.toLowerCase()}_${normalizedContractType}`
       : symbol.toLowerCase();
+
+  if (exchange && resolvedEventType !== "continuous_kline") {
+    const exchangeQualifiedSym = `${sym}@${exchange.toLowerCase()}`;
+    return interval
+      ? `${exchangeQualifiedSym}@${resolvedEventType}_${interval}`
+      : `${exchangeQualifiedSym}@${resolvedEventType}`;
+  }
 
   return interval
     ? `${sym}@${resolvedEventType}_${interval}`

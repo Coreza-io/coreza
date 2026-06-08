@@ -21,6 +21,7 @@ export interface StreamIdentifier {
   eventType: string;
   interval?: string;
   contractType?: string;
+  exchange?: string;
 }
 
 export const NATIVE_TRADING_STREAM_NAMES = new Set([
@@ -50,13 +51,21 @@ function buildStreamKey(
   eventType: string,
   interval?: string,
   contractType?: string,
+  exchange?: string,
 ): string {
   // Trading sources route through their routing key
   if (isTradingSource(source)) {
     return getTradingRoutingKey(source, eventType);
   }
 
-  return buildStreamNameBySource(source, symbol, eventType, interval, contractType);
+  return buildStreamNameBySource(
+    source,
+    symbol,
+    eventType,
+    interval,
+    contractType,
+    exchange,
+  );
 }
 
 export function buildStreamName(
@@ -65,8 +74,16 @@ export function buildStreamName(
   eventType: string,
   interval?: string,
   contractType?: string,
+  exchange?: string,
 ): string {
-  return buildStreamKey(source, symbol, eventType, interval, contractType);
+  return buildStreamKey(
+    source,
+    symbol,
+    eventType,
+    interval,
+    contractType,
+    exchange,
+  );
 }
 
 export function parseStreamName(
@@ -86,6 +103,7 @@ export function buildStreamNames(
   eventTypes: string[],
   interval?: string,
   contractType?: string,
+  exchange?: string,
 ): string[] {
   const streamNames: string[] = [];
   const brokerKey = source.split("_")[0];
@@ -108,7 +126,14 @@ export function buildStreamNames(
         const type = eventType.slice(0, underscoreIndex);
         const embeddedInterval = eventType.slice(underscoreIndex + 1);
         streamNames.push(
-          buildStreamName(source, symbol, type, embeddedInterval, contractType),
+          buildStreamName(
+            source,
+            symbol,
+            type,
+            embeddedInterval,
+            contractType,
+            exchange,
+          ),
         );
       } else if (eventType.startsWith("depth") && normalizeEventType) {
         const depthInterval = eventType.slice(5);
@@ -119,11 +144,19 @@ export function buildStreamNames(
             "depth",
             depthInterval || "20",
             contractType,
+            exchange,
           ),
         );
       } else {
         streamNames.push(
-          buildStreamName(source, symbol, eventType, interval, contractType),
+          buildStreamName(
+            source,
+            symbol,
+            eventType,
+            interval,
+            contractType,
+            exchange,
+          ),
         );
       }
     }

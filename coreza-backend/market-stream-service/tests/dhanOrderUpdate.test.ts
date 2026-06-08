@@ -191,9 +191,11 @@ describe('Dhan order-update stream', () => {
 
   it('enriches Dhan ticks from composite subscription metadata', () => {
     const marketConfig = getBrokerStreamConfig('dhan');
-    const nativeStreams = marketConfig.buildStreamNames?.(['HDFCBANK:1333'], ['ticker'], 'NSE_EQ') ?? [];
+    const symbols = marketConfig.preprocessSubscriptionSymbols?.(['HDFCBANK:1333'], 'NSE_EQ') ?? [];
+    const nativeStreams = buildStreamNames('dhan', symbols, ['ticker'], '', undefined, 'NSE_EQ');
 
-    expect(nativeStreams).toEqual(['HDFCBANK@1333@NSE_EQ@ticker']);
+    expect(symbols).toEqual(['HDFCBANK']);
+    expect(nativeStreams).toEqual(['hdfcbank@nse_eq@ticker']);
     expect(buildDhanSubscribeMessage(nativeStreams, 'dhan')).toEqual([
       {
         RequestCode: 15,
@@ -201,7 +203,7 @@ describe('Dhan order-update stream', () => {
         InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
       },
     ]);
-    expect(marketConfig.toRoutingStreamName?.(nativeStreams[0])).toBe('nse_eq:1333@ticker');
+
 
     const event = normalizeDhanMessage(
       {

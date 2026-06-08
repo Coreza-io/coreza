@@ -819,6 +819,16 @@ export class MarketControlHandler {
             `💾 [MarketControl] Stored ${routingStreamNames.length} routing stream names in ${streamsKey}`,
           );
 
+          // Persist broker resolution state (e.g. Dhan symbol->securityId map)
+          // for one-time rehydration on process restart (never per tick).
+          const subCfg = getBrokerStreamConfig(source);
+          if (subCfg.persistSubscriptionState) {
+            const snapshot = subCfg.persistSubscriptionState();
+            if (snapshot && Object.keys(snapshot).length > 0) {
+              await this.redisPub.hset(`md:resolution:${source}`, snapshot);
+            }
+          }
+
           // Extract symbols from new stream names for workflow notification
           // const newSymbols = [
           //   ...new Set(

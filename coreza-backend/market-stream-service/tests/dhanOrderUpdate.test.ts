@@ -128,6 +128,8 @@ describe('Dhan order-update stream', () => {
   });
 
   it('sends Dhan market subscriptions as grouped JSON payloads and parses binary responses', () => {
+    // Seed the resolution map so incoming ticks enrich back to the symbol.
+    getBrokerStreamConfig('dhan').preprocessSubscriptionSymbols?.(['RELIANCE:2885'], 'NSE_EQ');
     const subscribeMessages = buildDhanSubscribeMessage(
       ['RELIANCE@2885@NSE_EQ@ticker', '500325@BSE_EQ@quote', '35000@NSE_FNO@full'],
       'dhan',

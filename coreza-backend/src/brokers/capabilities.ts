@@ -45,6 +45,7 @@ export interface StreamParserConfig {
     eventType: string,
     interval?: string,
     contractType?: string,
+    exchange?: string,
   ) => string;
 }
 
@@ -491,6 +492,7 @@ export function buildStreamNameBySource(
       eventType,
       interval,
       contractType,
+      exchange,
     );
   }
 

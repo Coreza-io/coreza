@@ -382,16 +382,62 @@ export class MarketDataGateway {
     }
   }
 
-  private sendGatewayMessages(msg: unknown): void {
+  private sendGatewayMessages(msg: unknown): number {
     const messages = Array.isArray(msg) ? msg : [msg];
+    let sentCount = 0;
 
     for (const message of messages) {
       if (message === null || message === undefined) continue;
       const payload = this.encodeMessage(message);
       if (this.assertSocketBoundary(message, "send")) {
         this.ws?.send(payload);
+        sentCount += 1;
       }
     }
+
+    return sentCount;
+  }
+
+  private makeSubscribeMessageSafely(
+    streams: string[],
+    streamSource: string,
+  ): unknown | undefined {
+    try {
+      const msg = this.config.makeSubscribeMessage(streams, streamSource);
+      const payloadCount = this.countGatewayMessages(msg);
+
+      if (payloadCount === 0) {
+        this.logger.warn(
+          { source: this.source, streamSource, streams },
+          "No subscribe payload generated; skipping gateway send",
+        );
+        return undefined;
+      }
+
+      this.logger.debug(
+        {
+          source: this.source,
+          streamSource,
+          streamCount: streams.length,
+          payloadCount,
+        },
+        "Generated subscribe payloads",
+      );
+      return msg;
+    } catch (error) {
+      this.logger.error(
+        { source: this.source, streamSource, streams, err: error },
+        "Failed to generate subscribe payload",
+      );
+      return undefined;
+    }
+  }
+
+  private countGatewayMessages(msg: unknown): number {
+    const messages = Array.isArray(msg) ? msg : [msg];
+    return messages.filter(
+      (message) => message !== null && message !== undefined,
+    ).length;
   }
 
   /**
@@ -418,10 +464,12 @@ export class MarketDataGateway {
     });
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
-      const msg = this.config.makeSubscribeMessage(newStreams, this.source);
-      this.sendGatewayMessages(msg);
+      const msg = this.makeSubscribeMessageSafely(newStreams, this.source);
+      if (!msg) return;
+
+      const payloadCount = this.sendGatewayMessages(msg);
       this.logger.info(
-        { source: this.source, streams: newStreams },
+        { source: this.source, streams: newStreams, payloadCount },
         "Subscribed to streams",
       );
     }
@@ -468,10 +516,12 @@ export class MarketDataGateway {
     }
 
     for (const [streamSource, streams] of streamsBySource.entries()) {
-      const msg = this.config.makeSubscribeMessage(streams, streamSource);
-      this.sendGatewayMessages(msg);
+      const msg = this.makeSubscribeMessageSafely(streams, streamSource);
+      if (!msg) continue;
+
+      const payloadCount = this.sendGatewayMessages(msg);
       this.logger.info(
-        { source: this.source, streamSource, streams },
+        { source: this.source, streamSource, streams, payloadCount },
         "Resubscribed to streams",
       );
     }

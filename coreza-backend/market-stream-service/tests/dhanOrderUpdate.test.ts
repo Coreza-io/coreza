@@ -189,6 +189,14 @@ describe('Dhan order-update stream', () => {
     expect(normalized?.exchange).toBe('NSE_EQ');
   });
 
+  it('fails loudly when a canonical Dhan stream cannot resolve its securityId', () => {
+    expect(() =>
+      buildDhanSubscribeMessage(['unmappedcoreza@nse_eq@full'], 'dhan'),
+    ).toThrow(
+      'Unable to resolve Dhan securityId for unmappedcoreza@nse_eq@full',
+    );
+  });
+
   it('enriches Dhan ticks from composite subscription metadata', () => {
     const marketConfig = getBrokerStreamConfig('dhan');
     const symbols = marketConfig.preprocessSubscriptionSymbols?.(['HDFCBANK:1333'], 'NSE_EQ') ?? [];
@@ -203,7 +211,13 @@ describe('Dhan order-update stream', () => {
         InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
       },
     ]);
-
+    expect(buildDhanSubscribeMessage(['hdfcbank@nse_eq@full'], 'dhan')).toEqual([
+      {
+        RequestCode: 21,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
+      },
+    ]);
 
     const event = normalizeDhanMessage(
       {

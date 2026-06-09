@@ -1281,6 +1281,19 @@ export class MarketControlHandler {
             );
             let state = this.sourceStates.get(restoredStateKey);
 
+            // Rehydrate broker resolution state (e.g. Dhan symbol->securityId
+            // map) before connecting. Gateway open can immediately resubscribe,
+            // so native names without securityId must be resolvable first.
+            const restoreCfg = getBrokerStreamConfig(source as MarketSource);
+            if (restoreCfg.restoreSubscriptionState) {
+              const snapshot = await this.redisPub.hgetall(
+                `md:resolution:${source}`,
+              );
+              if (snapshot && Object.keys(snapshot).length > 0) {
+                restoreCfg.restoreSubscriptionState(snapshot);
+              }
+            }
+
             if (!state || !state.gateway.getStats().connected) {
               // Reconnect gateway. unifiedSocket aliases (for example, schwab_trading)
               // deliberately collapse to the base gateway state key.
@@ -1293,19 +1306,6 @@ export class MarketControlHandler {
                 stateData.environment,
               );
               state = this.sourceStates.get(restoredStateKey)!;
-            }
-
-            // Rehydrate broker resolution state (e.g. Dhan symbol->securityId
-            // map) before resubscribing so native names without securityId can
-            // still be resolved. One-time lookup, never per tick.
-            const restoreCfg = getBrokerStreamConfig(source as MarketSource);
-            if (restoreCfg.restoreSubscriptionState) {
-              const snapshot = await this.redisPub.hgetall(
-                `md:resolution:${source}`,
-              );
-              if (snapshot && Object.keys(snapshot).length > 0) {
-                restoreCfg.restoreSubscriptionState(snapshot);
-              }
             }
 
             // Restore streams directly - no conversion needed!

@@ -237,12 +237,15 @@ export function loadDhanInstrumentSnapshot(
   }
 }
 
-function resolveDhanSecurityId(exchange: string, symbol: string): string {
+function resolveDhanSecurityId(
+  exchange: string,
+  symbol: string,
+): string | undefined {
   const meta = symbolToSecurityId.get(dhanSymbolKey(exchange, symbol));
   if (meta) return meta.securityId;
   // A numeric symbol is already the securityId.
   if (/^\d+$/.test(symbol)) return symbol;
-  return '';
+  return undefined;
 }
 
 const DHAN_REQUEST_CODES: Record<DhanMarketMode, DhanRequestCodes> = {
@@ -282,6 +285,14 @@ function parseDhanStreamName(streamName: string): DhanStreamMetadata {
     const [symbol, exchange, mode] = parts;
     const exchangeSegment = (exchange || DEFAULT_DHAN_EXCHANGE_SEGMENT).toUpperCase();
     const securityId = resolveDhanSecurityId(exchangeSegment, symbol);
+
+    if (!securityId) {
+      throw new Error(
+        `Unable to resolve Dhan securityId for ${streamName}. ` +
+          `Seed the Dhan resolution map with SYMBOL:securityId before subscribing.`,
+      );
+    }
+
     return {
       symbol,
       securityId,
@@ -327,7 +338,6 @@ function buildDhanMarketMessages(
 
   for (const streamName of streamNames) {
     const parsed = parseDhanStreamName(streamName);
-    if (!parsed.SecurityId) continue;
 
     const requestCode = DHAN_REQUEST_CODES[parsed.mode][action];
     const instruments = instrumentsByRequestCode.get(requestCode) || [];

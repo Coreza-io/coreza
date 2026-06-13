@@ -214,15 +214,6 @@
           }
         },
         {
-          "id": "liquidation",
-          "name": "Liquidation (forceOrder)",
-          "displayOptions": {
-            "show": {
-              "marketType": ["futures"]
-            }
-          }
-        },
-        {
           "id": "continuousKline",
           "name": "Continuous Kline",
           "displayOptions": {
@@ -233,24 +224,6 @@
           "swapTo": {
             "marketType": {
               "spot": "kline"
-            }
-          }
-        },
-        {
-          "id": "indexPrice",
-          "name": "Index Price Update",
-          "displayOptions": {
-            "show": {
-              "marketType": ["futures"]
-            }
-          }
-        },
-        {
-          "id": "compositeIndex",
-          "name": "Composite Index",
-          "displayOptions": {
-            "show": {
-              "marketType": ["futures"]
             }
           }
         }

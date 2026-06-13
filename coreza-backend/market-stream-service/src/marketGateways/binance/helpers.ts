@@ -67,6 +67,19 @@ function normalizeBinanceIncomingEventType(eventType: string): string {
   }
 }
 
+function looksLikeBinanceBookTicker(
+  eventMsg: Record<string, unknown>,
+): boolean {
+  return (
+    eventMsg.e === undefined &&
+    typeof eventMsg.s === "string" &&
+    eventMsg.b !== undefined &&
+    eventMsg.B !== undefined &&
+    eventMsg.a !== undefined &&
+    eventMsg.A !== undefined
+  );
+}
+
 function normalizeBinanceIncomingEvent(msg: any): any {
   const eventMsg = unwrapBinanceUserDataEnvelope(msg);
   if (!eventMsg || typeof eventMsg !== "object") {
@@ -77,6 +90,13 @@ function normalizeBinanceIncomingEvent(msg: any): any {
     return {
       ...eventMsg,
       e: normalizeBinanceIncomingEventType(eventMsg.e),
+    };
+  }
+
+  if (looksLikeBinanceBookTicker(eventMsg)) {
+    return {
+      ...eventMsg,
+      e: "bookTicker",
     };
   }
 
@@ -658,7 +678,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
     case "bookTicker":
       return {
         symbol,
-        t,
+        t: eventMsg.E ?? Date.now(),
         b: parseFloat(eventMsg.b),
         B: parseFloat(eventMsg.B),
         a: parseFloat(eventMsg.a),

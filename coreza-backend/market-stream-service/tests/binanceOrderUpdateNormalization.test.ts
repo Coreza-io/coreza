@@ -149,3 +149,77 @@ describe("Binance continuous kline event normalization", () => {
     });
   });
 });
+
+describe("Binance spot bookTicker normalization", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("infers bookTicker type for spot payloads without an event type", () => {
+    jest.spyOn(Date, "now").mockReturnValue(1710000000200);
+
+    const msg = {
+      u: 5426915,
+      s: "BTCUSDT",
+      b: "63812.00",
+      B: "0.5627",
+      a: "63812.01",
+      A: "34.52",
+    };
+
+    expect(identifyBinanceMessageType(msg)).toBe("bookTicker");
+    expect(shouldPublishBinanceMessage(msg, "binance_stream")).toBe(true);
+
+    expect(normalizeBinanceMessage(msg, "binance_stream")).toMatchObject({
+      type: "bookTicker",
+      source: "binance",
+      symbol: "BTCUSDT",
+      t: 1710000000200,
+      b: 63812,
+      B: 0.5627,
+      a: 63812.01,
+      A: 34.52,
+    });
+  });
+
+  it("preserves futures bookTicker event timestamps", () => {
+    const msg = {
+      e: "bookTicker",
+      E: 1710000000300,
+      T: 1710000000299,
+      u: 5426916,
+      s: "ETHUSDT",
+      b: "3500.10",
+      B: "1.25",
+      a: "3500.20",
+      A: "2.50",
+    };
+
+    expect(identifyBinanceMessageType(msg)).toBe("bookTicker");
+    expect(shouldPublishBinanceMessage(msg, "binance_stream")).toBe(true);
+
+    expect(normalizeBinanceMessage(msg, "binance_stream")).toMatchObject({
+      type: "bookTicker",
+      source: "binance",
+      symbol: "ETHUSDT",
+      t: 1710000000300,
+      b: 3500.1,
+      B: 1.25,
+      a: 3500.2,
+      A: 2.5,
+    });
+  });
+
+  it("does not classify malformed messages as bookTicker", () => {
+    const msg = {
+      u: 5426917,
+      s: "BTCUSDT",
+      b: "63812.00",
+      B: "0.5627",
+    };
+
+    expect(identifyBinanceMessageType(msg)).toBeUndefined();
+    expect(shouldPublishBinanceMessage(msg, "binance_stream")).toBe(false);
+    expect(normalizeBinanceMessage(msg, "binance_stream")).toBeNull();
+  });
+});

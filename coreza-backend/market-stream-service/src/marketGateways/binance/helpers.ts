@@ -67,9 +67,7 @@ function normalizeBinanceIncomingEventType(eventType: string): string {
   }
 }
 
-function looksLikeBinanceBookTicker(
-  eventMsg: Record<string, unknown>,
-): boolean {
+function isBinanceBookTicker(eventMsg: Record<string, unknown>): boolean {
   return (
     eventMsg.e === undefined &&
     typeof eventMsg.s === "string" &&
@@ -93,7 +91,7 @@ function normalizeBinanceIncomingEvent(msg: any): any {
     };
   }
 
-  if (looksLikeBinanceBookTicker(eventMsg)) {
+  if (isBinanceBookTicker(eventMsg)) {
     return {
       ...eventMsg,
       e: "bookTicker",

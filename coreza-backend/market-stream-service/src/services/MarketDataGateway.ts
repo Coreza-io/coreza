@@ -403,7 +403,11 @@ export class MarketDataGateway {
     streamSource: string,
   ): unknown | undefined {
     try {
-      const msg = this.config.makeSubscribeMessage(streams, streamSource);
+      const msg = this.config.makeSubscribeMessage(
+        streams,
+        streamSource,
+        this.credentials,
+      );
       const payloadCount = this.countGatewayMessages(msg);
 
       if (payloadCount === 0) {
@@ -494,6 +498,7 @@ export class MarketDataGateway {
       const msg = this.config.makeUnsubscribeMessage(
         existingStreams,
         this.source,
+        this.credentials,
       );
       this.sendGatewayMessages(msg);
       this.logger.info(

@@ -5,6 +5,8 @@ import {
   buildSchwabSubscribeMessage,
   buildSchwabUnsubscribeMessage,
   identifySchwabMessageType,
+  isSchwabAuthError,
+  isSchwabAuthSuccess,
   normalizeSchwabMessage,
   parseSchwabMessage,
   preConnectSchwab,
@@ -25,10 +27,12 @@ export const schwabGatewayConfig: GatewayConfig = {
   preConnect: async (creds, context) =>
     preConnectSchwab(creds, context, schwabOAuthRefreshConfig),
   makeAuthMessage: (creds) => buildSchwabAuthMessage(creds),
-  makeSubscribeMessage: (streamNames, source) =>
-    buildSchwabSubscribeMessage(streamNames, source),
-  makeUnsubscribeMessage: (streamNames, source) =>
-    buildSchwabUnsubscribeMessage(streamNames, source),
+  isAuthSuccess: (msg) => isSchwabAuthSuccess(msg),
+  isAuthError: (msg) => isSchwabAuthError(msg),
+  makeSubscribeMessage: (streamNames, source, creds) =>
+    buildSchwabSubscribeMessage(streamNames, source, creds),
+  makeUnsubscribeMessage: (streamNames, source, creds) =>
+    buildSchwabUnsubscribeMessage(streamNames, source, creds),
   parseMessage: (buffer) => parseSchwabMessage(buffer),
   identifyMessageType: (msg) => identifySchwabMessageType(msg),
   shouldPublish: (msg, _source) => shouldPublishSchwabMessage(msg),

@@ -15,8 +15,18 @@ export interface GatewayConfig<TSource extends string = string> {
   makeAuthHeaders?: (creds: any) => Record<string, string>;
 
   // Subscription management
-  makeSubscribeMessage: (symbols: string[], types?: string[], source?: string) => any;
-  makeUnsubscribeMessage: (symbols: string[], types?: string[], source?: string) => any;
+  makeSubscribeMessage: (
+    symbols: string[],
+    types?: string[],
+    source?: string,
+    creds?: any,
+  ) => any;
+  makeUnsubscribeMessage: (
+    symbols: string[],
+    types?: string[],
+    source?: string,
+    creds?: any,
+  ) => any;
 
   // Message processing
   parseMessage: (buffer: Buffer, source?: string) => unknown[];

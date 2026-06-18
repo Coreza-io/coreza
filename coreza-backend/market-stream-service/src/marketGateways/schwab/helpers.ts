@@ -19,6 +19,11 @@ type SchwabService =
   | "CHART_FUTURES"
   | "ACCT_ACTIVITY";
 
+type SchwabRequestCredentials = {
+  schwabClientCustomerId?: unknown;
+  schwabClientCorrelId?: unknown;
+};
+
 const DEFAULT_ASSET_TYPE: SchwabAssetType = "equity";
 
 const SCHWAB_SERVICE_MAP: Record<
@@ -130,6 +135,7 @@ function buildSchwabRequest(
   streamNames: string[],
   command: "SUBS" | "UNSUBS",
   source?: string,
+  creds?: SchwabRequestCredentials,
 ) {
   const assetType = parseSchwabAssetType(source);
   const symbolsByService = new Map<SchwabService, Set<string>>();
@@ -165,6 +171,8 @@ function buildSchwabRequest(
         requestid: String(Date.now() + index),
         service,
         command,
+        SchwabClientCustomerId: creds?.schwabClientCustomerId,
+        SchwabClientCorrelId: creds?.schwabClientCorrelId,
         parameters: {
           keys,
           ...(command === "SUBS"
@@ -223,20 +231,55 @@ export function buildSchwabAuthMessage(creds: any) {
 export function buildSchwabSubscribeMessage(
   streamNames: string[],
   source?: string,
+  creds?: SchwabRequestCredentials,
 ) {
-  return buildSchwabRequest(streamNames, "SUBS", source);
+  return buildSchwabRequest(streamNames, "SUBS", source, creds);
 }
 
 export function buildSchwabUnsubscribeMessage(
   streamNames: string[],
   source?: string,
+  creds?: SchwabRequestCredentials,
 ) {
-  return buildSchwabRequest(streamNames, "UNSUBS", source);
+  return buildSchwabRequest(streamNames, "UNSUBS", source, creds);
 }
 
 export function parseSchwabMessage(buffer: Buffer): any[] {
   const parsed = JSON.parse(buffer.toString());
   return flattenSchwabContentMessages(parseSchwabStreamingMessage(parsed));
+}
+
+type SchwabLoginResponse = {
+  service: "ADMIN";
+  command: "LOGIN";
+  content?: unknown;
+};
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSchwabLoginResponse(msg: unknown): msg is SchwabLoginResponse {
+  return (
+    isObjectRecord(msg) &&
+    msg.service === "ADMIN" &&
+    msg.command === "LOGIN"
+  );
+}
+
+function getSchwabLoginCode(msg: SchwabLoginResponse): unknown {
+  return isObjectRecord(msg.content) ? msg.content.code : undefined;
+}
+
+export function isSchwabAuthSuccess(msg: unknown): boolean {
+  return isSchwabLoginResponse(msg) && Number(getSchwabLoginCode(msg)) === 0;
+}
+
+export function isSchwabAuthError(msg: unknown): boolean {
+  if (!isSchwabLoginResponse(msg)) return false;
+
+  const code = getSchwabLoginCode(msg);
+  return code !== undefined && Number(code) !== 0;
 }
 
 export function identifySchwabMessageType(msg: any): string {

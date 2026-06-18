@@ -16,6 +16,11 @@ type SchwabService =
   | 'CHART_FUTURES'
   | 'ACCT_ACTIVITY';
 
+type SchwabRequestCredentials = {
+  schwabClientCustomerId?: unknown;
+  schwabClientCorrelId?: unknown;
+};
+
 const DEFAULT_ASSET_TYPE: SchwabAssetType = 'equity';
 
 const SCHWAB_SERVICE_MAP: Record<
@@ -118,6 +123,7 @@ function buildSchwabRequest(
   streamNames: string[],
   command: 'SUBS' | 'UNSUBS',
   source?: string,
+  creds?: SchwabRequestCredentials,
 ) {
   const assetType = parseSchwabAssetType(source);
   const symbolsByService = new Map<SchwabService, Set<string>>();
@@ -153,6 +159,8 @@ function buildSchwabRequest(
         requestid: String(Date.now() + index),
         service,
         command,
+        SchwabClientCustomerId: creds?.schwabClientCustomerId,
+        SchwabClientCorrelId: creds?.schwabClientCorrelId,
         parameters: {
           keys,
           ...(command === 'SUBS'
@@ -212,15 +220,17 @@ export function buildSchwabAuthMessage(creds: any) {
 export function buildSchwabSubscribeMessage(
   streamNames: string[],
   source?: string,
+  creds?: SchwabRequestCredentials,
 ) {
-  return buildSchwabRequest(streamNames, 'SUBS', source);
+  return buildSchwabRequest(streamNames, 'SUBS', source, creds);
 }
 
 export function buildSchwabUnsubscribeMessage(
   streamNames: string[],
   source?: string,
+  creds?: SchwabRequestCredentials,
 ) {
-  return buildSchwabRequest(streamNames, 'UNSUBS', source);
+  return buildSchwabRequest(streamNames, 'UNSUBS', source, creds);
 }
 
 export function parseSchwabMessage(buffer: Buffer): any[] {

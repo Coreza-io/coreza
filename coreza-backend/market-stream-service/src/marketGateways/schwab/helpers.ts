@@ -358,36 +358,154 @@ function pickString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-function normalizeSchwabOrderStatus(status: unknown): string {
+function normalizeSide(side: unknown): string | undefined {
+  const normalized = String(side || "").toUpperCase();
+  if (normalized === "BUY") return "buy";
+  if (normalized === "SELL") return "sell";
+  return pickString(side)?.toLowerCase();
+}
+
+export function decodeSchwabDecimal(obj: unknown): number | undefined {
+  if (!isObjectRecord(obj) || obj.lo === undefined || obj.lo === null) {
+    return undefined;
+  }
+
+  const lo = toNumber(obj.lo);
+  if (lo === undefined) return undefined;
+  const signScale = toNumber(obj.signScale);
+  if (signScale === undefined) return lo;
+
+  const scale = signScale >> 1;
+  const sign = signScale & 1 ? -1 : 1;
+  return (sign * lo) / Math.pow(10, scale);
+}
+
+export function getSchwabEventDetail(
+  baseEvent: unknown,
+): Record<string, unknown> | undefined {
+  if (!isObjectRecord(baseEvent)) return undefined;
+
+  for (const [key, value] of Object.entries(baseEvent)) {
+    if (
+      key !== "EventType" &&
+      isObjectRecord(value) &&
+      !Array.isArray(value)
+    ) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function deepFind(
+  value: unknown,
+  keys: string[],
+  maxDepth = 8,
+): unknown | undefined {
+  if (maxDepth < 0 || value === null || value === undefined) return undefined;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = deepFind(item, keys, maxDepth - 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+
+  if (!isObjectRecord(value)) return undefined;
+
+  for (const key of keys) {
+    const foundKey = Object.keys(value).find(
+      (candidate) => candidate.toLowerCase() === key.toLowerCase(),
+    );
+    if (foundKey && value[foundKey] !== undefined && value[foundKey] !== null) {
+      return value[foundKey];
+    }
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "rawOrderData") continue;
+    const found = deepFind(child, keys, maxDepth - 1);
+    if (found !== undefined) return found;
+  }
+
+  return undefined;
+}
+
+function decodeFirstSchwabDecimal(
+  value: unknown,
+  keys: string[],
+): number | undefined {
+  const found = deepFind(value, keys);
+  return decodeSchwabDecimal(found) ?? toNumber(found);
+}
+
+function parseSchwabTimestamp(value: unknown): number | undefined {
+  const raw = pickString(value);
+  if (!raw) return undefined;
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeSchwabEventStatus(eventType: unknown): string | undefined {
+  const event = pickString(eventType) || "";
+  if (event === "OrderCreated") return "pending_new";
+  if (
+    [
+      "OrderAccepted",
+      "OrderReplaced",
+      "ExecutionRequested",
+      "ExecutionRequestCreated",
+      "ExecutionRequestCompleted",
+    ].includes(event)
+  ) {
+    return "new";
+  }
+  if (event.startsWith("OrderPartialFill")) return "partially_filled";
+  if (event.startsWith("OrderFill")) return "filled";
+  if (event.startsWith("OrderCancel") || event === "OrderCanceled") {
+    return "canceled";
+  }
+  if (event.startsWith("OrderReject")) return "rejected";
+  if (event === "OrderExpired") return "expired";
+  return undefined;
+}
+
+export function normalizeSchwabOrderStatus(status: unknown): string {
   const normalized = String(status || "")
     .toUpperCase()
     .replace(/[ -]/g, "_");
 
   if (
-    ["PENDING_ACTIVATION", "PENDING_SUBMIT", "AWAITING_PARENT_ORDER"].includes(
+    normalized.startsWith("PENDING_") ||
+    normalized === "AWAITING_PARENT_ORDER"
+  ) {
+    return "pending_new";
+  }
+  if (
+    ["OPEN", "QUEUED", "WORKING", "ACCEPTED", "PENDING_REPLACE"].includes(
       normalized,
     )
   ) {
-    return "submitted";
+    return "new";
   }
   if (
-    ["QUEUED", "WORKING", "ACCEPTED", "PENDING_REPLACE"].includes(normalized)
+    normalized.startsWith("PARTIAL_FILL") ||
+    normalized === "PARTIALLY_FILLED"
   ) {
-    return "working";
-  }
-  if (["PARTIAL_FILL", "PARTIALLY_FILLED"].includes(normalized)) {
     return "partially_filled";
   }
-  if (["FILLED", "FILL"].includes(normalized)) return "filled";
-  if (["CANCELED", "CANCELLED", "PENDING_CANCEL"].includes(normalized))
-    return "cancelled";
+  if (normalized.startsWith("FILL") || normalized === "FILLED") return "filled";
+  if (normalized.startsWith("CANCEL")) return "canceled";
   if (["REJECTED", "DENIED"].includes(normalized)) return "rejected";
   if (["EXPIRED"].includes(normalized)) return "expired";
 
   return "unknown";
 }
 
-function normalizeSchwabAccountActivityMessage(
+export function normalizeSchwabAccountActivityMessage(
   msg: any,
 ): CorezaMarketEvent | null {
   const content = msg.content?.[0];
@@ -397,6 +515,10 @@ function normalizeSchwabAccountActivityMessage(
     content["3"] ?? content.messageData ?? content.MessageData;
   const rawMessageText = toMessageText(rawMessageData);
   const messageData = parseJsonObject(rawMessageData) || {};
+  const baseEvent = isObjectRecord(messageData.BaseEvent)
+    ? messageData.BaseEvent
+    : messageData;
+  const eventDetail = getSchwabEventDetail(baseEvent) || {};
   const order =
     parseJsonObject(messageData.order) ||
     parseJsonObject(messageData.Order) ||
@@ -408,6 +530,8 @@ function normalizeSchwabAccountActivityMessage(
       : undefined;
 
   const orderId = pickString(
+    messageData.SchwabOrderID,
+    content.SchwabOrderID,
     order.orderId,
     order.order_id,
     order.OrderId,
@@ -420,11 +544,19 @@ function normalizeSchwabAccountActivityMessage(
       "orderId",
       "OrderId",
       "OrderID",
+      "SchwabOrderID",
       "OrderKey",
       "orderKey",
     ]),
   );
+  const orderEvent = pickString(
+    content["2"],
+    content.messageType,
+    content.MessageType,
+    isObjectRecord(baseEvent) ? baseEvent.EventType : undefined,
+  );
   const rawStatus = pickString(
+    deepFind(eventDetail, ["Status", "LegStatus", "LegSubStatus"]),
     order.status,
     order.Status,
     messageData.status,
@@ -445,14 +577,39 @@ function normalizeSchwabAccountActivityMessage(
       ]),
     );
   const filledQty =
+    decodeFirstSchwabDecimal(eventDetail, [
+      "CumulativeQuantity",
+      "ExecutionQuantity",
+    ]) ??
     toNumber(order.filledQuantity) ??
     toNumber(order.filledQty) ??
     toNumber(pickTextField(rawMessageText, ["filledQuantity", "filledQty"]));
+  const requestedQty =
+    decodeFirstSchwabDecimal(eventDetail, ["Quantity"]) ?? quantity;
+  const filledAvgPrice =
+    decodeFirstSchwabDecimal(eventDetail, [
+      "AveragePrice",
+      "ExecutionPrice",
+    ]) ??
+    toNumber(order.averagePrice) ??
+    toNumber(order.averageFillPrice) ??
+    toNumber(
+      pickTextField(rawMessageText, ["averagePrice", "averageFillPrice"]),
+    );
+  const orderStatus =
+    normalizeSchwabEventStatus(orderEvent) ||
+    normalizeSchwabOrderStatus(rawStatus);
+  const timestamp =
+    parseSchwabTimestamp(deepFind(eventDetail, ["DateTimeString"])) ??
+    toNumber(order.enteredTime) ??
+    toNumber(order.closeTime) ??
+    Date.now();
 
   return {
     source: "schwab",
     symbol: toSymbol(
       pickString(
+        deepFind(eventDetail, ["Symbol"]),
         order.symbol,
         order.Symbol,
         orderLeg?.instrument?.symbol,
@@ -463,38 +620,39 @@ function normalizeSchwabAccountActivityMessage(
       ),
     ),
     type: "order_update",
-    orderEvent: pickString(
-      content["2"],
-      content.messageType,
-      content.MessageType,
-    ),
+    orderEvent,
     orderId,
     clientOrderId: pickString(
       order.clientOrderId,
       order.client_order_id,
       pickTextField(rawMessageText, ["clientOrderId", "client_order_id"]),
     ),
-    side: pickString(
-      order.instruction,
-      order.Instruction,
-      orderLeg?.instruction,
-      pickTextField(rawMessageText, [
-        "instruction",
-        "Instruction",
-        "side",
-        "Side",
-      ]),
-    ),
-    orderStatus: normalizeSchwabOrderStatus(rawStatus),
-    requestedQty: quantity,
-    filledQty,
-    filledAvgPrice:
-      toNumber(order.averagePrice) ??
-      toNumber(order.averageFillPrice) ??
-      toNumber(
-        pickTextField(rawMessageText, ["averagePrice", "averageFillPrice"]),
+    side: normalizeSide(
+      pickString(
+        deepFind(eventDetail, ["BuySellCode"]),
+        order.instruction,
+        order.Instruction,
+        orderLeg?.instruction,
+        pickTextField(rawMessageText, [
+          "instruction",
+          "Instruction",
+          "side",
+          "Side",
+        ]),
       ),
+    ),
+    orderStatus,
+    requestedQty,
+    filledQty,
+    filledAvgPrice,
+    orderType: pickString(
+      deepFind(eventDetail, ["OrderTypeCode"]),
+      order.orderType,
+      order.OrderType,
+      pickTextField(rawMessageText, ["orderType", "OrderType", "OrderTypeCode"]),
+    )?.toLowerCase(),
     accountId: pickString(
+      messageData.AccountNumber,
       content["1"],
       content.accountId,
       content.accountNumber,
@@ -508,7 +666,7 @@ function normalizeSchwabAccountActivityMessage(
       messageData.accountHash,
       pickTextField(rawMessageText, ["accountHash", "brokerAccountHash"]),
     ),
-    t: toNumber(order.enteredTime) ?? toNumber(order.closeTime) ?? Date.now(),
+    t: timestamp,
     rawOrderData: msg,
   };
 }

@@ -204,6 +204,17 @@ export function getBrokerStreamConfig(source: string): BrokerStreamConfig {
   );
 }
 
+export function resolveTradingPublishStreamName(
+  source: string,
+  eventType: string,
+): string {
+  const tradingSource = source.endsWith("_trading")
+    ? source
+    : `${source}_trading`;
+  const cfg = getBrokerStreamConfig(tradingSource);
+  return cfg.tradingRoutingKey ? cfg.tradingRoutingKey(eventType) : eventType;
+}
+
 export function computeTradingNativeStreamsFromConfig(
   source: string,
   marketType?: string,

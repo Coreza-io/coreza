@@ -10,7 +10,10 @@ import {
 import { CorezaMarketEvent, MarketSource } from "../types/marketEvent";
 import { redisPublishBreaker } from "../utils/redisCircuitBreaker";
 import { RedisBuffer } from "./RedisBuffer";
-import { getBrokerStreamConfig } from "../config/brokerStreamConfig";
+import {
+  getBrokerStreamConfig,
+  resolveTradingPublishStreamName,
+} from "../config/brokerStreamConfig";
 import { createLogger } from "../utils/logger";
 import {
   marketMessagesCounter,
@@ -24,7 +27,6 @@ import {
 import {
   parseStreamName,
   extractSymbol,
-  tradingRoutingKey,
 } from "../utils/streamName";
 
 const TRADING_LIFECYCLE_EVENTS = new Set([
@@ -317,7 +319,7 @@ export class MarketDataGateway {
           ? `@${event.exchange.toLowerCase()}`
           : "";
         const stream = isTradingLifecycleEvent
-          ? event.type
+          ? resolveTradingPublishStreamName(event.source, event.type)
           : event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`

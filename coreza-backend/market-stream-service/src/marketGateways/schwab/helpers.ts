@@ -239,6 +239,39 @@ export function parseSchwabMessage(buffer: Buffer): any[] {
   return flattenSchwabContentMessages(parseSchwabStreamingMessage(parsed));
 }
 
+type SchwabLoginResponse = {
+  service: "ADMIN";
+  command: "LOGIN";
+  content?: unknown;
+};
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSchwabLoginResponse(msg: unknown): msg is SchwabLoginResponse {
+  return (
+    isObjectRecord(msg) &&
+    msg.service === "ADMIN" &&
+    msg.command === "LOGIN"
+  );
+}
+
+function getSchwabLoginCode(msg: SchwabLoginResponse): unknown {
+  return isObjectRecord(msg.content) ? msg.content.code : undefined;
+}
+
+export function isSchwabAuthSuccess(msg: unknown): boolean {
+  return isSchwabLoginResponse(msg) && Number(getSchwabLoginCode(msg)) === 0;
+}
+
+export function isSchwabAuthError(msg: unknown): boolean {
+  if (!isSchwabLoginResponse(msg)) return false;
+
+  const code = getSchwabLoginCode(msg);
+  return code !== undefined && Number(code) !== 0;
+}
+
 export function identifySchwabMessageType(msg: any): string {
   return (
     SCHWAB_SERVICE_REVERSE[msg.service as SchwabService] ||

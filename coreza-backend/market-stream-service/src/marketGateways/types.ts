@@ -31,8 +31,16 @@ export interface GatewayConfig {
   makeTradingKeepaliveMessage?: (creds: any, source?: string) => any;
 
   // Subscription management - streamNames are native broker format (btcusdt@kline_1m, bars.AAPL)
-  makeSubscribeMessage: (streamNames: string[], source?: string) => any;
-  makeUnsubscribeMessage: (streamNames: string[], source?: string) => any;
+  makeSubscribeMessage: (
+    streamNames: string[],
+    source?: string,
+    creds?: any,
+  ) => any;
+  makeUnsubscribeMessage: (
+    streamNames: string[],
+    source?: string,
+    creds?: any,
+  ) => any;
 
   // Message processing - source param for routing behavior
   parseMessage: (buffer: Buffer, source?: string) => unknown[];

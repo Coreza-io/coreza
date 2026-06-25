@@ -197,79 +197,91 @@ export class BrokerExecutor implements INodeExecutor {
           ? config.baseUrl(workingCreds, resolvedParams)
           : config.baseUrl;
 
-      const path =
-        typeof op.path === "function"
-          ? op.path(resolvedParams, workingCreds)
-          : op.path;
-
-      const url = `${baseUrl}${path}`;
       const headers = await config.makeAuthHeaders(workingCreds);
-      const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
-      const body = op.makeBody
-        ? await op.makeBody(resolvedParams, workingCreds)
-        : undefined;
-      const shouldPreRegisterOrderOwner =
-        operation === "place_order" &&
-        typeof resolvedParams?._idempotencyKey === "string" &&
-        resolvedParams._idempotencyKey.trim().length > 0;
-
-      if (shouldPreRegisterOrderOwner) {
-        preRegisteredClientOrderId = resolvedParams._idempotencyKey.trim();
-        try {
-          await OrderOwnerRegistry.saveOwner({
-            source: `${broker}_trading`,
-            userId,
-            workflowId,
-            nodeId: node.id,
-            runId: context?.runId,
-            symbol: String(resolvedParams?.symbol || ""),
-            createdAt: new Date().toISOString(),
-            clientOrderId: preRegisteredClientOrderId || "",
-          });
-        } catch (err) {
-          console.warn("Failed to pre-save order-owner mapping", err);
-        }
-      }
-
-      console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
-
-      // Check if pagination is enabled and requested
-      const autoPaginate = resolvedParams.auto_paginate !== false; // Default true
-      const maxPages = Number(resolvedParams.max_pages) || 100;
-      const pagination = op.pagination;
 
       let data: any;
 
-      if (pagination?.enabled && autoPaginate) {
-        // Execute with automatic pagination
-        data = await this.executeWithPagination(
-          op,
-          url,
+      if (op.execute) {
+        console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
+        data = await op.execute({
+          input: resolvedParams,
+          creds: workingCreds,
+          baseUrl,
           headers,
-          params,
-          body,
-          resolvedParams,
-          pagination,
-          maxPages,
-          broker,
-          operation,
-        );
-      } else {
-        // Single request (no pagination or disabled)
-        const response = await axios({
-          method: op.method,
-          url,
-          headers: body
-            ? { ...headers, "Content-Type": "application/json" }
-            : headers,
-          params,
-          data: body,
-          timeout: 30000,
+          request: axios,
         });
+      } else {
+        const path =
+          typeof op.path === "function"
+            ? op.path(resolvedParams, workingCreds)
+            : op.path;
 
-        data = op.transformResult
-          ? op.transformResult(response.data, resolvedParams, response)
-          : response.data;
+        const url = `${baseUrl}${path}`;
+        const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
+        const body = op.makeBody
+          ? await op.makeBody(resolvedParams, workingCreds)
+          : undefined;
+        const shouldPreRegisterOrderOwner =
+          operation === "place_order" &&
+          typeof resolvedParams?._idempotencyKey === "string" &&
+          resolvedParams._idempotencyKey.trim().length > 0;
+
+        if (shouldPreRegisterOrderOwner) {
+          preRegisteredClientOrderId = resolvedParams._idempotencyKey.trim();
+          try {
+            await OrderOwnerRegistry.saveOwner({
+              source: `${broker}_trading`,
+              userId,
+              workflowId,
+              nodeId: node.id,
+              runId: context?.runId,
+              symbol: String(resolvedParams?.symbol || ""),
+              createdAt: new Date().toISOString(),
+              clientOrderId: preRegisteredClientOrderId || "",
+            });
+          } catch (err) {
+            console.warn("Failed to pre-save order-owner mapping", err);
+          }
+        }
+
+        console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
+
+        // Check if pagination is enabled and requested
+        const autoPaginate = resolvedParams.auto_paginate !== false; // Default true
+        const maxPages = Number(resolvedParams.max_pages) || 100;
+        const pagination = op.pagination;
+
+        if (pagination?.enabled && autoPaginate) {
+          // Execute with automatic pagination
+          data = await this.executeWithPagination(
+            op,
+            url,
+            headers,
+            params,
+            body,
+            resolvedParams,
+            pagination,
+            maxPages,
+            broker,
+            operation,
+          );
+        } else {
+          // Single request (no pagination or disabled)
+          const response = await axios({
+            method: op.method,
+            url,
+            headers: body
+              ? { ...headers, "Content-Type": "application/json" }
+              : headers,
+            params,
+            data: body,
+            timeout: 30000,
+          });
+
+          data = op.transformResult
+            ? op.transformResult(response.data, resolvedParams, response)
+            : response.data;
+        }
       }
 
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);

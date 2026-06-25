@@ -1,6 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { lookupSecurityId } from "./scripMaster";
-import type { Bar, BarSeriesOutput } from "../types";
+import type {
+  Bar,
+  BarSeriesItem,
+  BarSeriesOutput,
+  BrokerOperationExecuteContext,
+} from "../types";
 import { toBarSeries } from "../types";
 
 export interface DhanBar {
@@ -13,7 +18,7 @@ export interface DhanBar {
 }
 
 type DhanCandleInput = {
-  symbol?: string;
+  symbol?: string | string[];
   exchangeSegment?: string;
   start?: string;
   end?: string;
@@ -40,6 +45,54 @@ type DhanCandleBaseBody = {
 type DhanIntradayBody = DhanCandleBaseBody & {
   interval: string;
 };
+
+const DHAN_CANDLE_CONCURRENCY_LIMIT = 5;
+const DHAN_CANDLE_REQUEST_TIMEOUT_MS = 30000;
+
+export function isDhanDailyCandle(input: DhanCandleInput): boolean {
+  return input.interval === "1Day" || input.interval === "Day";
+}
+
+export function parseDhanSymbols(raw?: string | string[]): string[] {
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const seen = new Set<string>();
+  const symbols: string[] = [];
+
+  for (const value of values) {
+    for (const part of String(value).split(",")) {
+      const symbol = part.trim().toUpperCase();
+      if (symbol && !seen.has(symbol)) {
+        seen.add(symbol);
+        symbols.push(symbol);
+      }
+    }
+  }
+
+  return symbols;
+}
+
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+
+  const concurrency = Math.max(1, Math.min(limit, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await fn(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return results;
+}
 
 type DhanPlaceOrderInput = {
   symbol?: string;
@@ -153,7 +206,7 @@ function resolveDateRange(input: DhanCandleInput): {
 async function buildDhanCandleBaseBody(
   input: DhanCandleInput,
 ): Promise<DhanCandleBaseBody> {
-  const { symbol } = input;
+  const symbol = Array.isArray(input.symbol) ? input.symbol[0] : input.symbol;
   if (!symbol) throw new Error("Symbol is required for get_candle");
 
   const exchangeSegment = input.exchangeSegment || "NSE_EQ";
@@ -394,4 +447,54 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
     input.timeframe || input.interval || "1",
     dhanBars.map(fromDhanBar),
   );
+}
+
+function getDhanErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+export async function fetchDhanCandles(
+  ctx: BrokerOperationExecuteContext,
+): Promise<BarSeriesOutput> {
+  const symbols = parseDhanSymbols(ctx.input.symbol);
+  if (symbols.length === 0) {
+    throw new Error("At least one symbol is required for get_candle");
+  }
+
+  const isDaily = isDhanDailyCandle(ctx.input);
+  const endpoint = isDaily ? "/charts/historical" : "/charts/intraday";
+
+  const series = await mapWithConcurrency(
+    symbols,
+    DHAN_CANDLE_CONCURRENCY_LIMIT,
+    async (symbol): Promise<BarSeriesItem> => {
+      try {
+        const perSymbolInput = { ...ctx.input, symbol };
+        const body = isDaily
+          ? await buildDhanHistoricalBody(perSymbolInput)
+          : await buildDhanIntradayBody(perSymbolInput);
+        const response = await ctx.request.post(
+          `${ctx.baseUrl}${endpoint}`,
+          body,
+          {
+            headers: ctx.headers,
+            timeout: DHAN_CANDLE_REQUEST_TIMEOUT_MS,
+          },
+        );
+        const transformed = transformDhanCandles(response.data, perSymbolInput);
+        const barSeries = transformed.BarSeries[0];
+        if (!barSeries) {
+          throw new Error("Dhan candle response did not include BarSeries data");
+        }
+        return barSeries;
+      } catch (error) {
+        throw new Error(
+          `Unable to fetch candles for ${symbol}: ${getDhanErrorMessage(error)}`,
+        );
+      }
+    },
+  );
+
+  return { BarSeries: series, next_page_token: null, has_more: false };
 }

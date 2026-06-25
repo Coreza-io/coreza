@@ -1,3 +1,5 @@
+import type { AxiosStatic } from "axios";
+
 export interface PaginationConfig {
   enabled: boolean;
   tokenField: string;       // Response field containing next token (e.g., 'next_page_token')
@@ -10,6 +12,14 @@ export interface BrokerHttpResponse {
   headers?: Record<string, unknown>;
 }
 
+export interface BrokerOperationExecuteContext {
+  input: any;
+  creds: any;
+  baseUrl: string;
+  headers: Record<string, string>;
+  request: AxiosStatic;
+}
+
 export interface BrokerOperation {
   method: 'get' | 'post' | 'put' | 'delete';
   path: string | ((input: any, creds?: any) => string);
@@ -17,6 +27,7 @@ export interface BrokerOperation {
   makeBody?: (input: any, creds?: any) => any | Promise<any>;
   transformResult?: (data: any, input: any, response?: BrokerHttpResponse) => any;
   pagination?: PaginationConfig;
+  execute?: (ctx: BrokerOperationExecuteContext) => Promise<any>;
 }
 
 export interface BrokerConfig {

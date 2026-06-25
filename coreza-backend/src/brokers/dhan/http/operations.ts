@@ -1,15 +1,9 @@
 import { BrokerOperation } from "../../types";
 import {
-  buildDhanHistoricalBody,
-  buildDhanIntradayBody,
+  fetchDhanCandles,
   buildDhanModifyOrder,
   buildDhanPlaceOrder,
-  transformDhanCandles,
 } from "../helpers";
-
-function isDailyCandle(input: any): boolean {
-  return input.interval === "1Day" || input.interval === "Day";
-}
 
 function getOrderPath(input: any): string {
   if (!input.orderId) {
@@ -60,12 +54,7 @@ export const dhanOperations: Record<string, BrokerOperation> = {
   },
   get_candle: {
     method: "post",
-    path: (input: any) =>
-      isDailyCandle(input) ? "/charts/historical" : "/charts/intraday",
-    makeBody: (input: any) =>
-      isDailyCandle(input)
-        ? buildDhanHistoricalBody(input)
-        : buildDhanIntradayBody(input),
-    transformResult: (raw: any, input: any) => transformDhanCandles(raw, input),
+    path: "/charts/intraday",
+    execute: fetchDhanCandles,
   },
 };

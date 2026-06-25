@@ -216,17 +216,31 @@
       "key": "symbol",
       "label": "Ticker Symbol",
       "type": "text",
+      "placeholder": "e.g. HDFCBANK, ICICIBANK",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ]
+        }
+      },
+      "description": "Enter one symbol or comma-separated symbols sharing the same exchange segment and instrument type (e.g., HDFCBANK, ICICIBANK)."
+    },
+    {
+      "key": "symbol",
+      "label": "Ticker Symbol",
+      "type": "text",
       "placeholder": "e.g. HDFCBANK",
       "required": true,
       "displayOptions": {
         "show": {
           "operation": [
-            "get_candle",
             "place_order"
           ]
         }
       },
-      "description": "NSE/BSE stock symbol (e.g., RELIANCE, TCS, INFY)."
+      "description": "Single NSE/BSE stock symbol for the order (e.g., HDFCBANK)."
     },
     {
       "key": "exchangeSegment",

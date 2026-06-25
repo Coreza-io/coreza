@@ -157,6 +157,40 @@ export class WorkflowExecutor {
     return this.branchOrigins.get(targetNodeId)?.get(edge.id);
   }
 
+  private getBranchHandleKey(result: unknown): string {
+    const branchValue =
+      result && typeof result === "object" && "data" in result
+        ? result.data
+        : result;
+
+    if (typeof branchValue === "boolean") {
+      return branchValue.toString();
+    }
+
+    if (typeof branchValue === "string") {
+      return branchValue;
+    }
+
+    if (
+      branchValue &&
+      typeof branchValue === "object" &&
+      ("true" in branchValue || "false" in branchValue)
+    ) {
+      return branchValue.true === true
+        ? "true"
+        : branchValue.false === true
+          ? "false"
+          : "";
+    }
+
+    const fallbackValue =
+      result && typeof result === "object" && "output" in result
+        ? result.output
+        : result;
+
+    return String(fallbackValue ?? result);
+  }
+
   constructor(private context: ExecutorContext) {
     this.context.executeNode = this.executeNode.bind(this);
     this.nodeStore = context.executionStore;
@@ -919,25 +953,7 @@ export class WorkflowExecutor {
               `🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`,
             );
 
-            // 1) figure out the handle key exactly as you already do
-            let handleKey: string;
-            if (typeof result === "boolean") {
-              handleKey = result.toString();
-            } else if (
-              result &&
-              typeof result === "object" &&
-              result.data &&
-              ("true" in result.data || "false" in result.data)
-            ) {
-              handleKey =
-                result.data.true === true
-                  ? "true"
-                  : result.data.false === true
-                    ? "false"
-                    : "";
-            } else {
-              handleKey = String(result.output || result);
-            }
+            const handleKey = this.getBranchHandleKey(result);
             console.log(
               `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`,
             );

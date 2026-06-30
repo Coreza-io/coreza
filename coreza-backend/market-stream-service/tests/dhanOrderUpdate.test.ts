@@ -151,6 +151,18 @@ describe('Dhan order-update stream', () => {
     expect(dhanGatewayConfig.isFatalControlMessage?.(message, 'dhan')).toBe(true);
   });
 
+  it('suppresses automatic reconnect for Dhan 805 quota disconnects', () => {
+    const message = {
+      type: 'feed_disconnect',
+      SecurityId: '1333',
+      ExchangeSegment: 'NSE_EQ',
+      reasonCode: 805,
+      reasonText: 'Too many requests or connections',
+    };
+
+    expect(dhanGatewayConfig.isFatalControlMessage?.(message, 'dhan')).toBe(true);
+  });
+
   it('builds Dhan market WebSocket URLs from api_key or access_token without raw undefined tokens', () => {
     expect(
       getDhanWsUrl({ client_id: 'client-1', access_token: 'token one' }, 'dhan'),

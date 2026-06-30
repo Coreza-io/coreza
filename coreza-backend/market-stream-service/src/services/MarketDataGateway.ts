@@ -62,6 +62,12 @@ export class MarketDataGateway {
   private messageSequence = 0;
   private awaitingPostAuth = false;
   private lastFatalControlMessage: unknown = null;
+  private lastPongAt: number | null = null;
+  private connectPromise: Promise<void> | null = null;
+  private connectReject: ((error: Error) => void) | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private connectionOpenedAt: number | null = null;
+  private lastSubscribeSentAt: number | null = null;
 
   private constructor(config: GatewayConfig, source: string) {
     this.config = config;
@@ -90,17 +96,40 @@ export class MarketDataGateway {
     return this.instances.get(key)!;
   }
 
-  async connect(
+  connect(
     credentials: any,
     preConnectContext?: GatewayPreConnectContext,
   ): Promise<void> {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve();
+    if (this.connectPromise) return this.connectPromise;
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
+      return Promise.reject(
+        new Error(
+          `Gateway ${this.source} is connecting without a tracked connect promise`,
+        ),
+      );
+    }
 
     this.credentials = credentials;
     if (preConnectContext) {
       this.preConnectContext = preConnectContext;
     }
 
+    this.connectPromise = this.connectSocket(
+      credentials,
+      preConnectContext,
+    ).finally(() => {
+      this.connectPromise = null;
+      this.connectReject = null;
+    });
+
+    return this.connectPromise;
+  }
+
+  private async connectSocket(
+    credentials: any,
+    preConnectContext?: GatewayPreConnectContext,
+  ): Promise<void> {
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch, Binance listenKey)
     const needsPreConnect =
       typeof this.config.requiresPreConnect === "function"
@@ -116,7 +145,7 @@ export class MarketDataGateway {
       this.logger.info({ source: this.source }, "Running pre-connect setup");
       this.credentials = await this.config.preConnect(
         credentials,
-        this.preConnectContext,
+        preConnectContext ?? this.preConnectContext,
       );
     }
 
@@ -127,12 +156,26 @@ export class MarketDataGateway {
         : this.config.wsUrl;
 
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(url, {
+      this.connectReject = reject;
+      const socket = new WebSocket(url, {
         headers: this.config.makeAuthHeaders?.(this.credentials),
       });
+      this.ws = socket;
+      const isCurrentSocket = () => this.ws === socket;
 
-      this.ws.on("open", () => {
+      socket.on("open", () => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source },
+            "Ignoring open from replaced gateway socket",
+          );
+          return;
+        }
+
         this.logger.info({ source: this.source }, "Gateway connected");
+        this.clearReconnectTimer();
+        this.connectionOpenedAt = Date.now();
+        this.lastPongAt = null;
         activeGatewayConnectionsGauge.set({ source: this.source }, 1);
         this.startKeepalive();
         this.awaitingPostAuth = false;
@@ -145,31 +188,62 @@ export class MarketDataGateway {
           const payload = this.encodeMessage(authMsg);
           if (this.assertSocketBoundary(authMsg, "send")) {
             this.logger.info(
-              { source: this.source, authMessage: this.redactAuthMessage(authMsg) },
+              {
+                source: this.source,
+                authMessage: this.redactAuthMessage(authMsg),
+              },
               "Sending gateway authentication message",
             );
-            this.ws!.send(payload);
+            socket.send(payload);
             if (this.authCompletesOnSend()) {
               this.markConnectionReady(resolve);
             }
           }
         } else {
-          this.isAuthenticated = true;
-          this.resubscribeAll();
-          resolve();
+          this.markConnectionReady(resolve);
         }
       });
 
-      this.ws.on("message", (data: Buffer) => {
+      socket.on("message", (data: Buffer) => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source },
+            "Ignoring message from replaced gateway socket",
+          );
+          return;
+        }
         this.handleMessage(data, resolve);
       });
 
-      this.ws.on("close", (code: number, reason: Buffer) => {
+      socket.on("close", (code: number, reason: Buffer) => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source, code },
+            "Ignoring close from replaced gateway socket",
+          );
+          return;
+        }
+
+        const now = Date.now();
         const reasonStr = reason.toString() || "No reason provided";
+        const uptimeMs = this.connectionOpenedAt
+          ? now - this.connectionOpenedAt
+          : null;
+        const msSinceSubscribe = this.lastSubscribeSentAt
+          ? now - this.lastSubscribeSentAt
+          : null;
         this.logger.warn(
-          { source: this.source, code, reason: reasonStr },
+          {
+            source: this.source,
+            code,
+            reason: reasonStr,
+            uptimeMs,
+            msSinceSubscribe,
+            lastPongAt: this.lastPongAt,
+          },
           "Gateway disconnected",
         );
+        this.ws = null;
         activeGatewayConnectionsGauge.set({ source: this.source }, 0);
         alertGatewayDisconnected(
           this.source,
@@ -181,11 +255,76 @@ export class MarketDataGateway {
         this.stopTradingKeepalive();
         this.clearCredentialIntervals();
         this.handleReconnect();
+        reject(
+          new Error(
+            `Gateway disconnected before connection completed: ${code} - ${reasonStr}`,
+          ),
+        );
       });
 
-      this.ws.on("error", (err) => {
+      socket.on("error", (err) => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source, error: err },
+            "Ignoring error from replaced gateway socket",
+          );
+          return;
+        }
         this.logger.error({ source: this.source, error: err }, "Gateway error");
         reject(err);
+      });
+
+      socket.on("ping", (payload: Buffer) => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source },
+            "Ignoring ping from replaced gateway socket",
+          );
+          return;
+        }
+        this.logger.debug(
+          { source: this.source, payloadBytes: payload.length, autoPong: true },
+          "Received gateway ping",
+        );
+      });
+
+      socket.on("pong", (payload: Buffer) => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source },
+            "Ignoring pong from replaced gateway socket",
+          );
+          return;
+        }
+        this.lastPongAt = Date.now();
+        this.logger.debug(
+          { source: this.source, payloadBytes: payload.length },
+          "Received gateway pong",
+        );
+      });
+
+      socket.on("unexpected-response", (_request, response) => {
+        if (!isCurrentSocket()) {
+          this.logger.debug(
+            { source: this.source },
+            "Ignoring unexpected response from replaced gateway socket",
+          );
+          return;
+        }
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          this.logger.error(
+            { source: this.source, statusCode: response.statusCode, body },
+            "Gateway unexpected response",
+          );
+          reject(
+            new Error(
+              `Gateway unexpected response: ${response.statusCode ?? "unknown"}`,
+            ),
+          );
+        });
       });
     });
   }
@@ -480,6 +619,7 @@ export class MarketDataGateway {
       if (!msg) return;
 
       const payloadCount = this.sendGatewayMessages(msg);
+      this.lastSubscribeSentAt = Date.now();
       this.logger.info(
         { source: this.source, streams: newStreams, payloadCount },
         "Subscribed to streams",
@@ -533,6 +673,7 @@ export class MarketDataGateway {
       if (!msg) continue;
 
       const payloadCount = this.sendGatewayMessages(msg);
+      this.lastSubscribeSentAt = Date.now();
       this.logger.info(
         { source: this.source, streamSource, streams, payloadCount },
         "Resubscribed to streams",
@@ -620,10 +761,18 @@ export class MarketDataGateway {
   }
 
   private handleReconnect(): void {
+    if (this.reconnectTimer) {
+      this.logger.debug(
+        { source: this.source },
+        "Reconnect already scheduled; skipping duplicate request",
+      );
+      return;
+    }
+
     if (this.lastFatalControlMessage) {
       this.logger.error(
         { source: this.source, controlMessage: this.lastFatalControlMessage },
-        'Suppressing reconnect after fatal gateway control message',
+        "Suppressing reconnect after fatal gateway control message",
       );
       this.lastFatalControlMessage = null;
       return;
@@ -636,20 +785,40 @@ export class MarketDataGateway {
       return;
     }
 
-    const delay =
-      (this.config.reconnectDelay ?? 1000) *
-      Math.pow(2, this.reconnectAttempts);
+    const baseDelay = this.config.reconnectDelay ?? 1000;
+    const exponential = baseDelay * Math.pow(2, this.reconnectAttempts);
+    const capped = this.config.maxReconnectDelay
+      ? Math.min(exponential, this.config.maxReconnectDelay)
+      : exponential;
+    const jitter =
+      this.config.reconnectJitter && this.config.reconnectJitter > 0
+        ? Math.floor(Math.random() * (this.config.reconnectJitter + 1))
+        : 0;
+    const delay = capped + jitter;
     this.reconnectAttempts++;
 
     console.log(
       `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`,
     );
 
-    setTimeout(() => {
-      if (this.credentials) {
-        this.connect(this.credentials, this.preConnectContext ?? undefined);
-      }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.credentials) return;
+      this.connect(this.credentials, this.preConnectContext ?? undefined).catch(
+        (error) => {
+          this.logger.error(
+            { source: this.source, error },
+            "Gateway reconnect failed",
+          );
+        },
+      );
     }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   private startKeepalive(): void {
@@ -702,6 +871,8 @@ export class MarketDataGateway {
 
   private markConnectionReady(resolveConnect?: () => void): void {
     this.logger.info({ source: this.source }, "Authentication successful");
+    this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
     this.isAuthenticated = true;
     this.awaitingPostAuth = false;
     this.resubscribeAll();
@@ -737,6 +908,12 @@ export class MarketDataGateway {
   }
 
   disconnect(): void {
+    this.clearReconnectTimer();
+    this.connectReject?.(
+      new Error(`Gateway ${this.source} disconnected intentionally`),
+    );
+    this.connectPromise = null;
+    this.connectReject = null;
     this.stopKeepalive();
     this.stopTradingKeepalive();
     this.clearCredentialIntervals();

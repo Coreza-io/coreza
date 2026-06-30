@@ -32,7 +32,9 @@ export const dhanGatewayConfig: GatewayConfig<'dhan'> = {
   },
   isFatalControlMessage: (msg) => isFatalDhanControlMessage(msg),
   normalize: (msg, source) => normalizeDhanMessage(msg, source),
-  reconnectDelay: 2000,
+  reconnectDelay: 5000,
+  maxReconnectDelay: 30000,
+  reconnectJitter: 1000,
   maxReconnectAttempts: 5,
   isBinary: () => false,
 };

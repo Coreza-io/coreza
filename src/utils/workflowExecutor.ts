@@ -176,9 +176,10 @@ export class WorkflowExecutor {
       typeof branchValue === "object" &&
       ("true" in branchValue || "false" in branchValue)
     ) {
-      return branchValue.true === true
+      const branchRecord = branchValue as Record<string, unknown>;
+      return branchRecord.true === true
         ? "true"
-        : branchValue.false === true
+        : branchRecord.false === true
           ? "false"
           : "";
     }

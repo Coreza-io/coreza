@@ -8,6 +8,9 @@ import {
   normalizeDhanMessage,
   parseDhanMessage,
   shouldPublishDhanMessage,
+  isDhanFeedDisconnectMessage,
+  describeDhanFeedDisconnect,
+  isFatalDhanControlMessage,
 } from './helpers';
 
 export const dhanGatewayConfig: GatewayConfig = {
@@ -20,6 +23,14 @@ export const dhanGatewayConfig: GatewayConfig = {
   parseMessage: (buffer, source) => parseDhanMessage(buffer, source),
   identifyMessageType: (msg) => identifyDhanMessageType(msg),
   shouldPublish: (msg, source) => shouldPublishDhanMessage(msg, source),
+  handleControlMessage: (msg, logger, source) => {
+    if (!isDhanFeedDisconnectMessage(msg)) return;
+    logger.error(
+      { source, msg },
+      `Dhan feed disconnect: ${describeDhanFeedDisconnect(msg, source)}`,
+    );
+  },
+  isFatalControlMessage: (msg) => isFatalDhanControlMessage(msg),
   normalize: (msg, source) => normalizeDhanMessage(msg, source),
   reconnectDelay: 2000,
   maxReconnectAttempts: 5,

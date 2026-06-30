@@ -47,6 +47,7 @@ export interface GatewayConfig {
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any, source?: string) => boolean;
   handleControlMessage?: (msg: any, logger: any, source?: string) => void;
+  isFatalControlMessage?: (msg: any, source?: string) => boolean;
 
   // CRITICAL: Normalizer to CorezaMarketEvent - source param for routing behavior
   normalize: (msg: any, source?: string) => CorezaMarketEvent | null;

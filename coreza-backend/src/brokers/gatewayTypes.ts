@@ -13,6 +13,7 @@ export interface GatewayConfig<TSource extends string = string> {
   // Authentication
   makeAuthMessage?: (creds: any, source?: string) => any;
   makeAuthHeaders?: (creds: any) => Record<string, string>;
+  authCompletesOnSend?: boolean | ((source?: string) => boolean);
 
   // Subscription management
   makeSubscribeMessage: (
@@ -32,6 +33,8 @@ export interface GatewayConfig<TSource extends string = string> {
   parseMessage: (buffer: Buffer, source?: string) => unknown[];
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any, source?: string) => boolean;
+  handleControlMessage?: (msg: any, logger: any, source?: string) => void;
+  isFatalControlMessage?: (msg: any, source?: string) => boolean;
 
   // CRITICAL: Normalizer to MarketEvent
   normalize: (msg: any, source?: string) => MarketEvent | null;

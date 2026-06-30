@@ -1,14 +1,4 @@
 /**
- * Coreza - Open-source trading workflow automation platform
- * Copyright (C) 2026 Coreza-io
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License v3.0.
- *
- * See the LICENSE file for details.
- */
-
-/**
  * Dhan Binary WebSocket Packet Parser
  *
  * DhanHQ v2 market feed sends JSON requests and binary responses. Each binary
@@ -23,6 +13,14 @@ export interface DhanDepthLevel {
   AskOrders: number;
   BidPrice: number;
   AskPrice: number;
+}
+
+export interface DhanFeedDisconnect {
+  type: 'feed_disconnect';
+  SecurityId: string;
+  ExchangeSegment: string;
+  reasonCode: number;
+  reasonText: string;
 }
 
 export interface DhanMarketData {
@@ -53,6 +51,8 @@ export interface DhanMarketData {
   Depth?: DhanDepthLevel[];
 }
 
+export type DhanBinaryMessage = DhanMarketData | DhanFeedDisconnect;
+
 const HEADER_LENGTH = 8;
 const DEPTH_LEVEL_LENGTH = 20;
 const DEPTH_LEVEL_COUNT = 5;
@@ -67,6 +67,25 @@ const RESPONSE_CODES = {
   FULL: 8,
   DISCONNECT: 50,
 } as const;
+
+const DHAN_FEED_DISCONNECT_REASONS: Record<number, string> = {
+  800: 'Internal server error',
+  804: 'No data found',
+  805: 'Too many requests or connections',
+  806: 'Data APIs not subscribed',
+  807: 'Access token expired',
+  808: 'Authentication failed',
+  809: 'Invalid client ID',
+  810: 'Invalid access token',
+  811: 'Invalid exchange segment',
+  812: 'Invalid instrument',
+  813: 'Invalid SecurityId',
+  814: 'Invalid request',
+};
+
+export function getDhanFeedDisconnectReasonText(reasonCode: number): string {
+  return DHAN_FEED_DISCONNECT_REASONS[reasonCode] ?? 'Unknown Dhan feed disconnect reason';
+}
 
 const EXCHANGE_SEGMENTS: Record<number, string> = {
   0: 'IDX_I',
@@ -126,7 +145,7 @@ function parsePayload(
   payload: Buffer,
   securityId: string,
   exchangeSegment: string,
-): DhanMarketData | null {
+): DhanBinaryMessage | null {
   const base = { SecurityId: securityId, ExchangeSegment: exchangeSegment };
 
   switch (responseCode) {
@@ -193,11 +212,16 @@ function parsePayload(
       };
     }
 
-    case RESPONSE_CODES.DISCONNECT:
-      if (hasBytes(payload, 0, 2)) {
-        console.warn('[Dhan Parser] Feed disconnect reason code:', payload.readInt16LE(0));
-      }
-      return null;
+    case RESPONSE_CODES.DISCONNECT: {
+      if (!hasBytes(payload, 0, 2)) return null;
+      const reasonCode = payload.readInt16LE(0);
+      return {
+        ...base,
+        type: 'feed_disconnect',
+        reasonCode,
+        reasonText: getDhanFeedDisconnectReasonText(reasonCode),
+      };
+    }
 
     default:
       console.warn('[Dhan Parser] Unknown response code:', responseCode);
@@ -209,14 +233,14 @@ function parsePayload(
  * Parse Dhan binary WebSocket frame.
  * Returns normalized records keyed by SecurityId for downstream routing.
  */
-export function parseDhanBinaryPacket(buffer: Buffer): DhanMarketData[] {
+export function parseDhanBinaryPacket(buffer: Buffer): DhanBinaryMessage[] {
   try {
     if (buffer.length < HEADER_LENGTH) {
       console.warn('[Dhan Parser] Buffer too small:', buffer.length);
       return [];
     }
 
-    const messages: DhanMarketData[] = [];
+    const messages: DhanBinaryMessage[] = [];
     let offset = 0;
 
     while (offset + HEADER_LENGTH <= buffer.length) {

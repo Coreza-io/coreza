@@ -61,6 +61,7 @@ export class MarketDataGateway {
   private tradingKeepaliveInterval: NodeJS.Timeout | null = null;
   private messageSequence = 0;
   private awaitingPostAuth = false;
+  private lastFatalControlMessage: unknown = null;
 
   private constructor(config: GatewayConfig, source: string) {
     this.config = config;
@@ -135,6 +136,7 @@ export class MarketDataGateway {
         activeGatewayConnectionsGauge.set({ source: this.source }, 1);
         this.startKeepalive();
         this.awaitingPostAuth = false;
+        this.lastFatalControlMessage = null;
         const authMsg = this.config.makeAuthMessage?.(
           this.credentials,
           this.source,
@@ -258,6 +260,10 @@ export class MarketDataGateway {
         // Handle control messages (subscription confirmations, etc.) - pass source
         if (this.config.handleControlMessage) {
           this.config.handleControlMessage(msg, this.logger, this.source);
+        }
+
+        if (this.config.isFatalControlMessage?.(msg, this.source)) {
+          this.lastFatalControlMessage = msg;
         }
 
         // Only publish market data messages - pass source for filtering
@@ -614,6 +620,15 @@ export class MarketDataGateway {
   }
 
   private handleReconnect(): void {
+    if (this.lastFatalControlMessage) {
+      this.logger.error(
+        { source: this.source, controlMessage: this.lastFatalControlMessage },
+        'Suppressing reconnect after fatal gateway control message',
+      );
+      this.lastFatalControlMessage = null;
+      return;
+    }
+
     const maxAttempts = this.config.maxReconnectAttempts ?? 5;
     if (this.reconnectAttempts >= maxAttempts) {
       console.error(`[${this.source}] Max reconnection attempts reached`);
@@ -731,6 +746,7 @@ export class MarketDataGateway {
     }
     this.isAuthenticated = false;
     this.awaitingPostAuth = false;
+    this.lastFatalControlMessage = null;
     this.reconnectAttempts = 0;
   }
 

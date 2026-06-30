@@ -4,6 +4,7 @@ import {
   buildDhanUnsubscribeMessage,
   normalizeDhanMessage,
   parseDhanMessage,
+  getDhanWsUrl,
 } from '../src/marketGateways/dhan/helpers';
 import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from '../src/config/brokerStreamConfig';
 import { buildStreamNames } from '../src/utils/streamName';
@@ -125,6 +126,41 @@ describe('Dhan order-update stream', () => {
       executionId: 'EXCH-456',
       orderType: 'limit',
     });
+  });
+
+
+  it('parses Dhan feed disconnect packets as control messages with reason text', () => {
+    const buffer = Buffer.alloc(10);
+    buffer.writeUInt8(50, 0);
+    buffer.writeInt16LE(10, 1);
+    buffer.writeUInt8(1, 3);
+    buffer.writeInt32LE(1333, 4);
+    buffer.writeInt16LE(813, 8);
+
+    const [message] = parseDhanMessage(buffer, 'dhan');
+
+    expect(message).toEqual({
+      type: 'feed_disconnect',
+      SecurityId: '1333',
+      ExchangeSegment: 'NSE_EQ',
+      reasonCode: 813,
+      reasonText: 'Invalid SecurityId',
+    });
+    expect(dhanGatewayConfig.identifyMessageType(message)).toBe('feed_disconnect');
+    expect(dhanGatewayConfig.shouldPublish(message, 'dhan')).toBe(false);
+    expect(dhanGatewayConfig.isFatalControlMessage?.(message, 'dhan')).toBe(true);
+  });
+
+  it('builds Dhan market WebSocket URLs from api_key or access_token without raw undefined tokens', () => {
+    expect(
+      getDhanWsUrl({ client_id: 'client-1', access_token: 'token one' }, 'dhan'),
+    ).toBe('wss://api-feed.dhan.co?version=2&token=token%20one&clientId=client-1&authType=2');
+    expect(
+      getDhanWsUrl({ client_id: 'client-1', api_key: 'api-token', access_token: 'fallback' }, 'dhan'),
+    ).toContain('token=api-token');
+    expect(() => getDhanWsUrl({ client_id: 'client-1' }, 'dhan')).toThrow(
+      'Dhan access token missing',
+    );
   });
 
   it('sends Dhan market subscriptions as grouped JSON payloads and parses binary responses', () => {

@@ -1,4 +1,5 @@
 import { parseDhanBinaryPacket } from '../../utils/dhanBinaryParser';
+import { createLogger } from '../../utils/logger';
 import {
   getDhanMarketWsUrl,
   getDhanOrderUpdateWsUrl,
@@ -6,13 +7,18 @@ import {
 } from './environment';
 import type { CorezaMarketEvent } from '../../types/marketEvent';
 
+const dhanLogger = createLogger('DhanGateway');
+
 const DHAN_TRADING_SOURCE = 'dhan_trading';
 const DHAN_ORDER_ALERT_TYPE = 'order_alert';
+const DHAN_FEED_DISCONNECT_TYPE = 'feed_disconnect';
+const FATAL_DHAN_FEED_DISCONNECT_CODES = new Set([806, 807, 808, 809, 810, 813, 814]);
 
 type DhanCredentials = {
   api_key?: string;
   access_token?: string;
   client_id?: string;
+  environment?: string;
 };
 
 type DhanOrderAlertData = Record<string, unknown>;
@@ -30,6 +36,28 @@ function toStringValue(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   const normalized = String(value).trim();
   return normalized || undefined;
+}
+
+function resolveDhanMarketToken(creds: DhanCredentials): string | undefined {
+  return toStringValue(creds.api_key) ?? toStringValue(creds.access_token);
+}
+
+function validateDhanMarketCredentials(creds: DhanCredentials): {
+  token: string;
+  clientId: string;
+} {
+  const token = resolveDhanMarketToken(creds);
+  const clientId = toStringValue(creds.client_id);
+  const environment = resolveDhanEnvironment(creds);
+  dhanLogger.info({
+    environment,
+    hasToken: Boolean(token),
+    tokenLength: token?.length ?? 0,
+    hasClientId: Boolean(clientId),
+  }, 'Dhan market credentials resolved');
+  if (!token) throw new Error('Dhan access token missing in credentials (api_key or access_token required)');
+  if (!clientId) throw new Error('Dhan client_id missing in credentials');
+  return { token, clientId };
 }
 
 function toNumberValue(value: unknown): number | undefined {
@@ -368,8 +396,9 @@ export function getDhanWsUrl(creds: DhanCredentials, source?: string): string {
     return getDhanOrderUpdateWsUrl(environment);
   }
 
+  const { token, clientId } = validateDhanMarketCredentials(creds);
   const baseUrl = getDhanMarketWsUrl(environment);
-  return `${baseUrl}?version=2&token=${creds.api_key}&clientId=${creds.client_id}&authType=2`;
+  return `${baseUrl}?version=2&token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}&authType=2`;
 }
 
 export function buildDhanAuthMessage(creds: DhanCredentials, source?: string) {
@@ -386,7 +415,15 @@ export function buildDhanAuthMessage(creds: DhanCredentials, source?: string) {
 
 export function buildDhanSubscribeMessage(streamNames: string[], source?: string) {
   if (isDhanTradingSource(source)) return null;
-  return buildDhanMarketMessages(streamNames, 'sub');
+  const messages = buildDhanMarketMessages(streamNames, 'sub');
+  for (const message of messages) {
+    dhanLogger.debug({
+      RequestCode: message.RequestCode,
+      InstrumentCount: message.InstrumentCount,
+      instruments: message.InstrumentList.map((instrument) => `${instrument.ExchangeSegment}:${instrument.SecurityId}`),
+    }, 'Dhan subscribe payload generated');
+  }
+  return messages;
 }
 
 export function buildDhanUnsubscribeMessage(streamNames: string[], source?: string) {
@@ -404,7 +441,28 @@ export function parseDhanMessage(buffer: Buffer, source?: string): unknown[] {
 export function identifyDhanMessageType(msg: unknown): string {
   if (!msg || typeof msg !== 'object') return 'unknown';
   const record = msg as Record<string, unknown>;
+  if (record.type === DHAN_FEED_DISCONNECT_TYPE) return DHAN_FEED_DISCONNECT_TYPE;
   return toStringValue(record.Type) ?? toStringValue(record.type) ?? 'unknown';
+}
+
+export function isDhanFeedDisconnectMessage(msg: unknown): boolean {
+  return Boolean(msg && typeof msg === 'object' && (msg as Record<string, unknown>).type === DHAN_FEED_DISCONNECT_TYPE);
+}
+
+export function describeDhanFeedDisconnect(msg: unknown, streamSource?: string): string {
+  const record = msg as Record<string, unknown>;
+  const code = toNumberValue(record.reasonCode);
+  const reason = toStringValue(record.reasonText) ?? 'Unknown Dhan feed disconnect reason';
+  const securityId = toStringValue(record.SecurityId) ?? 'unknown';
+  const exchange = toStringValue(record.ExchangeSegment) ?? 'unknown';
+  const stream = streamSource ?? 'unknown';
+  return `code=${code ?? 'unknown'} reason="${reason}" streamSource=${stream} securityId=${securityId} exchange=${exchange}`;
+}
+
+export function isFatalDhanControlMessage(msg: unknown): boolean {
+  if (!isDhanFeedDisconnectMessage(msg)) return false;
+  const code = toNumberValue((msg as Record<string, unknown>).reasonCode);
+  return code !== undefined && FATAL_DHAN_FEED_DISCONNECT_CODES.has(code);
 }
 
 export function shouldPublishDhanMessage(msg: unknown, source?: string): boolean {
@@ -413,6 +471,7 @@ export function shouldPublishDhanMessage(msg: unknown, source?: string): boolean
   }
 
   const record = msg as Record<string, unknown> | null;
+  if (isDhanFeedDisconnectMessage(msg)) return false;
   return ['ticker', 'quote', 'full'].includes(String(record?.type));
 }
 

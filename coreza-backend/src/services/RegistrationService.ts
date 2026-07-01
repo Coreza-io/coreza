@@ -43,6 +43,7 @@ export interface ListenerParams {
   environment?: string;
   symbols?: string[];
   streamTypes?: string[];
+  exchange?: string;
   assetType?: string;
   marketType?: string;
   contractType?: "perpetual" | "current_quarter" | "next_quarter";
@@ -146,6 +147,7 @@ export class RegistrationService {
       environment,
       symbols,
       streamTypes,
+      exchange,
       assetType,
       marketType,
       contractType,
@@ -169,6 +171,7 @@ export class RegistrationService {
       environment,
       symbols,
       streamTypes,
+      exchange,
       assetType,
       marketType,
       contractType,

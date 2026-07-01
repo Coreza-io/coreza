@@ -16,7 +16,11 @@ import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 import { normalizeOrderSymbol } from "../utils/symbolNormalize";
 import { tradingRoutingKey } from "../utils/streamName";
-import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from "../config/brokerStreamConfig";
+import {
+  computeTradingNativeStreamsFromConfig,
+  getBrokerStreamConfig,
+  resolveTradingPublishStreamName,
+} from "../config/brokerStreamConfig";
 import { OrderOwnerRegistry } from "./OrderOwnerRegistry";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
@@ -32,7 +36,10 @@ const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
 ]);
 const ORDER_OWNER_PREFIX = "orderowner";
 
-function computeTradingNativeStreams(source: string, marketType?: string): string[] {
+function computeTradingNativeStreams(
+  source: string,
+  marketType?: string,
+): string[] {
   return computeTradingNativeStreamsFromConfig(source, marketType);
 }
 
@@ -413,19 +420,31 @@ export class MarketDataSubscriber {
           return;
         }
 
-        const streamPrefix = REDIS_CHANNELS.streamData("");
-        const fallbackStream = channel.startsWith(streamPrefix)
-          ? channel.slice(streamPrefix.length)
-          : channel;
-        const stream = event.symbol
-          ? event.timeframe
+        // const streamPrefix = REDIS_CHANNELS.streamData("");
+        // const fallbackStream = channel.startsWith(streamPrefix)
+        //   ? channel.slice(streamPrefix.length)
+        //   : channel;
+        // const stream = event.symbol
+        //   ? event.timeframe
+        //     ? event.contractType
+        //       ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
+        //       : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+        //     : event.contractType
+        //       ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
+        //       : `${event.symbol.toLowerCase()}@${event.type}`
+        //   : fallbackStream;
+        const exchangePart = event.exchange
+          ? `@${event.exchange.toLowerCase()}`
+          : "";
+        const stream = isTradingLifecycleEvent
+          ? resolveTradingPublishStreamName(event.source, event.type)
+          : event.timeframe
             ? event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}_${event.timeframe}`
-              : `${event.symbol.toLowerCase()}@${event.type}_${event.timeframe}`
+              : `${event.symbol.toLowerCase()}${exchangePart}@${event.type}_${event.timeframe}`
             : event.contractType
               ? `${event.symbol.toLowerCase()}_${event.contractType.toLowerCase()}@${event.type}`
-              : `${event.symbol.toLowerCase()}@${event.type}`
-          : fallbackStream;
+              : `${event.symbol.toLowerCase()}${exchangePart}@${event.type}`;
 
         // Find workflows registered for this stream
         const workflows = this.streamWorkflows.get(stream);

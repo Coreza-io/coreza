@@ -285,7 +285,10 @@ const DHAN_REQUEST_CODES: Record<DhanMarketMode, DhanRequestCodes> = {
 };
 
 function normalizeDhanMarketMode(value?: string): DhanMarketMode {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_\d+[a-z]+$/, '');
   if (normalized === 'quote') return 'quote';
   if (normalized === 'full') return 'full';
   if (normalized === 'market_depth' || normalized === 'depth') return 'market_depth';

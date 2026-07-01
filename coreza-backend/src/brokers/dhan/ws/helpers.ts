@@ -13,6 +13,7 @@ const DHAN_TRADING_SOURCE = 'dhan_trading';
 const DHAN_ORDER_ALERT_TYPE = 'order_alert';
 const DHAN_FEED_DISCONNECT_TYPE = 'feed_disconnect';
 const FATAL_DHAN_FEED_DISCONNECT_CODES = new Set([806, 807, 808, 809, 810, 813, 814]);
+const SUPPRESSED_DHAN_RECONNECT_CODES = new Set([805, ...FATAL_DHAN_FEED_DISCONNECT_CODES]);
 
 type DhanCredentials = {
   api_key?: string;
@@ -462,7 +463,7 @@ export function describeDhanFeedDisconnect(msg: unknown, streamSource?: string):
 export function isFatalDhanControlMessage(msg: unknown): boolean {
   if (!isDhanFeedDisconnectMessage(msg)) return false;
   const code = toNumberValue((msg as Record<string, unknown>).reasonCode);
-  return code !== undefined && FATAL_DHAN_FEED_DISCONNECT_CODES.has(code);
+  return code !== undefined && SUPPRESSED_DHAN_RECONNECT_CODES.has(code);
 }
 
 export function shouldPublishDhanMessage(msg: unknown, source?: string): boolean {

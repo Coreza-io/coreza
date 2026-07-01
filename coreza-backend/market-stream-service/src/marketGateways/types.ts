@@ -54,6 +54,8 @@ export interface GatewayConfig {
 
   // Connection settings
   reconnectDelay?: number;
+  maxReconnectDelay?: number;
+  reconnectJitter?: number;
   maxReconnectAttempts?: number;
 
   // Protocol flags

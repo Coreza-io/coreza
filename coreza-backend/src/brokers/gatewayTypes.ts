@@ -41,6 +41,8 @@ export interface GatewayConfig<TSource extends string = string> {
 
   // Connection settings
   reconnectDelay?: number;
+  maxReconnectDelay?: number;
+  reconnectJitter?: number;
   maxReconnectAttempts?: number;
 
   // Protocol flags

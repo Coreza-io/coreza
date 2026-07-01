@@ -266,6 +266,27 @@ describe('Dhan order-update stream', () => {
         InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
       },
     ]);
+    expect(buildDhanSubscribeMessage(['hdfcbank@nse_eq@full_1m'], 'dhan')).toEqual([
+      {
+        RequestCode: 21,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
+      },
+    ]);
+    expect(buildDhanSubscribeMessage(['hdfcbank@nse_eq@quote_5m'], 'dhan')).toEqual([
+      {
+        RequestCode: 17,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
+      },
+    ]);
+    expect(buildDhanSubscribeMessage(['hdfcbank@nse_eq@market_depth'], 'dhan')).toEqual([
+      {
+        RequestCode: 23,
+        InstrumentCount: 1,
+        InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
+      },
+    ]);
 
     const event = normalizeDhanMessage(
       {

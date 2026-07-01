@@ -20,6 +20,26 @@ beforeAll(() => {
 });
 
 describe("backend stream names", () => {
+  it("round-trips Dhan exchange-qualified 1m full stream names", () => {
+    expect(
+      buildStreamNames(
+        "dhan_stream",
+        ["HDFCBANK"],
+        ["full"],
+        "1m",
+        undefined,
+        "NSE_EQ",
+      ),
+    ).toEqual(["hdfcbank@nse_eq@full_1m"]);
+
+    expect(parseStreamName("dhan_stream", "hdfcbank@nse_eq@full_1m")).toEqual({
+      symbol: "HDFCBANK",
+      eventType: "full",
+      exchange: "nse_eq",
+      interval: "1m",
+    });
+  });
+
   it("round-trips Dhan exchange-qualified market stream names", () => {
     expect(
       buildStreamNames(

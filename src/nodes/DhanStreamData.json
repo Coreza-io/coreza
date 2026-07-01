@@ -220,6 +220,32 @@
       "description": "Select Dhan market streams or order updates to subscribe to."
     },
     {
+      "key": "onlyClosedBars",
+      "label": "Close Bar (Aggregate to 1m Candles)",
+      "type": "toggle",
+      "default": false,
+      "description": "When ON, Full ticks are aggregated into 1-minute closed candles and the workflow runs once per closed bar instead of on every tick.",
+      "showDescription": false,
+      "displayOptions": {
+        "show": {
+          "mode": ["subscribe"],
+          "stream_type": ["full"]
+        }
+      }
+    },
+    {
+      "key": "interval",
+      "type": "hidden",
+      "default": "1m",
+      "displayOptions": {
+        "show": {
+          "mode": ["subscribe"],
+          "stream_type": ["full"],
+          "onlyClosedBars": [true]
+        }
+      }
+    },
+    {
       "key": "scope",
       "label": "scope",
       "type": "select",

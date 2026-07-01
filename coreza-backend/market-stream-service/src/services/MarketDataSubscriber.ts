@@ -22,6 +22,7 @@ import {
   resolveTradingPublishStreamName,
 } from "../config/brokerStreamConfig";
 import { OrderOwnerRegistry } from "./OrderOwnerRegistry";
+import { TickBarAggregator } from "./TickBarAggregator";
 
 const ORDER_UPDATE_DELAY_MS = 5000; // ms between order lifecycle events
 const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
@@ -35,6 +36,7 @@ const TRADING_LIFECYCLE_EVENT_TYPES = new Set([
   "listen_key_expired",
 ]);
 const ORDER_OWNER_PREFIX = "orderowner";
+const AGGREGATION_SWEEP_MS = 1000;
 
 function computeTradingNativeStreams(
   source: string,
@@ -59,6 +61,7 @@ interface WorkflowRegistration {
   allowedSymbols: Set<string>;
   symbolMatchMode: "exact" | "wildcard";
   onlyClosedBars?: boolean; // Filter out unclosed Binance klines (default: true)
+  interval?: string;
   isLive: boolean; // true = append to strategy stream for WorkflowRunner; false = frontend-only (manual test)
 }
 
@@ -70,6 +73,7 @@ interface PersistedRegistration {
   source: MarketSource;
   environment: string;
   onlyClosedBars?: boolean;
+  interval?: string;
   isLive?: boolean;
   filterSymbols?: string[];
   symbolMatchMode?: "exact" | "wildcard";
@@ -93,6 +97,8 @@ export class MarketDataSubscriber {
     | ((channel: string, message: string) => Promise<void>)
     | null = null;
   private deliveryQueues = new Map<string, Promise<void>>();
+  private tickAggregator = new TickBarAggregator();
+  private aggregationSweep: NodeJS.Timeout | null = null;
 
   private constructor() {
     // Lazy initialization - don't create Redis connections here
@@ -136,6 +142,7 @@ export class MarketDataSubscriber {
     filterSymbols: string[] = [],
     symbolMatchMode: "exact" | "wildcard" = "exact",
     tradingNativeStreams: string[] = [],
+    interval?: string,
   ): Promise<void> {
     try {
       console.log(
@@ -165,6 +172,7 @@ export class MarketDataSubscriber {
         allowedSymbols: new Set(normalizedSymbols),
         symbolMatchMode,
         onlyClosedBars: onlyClosedBars ?? true, // Default to true (only closed bars for Binance)
+        interval,
         isLive: isLive ?? false,
       };
 
@@ -172,7 +180,7 @@ export class MarketDataSubscriber {
       this.registrations.set(workflowId, registration);
 
       // Update stream→workflow mapping
-      for (const stream of registration.streams) {
+      for (const stream of this.getRedisSubscriptionStreams(registration)) {
         if (!this.streamWorkflows.has(stream)) {
           this.streamWorkflows.set(stream, new Set());
 
@@ -197,6 +205,7 @@ export class MarketDataSubscriber {
       // Initialize message handler if not already done
       if (!this.isInitialized) {
         this.setupMessageHandler();
+        this.startAggregationSweep();
         this.isInitialized = true;
       }
 
@@ -229,7 +238,7 @@ export class MarketDataSubscriber {
       }
 
       // Remove from stream→workflow mapping
-      for (const stream of registration.streams) {
+      for (const stream of this.getRedisSubscriptionStreams(registration)) {
         const workflows = this.streamWorkflows.get(stream);
         if (workflows) {
           workflows.delete(workflowId);
@@ -249,6 +258,7 @@ export class MarketDataSubscriber {
 
       // Remove from memory
       this.registrations.delete(workflowId);
+      this.tickAggregator.dispose(workflowId);
 
       // Remove from Redis persistence
       const { pub } = this.ensureRedisConnections();
@@ -336,6 +346,7 @@ export class MarketDataSubscriber {
             registration.filterSymbols || [],
             registration.symbolMatchMode || "exact",
             cleanedTradingNativeStreams,
+            registration.interval,
           );
 
           restored++;
@@ -382,6 +393,56 @@ export class MarketDataSubscriber {
         }
       }
     }
+  }
+
+  private getRedisSubscriptionStreams(
+    registration: WorkflowRegistration,
+  ): string[] {
+    const streams = new Set(registration.streams);
+    if (registration.interval && registration.onlyClosedBars !== false) {
+      const cfg = getBrokerStreamConfig(registration.source);
+      for (const stream of registration.streams) {
+        const rawStream = this.stripAggregationInterval(
+          stream,
+          registration.interval,
+        );
+        const streamType = this.extractStreamType(rawStream);
+        if (streamType && cfg.aggregatableTickTypes?.includes(streamType)) {
+          streams.add(rawStream);
+        }
+      }
+    }
+    return Array.from(streams);
+  }
+
+  private stripAggregationInterval(stream: string, interval: string): string {
+    return stream.endsWith(`_${interval}`)
+      ? stream.slice(0, -1 * `_${interval}`.length)
+      : stream;
+  }
+
+  private toIntervalStream(stream: string, interval: string): string {
+    return stream.endsWith(`_${interval}`) ? stream : `${stream}_${interval}`;
+  }
+
+  private extractStreamType(stream: string): string | undefined {
+    const lastSegment = stream.split("@").pop();
+    return lastSegment?.split("_")[0];
+  }
+
+  private startAggregationSweep(): void {
+    if (this.aggregationSweep) return;
+    this.aggregationSweep = setInterval(() => {
+      for (const closed of this.tickAggregator.flushDue(Date.now())) {
+        const registration = this.registrations.get(closed.workflowId);
+        if (!registration) continue;
+        this.enqueueWorkflowDelivery(
+          closed.workflowId,
+          registration,
+          closed.event,
+        );
+      }
+    }, AGGREGATION_SWEEP_MS);
   }
 
   /**
@@ -483,6 +544,26 @@ export class MarketDataSubscriber {
               },
               "Skipping market event due to broker mismatch",
             );
+            continue;
+          }
+
+          const cfg = getBrokerStreamConfig(event.source);
+          const shouldAggregate =
+            registration.onlyClosedBars !== false &&
+            Boolean(registration.interval) &&
+            cfg.aggregatableTickTypes?.includes(event.type) === true;
+
+          if (shouldAggregate) {
+            const deliveryStream = registration.interval
+              ? this.toIntervalStream(stream, registration.interval)
+              : stream;
+            const bar = this.tickAggregator.push(
+              workflowId,
+              deliveryStream,
+              event,
+            );
+            if (bar)
+              this.enqueueWorkflowDelivery(workflowId, registration, bar);
             continue;
           }
 
@@ -934,14 +1015,28 @@ export class MarketDataSubscriber {
       newStreams,
     );
 
+    const streamsToMap = new Set<string>();
     for (const stream of newStreams) {
-      // Skip if already registered
-      if (registration.streams.has(stream)) {
-        continue;
+      if (!registration.streams.has(stream)) {
+        registration.streams.add(stream);
       }
+      streamsToMap.add(stream);
 
-      // Add to registration's stream set
-      registration.streams.add(stream);
+      if (TRADING_LIFECYCLE_EVENT_TYPES.has(stream)) {
+        registration.tradingNativeStreams.add(stream);
+      }
+    }
+
+    for (const stream of this.getRedisSubscriptionStreams(registration)) {
+      if (!streamsToMap.has(stream) && !newStreams.includes(stream)) {
+        const rawMatchesNewAggregatedStream = newStreams.some(
+          (newStream) =>
+            registration.interval &&
+            this.stripAggregationInterval(newStream, registration.interval) ===
+              stream,
+        );
+        if (!rawMatchesNewAggregatedStream) continue;
+      }
 
       // Update stream→workflow mapping
       if (!this.streamWorkflows.has(stream)) {
@@ -956,10 +1051,6 @@ export class MarketDataSubscriber {
         );
       }
       this.streamWorkflows.get(stream)!.add(workflowId);
-
-      if (TRADING_LIFECYCLE_EVENT_TYPES.has(stream)) {
-        registration.tradingNativeStreams.add(stream);
-      }
     }
 
     newTradingNativeStreams.forEach((stream) =>
@@ -1027,6 +1118,7 @@ export class MarketDataSubscriber {
       streamsToRemove,
     );
 
+    const redisStreamsToRemove = new Set<string>();
     for (const stream of streamsToRemove) {
       if (!registration.streams.has(stream)) {
         continue;
@@ -1034,7 +1126,15 @@ export class MarketDataSubscriber {
 
       registration.streams.delete(stream);
       registration.tradingNativeStreams.delete(stream);
+      redisStreamsToRemove.add(stream);
+      if (registration.interval) {
+        redisStreamsToRemove.add(
+          this.stripAggregationInterval(stream, registration.interval),
+        );
+      }
+    }
 
+    for (const stream of redisStreamsToRemove) {
       const workflows = this.streamWorkflows.get(stream);
       if (workflows) {
         workflows.delete(workflowId);
@@ -1082,6 +1182,7 @@ export class MarketDataSubscriber {
       symbolMatchMode: registration.symbolMatchMode,
       tradingNativeStreams: Array.from(registration.tradingNativeStreams),
       onlyClosedBars: registration.onlyClosedBars,
+      interval: registration.interval,
       isLive: registration.isLive,
     });
 
@@ -1143,6 +1244,11 @@ export class MarketDataSubscriber {
     // Unsubscribe from all channels
     if (this.redisSub) {
       await this.redisSub.unsubscribe();
+    }
+
+    if (this.aggregationSweep) {
+      clearInterval(this.aggregationSweep);
+      this.aggregationSweep = null;
     }
 
     // Clear memory

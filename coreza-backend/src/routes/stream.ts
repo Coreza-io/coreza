@@ -1059,6 +1059,7 @@ router.post("/:source/register", async (req, res) => {
       scope,
       environment,
       onlyClosedBars,
+      interval,
       // symbols: parsedSymbols,
       // streamTypes: streamType,
       // symbolMatchMode: "exact",

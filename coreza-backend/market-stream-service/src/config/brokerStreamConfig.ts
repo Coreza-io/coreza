@@ -27,6 +27,7 @@ export interface BrokerStreamConfig {
   tradingRoutingKey?: (eventType: string) => string;
   companionSources?: string[];
   emitsUnclosedBars?: boolean;
+  aggregatableTickTypes?: string[];
   normalizeOrderSymbol?: (symbol: string) => string;
   resolveSourceForSymbol?: (symbol: string, defaultSource: string) => string;
   normalizeStreamType?: (streamType: string) => string;
@@ -142,6 +143,7 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     persistSubscriptionState: getDhanInstrumentSnapshot,
     restoreSubscriptionState: loadDhanInstrumentSnapshot,
     redactAuthMessage: redactLoginToken,
+    aggregatableTickTypes: ["full"],
   },
 
   schwab: {

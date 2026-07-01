@@ -35,7 +35,10 @@ function normalizeStreamTypeList(value: unknown): string[] {
     return value.map((streamType) => String(streamType).trim()).filter(Boolean);
   }
   if (typeof value === "string") {
-    return value.split(",").map((streamType) => streamType.trim()).filter(Boolean);
+    return value
+      .split(",")
+      .map((streamType) => streamType.trim())
+      .filter(Boolean);
   }
   return [];
 }
@@ -432,6 +435,7 @@ export class StreamingLifecycleAdapter {
       scope: subscriptionScope,
       environment,
       onlyClosedBars: nodeValues.onlyClosedBars ?? true,
+      interval: nodeValues.interval,
       isLive: true,
       symbols: symbols,
       streamTypes: streamType,

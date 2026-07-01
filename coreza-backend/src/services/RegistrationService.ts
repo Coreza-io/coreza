@@ -299,6 +299,7 @@ export class RegistrationService {
     scope: string;
     environment?: string;
     onlyClosedBars?: boolean;
+    interval?: string;
     isLive?: boolean;
     symbols?: string[];
     streamTypes?: string[];
@@ -316,6 +317,7 @@ export class RegistrationService {
       scope: params.scope,
       environment: params.environment,
       onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
+      interval: params.interval,
       isLive: params.isLive ?? false,
       // symbols: params.symbols ?? [],
       // streamTypes: params.streamTypes ?? [],

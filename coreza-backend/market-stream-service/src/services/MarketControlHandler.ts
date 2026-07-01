@@ -105,8 +105,6 @@ function buildNativeStreamNames(
   );
 }
 
-
-
 export class MarketControlHandler {
   private static instance: MarketControlHandler;
   private redisSub: Redis;
@@ -226,6 +224,7 @@ export class MarketControlHandler {
     scope: string;
     environment: string;
     onlyClosedBars?: boolean;
+    interval?: string;
     isLive?: boolean;
     // symbols?: string[];
     // streamTypes?: string[];
@@ -241,6 +240,7 @@ export class MarketControlHandler {
       scope,
       environment,
       onlyClosedBars,
+      interval,
       isLive,
       // symbols,
       // streamTypes,
@@ -285,9 +285,10 @@ export class MarketControlHandler {
         environment,
         onlyClosedBars,
         isLive,
-        // filterSymbols,
-        // symbolMatchMode,
-        // tradingNativeStreams,
+        [],
+        "exact",
+        [],
+        interval,
       );
 
       console.log(
@@ -1314,7 +1315,6 @@ export class MarketControlHandler {
 
               // Subscribe gateway with stored stream names
               state.gateway.subscribeStreams(stateData.streams);
-
 
               console.log(
                 `🔄 [MarketControl] Restored ${stateData.streams.length} streams on ${source}`,

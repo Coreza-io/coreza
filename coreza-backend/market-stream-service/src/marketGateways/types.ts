@@ -43,7 +43,7 @@ export interface GatewayConfig {
   ) => any;
 
   // Message processing - source param for routing behavior
-  parseMessage: (buffer: Buffer, source?: string) => unknown[];
+  parseMessage: (buffer: Buffer, source?: string, isBinary?: boolean) => unknown[];
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any, source?: string) => boolean;
   handleControlMessage?: (msg: any, logger: any, source?: string) => void;
@@ -57,6 +57,7 @@ export interface GatewayConfig {
   maxReconnectDelay?: number;
   reconnectJitter?: number;
   maxReconnectAttempts?: number;
+  reconnectResetAfterMs?: number;
 
   // Protocol flags
   isBinary?: boolean | ((source?: string) => boolean);

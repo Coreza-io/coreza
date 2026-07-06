@@ -2,7 +2,7 @@ import { MarketDataGateway } from '../src/services/MarketDataGateway';
 
 type ReconnectHarness = {
   source: string;
-  logger: { debug: jest.Mock; error: jest.Mock };
+  logger: { debug: jest.Mock; error: jest.Mock; info: jest.Mock };
   lastFatalControlMessage: unknown;
   reconnectTimer: NodeJS.Timeout | null;
   reconnectAttempts: number;
@@ -11,6 +11,7 @@ type ReconnectHarness = {
     maxReconnectDelay?: number;
     reconnectJitter?: number;
     maxReconnectAttempts?: number;
+    reconnectResetAfterMs?: number;
   };
   credentials: object | null;
   preConnectContext: undefined;
@@ -23,7 +24,7 @@ describe('MarketDataGateway reconnect control handling', () => {
     const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
     const gateway = Object.create(MarketDataGateway.prototype) as ReconnectHarness;
     gateway.source = 'dhan_stream';
-    gateway.logger = { debug: jest.fn(), error: jest.fn() };
+    gateway.logger = { debug: jest.fn(), error: jest.fn(), info: jest.fn() };
     gateway.lastFatalControlMessage = {
       type: 'feed_disconnect',
       reasonCode: 813,
@@ -50,7 +51,7 @@ describe('MarketDataGateway reconnect control handling', () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
     const gateway = Object.create(MarketDataGateway.prototype) as ReconnectHarness;
     gateway.source = 'dhan_stream';
-    gateway.logger = { debug: jest.fn(), error: jest.fn() };
+    gateway.logger = { debug: jest.fn(), error: jest.fn(), info: jest.fn() };
     gateway.lastFatalControlMessage = null;
     gateway.reconnectTimer = null;
     gateway.reconnectAttempts = 3;
@@ -83,6 +84,83 @@ describe('MarketDataGateway reconnect control handling', () => {
     setTimeoutSpy.mockRestore();
     consoleSpy.mockRestore();
     jest.useRealTimers();
+  });
+
+  it('does not reset reconnect attempts across repeated short authenticated closes and stops at max attempts', () => {
+    jest.useFakeTimers();
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const gateway = Object.create(MarketDataGateway.prototype) as ReconnectHarness & {
+      isAuthenticated: boolean;
+      awaitingPostAuth: boolean;
+      clearReconnectTimer: jest.Mock;
+      resubscribeAll: jest.Mock;
+      startTradingKeepalive: jest.Mock;
+      markConnectionReady: (resolveConnect?: () => void) => void;
+      resetReconnectAttemptsAfterStableClose: (uptimeMs: number | null) => void;
+    };
+    gateway.source = 'dhan_trading';
+    gateway.logger = { debug: jest.fn(), error: jest.fn(), info: jest.fn() };
+    gateway.lastFatalControlMessage = null;
+    gateway.reconnectTimer = null;
+    gateway.config = {
+      reconnectDelay: 1_000,
+      maxReconnectAttempts: 5,
+      reconnectResetAfterMs: 60_000,
+    };
+    gateway.reconnectAttempts = 0;
+    gateway.awaitingPostAuth = true;
+    gateway.credentials = { api_key: 'token' };
+    gateway.preConnectContext = undefined;
+    gateway.connect = jest.fn().mockResolvedValue(undefined);
+    gateway.clearReconnectTimer = jest.fn();
+    gateway.resubscribeAll = jest.fn();
+    gateway.startTradingKeepalive = jest.fn();
+
+    for (let cycle = 1; cycle <= 5; cycle += 1) {
+      gateway.markConnectionReady();
+      gateway.resetReconnectAttemptsAfterStableClose(1_000);
+      gateway.handleReconnect();
+
+      expect(gateway.reconnectAttempts).toBe(cycle);
+      expect(gateway.reconnectTimer).not.toBeNull();
+      jest.clearAllTimers();
+      gateway.reconnectTimer = null;
+    }
+
+    gateway.markConnectionReady();
+    gateway.resetReconnectAttemptsAfterStableClose(1_000);
+    gateway.handleReconnect();
+
+    expect(gateway.reconnectAttempts).toBe(5);
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(5);
+    expect(consoleErrorSpy).toHaveBeenCalledWith('[dhan_trading] Max reconnection attempts reached');
+
+    setTimeoutSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it('resets reconnect attempts only after configured stable close uptime', () => {
+    const gateway = Object.create(MarketDataGateway.prototype) as ReconnectHarness & {
+      resetReconnectAttemptsAfterStableClose: (uptimeMs: number | null) => void;
+    };
+    gateway.source = 'dhan_trading';
+    gateway.logger = {
+      debug: jest.fn(),
+      error: jest.fn(),
+      info: jest.fn(),
+    };
+    gateway.config = { reconnectResetAfterMs: 60_000 };
+    gateway.reconnectAttempts = 4;
+
+    gateway.resetReconnectAttemptsAfterStableClose(59_999);
+    expect(gateway.reconnectAttempts).toBe(4);
+
+    gateway.resetReconnectAttemptsAfterStableClose(60_000);
+    expect(gateway.reconnectAttempts).toBe(0);
   });
 
   it('shares one in-flight connect promise across concurrent connect calls', async () => {

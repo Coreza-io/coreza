@@ -204,7 +204,7 @@ export class MarketDataGateway {
         }
       });
 
-      socket.on("message", (data: Buffer) => {
+      socket.on("message", (data: WebSocket.RawData, isBinary: boolean) => {
         if (!isCurrentSocket()) {
           this.logger.debug(
             { source: this.source },
@@ -212,7 +212,12 @@ export class MarketDataGateway {
           );
           return;
         }
-        this.handleMessage(data, resolve);
+        const buffer = Array.isArray(data)
+          ? Buffer.concat(data)
+          : Buffer.isBuffer(data)
+            ? data
+            : Buffer.from(new Uint8Array(data));
+        this.handleMessage(buffer, resolve, isBinary);
       });
 
       socket.on("close", (code: number, reason: Buffer) => {
@@ -254,6 +259,7 @@ export class MarketDataGateway {
         this.stopKeepalive();
         this.stopTradingKeepalive();
         this.clearCredentialIntervals();
+        this.resetReconnectAttemptsAfterStableClose(uptimeMs);
         this.handleReconnect();
         reject(
           new Error(
@@ -332,10 +338,11 @@ export class MarketDataGateway {
   private async handleMessage(
     buffer: Buffer,
     resolveConnect?: () => void,
+    isBinary = false,
   ): Promise<void> {
     try {
       const startTime = Date.now();
-      const messages = this.config.parseMessage(buffer, this.source);
+      const messages = this.config.parseMessage(buffer, this.source, isBinary);
 
       // Debug log ALL incoming messages
       this.logger.debug(
@@ -872,12 +879,27 @@ export class MarketDataGateway {
   private markConnectionReady(resolveConnect?: () => void): void {
     this.logger.info({ source: this.source }, "Authentication successful");
     this.clearReconnectTimer();
-    this.reconnectAttempts = 0;
+    if (this.config.reconnectResetAfterMs === undefined) {
+      this.reconnectAttempts = 0;
+    }
     this.isAuthenticated = true;
     this.awaitingPostAuth = false;
     this.resubscribeAll();
     this.startTradingKeepalive();
     if (resolveConnect) resolveConnect();
+  }
+
+  private resetReconnectAttemptsAfterStableClose(uptimeMs: number | null): void {
+    const resetAfterMs = this.config.reconnectResetAfterMs;
+    if (resetAfterMs === undefined || uptimeMs === null || uptimeMs < resetAfterMs) {
+      return;
+    }
+
+    this.logger.info(
+      { source: this.source, uptimeMs, reconnectResetAfterMs: resetAfterMs },
+      "Resetting reconnect attempts after stable gateway connection",
+    );
+    this.reconnectAttempts = 0;
   }
 
   private stopKeepalive(): void {

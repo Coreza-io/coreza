@@ -2,8 +2,10 @@ import { dhanGatewayConfig } from '../src/marketGateways/dhan/config';
 import {
   buildDhanSubscribeMessage,
   buildDhanUnsubscribeMessage,
+  identifyDhanMessageType,
   normalizeDhanMessage,
   parseDhanMessage,
+  shouldPublishDhanMessage,
   getDhanWsUrl,
 } from '../src/marketGateways/dhan/helpers';
 import { computeTradingNativeStreamsFromConfig, getBrokerStreamConfig } from '../src/config/brokerStreamConfig';
@@ -86,6 +88,48 @@ describe('Dhan order-update stream', () => {
       UserType: 'SELF',
     });
     expect(authMessage.LoginReq.Token).toBe('token-1');
+  });
+
+
+  it('converts invalid Dhan trading JSON into a safe non-publishable control message', () => {
+    const buffer = Buffer.from('{"Type":"order_alert"}{"bad":true}');
+
+    const messages = parseDhanMessage(buffer, 'dhan_trading', true);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      type: 'dhan_trading_control',
+      kind: 'invalid_json',
+      byteLength: buffer.length,
+      isBinary: true,
+    });
+    expect(messages[0]).toHaveProperty('payloadHash', expect.stringMatching(/^[a-f0-9]{64}$/));
+    expect(messages[0]).toHaveProperty('parseError', expect.any(String));
+    expect(messages[0]).not.toHaveProperty('raw');
+    expect(messages[0]).not.toHaveProperty('preview');
+    expect(identifyDhanMessageType(messages[0])).toBe('dhan_trading_control');
+    expect(shouldPublishDhanMessage(messages[0], 'dhan_trading')).toBe(false);
+    expect(normalizeDhanMessage(messages[0], 'dhan_trading')).toBeNull();
+  });
+
+  it('ignores empty Dhan trading payloads and parses BOM-wrapped order alerts', () => {
+    expect(parseDhanMessage(Buffer.from('   \n\t  '), 'dhan_trading')).toEqual([]);
+
+    const payload = {
+      Type: 'order_alert',
+      Data: { OrderNo: 'DHAN-124', Status: 'TRADED', Symbol: 'RELIANCE' },
+    };
+    const [message] = parseDhanMessage(Buffer.from(`﻿${JSON.stringify(payload)}`), 'dhan_trading');
+
+    expect(message).toEqual(payload);
+    expect(shouldPublishDhanMessage(message, 'dhan_trading')).toBe(true);
+  });
+
+  it('does not publish or normalize unknown valid Dhan trading JSON', () => {
+    const [message] = parseDhanMessage(Buffer.from('{"Type":"heartbeat","Data":{}}'), 'dhan_trading');
+
+    expect(shouldPublishDhanMessage(message, 'dhan_trading')).toBe(false);
+    expect(normalizeDhanMessage(message, 'dhan_trading')).toBeNull();
   });
 
   it('normalizes Dhan order_alert JSON to a Coreza order_update event', () => {
@@ -266,7 +310,7 @@ describe('Dhan order-update stream', () => {
         InstrumentList: [{ ExchangeSegment: 'NSE_EQ', SecurityId: '1333' }],
       },
     ]);
-    expect(buildDhanSubscribeMessage(['hdfcbank@nse_eq@full_1m'], 'dhan')).toEqual([
+    expect(buildDhanSubscribeMessage(['hdfcbank@nse_eq@full_1m'], 'dhan_stream')).toEqual([
       {
         RequestCode: 21,
         InstrumentCount: 1,

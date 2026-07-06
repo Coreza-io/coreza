@@ -20,7 +20,7 @@ export const dhanGatewayConfig: GatewayConfig<'dhan'> = {
   authCompletesOnSend: (source) => source === 'dhan_trading',
   makeSubscribeMessage: (streamNames, _types, source) => buildDhanSubscribeMessage(streamNames, source),
   makeUnsubscribeMessage: (streamNames, _types, source) => buildDhanUnsubscribeMessage(streamNames, source),
-  parseMessage: (buffer, source) => parseDhanMessage(buffer, source),
+  parseMessage: (buffer, source, isBinary) => parseDhanMessage(buffer, source, isBinary),
   identifyMessageType: (msg) => identifyDhanMessageType(msg),
   shouldPublish: (msg, source) => shouldPublishDhanMessage(msg, source),
   handleControlMessage: (msg, logger, source) => {
@@ -36,5 +36,6 @@ export const dhanGatewayConfig: GatewayConfig<'dhan'> = {
   maxReconnectDelay: 30000,
   reconnectJitter: 1000,
   maxReconnectAttempts: 5,
+  reconnectResetAfterMs: 60_000,
   isBinary: () => false,
 };

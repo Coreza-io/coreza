@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { parseDhanBinaryPacket } from '../../utils/dhanBinaryParser';
 import { createLogger } from '../../utils/logger';
 import {
@@ -12,6 +13,7 @@ const dhanLogger = createLogger('DhanGateway');
 const DHAN_TRADING_SOURCE = 'dhan_trading';
 const DHAN_ORDER_ALERT_TYPE = 'order_alert';
 const DHAN_FEED_DISCONNECT_TYPE = 'feed_disconnect';
+const DHAN_TRADING_CONTROL_TYPE = 'dhan_trading_control';
 const FATAL_DHAN_FEED_DISCONNECT_CODES = new Set([806, 807, 808, 809, 810, 813, 814]);
 const SUPPRESSED_DHAN_RECONNECT_CODES = new Set([805, ...FATAL_DHAN_FEED_DISCONNECT_CODES]);
 
@@ -27,6 +29,15 @@ type DhanOrderAlertData = Record<string, unknown>;
 type DhanOrderAlertMessage = {
   Type?: string;
   Data?: DhanOrderAlertData;
+};
+
+type DhanTradingControlMessage = {
+  type: typeof DHAN_TRADING_CONTROL_TYPE;
+  kind: 'invalid_json';
+  byteLength: number;
+  isBinary: boolean;
+  parseError: string;
+  payloadHash: string;
 };
 
 function isDhanTradingSource(source?: string): boolean {
@@ -435,17 +446,34 @@ export function buildDhanUnsubscribeMessage(streamNames: string[], source?: stri
   return buildDhanMarketMessages(streamNames, 'unsub');
 }
 
-export function parseDhanMessage(buffer: Buffer, source?: string): unknown[] {
+export function parseDhanMessage(buffer: Buffer, source?: string, isBinary = false): unknown[] {
   if (!isDhanTradingSource(source)) return parseDhanBinaryPacket(buffer);
 
-  const parsed = JSON.parse(buffer.toString('utf8'));
-  return Array.isArray(parsed) ? parsed : [parsed];
+  const payload = buffer.toString('utf8').trim();
+  if (!payload) return [];
+
+  try {
+    const parsed = JSON.parse(payload);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (error) {
+    const parseError = error instanceof Error ? error.message : String(error);
+    const controlMessage: DhanTradingControlMessage = {
+      type: DHAN_TRADING_CONTROL_TYPE,
+      kind: 'invalid_json',
+      byteLength: buffer.length,
+      isBinary: Boolean(isBinary),
+      parseError,
+      payloadHash: createHash('sha256').update(buffer).digest('hex'),
+    };
+    return [controlMessage];
+  }
 }
 
 export function identifyDhanMessageType(msg: unknown): string {
   if (!msg || typeof msg !== 'object') return 'unknown';
   const record = msg as Record<string, unknown>;
   if (record.type === DHAN_FEED_DISCONNECT_TYPE) return DHAN_FEED_DISCONNECT_TYPE;
+  if (record.type === DHAN_TRADING_CONTROL_TYPE) return DHAN_TRADING_CONTROL_TYPE;
   return toStringValue(record.Type) ?? toStringValue(record.type) ?? 'unknown';
 }
 
@@ -507,8 +535,11 @@ export function normalizeDhanOrderUpdate(data: DhanOrderAlertData): CorezaMarket
 
 export function normalizeDhanMessage(msg: unknown, source?: string): CorezaMarketEvent | null {
   if (isDhanTradingSource(source)) {
-    const data = (msg as DhanOrderAlertMessage | null)?.Data;
-    return data ? normalizeDhanOrderUpdate(data) : null;
+    const record = msg as DhanOrderAlertMessage | null;
+    if (record?.Type !== DHAN_ORDER_ALERT_TYPE || !record.Data || typeof record.Data !== 'object') {
+      return null;
+    }
+    return normalizeDhanOrderUpdate(record.Data);
   }
 
   const record = msg as Record<string, unknown>;

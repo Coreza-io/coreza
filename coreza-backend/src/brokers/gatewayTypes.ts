@@ -30,7 +30,7 @@ export interface GatewayConfig<TSource extends string = string> {
   ) => any;
 
   // Message processing
-  parseMessage: (buffer: Buffer, source?: string) => unknown[];
+  parseMessage: (buffer: Buffer, source?: string, isBinary?: boolean) => unknown[];
   identifyMessageType: (msg: any) => string;
   shouldPublish: (msg: any, source?: string) => boolean;
   handleControlMessage?: (msg: any, logger: any, source?: string) => void;
@@ -44,6 +44,7 @@ export interface GatewayConfig<TSource extends string = string> {
   maxReconnectDelay?: number;
   reconnectJitter?: number;
   maxReconnectAttempts?: number;
+  reconnectResetAfterMs?: number;
 
   // Protocol flags
   isBinary?: boolean | ((source?: string) => boolean); // Uses binary WebSocket protocol (Dhan market)

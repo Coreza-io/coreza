@@ -15,6 +15,7 @@ type OrderOwnerIds = {
   orderId?: string;
   clientAlgoId?: string;
   algoId?: string;
+  exchangeOrderId?: string;
 };
 
 const ORDER_OWNER_PREFIX = "orderowner";

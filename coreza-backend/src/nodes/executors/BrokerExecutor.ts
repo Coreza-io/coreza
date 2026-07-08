@@ -34,6 +34,7 @@ import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
 import {
   BROKER_CAPABILITIES,
   getOrderOwnerExtractor,
+  getPlaceOrderEnrichment,
 } from "../../brokers/capabilities";
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
@@ -287,6 +288,17 @@ export class BrokerExecutor implements INodeExecutor {
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
       if (operation === "place_order") {
+        data = await this.enrichPlacedOrder({
+          broker,
+          data,
+          config,
+          baseUrl,
+          headers,
+          workingCreds,
+        });
+      }
+
+      if (operation === "place_order") {
         try {
           const extractor = getOrderOwnerExtractor(broker);
           const ids = extractor ? extractor(data) : {};
@@ -396,6 +408,84 @@ export class BrokerExecutor implements INodeExecutor {
       );
       return toNodeResult(normalized);
     }
+  }
+
+  private async enrichPlacedOrder(input: {
+    broker: string;
+    data: unknown;
+    config: NonNullable<ReturnType<typeof getBrokerConfig>>;
+    baseUrl: string;
+    headers: Record<string, string>;
+    workingCreds: unknown;
+  }): Promise<unknown> {
+    const enrichment = getPlaceOrderEnrichment(input.broker);
+    if (!enrichment) return input.data;
+
+    const orderId = enrichment.getOrderId(input.data);
+    if (!orderId) return input.data;
+
+    const op = input.config.operations[enrichment.operation];
+    if (!op) {
+      console.warn(
+        `⚠️ [BROKER] Missing ${input.broker}.${enrichment.operation} enrichment operation`,
+      );
+      return input.data;
+    }
+
+    const attempts = Math.max(1, enrichment.pollAttempts ?? 1);
+    const delayMs = Math.max(0, enrichment.pollDelayMs ?? 0);
+
+    let enrichedData = input.data;
+    let enriched = false;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        if (attempt > 1 && delayMs > 0) {
+          await this.delay(delayMs);
+        }
+
+        const params = { orderId };
+        const path =
+          typeof op.path === "function"
+            ? op.path(params, input.workingCreds)
+            : op.path;
+        const url = `${input.baseUrl}${path}`;
+        const queryParams = op.makeParams?.(params, input.workingCreds) ?? {};
+        const body = op.makeBody
+          ? await op.makeBody(params, input.workingCreds)
+          : undefined;
+
+        const response = await axios({
+          method: op.method,
+          url,
+          headers: body
+            ? { ...input.headers, "Content-Type": "application/json" }
+            : input.headers,
+          params: queryParams,
+          data: body,
+          timeout: 30000,
+        });
+
+        const detail = op.transformResult
+          ? op.transformResult(response.data, params, response)
+          : response.data;
+
+        enrichedData = enrichment.merge(input.data, detail);
+        enriched = true;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    if (!enriched && lastError) {
+      console.warn(
+        `⚠️ [BROKER] Failed to enrich ${input.broker}.place_order response`,
+        lastError,
+      );
+    }
+
+    return enriched ? enrichedData : input.data;
   }
 
   private async executeWithPagination(

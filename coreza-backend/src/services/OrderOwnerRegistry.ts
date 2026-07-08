@@ -2,6 +2,13 @@ import { getRedisQueue } from "../config/redis";
 
 const TTL_SECONDS = 86400;
 const PREFIX = "orderowner";
+const ORDER_OWNER_ID_KEYS = [
+  "clientOrderId",
+  "orderId",
+  "clientAlgoId",
+  "algoId",
+  "exchangeOrderId",
+] as const;
 
 export interface OrderOwner {
   userId: string;
@@ -18,6 +25,7 @@ export interface OrderOwnerIds {
   orderId?: string;
   clientAlgoId?: string;
   algoId?: string;
+  exchangeOrderId?: string;
 }
 
 export class OrderOwnerRegistry {
@@ -42,6 +50,7 @@ export class OrderOwnerRegistry {
       orderId: input.orderId,
       clientAlgoId: input.clientAlgoId,
       algoId: input.algoId,
+      exchangeOrderId: input.exchangeOrderId,
     };
     await Promise.all(
       (Object.keys(ids) as Array<keyof OrderOwnerIds>)
@@ -62,10 +71,9 @@ export class OrderOwnerRegistry {
     ids: OrderOwnerIds,
   ): Promise<number> {
     const redis = getRedisQueue();
-    const keys = (
-      ["clientOrderId", "orderId", "clientAlgoId", "algoId"] as const
+    const keys = ORDER_OWNER_ID_KEYS.map(
+      (k) => [k, String(ids[k] || "").trim()] as const,
     )
-      .map((k) => [k, String(ids[k] || "").trim()] as const)
       .filter(([, v]) => v)
       .map(([k, v]) => this.key(source, k, v));
     if (keys.length === 0) return 0;
@@ -77,10 +85,9 @@ export class OrderOwnerRegistry {
     ids: OrderOwnerIds,
   ): Promise<OrderOwner | null> {
     const redis = getRedisQueue();
-    const keys = (
-      ["clientOrderId", "orderId", "clientAlgoId", "algoId"] as const
+    const keys = ORDER_OWNER_ID_KEYS.map(
+      (k) => [k, String(ids[k] || "").trim()] as const,
     )
-      .map((k) => [k, String(ids[k] || "").trim()] as const)
       .filter(([, v]) => v)
       .map(([k, v]) => this.key(source, k, v));
     if (keys.length === 0) return null;

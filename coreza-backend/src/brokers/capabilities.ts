@@ -49,6 +49,14 @@ export interface StreamParserConfig {
   ) => string;
 }
 
+export interface PlaceOrderEnrichmentConfig {
+  operation: string;
+  getOrderId: (data: unknown) => string | undefined;
+  merge: (placeData: unknown, detail: unknown) => unknown;
+  pollAttempts?: number;
+  pollDelayMs?: number;
+}
+
 export interface BrokerCapabilities {
   /** Unique broker identifier, e.g. "alpaca", "binance" */
   id: string;
@@ -96,7 +104,10 @@ export interface BrokerCapabilities {
   normalizeCryptoParams?: (params: Record<string, any>) => void;
 
   /** Extract order owner IDs from broker response */
-  orderOwnerExtract?: (data: any) => Record<string, string | undefined>;
+  orderOwnerExtract?: (data: unknown) => Record<string, string | undefined>;
+
+  /** Optional best-effort enrichment for minimal place_order responses. */
+  placeOrderEnrichment?: PlaceOrderEnrichmentConfig;
 
   /** Trading routing key derivation */
   tradingRoutingKey?: (eventType: string) => string;
@@ -186,8 +197,15 @@ export function isTradingSource(source: string): boolean {
 /** Get order owner extractor for a broker */
 export function getOrderOwnerExtractor(
   broker: string,
-): ((data: any) => Record<string, string | undefined>) | undefined {
+): ((data: unknown) => Record<string, string | undefined>) | undefined {
   return BROKER_CAPABILITIES[broker]?.orderOwnerExtract;
+}
+
+/** Get place-order enrichment config for a broker */
+export function getPlaceOrderEnrichment(
+  broker: string,
+): BrokerCapabilities["placeOrderEnrichment"] | undefined {
+  return BROKER_CAPABILITIES[broker]?.placeOrderEnrichment;
 }
 
 /** Get credential validation for a service type */

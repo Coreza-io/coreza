@@ -1,6 +1,12 @@
 import { BrokerCapabilities } from "../capabilities";
 import { extractDhanOrderOwnerIds } from "./orderOwnerExtract";
 
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export const dhanCapabilities: BrokerCapabilities = {
   id: "dhan",
   displayName: "Dhan",
@@ -31,6 +37,24 @@ export const dhanCapabilities: BrokerCapabilities = {
   },
 
   orderOwnerExtract: extractDhanOrderOwnerIds,
+
+  placeOrderEnrichment: {
+    operation: "get_order_by_id",
+    getOrderId: (data: unknown) => {
+      const record = toRecord(data);
+      const orderId = record?.orderId ?? record?.order_id;
+      return orderId != null ? String(orderId) : undefined;
+    },
+    merge: (placeData: unknown, detail: unknown) => {
+      const placeRecord = toRecord(placeData);
+      const detailRecord = toRecord(Array.isArray(detail) ? detail[0] : detail);
+      return placeRecord && detailRecord
+        ? { ...placeRecord, ...detailRecord }
+        : placeData;
+    },
+    pollAttempts: 3,
+    pollDelayMs: 400,
+  },
 
   tradingRoutingKey: () => "order_alert",
 

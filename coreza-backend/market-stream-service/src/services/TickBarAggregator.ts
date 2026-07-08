@@ -37,7 +37,9 @@ function getEventTime(event: CorezaMarketEvent): number {
 }
 
 function getPrice(event: CorezaMarketEvent): number | undefined {
-  return toFiniteNumber(event.c ?? event.p);
+  // For a tick, the current price is the last-traded price (p / LTP).
+  // c is the day/previous close on Dhan full packets (near-constant), so it must not win.
+  return toFiniteNumber(event.p ?? event.c);
 }
 
 function getVolume(event: CorezaMarketEvent): number | undefined {

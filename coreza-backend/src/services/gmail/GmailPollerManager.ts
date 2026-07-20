@@ -202,6 +202,19 @@ class GmailPollerManager {
     } catch (error) {
       if (this.isReconnectRequiredError(error)) {
         await this.stopByKey(key);
+        const { webhookService } = await import("../WebhookService");
+        await webhookService.dispatchInternalError(
+          poller.workflowId,
+          poller.nodeId,
+          "gmail",
+          {
+            code: "OAUTH_RECONNECT_REQUIRED",
+            message:
+              "Gmail refresh token expired — please reconnect the Gmail credential.",
+            recoverable: false,
+          },
+          poller.userId,
+        );
         logger.warn(
           {
             err: error,
@@ -216,15 +229,28 @@ class GmailPollerManager {
 
       if (this.isInsufficientScopeError(error)) {
         await this.stopByKey(key);
+        const missingScope = poller.filters.markAsRead
+          ? "gmail.modify"
+          : "gmail.readonly";
+        const { webhookService } = await import("../WebhookService");
+        await webhookService.dispatchInternalError(
+          poller.workflowId,
+          poller.nodeId,
+          "gmail",
+          {
+            code: "OAUTH_INSUFFICIENT_SCOPE",
+            message: `Gmail credential is missing required scope (${missingScope}). Please reconnect and grant the scope.`,
+            recoverable: false,
+          },
+          poller.userId,
+        );
         logger.warn(
           {
             err: error,
             workflowId: poller.workflowId,
             nodeId: poller.nodeId,
             credentialId: poller.credentialId,
-            missingScope: poller.filters.markAsRead
-              ? "gmail.modify"
-              : "gmail.readonly",
+            missingScope,
           },
           "Gmail credential is missing required OAuth scope — user must reconnect the credential",
         );

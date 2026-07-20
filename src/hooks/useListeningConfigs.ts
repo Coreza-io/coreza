@@ -54,6 +54,8 @@ export const buildWebhookListeningConfig = ({
       provider,
     }),
     isDataReceived: (nodeData) => Boolean(nodeData?.output?.[waitField]),
+    shouldStop: (nodeData) =>
+      nodeData?.[listeningFlag] === false && Boolean(nodeData?.output?.error),
     buildSuccessOutput: (nodeData) => nodeData.output,
     buildTimeoutOutput: (listeningOutput) => ({
       ...(listeningOutput ?? {}),

@@ -11,6 +11,12 @@
 import { google, gmail_v1 } from "googleapis";
 import { getRedisCache } from "../../config/redis";
 import { createLogger } from "../../utils/logger";
+import CredentialManager from "../../utils/credentialManager";
+import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
+import {
+  getReconnectRequiredCode,
+  isBrokerAuthError,
+} from "../../utils/brokerAuthError";
 import { formatGmailMessage } from "../communication/configs/gmail-format";
 
 export interface GmailTriggerFilters {
@@ -34,7 +40,13 @@ interface GmailPollerRegistration {
   credentialId?: string;
 }
 
-interface ActivePoller extends Omit<GmailPollerRegistration, "filters"> {
+interface ActivePoller
+  extends Omit<
+    GmailPollerRegistration,
+    "credentialId" | "creds" | "filters" | "userId"
+  > {
+  userId: string;
+  credentialId: string;
   filters: GmailTriggerFilters;
   timer: NodeJS.Timeout;
   isPolling: boolean;
@@ -54,11 +66,12 @@ class GmailPollerManager {
   async start(
     registration: GmailPollerRegistration,
   ): Promise<{ success: boolean; description?: string }> {
-    const { workflowId, nodeId } = registration;
-    if (!workflowId || !nodeId) {
+    const { workflowId, nodeId, userId, credentialId } = registration;
+    if (!workflowId || !nodeId || !userId || !credentialId) {
       return {
         success: false,
-        description: "workflowId and nodeId are required for Gmail polling",
+        description:
+          "workflowId, nodeId, userId, and credentialId are required for Gmail polling",
       };
     }
 
@@ -73,7 +86,10 @@ class GmailPollerManager {
     );
 
     const activePoller: ActivePoller = {
-      ...registration,
+      workflowId,
+      nodeId,
+      userId,
+      credentialId,
       filters,
       timer: setInterval(() => {
         void this.poll(key);
@@ -134,7 +150,8 @@ class GmailPollerManager {
 
     poller.isPolling = true;
     try {
-      const gmail = this.createClient(poller.creds);
+      const freshCredentials = await this.getFreshCredentials(poller);
+      const gmail = this.createClient(freshCredentials);
       const watermark = await this.getWatermark(
         poller.workflowId,
         poller.nodeId,
@@ -183,16 +200,72 @@ class GmailPollerManager {
       }
       poller.backoffMs = 0;
     } catch (error) {
+      if (this.isReconnectRequiredError(error)) {
+        await this.stopByKey(key);
+        logger.warn(
+          {
+            err: error,
+            workflowId: poller.workflowId,
+            nodeId: poller.nodeId,
+            credentialId: poller.credentialId,
+          },
+          "Gmail refresh token invalid — user must reconnect the credential",
+        );
+        return;
+      }
+
+      if (this.isInsufficientScopeError(error)) {
+        await this.stopByKey(key);
+        logger.warn(
+          {
+            err: error,
+            workflowId: poller.workflowId,
+            nodeId: poller.nodeId,
+            credentialId: poller.credentialId,
+            missingScope: poller.filters.markAsRead
+              ? "gmail.modify"
+              : "gmail.readonly",
+          },
+          "Gmail credential is missing required OAuth scope — user must reconnect the credential",
+        );
+        return;
+      }
+
       poller.backoffMs = this.nextBackoff(poller.backoffMs);
       logger.error(
         { err: error, workflowId: poller.workflowId, nodeId: poller.nodeId },
-        this.isScopeError(error)
-          ? "Gmail poller needs reconnect with gmail.modify scope when markAsRead is enabled"
-          : "Gmail poll failed",
+        "Gmail poll failed",
       );
     } finally {
       poller.isPolling = false;
     }
+  }
+
+  private async getFreshCredentials(
+    poller: ActivePoller,
+  ): Promise<Record<string, unknown>> {
+    const { credentials: stored } = await CredentialManager.getCredentials(
+      poller.userId,
+      "gmail",
+      poller.credentialId,
+      { useCache: false },
+    );
+
+    if (!stored) {
+      throw new Error("Gmail credentials not found");
+    }
+
+    const mergedCredentials = {
+      ...stored.client_json,
+      ...stored.token_json,
+    };
+
+    return refreshOAuthTokenIfNeeded(
+      "gmail",
+      mergedCredentials,
+      poller.userId,
+      poller.credentialId,
+    );
   }
 
   private normalizeFilters(
@@ -293,11 +366,50 @@ class GmailPollerManager {
     return current === 0 ? 30_000 : Math.min(current * 2, MAX_BACKOFF_MS);
   }
 
-  private isScopeError(error: unknown) {
-    const status =
+  private isReconnectRequiredError(error: unknown) {
+    if (
+      isBrokerAuthError(error) &&
+      error.code === getReconnectRequiredCode()
+    ) {
+      return true;
+    }
+
+    return this.errorText(error).includes("invalid_grant");
+  }
+
+  private isInsufficientScopeError(error: unknown) {
+    return (
+      this.errorStatus(error) === 403 &&
+      this.errorText(error).includes("insufficient authentication scopes")
+    );
+  }
+
+  private errorStatus(error: unknown) {
+    return (
       (error as { code?: number; response?: { status?: number } })?.code ??
-      (error as { response?: { status?: number } })?.response?.status;
-    return status === 401 || status === 403;
+      (error as { response?: { status?: number } })?.response?.status
+    );
+  }
+
+  private errorText(error: unknown) {
+    if (typeof error !== "object" || error === null) return String(error);
+
+    const maybeError = error as {
+      message?: string;
+      response?: { data?: unknown };
+    };
+    const responseData = maybeError.response?.data;
+    const responseText =
+      typeof responseData === "string"
+        ? responseData
+        : responseData
+          ? JSON.stringify(responseData)
+          : "";
+
+    return [maybeError.message, responseText]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .toLowerCase();
   }
 
   private key(workflowId: string, nodeId: string) {

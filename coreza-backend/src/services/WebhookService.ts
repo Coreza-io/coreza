@@ -95,6 +95,13 @@ export class WebhookService {
     }
 
     try {
+      if (provider === "gmail" && (!userId || !credentialId)) {
+        return {
+          success: false,
+          message: "userId and credentialId required for Gmail trigger",
+        };
+      }
+
       // Fetch credentials
       const { credentials } = await CredentialManager.getCredentials(
         userId,

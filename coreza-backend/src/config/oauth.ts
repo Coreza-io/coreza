@@ -157,6 +157,7 @@ export const OAUTH_CONFIGS: Record<string, OAuthProviderConfig> = {
     redirectUriField: "redirect_uri",
     defaultScopes: [
       "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/gmail.send",
     ],
     generateAuthUrl: async (session, body) => {

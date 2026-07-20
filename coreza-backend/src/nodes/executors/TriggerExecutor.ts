@@ -71,15 +71,29 @@ export class TriggerExecutor implements INodeExecutor {
           break;
 
         case "WebhookTrigger":
+        case "TelegramTrigger":
+        case "GmailTrigger":
           result = await this.executeWebhookTrigger(
             userId,
             workflowId,
             nodeId,
             resolvedParams,
+            node,
           );
           break;
 
         default:
+          if (node.data?.definition?.executionMode === "webhook_listening") {
+            result = await this.executeWebhookTrigger(
+              userId,
+              workflowId,
+              nodeId,
+              resolvedParams,
+              node,
+            );
+            break;
+          }
+
           return {
             success: false,
             error: `Unsupported trigger node type: ${nodeName}`,
@@ -203,14 +217,28 @@ export class TriggerExecutor implements INodeExecutor {
     workflowId: string,
     nodeId: string,
     params: any,
+    node: WorkflowNode,
   ): Promise<NodeResult> {
     try {
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";
+      const definition = node.data?.definition;
+      const provider =
+        params.provider ||
+        definition?.provider ||
+        (node.name === "WebhookTrigger"
+          ? "generic"
+          : node.name?.replace(/Trigger$/, "").toLowerCase()) ||
+        "generic";
 
       const response = await axios.post(`${backendUrl}/webhooks/register`, {
+        ...params,
+        provider,
         user_id: userId,
         workflow_id: workflowId,
         node_id: nodeId,
+        credential_id: params.credential_id ?? params.credentialId,
+        update_types: params.update_types ?? params.updateTypes,
+        secret_token: params.secret_token ?? params.secretToken,
       });
 
       if (!response.data.success) {

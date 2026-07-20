@@ -31,41 +31,77 @@ router.post("/register", requireAuth, async (req, res) => {
     const {
       provider = "generic",
       workflow_id,
+      workflowId: camelWorkflowId,
       node_id,
+      nodeId: camelNodeId,
       credential_id,
+      credentialId: camelCredentialId,
       update_types,
+      updateTypes: camelUpdateTypes,
       secret_token,
+      secretToken: camelSecretToken,
+      user_id: _ignoredUserId,
+      userId: _ignoredCamelUserId,
+      nodeName: _ignoredNodeName,
+      node_type: _ignoredNodeType,
+      workflowSessionId: _ignoredWorkflowSessionId,
+      category: _ignoredCategory,
+      subCategory: _ignoredSubCategory,
+      ...filters
     } = req.body;
 
-    if (!workflow_id || !node_id) {
+    const workflowId = workflow_id ?? camelWorkflowId;
+    const nodeId = node_id ?? camelNodeId;
+    const credentialId = credential_id ?? camelCredentialId;
+    const updateTypes = update_types ?? camelUpdateTypes;
+    const secretToken = secret_token ?? camelSecretToken;
+
+    if (!workflowId || !nodeId) {
       return res.status(400).json({
         success: false,
-        error: "workflow_id and node_id are required",
+        error: "workflow_id/workflowId and node_id/nodeId are required",
       });
     }
 
     const callbackUrl = webhookService.generateCallbackUrl(
       userId,
-      workflow_id,
-      node_id,
+      workflowId,
+      nodeId,
       provider,
     );
 
     // Register with external provider if applicable
     let providerRegistration = null;
-    if (provider !== "generic" && credential_id) {
-      providerRegistration = await webhookService.registerWithProvider({
-        provider,
-        userId,
-        credentialId: credential_id,
-        callbackUrl,
-        updateTypes: update_types,
-        secretToken: secret_token,
+    if (provider !== "generic" && !credentialId) {
+      return res.status(400).json({
+        success: false,
+        error: "credential_id/credentialId is required for provider webhooks",
       });
     }
 
+    if (provider !== "generic") {
+      providerRegistration = await webhookService.registerWithProvider({
+        provider,
+        userId,
+        credentialId,
+        callbackUrl,
+        updateTypes,
+        secretToken,
+        workflowId,
+        nodeId,
+        filters,
+      });
+
+      if (!providerRegistration.success) {
+        return res.status(502).json({
+          success: false,
+          error: providerRegistration.message || "Provider registration failed",
+        });
+      }
+    }
+
     logger.info(
-      { userId, workflowId: workflow_id, nodeId: node_id, provider },
+      { userId, workflowId, nodeId, provider },
       "Webhook registered",
     );
 
@@ -132,19 +168,33 @@ router.post("/unregister", requireAuth, async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { provider, credential_id } = req.body;
+    const {
+      provider,
+      credential_id,
+      credentialId: camelCredentialId,
+      workflow_id,
+      workflowId: camelWorkflowId,
+      node_id,
+      nodeId: camelNodeId,
+    } = req.body;
 
-    if (!provider || !credential_id) {
+    const credentialId = credential_id ?? camelCredentialId;
+    const workflowId = workflow_id ?? camelWorkflowId;
+    const nodeId = node_id ?? camelNodeId;
+
+    if (!provider || !credentialId) {
       return res.status(400).json({
         success: false,
-        error: "provider and credential_id are required",
+        error: "provider and credential_id/credentialId are required",
       });
     }
 
     const result = await webhookService.unregisterFromProvider({
       provider,
       userId,
-      credentialId: credential_id,
+      credentialId,
+      workflowId,
+      nodeId,
     });
 
     logger.info({ userId, provider }, "Webhook unregistered");

@@ -27,14 +27,15 @@ export interface GmailTriggerFilters {
 
 interface GmailPollerRegistration {
   creds: Record<string, unknown>;
-  filters?: GmailTriggerFilters;
+  filters?: Record<string, unknown>;
   workflowId: string;
   nodeId: string;
   userId?: string;
   credentialId?: string;
 }
 
-interface ActivePoller extends GmailPollerRegistration {
+interface ActivePoller extends Omit<GmailPollerRegistration, "filters"> {
+  filters: GmailTriggerFilters;
   timer: NodeJS.Timeout;
   isPolling: boolean;
   backoffMs: number;
@@ -65,14 +66,15 @@ class GmailPollerManager {
     await this.stopByKey(key);
     await this.seedWatermark(workflowId, nodeId);
 
+    const filters = this.normalizeFilters(registration.filters);
     const intervalSeconds = Math.max(
-      Number(registration.filters?.pollIntervalSeconds) ||
-        DEFAULT_POLL_INTERVAL_SECONDS,
+      filters.pollIntervalSeconds || DEFAULT_POLL_INTERVAL_SECONDS,
       MIN_POLL_INTERVAL_SECONDS,
     );
 
     const activePoller: ActivePoller = {
       ...registration,
+      filters,
       timer: setInterval(() => {
         void this.poll(key);
       }, intervalSeconds * 1000),
@@ -133,11 +135,14 @@ class GmailPollerManager {
     poller.isPolling = true;
     try {
       const gmail = this.createClient(poller.creds);
-      const watermark = await this.getWatermark(poller.workflowId, poller.nodeId);
+      const watermark = await this.getWatermark(
+        poller.workflowId,
+        poller.nodeId,
+      );
       const listResult = await gmail.users.messages.list({
         userId: "me",
         q: this.buildQuery(poller.filters, watermark),
-        labelIds: poller.filters?.labelIds,
+        labelIds: poller.filters.labelIds,
         maxResults: 25,
       });
 
@@ -163,14 +168,18 @@ class GmailPollerManager {
           poller.userId,
         );
 
-        if (poller.filters?.markAsRead) {
+        if (poller.filters.markAsRead) {
           await this.markAsRead(gmail, message.id);
         }
         newestWatermark = Math.max(newestWatermark, internalDate);
       }
 
       if (newestWatermark > watermark) {
-        await this.setWatermark(poller.workflowId, poller.nodeId, newestWatermark);
+        await this.setWatermark(
+          poller.workflowId,
+          poller.nodeId,
+          newestWatermark,
+        );
       }
       poller.backoffMs = 0;
     } catch (error) {
@@ -186,6 +195,36 @@ class GmailPollerManager {
     }
   }
 
+  private normalizeFilters(
+    filters?: Record<string, unknown>,
+  ): GmailTriggerFilters {
+    const stringValue = (value: unknown) =>
+      typeof value === "string" && value.trim() ? value.trim() : undefined;
+    const booleanValue = (value: unknown, defaultValue = false) =>
+      typeof value === "boolean" ? value : defaultValue;
+    const labelIds = Array.isArray(filters?.labelIds)
+      ? filters.labelIds.filter(
+          (labelId): labelId is string =>
+            typeof labelId === "string" && labelId.trim().length > 0,
+        )
+      : undefined;
+    const rawPollInterval = Number(filters?.pollIntervalSeconds);
+
+    return {
+      fromEmail: stringValue(filters?.fromEmail),
+      toEmail: stringValue(filters?.toEmail),
+      subjectContains: stringValue(filters?.subjectContains),
+      bodyContains: stringValue(filters?.bodyContains),
+      labelIds,
+      unreadOnly: booleanValue(filters?.unreadOnly, true),
+      hasAttachment: booleanValue(filters?.hasAttachment),
+      pollIntervalSeconds: Number.isFinite(rawPollInterval)
+        ? rawPollInterval
+        : undefined,
+      markAsRead: booleanValue(filters?.markAsRead),
+    };
+  }
+
   private createClient(creds: Record<string, unknown>): gmail_v1.Gmail {
     const auth = new google.auth.OAuth2(
       String(creds.client_id ?? ""),
@@ -193,22 +232,26 @@ class GmailPollerManager {
       String(creds.redirect_uri ?? ""),
     );
     auth.setCredentials({
-      refresh_token: typeof creds.refresh_token === "string" ? creds.refresh_token : undefined,
-      access_token: typeof creds.access_token === "string" ? creds.access_token : undefined,
+      refresh_token:
+        typeof creds.refresh_token === "string"
+          ? creds.refresh_token
+          : undefined,
+      access_token:
+        typeof creds.access_token === "string" ? creds.access_token : undefined,
     });
     return google.gmail({ version: "v1", auth });
   }
 
-  private buildQuery(filters: GmailTriggerFilters | undefined, watermark: number) {
+  private buildQuery(filters: GmailTriggerFilters, watermark: number) {
     const terms: string[] = [`after:${Math.floor(watermark / 1000)}`];
-    if (filters?.unreadOnly ?? true) terms.push("is:unread");
-    if (filters?.fromEmail) terms.push(`from:${quote(filters.fromEmail)}`);
-    if (filters?.toEmail) terms.push(`to:${quote(filters.toEmail)}`);
-    if (filters?.subjectContains) {
+    if (filters.unreadOnly) terms.push("is:unread");
+    if (filters.fromEmail) terms.push(`from:${quote(filters.fromEmail)}`);
+    if (filters.toEmail) terms.push(`to:${quote(filters.toEmail)}`);
+    if (filters.subjectContains) {
       terms.push(`subject:${quote(filters.subjectContains)}`);
     }
-    if (filters?.bodyContains) terms.push(quote(filters.bodyContains));
-    if (filters?.hasAttachment) terms.push("has:attachment");
+    if (filters.bodyContains) terms.push(quote(filters.bodyContains));
+    if (filters.hasAttachment) terms.push("has:attachment");
     return terms.join(" ");
   }
 
@@ -222,16 +265,28 @@ class GmailPollerManager {
 
   private async seedWatermark(workflowId: string, nodeId: string) {
     const redis = getRedisCache();
-    await redis.setnx(this.watermarkKey(workflowId, nodeId), String(Date.now()));
+    await redis.setnx(
+      this.watermarkKey(workflowId, nodeId),
+      String(Date.now()),
+    );
   }
 
   private async getWatermark(workflowId: string, nodeId: string) {
-    const value = await getRedisCache().get(this.watermarkKey(workflowId, nodeId));
+    const value = await getRedisCache().get(
+      this.watermarkKey(workflowId, nodeId),
+    );
     return Number(value) || Date.now();
   }
 
-  private async setWatermark(workflowId: string, nodeId: string, watermark: number) {
-    await getRedisCache().set(this.watermarkKey(workflowId, nodeId), String(watermark));
+  private async setWatermark(
+    workflowId: string,
+    nodeId: string,
+    watermark: number,
+  ) {
+    await getRedisCache().set(
+      this.watermarkKey(workflowId, nodeId),
+      String(watermark),
+    );
   }
 
   private nextBackoff(current: number) {
@@ -239,7 +294,8 @@ class GmailPollerManager {
   }
 
   private isScopeError(error: unknown) {
-    const status = (error as { code?: number; response?: { status?: number } })?.code ??
+    const status =
+      (error as { code?: number; response?: { status?: number } })?.code ??
       (error as { response?: { status?: number } })?.response?.status;
     return status === 401 || status === 403;
   }

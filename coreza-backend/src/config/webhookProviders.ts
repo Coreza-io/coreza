@@ -22,7 +22,10 @@ export interface WebhookProviderConfig {
   };
 
   // For providers that require verification challenge (WhatsApp hub.challenge)
-  verifyChallenge?: (query: Record<string, any>) => { valid: boolean; challenge?: string };
+  verifyChallenge?: (query: Record<string, any>) => {
+    valid: boolean;
+    challenge?: string;
+  };
 
   externalApi?: {
     setWebhook?: (params: {
@@ -30,9 +33,17 @@ export interface WebhookProviderConfig {
       callbackUrl: string;
       secretToken?: string;
       allowedUpdates?: string[];
+      workflowId?: string;
+      nodeId?: string;
+      userId?: string;
+      credentialId?: string;
+      filters?: Record<string, unknown>;
     }) => Promise<{ success: boolean; description?: string }>;
 
-    deleteWebhook?: (botToken: string) => Promise<boolean>;
+    deleteWebhook?: (
+      botToken: string,
+      params?: { workflowId?: string; nodeId?: string; credentialId?: string },
+    ) => Promise<boolean>;
 
     getWebhookInfo?: (botToken: string) => Promise<any>;
   };
@@ -83,7 +94,7 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
         allowedUpdates,
       }) => {
         try {
-          const botToken = creds.bot_token;
+          const botToken = (creds as { bot_token?: string }).bot_token;
           const url = `https://api.telegram.org/bot${botToken}/setWebhook`;
           const payload: any = {
             url: callbackUrl,
@@ -180,6 +191,63 @@ export const WEBHOOK_PROVIDERS: Record<string, WebhookProviderConfig> = {
         raw: update,
       };
     },
+  },
+
+  gmail: {
+    id: "gmail",
+    name: "Gmail",
+    incomingPath: "gmail",
+    verification: {
+      method: "none",
+    },
+    externalApi: {
+      setWebhook: async ({
+        creds,
+        workflowId,
+        nodeId,
+        userId,
+        credentialId,
+        filters,
+      }) => {
+        const { gmailPollerManager } = await import(
+          "../services/gmail/GmailPollerManager"
+        );
+        return gmailPollerManager.start({
+          creds: creds as Record<string, unknown>,
+          filters,
+          workflowId: workflowId ?? "",
+          nodeId: nodeId ?? "",
+          userId,
+          credentialId,
+        });
+      },
+      deleteWebhook: async (_credentialId, params) => {
+        const { gmailPollerManager } = await import(
+          "../services/gmail/GmailPollerManager"
+        );
+        return gmailPollerManager.stop(
+          params?.workflowId,
+          params?.nodeId,
+          params?.credentialId ?? _credentialId,
+        );
+      },
+      getWebhookInfo: async () => {
+        const { gmailPollerManager } = await import(
+          "../services/gmail/GmailPollerManager"
+        );
+        return gmailPollerManager.status();
+      },
+    },
+    normalizePayload: ({ body }) => ({
+      timestamp: new Date().toISOString(),
+      updateType: "email",
+      webhookPayload: body,
+      message: body,
+      from: body.from,
+      subject: body.subject,
+      text: body.content?.text,
+      raw: body.raw,
+    }),
   },
 
   whatsapp: {

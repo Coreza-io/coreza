@@ -35,6 +35,7 @@ router.post("/register", requireAuth, async (req, res) => {
       credential_id,
       update_types,
       secret_token,
+      ...filters
     } = req.body;
 
     if (!workflow_id || !node_id) {
@@ -61,6 +62,9 @@ router.post("/register", requireAuth, async (req, res) => {
         callbackUrl,
         updateTypes: update_types,
         secretToken: secret_token,
+        workflowId: workflow_id,
+        nodeId: node_id,
+        filters,
       });
     }
 
@@ -132,7 +136,7 @@ router.post("/unregister", requireAuth, async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { provider, credential_id } = req.body;
+    const { provider, credential_id, workflow_id, node_id } = req.body;
 
     if (!provider || !credential_id) {
       return res.status(400).json({
@@ -145,6 +149,8 @@ router.post("/unregister", requireAuth, async (req, res) => {
       provider,
       userId,
       credentialId: credential_id,
+      workflowId: workflow_id,
+      nodeId: node_id,
     });
 
     logger.info({ userId, provider }, "Webhook unregistered");

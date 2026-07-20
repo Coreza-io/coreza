@@ -10,6 +10,7 @@
 
 import { google, gmail_v1 } from "googleapis";
 import { CommunicationConfig, CommunicationInput } from "../types";
+import { formatGmailMessage } from "./gmail-format";
 
 // Gmail uses OAuth and requires the Google SDK for proper handling
 // This config uses customExecute for full control
@@ -118,47 +119,7 @@ async function getMessage(gmail: gmail_v1.Gmail, input: CommunicationInput) {
     format: "full",
   });
 
-  const extractContent = (part: any): { text?: string; html?: string } => {
-    const content: any = {};
-
-    if (part.body?.data) {
-      const decodedContent = Buffer.from(part.body.data, "base64").toString();
-      if (part.mimeType === "text/plain") {
-        content.text = decodedContent;
-      } else if (part.mimeType === "text/html") {
-        content.html = decodedContent;
-      }
-    }
-
-    if (part.parts) {
-      for (const subPart of part.parts) {
-        Object.assign(content, extractContent(subPart));
-      }
-    }
-
-    return content;
-  };
-
-  const headers: gmail_v1.Schema$MessagePartHeader[] =
-    messageDetail.data.payload?.headers || [];
-  const getHeader = (name: string) =>
-    headers.find((header) => header.name === name)?.value || "";
-  const content = extractContent(messageDetail.data.payload);
-
-  return {
-    id: messageDetail.data.id,
-    threadId: messageDetail.data.threadId,
-    from: getHeader("From"),
-    to: getHeader("To"),
-    subject: getHeader("Subject"),
-    date: getHeader("Date"),
-    snippet: messageDetail.data.snippet,
-    content: {
-      text: content.text,
-      html: content.html,
-    },
-    labels: messageDetail.data.labelIds,
-  };
+  return formatGmailMessage(messageDetail.data);
 }
 
 export const gmailConfig: CommunicationConfig = {

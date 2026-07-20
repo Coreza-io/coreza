@@ -70,6 +70,9 @@ export class WebhookService {
     callbackUrl: string;
     updateTypes?: string[];
     secretToken?: string;
+    workflowId?: string;
+    nodeId?: string;
+    filters?: Record<string, unknown>;
   }): Promise<{ success: boolean; message?: string; webhookInfo?: any }> {
     const {
       provider,
@@ -78,6 +81,9 @@ export class WebhookService {
       callbackUrl,
       updateTypes,
       secretToken,
+      workflowId,
+      nodeId,
+      filters,
     } = params;
 
     const providerConfig = getProviderConfig(provider);
@@ -113,6 +119,11 @@ export class WebhookService {
         callbackUrl,
         secretToken,
         allowedUpdates: updateTypes,
+        workflowId,
+        nodeId,
+        userId,
+        credentialId,
+        filters,
       });
 
       return {
@@ -142,8 +153,10 @@ export class WebhookService {
     provider: string;
     userId: string;
     credentialId: string;
+    workflowId?: string;
+    nodeId?: string;
   }): Promise<{ success: boolean; message?: string }> {
-    const { provider, userId, credentialId } = params;
+    const { provider, userId, credentialId, workflowId, nodeId } = params;
 
     const providerConfig = getProviderConfig(provider);
     if (!providerConfig || !providerConfig.externalApi?.deleteWebhook) {
@@ -163,15 +176,15 @@ export class WebhookService {
         return { success: false, message: "Credentials not found" };
       }
 
-      const botToken = credentials.bot_token;
-      if (!botToken) {
-        return {
-          success: false,
-          message: "Bot token not found in credentials",
-        };
-      }
+      const providerCredential =
+        credentials.bot_token ||
+        credentials.credentials?.client_json?.bot_token ||
+        credentialId;
 
-      const success = await providerConfig.externalApi.deleteWebhook(botToken);
+      const success = await providerConfig.externalApi.deleteWebhook(
+        providerCredential,
+        { workflowId, nodeId, credentialId },
+      );
 
       return {
         success,
@@ -189,6 +202,46 @@ export class WebhookService {
         message: error instanceof Error ? error.message : "Unknown error",
       };
     }
+  }
+
+  /**
+   * Dispatch an internally produced provider event through the same delivery
+   * semantics as inbound webhook HTTP requests.
+   */
+  async dispatchInternal(
+    workflowId: string,
+    nodeId: string,
+    provider: string,
+    body: unknown,
+    userId?: string,
+  ): Promise<void> {
+    const resolvedUserId = userId || (await this.getWorkflowUserId(workflowId));
+    if (!resolvedUserId) {
+      logger.warn({ workflowId, nodeId, provider }, "Workflow user not found");
+      return;
+    }
+
+    await this.handleIncoming({
+      provider,
+      userId: resolvedUserId,
+      workflowId,
+      nodeId,
+      method: "POST",
+      headers: {},
+      body,
+      query: {},
+    });
+  }
+
+  private async getWorkflowUserId(workflowId: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from("workflows")
+      .select("user_id")
+      .eq("id", workflowId)
+      .single();
+
+    if (error || !data) return null;
+    return (data as { user_id?: string }).user_id ?? null;
   }
 
   /**

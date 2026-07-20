@@ -1,0 +1,139 @@
+{
+  "name": "GmailTrigger",
+  "node_type": "trigger",
+  "category": "Trigger",
+  "subCategory": "gmail",
+  "provider": "gmail",
+  "icon": "/assets/icons/gmail.svg",
+  "description": "Receive matching Gmail messages as workflow trigger events",
+  "color": "text-red-500",
+  "size": {
+    "width": 360,
+    "height": 500
+  },
+  "handles": [
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
+  ],
+  "executionMode": "webhook_listening",
+  "action": {
+    "url": "/webhooks/register",
+    "method": "POST"
+  },
+  "listeningConfig": {
+    "waitField": "webhookPayload",
+    "timeout": 300000,
+    "listeningFlag": "isListening"
+  },
+  "auth": "GmailAuthModal",
+  "authAction": { "url": "/oauth/gmail/generate-auth-url", "method": "POST" },
+  "fields": [
+    {
+      "key": "credential_id",
+      "label": "Gmail Credential",
+      "type": "select",
+      "optionsSource": "credentialsApi",
+      "placeholder": "Select credential",
+      "required": true
+    },
+    {
+      "key": "fromEmail",
+      "label": "From Email",
+      "type": "text",
+      "placeholder": "vj.goswami07@gmail.com",
+      "required": false
+    },
+    {
+      "key": "toEmail",
+      "label": "To Email",
+      "type": "text",
+      "placeholder": "recipient@example.com",
+      "required": false
+    },
+    {
+      "key": "subjectContains",
+      "label": "Subject Contains",
+      "type": "text",
+      "placeholder": "Invoice",
+      "required": false
+    },
+    {
+      "key": "bodyContains",
+      "label": "Body Contains",
+      "type": "text",
+      "placeholder": "Search text",
+      "required": false
+    },
+    {
+      "key": "labelIds",
+      "label": "Labels",
+      "type": "multiselect",
+      "options": [
+        { "label": "Inbox", "value": "INBOX" },
+        { "label": "Important", "value": "IMPORTANT" },
+        { "label": "Starred", "value": "STARRED" },
+        { "label": "Unread", "value": "UNREAD" },
+        { "label": "Spam", "value": "SPAM" },
+        { "label": "Trash", "value": "TRASH" },
+        { "label": "Personal", "value": "CATEGORY_PERSONAL" },
+        { "label": "Social", "value": "CATEGORY_SOCIAL" },
+        { "label": "Promotions", "value": "CATEGORY_PROMOTIONS" },
+        { "label": "Updates", "value": "CATEGORY_UPDATES" },
+        { "label": "Forums", "value": "CATEGORY_FORUMS" }
+      ],
+      "default": ["INBOX"],
+      "required": false
+    },
+    {
+      "key": "unreadOnly",
+      "label": "Unread Only",
+      "type": "checkbox",
+      "default": true,
+      "required": false
+    },
+    {
+      "key": "hasAttachment",
+      "label": "Has Attachment",
+      "type": "checkbox",
+      "default": false,
+      "required": false
+    },
+    {
+      "key": "pollIntervalSeconds",
+      "label": "Poll Interval (seconds)",
+      "type": "number",
+      "default": 60,
+      "min": 30,
+      "required": false
+    },
+    {
+      "key": "markAsRead",
+      "label": "Mark As Read",
+      "type": "checkbox",
+      "default": false,
+      "required": false
+    }
+  ],
+  "output": {
+    "updateType": "email",
+    "webhookPayload": "Normalized Gmail message",
+    "message": {
+      "id": "Message ID",
+      "threadId": "Thread ID",
+      "from": "Sender email",
+      "to": "Recipient email",
+      "subject": "Message subject",
+      "date": "Message date",
+      "snippet": "Message snippet",
+      "content": { "text": "Plain-text body", "html": "HTML body" },
+      "labels": ["INBOX"]
+    },
+    "from": "sender email",
+    "subject": "message subject",
+    "text": "plain-text body",
+    "raw": "Complete Gmail message resource"
+  }
+}

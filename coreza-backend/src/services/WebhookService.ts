@@ -240,6 +240,48 @@ export class WebhookService {
     });
   }
 
+  /**
+   * Dispatch a terminal provider-side listener error to the frontend without
+   * creating a workflow run or enqueueing backend execution.
+   */
+  async dispatchInternalError(
+    workflowId: string,
+    nodeId: string,
+    provider: string,
+    error: { code: string; message: string; recoverable?: boolean },
+    userId?: string,
+  ): Promise<void> {
+    const resolvedUserId = userId || (await this.getWorkflowUserId(workflowId));
+    if (!resolvedUserId) {
+      logger.warn({ workflowId, nodeId, provider }, "Workflow user not found");
+      return;
+    }
+
+    const { getRedisQueue } = await import("../config/redis");
+    const redis = getRedisQueue();
+
+    await redis.publish(
+      `ws:user:${resolvedUserId}`,
+      JSON.stringify({
+        type: "webhook_error",
+        workflowId,
+        nodeId,
+        provider,
+        error: {
+          code: error.code,
+          message: error.message,
+          recoverable: error.recoverable,
+        },
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    logger.info(
+      { workflowId, nodeId, userId: resolvedUserId, provider, code: error.code },
+      "Webhook error pushed to frontend via WebSocket",
+    );
+  }
+
   private async getWorkflowUserId(workflowId: string): Promise<string | null> {
     const { data, error } = await supabase
       .from("workflows")

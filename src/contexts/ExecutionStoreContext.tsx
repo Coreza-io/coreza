@@ -117,6 +117,26 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               }
             }
 
+            // Handle terminal webhook listener errors (manual run mode)
+            if (message.type === 'webhook_error' && message.nodeId) {
+              const { nodeId, error } = message;
+
+              if (storeRef.current) {
+                storeRef.current.setNodeData(nodeId, {
+                  isListening: false,
+                  isTestListening: false,
+                  output: {
+                    error: error?.message ?? 'Trigger stopped due to an error',
+                    errorCode: error?.code,
+                    endedAt: message.timestamp,
+                  },
+                });
+                setUpdateVersion(v => v + 1); // Trigger React re-render
+              }
+
+              console.warn('🪝 [ExecutionStore] Webhook error for node:', nodeId, error);
+            }
+
             // Handle streaming market data updates (new Redis Pub/Sub format)
             if (message.type === 'market_data' && message.payload) {
               const { workflowId, nodeId, source: eventSource, data } = message.payload;

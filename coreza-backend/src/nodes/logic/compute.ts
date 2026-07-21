@@ -63,6 +63,20 @@ import {
 } from "../../utils/normalizeOutput";
 import type { StandardNodeOutput, NormalizeContext } from "../../types/nodeOutput";
 
+type RegexBuildResult = { regex: RegExp } | { error: string };
+
+type StringValidationResult =
+  | { valid: true; string: string; error?: undefined }
+  | { valid: false; error: string; string?: undefined };
+
+type ArrayValidationResult =
+  | { valid: true; array: any[]; error?: undefined }
+  | { valid: false; error: string; array?: undefined };
+
+type ObjectValidationResult =
+  | { valid: true; object: Record<string, any>; error?: undefined }
+  | { valid: false; error: string; object?: undefined };
+
 export interface ComputeInput {
   value: any;
   operator: string;
@@ -80,6 +94,7 @@ export interface ComputeInput {
   inputFormat?: string;
   outputFormat?: string;
   customOutputFormat?: string;
+  regexFlags?: string;
   targetDay?: string;
 }
 
@@ -160,6 +175,7 @@ export class ComputeService {
         inputFormat,
         outputFormat,
         customOutputFormat,
+        regexFlags,
         targetDay,
         mapSubOperation,
         mapIndex,
@@ -240,6 +256,82 @@ export class ComputeService {
           if (!validation.valid) return createErrorOutput(validation.error);
           const delimiter = arg1 !== undefined ? String(arg1) : ",";
           return createSuccessOutput(validation.string.split(delimiter));
+        }
+
+        case "regexTest": {
+          const validation = this.validateRegexString(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+          const regexResult = this.buildRegex(arg1, regexFlags);
+          if ("error" in regexResult) return createErrorOutput(regexResult.error);
+          const { regex } = regexResult;
+          return createSuccessOutput(regex.test(validation.string));
+        }
+
+        case "regexMatch": {
+          const validation = this.validateRegexString(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+          const regexResult = this.buildRegex(arg1, regexFlags);
+          if ("error" in regexResult) return createErrorOutput(regexResult.error);
+          const { regex } = regexResult;
+
+          if (regex.global) {
+            return createSuccessOutput(
+              Array.from(validation.string.matchAll(regex), (m) => m[0]),
+            );
+          }
+
+          const match = validation.string.match(regex);
+          return createSuccessOutput(
+            match ? (match[1] !== undefined ? match[1] : match[0]) : null,
+          );
+        }
+
+        case "regexMatchAll": {
+          const validation = this.validateRegexString(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+          const regexResult = this.buildRegex(arg1, regexFlags, true);
+          if ("error" in regexResult) return createErrorOutput(regexResult.error);
+          const { regex } = regexResult;
+          return createSuccessOutput(
+            Array.from(validation.string.matchAll(regex), (m) => ({
+              match: m[0],
+              groups: m.slice(1).map((g) => g ?? null),
+              index: m.index ?? -1,
+            })),
+          );
+        }
+
+        case "regexReplace": {
+          const validation = this.validateRegexString(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+          const regexResult = this.buildRegex(arg1, regexFlags);
+          if ("error" in regexResult) return createErrorOutput(regexResult.error);
+          const { regex } = regexResult;
+          return createSuccessOutput(
+            validation.string.replace(regex, String(arg2 ?? "")),
+          );
+        }
+
+        case "regexSplit": {
+          const validation = this.validateRegexString(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+          const regexResult = this.buildRegex(arg1, regexFlags);
+          if ("error" in regexResult) return createErrorOutput(regexResult.error);
+          const { regex } = regexResult;
+          return createSuccessOutput(validation.string.split(regex));
+        }
+
+        case "regexExtract": {
+          const validation = this.validateRegexString(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+          const regexResult = this.buildRegex(arg1, regexFlags, true);
+          if ("error" in regexResult) return createErrorOutput(regexResult.error);
+          const { regex } = regexResult;
+          return createSuccessOutput(
+            Array.from(validation.string.matchAll(regex), (m) =>
+              m[1] !== undefined ? m[1] : m[0],
+            ),
+          );
         }
 
         case "concat": {
@@ -1217,7 +1309,7 @@ export class ComputeService {
   // Helper: Validate and convert value to array (strict)
   private static validateArray(
     value: any,
-  ): { valid: true; array: any[] } | { valid: false; error: string } {
+  ): ArrayValidationResult {
     if (Array.isArray(value)) {
       return { valid: true, array: value };
     }
@@ -1237,9 +1329,7 @@ export class ComputeService {
   // Helper: Validate and convert value to object (strict)
   private static validateObject(
     value: any,
-  ):
-    | { valid: true; object: Record<string, any> }
-    | { valid: false; error: string } {
+  ): ObjectValidationResult {
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
       return { valid: true, object: value };
     }
@@ -1260,10 +1350,53 @@ export class ComputeService {
     return { valid: false, error: "Value must be an object" };
   }
 
+  private static readonly MAX_REGEX_PATTERN_LENGTH = 2 * 1024;
+  private static readonly MAX_REGEX_VALUE_LENGTH = 256 * 1024;
+
+  private static buildRegex(
+    patternValue: unknown,
+    flagsValue: unknown,
+    forceGlobal = false,
+  ): RegexBuildResult {
+    const pattern = String(patternValue ?? "");
+    if (!pattern) return { error: "Pattern (arg1) is required" };
+    if (pattern.length > this.MAX_REGEX_PATTERN_LENGTH) {
+      return { error: "Regex pattern exceeds 2 KB limit" };
+    }
+
+    let flags = String(flagsValue ?? "").trim();
+    if (!/^[gimsu]*$/.test(flags)) {
+      return { error: "Invalid regex flags. Supported flags: g, i, m, s, u" };
+    }
+    if (new Set(flags).size !== flags.length) {
+      return { error: "Regex flags cannot contain duplicates" };
+    }
+    if (forceGlobal && !flags.includes("g")) flags += "g";
+
+    try {
+      return { regex: new RegExp(pattern, flags) };
+    } catch (e) {
+      return {
+        error: `Invalid regex: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+  }
+
+  private static validateRegexString(
+    value: any,
+  ): StringValidationResult {
+    const validation = this.validateString(value);
+    if (!validation.valid) return validation;
+    if (validation.string.length > this.MAX_REGEX_VALUE_LENGTH) {
+      return { error: "Regex input value exceeds 256 KB limit", valid: false };
+    }
+    return validation;
+  }
+
   // Helper: Validate value is a string (strict)
   private static validateString(
     value: any,
-  ): { valid: true; string: string } | { valid: false; error: string } {
+  ): StringValidationResult {
     if (typeof value === "string") {
       return { valid: true, string: value };
     }

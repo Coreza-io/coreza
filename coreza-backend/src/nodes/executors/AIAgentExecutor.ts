@@ -410,8 +410,10 @@ export class AIAgentExecutor implements INodeExecutor {
    * Generate a tool name from a node
    */
   private getToolName(node: WorkflowNode): string {
-    // Use node type as tool name, sanitized
-    const rawName = node.name || node.category || `node_${node.id}`;
+    const metadataName =
+      (node as any).toolMetadata?.name ||
+      loadNodeDefinition(node.name || "")?.toolMetadata?.name;
+    const rawName = metadataName || node.name || node.category || `node_${node.id}`;
     return rawName.toLowerCase().replace(/[^a-z0-9_]/g, "_");
   }
 
@@ -422,6 +424,13 @@ export class AIAgentExecutor implements INodeExecutor {
     node: WorkflowNode,
     definition?: ToolDefinition,
   ): string {
+    const metadataDescription =
+      (node as any).toolMetadata?.description ||
+      loadNodeDefinition(node.name || "")?.toolMetadata?.description;
+    if (metadataDescription) {
+      return metadataDescription;
+    }
+
     if (node.description) {
       return node.description;
     }
@@ -607,6 +616,7 @@ export class AIAgentExecutor implements INodeExecutor {
       // Utilities / tools
       GoogleWebSearch: "Tool",
       HttpRequest: "Utility",
+      DocumentExtract: "Document",
       Math: "ControlFlow",
       Transform: "ControlFlow",
       Date: "ControlFlow",

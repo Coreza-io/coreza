@@ -47,6 +47,7 @@ import storageRoutes from "./routes/storage";
 import backtestRoutes from "./routes/backtest";
 import datasourceRoutes from "./routes/datasource";
 import portfolioRoutes from "./routes/portfolio";
+import documentRoutes from "./routes/documents";
 
 import WebSocketManager from "./infra/websocketManager";
 import { initializeNodeExecutors } from "./nodes";
@@ -148,6 +149,7 @@ app.use("/storage", storageRoutes);
 app.use("/backtest", backtestRoutes);
 app.use("/datasource", datasourceRoutes);
 app.use("/portfolio", portfolioRoutes);
+app.use("/documents", documentRoutes);
 
 logger.info("All routes mounted");
 

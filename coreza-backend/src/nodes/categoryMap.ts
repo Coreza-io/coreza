@@ -23,6 +23,7 @@ export const CATEGORY_MAP: Record<string, string> = {
   SimpleMemory: "Memory",
   PostgresChatMemory: "Memory",
   RedisChatMemory: "Memory",
+  DocumentExtract: "Document",
 };
 
 export function resolveCategory(node: WorkflowNode): string {

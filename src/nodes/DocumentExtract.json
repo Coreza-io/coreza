@@ -1,0 +1,20 @@
+{
+  "name": "DocumentExtract",
+  "def": "Extract Document",
+  "node_type": "main",
+  "icon": "FileText",
+  "category": "Document",
+  "description": "Download a document URL and extract its content (PDF, HTML, DOCX, XLS/XLSX, CSV, text) as JSON",
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/documents/extract", "method": "POST" },
+  "fields": [
+    { "key": "url", "label": "Document URL", "type": "text", "required": true, "placeholder": "https://... or {{ $json.link }}" }
+  ],
+  "toolMetadata": {
+    "name": "read_document",
+    "description": "Download a document URL and return its extracted text. Supports PDF, HTML, DOCX, XLS/XLSX, CSV. The URL must point directly at the document."
+  }
+}

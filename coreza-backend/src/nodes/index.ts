@@ -24,6 +24,7 @@ import { ScreenerExecutor } from "./executors/ScreenerExecutor";
 import { TriggerExecutor } from "./executors/TriggerExecutor";
 import { BacktestExecutor } from "../backtest";
 import { PortfolioExecutor } from "./executors/PortfolioExecutor";
+import { DocumentExecutor } from "./executors/DocumentExecutor";
 
 // Register all node executors
 export function initializeNodeExecutors() {
@@ -43,6 +44,7 @@ export function initializeNodeExecutors() {
     new TriggerExecutor(),
     new BacktestExecutor(),
     new PortfolioExecutor(),
+    new DocumentExecutor(),
   ];
 
   executors.forEach((executor) => {

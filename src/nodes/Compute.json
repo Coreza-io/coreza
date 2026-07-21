@@ -5,7 +5,7 @@
   "node_type": "main",
   "icon": "/assets/icons/compute.svg",
   "category": "Logic",
-  "description": "Data computations for strings, numbers, dates, arrays, objects. Includes statistical and advanced date operations.",
+  "description": "Data computations for strings, numbers, dates, arrays, objects. Includes statistical and advanced date operations. Regex patterns run as native JavaScript RegExp and should be author-trusted.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,
@@ -81,6 +81,30 @@
             {
               "label": "Split",
               "value": "split"
+            },
+            {
+              "label": "Regex Test",
+              "value": "regexTest"
+            },
+            {
+              "label": "Regex Match",
+              "value": "regexMatch"
+            },
+            {
+              "label": "Regex Match All",
+              "value": "regexMatchAll"
+            },
+            {
+              "label": "Regex Replace",
+              "value": "regexReplace"
+            },
+            {
+              "label": "Regex Split",
+              "value": "regexSplit"
+            },
+            {
+              "label": "Regex Extract",
+              "value": "regexExtract"
             },
             {
               "label": "Concat",
@@ -421,7 +445,13 @@
             "pick",
             "omit",
             "find",
-            "filter"
+            "filter",
+            "regexTest",
+            "regexMatch",
+            "regexMatchAll",
+            "regexReplace",
+            "regexSplit",
+            "regexExtract"
           ]
         }
       },
@@ -460,7 +490,13 @@
           "pick": "Keys (comma-separated)",
           "omit": "Keys (comma-separated)",
           "find": "Property Name",
-          "filter": "Property Name"
+          "filter": "Property Name",
+          "regexTest": "Pattern",
+          "regexMatch": "Pattern",
+          "regexMatchAll": "Pattern",
+          "regexReplace": "Pattern",
+          "regexSplit": "Pattern",
+          "regexExtract": "Pattern"
         }
       },
       "description": "Primary argument for the operation (e.g., format string, amount, search string)."
@@ -968,7 +1004,8 @@
             "setProperty",
             "find",
             "map",
-            "filter"
+            "filter",
+            "regexReplace"
           ]
         }
       },
@@ -982,10 +1019,30 @@
           "find": "Match Value",
           "map": "Argument (e.g. delimiter, property path)",
           "filter": "Match Value",
-          "formatDate": "Output Format (e.g. YYYY-MM-DD)"
+          "formatDate": "Output Format (e.g. YYYY-MM-DD)",
+          "regexReplace": "Replacement"
         }
       },
       "description": "Secondary argument (e.g., replacement string, end index, match value)."
+    },
+    {
+      "key": "regexFlags",
+      "label": "Regex Flags",
+      "type": "text",
+      "placeholder": "e.g. gi",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "regexTest",
+            "regexMatch",
+            "regexMatchAll",
+            "regexReplace",
+            "regexSplit",
+            "regexExtract"
+          ]
+        }
+      },
+      "description": "Optional flags: g, i, m, s, u. Letters only, no commas or spaces."
     }
   ]
 }

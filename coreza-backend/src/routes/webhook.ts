@@ -182,20 +182,33 @@ router.post("/unregister", requireAuth, async (req, res) => {
     const workflowId = workflow_id ?? camelWorkflowId;
     const nodeId = node_id ?? camelNodeId;
 
-    if (!provider || !credentialId) {
+    if (!provider) {
       return res.status(400).json({
         success: false,
-        error: "provider and credential_id/credentialId are required",
+        error: "provider is required",
       });
     }
 
-    const result = await webhookService.unregisterFromProvider({
-      provider,
-      userId,
-      credentialId,
-      workflowId,
-      nodeId,
-    });
+    if (provider !== "generic" && !credentialId) {
+      return res.status(400).json({
+        success: false,
+        error: "credential_id/credentialId is required for provider webhooks",
+      });
+    }
+
+    const result =
+      provider === "generic"
+        ? {
+            success: true,
+            message: "Generic webhook does not require external unregistration",
+          }
+        : await webhookService.unregisterFromProvider({
+            provider,
+            userId,
+            credentialId,
+            workflowId,
+            nodeId,
+          });
 
     logger.info({ userId, provider }, "Webhook unregistered");
 

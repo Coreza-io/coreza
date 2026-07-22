@@ -11,6 +11,10 @@
     "url": "/stream/alpaca/register",
     "method": "POST"
   },
+  "stopAction": {
+    "url": "/stream/unregister",
+    "method": "POST"
+  },
   "streamingConfig": {
     "waitForFirstEvent": false,
     "timeout": 300000,

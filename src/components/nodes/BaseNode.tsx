@@ -43,6 +43,12 @@ import {
   type NodeVisualTheme,
 } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
+import {
+  LISTENER_CLEAR_STATE,
+  buildStopListeningPayload,
+  resolveListeningFlagKey,
+  resolveStopAction,
+} from "@/components/nodes/listeningStop";
 
 interface BaseNodeProps {
   data: any;
@@ -270,11 +276,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // Get auth context for API calls
   const { session } = useAuth();
 
-  // Check if node is in test listening mode - ONLY trust execution store, not stale output status
-  const isTestListening = useMemo(() => {
+  const listeningFlagKey = useMemo(
+    () => resolveListeningFlagKey(definition),
+    [definition],
+  );
+
+  // Check live listener state - ONLY trust execution store, not stale output status
+  const isTriggerListening = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
-    return nodeData?.isTestListening === true;
-  }, [nodeId, executionStore, storeVersion]);
+    return nodeData?.[listeningFlagKey] === true;
+  }, [nodeId, executionStore, storeVersion, listeningFlagKey]);
 
   const isStreamPaused = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
@@ -293,22 +304,29 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     }
   }, [hasStreamCursor]);
 
-  // Handle stop listening - calls the stop-listen-stream endpoint
+  // Handle stop listening - calls the node definition's stop endpoint
   const handleStopListening = useCallback(async () => {
     if (!workflowId || !nodeId || readOnly) return;
 
     try {
+      const stopAction = resolveStopAction(definition);
       console.log(
         `🛑 [BaseNode] Stopping test listener for ${workflowId}:${nodeId}`,
       );
 
-      const response = await apiClient.post(
-        "/stream/unregister",
+      const stopPayload = buildStopListeningPayload({
+        definition,
+        workflowId,
+        nodeId,
+        credentialId: fieldStateHook.fieldState.credential_id,
+      });
+      const response = await apiClient.request(
+        stopAction.url,
         {
-          workflowId,
-          node_id: nodeId,
+          method: stopAction.method,
+          body: JSON.stringify(stopPayload),
+          token: session?.access_token,
         },
-        session?.access_token,
       );
 
       if (response.ok) {
@@ -322,9 +340,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         outputHook.setLastOutput(stoppedOutput);
         executionStore.setNodeData(nodeId, {
           output: stoppedOutput,
-          isTestListening: false,
-          isStreamPaused: false,
-          isStreamStepping: false,
+          ...LISTENER_CLEAR_STATE,
         });
         notifyStoreUpdate(); // Trigger re-render to hide streaming footer
         setNodes((nds) =>
@@ -335,9 +351,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
                   data: {
                     ...n.data,
                     output: stoppedOutput,
-                    isTestListening: false,
-                    isStreamPaused: false,
-                    isStreamStepping: false,
+                    ...LISTENER_CLEAR_STATE,
                   },
                 }
               : n,
@@ -353,6 +367,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     nodeId,
     readOnly,
     session?.access_token,
+    definition,
+    fieldStateHook.fieldState.credential_id,
     outputHook,
     executionStore,
     setNodes,
@@ -574,7 +590,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     handleTogglePause,
     handleStepNext,
     handleStepPrevious,
-    isTestListening,
+    isTestListening: isTriggerListening,
     isStreamPaused,
     hasStreamCursor,
     canStepNext,

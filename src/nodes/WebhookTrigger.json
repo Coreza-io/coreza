@@ -16,6 +16,10 @@
     "url": "/webhooks/register",
     "method": "POST"
   },
+  "stopAction": {
+    "url": "/webhooks/unregister",
+    "method": "POST"
+  },
   "listeningConfig": {
     "waitField": "webhookPayload",
     "timeout": 300000,

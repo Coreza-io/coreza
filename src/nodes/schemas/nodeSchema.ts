@@ -204,6 +204,7 @@ export const NodeConfigSchema = z
     listeningConfig: ListeningConfigSchema.optional(),
 
     action: ActionSchema.optional(),
+    stopAction: ActionSchema.optional(),
 
     auth: z.string().optional(),
     authFields: z.array(AuthFieldSchema).optional(),

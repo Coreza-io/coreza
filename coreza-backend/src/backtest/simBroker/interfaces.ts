@@ -34,6 +34,7 @@ export interface SimBrokerConfig {
   commissionModel: "none" | "per_share" | "percentage" | "fixed";
   commissionValue: number; // e.g., 0.01 for $0.01/share or 0.001 for 0.1%
   allowShort: boolean;
+  shortMarginRequirement: number;
 }
 
 export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
@@ -45,6 +46,7 @@ export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
   commissionModel: "per_share",
   commissionValue: 0.01, // $0.01 per share
   allowShort: false,
+  shortMarginRequirement: 1.0,
 };
 
 // ============== MARKET DATA ==============
@@ -129,6 +131,7 @@ export interface PortfolioState {
   cumulativeFees: number;
   reservedCash: number;
   reservationsByOrderId: Record<string, number>;
+  reservedRateByOrderId: Record<string, number>;
   positions: Record<string, Position>; // symbol -> Position
   tickets: Record<string, import("../../types/order").OrderTicket>; // orderId -> OrderTicket
   trades: Trade[]; // Closed trades

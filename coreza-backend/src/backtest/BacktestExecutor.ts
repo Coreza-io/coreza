@@ -927,6 +927,7 @@ export class BacktestExecutor implements INodeExecutor {
     simBroker: SimBroker,
     backtestId: string,
   ): Promise<void> {
+    simBroker.releaseAllReservations();
     // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
     const metrics = simBroker.getMetrics();
     const trades = simBroker.getTrades();
@@ -1235,7 +1236,7 @@ export class BacktestExecutor implements INodeExecutor {
 
     return leanSuccess({
       cash: state.cash,
-      buying_power: state.cash - state.reservedCash,
+      buying_power: simBroker.getAvailableBuyingPower(),
       initial_capital: simBroker.getConfig().initialCapital,
     });
   }

@@ -1,94 +1,57 @@
-# Lean-parity corrections for SimBroker accounting
+# Review: Lean-parity SimBroker corrections + buying-power audit
 
-Scope is **calculation correctness only**. No read-purity refactor, no `onBar` rename, no new node requirements — the user composes `update_mtm` / portfolio nodes in the workflow as they see fit. `onBar` keeps its current name and its current behaviour of evaluating pending orders.
+## Part 1 — End-to-end review of what was implemented
 
-The uploaded review (`Coreza_Lean_Backtesting_Portfolio_Comparison_and_Corrections.pdf`) compares our engine against Lean. Its accounting findings are correct — re-verified against `main`:
+Verified against the code, not the plan text. Everything below is confirmed by reading the files.
 
-- **P0-001 slippage double-count** — `coreza-backend/src/backtest/simBroker/index.ts:342` sets `adjustedPrice = fillResult.price + slippage` (used for cash and average price), then `:615` computes `netPnl = grossPnl - totalCommissionForTrade - totalSlippageForTrade`, deducting slippage a second time.
-- **P0-003 realized P&L disappears on close** — `simBroker/index.ts:645` does `delete this.state.positions[order.symbol]` when quantity reaches zero, and portfolio summaries aggregate `Object.values(state.positions)` only (`PortfolioExecutor.ts:1018/1467/1594/1667/1686`, `BacktestExecutor.ts:1146/1245`). Closed-trade P&L is dropped from the summary.
-- **P1-005 unsigned fillQuantity** — `simBroker/index.ts:369` and `:483` write `fillQuantity: fillResult.quantity` (always positive) into `OrderEvent`, so an event stream cannot be replayed into holdings.
-- **P1-006 ticket average price overwritten** — `averageFillPrice` is assigned the latest fill price instead of a weighted average across partial fills.
+**Phase 1 — slippage double-count (P0-001): correct.**
+`applyFill` now computes `netPnl = grossPnl - totalCommissionForTrade` (index.ts:707). `totalSlippageForTrade` (:706) is still computed and stored on `Trade.slippage` (:729) as a diagnostic only. The convention comment is at :44. `adjustedPrice = fillResult.price + slippage` (:410, :548), and `SlippageModel` returns a signed value (+ for buy, − for sell), so the adjusted price is genuinely the economic execution price on both sides. Entry-side slippage is carried per-unit in `currentEntryMap` with `Math.abs`, so it never leaks into P&L. Stats aggregation (:954) uses `Math.abs(event.fillQuantity)`, so it survives the signed-quantity change.
 
-## Explicitly dropped from this plan
+**Phase 2 — durable realized P&L (P0-003): correct and fully wired.**
+`cumulativeRealizedPnl`, `realizedPnlBySymbol`, `cumulativeFees` are on `PortfolioState` (interfaces.ts:127-129), initialised at :120-122, incremented in `applyFill` at :714-716 **before** the `delete this.state.positions[...]` at :740, and fees at :615. All consumers read the durable field: `PortfolioExecutor.ts` 1017, 1471, 1631, 1689, 1820 and `BacktestExecutor.ts` 1161, 1199, 1281. `simulation/PortfolioManager.getPortfolioState` derives the same three fields from `trades`/`orders`, so live and backtest expose an identical shape.
 
-- **CZA-PORT-002 (pure portfolio reads)** — not doing it. `onBar` stays as-is and query paths keep calling it. The user controls when MTM/portfolio nodes run via the graph.
-- Any rename of `onBar` → `processExecutableBar`.
-- Phase 4 Lean features (currency cash book, settlement, corporate actions).
+**Phase 3 — order event / ticket semantics: correct.**
+Signed `fillQuantity` with `absoluteFillQuantity` alongside at both fill sites (:444-448, :579-581); `OrderEvent` type updated (types/order.ts:103-104); `BacktestExecutor.ts:840` prefers `absoluteFillQuantity` with an `Math.abs` fallback. `aggregateTicketFill` (:799-818) does a true weighted average and sets `partially_filled` vs `filled`. Both fill paths ask the fill model for `remainingQuantity` only (:377, :517) and clamp with `Math.min(fillResult.quantity, remainingQuantity)`.
 
-## Phase 0 — Reproduction tests
+**Not implemented, by your decision:** the Phase 0 tests and the `isSynthetic` forward-fill guard. Noted, no action.
 
-Add under `coreza-backend/tests/`, each landing green with its phase:
+**Two loose ends worth knowing about (not blocking):**
+- No `eventsSchemaVersion` migration was added. Backtest runs persisted before this change still hold unsigned sell `fillQuantity`. Nothing in `src/` reads `fillQuantity` today, so nothing renders wrong — but any future reader will see mixed sign conventions in old rows.
+- `onBar` is unchanged in name and behaviour, as requested; query paths still trigger it.
 
-- `simBrokerSlippageReconciliation.test.ts` — zero commission; buy 100 @ raw 10 with +0.10 slip, sell @ raw 12 with +0.12 slip. Assert `finalCash - initialCash === sum(trade.netPnl)` and equals 178.
-- `simBrokerRealizedPnlPersistence.test.ts` — buy 100 @ 10, sell 100 @ 12, no costs. After the close, portfolio summary `realized_pnl === 200` (currently 0 because the position was deleted).
-- `orderEventSignedQuantity.test.ts` — buy 40 → `fillQuantity === +40`; sell 40 → `fillQuantity === -40`; replaying the event stream from zero reproduces holdings.
-- `ticketWeightedAverage.test.ts` — 40 @ 10 then 60 @ 12 → `quantityFilled === 100`, `averageFillPrice === 11.20`.
-- `pendingBuyingPowerReservation.test.ts` — cash 10,000; accept a pending buy with est. cost 8,000; a second independent 8,000 buy must be rejected.
-- `syntheticBarNoFill.test.ts` — two symbols with non-overlapping timestamps; a pending order on the symbol with no real bar must not fill on the forward-filled timestamp.
+## Part 2 — Buying-power logic, end to end
 
-## Phase 1 — Slippage convention (P0-001)
+Flow today: `placeOrder` → `validateOrder` (checks `cash - reservedCash`, :316) → `reserveBuyingPower` (:820). Release happens on cancel/reject/expire/replace via `transitionPendingOrder` (:232), on full fill (:457, :590), on stale/missing tickets in `onBar` (:367, :372, :381) and on zero-remaining (:521). Partial fills call `adjustBuyingPowerReservation` (:459, :592). `BacktestExecutor.ts:1238` reports `buying_power: state.cash - state.reservedCash`.
 
-- In `applyFill`, treat `adjustedPrice` as the **economic execution price**. Change the closing-trade calculation to `netPnl = grossPnl - totalCommissionForTrade` — remove the `- totalSlippageForTrade` term.
-- Keep `totalSlippageForTrade` on `Trade` as a **diagnostic/reporting** field only. Stats aggregation at `:799` already derives slippage from `|adjustedFill − rawReference| × qty` and stays unchanged.
-- Add a comment block at the top of `simBroker/index.ts` stating the convention: *adjusted price is the actual execution price; slippage is recorded for analytics and never deducted again from P&L*.
+The lifecycle is complete — every terminal path releases, and no path reserves twice. The defects are in **how much** is reserved.
 
-## Phase 2 — Durable realized P&L (P0-003)
+### BP-1 (high) — reservation is priced off the wrong symbol
+`validateOrder` (:304), `reserveBuyingPower` (:822) and `adjustBuyingPowerReservation` (:838) all read `state.currentBar?.close`. `currentBar` is a single global slot overwritten by whichever symbol's bar was processed last (:350, :358, :541). In any multi-symbol backtest, an AAPL order can be reserved at the last MSFT close. Fix: resolve the price from the order's own symbol — `getSymbolState(symbol).previousBar?.close ?? lastFillPrice`, falling back to the global bar only if the symbol has no data yet.
 
-- Extend `PortfolioState`:
-  ```ts
-  cumulativeRealizedPnl: number;                 // portfolio-wide, survives position close
-  realizedPnlBySymbol: Record<string, number>;
-  cumulativeFees: number;
-  ```
-- In `applyFill`, increment both counters on any closing quantity **before** the `delete this.state.positions[...]` branch at `:645`.
-- Change every `realized_pnl` summary source to read `state.cumulativeRealizedPnl` instead of summing open positions: `PortfolioExecutor.ts` (L1018, L1467, L1594, L1667, L1686) and `BacktestExecutor.ts` (L1146, L1245).
-- Mirror the same three fields onto `simulation/PortfolioManager.ts` state so the live path shares the shape (population wired in Phase 5).
+### BP-2 (high) — worst-case price ignored for limit and stop orders
+A buy is always reserved at last close. Lean reserves at the price the order can actually execute at. Fix the estimate to:
+- `limit` and `stop_limit` buy → `limitPrice`
+- `stop_market` buy → `stopPrice`
+- `market` buy → symbol's last close
+Today a limit buy resting far below market over-reserves, and a stop-market buy above market under-reserves and can overdraw cash on fill.
 
-## Phase 3 — Order event and ticket semantics (P1-005, P1-006)
+### BP-3 (medium) — re-pricing on partial fill lets reservation drift above cash
+`adjustBuyingPowerReservation` recomputes the remaining leg at the *current* price. On a rising bar, the reservation for the unfilled remainder grows even though cash already left the account for the filled part, so `reservedCash` can exceed `cash` and block unrelated orders. Fix: store the per-unit reserve rate at placement (`reservedRateByOrderId`) and on each partial fill set `reservation = rate * remainingQuantity`, so the reservation only ever shrinks.
 
-**Signed fill quantity**
-- `simBroker/index.ts:369` and `:483`: `fillQuantity: order.side === 'sell' ? -fillResult.quantity : fillResult.quantity`.
-- Add optional `absoluteFillQuantity` to `OrderEvent` in `types/order.ts:94` for display.
-- Grep frontend consumers of `event.fillQuantity` (`src/components/backtest/OrdersTable.tsx`, `TradesTable.tsx`) and use the absolute field where a magnitude is shown.
-- Persisted historical runs: negate sell-side `fillQuantity` on read behind an idempotent `eventsSchemaVersion` flag on the run record, so old backtests still render correctly.
+### BP-4 (medium) — shorts reserve nothing
+`reserveBuyingPower` returns immediately for `order.side !== "buy"` (:821). With `allowShort: true`, `validateOrder` skips the position check (:327) and there is no margin requirement, so a strategy can open unbounded short exposure. Fix: when `allowShort` is on, reserve `notional * shortMarginRequirement + fee` (default 1.0, configurable on `SimBrokerConfig`) for sells that increase a short, and skip the reservation for sells that close an existing long.
 
-**Weighted average ticket price**
-```ts
-const newQty = ticket.quantityFilled + fillResult.quantity;
-ticket.averageFillPrice =
-  (ticket.averageFillPrice * ticket.quantityFilled + adjustedPrice * fillResult.quantity) / newQty;
-ticket.quantityFilled = newQty;
-```
-- Fill models must be asked for the **remaining** quantity (`order.quantity − ticket.quantityFilled`), not the full order quantity, on each subsequent attempt.
+### BP-5 (low) — float drift and orphaned reservations
+`reservedCash` is maintained by `+=`/`-=` and clamped with `Math.max(0, ...)` at :855, which hides drift rather than preventing it. Fix: derive `reservedCash` as the sum of `reservationsByOrderId` in a small private recompute called from reserve/adjust/release. Also release all outstanding reservations at backtest finalisation so the final `buying_power` figure isn't understated by orders that never resolved.
 
-## Phase 4 — Buying power and synthetic bars (P1-007, P1-008)
+### BP-6 (low) — sell-side release is a silent no-op
+`releaseBuyingPower` is called for sell orders too and exits on `undefined` (:854). Correct, but once BP-4 lands the same call has real work to do — keep the single release path and let the reserve side decide the amount.
 
-- Add `state.reservedCash` and `state.reservationsByOrderId`. `validateOrder` checks `estimatedCost <= state.cash - state.reservedCash`. Reserve `notional + estimatedFee` when a pending order is accepted; release or adjust on fill, cancel, replace, reject, and expiry.
-- Locate the multi-symbol bar aligner under `coreza-backend/src/backtest/` and mark carried-forward bars with `bar.isSynthetic = true`. In `onBar`, when `bar.isSynthetic` is set, update mark-to-market only and skip pending-order evaluation — a forward-filled price is not a tradable print.
+## Implementation order
 
-## Phase 5 — Shared accounting core (optional, after Phases 1-4 are green)
+1. Add a private `estimateOrderPrice(symbol, order)` helper that resolves the symbol's own last price and applies the BP-2 limit/stop rules. Use it from `validateOrder`, `reserveBuyingPower` and `adjustBuyingPowerReservation`. (BP-1, BP-2)
+2. Add `reservedRateByOrderId` to `PortfolioState`; make `adjustBuyingPowerReservation` scale by remaining quantity instead of re-pricing. (BP-3)
+3. Add `shortMarginRequirement` to `SimBrokerConfig` and reserve on short-increasing sells. (BP-4)
+4. Recompute `reservedCash` from the reservation map instead of incremental arithmetic; release everything at finalisation. (BP-5)
 
-Extract the cash/holdings/realized-P&L arithmetic into `coreza-backend/src/portfolio/PortfolioLedger.ts` with a single immutable fill contract:
-
-```ts
-interface PortfolioFill {
-  executionId: string; orderId: string; symbol: string;
-  signedQuantity: number; fillPrice: number;
-  rawReferencePrice?: number; slippagePerUnit?: number;
-  fee: { amount: number; currency: string };
-  contractMultiplier: number; timestamp: string;
-}
-```
-
-`SimBroker` keeps ownership of order matching and `onBar`; it just delegates state mutation to the ledger. `simulation/PortfolioManager.ts` normalizes live broker executions into the same `PortfolioFill` and calls the same code, so backtest and live P&L cannot drift. Ship behind a `USE_PORTFOLIO_LEDGER` flag for one release.
-
-## Invariants added to CI
-
-- Replaying all fills from zero reproduces current cash and holdings.
-- Once every position is flat: `finalEquity − initialEquity === cumulativeRealizedPnl`.
-- `sum(ticket fees) === state.cumulativeFees`.
-- A fill is applied at most once per `executionId`.
-
-## Risk
-
-Phase 1 changes reported P&L for any historical run that had non-zero slippage (the numbers become correct — previously they were pessimistic). Bump a `schemaVersion` on backtest run records and label older runs in the results UI so the difference is explainable. Phase 3's signed quantity is the only wire-format change; the read-time migration keeps old runs displayable.
+No changes to `onBar`, no read-purity refactor, no `isSynthetic`, no tests — matching your scope.

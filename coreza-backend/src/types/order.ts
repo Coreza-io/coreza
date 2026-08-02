@@ -27,6 +27,8 @@ export type OrderStatus =
   | "partially_filled"
   | "filled"
   | "canceled"
+  | "expired"
+  | "replaced"
   | "rejected"
   | "invalid";
 
@@ -99,6 +101,7 @@ export interface OrderEvent {
   side: OrderSide;
   fillPrice: number;
   fillQuantity: number;
+  absoluteFillQuantity?: number;
   orderFee?: OrderFee;
   slippage?: number; // sim only
   message?: string;
@@ -110,7 +113,7 @@ export interface OrderTicket {
   orderId: string;
   order: Order;
   orderEvents: OrderEvent[];
-  quantityFilled: number; // sum of event fillQuantity
+  quantityFilled: number; // absolute quantity filled for this order
   averageFillPrice: number; // weighted avg
   totalFees: number; // sum of event fees
 }

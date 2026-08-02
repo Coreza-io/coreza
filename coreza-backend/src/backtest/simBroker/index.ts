@@ -41,6 +41,8 @@ import { BarBuffer } from "./BarBuffer";
  * No Redis round-trips during backtest execution.
  *
  * Uses the QC Lean pattern: immutable Order + append-only OrderEvent + OrderTicket aggregate.
+ * Adjusted price is the actual execution price; slippage is diagnostic and is
+ * never deducted from P&L a second time.
  *
  * Performance: 100-500x faster than Redis-based approach
  * - 10 years daily bars (2,520): ~0.1-0.5 seconds
@@ -115,6 +117,11 @@ export class SimBroker {
     // Initialize state immediately in memory
     this.state = {
       cash: this.config.initialCapital,
+      cumulativeRealizedPnl: 0,
+      realizedPnlBySymbol: {},
+      cumulativeFees: 0,
+      reservedCash: 0,
+      reservationsByOrderId: {},
       positions: {},
       tickets: {},
       trades: [],
@@ -192,9 +199,38 @@ export class SimBroker {
     };
 
     this.state.tickets[orderId] = ticket;
+    this.reserveBuyingPower(order);
     this.trackPendingTicket(order.symbol, orderId);
 
     return { success: true, orderId, status: "new" };
+  }
+
+  cancelOrder(orderId: string): boolean {
+    return this.transitionPendingOrder(orderId, "canceled");
+  }
+
+  rejectOrder(orderId: string): boolean {
+    return this.transitionPendingOrder(orderId, "rejected");
+  }
+
+  expireOrder(orderId: string): boolean {
+    return this.transitionPendingOrder(orderId, "expired");
+  }
+
+  markOrderReplaced(orderId: string): boolean {
+    return this.transitionPendingOrder(orderId, "replaced");
+  }
+
+  private transitionPendingOrder(
+    orderId: string,
+    status: "canceled" | "rejected" | "expired" | "replaced",
+  ): boolean {
+    const ticket = this.state.tickets[orderId];
+    if (!ticket || !isTicketPending(ticket)) return false;
+    ticket.order.status = status;
+    this.untrackPendingTicket(ticket.order.symbol, orderId);
+    this.releaseBuyingPower(orderId);
+    return true;
   }
 
   private ensureEquityCapacity(): void {
@@ -266,13 +302,23 @@ export class SimBroker {
     // Estimate required capital for buy orders
     if (request.side === "buy") {
       const currentPrice = state.currentBar?.close ?? request.limitPrice ?? 100;
-      const estimatedCost = request.quantity * currentPrice;
+      const estimatedFee = this.feeModel.getCommission(
+        {
+          ...request,
+          id: "estimate",
+          status: "new",
+          createdAt: "",
+        },
+        currentPrice,
+        request.quantity,
+      );
+      const estimatedCost = request.quantity * currentPrice + estimatedFee;
+      const availableCash = state.cash - state.reservedCash;
 
-      if (estimatedCost > state.cash * 0.99) {
-        // 1% buffer for commissions
+      if (estimatedCost > availableCash) {
         return {
           valid: false,
-          error: `Insufficient buying power. Required: $${estimatedCost.toFixed(2)}, Available: $${state.cash.toFixed(2)}`,
+          error: `Insufficient buying power. Required: $${estimatedCost.toFixed(2)}, Available: $${availableCash.toFixed(2)}`,
         };
       }
     }
@@ -318,24 +364,46 @@ export class SimBroker {
         const ticket = this.state.tickets[ticketId];
         if (!ticket) {
           pendingTickets.delete(ticketId);
+          this.releaseBuyingPower(ticketId);
           continue;
         }
         if (!isTicketPending(ticket)) {
           pendingTickets.delete(ticketId);
+          this.releaseBuyingPower(ticketId);
           continue;
         }
 
         const order = ticket.order;
+        const remainingQuantity = order.quantity - ticket.quantityFilled;
+        if (remainingQuantity <= 0) {
+          order.status = "filled";
+          pendingTickets.delete(ticketId);
+          this.releaseBuyingPower(order.id);
+          continue;
+        }
+        const fillOrder: Order = { ...order, quantity: remainingQuantity };
         const fillResult = this.fillModel.fill(
-          order,
+          fillOrder,
           bar,
           symbolState.previousBar ?? undefined,
         );
 
-        if (fillResult.filled && fillResult.price && fillResult.quantity) {
+        if (
+          fillResult.filled &&
+          fillResult.price !== undefined &&
+          Number.isFinite(fillResult.price) &&
+          fillResult.price > 0 &&
+          fillResult.quantity !== undefined &&
+          Number.isFinite(fillResult.quantity) &&
+          fillResult.quantity > 0
+        ) {
+          const fillQuantity = Math.min(
+            fillResult.quantity,
+            remainingQuantity,
+          );
           // Calculate slippage
           const slippage = this.slippageModel.getSlippage(
-            order,
+            fillOrder,
             fillResult.price,
             bar,
           );
@@ -343,19 +411,26 @@ export class SimBroker {
 
           // Calculate commission
           const commission = this.feeModel.getCommission(
-            order,
+            fillOrder,
             adjustedPrice,
-            fillResult.quantity,
+            fillQuantity,
           );
 
           // Apply fill to portfolio
           this.applyFill(
             order,
             adjustedPrice,
-            fillResult.quantity,
+            fillQuantity,
             slippage,
             commission,
             bar.timestamp,
+          );
+
+          const eventStatus = this.aggregateTicketFill(
+            ticket,
+            adjustedPrice,
+            fillQuantity,
+            commission,
           );
 
           // Create append-only OrderEvent
@@ -363,28 +438,25 @@ export class SimBroker {
             orderId: order.id,
             symbol: order.symbol,
             utcTime: asIsoTimestamp(bar.timestamp),
-            status: "filled",
+            status: eventStatus,
             side: order.side,
             fillPrice: adjustedPrice,
-            fillQuantity: fillResult.quantity,
+            fillQuantity:
+              order.side === "sell"
+                ? -fillQuantity
+                : fillQuantity,
+            absoluteFillQuantity: fillQuantity,
             orderFee: { value: commission, currency: "USD" },
             slippage,
           };
 
-          // Update ticket aggregate
           ticket.orderEvents.push(event);
-          ticket.quantityFilled += fillResult.quantity;
-          ticket.averageFillPrice = adjustedPrice; // single fill per order in sim
-          ticket.totalFees += commission;
           symbolState.lastFillPrice = adjustedPrice;
-
-          // Update order status (the only mutable field)
-          order.status =
-            ticket.quantityFilled >= order.quantity
-              ? "filled"
-              : "partially_filled";
           if (!isTicketPending(ticket)) {
             pendingTickets.delete(ticketId);
+            this.releaseBuyingPower(order.id);
+          } else {
+            this.adjustBuyingPowerReservation(ticket);
           }
 
           events.push(event);
@@ -442,34 +514,58 @@ export class SimBroker {
     }
 
     const order = ticket.order;
-    const fillResult = this.fillModel.fill(order, bar);
-
-    if (!fillResult.filled || !fillResult.price || !fillResult.quantity) {
+    const remainingQuantity = order.quantity - ticket.quantityFilled;
+    if (remainingQuantity <= 0) {
+      order.status = "filled";
+      this.untrackPendingTicket(order.symbol, order.id);
+      this.releaseBuyingPower(order.id);
       return null;
     }
+    const fillOrder: Order = { ...order, quantity: remainingQuantity };
+    const fillResult = this.fillModel.fill(fillOrder, bar);
+
+    if (
+      !fillResult.filled ||
+      fillResult.price === undefined ||
+      !Number.isFinite(fillResult.price) ||
+      fillResult.price <= 0 ||
+      fillResult.quantity === undefined ||
+      !Number.isFinite(fillResult.quantity) ||
+      fillResult.quantity <= 0
+    ) {
+      return null;
+    }
+    const fillQuantity = Math.min(fillResult.quantity, remainingQuantity);
 
     // Keep current bar in state for order validation/price usage
     this.state.currentBar = bar;
 
     const slippage = this.slippageModel.getSlippage(
-      order,
+      fillOrder,
       fillResult.price,
       bar,
     );
     const adjustedPrice = fillResult.price + slippage;
     const commission = this.feeModel.getCommission(
-      order,
+      fillOrder,
       adjustedPrice,
-      fillResult.quantity,
+      fillQuantity,
     );
 
     this.applyFill(
       order,
       adjustedPrice,
-      fillResult.quantity,
+      fillQuantity,
       slippage,
       commission,
       bar.timestamp,
+    );
+
+    const eventStatus = this.aggregateTicketFill(
+      ticket,
+      adjustedPrice,
+      fillQuantity,
+      commission,
     );
 
     // Create append-only OrderEvent
@@ -477,26 +573,23 @@ export class SimBroker {
       orderId: order.id,
       symbol: order.symbol,
       utcTime: asIsoTimestamp(bar.timestamp),
-      status: "filled",
+      status: eventStatus,
       side: order.side,
       fillPrice: adjustedPrice,
-      fillQuantity: fillResult.quantity,
+      fillQuantity:
+        order.side === "sell" ? -fillQuantity : fillQuantity,
+      absoluteFillQuantity: fillQuantity,
       orderFee: { value: commission, currency: "USD" },
       slippage,
     };
 
-    // Update ticket aggregate
     ticket.orderEvents.push(event);
-    ticket.quantityFilled += fillResult.quantity;
-    ticket.averageFillPrice = adjustedPrice;
-    ticket.totalFees += commission;
     this.getSymbolState(order.symbol).lastFillPrice = adjustedPrice;
-
-    // Update order status
-    order.status =
-      ticket.quantityFilled >= order.quantity ? "filled" : "partially_filled";
     if (!isTicketPending(ticket)) {
       this.untrackPendingTicket(order.symbol, order.id);
+      this.releaseBuyingPower(order.id);
+    } else {
+      this.adjustBuyingPowerReservation(ticket);
     }
 
     this.updatePositionMTM(order.symbol, bar.close);
@@ -519,6 +612,7 @@ export class SimBroker {
     } else {
       this.state.cash += price * quantity - commission;
     }
+    this.state.cumulativeFees += commission;
 
     const existing = this.state.positions[order.symbol];
     if (!existing) {
@@ -609,16 +703,17 @@ export class SimBroker {
     const entrySlippagePerUnit = entry?.entrySlippagePerUnit ?? 0;
     const allocatedEntrySlippageCost = entrySlippagePerUnit * closingQty;
     const totalCommissionForTrade = allocatedEntryCommission + exitCommission;
-    const totalSlippageForTrade =
-      allocatedEntrySlippageCost + exitSlippageCost;
-    const netPnl =
-      grossPnl - totalCommissionForTrade - totalSlippageForTrade;
+    const totalSlippageForTrade = allocatedEntrySlippageCost + exitSlippageCost;
+    const netPnl = grossPnl - totalCommissionForTrade;
     const holdingPeriodBars = Math.max(
       0,
       this.equityCurveIndex - (entry?.barIndex ?? this.equityCurveIndex),
     );
 
     existing.realizedPnl += netPnl;
+    this.state.cumulativeRealizedPnl += netPnl;
+    this.state.realizedPnlBySymbol[order.symbol] =
+      (this.state.realizedPnlBySymbol[order.symbol] ?? 0) + netPnl;
 
     const trade: Trade = {
       id: `TRD-${++this.tradeIdCounter}`,
@@ -683,7 +778,8 @@ export class SimBroker {
       filledAt: fillTimeIso,
       barIndex: this.equityCurveIndex,
       entryQuantity: Math.abs(newQty),
-      entryCommission: commission * (Math.abs(newQty) / Math.abs(signedQuantity)),
+      entryCommission:
+        commission * (Math.abs(newQty) / Math.abs(signedQuantity)),
       entrySlippagePerUnit: Math.abs(slippage),
     });
   }
@@ -694,12 +790,70 @@ export class SimBroker {
       const oldMarketValue = position.marketValue;
       position.currentPrice = currentPrice;
       position.marketValue = position.quantity * currentPrice;
-      position.openCostBasis =
-        Math.abs(position.quantity) * position.avgFillPrice;
       position.unrealizedPnl =
         (currentPrice - position.avgFillPrice) * position.quantity;
       this.positionsValue += position.marketValue - oldMarketValue;
     }
+  }
+
+  private aggregateTicketFill(
+    ticket: OrderTicket,
+    fillPrice: number,
+    fillQuantity: number,
+    fee: number,
+  ): OrderEvent["status"] {
+    const previousQuantityFilled = ticket.quantityFilled;
+    const newQuantityFilled = previousQuantityFilled + fillQuantity;
+    ticket.averageFillPrice =
+      (ticket.averageFillPrice * previousQuantityFilled +
+        fillPrice * fillQuantity) /
+      newQuantityFilled;
+    ticket.quantityFilled = newQuantityFilled;
+    ticket.totalFees += fee;
+    ticket.order.status =
+      newQuantityFilled >= ticket.order.quantity
+        ? "filled"
+        : "partially_filled";
+    return ticket.order.status;
+  }
+
+  private reserveBuyingPower(order: Order): void {
+    if (order.side !== "buy") return;
+    const price = this.state.currentBar?.close ?? order.limitPrice ?? 100;
+    const fee = this.feeModel.getCommission(order, price, order.quantity);
+    const reservation = price * order.quantity + fee;
+    this.state.reservationsByOrderId[order.id] = reservation;
+    this.state.reservedCash += reservation;
+  }
+
+  private adjustBuyingPowerReservation(ticket: OrderTicket): void {
+    const currentReservation =
+      this.state.reservationsByOrderId[ticket.orderId] ?? 0;
+    if (currentReservation === 0) return;
+    const remainingQuantity = Math.max(
+      0,
+      ticket.order.quantity - ticket.quantityFilled,
+    );
+    const price =
+      this.state.currentBar?.close ?? ticket.order.limitPrice ?? 100;
+    const adjustedReservation =
+      remainingQuantity > 0
+        ? price * remainingQuantity +
+          this.feeModel.getCommission(
+            { ...ticket.order, quantity: remainingQuantity },
+            price,
+            remainingQuantity,
+          )
+        : 0;
+    this.state.reservationsByOrderId[ticket.orderId] = adjustedReservation;
+    this.state.reservedCash += adjustedReservation - currentReservation;
+  }
+
+  private releaseBuyingPower(orderId: string): void {
+    const reservation = this.state.reservationsByOrderId[orderId];
+    if (reservation === undefined) return;
+    this.state.reservedCash = Math.max(0, this.state.reservedCash - reservation);
+    delete this.state.reservationsByOrderId[orderId];
   }
 
   /**
@@ -796,7 +950,8 @@ export class SimBroker {
     for (const ticket of Object.values(this.state.tickets)) {
       totalCommission += ticket.totalFees ?? 0;
       for (const event of ticket.orderEvents) {
-        totalSlippage += Math.abs(event.slippage ?? 0) * (event.fillQuantity ?? 0);
+        totalSlippage +=
+          Math.abs(event.slippage ?? 0) * Math.abs(event.fillQuantity ?? 0);
       }
     }
 
@@ -895,7 +1050,8 @@ export class SimBroker {
   ): number {
     if (returns.length < 30) return 0;
 
-    const dailyRf = riskFreeRate === 0 ? 0 : Math.pow(1 + riskFreeRate, 1 / 252) - 1;
+    const dailyRf =
+      riskFreeRate === 0 ? 0 : Math.pow(1 + riskFreeRate, 1 / 252) - 1;
     const excessReturns = new Array<number>(returns.length);
     let sum = 0;
 
@@ -920,7 +1076,8 @@ export class SimBroker {
   ): number {
     if (returns.length < 30) return 0;
 
-    const dailyRf = riskFreeRate === 0 ? 0 : Math.pow(1 + riskFreeRate, 1 / 252) - 1;
+    const dailyRf =
+      riskFreeRate === 0 ? 0 : Math.pow(1 + riskFreeRate, 1 / 252) - 1;
     const excessReturns = new Array<number>(returns.length);
     let sum = 0;
 

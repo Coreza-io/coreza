@@ -1,82 +1,94 @@
-# Dhan Live Market Feed — 1006 After Subscribe: Root-Cause Analysis & Fix Plan
+# Lean-parity corrections for SimBroker accounting
 
-## Symptom
-- Socket upgrade to `wss://api-feed.dhan.co` succeeds (`Gateway connected`).
-- Connection stays **stable while idle** (observed up to ~273s / 4.5 min).
-- ~3–6s **after the subscribe frame is sent**, Dhan raw-TCP-drops the socket:
-  `code 1006 - No reason provided` (abnormal closure, no application-level close frame, no Dhan `50` disconnect packet).
-- Reconnect loop retries (attempt N/5) and repeats.
+Scope is **calculation correctness only**. No read-purity refactor, no `onBar` rename, no new node requirements — the user composes `update_mtm` / portfolio nodes in the workflow as they see fit. `onBar` keeps its current name and its current behaviour of evaluating pending orders.
 
-## What has been PROVEN correct (ruled out)
-End-to-end verification across the pipeline shows every value Dhan needs is correct:
+The uploaded review (`Coreza_Lean_Backtesting_Portfolio_Comparison_and_Corrections.pdf`) compares our engine against Lean. Its accounting findings are correct — re-verified against `main`:
 
-1. **WS URL host & params** — `wss://api-feed.dhan.co?version=2&token=<JWT>&clientId=<id>&authType=2`
-   (`getDhanWsUrl` / `environment.ts`). Matches Dhan v2 spec exactly.
-2. **Token = JWT** — `resolveDhanMarketToken` returns `creds.api_key`, which is the **same JWT value** used (and working) as the `access-token` header for Dhan REST trading calls (`dhan/http/config.ts`). So the token field is correct, not a mix-up with client_id.
-3. **clientId** — populated and sent.
-4. **Payload** — user screenshot confirms:
-   `{ "RequestCode": 21, "InstrumentCount": 1, "InstrumentList": [{ "ExchangeSegment": "NSE_EQ", "SecurityId": "1333" }] }`
-   RequestCode 21 (Full) is documented/valid; SecurityId is numeric (`1333`, not the symbol); exchange enum correct.
-5. **Wire format** — Dhan market frames are sent as **JSON text frames** via `JSON.stringify` (`isBinary` is false), matching Dhan's "subscribe = JSON, responses = binary" contract.
-6. **Idle stability** — survives minutes idle → rules out auth failure, ping/pong timeout, and URL/token-at-connect rejection.
+- **P0-001 slippage double-count** — `coreza-backend/src/backtest/simBroker/index.ts:342` sets `adjustedPrice = fillResult.price + slippage` (used for cash and average price), then `:615` computes `netPnl = grossPnl - totalCommissionForTrade - totalSlippageForTrade`, deducting slippage a second time.
+- **P0-003 realized P&L disappears on close** — `simBroker/index.ts:645` does `delete this.state.positions[order.symbol]` when quantity reaches zero, and portfolio summaries aggregate `Object.values(state.positions)` only (`PortfolioExecutor.ts:1018/1467/1594/1667/1686`, `BacktestExecutor.ts:1146/1245`). Closed-trade P&L is dropped from the summary.
+- **P1-005 unsigned fillQuantity** — `simBroker/index.ts:369` and `:483` write `fillQuantity: fillResult.quantity` (always positive) into `OrderEvent`, so an event stream cannot be replayed into holdings.
+- **P1-006 ticket average price overwritten** — `averageFillPrice` is assigned the latest fill price instead of a weighted average across partial fills.
 
-**Conclusion:** This is a **Dhan server-side rejection that fires only at subscription time**, not a bug in our payload-building or send path.
+## Explicitly dropped from this plan
 
-## External corroboration (research)
-- DhanHQ-py issue #75: confirms async-vs-sync usage, not our case (we run the receive loop). Not the cause.
-- madefortrade "Websockets keep getting closed": multiple users hit 1006/1011 from Dhan; Dhan staff acknowledged **server-side instability** and that fixes were rolled into v2. Their drops are 10–20 min (keepalive), which is a *different* (also-real) issue.
+- **CZA-PORT-002 (pure portfolio reads)** — not doing it. `onBar` stays as-is and query paths keep calling it. The user controls when MTM/portfolio nodes run via the graph.
+- Any rename of `onBar` → `processExecutableBar`.
+- Phase 4 Lean features (currency cash book, settlement, corporate actions).
 
-## Most likely remaining causes (in priority order)
-1. **Token lacks Data API feed entitlement.** Dhan's feed JWT must be generated with **Data APIs enabled** in the Dhan dashboard. A trading-only token authenticates the socket *upgrade* but is rejected the moment a market subscription is requested → exactly "upgrade OK, idle OK, drop right after subscribe." (User earlier saw "DhanLive / Dhan Cloud" data entitlements as Inactive/Expired.)
-2. **Concurrent WS connection limit hit.** Dhan allows a small number of simultaneous feed connections per clientId. The earlier reconnect storms + multiple dev restarts can exhaust the quota; new sockets are accepted then dropped at subscribe.
-3. **Dhan server-side instability** (documented), usually longer-lived than seconds.
+## Phase 0 — Reproduction tests
 
-We cannot distinguish #1/#2 from generic noise inside the full pipeline. The plan below adds **decisive diagnostics** and an **isolated probe** to confirm, plus low-risk hardening.
+Add under `coreza-backend/tests/`, each landing green with its phase:
 
----
+- `simBrokerSlippageReconciliation.test.ts` — zero commission; buy 100 @ raw 10 with +0.10 slip, sell @ raw 12 with +0.12 slip. Assert `finalCash - initialCash === sum(trade.netPnl)` and equals 178.
+- `simBrokerRealizedPnlPersistence.test.ts` — buy 100 @ 10, sell 100 @ 12, no costs. After the close, portfolio summary `realized_pnl === 200` (currently 0 because the position was deleted).
+- `orderEventSignedQuantity.test.ts` — buy 40 → `fillQuantity === +40`; sell 40 → `fillQuantity === -40`; replaying the event stream from zero reproduces holdings.
+- `ticketWeightedAverage.test.ts` — 40 @ 10 then 60 @ 12 → `quantityFilled === 100`, `averageFillPrice === 11.20`.
+- `pendingBuyingPowerReservation.test.ts` — cash 10,000; accept a pending buy with est. cost 8,000; a second independent 8,000 buy must be rejected.
+- `syntheticBarNoFill.test.ts` — two symbols with non-overlapping timestamps; a pending order on the symbol with no real bar must not fill on the forward-filled timestamp.
 
-## Plan
+## Phase 1 — Slippage convention (P0-001)
 
-### Step 1 — Surface the HTTP upgrade response (the smoking gun)
-File: `coreza-backend/market-stream-service/src/services/MarketDataGateway.ts`
-- Add a `this.ws.on('unexpected-response', (req, res) => …)` handler in `connect()` that logs `res.statusCode`, `res.statusMessage`, and the response body.
-  - **401/403 here = token/entitlement problem (cause #1).** This is the single most valuable signal and we currently don't log it.
+- In `applyFill`, treat `adjustedPrice` as the **economic execution price**. Change the closing-trade calculation to `netPnl = grossPnl - totalCommissionForTrade` — remove the `- totalSlippageForTrade` term.
+- Keep `totalSlippageForTrade` on `Trade` as a **diagnostic/reporting** field only. Stats aggregation at `:799` already derives slippage from `|adjustedFill − rawReference| × qty` and stays unchanged.
+- Add a comment block at the top of `simBroker/index.ts` stating the convention: *adjusted price is the actual execution price; slippage is recorded for analytics and never deducted again from P&L*.
 
-### Step 2 — Add subscribe-relative timing to the close handler
-File: same.
-- Add private fields `connectionOpenedAt` and `lastSubscribeSentAt`.
-- Set `connectionOpenedAt = Date.now()` in the `open` handler.
-- Set `lastSubscribeSentAt = Date.now()` whenever a subscribe payload is sent (in the send path used by `resubscribeAll`).
-- In the `close` handler, log `uptimeMs = now - connectionOpenedAt` and `msSinceSubscribe = now - lastSubscribeSentAt`.
-  - A consistently small `msSinceSubscribe` confirms "subscribe triggers the drop" (cause #1/#2), vs large uptime with no recent subscribe (keepalive instability, cause #3).
+## Phase 2 — Durable realized P&L (P0-003)
 
-### Step 3 — Standalone isolation probe (no pipeline, no Redis, no app)
-New file: `coreza-backend/market-stream-service/scripts/dhan-feed-probe.ts`
-- Reads `DHAN_CLIENT_ID` and `DHAN_ACCESS_TOKEN` from env.
-- Opens `wss://api-feed.dhan.co?version=2&token=…&clientId=…&authType=2`.
-- Logs `unexpected-response` (status + body), `open`, every binary message length, and `close` (code, reason, elapsed since open, elapsed since subscribe).
-- On open, waits ~1s then sends **RequestCode 15 (Ticker)** for `{ ExchangeSegment: "NSE_EQ", SecurityId: "1333" }` (Ticker is the lightest entitlement; if even 15 drops, it is almost certainly entitlement/quota, not mode).
-- Optional `--full` flag to retry with RequestCode 21.
-- Run: `npx ts-node scripts/dhan-feed-probe.ts` (or `bun`).
-- **Interpretation:**
-  - 401/403 at upgrade → enable Data APIs / regenerate token (cause #1).
-  - Upgrade OK + drop after ticker subscribe → entitlement or connection-limit (cause #1/#2); verify dashboard + close stale sockets.
-  - Ticker works but Full drops → mode/entitlement on Full only; default live nodes to Ticker/Quote.
-  - Stable for minutes then drops with no recent subscribe → keepalive instability (cause #3); align keepalive to Dhan's 10s cadence.
+- Extend `PortfolioState`:
+  ```ts
+  cumulativeRealizedPnl: number;                 // portfolio-wide, survives position close
+  realizedPnlBySymbol: Record<string, number>;
+  cumulativeFees: number;
+  ```
+- In `applyFill`, increment both counters on any closing quantity **before** the `delete this.state.positions[...]` branch at `:645`.
+- Change every `realized_pnl` summary source to read `state.cumulativeRealizedPnl` instead of summing open positions: `PortfolioExecutor.ts` (L1018, L1467, L1594, L1667, L1686) and `BacktestExecutor.ts` (L1146, L1245).
+- Mirror the same three fields onto `simulation/PortfolioManager.ts` state so the live path shares the shape (population wired in Phase 5).
 
-### Step 4 — Low-risk hardening (apply regardless)
-- Throw/skip in `buildDhanMarketMessages` if a resolved `SecurityId` is non-numeric (defensive; already verified numeric, but prevents silent bad payloads on future symbols).
-- Promote `buildDhanSubscribeMessage` payload log from `debug` → `info` so the exact RequestCode + instruments are visible in normal logs.
-- Reconnect backoff: do **not** auto-reconnect after repeated subscribe-triggered 1006s within a short window (avoids burning the connection quota → cause #2 self-inflicted). Treat N consecutive subscribe-drops as fatal and emit a control record instead of looping.
+## Phase 3 — Order event and ticket semantics (P1-005, P1-006)
 
-### Step 5 — Mirror to backend repo
-- Apply the same `unexpected-response` + timing diagnostics to any equivalent gateway in `coreza-backend/src` (order-update path) and keep `dhan/ws/helpers.ts` in sync.
+**Signed fill quantity**
+- `simBroker/index.ts:369` and `:483`: `fillQuantity: order.side === 'sell' ? -fillResult.quantity : fillResult.quantity`.
+- Add optional `absoluteFillQuantity` to `OrderEvent` in `types/order.ts:94` for display.
+- Grep frontend consumers of `event.fillQuantity` (`src/components/backtest/OrdersTable.tsx`, `TradesTable.tsx`) and use the absolute field where a magnitude is shown.
+- Persisted historical runs: negate sell-side `fillQuantity` on read behind an idempotent `eventsSchemaVersion` flag on the run record, so old backtests still render correctly.
 
----
+**Weighted average ticket price**
+```ts
+const newQty = ticket.quantityFilled + fillResult.quantity;
+ticket.averageFillPrice =
+  (ticket.averageFillPrice * ticket.quantityFilled + adjustedPrice * fillResult.quantity) / newQty;
+ticket.quantityFilled = newQty;
+```
+- Fill models must be asked for the **remaining** quantity (`order.quantity − ticket.quantityFilled`), not the full order quantity, on each subsequent attempt.
 
-## Decision needed from user (account-side, cannot be fixed in code)
-The code is correct; the next move depends on probe output. Most likely action:
-- In the Dhan dashboard / developer portal, confirm **Data APIs (market feed)** entitlement is **Active** for the access token in use, and regenerate the token if it shows Inactive/Expired.
-- Ensure no other app/session is holding Dhan feed connections (connection-limit).
+## Phase 4 — Buying power and synthetic bars (P1-007, P1-008)
 
-Start with **Steps 1–3** to get a definitive signal, then apply Step 4 hardening and the account fix indicated by the probe.
+- Add `state.reservedCash` and `state.reservationsByOrderId`. `validateOrder` checks `estimatedCost <= state.cash - state.reservedCash`. Reserve `notional + estimatedFee` when a pending order is accepted; release or adjust on fill, cancel, replace, reject, and expiry.
+- Locate the multi-symbol bar aligner under `coreza-backend/src/backtest/` and mark carried-forward bars with `bar.isSynthetic = true`. In `onBar`, when `bar.isSynthetic` is set, update mark-to-market only and skip pending-order evaluation — a forward-filled price is not a tradable print.
+
+## Phase 5 — Shared accounting core (optional, after Phases 1-4 are green)
+
+Extract the cash/holdings/realized-P&L arithmetic into `coreza-backend/src/portfolio/PortfolioLedger.ts` with a single immutable fill contract:
+
+```ts
+interface PortfolioFill {
+  executionId: string; orderId: string; symbol: string;
+  signedQuantity: number; fillPrice: number;
+  rawReferencePrice?: number; slippagePerUnit?: number;
+  fee: { amount: number; currency: string };
+  contractMultiplier: number; timestamp: string;
+}
+```
+
+`SimBroker` keeps ownership of order matching and `onBar`; it just delegates state mutation to the ledger. `simulation/PortfolioManager.ts` normalizes live broker executions into the same `PortfolioFill` and calls the same code, so backtest and live P&L cannot drift. Ship behind a `USE_PORTFOLIO_LEDGER` flag for one release.
+
+## Invariants added to CI
+
+- Replaying all fills from zero reproduces current cash and holdings.
+- Once every position is flat: `finalEquity − initialEquity === cumulativeRealizedPnl`.
+- `sum(ticket fees) === state.cumulativeFees`.
+- A fill is applied at most once per `executionId`.
+
+## Risk
+
+Phase 1 changes reported P&L for any historical run that had non-zero slippage (the numbers become correct — previously they were pessimistic). Bump a `schemaVersion` on backtest run records and label older runs in the results UI so the difference is explainable. Phase 3's signed quantity is the only wire-format change; the read-time migration keeps old runs displayable.

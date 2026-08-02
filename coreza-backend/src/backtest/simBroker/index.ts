@@ -122,6 +122,7 @@ export class SimBroker {
       cumulativeFees: 0,
       reservedCash: 0,
       reservationsByOrderId: {},
+      reservedRateByOrderId: {},
       positions: {},
       tickets: {},
       trades: [],
@@ -299,28 +300,12 @@ export class SimBroker {
       };
     }
 
-    // Estimate required capital for buy orders
-    if (request.side === "buy") {
-      const currentPrice = state.currentBar?.close ?? request.limitPrice ?? 100;
-      const estimatedFee = this.feeModel.getCommission(
-        {
-          ...request,
-          id: "estimate",
-          status: "new",
-          createdAt: "",
-        },
-        currentPrice,
-        request.quantity,
-      );
-      const estimatedCost = request.quantity * currentPrice + estimatedFee;
-      const availableCash = state.cash - state.reservedCash;
-
-      if (estimatedCost > availableCash) {
-        return {
-          valid: false,
-          error: `Insufficient buying power. Required: $${estimatedCost.toFixed(2)}, Available: $${availableCash.toFixed(2)}`,
-        };
-      }
+    const estimatedPrice = this.estimateOrderPrice(request);
+    if (!Number.isFinite(estimatedPrice) || estimatedPrice <= 0) {
+      return {
+        valid: false,
+        error: `No market price available for ${request.symbol}`,
+      };
     }
 
     // Check for short selling
@@ -334,6 +319,14 @@ export class SimBroker {
           error: `Cannot sell ${request.quantity} shares. Only ${currentQty} shares held. Short selling disabled.`,
         };
       }
+    }
+
+    const requiredBuyingPower = this.computeReservation(request);
+    if (requiredBuyingPower > this.availableBuyingPower) {
+      return {
+        valid: false,
+        error: `Insufficient buying power. Required: $${requiredBuyingPower.toFixed(2)}, Available: $${this.availableBuyingPower.toFixed(2)}`,
+      };
     }
 
     return { valid: true };
@@ -818,42 +811,115 @@ export class SimBroker {
   }
 
   private reserveBuyingPower(order: Order): void {
-    if (order.side !== "buy") return;
-    const price = this.state.currentBar?.close ?? order.limitPrice ?? 100;
-    const fee = this.feeModel.getCommission(order, price, order.quantity);
-    const reservation = price * order.quantity + fee;
+    const reservation = this.computeReservation(order);
     this.state.reservationsByOrderId[order.id] = reservation;
-    this.state.reservedCash += reservation;
+    this.state.reservedRateByOrderId[order.id] =
+      reservation / order.quantity;
+    this.recomputeReservedCash();
   }
 
   private adjustBuyingPowerReservation(ticket: OrderTicket): void {
-    const currentReservation =
-      this.state.reservationsByOrderId[ticket.orderId] ?? 0;
-    if (currentReservation === 0) return;
+    const reservedRate = this.state.reservedRateByOrderId[ticket.orderId];
+    if (reservedRate === undefined) return;
     const remainingQuantity = Math.max(
       0,
       ticket.order.quantity - ticket.quantityFilled,
     );
-    const price =
-      this.state.currentBar?.close ?? ticket.order.limitPrice ?? 100;
-    const adjustedReservation =
-      remainingQuantity > 0
-        ? price * remainingQuantity +
-          this.feeModel.getCommission(
-            { ...ticket.order, quantity: remainingQuantity },
-            price,
-            remainingQuantity,
-          )
-        : 0;
-    this.state.reservationsByOrderId[ticket.orderId] = adjustedReservation;
-    this.state.reservedCash += adjustedReservation - currentReservation;
+    this.state.reservationsByOrderId[ticket.orderId] =
+      reservedRate * remainingQuantity;
+    this.recomputeReservedCash();
   }
 
   private releaseBuyingPower(orderId: string): void {
-    const reservation = this.state.reservationsByOrderId[orderId];
-    if (reservation === undefined) return;
-    this.state.reservedCash = Math.max(0, this.state.reservedCash - reservation);
     delete this.state.reservationsByOrderId[orderId];
+    delete this.state.reservedRateByOrderId[orderId];
+    this.recomputeReservedCash();
+  }
+
+  private estimateOrderPrice(order: Order | OrderRequest): number {
+    const symbolState = this.getSymbolState(order.symbol);
+    const lastClose = symbolState.previousBar?.close;
+    let orderPrice: number | undefined;
+
+    switch (normalizeOrderType(order.orderType)) {
+      case "limit":
+      case "stop_limit":
+        orderPrice = order.limitPrice;
+        break;
+      case "stop_market":
+        orderPrice = order.stopPrice;
+        break;
+      case "market":
+      case "market_on_open":
+      case "market_on_close":
+        orderPrice = lastClose;
+        break;
+    }
+
+    if (orderPrice !== undefined && lastClose !== undefined) {
+      return order.side === "buy"
+        ? Math.max(orderPrice, lastClose)
+        : Math.min(orderPrice, lastClose);
+    }
+
+    return (
+      orderPrice ??
+      lastClose ??
+      symbolState.lastFillPrice ??
+      this.state.currentBar?.close ??
+      0
+    );
+  }
+
+  private computeReservation(order: Order | OrderRequest): number {
+    const price = this.estimateOrderPrice(order);
+    if (!Number.isFinite(price) || price <= 0) return 0;
+
+    const positionQuantity = this.state.positions[order.symbol]?.quantity ?? 0;
+    const reservedQuantity =
+      order.side === "buy"
+        ? order.quantity
+        : Math.max(0, order.quantity - Math.max(0, positionQuantity));
+    if (reservedQuantity === 0) return 0;
+
+    const reservationOrder: Order =
+      "id" in order
+        ? order
+        : {
+            ...order,
+            id: "estimate",
+            status: "new",
+            createdAt: "",
+          };
+    const totalFee = this.feeModel.getCommission(
+      reservationOrder,
+      price,
+      order.quantity,
+    );
+    const feeShare = totalFee * (reservedQuantity / order.quantity);
+    const marginRequirement =
+      order.side === "sell" ? this.config.shortMarginRequirement : 1;
+    return price * reservedQuantity * marginRequirement + feeShare;
+  }
+
+  private get availableBuyingPower(): number {
+    return this.state.cash - this.state.reservedCash;
+  }
+
+  public getAvailableBuyingPower(): number {
+    return this.availableBuyingPower;
+  }
+
+  private recomputeReservedCash(): void {
+    this.state.reservedCash = Object.values(
+      this.state.reservationsByOrderId,
+    ).reduce((total, reservation) => total + reservation, 0);
+  }
+
+  public releaseAllReservations(): void {
+    this.state.reservationsByOrderId = {};
+    this.state.reservedRateByOrderId = {};
+    this.recomputeReservedCash();
   }
 
   /**

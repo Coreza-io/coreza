@@ -1318,6 +1318,9 @@ export class PortfolioManager {
     startingEquity: number | null;
     pendingOrders: OrderState[];
     algoOrders: AlgoOrderState[];
+    cumulativeRealizedPnl: number;
+    realizedPnlBySymbol: Record<string, number>;
+    cumulativeFees: number;
   } {
     const positionStates = this.getPositions();
 
@@ -1349,6 +1352,17 @@ export class PortfolioManager {
     );
 
     const totalEquity = cashBase + positionsEquityValue;
+    const realizedPnlBySymbol: Record<string, number> = {};
+    let cumulativeRealizedPnl = 0;
+    for (const trade of this.trades) {
+      cumulativeRealizedPnl += trade.netPnl;
+      realizedPnlBySymbol[trade.symbol] =
+        (realizedPnlBySymbol[trade.symbol] ?? 0) + trade.netPnl;
+    }
+    let cumulativeFees = 0;
+    for (const order of this.orders.values()) {
+      cumulativeFees += order.totalFees;
+    }
 
     if (this.startingEquity === null && totalEquity > 0) {
       this.startingEquity = totalEquity;
@@ -1363,6 +1377,9 @@ export class PortfolioManager {
       startingEquity: this.startingEquity,
       pendingOrders: this.getOpenOrders(),
       algoOrders: this.getOpenAlgoOrders(),
+      cumulativeRealizedPnl,
+      realizedPnlBySymbol,
+      cumulativeFees,
     };
   }
 

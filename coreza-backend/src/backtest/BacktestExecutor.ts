@@ -836,7 +836,9 @@ export class BacktestExecutor implements INodeExecutor {
       tradeResult.data.order_id = orderResult.orderId;
       tradeResult.data.order_status = fill ? "filled" : orderResult.status;
       tradeResult.data.fill_price = fill?.fillPrice;
-      tradeResult.data.fill_quantity = fill?.fillQuantity;
+      tradeResult.data.fill_quantity = fill
+        ? (fill.absoluteFillQuantity ?? Math.abs(fill.fillQuantity))
+        : undefined;
       tradeResult.data.commission = fill?.orderFee?.value ?? 0;
       tradeResult.data.slippage = fill?.slippage ?? 0;
       tradeResult.data.symbol = symbol;
@@ -980,7 +982,7 @@ export class BacktestExecutor implements INodeExecutor {
             ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
               trades.length
             : 0,
-      } as any);
+      });
     if (resultsError) {
       console.error(
         "[BacktestExecutor] Failed to insert backtest_results:",
@@ -1156,10 +1158,7 @@ export class BacktestExecutor implements INodeExecutor {
       (sum, pos) => sum + pos.unrealizedPnl,
       0,
     );
-    const realizedPnlValue = positions.reduce(
-      (sum, pos) => sum + pos.realizedPnl,
-      0,
-    );
+    const realizedPnlValue = state.cumulativeRealizedPnl;
     const pendingOrders = simBroker.getOpenOrders();
 
     return leanSuccess({
@@ -1196,7 +1195,8 @@ export class BacktestExecutor implements INodeExecutor {
       ? Math.abs(position.avgFillPrice * position.quantity)
       : 0;
     const unrealizedPnlValue = position?.unrealizedPnl || 0;
-    const realizedPnlValue = position?.realizedPnl || 0;
+    const realizedPnlValue =
+      simBroker.getPortfolioState().realizedPnlBySymbol[symbol] ?? 0;
 
     return leanSuccess({
       has_position: !!position,
@@ -1235,7 +1235,7 @@ export class BacktestExecutor implements INodeExecutor {
 
     return leanSuccess({
       cash: state.cash,
-      buying_power: state.cash,
+      buying_power: state.cash - state.reservedCash,
       initial_capital: simBroker.getConfig().initialCapital,
     });
   }
@@ -1272,16 +1272,13 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   private portfolioGetTrades(simBroker: SimBroker): NodeResult {
+    const state = simBroker.getPortfolioState();
     const trades = simBroker.getTrades();
-    const totalRealizedPnl = trades.reduce(
-      (sum, trade) => sum + trade.netPnl,
-      0,
-    );
 
     return leanSuccess({
       trades,
       count: trades.length,
-      total_realized_pnl: totalRealizedPnl,
+      total_realized_pnl: state.cumulativeRealizedPnl,
       winning_trades: trades.filter((trade) => trade.netPnl > 0).length,
       losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
     });

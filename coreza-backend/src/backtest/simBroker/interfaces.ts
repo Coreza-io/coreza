@@ -124,6 +124,11 @@ export interface NumericEquityPoint {
 
 export interface PortfolioState {
   cash: number;
+  cumulativeRealizedPnl: number;
+  realizedPnlBySymbol: Record<string, number>;
+  cumulativeFees: number;
+  reservedCash: number;
+  reservationsByOrderId: Record<string, number>;
   positions: Record<string, Position>; // symbol -> Position
   tickets: Record<string, import("../../types/order").OrderTicket>; // orderId -> OrderTicket
   trades: Trade[]; // Closed trades

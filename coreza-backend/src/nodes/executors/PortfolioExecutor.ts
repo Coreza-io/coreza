@@ -1014,7 +1014,7 @@ export class PortfolioExecutor implements INodeExecutor {
       base_currency: meta.baseCurrency,
       cash: baseCash,
       equity: state.totalEquity,
-      realized_pnl: tradeStats.netProfit,
+      realized_pnl: state.cumulativeRealizedPnl,
       unrealized_pnl: state.positions.reduce((s, p) => s + p.unrealizedPnl, 0),
       positions_count: state.positions.length,
       balances_json: balances,
@@ -1468,13 +1468,12 @@ export class PortfolioExecutor implements INodeExecutor {
     const formattedPositions: FormattedPosition[] = [];
     let positionsValue = 0;
     let unrealizedPnlValue = 0;
-    let realizedPnlValue = 0;
+    const realizedPnlValue = state.cumulativeRealizedPnl;
 
     for (const position of positions) {
       formattedPositions.push(formatPositionWithPnlPercent(position));
       positionsValue += position.marketValue;
       unrealizedPnlValue += position.unrealizedPnl;
-      realizedPnlValue += position.realizedPnl;
     }
 
     const initialCapital = simBroker.getConfig().initialCapital;
@@ -1533,6 +1532,8 @@ export class PortfolioExecutor implements INodeExecutor {
       );
     }
     const position = simBroker.getPosition(symbol);
+    const realizedPnl =
+      simBroker.getPortfolioState().realizedPnlBySymbol[symbol] ?? 0;
     // const formattedPosition = position
     //   ? formatPositionWithPnlPercent(position)
     //   : null;
@@ -1554,10 +1555,10 @@ export class PortfolioExecutor implements INodeExecutor {
       ),
       unrealized_pnl: position?.unrealizedPnl || 0,
       realized_pnl_pct: toPercent(
-        position?.realizedPnl || 0,
+        realizedPnl,
         position?.openCostBasis || 0,
       ),
-      realized_pnl: position?.realizedPnl || 0,
+      realized_pnl: realizedPnl,
       market_value: position?.marketValue || 0,
     });
   }
@@ -1583,7 +1584,7 @@ export class PortfolioExecutor implements INodeExecutor {
     return toNodeResult(
       createSuccessOutput({
         cash: state.cash,
-        buying_power: state.cash,
+        buying_power: state.cash - state.reservedCash,
         initial_capital: simBroker.getConfig().initialCapital,
       }),
     );
@@ -1614,13 +1615,12 @@ export class PortfolioExecutor implements INodeExecutor {
   }
 
   private backtestGetTrades(simBroker: SimBroker): NodeResult {
+    const state = simBroker.getPortfolioState();
     const trades = simBroker.getTrades();
-    let totalRealizedPnl = 0;
     let winningTrades = 0;
     let losingTrades = 0;
 
     for (const trade of trades) {
-      totalRealizedPnl += trade.netPnl;
       if (trade.netPnl > 0) winningTrades += 1;
       else if (trade.netPnl < 0) losingTrades += 1;
     }
@@ -1628,7 +1628,7 @@ export class PortfolioExecutor implements INodeExecutor {
     return leanSuccess({
       trades,
       count: trades.length,
-      total_realized_pnl: totalRealizedPnl,
+      total_realized_pnl: state.cumulativeRealizedPnl,
       winning_trades: winningTrades,
       losing_trades: losingTrades,
     });
@@ -1686,7 +1686,7 @@ export class PortfolioExecutor implements INodeExecutor {
       positions_count: state.positions.length,
       positions_value: positionsValue,
       unrealized_pnl: unrealizedPnl,
-      realized_pnl: tradeStats.netProfit,
+      realized_pnl: state.cumulativeRealizedPnl,
       total_equity: state.totalEquity,
       peak_equity: state.peakEquity,
       initial_capital: startingEquity,
@@ -1804,13 +1804,12 @@ export class PortfolioExecutor implements INodeExecutor {
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {
+    const state = pm.getPortfolioState();
     const trades = pm.getTrades();
-    let totalRealizedPnl = 0;
     let winningTrades = 0;
     let losingTrades = 0;
 
     for (const trade of trades) {
-      totalRealizedPnl += trade.netPnl;
       if (trade.netPnl > 0) winningTrades += 1;
       else if (trade.netPnl < 0) losingTrades += 1;
     }
@@ -1818,7 +1817,7 @@ export class PortfolioExecutor implements INodeExecutor {
     return leanSuccess({
       trades,
       count: trades.length,
-      total_realized_pnl: totalRealizedPnl,
+      total_realized_pnl: state.cumulativeRealizedPnl,
       winning_trades: winningTrades,
       losing_trades: losingTrades,
     });

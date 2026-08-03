@@ -1,89 +1,111 @@
-# Buying-Power Correctness Fix (SimBroker)
+# Live/Broker Portfolio Parity with the Corrected Backtest Engine
 
-Scope: `coreza-backend/src/backtest/simBroker/index.ts` + `interfaces.ts` only. No `onBar` rename, no read-purity refactor, no `isSynthetic`, no tests.
+## Part 1 — Review of the implemented backtest changes
 
-## Current behaviour (verified)
+All items from the buying-power plan are present in `coreza-backend/src/backtest/simBroker/index.ts` and wired into `BacktestExecutor.ts`:
 
-`placeOrder` → `validateOrder` (checks `cash - reservedCash`, :316) → `reserveBuyingPower` (:820). Release on cancel/reject/expire/replace (:232), on full fill (:457, :590), on stale/missing tickets (:367, :372, :381, :521). Partial fills call `adjustBuyingPowerReservation` (:459, :592). `BacktestExecutor.ts:1238` reports `buying_power: cash - reservedCash`.
+- `estimateOrderPrice` (:839) — per-symbol `previousBar.close`, worst-case limit/stop pricing, `Math.max` for buys / `Math.min` for sells, no `?? 100` fallback.
+- `computeReservation` (:874) — closing-leg vs opening-short split, `shortMarginRequirement`, proportional fee share.
+- `reserveBuyingPower` / `adjustBuyingPowerReservation` (:813-831) — rate stored at placement, remaining quantity scaled by rate, no re-pricing.
+- `releaseBuyingPower` (:833) clears both maps; `recomputeReservedCash` (:913) rebuilds from the map instead of `+=`.
+- `availableBuyingPower` getter (:905) used by `validateOrder` (:325) and by `BacktestExecutor:1239`; `releaseAllReservations()` called at finalisation (`BacktestExecutor:930`).
+- `applyFill` netPnl (:700) no longer subtracts slippage — double-count gone.
 
-The lifecycle is complete — every terminal path releases exactly once. The defects are in **how much** gets reserved.
+Two small residuals worth folding into the live work below:
+- `reserveBuyingPower` divides by `order.quantity` with no guard; a zero-quantity order yields `Infinity`. `validateOrder` rejects `quantity <= 0` first, so it is unreachable today, but the guard belongs in the shared helper.
+- `computeReservation`'s closing-leg split uses `Math.max(0, positionQuantity)` only, so it ignores quantity already committed by other resting sell orders on the same symbol (two sells each "closing" the same 100 shares both reserve nothing).
 
-## Defects and logic changes
+## Part 2 — What is wrong in live/broker mode
 
-### BP-1 (high) — reservation priced off the wrong symbol
-`validateOrder` (:304), `reserveBuyingPower` (:822) and `adjustBuyingPowerReservation` (:838) all read `state.currentBar?.close`. `currentBar` is one global slot overwritten by whichever symbol was processed last (:350, :358, :541), so in a multi-symbol backtest an AAPL order is reserved at the last MSFT close.
+`coreza-backend/src/simulation/PortfolioManager.ts` is the live counterpart. Verified gaps:
 
-**Change:** new private helper
+**LP-1 (high) — no buying-power reservation at all.**
+`computeBuyingPower` (:1138) is `Math.max(cash, 0) * margin`. Open orders never consume it, so `getOpenOrders()` can hold unlimited notional while the Risk node still reads full buying power. The backtest now reserves at placement; live does not.
+
+**LP-2 (high) — position-level `realizedPnl` is never accumulated.**
+New positions are created with `realizedPnl: 0` (:1053) and `applyPositionUpdate` only ever reads `existing.realizedPnl ?? 0` (:998) — nothing ever writes it. On close, the position is deleted (:944) along with the entry map. So `Position.realizedPnl` and `totalPnl` (:1343, :1405) are always wrong in live. `getPortfolioState` masks this at the portfolio level because `cumulativeRealizedPnl` is re-derived from `this.trades` (:1357), but per-symbol/per-position reads are broken.
+
+**LP-3 (medium) — realized P&L lives only in the trades array.**
+`cumulativeRealizedPnl` and `realizedPnlBySymbol` are recomputed by looping every trade on every read (:1357). The backtest now keeps a durable ledger. Live should match, both for correctness across restarts and to stop the O(n) loop on hot reads.
+
+**LP-4 (medium) — `cumulativeFees` sums across currencies.**
+`:1362` adds `order.totalFees` for all orders regardless of the fee asset, and `updateFeeBalance` correctly debits the fee against its own asset. The scalar is meaningless in multi-currency accounts.
+
+**LP-5 (medium) — no short-margin concept.**
+`updateBalance` (:1143) credits cash on any sell. A sell that opens a short increases reported buying power. The backtest now holds `shortMarginRequirement` against the opening-short leg.
+
+**LP-6 (low) — `slippage: 0` hardcoded on live trades** (:721, :818). Consistent with the corrected netPnl formula (no double-count), but the field is a permanent zero; it should carry the real slip when the broker reports both intended and fill price.
+
+## Part 3 — Changes
+
+### Step 1: Extract the shared reservation math
+
+New `coreza-backend/src/simulation/buyingPower.ts`, pure functions, no class state:
 
 ```
-estimateOrderPrice(order): number
-  1. worst-case order price (BP-2 rules below)
-  2. else symbolState(order.symbol).previousBar?.close
-  3. else symbolState(order.symbol).lastFillPrice
-  4. else state.currentBar?.close
-  5. else 0  -> reject the order instead of reserving at the magic 100
+estimateOrderPrice({ orderType, side, limitPrice, stopPrice, referencePrice }): number
+computeReservation({ side, quantity, price, positionQuantity, committedSellQuantity,
+                     fee, shortMarginRequirement }): number
 ```
-Delete the `?? 100` fallback everywhere. If no price is resolvable the order is invalid ("No market price available for <symbol>"), which is safer than silently reserving $100/share.
 
-### BP-2 (high) — worst-case price ignored for limit/stop orders
-A buy is always reserved at last close. Lean reserves at the price the order can actually execute at.
+Rules identical to the SimBroker versions: worst-case limit/stop price, buy = `max(orderPrice, reference)`, sell = `min(orderPrice, reference)`, closing leg reserves nothing, opening-short leg reserves `price * qty * shortMarginRequirement`, plus the proportional fee share. Add the missing `quantity <= 0 -> 0` guard here (fixes the `Infinity` rate residual) and subtract `committedSellQuantity` from the closing-leg allowance (fixes the double-close residual).
 
-**Change**, inside `estimateOrderPrice`:
-- `limit`, `stop_limit` buy → `limitPrice`
-- `stop_market` buy → `stopPrice`
-- `market`, `market_on_open`, `market_on_close` → symbol's last close
-- for a **buy**, take `Math.max(orderPrice, lastClose)` so a stop-buy above market is never under-reserved; for a **short sell** take `Math.min(orderPrice, lastClose)` (worst case is the lower proceeds side).
+`simBroker/index.ts` then delegates: `estimateOrderPrice` resolves its reference price (`previousBar.close ?? lastFillPrice ?? currentBar.close`) and calls the shared function; `computeReservation` passes the position quantity, the sum of resting sell quantities for the symbol, and the fee-model result. Behaviour for existing backtests is unchanged apart from the two residual fixes.
 
-Today a resting limit buy far below market over-reserves, and a stop-market buy above market under-reserves and can overdraw cash on fill.
+### Step 2: Reservation ledger in PortfolioManager
 
-### BP-3 (medium) — re-pricing on partial fill lets the reservation grow
-`adjustBuyingPowerReservation` recomputes the remaining leg at the *current* price. On a rising bar the reservation for the unfilled remainder grows even though cash already left the account for the filled part, so `reservedCash` can exceed `cash` and block unrelated orders.
+Add to the class:
 
-**Change:** add `reservedRateByOrderId: Record<string, number>` to `PortfolioState`. At placement store `rate = reservation / order.quantity`. On partial fill set `reservation = rate * remainingQuantity` — no re-pricing, monotonically shrinking. Drop the fee re-computation from the adjust path (the fee share is already inside the rate).
+```
+private reservationsByOrderId = new Map<string, number>();
+private reservedRateByOrderId = new Map<string, number>();
+private reservedCashByAsset = new Map<string, number>();
+```
 
-### BP-4 (medium) — shorts reserve nothing
-`reserveBuyingPower` returns early for any sell (:821). With `allowShort: true`, `validateOrder` skips the held-quantity check (:327) and there is no margin requirement, so a strategy can open unbounded short exposure.
+Methods mirroring SimBroker:
+- `reserveBuyingPower(order: OrderState, quoteAsset: string)` — computes via the shared helper using `order.limitPrice/stopPrice` or the position's `currentPrice` as reference, stores amount + per-unit rate.
+- `adjustBuyingPowerReservation(orderId)` — `rate * (origQty - filledQty)`, never re-prices.
+- `releaseBuyingPower(orderId)` — deletes both entries.
+- `recomputeReservedCash(asset)` — rebuilds the per-asset total from the map.
+- `getReservedCash(asset)` / `getAvailableBuyingPower(asset)`.
 
-**Change:**
-- add `shortMarginRequirement: number` to `SimBrokerConfig`, default `1.0` (100% cash-covered; `DEFAULT_SIM_BROKER_CONFIG` unchanged in behaviour for long-only runs).
-- split the sell quantity into a **closing leg** (up to `max(0, currentPosition.quantity)`) and an **opening-short leg** (the remainder).
-- reserve only for the opening-short leg: `price * shortQty * shortMarginRequirement + feeShare`. The closing leg reserves nothing — it releases capital.
-- `validateOrder` must apply the same split so a sell that opens a short is rejected when `cash - reservedCash` cannot cover the margin.
+`computeBuyingPower` (:1138) becomes `max(cash - reservedCash(asset), 0) * margin`. `reconcileBalance` (:1088) keeps trusting a broker-reported `buyingPower` when present — the broker already nets its own holds — but stores the local reserved figure alongside so `getAvailableBuyingPower` returns `min(brokerBP, localBP)`; the conservative side wins.
 
-### BP-5 (medium) — reserving against cash ignores unsettled position value
-`validateOrder` compares against `cash - reservedCash` only. That is correct for a cash account and matches the current model, so no change to the definition — but the same expression is duplicated in three places.
+### Step 3: Hook the lifecycle
 
-**Change:** single accessor `get availableBuyingPower(): number { return this.state.cash - this.state.reservedCash; }`, used by `validateOrder`, the error message, and exposed via a public `getAvailableBuyingPower()` so `BacktestExecutor` reports the identical number instead of recomputing it.
+In `PortfolioManager`:
+- `upsertOrder` / the order-accept path — call `reserveBuyingPower` when an order enters an open status and has no existing reservation.
+- The fill path (`applyFillAccounting` / order-update path around :554) — call `adjustBuyingPowerReservation` on partial fill, `releaseBuyingPower` when the order reaches a terminal status.
+- Terminal non-fill statuses (canceled/rejected/expired/replaced) already flow through the status update — release there too.
+- `reset()` (:299) and `dispose()` (:311) clear all three maps.
 
-### BP-6 (low) — float drift and orphaned reservations
-`reservedCash` is maintained with `+=`/`-=` and clamped by `Math.max(0, ...)` at :855, which hides drift instead of preventing it.
+In `PortfolioExecutor.ts`:
+- `place_order` validation path — reject when `computeReservation(...) > getAvailableBuyingPower(quoteAsset)`, with the same message shape as SimBroker (`Insufficient buying power. Required: $X, Available: $Y`) so backtest and live surface identical errors to the workflow.
+- `get_portfolio` / balance output (:721, :818) — report `buying_power: pm.getAvailableBuyingPower(asset)` instead of raw `account.buying_power ?? cash`, and add `reserved_cash` to the balance payload.
 
-**Change:** private `recomputeReservedCash()` that sums `reservationsByOrderId` and assigns; call it at the end of reserve/adjust/release. Also add `releaseAllReservations()` invoked at backtest finalisation so the final `buying_power` isn't understated by orders that never resolved.
+### Step 4: Durable realized P&L ledger (LP-2, LP-3, LP-4)
 
-### BP-7 (low) — reserve/release symmetry
-`releaseBuyingPower` is already called for sells and no-ops on `undefined` (:854). Once BP-4 lands it does real work; keep the single release path and let the reserve side own the amount. Also delete the entry from `reservedRateByOrderId` there.
+- Add `cumulativeRealizedPnl: number`, `realizedPnlBySymbol: Map<string, number>`, `cumulativeFeesByAsset: Map<string, number>` as real fields.
+- When `applyTrade` finalises a trade (:807-827 and the no-fill terminal branch at :710), increment the ledger by `trade.netPnl` and index it by symbol — before the position can be deleted.
+- In `applyPositionUpdate`, add the closing leg's realized P&L onto `existing.realizedPnl` so live positions report the same `realizedPnl` / `totalPnl` semantics as backtest positions, and migrate it into the ledger just before `this.positions.delete` (:944).
+- `getPortfolioState` (:1355-1365) reads the ledger instead of re-looping `this.trades`, and returns `cumulativeFeesByAsset` alongside a base-currency `cumulativeFees` (only fees in the base asset) rather than a mixed-currency sum.
+- `updateFeeBalance` (:1185) increments `cumulativeFeesByAsset` for its asset.
 
-## Edit list
+### Step 5: Short margin in live (LP-5)
 
-`simBroker/interfaces.ts`
-- `PortfolioState`: add `reservedRateByOrderId: Record<string, number>`
-- `SimBrokerConfig` + `DEFAULT_SIM_BROKER_CONFIG`: add `shortMarginRequirement: 1.0`
+- Add `shortMarginRequirement` to the PortfolioManager construction options, default `1.0`, sourced from the portfolio-init node values so it stays config-driven and broker-agnostic.
+- `updateBalance` continues to credit sale proceeds, but the opening-short leg's margin is held through the reservation ledger (Step 2) rather than by altering cash — that keeps cash reconcilable against the broker while still shrinking available buying power.
 
-`simBroker/index.ts`
-- init `reservedRateByOrderId: {}` in the constructor (:118-130)
-- new `private estimateOrderPrice(order: Order | OrderRequest): number` (BP-1, BP-2)
-- new `private computeReservation(order): number` implementing the buy / closing-sell / opening-short split (BP-4)
-- new `get availableBuyingPower()` + public `getAvailableBuyingPower()` (BP-5)
-- new `private recomputeReservedCash()` and `releaseAllReservations()` (BP-6)
-- rewrite `validateOrder` capital block (:302-337) to use `estimateOrderPrice` + `computeReservation` + `availableBuyingPower`, and to reject when no price is resolvable
-- rewrite `reserveBuyingPower` (:820-827) to store the rate and use `computeReservation`
-- rewrite `adjustBuyingPowerReservation` (:829-850) to scale by rate × remaining quantity
-- `releaseBuyingPower` (:852-857): also clear the rate, then `recomputeReservedCash()`
+### Step 6: Slippage on live trades (LP-6)
 
-`backtest/BacktestExecutor.ts`
-- `:1238` use `simBroker.getAvailableBuyingPower()`
-- call `releaseAllReservations()` in the finalisation path
+When the order-update event carries both a requested price (`limitPrice`, or the mark at submit time) and a fill price, record `slippage = |fillPrice - requestedPrice| * qty` on the pending trade and emit it on the `Trade`. `netPnl` stays `grossPnl - commission` — slippage remains reporting-only, exactly as in the corrected backtest.
 
-## Note before starting
+## Files touched
 
-There is an unrelated build error to clear first: `src/contexts/ExecutionStoreContext.tsx(126,19)` — `isListening` is not a property of `NodeExecutionData`. It needs adding to that type (from the earlier stop-button work).
+- new `coreza-backend/src/simulation/buyingPower.ts`
+- `coreza-backend/src/backtest/simBroker/index.ts` — delegate to the shared helper (Step 1)
+- `coreza-backend/src/simulation/PortfolioManager.ts` — Steps 2, 3, 4, 5, 6
+- `coreza-backend/src/nodes/executors/PortfolioExecutor.ts` — pre-trade check and balance reporting (Step 3)
+- `coreza-backend/src/nodes/logic/risk.ts` — read available (net of reserved) buying power
+
+No tests, per your standing preference.

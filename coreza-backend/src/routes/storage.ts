@@ -23,8 +23,7 @@ import { buildExecutionScopedKey } from "../utils/executionKey";
 import { RollingWindow } from "../engine/RollingWindow";
 
 const router = Router();
-const rollingWindows = new Map<string, RollingWindow<any>>();
-const rollingWindowIndex = new Map<string, string>();
+const rollingWindows = new Map<string, RollingWindow<unknown>>();
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
@@ -44,7 +43,6 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       timeframe,
       workflowId,
       workflowSessionId,
-      node_id,
       operation = "set",
     } = req.body;
     if (!workflowSessionId) {
@@ -55,8 +53,8 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       });
     }
 
-    const normalizedSymbol = String(symbol ?? "").trim();
-    const indexKey = `${userId}:${workflowSessionId}:${node_id}:${normalizedSymbol}`;
+    const normalizedSymbol = String(symbol ?? "").trim().toUpperCase();
+    const normalizedTimeframe = String(timeframe ?? "").trim();
 
     if (operation === "get") {
       if (!normalizedSymbol) {
@@ -66,25 +64,33 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
         });
       }
 
-      const indexedStoreKey = rollingWindowIndex.get(indexKey);
-      const indexedWindow = indexedStoreKey
-        ? rollingWindows.get(indexedStoreKey)
-        : undefined;
-      const resolvedTimeframe = indexedStoreKey
-        ? indexedStoreKey.slice(indexedStoreKey.lastIndexOf(":") + 1)
-        : null;
+      if (!normalizedTimeframe) {
+        return res.status(400).json({
+          success: false,
+          error: "timeframe is required for get operation",
+        });
+      }
+
+      const storeKey = buildExecutionScopedKey({
+        userId,
+        workflowId,
+        executionId: workflowSessionId,
+        scope: "rolling_window",
+        parts: [normalizedSymbol, normalizedTimeframe],
+      });
+      const window = rollingWindows.get(storeKey);
 
       return res.json({
         success: true,
         status: "success",
-        data: indexedWindow
+        data: window
           ? {
-              window: [...indexedWindow.values()],
-              count: indexedWindow.count,
-              size: indexedWindow.size,
-              isReady: indexedWindow.isReady,
-              remaining: indexedWindow.size - indexedWindow.count,
-              latest: indexedWindow.count > 0 ? indexedWindow.at(0) : null,
+              window: [...window.values()],
+              count: window.count,
+              size: window.size,
+              isReady: window.isReady,
+              remaining: window.size - window.count,
+              latest: window.count > 0 ? window.at(0) : null,
               found: true,
             }
           : {
@@ -97,8 +103,8 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
               found: false,
             },
         meta: {
-          key: indexedStoreKey ?? null,
-          timeframe: resolvedTimeframe,
+          key: storeKey,
+          timeframe: normalizedTimeframe,
           timestamp: new Date().toISOString(),
         },
       });
@@ -109,16 +115,10 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       userId,
       workflowId,
       executionId: workflowSessionId,
-      scope: node_id,
-      parts: [normalizedSymbol || "_", timeframe || "_"],
+      scope: "rolling_window",
+      parts: [normalizedSymbol || "_", normalizedTimeframe || "_"],
     });
-    let window = rollingWindows.get(storeKey);
-    if (!window || window.size !== windowSize) {
-      window = new RollingWindow<any>(windowSize);
-      rollingWindows.set(storeKey, window);
-    }
-
-    let bars: any[] = [];
+    let bars: unknown[] = [];
     if (Array.isArray(candle_data)) {
       bars = candle_data;
     } else if (typeof candle_data === "string") {
@@ -148,11 +148,15 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
         .json({ success: false, error: "No bars provided in candle_data" });
     }
 
+    let window = rollingWindows.get(storeKey);
+    if (!window || window.size !== windowSize) {
+      window = new RollingWindow<unknown>(windowSize);
+      rollingWindows.set(storeKey, window);
+    }
+
     for (const bar of bars) {
       window.add(bar);
     }
-    rollingWindowIndex.set(indexKey, storeKey);
-
     res.json({
       success: true,
       status: "success",

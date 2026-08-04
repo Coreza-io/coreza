@@ -59,11 +59,10 @@ export const RedisKeys = {
     userId: string,
     workflowId: string,
     executionId: string,
-    nodeId: string,
     symbol: string,
     timeframe: string,
   ): string =>
-    `rw:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${nodeId}:${symbol}:${timeframe}`,
+    `RollingWindow:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${symbol}:${timeframe}`,
 
   executionPattern: (
     userId: string,

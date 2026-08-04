@@ -29,7 +29,6 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly indicatorKeyCache = new Map<string, string>();
   private readonly indicatorResults = new Map<string, NodeResult>();
   private readonly rollingWindowKeyCache = new Map<string, string>();
-  private readonly rollingWindowSymbolIndex = new Map<string, string>();
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
@@ -51,7 +50,6 @@ export class IndicatorsExecutor implements INodeExecutor {
       this.indicatorKeyCache.clear();
       this.indicatorResults.clear();
       this.rollingWindowKeyCache.clear();
-      this.rollingWindowSymbolIndex.clear();
       this.rollingWindowResults.clear();
       this.cachedRunId = runId;
     }
@@ -153,7 +151,6 @@ export class IndicatorsExecutor implements INodeExecutor {
         this.indicatorKeyCache.clear();
         this.indicatorResults.clear();
         this.rollingWindowKeyCache.clear();
-        this.rollingWindowSymbolIndex.clear();
         this.rollingWindowResults.clear();
         this.cachedRunId = runId;
       }
@@ -359,7 +356,8 @@ export class IndicatorsExecutor implements INodeExecutor {
     context?: any,
   ): NodeResult {
     const operation = params.operation ?? "set";
-    const requestedSymbol = String(params.symbol ?? "").trim();
+    const requestedSymbol = String(params.symbol ?? "").trim().toUpperCase();
+    const requestedTimeframe = String(params.timeframe ?? "").trim();
     const dataContext = context?.dataContext as DataContext | undefined;
 
     if (operation === "get") {
@@ -373,23 +371,34 @@ export class IndicatorsExecutor implements INodeExecutor {
         );
       }
 
-      const storeKey = this.rollingWindowSymbolIndex.get(
-        `${node.id}:${requestedSymbol}`,
-      );
-      const window = storeKey
-        ? (dataContext?.getDataByKey(storeKey) as
-            | RollingWindow<unknown>
-            | undefined)
-        : undefined;
-      const rollingCachePrefix = `${node.id}:${requestedSymbol}:`;
-      const resolvedCacheKey = storeKey
-        ? Array.from(this.rollingWindowKeyCache.entries()).find(
-            ([, key]) => key === storeKey,
-          )?.[0]
-        : undefined;
-      const resolvedTimeframe = resolvedCacheKey?.startsWith(rollingCachePrefix)
-        ? resolvedCacheKey.slice(rollingCachePrefix.length)
-        : undefined;
+      if (!requestedTimeframe) {
+        return toNodeResult(
+          createErrorOutput("timeframe is required for get operation", {
+            nodeId: node.id,
+            nodeName: "RollingWindow",
+            category: this.category,
+          }),
+        );
+      }
+
+      const userId = context?.userId || params.user_id || "system";
+      const workflowId = context?.workflowId || params.workflow_id || "manual";
+      const runId = context?.runId || params.run_id || "manual";
+      const rollingCacheKey = `${requestedSymbol}:${requestedTimeframe}`;
+      let storeKey = this.rollingWindowKeyCache.get(rollingCacheKey);
+      if (!storeKey) {
+        storeKey = buildExecutionScopedKey({
+          userId,
+          workflowId,
+          runId,
+          scope: "rolling_window",
+          parts: [requestedSymbol, requestedTimeframe],
+        });
+        this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
+      }
+      const window = dataContext?.getDataByKey(storeKey) as
+        | RollingWindow<unknown>
+        | undefined;
 
       return {
         success: true,
@@ -413,50 +422,34 @@ export class IndicatorsExecutor implements INodeExecutor {
               found: false,
             },
         meta: {
-          key: storeKey ?? null,
-          timeframe: resolvedTimeframe ?? null,
+          key: storeKey,
+          timeframe: requestedTimeframe,
         },
       };
     }
 
     const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
     const symbol = requestedSymbol || "_";
-    const timeframe = params.timeframe || "_";
+    const timeframe = requestedTimeframe || "_";
 
     const userId = context?.userId || params.user_id || "system";
     const workflowId = context?.workflowId || params.workflow_id || "manual";
     const runId = context?.runId || params.run_id || "manual";
 
-    const rollingCacheKey = this.getIndicatorCacheKey(
-      node.id,
-      symbol,
-      timeframe,
-    );
+    const rollingCacheKey = `${symbol}:${timeframe}`;
     let storeKey = this.rollingWindowKeyCache.get(rollingCacheKey);
     if (!storeKey) {
       storeKey = buildExecutionScopedKey({
         userId,
         workflowId,
         runId,
-        nodeId: node.id,
         scope: "rolling_window",
         parts: [symbol, timeframe],
       });
       this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
     }
 
-    let window: any;
-    if (dataContext) {
-      window = dataContext.getDataByKey(storeKey);
-      if (!window || window.size !== size) {
-        window = new RollingWindow(size);
-        dataContext.setData(storeKey, window);
-      }
-    } else {
-      window = new RollingWindow(size);
-    }
-
-    let bars: any[];
+    let bars: unknown[];
     const rawCandle = params.candle_data;
     if (
       rawCandle &&
@@ -487,11 +480,20 @@ export class IndicatorsExecutor implements INodeExecutor {
       );
     }
 
+    let window: RollingWindow<unknown> | undefined;
+    if (dataContext) {
+      window = dataContext.getDataByKey(storeKey);
+      if (!window || window.size !== size) {
+        window = new RollingWindow(size);
+        dataContext.setData(storeKey, window);
+      }
+    } else {
+      window = new RollingWindow(size);
+    }
+
     for (const bar of bars) {
       window.add(bar);
     }
-    this.rollingWindowSymbolIndex.set(`${node.id}:${symbol}`, storeKey);
-
     if (!this.rollingWindowResults.has(node.id)) {
       this.rollingWindowResults.set(node.id, {
         success: true,

@@ -31,7 +31,7 @@ describe("Rolling Window operations", () => {
     dataContext: new TestDataContext(),
   });
 
-  it("gets the most recently written timeframe without mutating its window", () => {
+  it("gets a requested timeframe without mutating its window", () => {
     const executor = new IndicatorsExecutor();
     const context = createContext("run-1");
 
@@ -60,12 +60,12 @@ describe("Rolling Window operations", () => {
 
     const firstGet = executor.execute(
       node,
-      { operation: "get", symbol: "BTCUSDT" },
+      { operation: "get", symbol: "btcusdt", timeframe: "4h" },
       context,
     );
     const secondGet = executor.execute(
       node,
-      { operation: "get", symbol: "BTCUSDT" },
+      { operation: "get", symbol: "BTCUSDT", timeframe: "4h" },
       context,
     );
 
@@ -86,7 +86,7 @@ describe("Rolling Window operations", () => {
     expect(firstGet).not.toBe(secondGet);
   });
 
-  it("does not change the symbol index when a set has no bars", () => {
+  it("does not create data when a set has no bars", () => {
     const executor = new IndicatorsExecutor();
     const context = createContext("run-invalid-set");
     executor.execute(
@@ -104,6 +104,7 @@ describe("Rolling Window operations", () => {
       executor.execute(
         node,
         {
+          operation: "set",
           size: 2,
           symbol: "BTCUSDT",
           timeframe: "4h",
@@ -114,11 +115,23 @@ describe("Rolling Window operations", () => {
     ).toMatchObject({ success: false });
 
     expect(
-      executor.execute(node, { operation: "get", symbol: "BTCUSDT" }, context),
+      executor.execute(
+        node,
+        { operation: "get", symbol: "BTCUSDT", timeframe: "4h" },
+        context,
+      ),
     ).toMatchObject({
-      data: { found: true, window: [{ close: 1 }] },
-      meta: { timeframe: "1h" },
+      data: { found: false, window: [] },
+      meta: { timeframe: "4h" },
     });
+
+    expect(
+      executor.execute(
+        node,
+        { operation: "get", symbol: "BTCUSDT", timeframe: "1h" },
+        context,
+      ),
+    ).toMatchObject({ data: { found: true, window: [{ close: 1 }] } });
   });
 
   it("returns an empty successful read and requires a symbol", () => {
@@ -126,7 +139,11 @@ describe("Rolling Window operations", () => {
     const context = createContext("run-2");
 
     expect(
-      executor.execute(node, { operation: "get", symbol: "ETHUSDT" }, context),
+      executor.execute(
+        node,
+        { operation: "get", symbol: "ETHUSDT", timeframe: "1h" },
+        context,
+      ),
     ).toMatchObject({
       success: true,
       data: {
@@ -146,9 +163,16 @@ describe("Rolling Window operations", () => {
         error: "symbol is required for get operation",
       },
     );
+
+    expect(
+      executor.execute(node, { operation: "get", symbol: "ETHUSDT" }, context),
+    ).toMatchObject({
+      success: false,
+      error: "timeframe is required for get operation",
+    });
   });
 
-  it("clears symbol lookups when execution changes", () => {
+  it("does not read windows from another execution", () => {
     const executor = new IndicatorsExecutor();
     const firstContext = createContext("run-3");
     executor.execute(
@@ -164,10 +188,72 @@ describe("Rolling Window operations", () => {
 
     const result = executor.execute(
       node,
-      { operation: "get", symbol: "SOLUSDT" },
+      { operation: "get", symbol: "SOLUSDT", timeframe: "1m" },
       createContext("run-4"),
     );
 
     expect(result).toMatchObject({ data: { found: false, window: [] } });
+  });
+
+  it("reads a legacy set window whose blank timeframe used the fallback", () => {
+    const executor = new IndicatorsExecutor();
+    const context = createContext("run-legacy-timeframe");
+
+    executor.execute(
+      node,
+      {
+        operation: "set",
+        size: 2,
+        symbol: "AAPL",
+        timeframe: " ",
+        candle_data: [{ close: 200 }],
+      },
+      context,
+    );
+
+    expect(
+      executor.execute(
+        { ...node, id: "legacy-get-node" },
+        { operation: "get", symbol: "aapl", timeframe: "_" },
+        context,
+      ),
+    ).toMatchObject({
+      success: true,
+      data: { found: true, window: [{ close: 200 }] },
+      meta: { timeframe: "_" },
+    });
+  });
+
+  it("reads a window written by a different node", () => {
+    const executor = new IndicatorsExecutor();
+    const context = createContext("run-cross-node");
+    const getNode = { ...node, id: "rolling-get-node" };
+
+    executor.execute(
+      node,
+      {
+        operation: "set",
+        size: 2,
+        symbol: " amd ",
+        timeframe: " 1d ",
+        candle_data: [{ close: 150 }],
+      },
+      context,
+    );
+
+    expect(
+      executor.execute(
+        getNode,
+        { operation: "get", symbol: "AMD", timeframe: "1d" },
+        context,
+      ),
+    ).toMatchObject({
+      success: true,
+      data: { found: true, window: [{ close: 150 }] },
+      meta: {
+        key: "RollingWindow:userId:user-1:workflowId:workflow-1:executionId:run-cross-node:AMD:1d",
+        timeframe: "1d",
+      },
+    });
   });
 });

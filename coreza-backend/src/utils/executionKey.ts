@@ -40,7 +40,6 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
 
   if (
     config.scope === "rolling_window" &&
-    config.nodeId &&
     config.parts &&
     config.parts.length >= 2
   ) {
@@ -49,7 +48,6 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
       config.userId,
       config.workflowId,
       executionId,
-      config.nodeId,
       String(symbol),
       String(timeframe),
     );

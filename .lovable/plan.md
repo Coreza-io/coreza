@@ -23,51 +23,45 @@ Two smaller issues:
 
 ## The fix: make rolling-window buffers workflow-scoped, not node-scoped
 
-A rolling window becomes a named buffer inside the execution, addressable by `windowName + symbol`, so any node can read it.
+Within one execution, `symbol + timeframe` already identifies a rolling window uniquely — the node id adds nothing but prevents cross-node reads. No new field is introduced.
 
 ### 1. Node definition — `src/nodes/RollingWindow.json`
 
-- Collapse the two `symbol` entries into a **single** field (`required: true`, description covering both operations, shown for both).
-- Add a new field shown for **both** operations:
-
-```
-{ key: "windowName", type: "text", label: "Window Name", default: "default",
-  description: "Namespace for this buffer. A Get with the same Window Name + Symbol reads the buffer written by the Set." }
-```
-
-- `size`, `candle_data`, `timeframe` stay gated to `operation: ["set"]`.
+- Collapse the two `symbol` entries into a **single** field (`required: true`, description covering both operations, shown for both operations).
+- `size`, `candle_data`, `timeframe` stay gated to `operation: ["set"]` — `get` still resolves the timeframe from the index.
 
 ### 2. Key scheme (both paths, identical)
 
-Store key — drop the node id, add the window name:
+Store key — drop the node id:
 
 ```
-rw:userId:<u>:workflowId:<w>:executionId:<e>:<windowName>:<symbol>:<timeframe>
+RollingWindow:userId:<u>:workflowId:<w>:executionId:<e>:<symbol>:<timeframe>
 ```
 
-Index key — resolves symbol-only reads to the concrete store key:
+Index key — lets a symbol-only `get` resolve the concrete store key:
 
 ```
-<userId>:<workflowId>:<executionId>:<windowName>:<symbol>   ->   { storeKey, timeframe }
+<userId>:<workflowId>:<executionId>:<symbol>   ->   { storeKey, timeframe }
 ```
 
-`windowName` defaults to `"default"` and is lower-cased/trimmed; `symbol` is trimmed and upper-cased for both write and read so casing mismatches don't miss.
+`symbol` is trimmed and upper-cased on both write and read so casing mismatches don't miss. If the same symbol is written with two timeframes, the index holds the most recently written one (existing documented behaviour, unchanged).
 
-Use `RedisKeys.rollingWindow(...)` for the store key, changing its `nodeId` argument to `windowName` (it is only referenced by the rolling-window paths), and route both call sites through `buildExecutionScopedKey` so the two paths cannot drift.
+Use `RedisKeys.rollingWindow(...)` for the store key, dropping its `nodeId` argument (it is referenced only by the rolling-window paths), and route both call sites through `buildExecutionScopedKey` so the two paths cannot drift.
 
 ### 3. `IndicatorsExecutor.executeRollingWindowNode`
 
 - Replace `rollingWindowSymbolIndex: Map<string,string>` with `Map<string, { storeKey: string; timeframe: string }>` keyed by the index key above (no `node.id`).
-- `set`: build the store key with `windowName` instead of `nodeId`; write the index entry after bars are added (unchanged ordering).
+- `set`: build the store key without `nodeId`; write the index entry after bars are added (unchanged ordering).
 - `get`: read the index entry directly; drop the `Array.from(...).find(...)` scan and use the stored `timeframe` for `meta`. Missing entry still returns the successful `found: false` payload.
-- `rollingWindowKeyCache` key becomes `windowName:symbol:timeframe` (node-independent); it and the symbol index still clear together on run change.
+- `rollingWindowKeyCache` key becomes `symbol:timeframe` (node-independent); it and the symbol index still clear together on run change.
 - Keep `rollingWindowResults` keyed by `node.id` — that is per-node output caching and is correct as-is.
 
 ### 4. `POST /storage/rolling-window` (manual test path)
 
-- Build `indexKey` and `storeKey` from `windowName` (from `req.body`, default `"default"`) instead of `node_id`; `node_id` stays in the body but no longer participates in either key.
+- Build `indexKey` as `${userId}:${workflowSessionId}:${symbol}` and `storeKey` without `node_id`; `node_id` stays in the body but no longer participates in either key.
 - Store `{ storeKey, timeframe }` in `rollingWindowIndex` so `get` stops deriving the timeframe with `lastIndexOf(":")`.
 - Manual buffers stay scoped by `workflowSessionId`, so a session reset still isolates state.
+
 
 ### 5. Backward behaviour
 

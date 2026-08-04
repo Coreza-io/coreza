@@ -75,38 +75,16 @@
       "key": "symbol",
       "type": "text",
       "label": "Symbol",
-      "required": false,
-      "placeholder": "e.g. BTCUSDT",
-      "displayOptions": {
-        "show": {
-          "operation": ["set"]
-        }
-      }
-    },
-    {
-      "key": "symbol",
-      "type": "text",
-      "label": "Symbol",
       "required": true,
       "placeholder": "e.g. BTCUSDT",
-      "description": "Returns the rolling-window data buffered for this symbol.",
-      "displayOptions": {
-        "show": {
-          "operation": ["get"]
-        }
-      }
+      "description": "Symbol for the rolling-window buffer."
     },
     {
       "key": "timeframe",
       "type": "text",
       "label": "Timeframe",
-      "required": false,
-      "placeholder": "e.g. 1d",
-      "displayOptions": {
-        "show": {
-          "operation": ["set"]
-        }
-      }
+      "required": true,
+      "placeholder": "e.g. 1d"
     }
   ]
 }

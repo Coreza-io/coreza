@@ -27,48 +27,43 @@ Within one execution, `symbol + timeframe` already identifies a rolling window u
 
 ### 1. Node definition — `src/nodes/RollingWindow.json`
 
-- Collapse the two `symbol` entries into a **single** field (`required: true`, description covering both operations, shown for both operations).
-- `size`, `candle_data`, `timeframe` stay gated to `operation: ["set"]` — `get` still resolves the timeframe from the index.
+- Collapse the two `symbol` entries into a **single** field (`required: true`, shown for both operations).
+- Show `timeframe` for **both** operations and make it `required: true`, so `get` addresses the exact same key the `set` wrote.
+- `size` and `candle_data` stay gated to `operation: ["set"]`.
 
 ### 2. Key scheme (both paths, identical)
 
-Store key — drop the node id:
+One deterministic key, no index map, no string stripping:
 
 ```
 RollingWindow:userId:<u>:workflowId:<w>:executionId:<e>:<symbol>:<timeframe>
 ```
 
-Index key — lets a symbol-only `get` resolve the concrete store key:
-
-```
-<userId>:<workflowId>:<executionId>:<symbol>   ->   { storeKey, timeframe }
-```
-
-`symbol` is trimmed and upper-cased on both write and read so casing mismatches don't miss. If the same symbol is written with two timeframes, the index holds the most recently written one (existing documented behaviour, unchanged).
+`symbol` and `timeframe` are trimmed; `symbol` is upper-cased on both write and read so casing mismatches can't miss. `get` builds this exact key and does a single O(1) lookup.
 
 Use `RedisKeys.rollingWindow(...)` for the store key, dropping its `nodeId` argument (it is referenced only by the rolling-window paths), and route both call sites through `buildExecutionScopedKey` so the two paths cannot drift.
 
 ### 3. `IndicatorsExecutor.executeRollingWindowNode`
 
-- Replace `rollingWindowSymbolIndex: Map<string,string>` with `Map<string, { storeKey: string; timeframe: string }>` keyed by the index key above (no `node.id`).
-- `set`: build the store key without `nodeId`; write the index entry after bars are added (unchanged ordering).
-- `get`: read the index entry directly; drop the `Array.from(...).find(...)` scan and use the stored `timeframe` for `meta`. Missing entry still returns the successful `found: false` payload.
-- `rollingWindowKeyCache` key becomes `symbol:timeframe` (node-independent); it and the symbol index still clear together on run change.
+- Delete `rollingWindowSymbolIndex` entirely — no longer needed.
+- `get`: require both `symbol` and `timeframe`; build the store key exactly as `set` does, read it from `dataContext`, and return `found: false` (success) when absent. `meta.timeframe` is the requested timeframe; drop the `Array.from(...).find(...)` scan.
+- `set`: build the store key without `nodeId`; behaviour otherwise unchanged.
+- `rollingWindowKeyCache` key becomes `symbol:timeframe` (node-independent) and still clears on run change.
 - Keep `rollingWindowResults` keyed by `node.id` — that is per-node output caching and is correct as-is.
 
 ### 4. `POST /storage/rolling-window` (manual test path)
 
-- Build `indexKey` as `${userId}:${workflowSessionId}:${symbol}` and `storeKey` without `node_id`; `node_id` stays in the body but no longer participates in either key.
-- Store `{ storeKey, timeframe }` in `rollingWindowIndex` so `get` stops deriving the timeframe with `lastIndexOf(":")`.
-- Manual buffers stay scoped by `workflowSessionId`, so a session reset still isolates state.
-
+- Delete the `rollingWindowIndex` map and `indexKey`.
+- `get`: validate `symbol` and `timeframe`, build the same node-less `storeKey` (scoped by `workflowSessionId`), and read `rollingWindows.get(storeKey)` directly — no `lastIndexOf(":")` derivation.
+- `set`: same key construction; `node_id` stays in the body but no longer participates in the key.
 
 ### 5. Backward behaviour
 
-An existing workflow with a single Set node and no Get keeps working: buffers are per-execution/session in-memory only, so there is nothing persisted to migrate.
+An existing workflow with a single Set node and no Get keeps working: buffers are per-execution/session in-memory only, so there is nothing persisted to migrate. Existing Set nodes that left `timeframe` blank keep the `"_"` fallback on the write side; a Get for such a window must leave `timeframe` matching.
 
 ## Tests to update — `coreza-backend/tests/rollingWindowOperations.test.ts` and `executionKey.rollingWindow.test.ts`
 
 - Update key-shape assertions to the node-less store key.
-- Add: a **Set on node A, Get on node B** case that now returns `found: true` — the regression the screenshot describes.
-- Add: same symbol with two timeframes — `get` resolves the most recently written window.
+- Add: **Set on node A, Get on node B** with the same symbol + timeframe now returns `found: true` — the regression the screenshot describes.
+- Add: `get` with a timeframe that was never written returns `found: false` with success.
+- Add: `get` missing `timeframe` returns a validation error.

@@ -1,38 +1,49 @@
-# Compute node: key-by-value operations
+# Compute node: extreme-by-value extraction (key or value)
 
-Add object operators that return the *key* holding the extreme numeric value, instead of the value itself.
+Instead of adding separate `maxValueKey` / `minValueKey` operators, add **one** object operation that covers max/min and can return the key, the value, or both. This keeps the operator list short and matches the existing `map` pattern (an operator plus a sub-operation select).
 
-## Operators
+## New operation
 
-- `maxValueKey` — "Get Key of Max Value"
-- `minValueKey` — "Get Key of Min Value" (same logic, inverted comparison — added for symmetry since one without the other is awkward in a strategy graph)
+`extremeByValue` — label **"Extract by Value (Max/Min)"**, in the `object` group of `groupedOptions`.
 
-Behaviour for both:
-- Input must be an object (uses the existing `validateObject`, so JSON strings are accepted the same way `keys`/`values` accept them).
+Two supporting select fields, both shown only when `operator = extremeByValue`:
+
+| Field | Label | Options | Default |
+|---|---|---|---|
+| `extremeDirection` | Direction | Max / Min | `max` |
+| `extremeReturn` | Return | Key / Value / Entry (`{ key, value }`) | `key` |
+
+This mirrors how `map` uses `mapSubOperation` / `mapIndex`, so no new UI machinery is needed — `displayOptions.show.operator` already drives visibility.
+
+## Behaviour
+
+- Input goes through the existing `validateObject`, so plain objects and JSON strings are both accepted (same as `keys` / `values`).
 - Empty object -> error `Object cannot be empty`.
-- Non-numeric entries are skipped; if none remain -> error `Object does not contain numeric values`.
-- Ties resolve to the first matching key in insertion order (strict `>` / `<` in the reduce).
-- Returns the key as a string.
+- Entries whose value is not finite-numeric are skipped; if none remain -> error `Object does not contain numeric values`.
+- Ties resolve to the first matching key in insertion order (strict `>` for max, `<` for min).
+- Return shape follows `extremeReturn`:
+  - `key` -> `"MSFT"`
+  - `value` -> `0.91` (the numeric value)
+  - `entry` -> `{ "key": "MSFT", "value": 0.91 }`
 
 ## Changes
 
 ### `coreza-backend/src/nodes/logic/compute.ts`
-In the object-operations block (after `objectIsEmpty`, ~line 1299), add both cases. Shared logic goes in a small private helper to avoid duplicating the filter/reduce:
-
-```
-private static extremeValueKey(value, direction: "max" | "min")
-  -> { ok: true, key } | { ok: false, error }
-```
-
-Each case calls the helper and returns `createSuccessOutput(key)` or `createErrorOutput(error)`, matching the shape of the surrounding cases.
+Add a `case "extremeByValue"` in the object-operations block (after `objectIsEmpty`, ~line 1299). It reads the two new args from the operation payload, validates the object, computes the extreme entry with a single filter+reduce, and returns via `createSuccessOutput` / `createErrorOutput` like the surrounding cases. Unknown/blank `extremeDirection` defaults to `max`, unknown/blank `extremeReturn` defaults to `key`.
 
 ### `src/nodes/Compute.json`
-Add two options to the `object` group in `groupedOptions`, after `Is Empty`:
-- `{ "label": "Get Key of Max Value", "value": "maxValueKey" }`
-- `{ "label": "Get Key of Min Value", "value": "minValueKey" }`
+- Add `{ "label": "Extract by Value (Max/Min)", "value": "extremeByValue" }` to the `object` group options.
+- Add the `extremeDirection` and `extremeReturn` select fields with `displayOptions.show.operator: ["extremeByValue"]`.
 
-No new fields — both operators use only `value`, so no `displayOptions` or route plumbing changes are needed (`/comparator/compute` already forwards `value` and `operator`).
+### `coreza-backend/src/routes/comparator.ts`
+Forward `extremeDirection` and `extremeReturn` from the request body into the compute call, the same way `mapSubOperation` / `mapIndex` / `regexFlags` are forwarded.
+
+The existing `pick` ("Extract") operation is left untouched — it stays the key-list extractor.
 
 ## Example
 
-Input `{ "AAPL": 0.82, "MSFT": 0.91, "TSLA": 0.45 }` with `maxValueKey` -> `"MSFT"`.
+Value `{{ $('Momentum Scores').json.data }}` = `{ "AAPL": 0.82, "MSFT": 0.91, "TSLA": 0.45 }`
+
+- Direction `Max`, Return `Key` -> `"MSFT"`
+- Direction `Max`, Return `Value` -> `0.91`
+- Direction `Min`, Return `Entry` -> `{ "key": "TSLA", "value": 0.45 }`

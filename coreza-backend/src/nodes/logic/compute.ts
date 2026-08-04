@@ -87,6 +87,8 @@ export interface ComputeInput {
   filterOperator?: string;
   mapSubOperation?: string;
   mapIndex?: string | number;
+  extremeDirection?: string;
+  extremeReturn?: string;
   // Date-specific fields
   date2?: any;
   unit?: string;
@@ -1296,6 +1298,56 @@ export class ComputeService {
           return createSuccessOutput(
             Object.keys(validation.object).length === 0,
           );
+        }
+
+        case "extremeByValue": {
+          const validation = this.validateObject(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+
+          const entries = Object.entries(validation.object);
+          if (entries.length === 0) {
+            return createErrorOutput("Object cannot be empty");
+          }
+
+          const direction = input.extremeDirection === "min" ? "min" : "max";
+          const returnType = ["value", "entry"].includes(
+            input.extremeReturn ?? "",
+          )
+            ? input.extremeReturn
+            : "key";
+          const extreme = entries
+            .filter(([, entryValue]) => {
+              const isNumericType =
+                typeof entryValue === "number" ||
+                (typeof entryValue === "string" && entryValue.trim() !== "");
+              return isNumericType && Number.isFinite(Number(entryValue));
+            })
+            .reduce<{ key: string; value: number } | undefined>(
+              (current, [key, entryValue]) => {
+                const numericValue = Number(entryValue);
+                if (
+                  current === undefined ||
+                  (direction === "max"
+                    ? numericValue > current.value
+                    : numericValue < current.value)
+                ) {
+                  return { key, value: numericValue };
+                }
+                return current;
+              },
+              undefined,
+            );
+
+          if (!extreme) {
+            return createErrorOutput("Object does not contain numeric values");
+          }
+          if (returnType === "value") {
+            return createSuccessOutput(extreme.value);
+          }
+          if (returnType === "entry") {
+            return createSuccessOutput(extreme);
+          }
+          return createSuccessOutput(extreme.key);
         }
 
         default:

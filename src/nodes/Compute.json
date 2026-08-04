@@ -401,6 +401,10 @@
             {
               "label": "Is Empty",
               "value": "objectIsEmpty"
+            },
+            {
+              "label": "Extract by Value (Max/Min)",
+              "value": "extremeByValue"
             }
           ]
         }
@@ -872,6 +876,56 @@
         "show": {
           "operator": [
             "map"
+          ]
+        }
+      }
+    },
+    {
+      "key": "extremeDirection",
+      "label": "Direction",
+      "type": "select",
+      "options": [
+        {
+          "label": "Max",
+          "value": "max"
+        },
+        {
+          "label": "Min",
+          "value": "min"
+        }
+      ],
+      "default": "max",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "extremeByValue"
+          ]
+        }
+      }
+    },
+    {
+      "key": "extremeReturn",
+      "label": "Return",
+      "type": "select",
+      "options": [
+        {
+          "label": "Key",
+          "value": "key"
+        },
+        {
+          "label": "Value",
+          "value": "value"
+        },
+        {
+          "label": "Entry ({ key, value })",
+          "value": "entry"
+        }
+      ],
+      "default": "key",
+      "displayOptions": {
+        "show": {
+          "operator": [
+            "extremeByValue"
           ]
         }
       }

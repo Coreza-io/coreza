@@ -24,6 +24,7 @@ import { RollingWindow } from "../engine/RollingWindow";
 
 const router = Router();
 const rollingWindows = new Map<string, RollingWindow<any>>();
+const rollingWindowIndex = new Map<string, string>();
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
@@ -44,11 +45,62 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       workflowId,
       workflowSessionId,
       node_id,
+      operation = "set",
     } = req.body;
     if (!workflowSessionId) {
       return res.status(400).json({
         success: false,
-        error: "workflowSessionId is required for manual rolling-window execution",
+        error:
+          "workflowSessionId is required for manual rolling-window execution",
+      });
+    }
+
+    const normalizedSymbol = String(symbol ?? "").trim();
+    const indexKey = `${userId}:${workflowSessionId}:${node_id}:${normalizedSymbol}`;
+
+    if (operation === "get") {
+      if (!normalizedSymbol) {
+        return res.status(400).json({
+          success: false,
+          error: "symbol is required for get operation",
+        });
+      }
+
+      const indexedStoreKey = rollingWindowIndex.get(indexKey);
+      const indexedWindow = indexedStoreKey
+        ? rollingWindows.get(indexedStoreKey)
+        : undefined;
+      const resolvedTimeframe = indexedStoreKey
+        ? indexedStoreKey.slice(indexedStoreKey.lastIndexOf(":") + 1)
+        : null;
+
+      return res.json({
+        success: true,
+        status: "success",
+        data: indexedWindow
+          ? {
+              window: [...indexedWindow.values()],
+              count: indexedWindow.count,
+              size: indexedWindow.size,
+              isReady: indexedWindow.isReady,
+              remaining: indexedWindow.size - indexedWindow.count,
+              latest: indexedWindow.count > 0 ? indexedWindow.at(0) : null,
+              found: true,
+            }
+          : {
+              window: [],
+              count: 0,
+              size: 0,
+              isReady: false,
+              remaining: 0,
+              latest: null,
+              found: false,
+            },
+        meta: {
+          key: indexedStoreKey ?? null,
+          timeframe: resolvedTimeframe,
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 
@@ -58,9 +110,8 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       workflowId,
       executionId: workflowSessionId,
       scope: node_id,
-      parts: [symbol || "_", timeframe || "_"],
+      parts: [normalizedSymbol || "_", timeframe || "_"],
     });
-
     let window = rollingWindows.get(storeKey);
     if (!window || window.size !== windowSize) {
       window = new RollingWindow<any>(windowSize);
@@ -100,6 +151,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
     for (const bar of bars) {
       window.add(bar);
     }
+    rollingWindowIndex.set(indexKey, storeKey);
 
     res.json({
       success: true,

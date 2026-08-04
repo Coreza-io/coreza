@@ -65,10 +65,10 @@ Use `RedisKeys.rollingWindow(...)` for the store key, dropping its `nodeId` argu
 
 ### 5. Backward behaviour
 
-An existing workflow with a single Set node and no Get keeps working: `windowName` defaults to `"default"`, and buffers are per-execution/session in-memory only, so there is nothing persisted to migrate.
+An existing workflow with a single Set node and no Get keeps working: buffers are per-execution/session in-memory only, so there is nothing persisted to migrate.
 
-## Tests to update — `coreza-backend/tests/rollingWindowOperations.test.ts`
+## Tests to update — `coreza-backend/tests/rollingWindowOperations.test.ts` and `executionKey.rollingWindow.test.ts`
 
-- Existing cases keep passing (single node, default window name).
-- Add: a **Set on node A, Get on node B** case that now returns `found: true` — this is the regression the screenshot describes.
-- Add: two Set nodes with different `windowName` writing the same symbol; each Get resolves its own buffer.
+- Update key-shape assertions to the node-less store key.
+- Add: a **Set on node A, Get on node B** case that now returns `found: true` — the regression the screenshot describes.
+- Add: same symbol with two timeframes — `get` resolves the most recently written window.

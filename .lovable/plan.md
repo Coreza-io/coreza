@@ -1,68 +1,80 @@
-# Rolling Window: `set` / `get` operations
+# Fix: Rolling Window `get` cannot find the window written by `set`
 
-Add an `operation` selector to the Rolling Window node:
+## Review of what was implemented
 
-- **Set (default)** — exactly today's behaviour: push bar(s) into the bounded FIFO buffer for `symbol` + `timeframe` and return the window state.
-- **Get** — read-only. Only a `symbol` field is shown; it returns the current rolling-window data for that symbol without mutating anything.
+Implemented and correct:
+- `operation` select in `src/nodes/RollingWindow.json` with `displayOptions` gating.
+- `get` branch in `IndicatorsExecutor.executeRollingWindowNode` returning a fresh, non-mutating result with `found` plus `meta.key` / `meta.timeframe`.
+- `get` branch in `POST /storage/rolling-window` that skips size/candle validation, requires `symbol`, and returns the same shape.
+- Index writes happen only after a successful `set` (after bars are added), and the executor clears its indexes on run change.
 
-## UI — `src/nodes/RollingWindow.json`
+## The defect the screenshot shows
 
-Add a first field:
+Both index maps are **node-scoped**, so only the *same node* can read back its own window:
+
+- `coreza-backend/src/routes/storage.ts:59` — `indexKey = ${userId}:${workflowSessionId}:${node_id}:${symbol}`
+- `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts:377,493` — `${node.id}:${symbol}`
+
+The stored entry is written by the **Set** node (`...:RollingWindow:AMD`) while the read comes from a **different Get node** (`...:getAMDRollingWindow:AMD`) — the lookup can never hit. The store key itself is node-scoped too (`storage.ts` uses `scope: node_id`; the executor uses `nodeId` → `RedisKeys.nodeState`), so even a symbol-only scan would not help.
+
+Two smaller issues:
+1. `RollingWindow.json` declares the `symbol` field **twice** (same `key`, one per operation). Duplicate keys in one field list are fragile for value reconciliation/serialization — collapse to one field.
+2. The executor resolves the timeframe for `meta` by scanning `rollingWindowKeyCache` with `Array.from(...).find(...)` on every `get` — O(n) and easy to break. Store the timeframe alongside the key instead.
+
+## The fix: make rolling-window buffers workflow-scoped, not node-scoped
+
+A rolling window becomes a named buffer inside the execution, addressable by `windowName + symbol`, so any node can read it.
+
+### 1. Node definition — `src/nodes/RollingWindow.json`
+
+- Collapse the two `symbol` entries into a **single** field (`required: true`, description covering both operations, shown for both).
+- Add a new field shown for **both** operations:
 
 ```
-{ key: "operation", type: "select", label: "Operation", default: "set",
-  options: [ {label:"Set", value:"set"}, {label:"Get", value:"get"} ] }
+{ key: "windowName", type: "text", label: "Window Name", default: "default",
+  description: "Namespace for this buffer. A Get with the same Window Name + Symbol reads the buffer written by the Set." }
 ```
 
-Field visibility via `displayOptions.show.operation`:
+- `size`, `candle_data`, `timeframe` stay gated to `operation: ["set"]`.
 
-| Field | set | get |
-|---|---|---|
-| `size` | shown (required) | hidden |
-| `candle_data` | shown (required) | hidden |
-| `symbol` | shown | shown (**required**) |
-| `timeframe` | shown | hidden |
+### 2. Key scheme (both paths, identical)
 
-Description of `symbol` under `get`: "Returns the rolling-window data buffered for this symbol."
+Store key — drop the node id, add the window name:
 
-## Backend — the two execution paths
-
-Rolling Window runs through two code paths and both need the operation branch:
-
-1. `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` → `executeRollingWindowNode` (workflow/live/backtest path, buffers live in `DataContext` keyed by `buildExecutionScopedKey`).
-2. `coreza-backend/src/routes/storage.ts` → `POST /storage/rolling-window` (manual single-node test, buffers live in the module-level `rollingWindows` Map).
-
-### Symbol-only lookup
-
-Buffers are keyed by `nodeId + symbol + timeframe`, so a `get` that supplies only a symbol needs an index. Add a per-node symbol index alongside the existing key cache:
-
-- `IndicatorsExecutor`: reuse `rollingWindowKeyCache` — it is already keyed `nodeId:symbol:timeframe`. On every `set`, also record `symbolIndex.set(`${nodeId}:${symbol}`, storeKey)`. `get` reads that map, then `dataContext.getDataByKey(storeKey)`.
-- `storage.ts`: add `const rollingWindowIndex = new Map<string, string>()` mapping `${userId}:${workflowSessionId}:${node_id}:${symbol}` -> storeKey, written on `set`, read on `get`.
-
-Both indexes are cleared wherever `rollingWindowKeyCache` / execution state is already cleared (executor reset on new execution), so `get` never leaks across executions.
-
-If a symbol is buffered under several timeframes for the same node, the index holds the most recently written timeframe; the response `meta` includes the resolved `timeframe` and `key` so the user can see which buffer was read.
-
-### `set` behaviour
-Unchanged. Additionally writes the symbol index entry.
-
-### `get` behaviour
-- Validate `symbol` is present -> otherwise error `symbol is required for get operation`.
-- Resolve the store key from the index; if absent, or the buffer does not exist yet, return a **successful** empty-state payload rather than an error:
-
-```json
-{ "window": [], "count": 0, "size": 0, "isReady": false, "remaining": 0, "latest": null, "found": false }
+```
+rw:userId:<u>:workflowId:<w>:executionId:<e>:<windowName>:<symbol>:<timeframe>
 ```
 
-- When found, return the identical shape as `set` (`window`, `count`, `size`, `isReady`, `remaining`, `latest`) plus `"found": true`, without calling `window.add(...)`.
-- `get` never creates a buffer and never errors on missing `candle_data`.
+Index key — resolves symbol-only reads to the concrete store key:
 
-In `IndicatorsExecutor`, the `get` branch must return a fresh result object (not the shared mutable `rollingWindowResults` entry used by `set`) so a read cannot overwrite the set-node's cached output.
+```
+<userId>:<workflowId>:<executionId>:<windowName>:<symbol>   ->   { storeKey, timeframe }
+```
 
-## Route plumbing
+`windowName` defaults to `"default"` and is lower-cased/trimmed; `symbol` is trimmed and upper-cased for both write and read so casing mismatches don't miss.
 
-`POST /storage/rolling-window` currently hard-requires `candle_data` and errors on empty bars. Branch on `req.body.operation ?? "set"` before those validations so `get` skips the size/candle validation entirely and only requires `symbol` + `workflowSessionId`.
+Use `RedisKeys.rollingWindow(...)` for the store key, changing its `nodeId` argument to `windowName` (it is only referenced by the rolling-window paths), and route both call sites through `buildExecutionScopedKey` so the two paths cannot drift.
 
-## Output shape
+### 3. `IndicatorsExecutor.executeRollingWindowNode`
 
-Unchanged for `set`. `get` returns the same fields plus `found`, so downstream nodes and templates (`{{ $('Rolling Window').json.data.window }}`) work identically for both operations.
+- Replace `rollingWindowSymbolIndex: Map<string,string>` with `Map<string, { storeKey: string; timeframe: string }>` keyed by the index key above (no `node.id`).
+- `set`: build the store key with `windowName` instead of `nodeId`; write the index entry after bars are added (unchanged ordering).
+- `get`: read the index entry directly; drop the `Array.from(...).find(...)` scan and use the stored `timeframe` for `meta`. Missing entry still returns the successful `found: false` payload.
+- `rollingWindowKeyCache` key becomes `windowName:symbol:timeframe` (node-independent); it and the symbol index still clear together on run change.
+- Keep `rollingWindowResults` keyed by `node.id` — that is per-node output caching and is correct as-is.
+
+### 4. `POST /storage/rolling-window` (manual test path)
+
+- Build `indexKey` and `storeKey` from `windowName` (from `req.body`, default `"default"`) instead of `node_id`; `node_id` stays in the body but no longer participates in either key.
+- Store `{ storeKey, timeframe }` in `rollingWindowIndex` so `get` stops deriving the timeframe with `lastIndexOf(":")`.
+- Manual buffers stay scoped by `workflowSessionId`, so a session reset still isolates state.
+
+### 5. Backward behaviour
+
+An existing workflow with a single Set node and no Get keeps working: `windowName` defaults to `"default"`, and buffers are per-execution/session in-memory only, so there is nothing persisted to migrate.
+
+## Tests to update — `coreza-backend/tests/rollingWindowOperations.test.ts`
+
+- Existing cases keep passing (single node, default window name).
+- Add: a **Set on node A, Get on node B** case that now returns `found: true` — this is the regression the screenshot describes.
+- Add: two Set nodes with different `windowName` writing the same symbol; each Get resolves its own buffer.

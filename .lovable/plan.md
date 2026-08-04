@@ -1,49 +1,68 @@
-# Compute node: extreme-by-value extraction (key or value)
+# Rolling Window: `set` / `get` operations
 
-Instead of adding separate `maxValueKey` / `minValueKey` operators, add **one** object operation that covers max/min and can return the key, the value, or both. This keeps the operator list short and matches the existing `map` pattern (an operator plus a sub-operation select).
+Add an `operation` selector to the Rolling Window node:
 
-## New operation
+- **Set (default)** — exactly today's behaviour: push bar(s) into the bounded FIFO buffer for `symbol` + `timeframe` and return the window state.
+- **Get** — read-only. Only a `symbol` field is shown; it returns the current rolling-window data for that symbol without mutating anything.
 
-`extremeByValue` — label **"Extract by Value (Max/Min)"**, in the `object` group of `groupedOptions`.
+## UI — `src/nodes/RollingWindow.json`
 
-Two supporting select fields, both shown only when `operator = extremeByValue`:
+Add a first field:
 
-| Field | Label | Options | Default |
-|---|---|---|---|
-| `extremeDirection` | Direction | Max / Min | `max` |
-| `extremeReturn` | Return | Key / Value / Entry (`{ key, value }`) | `key` |
+```
+{ key: "operation", type: "select", label: "Operation", default: "set",
+  options: [ {label:"Set", value:"set"}, {label:"Get", value:"get"} ] }
+```
 
-This mirrors how `map` uses `mapSubOperation` / `mapIndex`, so no new UI machinery is needed — `displayOptions.show.operator` already drives visibility.
+Field visibility via `displayOptions.show.operation`:
 
-## Behaviour
+| Field | set | get |
+|---|---|---|
+| `size` | shown (required) | hidden |
+| `candle_data` | shown (required) | hidden |
+| `symbol` | shown | shown (**required**) |
+| `timeframe` | shown | hidden |
 
-- Input goes through the existing `validateObject`, so plain objects and JSON strings are both accepted (same as `keys` / `values`).
-- Empty object -> error `Object cannot be empty`.
-- Entries whose value is not finite-numeric are skipped; if none remain -> error `Object does not contain numeric values`.
-- Ties resolve to the first matching key in insertion order (strict `>` for max, `<` for min).
-- Return shape follows `extremeReturn`:
-  - `key` -> `"MSFT"`
-  - `value` -> `0.91` (the numeric value)
-  - `entry` -> `{ "key": "MSFT", "value": 0.91 }`
+Description of `symbol` under `get`: "Returns the rolling-window data buffered for this symbol."
 
-## Changes
+## Backend — the two execution paths
 
-### `coreza-backend/src/nodes/logic/compute.ts`
-Add a `case "extremeByValue"` in the object-operations block (after `objectIsEmpty`, ~line 1299). It reads the two new args from the operation payload, validates the object, computes the extreme entry with a single filter+reduce, and returns via `createSuccessOutput` / `createErrorOutput` like the surrounding cases. Unknown/blank `extremeDirection` defaults to `max`, unknown/blank `extremeReturn` defaults to `key`.
+Rolling Window runs through two code paths and both need the operation branch:
 
-### `src/nodes/Compute.json`
-- Add `{ "label": "Extract by Value (Max/Min)", "value": "extremeByValue" }` to the `object` group options.
-- Add the `extremeDirection` and `extremeReturn` select fields with `displayOptions.show.operator: ["extremeByValue"]`.
+1. `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` → `executeRollingWindowNode` (workflow/live/backtest path, buffers live in `DataContext` keyed by `buildExecutionScopedKey`).
+2. `coreza-backend/src/routes/storage.ts` → `POST /storage/rolling-window` (manual single-node test, buffers live in the module-level `rollingWindows` Map).
 
-### `coreza-backend/src/routes/comparator.ts`
-Forward `extremeDirection` and `extremeReturn` from the request body into the compute call, the same way `mapSubOperation` / `mapIndex` / `regexFlags` are forwarded.
+### Symbol-only lookup
 
-The existing `pick` ("Extract") operation is left untouched — it stays the key-list extractor.
+Buffers are keyed by `nodeId + symbol + timeframe`, so a `get` that supplies only a symbol needs an index. Add a per-node symbol index alongside the existing key cache:
 
-## Example
+- `IndicatorsExecutor`: reuse `rollingWindowKeyCache` — it is already keyed `nodeId:symbol:timeframe`. On every `set`, also record `symbolIndex.set(`${nodeId}:${symbol}`, storeKey)`. `get` reads that map, then `dataContext.getDataByKey(storeKey)`.
+- `storage.ts`: add `const rollingWindowIndex = new Map<string, string>()` mapping `${userId}:${workflowSessionId}:${node_id}:${symbol}` -> storeKey, written on `set`, read on `get`.
 
-Value `{{ $('Momentum Scores').json.data }}` = `{ "AAPL": 0.82, "MSFT": 0.91, "TSLA": 0.45 }`
+Both indexes are cleared wherever `rollingWindowKeyCache` / execution state is already cleared (executor reset on new execution), so `get` never leaks across executions.
 
-- Direction `Max`, Return `Key` -> `"MSFT"`
-- Direction `Max`, Return `Value` -> `0.91`
-- Direction `Min`, Return `Entry` -> `{ "key": "TSLA", "value": 0.45 }`
+If a symbol is buffered under several timeframes for the same node, the index holds the most recently written timeframe; the response `meta` includes the resolved `timeframe` and `key` so the user can see which buffer was read.
+
+### `set` behaviour
+Unchanged. Additionally writes the symbol index entry.
+
+### `get` behaviour
+- Validate `symbol` is present -> otherwise error `symbol is required for get operation`.
+- Resolve the store key from the index; if absent, or the buffer does not exist yet, return a **successful** empty-state payload rather than an error:
+
+```json
+{ "window": [], "count": 0, "size": 0, "isReady": false, "remaining": 0, "latest": null, "found": false }
+```
+
+- When found, return the identical shape as `set` (`window`, `count`, `size`, `isReady`, `remaining`, `latest`) plus `"found": true`, without calling `window.add(...)`.
+- `get` never creates a buffer and never errors on missing `candle_data`.
+
+In `IndicatorsExecutor`, the `get` branch must return a fresh result object (not the shared mutable `rollingWindowResults` entry used by `set`) so a read cannot overwrite the set-node's cached output.
+
+## Route plumbing
+
+`POST /storage/rolling-window` currently hard-requires `candle_data` and errors on empty bars. Branch on `req.body.operation ?? "set"` before those validations so `get` skips the size/candle validation entirely and only requires `symbol` + `workflowSessionId`.
+
+## Output shape
+
+Unchanged for `set`. `get` returns the same fields plus `found`, so downstream nodes and templates (`{{ $('Rolling Window').json.data.window }}`) work identically for both operations.

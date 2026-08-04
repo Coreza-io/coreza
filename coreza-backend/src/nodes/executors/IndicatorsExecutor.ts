@@ -29,6 +29,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly indicatorKeyCache = new Map<string, string>();
   private readonly indicatorResults = new Map<string, NodeResult>();
   private readonly rollingWindowKeyCache = new Map<string, string>();
+  private readonly rollingWindowSymbolIndex = new Map<string, string>();
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
@@ -50,6 +51,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       this.indicatorKeyCache.clear();
       this.indicatorResults.clear();
       this.rollingWindowKeyCache.clear();
+      this.rollingWindowSymbolIndex.clear();
       this.rollingWindowResults.clear();
       this.cachedRunId = runId;
     }
@@ -151,6 +153,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         this.indicatorKeyCache.clear();
         this.indicatorResults.clear();
         this.rollingWindowKeyCache.clear();
+        this.rollingWindowSymbolIndex.clear();
         this.rollingWindowResults.clear();
         this.cachedRunId = runId;
       }
@@ -355,8 +358,69 @@ export class IndicatorsExecutor implements INodeExecutor {
     params: Record<string, any>,
     context?: any,
   ): NodeResult {
+    const operation = params.operation ?? "set";
+    const requestedSymbol = String(params.symbol ?? "").trim();
+    const dataContext = context?.dataContext as DataContext | undefined;
+
+    if (operation === "get") {
+      if (!requestedSymbol) {
+        return toNodeResult(
+          createErrorOutput("symbol is required for get operation", {
+            nodeId: node.id,
+            nodeName: "RollingWindow",
+            category: this.category,
+          }),
+        );
+      }
+
+      const storeKey = this.rollingWindowSymbolIndex.get(
+        `${node.id}:${requestedSymbol}`,
+      );
+      const window = storeKey
+        ? (dataContext?.getDataByKey(storeKey) as
+            | RollingWindow<unknown>
+            | undefined)
+        : undefined;
+      const rollingCachePrefix = `${node.id}:${requestedSymbol}:`;
+      const resolvedCacheKey = storeKey
+        ? Array.from(this.rollingWindowKeyCache.entries()).find(
+            ([, key]) => key === storeKey,
+          )?.[0]
+        : undefined;
+      const resolvedTimeframe = resolvedCacheKey?.startsWith(rollingCachePrefix)
+        ? resolvedCacheKey.slice(rollingCachePrefix.length)
+        : undefined;
+
+      return {
+        success: true,
+        data: window
+          ? {
+              window: [...window.values()],
+              count: window.count,
+              size: window.size,
+              isReady: window.isReady,
+              remaining: window.size - window.count,
+              latest: window.count > 0 ? window.at(0) : null,
+              found: true,
+            }
+          : {
+              window: [],
+              count: 0,
+              size: 0,
+              isReady: false,
+              remaining: 0,
+              latest: null,
+              found: false,
+            },
+        meta: {
+          key: storeKey ?? null,
+          timeframe: resolvedTimeframe ?? null,
+        },
+      };
+    }
+
     const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
-    const symbol = params.symbol || "_";
+    const symbol = requestedSymbol || "_";
     const timeframe = params.timeframe || "_";
 
     const userId = context?.userId || params.user_id || "system";
@@ -380,8 +444,6 @@ export class IndicatorsExecutor implements INodeExecutor {
       });
       this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
     }
-
-    const dataContext = context?.dataContext as DataContext | undefined;
 
     let window: any;
     if (dataContext) {
@@ -428,6 +490,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     for (const bar of bars) {
       window.add(bar);
     }
+    this.rollingWindowSymbolIndex.set(`${node.id}:${symbol}`, storeKey);
 
     if (!this.rollingWindowResults.has(node.id)) {
       this.rollingWindowResults.set(node.id, {

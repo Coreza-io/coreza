@@ -38,6 +38,23 @@ export function buildExecutionScopedKey(config: BuildExecutionKeyConfig): string
     );
   }
 
+  if (
+    config.scope === "rolling_window" &&
+    config.nodeId &&
+    config.parts &&
+    config.parts.length >= 2
+  ) {
+    const [symbol, timeframe] = config.parts;
+    return RedisKeys.rollingWindow(
+      config.userId,
+      config.workflowId,
+      executionId,
+      config.nodeId,
+      String(symbol),
+      String(timeframe),
+    );
+  }
+
   if (config.nodeId) {
     return RedisKeys.nodeState(
       config.userId,

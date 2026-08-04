@@ -29,13 +29,34 @@
   },
   "fields": [
     {
+      "key": "operation",
+      "type": "select",
+      "label": "Operation",
+      "default": "set",
+      "options": [
+        {
+          "label": "Set",
+          "value": "set"
+        },
+        {
+          "label": "Get",
+          "value": "get"
+        }
+      ]
+    },
+    {
       "key": "size",
       "type": "text",
       "label": "Window Size",
       "required": true,
       "placeholder": "20",
       "default": "20",
-      "description": "Max bars to hold (1-500). Window is 'ready' when full."
+      "description": "Max bars to hold (1-500). Window is 'ready' when full.",
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
     },
     {
       "key": "candle_data",
@@ -43,21 +64,49 @@
       "label": "Candle Data",
       "required": true,
       "placeholder": "Bar or bars to add (single bar, array, or {{ $('Node').json.data }})",
-      "description": "OHLCV bar(s) to push into the window"
+      "description": "OHLCV bar(s) to push into the window",
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
     },
     {
       "key": "symbol",
       "type": "text",
       "label": "Symbol",
       "required": false,
-      "placeholder": "e.g. BTCUSDT"
+      "placeholder": "e.g. BTCUSDT",
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
+    },
+    {
+      "key": "symbol",
+      "type": "text",
+      "label": "Symbol",
+      "required": true,
+      "placeholder": "e.g. BTCUSDT",
+      "description": "Returns the rolling-window data buffered for this symbol.",
+      "displayOptions": {
+        "show": {
+          "operation": ["get"]
+        }
+      }
     },
     {
       "key": "timeframe",
       "type": "text",
       "label": "Timeframe",
       "required": false,
-      "placeholder": "e.g. 1d"
+      "placeholder": "e.g. 1d",
+      "displayOptions": {
+        "show": {
+          "operation": ["set"]
+        }
+      }
     }
   ]
 }

@@ -261,6 +261,8 @@ router.post("/compute", async (req, res) => {
       targetDay,
       mapSubOperation,
       mapIndex,
+      extremeDirection,
+      extremeReturn,
     } = req.body;
 
     if (operator == null) {
@@ -286,6 +288,8 @@ router.post("/compute", async (req, res) => {
       targetDay,
       mapSubOperation,
       mapIndex,
+      extremeDirection,
+      extremeReturn,
     });
     if (!result.success) {
       return res.status(400).json({ error: result.error });

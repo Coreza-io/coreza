@@ -49,6 +49,10 @@ export interface Order {
   trailPercent?: number;
   trailPrice?: number;
   createdAt: string; // ISO 8601
+  /** Algorithm/event time the order was submitted (epoch ms) — look-ahead protection */
+  submittedAt?: number;
+  /** Monotonic submission sequence within a run */
+  submittedSequence?: number;
   tag?: string; // user-defined label
   properties?: {
     timeInForce?: string;

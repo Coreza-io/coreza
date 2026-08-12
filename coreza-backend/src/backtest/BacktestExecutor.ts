@@ -662,8 +662,13 @@ export class BacktestExecutor implements INodeExecutor {
         const currentBar = symbolBars[currentIndex];
 
         if (currentBar && (currentBar.time as number) === timestamp) {
-          alignedBars[symbol] = currentBar;
-          previousBars.set(symbol, currentBar);
+          const realBar = {
+            ...currentBar,
+            _sourceTimestamp: currentBar.time as number,
+            _isFillForward: false,
+          };
+          alignedBars[symbol] = realBar;
+          previousBars.set(symbol, realBar);
           indexes.set(symbol, currentIndex + 1);
           activeSymbols.push(symbol);
           continue;
@@ -672,9 +677,14 @@ export class BacktestExecutor implements INodeExecutor {
         const previousBar = previousBars.get(symbol);
 
         if (previousBar) {
+          // Fill-forward: keep the ORIGINAL observation timestamp so age is
+          // measured against the last real bar, not the aligned clock.
           alignedBars[symbol] = {
             ...previousBar,
             time: timestamp,
+            _sourceTimestamp:
+              previousBar._sourceTimestamp ?? (previousBar.time as number),
+            _isFillForward: true,
           };
           activeSymbols.push(symbol);
         }

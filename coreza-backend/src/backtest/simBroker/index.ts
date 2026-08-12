@@ -131,7 +131,14 @@ export class SimBroker {
 
   constructor(backtestId: string, config: Partial<SimBrokerConfig> = {}) {
     this.backtestId = backtestId;
-    this.config = { ...DEFAULT_SIM_BROKER_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_SIM_BROKER_CONFIG,
+      ...config,
+      marketDataPolicy: {
+        ...DEFAULT_MARKET_DATA_POLICY,
+        ...(config.marketDataPolicy ?? {}),
+      },
+    };
     this.fillModel = createFillModel(this.config.fillModel);
     this.slippageModel = createSlippageModel(
       this.config.slippageModel,

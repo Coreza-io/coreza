@@ -1,30 +1,39 @@
-# Review of the gap-closing implementation + one compile fix
+# Fix: `normalizeSymbol is not a function` — rolling-window module name collision
 
-## Verified correct
+## Root cause
 
-- **A1** — `liquidate` cancels every pending non-market ticket for the symbol first and collects `canceledOrderIds` (`simBroker/index.ts:593-606`); `cancelOrder` handles reservation release and pending-index removal.
-- **A2** — After `placeOrder`, an immediate fill is attempted when `fillModel === "immediate"` and returned as `fill` (`:643-653`); the discriminated `LiquidationResult` is exported from `interfaces.ts:121-136`.
-- **A3** — The lock is now acquired before the cancel sweep and released in a `finally` wrapping the whole sequence (`:591-656`), so reentrant calls hit `LIQUIDATION_IN_FLIGHT`.
-- **A4/D1** — The executor liquidate branch returns `canceled_order_ids`, `order_id`, `order_status`, `fill_price`, `fill_quantity`, `commission`, `slippage` plus provenance; the place-order path sets the same provenance fields on `tradeResult.data` (`BacktestExecutor.ts:782-826, 910-914`).
-- **B1/B2** — `isCausallyEligible` reads `sameBarPolicy` (`>` strict, `>=` allow-close), applies to conditional orders and everything under `next_bar_open`, and is called from both `onBar` (`:545`) and `tryFillImmediateOrder` (`:721`); the ad-hoc `eventTimestamp < submittedAt` guard is gone.
-- **C1** — `validateEnvelope` checks symbol, finite OHLC, positive finite timestamps, `source <= event`, and per-symbol monotonic event clock; it throws in test env, warns once per `symbol:reason` via `envelopeWarnings`, and returns `[]` before any state mutation (`:380-499`).
-- **C2** — The legacy positional `onBar` compares `bar.symbol` / `bar.Symbol` against the argument, throws in test env, and increments `legacySymbolMismatches`, exposed from the counters accessor (`:471-478, 1642-1647`).
-- **C3** — `fillTicket` no longer takes override bars and prices strictly off `context.bar` / `context.previousBar` (`:879-893`); MTM still uses the envelope close as planned.
-- **D2** — `fillForwardSymbols` added to the multi-bar event type and populated by `alignMultiSymbolBars` (`BacktestExecutor.ts:51, 664-708`).
+Two modules in `coreza-backend/src/engine/` differ only by the case of their first letter:
 
-## One defect to fix
+- `src/engine/RollingWindow.ts` — the `RollingWindow` class.
+- `src/engine/rollingWindow/index.ts` — the helper module exporting `normalizeSymbol`, `normalizeTimeframe`, `clampWindowSize`, `parseCandleData`, `buildRollingWindowPayload`, `ROLLING_WINDOW_ERRORS`.
 
-`OrderResult` was dropped from the `./interfaces` import list in `simBroker/index.ts` when `LiquidationResult` was added, so the file no longer compiles:
+`IndicatorsExecutor.ts` imports both:
 
-```
-src/backtest/simBroker/index.ts(205,60): error TS2304: Cannot find name 'OrderResult'.
+```ts
+import { RollingWindow } from "../../engine/RollingWindow";
+import { buildRollingWindowPayload, normalizeSymbol, ... } from "../../engine/rollingWindow";
 ```
 
-**Fix:** re-add `OrderResult` to the import block at `simBroker/index.ts:20-36` (it is still used as the `placeOrder` return type at line 205). Single-line change, no logic impact.
+On the Windows dev machine the filesystem is case-insensitive, so the bundler/loader resolves `../../engine/rollingWindow` to the **file** `RollingWindow.ts` (a file match wins over the directory, and the case difference is ignored) instead of `rollingWindow/index.ts`. The resulting namespace object only has the class, so `import_rollingWindow.normalizeSymbol` is `undefined` — hence the throw at `IndicatorsExecutor.ts:367` inside the compiled backtest VM. The same code path works on case-sensitive Linux, which is why it only surfaces locally.
 
-The only other backtest-area type errors are the two pre-existing ones (`PortfolioExecutor.ts:1803`, `routes/backtest.ts:398 cleanup`), untouched by this work.
+## Fix — rename the helper module so no case-only collision exists
 
-## Not changed (by prior agreement)
+1. Move `src/engine/rollingWindow/index.ts` to `src/engine/rollingWindowHelpers.ts` (single file, same contents, same exports) and delete the now-empty `src/engine/rollingWindow/` directory.
+2. Update the three importers to the new path:
+   - `src/nodes/executors/IndicatorsExecutor.ts` (helper import block, lines 24-31)
+   - `src/routes/storage.ts` (same helper import block)
+   - `tests/rollingWindowHelpers.test.ts`
+3. Leave `src/engine/RollingWindow.ts` and every `RollingWindow` class import untouched.
+4. Do not re-export the helpers from `src/engine/index.ts` — keeping them on an explicit path avoids reintroducing an ambiguity and keeps the engine barrel unchanged.
 
-- Phase 1/4/5 regression tests remain unwritten.
-- Phase 6 cleanup (`setCurrentBar`, the legacy `onBar` overload, `PortfolioState.currentBar`) stays deferred until the legacy counters read zero.
+Rename is preferred over adding an explicit `/index` suffix to the import: the suffix would fix these two call sites but the directory would stay a landmine for the next import, and case-only sibling names also break case-insensitive git checkouts.
+
+## Verification
+
+- `npx tsc --noEmit` shows no new errors and no unresolved-module errors for the three touched files.
+- `npx jest tests/rollingWindowHelpers.test.ts` passes against the new path.
+- Re-run the backtest activation that produced the trace; `executeRollingWindowNode` should reach the `get`/`set` branches instead of throwing.
+
+## Note (separate, still open)
+
+`OrderResult` is still missing from the `./interfaces` import block in `src/backtest/simBroker/index.ts`, so that file reports `TS2304: Cannot find name 'OrderResult'` at line 205. It is unrelated to this crash but should be re-added in the same pass.

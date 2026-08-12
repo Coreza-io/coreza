@@ -376,32 +376,78 @@ export class SimBroker {
   // ============== BAR PROCESSING ==============
 
   /**
-   * Process bar - SYNCHRONOUS (no Redis)
-   * Iterates pending OrderTickets for the given symbol, attempts fills,
-   * and appends OrderEvents on success.
+   * @deprecated Global current-bar pricing is removed. Callers must not
+   * select market data; SimBroker resolves it per order symbol.
    */
-  setCurrentBar(bar: Bar): void {
-    this.state.currentBar = bar;
+  setCurrentBar(_bar: Bar): void {
+    this.legacySetCurrentBarCalls++;
+    if (process.env.NODE_ENV === "test") {
+      throw new Error(
+        "SimBroker.setCurrentBar is removed: market data is symbol-scoped",
+      );
+    }
+    console.warn(
+      "[SimBroker] setCurrentBar() is deprecated and ignored (symbol-scoped pricing).",
+    );
   }
 
-  onBar(symbol: string, bar: Bar): OrderEvent[] {
+  /**
+   * Process a market data envelope for ONE symbol - SYNCHRONOUS.
+   * Updates that symbol's state, then attempts fills for its pending tickets
+   * using the canonical resolved context.
+   */
+  onBar(envelope: MarketBarEnvelope): OrderEvent[];
+  /** @deprecated legacy positional signature */
+  onBar(symbol: string, bar: Bar): OrderEvent[];
+  onBar(
+    envelopeOrSymbol: MarketBarEnvelope | string,
+    legacyBar?: Bar,
+  ): OrderEvent[] {
+    let envelope: MarketBarEnvelope;
+    if (typeof envelopeOrSymbol === "string") {
+      this.legacyOnBarCalls++;
+      const bar = legacyBar as Bar;
+      envelope = {
+        symbol: envelopeOrSymbol,
+        bar,
+        sourceTimestamp: toEpochMs(bar?.timestamp),
+        eventTimestamp: toEpochMs(bar?.timestamp),
+        isFillForward: false,
+      };
+    } else {
+      envelope = envelopeOrSymbol;
+    }
+
+    const { symbol, bar } = envelope;
     const events: OrderEvent[] = [];
-    const symbolState = this.getSymbolState(symbol);
+    const marketState = this.getMarketStateForUpdate(symbol);
 
-    // Store current bar in state
-    this.state.currentBar = bar;
+    // ---- Ingest: real observation vs fill-forward event ----
+    marketState.latestEventTimestamp = envelope.eventTimestamp;
+    marketState.lastEnvelopeWasFillForward = envelope.isFillForward === true;
+    if (!envelope.isFillForward) {
+      marketState.previousRealBar = marketState.latestRealBar;
+      marketState.latestRealBar = {
+        bar,
+        sourceTimestamp: envelope.sourceTimestamp,
+        eventTimestamp: envelope.eventTimestamp,
+      };
+    } else if (marketState.latestRealBar) {
+      // Keep the original source timestamp; only the event clock advances.
+      marketState.latestRealBar = {
+        ...marketState.latestRealBar,
+        eventTimestamp: envelope.eventTimestamp,
+      };
+    }
 
-    // Process pending tickets for this symbol
+    const context = this.resolveMarketContext({ symbol } as Order);
+
+    // Process pending tickets for this symbol only
     const pendingTickets = this.pendingTicketsBySymbol.get(symbol);
     if (pendingTickets) {
-      for (const ticketId of pendingTickets) {
+      for (const ticketId of [...pendingTickets]) {
         const ticket = this.state.tickets[ticketId];
-        if (!ticket) {
-          pendingTickets.delete(ticketId);
-          this.releaseBuyingPower(ticketId);
-          continue;
-        }
-        if (!isTicketPending(ticket)) {
+        if (!ticket || !isTicketPending(ticket)) {
           pendingTickets.delete(ticketId);
           this.releaseBuyingPower(ticketId);
           continue;
@@ -415,100 +461,96 @@ export class SimBroker {
           this.releaseBuyingPower(order.id);
           continue;
         }
-        const fillOrder: Order = { ...order, quantity: remainingQuantity };
-        const fillResult = this.fillModel.fill(
-          fillOrder,
-          bar,
-          symbolState.previousBar ?? undefined,
-        );
 
+        // Look-ahead protection: never fill an order with data it preceded.
         if (
-          fillResult.filled &&
-          fillResult.price !== undefined &&
-          Number.isFinite(fillResult.price) &&
-          fillResult.price > 0 &&
-          fillResult.quantity !== undefined &&
-          Number.isFinite(fillResult.quantity) &&
-          fillResult.quantity > 0
+          order.submittedAt !== undefined &&
+          envelope.eventTimestamp < order.submittedAt
         ) {
-          const fillQuantity = Math.min(
-            fillResult.quantity,
-            remainingQuantity,
-          );
-          // Calculate slippage
-          const slippage = this.slippageModel.getSlippage(
-            fillOrder,
-            fillResult.price,
-            bar,
-          );
-          const adjustedPrice = fillResult.price + slippage;
-
-          // Calculate commission
-          const commission = this.feeModel.getCommission(
-            fillOrder,
-            adjustedPrice,
-            fillQuantity,
-          );
-
-          // Apply fill to portfolio
-          this.applyFill(
-            order,
-            adjustedPrice,
-            fillQuantity,
-            slippage,
-            commission,
-            bar.timestamp,
-          );
-
-          const eventStatus = this.aggregateTicketFill(
-            ticket,
-            adjustedPrice,
-            fillQuantity,
-            commission,
-          );
-
-          // Create append-only OrderEvent
-          const event: OrderEvent = {
-            orderId: order.id,
-            symbol: order.symbol,
-            utcTime: asIsoTimestamp(bar.timestamp),
-            status: eventStatus,
-            side: order.side,
-            fillPrice: adjustedPrice,
-            fillQuantity:
-              order.side === "sell"
-                ? -fillQuantity
-                : fillQuantity,
-            absoluteFillQuantity: fillQuantity,
-            orderFee: { value: commission, currency: "USD" },
-            slippage,
-          };
-
-          ticket.orderEvents.push(event);
-          symbolState.lastFillPrice = adjustedPrice;
-          if (!isTicketPending(ticket)) {
-            pendingTickets.delete(ticketId);
-            this.releaseBuyingPower(order.id);
-          } else {
-            this.adjustBuyingPowerReservation(ticket);
-          }
-
-          events.push(event);
+          continue;
         }
+
+        const eligibility = this.classifyMarketData(order, context);
+        if (!eligibility.eligible) {
+          const rejectEvent = this.applyEligibilityTransition(
+            ticket,
+            context,
+            eligibility,
+          );
+          if (rejectEvent) events.push(rejectEvent);
+          continue;
+        }
+
+        const event = this.fillTicket(
+          ticket,
+          context,
+          remainingQuantity,
+          bar,
+          marketState.previousRealBar?.bar,
+        );
+        if (event) events.push(event);
       }
       if (pendingTickets.size === 0) {
         this.pendingTicketsBySymbol.delete(symbol);
       }
     }
 
-    // Update position mark-to-market
+    // Update position mark-to-market for THIS symbol only
     this.updatePositionMTM(symbol, bar.close);
-
-    // Remember this bar for next iteration
-    symbolState.previousBar = bar;
 
     return events;
   }
+
+  /**
+   * LEAN-style liquidation for a single symbol.
+   * Submits a market order for -(holdingQty + signed pending market qty),
+   * so in-flight market orders are neutralized rather than double-counted.
+   */
+  liquidate(
+    symbol: string,
+    tag = "Liquidate",
+  ): OrderResult | { success: true; skipped: true; reason: string } {
+    if (this.liquidationLocks.has(symbol)) {
+      return { success: true, skipped: true, reason: "LIQUIDATION_IN_FLIGHT" };
+    }
+
+    const holdingQty = this.state.positions[symbol]?.quantity ?? 0;
+
+    // Signed remainder of all pending MARKET orders for this symbol
+    let pendingMarketQty = 0;
+    const pendingIds = this.pendingTicketsBySymbol.get(symbol);
+    if (pendingIds) {
+      for (const id of pendingIds) {
+        const ticket = this.state.tickets[id];
+        if (!ticket || !isTicketPending(ticket)) continue;
+        const type = normalizeOrderType(ticket.order.orderType);
+        if (type !== "market") continue;
+        const remaining = ticket.order.quantity - ticket.quantityFilled;
+        if (remaining <= 0) continue;
+        pendingMarketQty +=
+          ticket.order.side === "sell" ? -remaining : remaining;
+      }
+    }
+
+    const target = -(holdingQty + pendingMarketQty);
+    if (target === 0) {
+      return { success: true, skipped: true, reason: "NOTHING_TO_LIQUIDATE" };
+    }
+
+    this.liquidationLocks.add(symbol);
+    try {
+      return this.placeOrder({
+        symbol,
+        side: target > 0 ? "buy" : "sell",
+        orderType: "market",
+        quantity: Math.abs(target),
+        tag,
+      });
+    } finally {
+      this.liquidationLocks.delete(symbol);
+    }
+  }
+
 
   recordEquitySnapshot(timestamp: string | number): void {
     const positionsValue = this.positionsValue;

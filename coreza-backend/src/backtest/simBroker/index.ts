@@ -1526,11 +1526,33 @@ export class SimBroker {
     return this.backtestId;
   }
 
-  private getSymbolState(symbol: string) {
-    let state = this.symbolStates.get(symbol);
+  /** Read-only snapshot of a symbol's market state (diagnostics/tests). */
+  getMarketState(symbol: string): SymbolMarketState | undefined {
+    return this.marketDataBySymbol.get(symbol);
+  }
+
+  /** Migration telemetry for deprecated global-bar entry points. */
+  getLegacyMarketDataCallCounts(): {
+    onBar: number;
+    setCurrentBar: number;
+  } {
+    return {
+      onBar: this.legacyOnBarCalls,
+      setCurrentBar: this.legacySetCurrentBarCalls,
+    };
+  }
+
+  private getMarketStateForUpdate(symbol: string): SymbolMarketState {
+    let state = this.marketDataBySymbol.get(symbol);
     if (!state) {
-      state = { previousBar: null };
-      this.symbolStates.set(symbol, state);
+      state = {
+        symbol,
+        latestRealBar: null,
+        previousRealBar: null,
+        latestEventTimestamp: 0,
+        lastEnvelopeWasFillForward: false,
+      };
+      this.marketDataBySymbol.set(symbol, state);
     }
     return state;
   }

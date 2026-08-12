@@ -8,7 +8,7 @@
   "color": "text-orange-500",
   "size": {
     "width": 340,
-    "height": 360
+    "height": 320
   },
   "handles": [
     {
@@ -160,20 +160,6 @@
           "order_type": [
             "stop",
             "stop_limit"
-          ]
-        }
-      }
-    },
-    {
-      "key": "current_bar",
-      "label": "Current Bar Data",
-      "type": "text",
-      "placeholder": "{{ $('OnBar').json.bar }}",
-      "required": false,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "place_order"
           ]
         }
       }

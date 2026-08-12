@@ -222,7 +222,6 @@ router.post("/trade", async (req: Request, res: Response) => {
       order_type,
       limit_price,
       stop_price,
-      current_bar,
     } = req.body;
 
     const tradeOperation = operation || "place_order";
@@ -253,7 +252,6 @@ router.post("/trade", async (req: Request, res: Response) => {
           order_type,
           limit_price,
           stop_price,
-          current_bar,
         },
       } as any,
       {},

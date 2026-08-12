@@ -761,15 +761,39 @@ export class BacktestExecutor implements INodeExecutor {
       const side = params.side;
       const quantity = parseFloat(params.quantity);
       const orderType = params.order_type || "market";
+      const operation = params.operation || "place_order";
 
-      if (!symbol || !side || !quantity) {
-        return leanError("symbol, side, and quantity are required");
+      if (!symbol) {
+        return leanError("symbol is required");
       }
 
       // Get SimBroker instance from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
 
-      const currentBar = parseBar(params.current_bar);
+      // LEAN-style liquidation: SimBroker computes the signed target itself.
+      if (operation === "liquidate") {
+        const result: any = simBroker.liquidate(symbol);
+        if (!result.success) {
+          return leanError(result.error || "Liquidation failed");
+        }
+        return toNodeResult(
+          createSuccessOutput({
+            operation: "liquidate",
+            symbol,
+            skipped: result.skipped === true,
+            reason: result.reason,
+            orderId: result.orderId,
+            cash: simBroker.getCash(),
+            positions: simBroker.getPositions(),
+            pending_orders: simBroker.getOpenOrders(),
+            total_equity: simBroker.getTotalEquity(),
+          }),
+        );
+      }
+
+      if (!side || !quantity) {
+        return leanError("symbol, side, and quantity are required");
+      }
 
       // Parse current bar from input (passed from loop iteration)
       // let currentBar;
@@ -783,11 +807,8 @@ export class BacktestExecutor implements INodeExecutor {
       //   throw new Error("Invalid current_bar JSON");
       // }
 
-      // If we have a current bar, make it available for validation and
-      // immediate-fill pricing without re-processing pending orders.
-      if (currentBar) {
-        simBroker.setCurrentBar(currentBar);
-      }
+      // NOTE: market data is symbol-scoped inside SimBroker; callers must NOT
+      // inject a bar for pricing (that was the cross-symbol pricing defect).
 
       // Place the new order - SYNCHRONOUS
       const orderResult = simBroker.placeOrder({
@@ -810,8 +831,8 @@ export class BacktestExecutor implements INodeExecutor {
       // For immediate fill model only, attempt same-bar fill of just this order.
       // For next_bar_open, order remains pending until next bar's onBar call.
       let fill: OrderEvent | null = null;
-      if (currentBar && orderResult.orderId) {
-        fill = simBroker.tryFillImmediateOrder(orderResult.orderId, currentBar);
+      if (orderResult.orderId) {
+        fill = simBroker.tryFillImmediateOrder(orderResult.orderId);
       }
 
       // Get updated state (for pending orders that weren't filled) - SYNCHRONOUS

@@ -25,6 +25,34 @@ export {
 
 // ============== CONFIGURATION ==============
 
+/**
+ * Order-type aware market-data freshness policy.
+ * Defaults preserve historic behaviour (no age limits).
+ */
+export interface MarketDataPolicy {
+  /** 0 = no limit */
+  maxMarketOrderAgeMs: number;
+  /** 0 = no limit */
+  maxConditionalOrderAgeMs: number;
+  allowFillForwardMarketOrders: boolean;
+  requireRealBarForConditionalOrders: boolean;
+  rejectOnSymbolMismatch: boolean;
+}
+
+export const DEFAULT_MARKET_DATA_POLICY: MarketDataPolicy = {
+  maxMarketOrderAgeMs: 0,
+  maxConditionalOrderAgeMs: 0,
+  allowFillForwardMarketOrders: true,
+  requireRealBarForConditionalOrders: false,
+  rejectOnSymbolMismatch: true,
+};
+
+export type RejectionReason =
+  | "NO_MARKET_DATA"
+  | "STALE_MARKET_DATA"
+  | "MARKET_CLOSED"
+  | "SYMBOL_MISMATCH";
+
 export interface SimBrokerConfig {
   initialCapital: number;
   expectedBars: number;
@@ -35,6 +63,9 @@ export interface SimBrokerConfig {
   commissionValue: number; // e.g., 0.01 for $0.01/share or 0.001 for 0.1%
   allowShort: boolean;
   shortMarginRequirement: number;
+  marketDataPolicy: MarketDataPolicy;
+  /** Allow conditional/next-bar orders to fill from the bar they were submitted on */
+  sameBarPolicy: "strict" | "allow-close";
 }
 
 export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
@@ -47,7 +78,10 @@ export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
   commissionValue: 0.01, // $0.01 per share
   allowShort: false,
   shortMarginRequirement: 1.0,
+  marketDataPolicy: DEFAULT_MARKET_DATA_POLICY,
+  sameBarPolicy: "strict",
 };
+
 
 // ============== MARKET DATA ==============
 

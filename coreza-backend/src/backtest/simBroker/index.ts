@@ -1113,8 +1113,8 @@ export class SimBroker {
   }
 
   private estimateOrderPrice(order: Order | OrderRequest): number {
-    const symbolState = this.getSymbolState(order.symbol);
-    const lastClose = symbolState.previousBar?.close;
+    const context = this.resolveMarketContext(order);
+    const lastClose = context.bar?.close ?? context.previousBar?.close;
     let orderPrice: number | undefined;
 
     switch (normalizeOrderType(order.orderType)) {
@@ -1138,13 +1138,8 @@ export class SimBroker {
         : Math.min(orderPrice, lastClose);
     }
 
-    return (
-      orderPrice ??
-      lastClose ??
-      symbolState.lastFillPrice ??
-      this.state.currentBar?.close ??
-      0
-    );
+    // NOTE: no global currentBar fallback — pricing is symbol-scoped only.
+    return orderPrice ?? lastClose ?? context.lastFillPrice ?? 0;
   }
 
   private computeReservation(order: Order | OrderRequest): number {

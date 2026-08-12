@@ -121,9 +121,11 @@ export interface MarketBarEnvelope {
 export interface RealObservation {
   bar: Bar;
   sourceTimestamp: number;
+  eventTimestamp?: number;
 }
 
 export interface SymbolMarketState {
+  symbol?: string;
   latestRealBar: RealObservation | null;
   previousRealBar: RealObservation | null;
   latestEventTimestamp?: number;

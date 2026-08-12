@@ -49,6 +49,10 @@ export interface Order {
   trailPercent?: number;
   trailPrice?: number;
   createdAt: string; // ISO 8601
+  /** Algorithm/event time the order was submitted (epoch ms) — look-ahead protection */
+  submittedAt?: number;
+  /** Monotonic submission sequence within a run */
+  submittedSequence?: number;
   tag?: string; // user-defined label
   properties?: {
     timeInForce?: string;
@@ -105,6 +109,17 @@ export interface OrderEvent {
   orderFee?: OrderFee;
   slippage?: number; // sim only
   message?: string;
+  // ---- Simulated-fill provenance (sim only) ----
+  /** Symbol of the market data actually used; must equal `symbol` */
+  marketDataSymbol?: string;
+  marketDataSourceTimestamp?: number;
+  marketDataEventTimestamp?: number;
+  marketDataAgeMs?: number;
+  usedFillForwardData?: boolean;
+  fillModel?: string;
+  /** Pre-slippage reference price */
+  referencePrice?: number;
+  rejectionReason?: string;
 }
 
 // ============== ORDER TICKET (aggregate) ==============

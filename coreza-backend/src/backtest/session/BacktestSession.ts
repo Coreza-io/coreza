@@ -10,6 +10,7 @@ import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
 import { RedisKeys } from "../../infra/redisKeys";
 import { createWorkflowLifecycleService } from "../../workflow/lifecycleServiceInstance";
+import { toMarketBarEnvelope } from "../simBroker/marketEnvelope";
 
 export interface BarEvent {
   bar: any;
@@ -437,10 +438,12 @@ export class BacktestSession {
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
       if (bar) {
-        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
-          symbol,
-          bar,
-        );
+        const envelope = toMarketBarEnvelope(symbol, bar, event.timestamp);
+        if (envelope) {
+          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+            envelope,
+          );
+        }
       }
     }
     this.perf.simBrokerOnBarMs += performance.now() - t0;
@@ -506,10 +509,12 @@ export class BacktestSession {
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
       if (bar) {
-        BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
-          symbol,
-          bar,
-        );
+        const envelope = toMarketBarEnvelope(symbol, bar, event.timestamp);
+        if (envelope) {
+          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+            envelope,
+          );
+        }
       }
     }
     this.perf.simBrokerOnBarMs += performance.now() - t0;
@@ -623,10 +628,16 @@ export class BacktestSession {
           const currentSymbol = availableSymbols[symbolIndex];
           const currentBar = currentEvent.bars[currentSymbol];
 
-          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+          const stepEnvelope = toMarketBarEnvelope(
             currentSymbol,
             currentBar,
+            currentEvent.timestamp,
           );
+          if (stepEnvelope) {
+            BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
+              stepEnvelope,
+            );
+          }
 
           const nextSymbolIndex = symbolIndex + 1;
           const consumedTimestamp = nextSymbolIndex >= availableSymbols.length;

@@ -215,6 +215,7 @@ router.post("/trade", async (req: Request, res: Response) => {
       nodeName,
       node_type,
       backtest_id,
+      operation,
       symbol,
       side,
       quantity,
@@ -224,9 +225,17 @@ router.post("/trade", async (req: Request, res: Response) => {
       current_bar,
     } = req.body;
 
-    if (!backtest_id || !symbol || !side || !quantity) {
+    const tradeOperation = operation || "place_order";
+
+    if (!backtest_id || !symbol) {
+      return res
+        .status(400)
+        .json({ error: "backtest_id and symbol are required" });
+    }
+
+    if (tradeOperation === "place_order" && (!side || !quantity)) {
       return res.status(400).json({
-        error: "backtest_id, symbol, side, and quantity are required",
+        error: "side and quantity are required for place_order",
       });
     }
 
@@ -237,6 +246,7 @@ router.post("/trade", async (req: Request, res: Response) => {
         node_type,
         values: {
           backtest_id,
+          operation: tradeOperation,
           symbol,
           side,
           quantity,

@@ -35,12 +35,17 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
     }
 
     const syncResult = result as NodeResult;
-    if (syncResult && typeof syncResult === "object" && "success" in syncResult) {
+    if (
+      syncResult &&
+      typeof syncResult === "object" &&
+      "success" in syncResult
+    ) {
       if (!syncResult.success) {
         return {
           success: false,
           data: null,
-          error: syncResult.error || `Node execution failed: ${executor.category}`,
+          error:
+            syncResult.error || `Node execution failed: ${executor.category}`,
           meta: syncResult.meta,
           control: syncResult.control,
         };

@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { RollingWindow } from "../RollingWindow";
+import { RollingWindow } from "./RollingWindow";
 
 export interface RollingWindowPayload {
   window: unknown[];

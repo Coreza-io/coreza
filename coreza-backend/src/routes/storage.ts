@@ -28,7 +28,7 @@ import {
   normalizeTimeframe,
   parseCandleData,
   ROLLING_WINDOW_ERRORS,
-} from "../engine/rollingWindow";
+} from "../engine/rollingWindowHelpers";
 
 const router = Router();
 const MAX_SESSIONS = 200;

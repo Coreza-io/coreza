@@ -6,7 +6,7 @@ import {
   normalizeTimeframe,
   parseCandleData,
   ROLLING_WINDOW_ERRORS,
-} from "../src/engine/rollingWindow";
+} from "../src/engine/rollingWindowHelpers";
 
 describe("rolling window helpers", () => {
   it("normalizes keys and clamps window sizes", () => {

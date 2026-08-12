@@ -28,7 +28,7 @@ import {
   normalizeTimeframe,
   parseCandleData,
   ROLLING_WINDOW_ERRORS,
-} from "../../engine/rollingWindow";
+} from "../../engine/rollingWindowHelpers";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";

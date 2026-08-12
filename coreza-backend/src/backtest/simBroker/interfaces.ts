@@ -221,6 +221,7 @@ export interface PortfolioState {
   trades: Trade[]; // Closed trades
   equityCurve: EquityPoint[];
   peakEquity: number;
+  /** @deprecated Symbol-less global bar. Never used for pricing. Removed after migration. */
   currentBar?: Bar;
 }
 

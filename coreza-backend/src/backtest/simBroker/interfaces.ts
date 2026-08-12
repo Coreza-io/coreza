@@ -118,6 +118,23 @@ export interface MarketBarEnvelope {
   intervalMs?: number;
 }
 
+export type LiquidationResult =
+  | {
+      success: true;
+      skipped: true;
+      reason: "NOTHING_TO_LIQUIDATE" | "LIQUIDATION_IN_FLIGHT";
+      canceledOrderIds: string[];
+    }
+  | {
+      success: true;
+      skipped?: false;
+      orderId: string;
+      status: string;
+      canceledOrderIds: string[];
+      fill: import("../../types/order").OrderEvent | null;
+    }
+  | { success: false; error: string; canceledOrderIds: string[] };
+
 export interface RealObservation {
   bar: Bar;
   sourceTimestamp: number;

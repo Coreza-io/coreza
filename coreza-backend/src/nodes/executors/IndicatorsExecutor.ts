@@ -21,6 +21,14 @@ import { IndicatorStateManager, buildIndicatorKey } from "../../engine";
 import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
 import { buildExecutionScopedKey } from "../../utils/executionKey";
 import { RollingWindow } from "../../engine/RollingWindow";
+import {
+  buildRollingWindowPayload,
+  clampWindowSize,
+  normalizeSymbol,
+  normalizeTimeframe,
+  parseCandleData,
+  ROLLING_WINDOW_ERRORS,
+} from "../../engine/rollingWindow";
 
 export class IndicatorsExecutor implements INodeExecutor {
   readonly category = "Indicators";
@@ -356,14 +364,14 @@ export class IndicatorsExecutor implements INodeExecutor {
     context?: any,
   ): NodeResult {
     const operation = params.operation ?? "set";
-    const requestedSymbol = String(params.symbol ?? "").trim().toUpperCase();
-    const requestedTimeframe = String(params.timeframe ?? "").trim();
+    const requestedSymbol = normalizeSymbol(params.symbol);
+    const requestedTimeframe = normalizeTimeframe(params.timeframe);
     const dataContext = context?.dataContext as DataContext | undefined;
 
     if (operation === "get") {
       if (!requestedSymbol) {
         return toNodeResult(
-          createErrorOutput("symbol is required for get operation", {
+          createErrorOutput(ROLLING_WINDOW_ERRORS.symbolRequired, {
             nodeId: node.id,
             nodeName: "RollingWindow",
             category: this.category,
@@ -373,7 +381,7 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       if (!requestedTimeframe) {
         return toNodeResult(
-          createErrorOutput("timeframe is required for get operation", {
+          createErrorOutput(ROLLING_WINDOW_ERRORS.timeframeRequired, {
             nodeId: node.id,
             nodeName: "RollingWindow",
             category: this.category,
@@ -402,25 +410,7 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       return {
         success: true,
-        data: window
-          ? {
-              window: [...window.values()],
-              count: window.count,
-              size: window.size,
-              isReady: window.isReady,
-              remaining: window.size - window.count,
-              latest: window.count > 0 ? window.at(0) : null,
-              found: true,
-            }
-          : {
-              window: [],
-              count: 0,
-              size: 0,
-              isReady: false,
-              remaining: 0,
-              latest: null,
-              found: false,
-            },
+        data: buildRollingWindowPayload(window),
         meta: {
           key: storeKey,
           timeframe: requestedTimeframe,
@@ -428,7 +418,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       };
     }
 
-    const size = Math.min(Math.max(parseInt(params.size) || 20, 1), 500);
+    const size = clampWindowSize(params.size);
     const symbol = requestedSymbol || "_";
     const timeframe = requestedTimeframe || "_";
 
@@ -449,30 +439,10 @@ export class IndicatorsExecutor implements INodeExecutor {
       this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
     }
 
-    let bars: unknown[];
-    const rawCandle = params.candle_data;
-    if (
-      rawCandle &&
-      typeof rawCandle === "object" &&
-      !Array.isArray(rawCandle)
-    ) {
-      bars = [rawCandle];
-    } else if (Array.isArray(rawCandle)) {
-      bars = rawCandle;
-    } else if (typeof rawCandle === "string") {
-      try {
-        const parsed = JSON.parse(rawCandle);
-        bars = Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        bars = [];
-      }
-    } else {
-      bars = [];
-    }
-
-    if (bars.length === 0) {
+    const parsed = parseCandleData(params.candle_data);
+    if (!parsed.ok) {
       return toNodeResult(
-        createErrorOutput("No bars provided in candle_data", {
+        createErrorOutput(parsed.error, {
           nodeId: node.id,
           nodeName: "RollingWindow",
           category: this.category,
@@ -491,30 +461,16 @@ export class IndicatorsExecutor implements INodeExecutor {
       window = new RollingWindow(size);
     }
 
-    for (const bar of bars) {
+    for (const bar of parsed.bars) {
       window.add(bar);
     }
-    if (!this.rollingWindowResults.has(node.id)) {
-      this.rollingWindowResults.set(node.id, {
-        success: true,
-        data: {
-          window: null,
-          count: 0,
-          size: 0,
-          isReady: false,
-          remaining: 0,
-          latest: null,
-        },
-      });
-    }
-
-    const rw = this.rollingWindowResults.get(node.id)!;
-    rw.data.window = window.values();
-    rw.data.count = window.count;
-    rw.data.size = window.size;
-    rw.data.isReady = window.isReady;
-    rw.data.remaining = window.size - window.count;
-    rw.data.latest = window.count > 0 ? window.at(0) : null;
+    const payload = buildRollingWindowPayload(window);
+    const rw = this.rollingWindowResults.get(node.id) ?? {
+      success: true,
+      data: {},
+    };
+    Object.assign(rw.data, payload);
+    this.rollingWindowResults.set(node.id, rw);
     return rw;
   }
 

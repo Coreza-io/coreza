@@ -134,6 +134,59 @@ describe("Rolling Window operations", () => {
     ).toMatchObject({ data: { found: true, window: [{ close: 1 }] } });
   });
 
+  it("uses shared parsing errors and returns a snapshot payload on set", () => {
+    const executor = new IndicatorsExecutor();
+    const context = createContext("run-parser-contract");
+
+    expect(
+      executor.execute(
+        node,
+        {
+          symbol: "BTCUSDT",
+          timeframe: "1h",
+          candle_data: "{{ upstream.data }}",
+        },
+        context,
+      ),
+    ).toMatchObject({
+      success: false,
+      error:
+        "Candle data contains unresolved template references. Execute the upstream node first.",
+    });
+
+    const result = executor.execute(
+      node,
+      {
+        size: 2,
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        candle_data: '[{"close":1}]',
+      },
+      context,
+    );
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        window: [{ close: 1 }],
+        count: 1,
+        size: 2,
+        isReady: false,
+        remaining: 1,
+        latest: { close: 1 },
+        found: true,
+      },
+    });
+
+    if (result instanceof Promise) {
+      throw new Error("RollingWindow execution unexpectedly became asynchronous");
+    }
+    const returnedWindow = result.data?.window;
+    const storedWindow = context.dataContext.getDataByKey(
+      "RollingWindow:userId:user-1:workflowId:workflow-1:executionId:run-parser-contract:BTCUSDT:1h",
+    ) as { values(): readonly unknown[] };
+    expect(returnedWindow).not.toBe(storedWindow.values());
+  });
+
   it("returns an empty successful read and requires a symbol", () => {
     const executor = new IndicatorsExecutor();
     const context = createContext("run-2");

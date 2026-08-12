@@ -21,9 +21,39 @@ import { buildStoreKey, extractVariableNameFromKey } from "../utils/store";
 import logger from "../utils/logger";
 import { buildExecutionScopedKey } from "../utils/executionKey";
 import { RollingWindow } from "../engine/RollingWindow";
+import {
+  buildRollingWindowPayload,
+  clampWindowSize,
+  normalizeSymbol,
+  normalizeTimeframe,
+  parseCandleData,
+  ROLLING_WINDOW_ERRORS,
+} from "../engine/rollingWindow";
 
 const router = Router();
+const MAX_SESSIONS = 200;
 const rollingWindows = new Map<string, RollingWindow<unknown>>();
+const sessionKeys = new Map<string, Set<string>>();
+
+function touchSession(sessionId: string, storeKey: string): void {
+  let keys = sessionKeys.get(sessionId);
+  if (keys) {
+    sessionKeys.delete(sessionId);
+  } else {
+    keys = new Set<string>();
+  }
+  keys.add(storeKey);
+  sessionKeys.set(sessionId, keys);
+
+  while (sessionKeys.size > MAX_SESSIONS) {
+    const oldest = sessionKeys.entries().next();
+    if (oldest.done) break;
+
+    const [oldestSessionId, oldestKeys] = oldest.value;
+    for (const key of oldestKeys) rollingWindows.delete(key);
+    sessionKeys.delete(oldestSessionId);
+  }
+}
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
@@ -53,21 +83,21 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       });
     }
 
-    const normalizedSymbol = String(symbol ?? "").trim().toUpperCase();
-    const normalizedTimeframe = String(timeframe ?? "").trim();
+    const normalizedSymbol = normalizeSymbol(symbol);
+    const normalizedTimeframe = normalizeTimeframe(timeframe);
 
     if (operation === "get") {
       if (!normalizedSymbol) {
         return res.status(400).json({
           success: false,
-          error: "symbol is required for get operation",
+          error: ROLLING_WINDOW_ERRORS.symbolRequired,
         });
       }
 
       if (!normalizedTimeframe) {
         return res.status(400).json({
           success: false,
-          error: "timeframe is required for get operation",
+          error: ROLLING_WINDOW_ERRORS.timeframeRequired,
         });
       }
 
@@ -79,29 +109,12 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
         parts: [normalizedSymbol, normalizedTimeframe],
       });
       const window = rollingWindows.get(storeKey);
+      touchSession(workflowSessionId, storeKey);
 
       return res.json({
         success: true,
         status: "success",
-        data: window
-          ? {
-              window: [...window.values()],
-              count: window.count,
-              size: window.size,
-              isReady: window.isReady,
-              remaining: window.size - window.count,
-              latest: window.count > 0 ? window.at(0) : null,
-              found: true,
-            }
-          : {
-              window: [],
-              count: 0,
-              size: 0,
-              isReady: false,
-              remaining: 0,
-              latest: null,
-              found: false,
-            },
+        data: buildRollingWindowPayload(window),
         meta: {
           key: storeKey,
           timeframe: normalizedTimeframe,
@@ -110,7 +123,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       });
     }
 
-    const windowSize = Math.min(Math.max(parseInt(size) || 20, 1), 500);
+    const windowSize = clampWindowSize(size);
     const storeKey = buildExecutionScopedKey({
       userId,
       workflowId,
@@ -118,34 +131,9 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       scope: "rolling_window",
       parts: [normalizedSymbol || "_", normalizedTimeframe || "_"],
     });
-    let bars: unknown[] = [];
-    if (Array.isArray(candle_data)) {
-      bars = candle_data;
-    } else if (typeof candle_data === "string") {
-      if (candle_data.includes("{{")) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Candle data contains unresolved template references. Execute the upstream node first.",
-        });
-      }
-
-      try {
-        const parsed = JSON.parse(candle_data);
-        bars = Array.isArray(parsed) ? parsed : [parsed];
-      } catch {
-        return res
-          .status(400)
-          .json({ success: false, error: "Invalid candle_data format" });
-      }
-    } else if (candle_data && typeof candle_data === "object") {
-      bars = [candle_data];
-    }
-
-    if (bars.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: "No bars provided in candle_data" });
+    const parsed = parseCandleData(candle_data);
+    if (!parsed.ok) {
+      return res.status(400).json({ success: false, error: parsed.error });
     }
 
     let window = rollingWindows.get(storeKey);
@@ -153,23 +141,18 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       window = new RollingWindow<unknown>(windowSize);
       rollingWindows.set(storeKey, window);
     }
+    touchSession(workflowSessionId, storeKey);
 
-    for (const bar of bars) {
+    for (const bar of parsed.bars) {
       window.add(bar);
     }
     res.json({
       success: true,
       status: "success",
-      data: {
-        window: [...window.values()],
-        count: window.count,
-        size: window.size,
-        isReady: window.isReady,
-        remaining: window.size - window.count,
-      },
+      data: buildRollingWindowPayload(window),
       meta: {
         key: storeKey,
-        barsAdded: bars.length,
+        barsAdded: parsed.bars.length,
         timestamp: new Date().toISOString(),
       },
     });

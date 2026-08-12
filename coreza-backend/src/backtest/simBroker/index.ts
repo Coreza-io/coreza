@@ -345,7 +345,7 @@ export class SimBroker {
     if (!Number.isFinite(estimatedPrice) || estimatedPrice <= 0) {
       return {
         valid: false,
-        error: `No market price available for ${request.symbol}`,
+        error: `NO_MARKET_DATA: No market price available for ${request.symbol}`,
       };
     }
 

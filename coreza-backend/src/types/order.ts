@@ -109,6 +109,17 @@ export interface OrderEvent {
   orderFee?: OrderFee;
   slippage?: number; // sim only
   message?: string;
+  // ---- Simulated-fill provenance (sim only) ----
+  /** Symbol of the market data actually used; must equal `symbol` */
+  marketDataSymbol?: string;
+  marketDataSourceTimestamp?: number;
+  marketDataEventTimestamp?: number;
+  marketDataAgeMs?: number;
+  usedFillForwardData?: boolean;
+  fillModel?: string;
+  /** Pre-slippage reference price */
+  referencePrice?: number;
+  rejectionReason?: string;
 }
 
 // ============== ORDER TICKET (aggregate) ==============

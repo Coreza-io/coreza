@@ -67,19 +67,41 @@ function asIsoTimestamp(timestamp: string | number): string {
     : timestamp;
 }
 
+function toEpochMs(timestamp: string | number | undefined): number {
+  if (timestamp === undefined) return 0;
+  return typeof timestamp === "number"
+    ? timestamp
+    : new Date(timestamp).getTime();
+}
+
+/** Price explicitly carried by a resting order (limit/stop), if any. */
+function explicitRestingOrderPrice(
+  order: Order | OrderRequest,
+): number | undefined {
+  switch (normalizeOrderType(order.orderType)) {
+    case "limit":
+    case "stop_limit":
+      return order.limitPrice;
+    case "stop_market":
+      return order.stopPrice;
+    default:
+      return undefined;
+  }
+}
+
 export class SimBroker {
   private backtestId: string;
   private config: SimBrokerConfig;
   private fillModel: IFillModel;
   private slippageModel: ISlippageModel;
   private feeModel: IFeeModel;
-  private symbolStates = new Map<
-    string,
-    {
-      previousBar: Bar | null;
-      lastFillPrice?: number;
-    }
-  >();
+  /** Symbol-scoped market data — the ONLY pricing authority. */
+  private marketDataBySymbol = new Map<string, SymbolMarketState>();
+  /** Migration telemetry for the legacy onBar(symbol, bar) adapter. */
+  private legacyOnBarCalls = 0;
+  private legacySetCurrentBarCalls = 0;
+  private liquidationLocks = new Set<string>();
+  private submissionSequence = 0;
   private orderIdCounter = 0;
   private tradeIdCounter = 0;
   private currentEntryMap = new Map<

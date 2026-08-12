@@ -200,7 +200,7 @@ export class SimBroker {
    * Place order - SYNCHRONOUS
    * Creates an immutable Order and wraps it in an OrderTicket.
    */
-  placeOrder(request: OrderRequest): OrderResult {
+  placeOrder(request: OrderRequest, submittedAt?: number): OrderResult {
     // Validate order
     const validation = this.validateOrder(request, this.state);
     if (!validation.valid) {
@@ -208,6 +208,10 @@ export class SimBroker {
     }
 
     const orderId = `SIM-${++this.orderIdCounter}`;
+    const submissionTime =
+      submittedAt ??
+      this.marketDataBySymbol.get(request.symbol)?.latestEventTimestamp ??
+      0;
 
     // Create immutable Order
     const order: Order = {
@@ -222,6 +226,8 @@ export class SimBroker {
       properties: request.properties,
       status: "new",
       createdAt: new Date().toISOString(),
+      submittedAt: submissionTime,
+      submittedSequence: ++this.submissionSequence,
     };
 
     // Create OrderTicket aggregate

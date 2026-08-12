@@ -103,6 +103,56 @@ export interface NumericBar {
   volume: number;
 }
 
+/**
+ * Canonical symbol-bearing market data unit handed to SimBroker.onBar().
+ * Carries both clocks so freshness stays auditable.
+ */
+export interface MarketBarEnvelope {
+  symbol: string;
+  bar: Bar;
+  /** When the underlying observation actually occurred (epoch ms) */
+  sourceTimestamp: number;
+  /** Aligned backtest clock currently being processed (epoch ms) */
+  eventTimestamp: number;
+  isFillForward: boolean;
+  intervalMs?: number;
+}
+
+export interface RealObservation {
+  bar: Bar;
+  sourceTimestamp: number;
+}
+
+export interface SymbolMarketState {
+  latestRealBar: RealObservation | null;
+  previousRealBar: RealObservation | null;
+  latestEventTimestamp?: number;
+  lastFillPrice?: number;
+  lastEnvelopeWasFillForward: boolean;
+}
+
+/** Market context resolved from the ORDER's own symbol — the only pricing authority. */
+export interface ResolvedMarketContext {
+  symbol: string;
+  bar: Bar | null;
+  previousBar: Bar | null;
+  sourceTimestamp?: number;
+  eventTimestamp?: number;
+  ageMs: number;
+  isFillForward: boolean;
+  lastFillPrice?: number;
+}
+
+export interface MarketDataEligibility {
+  eligible: boolean;
+  /** true => terminal rejection, false => leave pending */
+  reject?: boolean;
+  reason?: RejectionReason;
+  message?: string;
+}
+
+
+
 // ============== POSITIONS ==============
 
 export type PositionSide = "long" | "short";

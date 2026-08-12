@@ -6,18 +6,49 @@
   "category": "Backtest",
   "description": "Execute a simulated trade in the backtest session",
   "color": "text-orange-500",
-  "size": { "width": 340, "height": 360 },
+  "size": {
+    "width": 340,
+    "height": 360
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
-  "action": { "url": "/backtest/trade", "method": "POST" },
+  "action": {
+    "url": "/backtest/trade",
+    "method": "POST"
+  },
   "fields": [
     {
       "key": "backtest_id",
       "label": "Backtest ID",
       "type": "text",
       "placeholder": "From BacktestInit output",
+      "required": true
+    },
+    {
+      "key": "operation",
+      "label": "Operation",
+      "type": "select",
+      "options": [
+        {
+          "id": "place_order",
+          "name": "Place Order"
+        },
+        {
+          "id": "liquidate",
+          "name": "Liquidate Symbol"
+        }
+      ],
+      "default": "place_order",
       "required": true
     },
     {
@@ -32,31 +63,70 @@
       "label": "Side",
       "type": "select",
       "options": [
-        { "id": "buy", "name": "Buy" },
-        { "id": "sell", "name": "Sell" }
+        {
+          "id": "buy",
+          "name": "Buy"
+        },
+        {
+          "id": "sell",
+          "name": "Sell"
+        }
       ],
       "default": "buy",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "quantity",
       "label": "Quantity",
       "type": "text",
       "placeholder": "e.g. 10",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "order_type",
       "label": "Order Type",
       "type": "select",
       "options": [
-        { "id": "market", "name": "Market Order" },
-        { "id": "limit", "name": "Limit Order" },
-        { "id": "stop", "name": "Stop Order" },
-        { "id": "stop_limit", "name": "Stop Limit Order" }
+        {
+          "id": "market",
+          "name": "Market Order"
+        },
+        {
+          "id": "limit",
+          "name": "Limit Order"
+        },
+        {
+          "id": "stop",
+          "name": "Stop Order"
+        },
+        {
+          "id": "stop_limit",
+          "name": "Stop Limit Order"
+        }
       ],
       "default": "market",
-      "required": true
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     },
     {
       "key": "limit_price",
@@ -66,7 +136,13 @@
       "placeholder": "e.g. 150.00",
       "displayOptions": {
         "show": {
-          "order_type": ["limit", "stop_limit"]
+          "operation": [
+            "place_order"
+          ],
+          "order_type": [
+            "limit",
+            "stop_limit"
+          ]
         }
       }
     },
@@ -78,7 +154,13 @@
       "placeholder": "e.g. 145.00",
       "displayOptions": {
         "show": {
-          "order_type": ["stop", "stop_limit"]
+          "operation": [
+            "place_order"
+          ],
+          "order_type": [
+            "stop",
+            "stop_limit"
+          ]
         }
       }
     },
@@ -87,7 +169,14 @@
       "label": "Current Bar Data",
       "type": "text",
       "placeholder": "{{ $('OnBar').json.bar }}",
-      "required": false
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "place_order"
+          ]
+        }
+      }
     }
   ]
 }

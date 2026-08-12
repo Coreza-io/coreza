@@ -533,11 +533,25 @@ export class SimBroker {
   }
 
   /**
-   * Attempt to fill a specific pending order at the current bar.
-   * Used for immediate fill model only (same-bar execution).
-   * Does NOT mutate previousBar or process other pending orders.
+   * Attempt to fill a specific pending order using ITS OWN symbol's market data.
+   * Used for the immediate fill model only (same-bar execution).
+   * The caller can never select the bar — pricing authority lives here.
+   *
+   * @param legacyBar deprecated; ignored (kept for one migration cycle)
    */
-  tryFillImmediateOrder(orderId: string, bar: Bar): OrderEvent | null {
+  tryFillImmediateOrder(orderId: string, legacyBar?: Bar): OrderEvent | null {
+    if (legacyBar !== undefined) {
+      this.legacyOnBarCalls++;
+      if (process.env.NODE_ENV === "test") {
+        throw new Error(
+          "tryFillImmediateOrder(orderId, bar) is removed: market data is resolved from order.symbol",
+        );
+      }
+      console.warn(
+        "[SimBroker] tryFillImmediateOrder received a caller-supplied bar; it is ignored.",
+      );
+    }
+
     if (this.config.fillModel !== "immediate") {
       return null;
     }
@@ -555,8 +569,182 @@ export class SimBroker {
       this.releaseBuyingPower(order.id);
       return null;
     }
+
+    const context = this.resolveMarketContext(order);
+    const eligibility = this.classifyMarketData(order, context);
+    if (!eligibility.eligible) {
+      return this.applyEligibilityTransition(ticket, context, eligibility);
+    }
+
+    return this.fillTicket(ticket, context, remainingQuantity);
+  }
+
+  /**
+   * Resolve the market context for an order STRICTLY from order.symbol.
+   * This is the single boundary through which market data enters
+   * validation, reservation, fills, slippage and fees.
+   */
+  resolveMarketContext(order: Order | OrderRequest): ResolvedMarketContext {
+    const state = this.marketDataBySymbol.get(order.symbol);
+    const sourceTimestamp = state?.latestRealBar?.sourceTimestamp;
+    const eventTimestamp = state?.latestEventTimestamp;
+    const ageMs =
+      sourceTimestamp !== undefined && eventTimestamp !== undefined
+        ? Math.max(0, eventTimestamp - sourceTimestamp)
+        : 0;
+
+    return {
+      symbol: order.symbol,
+      bar: state?.latestRealBar?.bar ?? null,
+      previousBar: state?.previousRealBar?.bar ?? null,
+      sourceTimestamp,
+      eventTimestamp,
+      ageMs,
+      isFillForward: state?.lastEnvelopeWasFillForward ?? false,
+      lastFillPrice: state?.lastFillPrice,
+    };
+  }
+
+  /**
+   * Pure classifier — never mutates state.
+   * Applies order-type specific freshness rules from the configured policy.
+   */
+  classifyMarketData(
+    order: Order,
+    context: ResolvedMarketContext,
+  ): MarketDataEligibility {
+    if (order.symbol !== context.symbol) {
+      return {
+        eligible: false,
+        reject: true,
+        reason: "SYMBOL_MISMATCH",
+        message: `Market data symbol ${context.symbol} does not match order symbol ${order.symbol}`,
+      };
+    }
+
+    if (!context.bar) {
+      const explicitPrice = explicitRestingOrderPrice(order);
+      // Explicitly priced resting orders may wait for their symbol's data.
+      return {
+        eligible: false,
+        reject: explicitPrice === undefined,
+        reason: "NO_MARKET_DATA",
+        message: `No market data available for ${order.symbol}`,
+      };
+    }
+
+    const policy = this.config.marketDataPolicy;
+    const isMarketOrder =
+      normalizeOrderType(order.orderType) === "market" ||
+      normalizeOrderType(order.orderType) === "market_on_open" ||
+      normalizeOrderType(order.orderType) === "market_on_close";
+
+    if (isMarketOrder) {
+      if (context.isFillForward && !policy.allowFillForwardMarketOrders) {
+        return {
+          eligible: false,
+          reason: "STALE_MARKET_DATA",
+          message: `Fill-forward data not allowed for market orders on ${order.symbol}`,
+        };
+      }
+      if (
+        policy.maxMarketOrderAgeMs > 0 &&
+        context.ageMs > policy.maxMarketOrderAgeMs
+      ) {
+        return {
+          eligible: false,
+          reject: true,
+          reason: "STALE_MARKET_DATA",
+          message: `Market data for ${order.symbol} is ${context.ageMs}ms old`,
+        };
+      }
+      return { eligible: true };
+    }
+
+    if (context.isFillForward && policy.requireRealBarForConditionalOrders) {
+      return {
+        eligible: false,
+        reason: "STALE_MARKET_DATA",
+        message: `Conditional order on ${order.symbol} requires a real bar`,
+      };
+    }
+    if (
+      policy.maxConditionalOrderAgeMs > 0 &&
+      context.ageMs > policy.maxConditionalOrderAgeMs
+    ) {
+      return {
+        eligible: false,
+        reason: "STALE_MARKET_DATA",
+        message: `Market data for ${order.symbol} is ${context.ageMs}ms old`,
+      };
+    }
+
+    return { eligible: true };
+  }
+
+  /**
+   * Atomic transition for an ineligible ticket:
+   * terminal status + reason, pending-index removal, reservation release, OrderEvent.
+   * Non-terminal outcomes leave the ticket pending untouched.
+   */
+  private applyEligibilityTransition(
+    ticket: OrderTicket,
+    context: ResolvedMarketContext,
+    eligibility: MarketDataEligibility,
+  ): OrderEvent | null {
+    if (!eligibility.reject) {
+      return null; // stays pending
+    }
+
+    const order = ticket.order;
+    order.status = "rejected";
+    this.untrackPendingTicket(order.symbol, order.id);
+    this.releaseBuyingPower(order.id);
+
+    const event: OrderEvent = {
+      orderId: order.id,
+      symbol: order.symbol,
+      utcTime: new Date(
+        context.eventTimestamp ?? Date.now(),
+      ).toISOString(),
+      status: "rejected",
+      side: order.side,
+      fillPrice: 0,
+      fillQuantity: 0,
+      absoluteFillQuantity: 0,
+      message: eligibility.message,
+      rejectionReason: eligibility.reason as RejectionReason,
+      marketDataSymbol: context.symbol,
+      marketDataSourceTimestamp: context.sourceTimestamp,
+      marketDataEventTimestamp: context.eventTimestamp,
+      marketDataAgeMs: context.ageMs,
+      usedFillForwardData: context.isFillForward,
+      fillModel: this.config.fillModel,
+    };
+    ticket.orderEvents.push(event);
+    return event;
+  }
+
+  /**
+   * Execute a fill for a pending ticket against its own symbol's market context.
+   */
+  private fillTicket(
+    ticket: OrderTicket,
+    context: ResolvedMarketContext,
+    remainingQuantity: number,
+    overrideBar?: Bar,
+    overridePreviousBar?: Bar,
+  ): OrderEvent | null {
+    const bar = overrideBar ?? context.bar;
+    if (!bar) return null;
+
+    const order = ticket.order;
     const fillOrder: Order = { ...order, quantity: remainingQuantity };
-    const fillResult = this.fillModel.fill(fillOrder, bar);
+    const fillResult = this.fillModel.fill(
+      fillOrder,
+      bar,
+      overridePreviousBar ?? context.previousBar ?? undefined,
+    );
 
     if (
       !fillResult.filled ||
@@ -569,11 +757,8 @@ export class SimBroker {
     ) {
       return null;
     }
+
     const fillQuantity = Math.min(fillResult.quantity, remainingQuantity);
-
-    // Keep current bar in state for order validation/price usage
-    this.state.currentBar = bar;
-
     const slippage = this.slippageModel.getSlippage(
       fillOrder,
       fillResult.price,
@@ -602,7 +787,6 @@ export class SimBroker {
       commission,
     );
 
-    // Create append-only OrderEvent
     const event: OrderEvent = {
       orderId: order.id,
       symbol: order.symbol,
@@ -610,15 +794,23 @@ export class SimBroker {
       status: eventStatus,
       side: order.side,
       fillPrice: adjustedPrice,
-      fillQuantity:
-        order.side === "sell" ? -fillQuantity : fillQuantity,
+      fillQuantity: order.side === "sell" ? -fillQuantity : fillQuantity,
       absoluteFillQuantity: fillQuantity,
       orderFee: { value: commission, currency: "USD" },
       slippage,
+      // per-fill provenance (also snapshotted for each partial fill)
+      marketDataSymbol: context.symbol,
+      marketDataSourceTimestamp: context.sourceTimestamp,
+      marketDataEventTimestamp: context.eventTimestamp,
+      marketDataAgeMs: context.ageMs,
+      usedFillForwardData: context.isFillForward,
+      fillModel: this.config.fillModel,
+      referencePrice: fillResult.price,
     };
 
     ticket.orderEvents.push(event);
-    this.getSymbolState(order.symbol).lastFillPrice = adjustedPrice;
+    this.getMarketStateForUpdate(order.symbol).lastFillPrice = adjustedPrice;
+
     if (!isTicketPending(ticket)) {
       this.untrackPendingTicket(order.symbol, order.id);
       this.releaseBuyingPower(order.id);
@@ -630,6 +822,7 @@ export class SimBroker {
 
     return event;
   }
+
 
   private applyFill(
     order: Order,

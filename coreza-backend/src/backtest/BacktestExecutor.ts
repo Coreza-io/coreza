@@ -46,6 +46,11 @@ interface DiscoveredIndicator {
   params: Record<string, any>;
 }
 
+type AlignedMultiBarEvent = MultiBarEvent & {
+  /** Symbols whose bars were copied from their latest real observation. */
+  fillForwardSymbols?: string[];
+};
+
 function extractStrategySubgraph(
   backtestNodeId: string,
   allNodes: WorkflowNode[],
@@ -634,7 +639,7 @@ export class BacktestExecutor implements INodeExecutor {
     symbols: string[],
     interval: string,
     barsBySymbol: Map<string, any[]>,
-  ): MultiBarEvent[] {
+  ): AlignedMultiBarEvent[] {
     const timestamps = new Set<number>();
 
     for (const bars of barsBySymbol.values()) {
@@ -647,7 +652,7 @@ export class BacktestExecutor implements INodeExecutor {
     const indexes = new Map<string, number>();
     const previousBars = new Map<string, any>();
 
-    const events: MultiBarEvent[] = [];
+    const events: AlignedMultiBarEvent[] = [];
 
     for (const symbol of symbols) {
       indexes.set(symbol, 0);
@@ -656,6 +661,7 @@ export class BacktestExecutor implements INodeExecutor {
     for (const [barIndex, timestamp] of orderedTimestamps.entries()) {
       const alignedBars: Record<string, any> = {};
       const activeSymbols: string[] = [];
+      const fillForwardSymbols: string[] = [];
 
       for (const symbol of symbols) {
         const symbolBars = barsBySymbol.get(symbol) || [];
@@ -688,6 +694,7 @@ export class BacktestExecutor implements INodeExecutor {
             _isFillForward: true,
           };
           activeSymbols.push(symbol);
+          fillForwardSymbols.push(symbol);
         }
       }
 
@@ -698,6 +705,7 @@ export class BacktestExecutor implements INodeExecutor {
           interval,
           symbols: activeSymbols,
           bars: alignedBars,
+          fillForwardSymbols,
         });
       }
     }
@@ -772,7 +780,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       // LEAN-style liquidation: SimBroker computes the signed target itself.
       if (operation === "liquidate") {
-        const result: any = simBroker.liquidate(symbol);
+        const result = simBroker.liquidate(symbol);
         if (!result.success) {
           return leanError(result.error || "Liquidation failed");
         }
@@ -781,8 +789,34 @@ export class BacktestExecutor implements INodeExecutor {
             operation: "liquidate",
             symbol,
             skipped: result.skipped === true,
-            reason: result.reason,
-            orderId: result.orderId,
+            reason: "reason" in result ? result.reason : undefined,
+            canceled_order_ids: result.canceledOrderIds,
+            order_id: "orderId" in result ? result.orderId : undefined,
+            order_status:
+              "fill" in result && result.fill
+                ? result.fill.status
+                : "status" in result
+                  ? result.status
+                  : undefined,
+            fill_price: "fill" in result ? result.fill?.fillPrice : undefined,
+            fill_quantity:
+              "fill" in result && result.fill
+                ? (result.fill.absoluteFillQuantity ??
+                  Math.abs(result.fill.fillQuantity))
+                : undefined,
+            commission:
+              "fill" in result ? (result.fill?.orderFee?.value ?? 0) : 0,
+            slippage: "fill" in result ? (result.fill?.slippage ?? 0) : 0,
+            market_data_symbol:
+              "fill" in result ? result.fill?.marketDataSymbol : undefined,
+            market_data_age_ms:
+              "fill" in result ? result.fill?.marketDataAgeMs : undefined,
+            used_fill_forward_data:
+              "fill" in result ? result.fill?.usedFillForwardData : undefined,
+            reference_price:
+              "fill" in result ? result.fill?.referencePrice : undefined,
+            rejection_reason:
+              "fill" in result ? result.fill?.rejectionReason : undefined,
             cash: simBroker.getCash(),
             positions: simBroker.getPositions(),
             pending_orders: simBroker.getOpenOrders(),
@@ -866,13 +900,18 @@ export class BacktestExecutor implements INodeExecutor {
 
       const tradeResult = this._tradeResults.get(node.id)!;
       tradeResult.data.order_id = orderResult.orderId;
-      tradeResult.data.order_status = fill ? "filled" : orderResult.status;
+      tradeResult.data.order_status = fill?.status ?? orderResult.status;
       tradeResult.data.fill_price = fill?.fillPrice;
       tradeResult.data.fill_quantity = fill
         ? (fill.absoluteFillQuantity ?? Math.abs(fill.fillQuantity))
         : undefined;
       tradeResult.data.commission = fill?.orderFee?.value ?? 0;
       tradeResult.data.slippage = fill?.slippage ?? 0;
+      tradeResult.data.market_data_symbol = fill?.marketDataSymbol;
+      tradeResult.data.market_data_age_ms = fill?.marketDataAgeMs;
+      tradeResult.data.used_fill_forward_data = fill?.usedFillForwardData;
+      tradeResult.data.reference_price = fill?.referencePrice;
+      tradeResult.data.rejection_reason = fill?.rejectionReason;
       tradeResult.data.symbol = symbol;
       tradeResult.data.side = side;
       tradeResult.data.quantity = quantity;

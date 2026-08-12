@@ -15,6 +15,7 @@ import {
   Bar,
   Order,
   OrderRequest,
+  OrderResult,
   OrderEvent,
   OrderTicket,
   Position,
@@ -468,8 +469,12 @@ export class SimBroker {
     if (typeof envelopeOrSymbol === "string") {
       this.legacyOnBarCalls++;
       const bar = legacyBar as Bar;
-      const symbolBearingBar = bar as Bar & { symbol?: unknown; Symbol?: unknown };
-      const embeddedSymbol = symbolBearingBar?.symbol ?? symbolBearingBar?.Symbol;
+      const symbolBearingBar = bar as Bar & {
+        symbol?: unknown;
+        Symbol?: unknown;
+      };
+      const embeddedSymbol =
+        symbolBearingBar?.symbol ?? symbolBearingBar?.Symbol;
       if (embeddedSymbol !== undefined && embeddedSymbol !== envelopeOrSymbol) {
         this.legacySymbolMismatches++;
         const message = `Legacy onBar symbol mismatch: argument ${envelopeOrSymbol} does not match bar symbol ${String(embeddedSymbol)}`;
@@ -493,7 +498,9 @@ export class SimBroker {
       const warningKey = `${envelope.symbol}:${validationError}`;
       if (!this.envelopeWarnings.has(warningKey)) {
         this.envelopeWarnings.add(warningKey);
-        console.warn(`[SimBroker] Ignoring invalid market envelope: ${validationError}`);
+        console.warn(
+          `[SimBroker] Ignoring invalid market envelope: ${validationError}`,
+        );
       }
       return [];
     }
@@ -574,10 +581,7 @@ export class SimBroker {
    * Submits a market order for -(holdingQty + signed pending market qty),
    * so in-flight market orders are neutralized rather than double-counted.
    */
-  liquidate(
-    symbol: string,
-    tag = "Liquidate",
-  ): LiquidationResult {
+  liquidate(symbol: string, tag = "Liquidate"): LiquidationResult {
     const canceledOrderIds: string[] = [];
     if (this.liquidationLocks.has(symbol)) {
       return {
@@ -613,7 +617,8 @@ export class SimBroker {
         if (normalizeOrderType(ticket.order.orderType) !== "market") continue;
         const remaining = ticket.order.quantity - ticket.quantityFilled;
         if (remaining <= 0) continue;
-        pendingMarketQty += ticket.order.side === "sell" ? -remaining : remaining;
+        pendingMarketQty +=
+          ticket.order.side === "sell" ? -remaining : remaining;
       }
 
       const target = -(holdingQty + pendingMarketQty);
@@ -655,7 +660,6 @@ export class SimBroker {
       this.liquidationLocks.delete(symbol);
     }
   }
-
 
   recordEquitySnapshot(timestamp: string | number): void {
     const positionsValue = this.positionsValue;
@@ -852,9 +856,7 @@ export class SimBroker {
     const event: OrderEvent = {
       orderId: order.id,
       symbol: order.symbol,
-      utcTime: new Date(
-        context.eventTimestamp ?? Date.now(),
-      ).toISOString(),
+      utcTime: new Date(context.eventTimestamp ?? Date.now()).toISOString(),
       status: "rejected",
       side: order.side,
       fillPrice: 0,
@@ -968,7 +970,6 @@ export class SimBroker {
 
     return event;
   }
-
 
   private applyFill(
     order: Order,
@@ -1193,8 +1194,7 @@ export class SimBroker {
   private reserveBuyingPower(order: Order): void {
     const reservation = this.computeReservation(order);
     this.state.reservationsByOrderId[order.id] = reservation;
-    this.state.reservedRateByOrderId[order.id] =
-      reservation / order.quantity;
+    this.state.reservedRateByOrderId[order.id] = reservation / order.quantity;
     this.recomputeReservedCash();
   }
 

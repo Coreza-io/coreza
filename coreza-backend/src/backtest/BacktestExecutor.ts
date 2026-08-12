@@ -38,6 +38,7 @@ import { parseBar, parsePrices, toPercent } from "../utils/barParser";
 import { formatPositionWithPnlPercent } from "../utils/portfolioHelpers";
 
 import { BacktestSessionManager, MultiBarEvent } from "./session";
+import { toMarketBarEnvelope } from "./simBroker/marketEnvelope";
 
 interface DiscoveredIndicator {
   nodeId: string;
@@ -1119,7 +1120,8 @@ export class BacktestExecutor implements INodeExecutor {
         if (prices && Object.keys(prices).length > 0) {
           simBroker.updateAllPositionsMTM(prices);
         } else if (currentBar && symbol) {
-          simBroker.onBar(symbol, currentBar);
+          const mtmEnvelope = toMarketBarEnvelope(symbol, params.current_bar);
+          if (mtmEnvelope) simBroker.onBar(mtmEnvelope);
         }
       }
 

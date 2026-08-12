@@ -35,6 +35,7 @@ import { LiveTradeRepository } from "../../repositories/LiveTradeRepository";
 import { createLogger } from "../../utils/logger";
 import { BrokerExecutor } from "./BrokerExecutor";
 import { BROKER_CAPABILITIES } from "../../brokers/capabilities";
+import { toMarketBarEnvelope } from "../../backtest/simBroker/marketEnvelope";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
 const TERMINAL_ORDER_STATUSES = new Set([
@@ -309,7 +310,8 @@ export class PortfolioExecutor implements INodeExecutor {
       if (prices && Object.keys(prices).length > 0) {
         simBroker.updateAllPositionsMTM(prices);
       } else if (currentBar && symbol) {
-        simBroker.onBar(symbol, currentBar);
+        const mtmEnvelope = toMarketBarEnvelope(symbol, params.currentBar);
+        if (mtmEnvelope) simBroker.onBar(mtmEnvelope);
       }
     }
 

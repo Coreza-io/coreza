@@ -1,36 +1,44 @@
-# Remove the dead "Current Bar Data" field from the Backtest Trade node
+# Backtest Portfolio node: drop `current_bar` / `prices` pricing injection
 
-## Finding (verified)
+## Analysis (verified in code)
 
-`current_bar` is **not used** by the Backtest Trade node's `place_order` path:
+**SimBroker already marks positions to market on every bar, for every symbol.**
+`simBroker/index.ts` line 574, at the end of `onBar()`: `this.updatePositionMTM(symbol, bar.close)` — and line 969 does the same on each fill. `BacktestSession` feeds one envelope per symbol per timestamp (`alignMultiSymbolBars` fill-forwards symbols that have no new bar), so by the time any Portfolio node runs on that bar, `position.currentPrice`, `marketValue`, and `unrealizedPnl` are already current.
 
-- `coreza-backend/src/backtest/BacktestExecutor.ts` lines 833-846: the old `current_bar` parse block is commented out and replaced by the note "market data is symbol-scoped inside SimBroker; callers must NOT inject a bar for pricing (that was the cross-symbol pricing defect)". The subsequent `simBroker.placeOrder({...})` call passes only symbol, side, order type, quantity, limit/stop price.
-- The `liquidate` branch of the same executor also never reads `params.current_bar`.
-- `coreza-backend/src/routes/backtest.ts` lines 225 and 256 still destructure `current_bar` from the body and forward it into `values`, where nothing consumes it.
-- The only real consumer is `update_mtm`, on a different node: `BacktestExecutor.ts` lines 1170-1196 (`parseBar(params.current_bar)` / `toMarketBarEnvelope`), reached through `src/nodes/BacktestPortfolio.json` line 52 and `/portfolio` (`routes/portfolio.ts` line 59).
+**What the Portfolio node does today is therefore redundant — and unsafe.**
+`BacktestExecutor.executeBacktestPortfolio` (lines 1169-1186) reads `params.current_bar` / `params.prices` and, before any read operation (`get_portfolio`, `get_position`, `update_mtm`, `get_equity`), does one of:
 
-So the field in `src/nodes/BacktestTrade.json` (lines 167-180) is a leftover from the pre-symbol-scoped pricing design. Leaving it invites users to inject a bar for pricing — exactly the cross-symbol defect that was fixed — and it renders under `place_order`, which is the operation where it is most misleading.
+- `simBroker.updateAllPositionsMTM(prices)` — overwrites marks from a user-supplied price map, with no symbol or staleness validation.
+- `simBroker.onBar(toMarketBarEnvelope(symbol, params.current_bar))` — this is the serious one. It does not merely re-price: `onBar` mutates that symbol's `SymbolMarketState` (`latestRealBar`, `previousRealBar`, `latestEventTimestamp`), **and runs the pending-ticket fill loop for the symbol**. A user-pasted or stale bar wired into a read node can fill resting limit/stop orders out of band, off a bar the session never emitted, and corrupt the causality state that `isCausallyEligible` and `classifyMarketData` depend on. The envelope is built with no `eventTimestamp`, so it also rewinds/advances the symbol clock to the pasted bar's own time.
+
+This is the same defect class that was just removed from the Backtest Trade node ("callers must NOT inject a bar for pricing"). The Portfolio node is the remaining hole.
+
+**`update_mtm` is already a no-op.** `portfolioUpdateMTM` (lines 1290-1302) only validates that `prices` or `symbol + current_bar` was supplied and then returns `portfolioGetAll(simBroker)` — the comment says "MTM was already applied in the main dispatch path". Remove the injection and the operation is exactly `get_portfolio`.
+
+Conclusion: neither `current_bar` nor `prices` is needed on the Portfolio node any more.
 
 ## Change
 
-1. `src/nodes/BacktestTrade.json`
-   - Delete the `current_bar` field object (lines 167-180) including the trailing comma handling on the preceding `stop_price` field.
-   - Reduce `size.height` from 360 to about 320 to match the shorter form.
-2. `coreza-backend/src/routes/backtest.ts` (`POST /trade`)
-   - Drop `current_bar` from the request destructure (line 225) and from the `values` object (line 256). No validation change — it was always optional and unused.
-
-## Explicitly unchanged
-
-- `src/nodes/BacktestPortfolio.json` keeps its `current_bar` field — `update_mtm` genuinely needs it.
-- `routes/portfolio.ts` and the `update_mtm` branch of `BacktestExecutor.ts` are untouched.
-- No change to `SimBroker` pricing: it continues to price from the symbol's own market state fed via `onBar`.
+1. `src/nodes/BacktestPortfolio.json`
+   - Delete the `current_bar` field (lines 51-63).
+   - Remove the `update_mtm` option from the `operation` select (line 32) and drop `"update_mtm"` from the `symbol` field's `displayOptions.show.operation` (line 47), leaving `["get_position"]`.
+   - Update the node `description` to drop "and update".
+   - Reduce `size.height` from 320 to about 260.
+2. `coreza-backend/src/backtest/BacktestExecutor.ts`
+   - In `executeBacktestPortfolio`: delete `const currentBar = parseBar(params.current_bar)`, `const prices = parsePrices(params.prices)`, and the whole pre-read MTM injection block (lines 1169-1186). Keep `symbol`.
+   - Delete the `case "update_mtm"` branch and the `portfolioUpdateMTM` method.
+   - Drop the now-unused `parseBar` / `parsePrices` imports if nothing else in the file uses them (`parseBar` is likely still used elsewhere — check before removing).
+3. `coreza-backend/src/routes/backtest.ts` (`POST /backtest/portfolio`, lines 316-327)
+   - Stop destructuring and forwarding `current_bar` and `prices`; pass `{ backtest_id, operation, symbol }`.
+4. `coreza-backend/src/routes/portfolio.ts`
+   - Leave `current_bar` in the zod schema and `update_mtm` in `portfolioOperationSchema` alone: that route serves the **live/broker** `Portfolio` node backed by `PortfolioManager`, which has no bar stream and genuinely needs an external price for MTM. This change is backtest-only.
 
 ## Backward compatibility
 
-Existing saved workflows may still hold a `current_bar` value on a Backtest Trade node. Because the field disappears from the node definition, the visibility-aware serializer stops persisting it and the backend ignores it if still sent, so old workflows keep running with no migration.
+Saved workflows may still hold `current_bar`/`prices` values or `operation: "update_mtm"` on a Backtest Portfolio node. Removing the field stops it being serialized going forward, and the backend ignores unknown keys. A saved `update_mtm` would fall through to `Unknown portfolio operation` — to avoid breaking existing workflows, keep a silent alias in the switch: map `"update_mtm"` to `portfolioGetAll` without any validation or injection.
 
 ## Verification
 
-- Open a workflow with a Backtest Trade node: `place_order` shows Symbol / Side / Quantity / Order Type / Limit / Stop only; `liquidate` shows Symbol only.
-- Run a backtest that places market and limit orders and confirm fills, `market_data_symbol`, and `market_data_age_ms` in the node output are unchanged from before the edit.
-- Confirm the Backtest Portfolio node's `update_mtm` still accepts and applies `current_bar`.
+- Run a multi-symbol backtest with an open position and read `get_portfolio` / `get_position` mid-run: `current_price`, `market_value`, and `unrealized_pnl` must match the current bar's close with no `current_bar` wired in.
+- Place a resting limit order, then execute a Portfolio read on the same bar: the order must stay pending (previously an injected bar could fill it).
+- Confirm the live Portfolio node's `update_mtm` on `/portfolio` still works unchanged.

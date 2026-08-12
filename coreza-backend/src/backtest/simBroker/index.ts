@@ -15,7 +15,6 @@ import {
   Bar,
   Order,
   OrderRequest,
-  OrderResult,
   OrderEvent,
   OrderTicket,
   Position,
@@ -30,6 +29,7 @@ import {
   SymbolMarketState,
   ResolvedMarketContext,
   MarketDataEligibility,
+  LiquidationResult,
   RejectionReason,
   normalizeOrderType,
   isTicketPending,
@@ -100,6 +100,8 @@ export class SimBroker {
   /** Migration telemetry for the legacy onBar(symbol, bar) adapter. */
   private legacyOnBarCalls = 0;
   private legacySetCurrentBarCalls = 0;
+  private legacySymbolMismatches = 0;
+  private envelopeWarnings = new Set<string>();
   private liquidationLocks = new Set<string>();
   private submissionSequence = 0;
   private orderIdCounter = 0;
@@ -375,6 +377,65 @@ export class SimBroker {
 
   // ============== BAR PROCESSING ==============
 
+  private validateEnvelope(envelope: MarketBarEnvelope): string | null {
+    if (typeof envelope.symbol !== "string" || envelope.symbol.trim() === "") {
+      return "symbol must be non-empty";
+    }
+    if (!envelope.bar) return `${envelope.symbol}: bar is required`;
+    for (const field of ["open", "high", "low", "close"] as const) {
+      if (!Number.isFinite(envelope.bar[field])) {
+        return `${envelope.symbol}: bar.${field} must be finite`;
+      }
+    }
+    if (
+      !Number.isFinite(envelope.sourceTimestamp) ||
+      envelope.sourceTimestamp <= 0
+    ) {
+      return `${envelope.symbol}: sourceTimestamp must be finite and positive`;
+    }
+    if (
+      !Number.isFinite(envelope.eventTimestamp) ||
+      envelope.eventTimestamp <= 0
+    ) {
+      return `${envelope.symbol}: eventTimestamp must be finite and positive`;
+    }
+    if (envelope.sourceTimestamp > envelope.eventTimestamp) {
+      return `${envelope.symbol}: sourceTimestamp exceeds eventTimestamp`;
+    }
+    const latestEventTimestamp = this.marketDataBySymbol.get(
+      envelope.symbol,
+    )?.latestEventTimestamp;
+    if (
+      latestEventTimestamp !== undefined &&
+      envelope.eventTimestamp < latestEventTimestamp
+    ) {
+      return `${envelope.symbol}: eventTimestamp precedes latest event timestamp`;
+    }
+    return null;
+  }
+
+  private isCausallyEligible(
+    order: Order,
+    context: ResolvedMarketContext,
+  ): boolean {
+    const orderType = normalizeOrderType(order.orderType);
+    const requiresLaterObservation =
+      this.config.fillModel === "next_bar_open" ||
+      orderType === "limit" ||
+      orderType === "stop_market" ||
+      orderType === "stop_limit";
+    if (!requiresLaterObservation) return context.bar !== null;
+    if (
+      context.sourceTimestamp === undefined ||
+      order.submittedAt === undefined
+    ) {
+      return false;
+    }
+    return this.config.sameBarPolicy === "allow-close"
+      ? context.sourceTimestamp >= order.submittedAt
+      : context.sourceTimestamp > order.submittedAt;
+  }
+
   /**
    * @deprecated Global current-bar pricing is removed. Callers must not
    * select market data; SimBroker resolves it per order symbol.
@@ -407,6 +468,14 @@ export class SimBroker {
     if (typeof envelopeOrSymbol === "string") {
       this.legacyOnBarCalls++;
       const bar = legacyBar as Bar;
+      const symbolBearingBar = bar as Bar & { symbol?: unknown; Symbol?: unknown };
+      const embeddedSymbol = symbolBearingBar?.symbol ?? symbolBearingBar?.Symbol;
+      if (embeddedSymbol !== undefined && embeddedSymbol !== envelopeOrSymbol) {
+        this.legacySymbolMismatches++;
+        const message = `Legacy onBar symbol mismatch: argument ${envelopeOrSymbol} does not match bar symbol ${String(embeddedSymbol)}`;
+        if (process.env.NODE_ENV === "test") throw new Error(message);
+        console.warn(`[SimBroker] ${message}`);
+      }
       envelope = {
         symbol: envelopeOrSymbol,
         bar,
@@ -416,6 +485,17 @@ export class SimBroker {
       };
     } else {
       envelope = envelopeOrSymbol;
+    }
+
+    const validationError = this.validateEnvelope(envelope);
+    if (validationError) {
+      if (process.env.NODE_ENV === "test") throw new Error(validationError);
+      const warningKey = `${envelope.symbol}:${validationError}`;
+      if (!this.envelopeWarnings.has(warningKey)) {
+        this.envelopeWarnings.add(warningKey);
+        console.warn(`[SimBroker] Ignoring invalid market envelope: ${validationError}`);
+      }
+      return [];
     }
 
     const { symbol, bar } = envelope;
@@ -462,13 +542,7 @@ export class SimBroker {
           continue;
         }
 
-        // Look-ahead protection: never fill an order with data it preceded.
-        if (
-          order.submittedAt !== undefined &&
-          envelope.eventTimestamp < order.submittedAt
-        ) {
-          continue;
-        }
+        if (!this.isCausallyEligible(order, context)) continue;
 
         const eligibility = this.classifyMarketData(order, context);
         if (!eligibility.eligible) {
@@ -481,13 +555,7 @@ export class SimBroker {
           continue;
         }
 
-        const event = this.fillTicket(
-          ticket,
-          context,
-          remainingQuantity,
-          bar,
-          marketState.previousRealBar?.bar,
-        );
+        const event = this.fillTicket(ticket, context, remainingQuantity);
         if (event) events.push(event);
       }
       if (pendingTickets.size === 0) {
@@ -509,43 +577,80 @@ export class SimBroker {
   liquidate(
     symbol: string,
     tag = "Liquidate",
-  ): OrderResult | { success: true; skipped: true; reason: string } {
+  ): LiquidationResult {
+    const canceledOrderIds: string[] = [];
     if (this.liquidationLocks.has(symbol)) {
-      return { success: true, skipped: true, reason: "LIQUIDATION_IN_FLIGHT" };
-    }
-
-    const holdingQty = this.state.positions[symbol]?.quantity ?? 0;
-
-    // Signed remainder of all pending MARKET orders for this symbol
-    let pendingMarketQty = 0;
-    const pendingIds = this.pendingTicketsBySymbol.get(symbol);
-    if (pendingIds) {
-      for (const id of pendingIds) {
-        const ticket = this.state.tickets[id];
-        if (!ticket || !isTicketPending(ticket)) continue;
-        const type = normalizeOrderType(ticket.order.orderType);
-        if (type !== "market") continue;
-        const remaining = ticket.order.quantity - ticket.quantityFilled;
-        if (remaining <= 0) continue;
-        pendingMarketQty +=
-          ticket.order.side === "sell" ? -remaining : remaining;
-      }
-    }
-
-    const target = -(holdingQty + pendingMarketQty);
-    if (target === 0) {
-      return { success: true, skipped: true, reason: "NOTHING_TO_LIQUIDATE" };
+      return {
+        success: true,
+        skipped: true,
+        reason: "LIQUIDATION_IN_FLIGHT",
+        canceledOrderIds,
+      };
     }
 
     this.liquidationLocks.add(symbol);
     try {
-      return this.placeOrder({
+      const pendingIds = this.pendingTicketsBySymbol.get(symbol);
+      if (pendingIds) {
+        for (const id of [...pendingIds]) {
+          const ticket = this.state.tickets[id];
+          if (
+            ticket &&
+            isTicketPending(ticket) &&
+            normalizeOrderType(ticket.order.orderType) !== "market" &&
+            this.cancelOrder(id)
+          ) {
+            canceledOrderIds.push(id);
+          }
+        }
+      }
+
+      const holdingQty = this.state.positions[symbol]?.quantity ?? 0;
+      let pendingMarketQty = 0;
+      for (const id of this.pendingTicketsBySymbol.get(symbol) ?? []) {
+        const ticket = this.state.tickets[id];
+        if (!ticket || !isTicketPending(ticket)) continue;
+        if (normalizeOrderType(ticket.order.orderType) !== "market") continue;
+        const remaining = ticket.order.quantity - ticket.quantityFilled;
+        if (remaining <= 0) continue;
+        pendingMarketQty += ticket.order.side === "sell" ? -remaining : remaining;
+      }
+
+      const target = -(holdingQty + pendingMarketQty);
+      if (target === 0) {
+        return {
+          success: true,
+          skipped: true,
+          reason: "NOTHING_TO_LIQUIDATE",
+          canceledOrderIds,
+        };
+      }
+
+      const result = this.placeOrder({
         symbol,
         side: target > 0 ? "buy" : "sell",
         orderType: "market",
         quantity: Math.abs(target),
         tag,
       });
+      if (!result.success || !result.orderId || !result.status) {
+        return {
+          success: false,
+          error: result.error ?? "Liquidation order was not accepted",
+          canceledOrderIds,
+        };
+      }
+      const fill =
+        this.config.fillModel === "immediate"
+          ? this.tryFillImmediateOrder(result.orderId)
+          : null;
+      return {
+        success: true,
+        orderId: result.orderId,
+        status: result.status,
+        canceledOrderIds,
+        fill,
+      };
     } finally {
       this.liquidationLocks.delete(symbol);
     }
@@ -613,6 +718,7 @@ export class SimBroker {
     }
 
     const context = this.resolveMarketContext(order);
+    if (!this.isCausallyEligible(order, context)) return null;
     const eligibility = this.classifyMarketData(order, context);
     if (!eligibility.eligible) {
       return this.applyEligibilityTransition(ticket, context, eligibility);
@@ -774,10 +880,8 @@ export class SimBroker {
     ticket: OrderTicket,
     context: ResolvedMarketContext,
     remainingQuantity: number,
-    overrideBar?: Bar,
-    overridePreviousBar?: Bar,
   ): OrderEvent | null {
-    const bar = overrideBar ?? context.bar;
+    const bar = context.bar;
     if (!bar) return null;
 
     const order = ticket.order;
@@ -785,7 +889,7 @@ export class SimBroker {
     const fillResult = this.fillModel.fill(
       fillOrder,
       bar,
-      overridePreviousBar ?? context.previousBar ?? undefined,
+      context.previousBar ?? undefined,
     );
 
     if (
@@ -1535,10 +1639,12 @@ export class SimBroker {
   getLegacyMarketDataCallCounts(): {
     onBar: number;
     setCurrentBar: number;
+    legacySymbolMismatches: number;
   } {
     return {
       onBar: this.legacyOnBarCalls,
       setCurrentBar: this.legacySetCurrentBarCalls,
+      legacySymbolMismatches: this.legacySymbolMismatches,
     };
   }
 

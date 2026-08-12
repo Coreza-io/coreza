@@ -11,6 +11,7 @@
 import {
   SimBrokerConfig,
   DEFAULT_SIM_BROKER_CONFIG,
+  DEFAULT_MARKET_DATA_POLICY,
   Bar,
   Order,
   OrderRequest,
@@ -25,6 +26,11 @@ import {
   IFillModel,
   ISlippageModel,
   IFeeModel,
+  MarketBarEnvelope,
+  SymbolMarketState,
+  ResolvedMarketContext,
+  MarketDataEligibility,
+  RejectionReason,
   normalizeOrderType,
   isTicketPending,
 } from "./interfaces";

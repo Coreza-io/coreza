@@ -1,126 +1,116 @@
-# Rolling Window: make manual route and live executor byte-for-byte in sync
+# Cross-Symbol Liquidation and Symbol-Scoped Backtest Pricing
 
-Goal: one shared key builder (already in place), one shared payload builder, one shared input parser, identical validation messages, and bounded memory in both paths.
+Implements the attached design note. The core rule: **every simulated fill, validation, reservation, and price estimate must resolve market data from `order.symbol`** — never from whichever symbol's bar the workflow happened to be processing.
 
-## Current divergences (confirmed by reading both files)
+## Confirmed current-state defect (verified in code)
 
-| # | Divergence | Manual route (`src/routes/storage.ts`) | Live executor (`IndicatorsExecutor.executeRollingWindowNode`) |
-| --- | --- | --- | --- |
-| D1 | `set` payload | no `latest` field | includes `latest` |
-| D2 | Unresolved `{{ }}` in `candle_data` | explicit 400 "Candle data contains unresolved template references..." | silently parses to `[]`, reports "No bars provided in candle_data" |
-| D3 | `window` value | copied array `[...window.values()]` | live `window.values()` reference on a mutated per-node cached object |
-| D4 | Buffer lifetime | module-level `Map`, never evicted (leaks per `workflowSessionId`) | `DataContext`, discarded with the run; key cache cleared on `runId` change |
-| D5 | `set` meta | `{ key, barsAdded, timestamp }` | no `meta` at all |
+- `SimBroker.setCurrentBar(bar)` writes `this.state.currentBar` with no symbol identity (`simBroker/index.ts:342`).
+- `BacktestExecutor` BacktestTrade path calls `simBroker.setCurrentBar(currentBar)` with the *triggering* node's `current_bar`, then `simBroker.tryFillImmediateOrder(orderResult.orderId, currentBar)` (`BacktestExecutor.ts:778, 803`). An OTLK order raised during an AAPL event is filled at the AAPL close.
+- `tryFillImmediateOrder(orderId, bar)` passes the caller's bar straight into `fillModel.fill()`, `slippageModel.getSlippage()`, `applyFill(..., bar.timestamp)` (`index.ts:499-560`) with no `bar.symbol` check.
+- `estimateOrderPrice` falls back to `this.state.currentBar?.close` (`index.ts:869`), so validation and buying-power reservation can also be priced off the wrong symbol.
+- `alignMultiSymbolBars` fill-forwards with `{ ...previousBar, time: timestamp }` (`BacktestExecutor.ts:672`), erasing the true observation time — staleness is invisible.
+- `symbolStates` currently holds only `{ previousBar, lastFillPrice }`; there is no `latestBar` and no freshness metadata.
+- No liquidation API exists on SimBroker or in `BacktestTrade.json` / `Portfolio.json`.
 
-Already in sync and to be left alone: key construction via `buildExecutionScopedKey({ scope: "rolling_window", parts: [symbol, timeframe] })` -> `RedisKeys.rollingWindow`, symbol upper-case/trim, timeframe trim, `"_"` fallbacks on `set`, size clamp `1..500`, size-change reallocation, `get` validation order (symbol then timeframe), and `found: false` returning success.
+## Phase 1 — Symbol-scoped market state (correctness core)
 
-## Step 1 — Shared module: `coreza-backend/src/engine/rollingWindowShared.ts` (new)
-
-Pure, dependency-free (imports only `RollingWindow`), so both the Express route and the executor can use it.
+### 1.1 `coreza-backend/src/backtest/simBroker/interfaces.ts`
+- Add:
 
 ```ts
-export interface RollingWindowPayload {
-  window: unknown[];
-  count: number;
-  size: number;
-  isReady: boolean;
-  remaining: number;
-  latest: unknown | null;
-  found: boolean;
+export interface MarketBarEnvelope {
+  symbol: string;
+  bar: Bar;
+  eventTimestamp: number;   // aligned backtest clock (epoch ms)
+  sourceTimestamp: number;  // when the bar actually occurred
+  isFillForward: boolean;
+  barIndex?: number;
 }
 
-export const ROLLING_WINDOW_ERRORS = {
-  symbolRequired: "symbol is required for get operation",
-  timeframeRequired: "timeframe is required for get operation",
-  unresolvedTemplate:
-    "Candle data contains unresolved template references. Execute the upstream node first.",
-  invalidCandleData: "Invalid candle_data format",
-  noBars: "No bars provided in candle_data",
-} as const;
-
-export function normalizeSymbol(v: unknown): string;   // String(v ?? "").trim().toUpperCase()
-export function normalizeTimeframe(v: unknown): string; // String(v ?? "").trim()
-export function clampWindowSize(v: unknown): number;    // min(max(parseInt||20,1),500)
-
-export function buildRollingWindowPayload(
-  window: RollingWindow<unknown> | undefined,
-): RollingWindowPayload;
-// present -> { window: [...values()], count, size, isReady, remaining: size-count,
-//              latest: count > 0 ? at(0) : null, found: true }
-// absent  -> { window: [], count: 0, size: 0, isReady: false, remaining: 0,
-//              latest: null, found: false }
-
-export type ParsedBars =
-  | { ok: true; bars: unknown[] }
-  | { ok: false; error: string };
-
-export function parseCandleData(raw: unknown): ParsedBars;
-// array -> ok; non-array object -> [obj]; string containing "{{" -> unresolvedTemplate;
-// string -> JSON.parse, non-JSON -> invalidCandleData; anything else -> [];
-// empty result -> { ok:false, error: noBars }
-```
-
-Fixes D1, D2, D3 (the payload always copies), and guarantees identical error strings.
-
-## Step 2 — `coreza-backend/src/routes/storage.ts`
-
-- Import the shared helpers; delete the local normalization, size clamp, and inline `candle_data` branching.
-- `get`: unchanged control flow, but the response `data` becomes `buildRollingWindowPayload(rollingWindows.get(storeKey))`.
-- `set`: `const parsed = parseCandleData(candle_data); if (!parsed.ok) return res.status(400).json({ success:false, error: parsed.error });` then add bars and respond with `data: buildRollingWindowPayload(window)` and `meta: { key: storeKey, barsAdded: parsed.bars.length, timestamp: new Date().toISOString() }` (D5 stays route-only; `meta` is additive and harmless).
-- **Eviction (D4).** Replace the bare `Map` with a bounded, session-indexed store in the same file:
-
-```ts
-const MAX_SESSIONS = 200;
-const rollingWindows = new Map<string, RollingWindow<unknown>>();      // storeKey -> window
-const sessionKeys = new Map<string, Set<string>>();                    // sessionId -> storeKeys (insertion-ordered = LRU)
-
-function touchSession(sessionId: string, storeKey: string) {
-  let keys = sessionKeys.get(sessionId);
-  if (keys) sessionKeys.delete(sessionId);            // re-insert to move to MRU end
-  else keys = new Set<string>();
-  keys.add(storeKey);
-  sessionKeys.set(sessionId, keys);
-  while (sessionKeys.size > MAX_SESSIONS) {
-    const [oldest, oldestKeys] = sessionKeys.entries().next().value;
-    for (const k of oldestKeys) rollingWindows.delete(k);
-    sessionKeys.delete(oldest);
-  }
+export interface SymbolMarketState {
+  latestBar: Bar | null;
+  previousBar: Bar | null;
+  lastFillPrice?: number;
+  sourceTimestamp?: number;
+  eventTimestamp?: number;
+  isFillForward: boolean;
 }
 ```
 
-  `touchSession(workflowSessionId, storeKey)` is called on every `set` (after the window is created) and on every `get` (to keep an actively read session from being evicted). A new `workflowSessionId` from a manual session reset naturally starts empty, matching the live path's per-run `DataContext`.
+- Add to `SimBrokerConfig` (+ defaults): `maxStaleBars: number` (default `0` = no limit) and `staleDataPolicy: "allow" | "pend" | "reject"` (default `"allow"`, so Phase 1 changes no outcomes).
+- Deprecate `PortfolioState.currentBar` (mark `@deprecated`, stop reading it; removed in Phase 3).
 
-## Step 3 — `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts`
-
-- Import the shared helpers; replace the inline `.trim().toUpperCase()`, size clamp, and the `rawCandle` if/else chain.
-- `get`: `data: buildRollingWindowPayload(window)`, `meta: { key: storeKey, timeframe: requestedTimeframe }` unchanged.
-- `set`: `const parsed = parseCandleData(params.candle_data); if (!parsed.ok) return toNodeResult(createErrorOutput(parsed.error, { nodeId: node.id, nodeName: "RollingWindow", category: this.category }));` — this is what surfaces the unresolved-template message live (D2).
-- Keep the `rollingWindowResults` per-node cached object for allocation reuse, but fill it from the shared payload so `window` is a snapshot copy (D3):
+### 1.2 `coreza-backend/src/backtest/simBroker/index.ts`
+- Replace the `symbolStates` map value with `SymbolMarketState`; `getSymbolState(symbol)` seeds `{ latestBar: null, previousBar: null, isFillForward: false }`.
+- `onBar(symbol, bar, meta?)` — accepts either the legacy `(symbol, bar)` shape or a `MarketBarEnvelope`. It must:
+  - throw `Symbol/bar mismatch` when an envelope's `symbol` differs from the argument,
+  - shift `previousBar = latestBar` and set `latestBar = bar` **before** processing pending tickets for that symbol (so the fill model sees `(latestBar, previousBar)` exactly as it does today via the existing `symbolState.previousBar` argument — verify the next-bar-open model still receives the same pair),
+  - record `sourceTimestamp`, `eventTimestamp`, `isFillForward`,
+  - stop writing `this.state.currentBar`.
+- `tryFillImmediateOrder(orderId)` — drop the `bar` parameter (keep an overload accepting a bar for one release, ignoring it and logging once). New body resolves the bar itself:
 
 ```ts
-const payload = buildRollingWindowPayload(window);
-const rw = this.rollingWindowResults.get(node.id) ?? { success: true, data: {} as any };
-Object.assign(rw.data, payload);
-this.rollingWindowResults.set(node.id, rw);
-return rw;
+const market = this.getSymbolState(order.symbol);
+if (!market.latestBar) return null;               // NO_MARKET_DATA -> stays pending
+if (!this.isMarketDataEligible(market)) return null; // staleness policy
+// fill/slippage/commission/applyFill all use market.latestBar
 ```
 
-- Leave `rollingWindowKeyCache` (keyed `symbol:timeframe`) and its clearing on `runId` change untouched.
+- New private `isMarketDataEligible(state)`: `true` when `maxStaleBars === 0`, otherwise compares `eventTimestamp - sourceTimestamp` against `maxStaleBars` intervals; `"reject"` policy surfaces the reason on the order (`rejectReason: "STALE_MARKET_DATA"`), `"pend"` returns false and leaves the ticket pending.
+- `estimateOrderPrice(order)` — remove the `this.state.currentBar?.close` fallback; chain becomes `explicit order price -> latestBar.close -> previousBar.close -> lastFillPrice -> 0`. `validateOrder` already rejects with `No market price available for <symbol>`, which now correctly fires for an unpriced symbol instead of silently borrowing the trigger symbol's price.
+- Delete `setCurrentBar` (kept as a deprecated no-op in Phase 1, removed in Phase 3).
+- `updatePositionMTM` continues to use the order-symbol bar close from `onBar` — unchanged.
 
-## Step 4 — Behavioural contract after the change
+### 1.3 `coreza-backend/src/backtest/BacktestExecutor.ts` (BacktestTrade path)
+- Remove the `simBroker.setCurrentBar(currentBar)` call.
+- Call `simBroker.tryFillImmediateOrder(orderResult.orderId)` with no bar, and no longer gate it on `currentBar` being present — an immediate order for a symbol with cached data must fill even when the triggering node passed no bar.
+- Keep parsing `current_bar` for node output/back-compat only.
+- Include `symbol`, `fill_price`, and a new `market_data_symbol` in the node result so a mismatch is visible in run history.
 
-For the same `{ operation, symbol, timeframe, size, candle_data }`, manual and live return:
-- identical `data` keys and values (`window, count, size, isReady, remaining, latest, found`),
-- identical error text for missing symbol, missing timeframe, unresolved template, unparseable candle data, and zero bars,
-- differing only in transport shape: route = HTTP 400 + `{ success:false, error }` and an extra `meta.barsAdded`/`meta.timestamp`; executor = normalized `createErrorOutput` node result.
+### 1.4 Regression tests (write these first, they should fail before 1.1-1.3)
+`coreza-backend/tests/simBrokerCrossSymbolPricing.test.ts`:
+- AAPL close 220 / OTLK close 1.40; feed both via `onBar`, then submit an OTLK market sell while "processing" AAPL -> fill price derives from 1.40, never 220.
+- Only AAPL cached; submit an OTLK order -> rejected at validation (`No market price available for OTLK`) or left pending, never filled.
+- Limit/stop orders keep their existing pricing behaviour (no regression in `simBroker` buying-power tests).
 
-## Step 5 — Tests
+## Phase 2 — Fill-forward and staleness visibility
 
-- `coreza-backend/tests/rollingWindowOperations.test.ts`
-  - `set` now returns `latest`.
-  - String `candle_data` containing `{{ ... }}` returns the unresolved-template error (not "No bars").
-  - Mutating a returned `window` array, or a later `set`, does not alter a previously returned payload.
-- New `coreza-backend/tests/rollingWindowSharedParity.test.ts`
-  - Drives `parseCandleData` / `buildRollingWindowPayload` directly across array, single object, JSON string, template string, garbage string, and empty input.
-  - Asserts `Object.keys(payload)` for the found and not-found cases match between a route-style call and an executor-style call.
-- New route test for eviction: writing `MAX_SESSIONS + 1` sessions drops the oldest session's keys while the newest still reads `found: true`.
+### 2.1 `BacktestExecutor.alignMultiSymbolBars`
+- When copying a prior bar forward, emit `{ ...previousBar, time: timestamp, sourceTime: previousBar.time, isFillForward: true }` and mark real bars with `sourceTime: bar.time, isFillForward: false`.
+- `MultiBarEvent` gains an optional `fillForwardSymbols: string[]` for observability.
+
+### 2.2 Bar plumbing
+- `coreza-backend/src/backtest/session/BacktestSession.ts` (three `onBar` call sites at ~440, ~509, ~626) and `PortfolioExecutor.ts:312` build a `MarketBarEnvelope` from the aligned bar (`sourceTimestamp = bar.sourceTime ?? bar.time`, `eventTimestamp = event timestamp`, `isFillForward`) and pass it to `onBar`. Call sites without that metadata fall back to `sourceTimestamp = bar.time, isFillForward: false`, so behaviour is unchanged.
+- Fills carry the flag through: `OrderEvent` gains optional `usedFillForwardData?: boolean` and `marketDataAgeMs?: number`, populated from the symbol's market state at fill time and persisted with the trade record for audit.
+
+## Phase 3 — Liquidation API
+
+### 3.1 `SimBroker.liquidate(symbol, options)`
+```ts
+liquidate(symbol: string, options?: { orderType?: OrderType; limitPrice?: number; tag?: string })
+  : { success: boolean; orderId?: string; error?: string; quantity?: number; side?: "buy"|"sell" }
+```
+- Reads `this.state.positions[symbol]`; no position or `quantity === 0` -> `{ success: false, error: "NO_POSITION" }`.
+- Computes side from the sign of the position quantity (long -> sell, short -> buy) and quantity `Math.abs(qty)`, **minus** any already-pending closing quantity for that symbol (scan `pendingTicketsBySymbol`) so a duplicate liquidation cannot over-close; when the remainder is 0 -> `{ success: false, error: "LIQUIDATION_ALREADY_PENDING" }`.
+- Submits through the normal `placeOrder` path — no special pricing, no direct position mutation — then, under the immediate model, calls `tryFillImmediateOrder(orderId)` (which resolves the *liquidated* symbol's bar).
+- Position `averagePrice` is never used as a fill price.
+
+### 3.2 Node surface
+- `src/nodes/BacktestTrade.json`: add an `operation` select (`place_order` default, `liquidate`); when `liquidate` is selected, show `symbol`, `order_type`, `tag` and hide `side` / `quantity` / prices via `displayOptions`.
+- `BacktestExecutor`'s BacktestTrade handler branches on `operation === "liquidate"` and delegates to `simBroker.liquidate(...)`, returning the same result shape (`order_id`, `fill_price`, `fill_quantity`, `cash`, `positions`, `total_equity`).
+- Cleanup in the same PR: delete the deprecated `setCurrentBar` no-op, the `tryFillImmediateOrder(orderId, bar)` overload, and `PortfolioState.currentBar`.
+
+### 3.3 Tests — `coreza-backend/tests/simBrokerLiquidation.test.ts`
+- Long 500 -> sell 500; short -500 -> buy 500.
+- Cross-symbol: liquidate OTLK during an AAPL event -> fill at the OTLK price.
+- Duplicate liquidation before fill -> second rejected, no over-close.
+- Partial fill -> ticket stays pending with the correct remaining quantity, second liquidation call still blocked.
+- No position -> `NO_POSITION`, no order created.
+
+## Out of scope (explicit)
+- Quote/bid-ask-aware fill models.
+- Any change to live/broker pricing — broker-reported `avgFillPrice` stays authoritative.
+- Signal generation, indicators, or using a user RollingWindow as execution authority.
+
+## Definition of done
+The price used for any simulated order is a function of the order symbol's cached market data and the configured reality models, and `SimBroker` exposes no API that can accept another symbol's bar as pricing input.

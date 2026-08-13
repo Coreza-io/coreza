@@ -40,8 +40,9 @@
       "key": "symbol",
       "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. BTCUSDT",
-      "required": true,
+      "placeholder": "e.g. BTCUSDT (leave blank for all positions)",
+      "description": "For Get Position, leave blank to return all positions.",
+      "required": false,
       "displayOptions": {
         "show": {
           "operation": ["get_position", "update_mtm"]

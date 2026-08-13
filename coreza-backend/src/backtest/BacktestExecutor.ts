@@ -32,19 +32,19 @@ import {
   leanSuccess,
   leanError,
 } from "../utils/normalizeOutput";
-import { discoverIndicators } from "../nodes/executors/InitializeIndicatorsExecutor";
+import { discoverWarmupNodes } from "../nodes/executors/InitializeIndicatorsExecutor";
+import type { DiscoveredWarmupNode } from "../nodes/executors/InitializeIndicatorsExecutor";
 import { buildIndicatorKey, IndicatorStateManager } from "../engine";
 import { parseBar, parsePrices, toPercent } from "../utils/barParser";
 import { formatPositionWithPnlPercent } from "../utils/portfolioHelpers";
 
 import { BacktestSessionManager, MultiBarEvent } from "./session";
 import { toMarketBarEnvelope } from "./simBroker/marketEnvelope";
-
-interface DiscoveredIndicator {
-  nodeId: string;
-  type: string;
-  params: Record<string, any>;
-}
+import {
+  resolveRollingWindowSeedSize,
+  seedRollingWindows,
+} from "./rollingWindowSeed";
+import type { RollingWindowSeed } from "./rollingWindowSeed";
 
 type AlignedMultiBarEvent = MultiBarEvent & {
   /** Symbols whose bars were copied from their latest real observation. */
@@ -242,9 +242,6 @@ export class BacktestExecutor implements INodeExecutor {
 
       const userId = context?.userId;
       const workflowId = context?.workflowId;
-      const runId = context.runId || context.workflowSessionId || workflowId;
-      //const runId = context?.runId || workflowId;
-
       if (!userId || !workflowId) {
         return toNodeResult(
           createErrorOutput("User ID and Workflow ID required for backtest"),
@@ -315,6 +312,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const backtestId = (backtest as { id: string }).id;
+      const effectiveRunId = context?.runId || `manual-${backtestId}`;
       BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
@@ -381,13 +379,31 @@ export class BacktestExecutor implements INodeExecutor {
       const allNodes: WorkflowNode[] = context?.nodes || [];
       const allEdges: WorkflowEdge[] = context?.edges || [];
 
-      let discoveredIndicators: DiscoveredIndicator[] = [];
+      let warmupNodes: DiscoveredWarmupNode[] = [];
       if (allNodes.length > 0) {
-        discoveredIndicators = discoverIndicators(
+        warmupNodes = discoverWarmupNodes(
           node.id,
           allNodes,
           allEdges,
-        ) as DiscoveredIndicator[];
+        );
+      }
+      const discoveredIndicators = warmupNodes.filter(
+        (candidate) => candidate.type !== "rollingwindow",
+      );
+      const discoveredWindows = warmupNodes.filter(
+        (candidate) =>
+          candidate.type === "rollingwindow" &&
+          String(candidate.params?.operation ?? "set").toLowerCase() === "set",
+      );
+      let rollingWindowSize: number | undefined;
+      try {
+        rollingWindowSize = resolveRollingWindowSeedSize(discoveredWindows);
+      } catch (error) {
+        return toNodeResult(
+          createErrorOutput(
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
       }
 
       const warmupBarsBySymbol = new Map<string, any[]>();
@@ -427,7 +443,7 @@ export class BacktestExecutor implements INodeExecutor {
             const key = buildIndicatorKey(
               userId,
               workflowId,
-              runId,
+              effectiveRunId,
               currentSymbol,
               interval,
               ind.nodeId,
@@ -443,6 +459,19 @@ export class BacktestExecutor implements INodeExecutor {
           }
         }
       }
+
+      const rollingWindowSeed: RollingWindowSeed | undefined =
+        rollingWindowSize === undefined
+          ? undefined
+          : { size: rollingWindowSize, interval, symbols, warmupBarsBySymbol };
+      const rollingWindowsInitialized = rollingWindowSeed
+        ? seedRollingWindows({
+            ...rollingWindowSeed,
+            userId,
+            workflowId,
+            executionId: effectiveRunId,
+          })
+        : 0;
 
       const {
         nodes: strategyNodes,
@@ -479,8 +508,6 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       const isManual = !context?.runId;
-      const effectiveRunId = context?.runId || `manual-${backtestId}`;
-
       const session = BacktestSessionManager.getInstance().createSession(
         backtestId,
         workflowId,
@@ -493,6 +520,7 @@ export class BacktestExecutor implements INodeExecutor {
         barEvents,
         effectiveRunId,
         stateManager,
+        rollingWindowSeed,
       );
 
       if (
@@ -546,6 +574,10 @@ export class BacktestExecutor implements INodeExecutor {
             warmup_bars_used: warmupPeriod,
             bars_emitted: barEvents.length,
             indicators_initialized: discoveredIndicators.length,
+            rolling_windows_initialized: rollingWindowsInitialized,
+            ...(rollingWindowsInitialized > 0
+              ? { rolling_window_size: rollingWindowSize }
+              : {}),
           },
           status: !isManual && barEvents.length > 0 ? "running" : "ready",
         }),

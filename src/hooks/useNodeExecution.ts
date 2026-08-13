@@ -732,6 +732,12 @@ export function useNodeExecution({
           };
         }
 
+        // A pinned output must never be overwritten by an error
+        if (overrideOutput !== null && overrideOutput !== undefined) {
+          setIsSending(false);
+          return;
+        }
+
         setLastOutput(errOutput);
         data.output = errOutput;
 

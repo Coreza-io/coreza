@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { useNodeId } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import { createWaitingNewsOutput } from "@/utils/newsStream";
 import { isNewsStreamNode } from "@/utils/brokerRegistry";
 import {
@@ -25,6 +25,7 @@ interface UseNodeOutputProps {
 interface UseNodeOutputReturn {
   displayedData: any;
   isPinned: boolean;
+  pinnedOutput: any | null;
   handlePanelSave: (newData: any) => void;
   handlePanelPinToggle: () => void;
   setLastOutput: (output: any) => void;
@@ -42,6 +43,7 @@ export function useNodeOutput({
   const nodeId = useNodeId();
   const executionStore = useExecutionStore();
   const version = useExecutionStoreVersion();
+  const { setNodes } = useReactFlow();
   const isNews = isNewsStreamNode(definition);
 
   const [lastOutput, setLastOutput] = useState<any>(() => {
@@ -60,27 +62,77 @@ export function useNodeOutput({
     }
     return { status: "pending" };
   });
-  const [overrideOutput, setOverrideOutput] = useState<any | null>(null);
+  const [overrideOutput, setOverrideOutput] = useState<any | null>(
+    data.pinnedOutput ?? null,
+  );
+
+  /**
+   * Propagate a pinned value everywhere consumers read node output from:
+   * node data (for the workflow executor), the execution store (for
+   * downstream input panels) and React Flow node data.
+   */
+  const syncPinnedOutput = useCallback(
+    (value: any | null) => {
+      data.pinnedOutput = value ?? undefined;
+      if (value !== null) {
+        data.output = value;
+      }
+
+      if (!nodeId) return;
+
+      if (value !== null) {
+        executionStore.setNodeData(nodeId, { output: value });
+      }
+
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  pinnedOutput: value ?? undefined,
+                  ...(value !== null ? { output: value } : {}),
+                },
+              }
+            : n,
+        ),
+      );
+    },
+    [data, nodeId, executionStore, setNodes],
+  );
 
   // Save output data (pins it)
   const handlePanelSave = useCallback(
     (newData: any) => {
       setOverrideOutput(newData);
       setLastOutput(newData);
-      data.output = newData;
+      syncPinnedOutput(newData);
     },
-    [data]
+    [syncPinnedOutput]
   );
 
   // Toggle output pinning
   const handlePanelPinToggle = useCallback(() => {
     if (overrideOutput == null) {
       setOverrideOutput(lastOutput);
+      syncPinnedOutput(lastOutput);
     } else {
       setOverrideOutput(null);
-      setLastOutput(data.output || {});
+      syncPinnedOutput(null);
+      const storeOutput = nodeId
+        ? executionStore.getNodeData(nodeId)?.output
+        : undefined;
+      setLastOutput(storeOutput ?? data.output ?? {});
     }
-  }, [overrideOutput, lastOutput, data]);
+  }, [
+    overrideOutput,
+    lastOutput,
+    data,
+    nodeId,
+    executionStore,
+    syncPinnedOutput,
+  ]);
 
   const displayedData = overrideOutput !== null ? overrideOutput : lastOutput;
   const isPinned = overrideOutput !== null;
@@ -119,6 +171,7 @@ export function useNodeOutput({
   return {
     displayedData,
     isPinned,
+    pinnedOutput: overrideOutput,
     handlePanelSave,
     handlePanelPinToggle,
     setLastOutput,

@@ -2,77 +2,64 @@
 
 ## Goal
 
-`BacktestInit` already discovers downstream indicators and warms them from the warmup slice of bars. Reuse that exact discovery + per-symbol loop for `RollingWindow` instead of adding a parallel mechanism, so the change is as small as possible.
+`BacktestInit` already discovers downstream indicators and warms them from the warmup slice of bars. Reuse that same discovery + per-symbol loop to also seed downstream `RollingWindow` buffers, so the first strategy bar sees a ready window.
 
-## Why RollingWindow can't be a plain indicator
+## Why RollingWindow can't just be an indicator
 
-Verified: `IndicatorStateManager.warmUp()` calls `IndicatorService.createIncrementalUpdater(indicator, params)` and stores an `IndicatorState` (Redis/RAM). `RollingWindow` has no incremental updater, and at run time `IndicatorsExecutor.executeRollingWindowNode` reads its window from the shared `DataContext` under `buildExecutionScopedKey({ userId, workflowId, runId, scope: "rolling_window", parts: [symbol, timeframe] })` — not from indicator state.
+`IndicatorStateManager.warmUp()` calls `IndicatorService.createIncrementalUpdater(indicator, params)` and stores an `IndicatorState`. `RollingWindow` has no updater; at run time `IndicatorsExecutor.executeRollingWindowNode` reads its window from the shared `DataContext` under `buildExecutionScopedKey({ userId, workflowId, runId, scope: "rolling_window", parts: [symbol, timeframe] })`. So we reuse the *discovery walk and warmup loop*; only the "how to warm" leaf differs.
 
-So simply adding `ROLLINGWINDOW` to `INDICATOR_NAMES` would throw in `warmUp` and seed nothing. What we can reuse is the **discovery walk and the warmup loop**; only the "how to warm" leaf differs.
+## Review of the suggestions — what is adopted
 
-## Changes (two files, ~30 lines)
+Adopted: (1) generic `discoverWarmupNodes` + filter so the live `InitializeIndicators` output is genuinely unchanged; (2) seed only `operation: "set"` nodes; (3) explicit handling of conflicting sizes; (4) reseeding after `BacktestSession.reset()` — verified: `reset()` calls `this.run.destroy()`, which calls `DataContextManager.destroyContext(executionId)`, so a seeded window would be lost; (5) unique-window count via a key set; (6) aligning indicator keys onto `effectiveRunId`.
+
+Adjusted: for conflicting sizes, take the **minimal-change option** — reject the configuration with a clear error, not add `nodeId` to the key. The node-agnostic `symbol:timeframe` key is a deliberate design decision (locked in by `tests/executionKey.rollingWindow.test.ts`, which asserts two node ids produce the same key) and lets `get` on one node read what another node's `set` wrote. Adding `nodeId` would break that contract.
+
+Deferred: LEAN-style pre-start warmup bars (fetch extra bars before `start_date` instead of consuming the selected range). That is a real semantic gap, but it changes the historical fetch, the bar-alignment, and every existing backtest's results — a separate change, not folded in here.
+
+## Changes
 
 ### 1. `src/nodes/executors/InitializeIndicatorsExecutor.ts`
 
-- Add `export const WARMUP_NODE_NAMES = new Set([...INDICATOR_NAMES, "ROLLINGWINDOW"]);`
-- In `discoverIndicators`'s BFS, match against `WARMUP_NODE_NAMES` instead of `INDICATOR_NAMES`. The returned shape (`{ nodeId, type, params }`) is unchanged; a rolling-window node comes back with `type: "rollingwindow"`.
-- In the executor's own warmup loop (the live `InitializeIndicators` node), skip entries with `type === "rollingwindow"` so nothing changes there for now — only the backtest path seeds windows.
-
-No new discovery function, no BFS duplication, no refactor of `discoverIndicators`.
+- Rename the BFS to `discoverWarmupNodes(startNodeId, allNodes, allEdges)`, matching `INDICATOR_NAMES` **or** `ROLLINGWINDOW`, returning the same `{ nodeId, type, params }` shape (`type: "rollingwindow"` for windows).
+- Keep `discoverIndicators` as a thin wrapper: `discoverWarmupNodes(...).filter(n => n.type !== "rollingwindow")`. Every existing caller (the executor itself, `POST /indicators/initialize`) keeps identical behavior — same `indicators_total`, same "No indicator nodes found downstream" path for a rolling-window-only workflow.
 
 ### 2. `src/backtest/BacktestExecutor.ts`
 
-- Move the existing `const effectiveRunId = context?.runId || \`manual-${backtestId}\`;` (line 482) above the warmup block so seeding uses the same run id the session's `DataContext` uses. `isManual` stays where it is.
-- Resolve the context once before the loop: `const dataContext = DataContextManager.getInstance().getContext({ executionId: effectiveRunId, workflowId, userId })`.
-- Inside the existing `for (const currentSymbol of symbols) { for (const ind of discoveredIndicators) { ... } }` loop, add one branch at the top of the inner body:
+- **Run id alignment:** move `const effectiveRunId = context?.runId || \`manual-${backtestId}\`;` above the warmup block and use it for the indicator keys too, replacing the current `runId` (`context.runId || context.workflowSessionId || workflowId`). This fixes the existing manual-mode mismatch where indicator state was written under a key the session never reads. Same value then flows into the rolling-window keys, `BacktestSessionManager.createSession`, and the `DataContext`.
+- Call `discoverWarmupNodes(...)` once; split into `discoveredIndicators` (unchanged use) and `discoveredWindows = warmupNodes.filter(n => n.type === "rollingwindow" && String(n.params?.operation ?? "set").toLowerCase() === "set")`. `get` nodes are never seeded — they only consume what a `set` node defines.
+- **Size conflict check**, before seeding: group `discoveredWindows` by their resolved size (`clampWindowSize(params.size)`). Since all windows for a `symbol:timeframe` share one key, more than one distinct size is a configuration error — return `createErrorOutput("Conflicting RollingWindow sizes (…) for the same symbol/timeframe. All RollingWindow set nodes in a backtest must declare the same Window Size.")`. This matches runtime behavior, where `IndicatorsExecutor` recreates the window whenever `window.size !== size`.
+- **Seeding helper** — add a module-level `export function seedRollingWindows({ userId, workflowId, executionId, symbols, interval, size, warmupBarsBySymbol }): number` in `BacktestExecutor.ts` (or a small `backtest/rollingWindowSeed.ts` so `BacktestSession` can import it without a cycle). It:
+  - resolves `DataContextManager.getInstance().getContext({ executionId, workflowId, userId })`,
+  - for each symbol with non-empty warmup bars: builds the key with `buildExecutionScopedKey({ userId, workflowId, runId: executionId, scope: "rolling_window", parts: [normalizeSymbol(symbol), normalizeTimeframe(interval)] })`, creates `new RollingWindow(size)`, adds the last `size` warmup bars in order, `dataContext.setData(key, window)`, and records the key in a `Set`,
+  - returns `keys.size`.
+- Call it after the indicator warmup loop and before `BacktestSessionManager.createSession(...)`, and pass the seed inputs (`size`, `warmupBarsBySymbol`, `symbols`, `interval`) into `createSession` so the session can replay them.
 
-```ts
-if (ind.type === "rollingwindow") {
-  const size = clampWindowSize(ind.params?.size);
-  const key = buildExecutionScopedKey({
-    userId, workflowId, runId: effectiveRunId,
-    scope: "rolling_window",
-    parts: [normalizeSymbol(currentSymbol), normalizeTimeframe(interval)],
-  });
-  let window = dataContext.getDataByKey(key) as RollingWindow<unknown> | undefined;
-  if (!window || window.size !== size) {
-    window = new RollingWindow(size);
-    dataContext.setData(key, window);
-  }
-  for (const bar of symbolWarmupBars.slice(-size)) window.add(bar);
-  rollingWindowsInitialized++;
-  continue;
-}
-```
+### 3. `src/backtest/session/BacktestSession.ts` — survive `reset()`
 
-Because two rolling-window nodes on the same `symbol:timeframe` share one key, the existing-window reuse above keeps the first-created size; declaring different sizes on the same symbol/timeframe logs a warning and keeps the larger by creating with the max size seen for that key.
+- Accept an optional `rollingWindowSeed` payload (`{ size, interval, symbols, warmupBarsBySymbol }`) in `createSession` / the constructor and keep it on the instance.
+- In `reset()`, after `this.run = this.plan.createRun({...})` (which recreates the `DataContext`), call `seedRollingWindows({ ...seed, userId, workflowId, executionId: this.executionId })` again. Skip when no seed was provided.
+- Same for `cleanup()`: nothing to do — the session is going away.
 
-- Guard: the surrounding block currently requires `stateManager && discoveredIndicators.length > 0` — keep it; a rolling-window-only workflow still satisfies `discoveredIndicators.length > 0` since discovery now includes it.
+### 4. Output + docs
 
-### 3. Output + docs
-
-- Add `rolling_windows_initialized` to the `BacktestInit` success `data` block.
-- `src/nodes/RollingWindow.json`: note in the `size` description that in backtests the window is pre-seeded from `BacktestInit` warmup bars.
-
-## Review corrections (verified against the code)
-
-- Node name matches: `src/nodes/RollingWindow.json` has `"name": "RollingWindow"`, so the BFS's `toUpperCase().replace(/\s+/g,"")` normalization yields `ROLLINGWINDOW`. Good.
-- `BacktestExecutor.ts` needs four new imports it doesn't have today: `RollingWindow` (`../engine/RollingWindow`), `clampWindowSize` / `normalizeSymbol` / `normalizeTimeframe` (`../engine/rollingWindowHelpers`), `buildExecutionScopedKey` (`../utils/executionKey`), and `DataContextManager` (`../engine/DataContext`). Import `rollingWindowHelpers` by its exact filename — do not use a `../engine/rollingWindow` path (the earlier case-collision bug).
-- Two other callers of `discoverIndicators` now see rolling-window entries and must skip `type === "rollingwindow"`: `InitializeIndicatorsExecutor.execute`'s warmup loop **and** the `POST /indicators/initialize` route that drives it (it just forwards to the executor, so the executor-side skip covers both). Also skip them in the `indicators_total` count so the live node's report stays accurate.
-- `ind.params.size` can be an unresolved `{{ ... }}` template; `clampWindowSize` already falls back to 20 via `parseInt(...) || 20`, so no crash — just log a warning when the raw value isn't numeric.
-- `RollingWindow`'s constructor throws for `size <= 0` or `> 500`; `clampWindowSize` clamps to 1..500 first, so construction is safe.
-- Shape check to confirm during implementation: seeding pushes raw historical bars, while the runtime `set` path pushes bars through `parseCandleData`. Confirm both produce the same bar object shape (they both come from the broker's bar format) so a seeded window and a live-appended window are homogeneous.
+- `BacktestInit` success `data` gains `rolling_windows_initialized` (the `Set` size — unique `symbol:timeframe` windows, not attempts) and `rolling_window_size` when at least one window was seeded.
+- `src/nodes/RollingWindow.json`: in the `size` description, note that in a backtest the window is pre-seeded from `BacktestInit`'s warmup bars, and that all `set` nodes sharing a symbol/timeframe must declare the same size.
 
 ## Technical notes
 
+- New imports needed in `BacktestExecutor.ts`: `RollingWindow` (`../engine/RollingWindow`), `clampWindowSize` / `normalizeSymbol` / `normalizeTimeframe` (`../engine/rollingWindowHelpers` — use that exact filename, not `../engine/rollingWindow`, to avoid the earlier case-collision bug), `buildExecutionScopedKey` (`../utils/executionKey`), `DataContextManager` (`../engine/DataContext`).
 - Symbol/timeframe come from the backtest config (`symbols`, `interval`), exactly like the indicator keys — the node's own fields are usually unresolved templates at init time.
-- Seeding writes a real `RollingWindow` instance, which is what the executor's `set` path expects and what `get` reads. `dataContext.setData` returns a `DataRef`; ignore the return value.
-- Observation (not part of this change): the indicator warmup keys use `runId` (line 430) while the session runs under `effectiveRunId`; in manual mode those differ. Rolling-window seeding uses `effectiveRunId` so it matches run time. Say the word if you want the indicator keys aligned too.
+- `clampWindowSize` falls back to 20 for an unresolved `{{ ... }}` size; log a warning when the raw value isn't numeric so a template mistake is visible.
+- `RollingWindow`'s constructor throws outside 1..500; `clampWindowSize` clamps first, so construction is safe.
+- Confirm during implementation that seeded raw historical bars have the same shape as bars pushed at run time through `parseCandleData`, so a seeded window and a live-appended window stay homogeneous.
 - No change to `IndicatorsExecutor`, the `/storage/rolling-window` manual route, or the key format.
 
 ## Verification
 
 - Backtest with `BacktestInit -> ... -> RollingWindow (set)` and `size < warmup_period`: first bar returns `isReady: true`, `count: size`.
 - `RollingWindow (get)` for the same symbol/timeframe returns the seeded window before any `set` runs.
-- Multi-symbol run: `rolling_windows_initialized` equals the symbol count.
-- Live `InitializeIndicators` node output is unchanged (rolling-window entries skipped).
+- Multi-symbol run: `rolling_windows_initialized` equals the symbol count; running twice does not double-count.
+- Reset then re-run: the window is ready again on the first bar (regression test for the `DataContext` destroy).
+- Two `set` nodes with different sizes on the same symbol/timeframe: `BacktestInit` fails with the configuration error.
+- A `get`-only workflow seeds nothing and reports `rolling_windows_initialized: 0`.
+- Live `InitializeIndicators` node and `POST /indicators/initialize` output byte-identical to today for an indicator-only workflow, and still report "No indicator nodes found downstream" for a rolling-window-only workflow.

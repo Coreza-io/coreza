@@ -24,6 +24,9 @@ export interface IndicatorState {
   previousValue: number | Record<string, any> | null;
   lastBarTime: string;
   warmupCompleted: boolean;
+  isReady: boolean;
+  observedBars: number;
+  requiredWarmupBars: number;
   internalState: Record<string, any>;
   lastWarmupTs?: number | null;
 }
@@ -48,7 +51,45 @@ export function serializeParams(params: Record<string, any>): string {
     .join(":");
 }
 
-const STATE_VERSION = 2;
+const STATE_VERSION = 3;
+
+function positivePeriod(value: unknown, fallback = 1): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : fallback;
+}
+
+function requiredWarmupBars(
+  indicator: string,
+  params: Record<string, any>,
+): number {
+  switch (indicator.trim().toLowerCase()) {
+    case "rsi":
+      return positivePeriod(params.period ?? params.window) + 1;
+    case "ema":
+    case "sma":
+    case "bollinger bands":
+      return positivePeriod(params.period ?? params.window);
+    case "macd":
+      return (
+        positivePeriod(params.slowPeriod) + positivePeriod(params.signalPeriod)
+      );
+    case "adx":
+      return positivePeriod(params.period) * 2;
+    case "stochastic":
+      return positivePeriod(params.k_period) + positivePeriod(params.d_period) - 1;
+    case "ichimoku":
+      return positivePeriod(params.leading_span_b_period);
+    case "volume-oscillator":
+    case "volumeoscillator":
+      return positivePeriod(params.long_period);
+    case "support-resistance":
+    case "support & resistance":
+    case "supportresistance":
+      return positivePeriod(params.lookback_period);
+    default:
+      return 1;
+  }
+}
 
 export class IndicatorStateManager {
   private readonly l1Cache = new Map<string, IndicatorState>();
@@ -144,6 +185,7 @@ export class IndicatorStateManager {
     const updater = this.getUpdater(indicator, params);
     const warmup = updater.warmUp(bars);
 
+    const minimumBars = requiredWarmupBars(indicator, params);
     const state: IndicatorState = {
       version: STATE_VERSION,
       indicator,
@@ -152,10 +194,16 @@ export class IndicatorStateManager {
       previousValue: null,
       lastBarTime: warmup.lastBarTime,
       warmupCompleted: true,
+      isReady:
+        bars.length >= minimumBars &&
+        warmup.value !== null &&
+        warmup.value !== undefined,
       internalState: warmup.internalState,
+      observedBars: bars.length,
+      requiredWarmupBars: minimumBars,
       lastWarmupTs:
         bars.length > 0
-          ? ((bars[bars.length - 1]?.time as number | undefined) ?? null)
+          ? ((bars[bars.length - 1]?.time ?? bars[bars.length - 1]?.t) as number | undefined) ?? null
           : null,
     };
 
@@ -173,7 +221,7 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const barTs = bar?.time;
+    const barTs = bar?.time ?? bar?.t;
     if (typeof barTs === "number" && existing.lastWarmupTs != null) {
       if (barTs <= existing.lastWarmupTs) {
         return existing;
@@ -191,7 +239,16 @@ export class IndicatorStateManager {
 
     existing.previousValue = existing.currentValue;
     existing.currentValue = value;
-    existing.lastBarTime = String(bar?.time ?? "");
+    existing.observedBars = (existing.observedBars ?? 0) + 1;
+    existing.requiredWarmupBars ??= requiredWarmupBars(
+      existing.indicator,
+      existing.params,
+    );
+    existing.isReady =
+      existing.observedBars >= existing.requiredWarmupBars &&
+      value !== null &&
+      value !== undefined;
+    existing.lastBarTime = String(bar?.time ?? bar?.t ?? "");
     existing.internalState = internalState;
 
     if (sync) {
@@ -208,7 +265,7 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const barTs = bar?.t;
+    const barTs = bar?.time ?? bar?.t;
     if (typeof barTs === "number" && existing.lastWarmupTs != null) {
       if (barTs <= existing.lastWarmupTs) {
         return existing;
@@ -225,7 +282,16 @@ export class IndicatorStateManager {
 
     existing.previousValue = existing.currentValue;
     existing.currentValue = value;
-    existing.lastBarTime = String(bar?.time ?? "");
+    existing.observedBars = (existing.observedBars ?? 0) + 1;
+    existing.requiredWarmupBars ??= requiredWarmupBars(
+      existing.indicator,
+      existing.params,
+    );
+    existing.isReady =
+      existing.observedBars >= existing.requiredWarmupBars &&
+      value !== null &&
+      value !== undefined;
+    existing.lastBarTime = String(bar?.time ?? bar?.t ?? "");
     existing.internalState = internalState;
     this.dirtyKeys.add(key);
     return existing;
@@ -263,6 +329,27 @@ export class IndicatorStateManager {
       }
     } while (cursor !== "0");
 
+    return removed;
+  }
+
+  async clearExecutionScope(
+    userId: string,
+    workflowId: string,
+    executionId: string,
+  ): Promise<number> {
+    const redis = getRedisCache();
+    const pattern = `indicator:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:*`;
+    let cursor = "0";
+    let removed = 0;
+    do {
+      const [next, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 200);
+      cursor = next;
+      if (keys.length > 0) {
+        removed += keys.length;
+        await redis.del(...keys);
+      }
+    } while (cursor !== "0");
+    this.clearL1Cache();
     return removed;
   }
 }

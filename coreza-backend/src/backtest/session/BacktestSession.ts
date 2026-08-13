@@ -13,6 +13,16 @@ import { createWorkflowLifecycleService } from "../../workflow/lifecycleServiceI
 import { toMarketBarEnvelope } from "../simBroker/marketEnvelope";
 import { seedRollingWindows } from "../rollingWindowSeed";
 import type { RollingWindowSeed } from "../rollingWindowSeed";
+import { buildIndicatorKey } from "../../engine";
+import type { DiscoveredWarmupNode } from "../../nodes/executors/InitializeIndicatorsExecutor";
+import type { HistoricalBar } from "../../marketData/HistoricalDataService";
+
+export interface IndicatorWarmupSeed {
+  interval: string;
+  symbols: string[];
+  warmupBarsBySymbol: Map<string, HistoricalBar[]>;
+  indicators: DiscoveredWarmupNode[];
+}
 
 export interface BarEvent {
   bar: any;
@@ -102,6 +112,7 @@ export class BacktestSession {
     private readonly executionId: string,
     stateManager?: IndicatorStateManager,
     private readonly rollingWindowSeed?: RollingWindowSeed,
+    private readonly indicatorWarmupSeed?: IndicatorWarmupSeed,
   ) {
     this.abortController = new AbortController();
     this.stateManager = stateManager;
@@ -865,6 +876,33 @@ export class BacktestSession {
       executionMode: "backtest",
     });
     if (this.stateManager) {
+      await this.stateManager.clearExecutionScope(
+        this.userId,
+        this.workflowId,
+        this.executionId,
+      );
+      if (this.indicatorWarmupSeed) {
+        for (const symbol of this.indicatorWarmupSeed.symbols) {
+          const bars = this.indicatorWarmupSeed.warmupBarsBySymbol.get(symbol) ?? [];
+          for (const indicator of this.indicatorWarmupSeed.indicators) {
+            const { candle_data, ...params } = indicator.params;
+            await this.stateManager.warmUp(
+              buildIndicatorKey(
+                this.userId,
+                this.workflowId,
+                this.executionId,
+                symbol,
+                this.indicatorWarmupSeed.interval,
+                indicator.nodeId,
+              ),
+              indicator.type,
+              { ...params, symbol, timeframe: this.indicatorWarmupSeed.interval },
+              bars,
+              false,
+            );
+          }
+        }
+      }
       this.run.setIndicatorStateManager(this.stateManager);
     }
     if (this.rollingWindowSeed) {
@@ -877,7 +915,6 @@ export class BacktestSession {
     }
     this.run.clearNodeTiming();
     this.run.pinResults(this.backtestInitResult);
-    this.stateManager?.clearL1Cache();
     this.tryCompilePlan();
 
     await this.reportProgress();

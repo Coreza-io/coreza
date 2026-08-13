@@ -364,10 +364,11 @@
     },
     {
       "key": "warmup_period",
-      "label": "Warmup Period",
+      "label": "Pre-Start Warm-Up (bars)",
       "type": "text",
       "placeholder": "200",
       "default": "200",
+      "description": "Number of historical bars strictly before Start Date used to initialize indicators and rolling windows. Set to 0 to disable warm-up.",
       "required": false
     },
     {

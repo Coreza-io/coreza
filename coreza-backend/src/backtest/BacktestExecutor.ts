@@ -23,7 +23,6 @@ import {
   EquityPoint,
 } from "./simBroker";
 import { OrderEvent, normalizeOrderType } from "../types/order";
-import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import { supabase } from "../config/supabase";
 import {
   createSuccessOutput,
@@ -45,6 +44,12 @@ import {
   seedRollingWindows,
 } from "./rollingWindowSeed";
 import type { RollingWindowSeed } from "./rollingWindowSeed";
+import {
+  HistoricalDataService,
+  historicalBarTimestamp,
+} from "../marketData/HistoricalDataService";
+import type { HistoricalBar } from "../marketData/HistoricalDataService";
+import { parseWarmupPeriod } from "../utils/warmupPeriod";
 
 type AlignedMultiBarEvent = MultiBarEvent & {
   /** Symbols whose bars were copied from their latest real observation. */
@@ -322,8 +327,8 @@ export class BacktestExecutor implements INodeExecutor {
       const symbol = params.symbol;
       const symbols = this.parseSymbols(params.symbols, params.symbol);
       const interval = params.interval;
-      const startDate = params.start_date;
-      const endDate = params.end_date;
+      const startDate = params.start_date || new Date().toISOString().split("T")[0];
+      const endDate = params.end_date || new Date().toISOString().split("T")[0];
       const assetType = params.asset_type;
       const feed = params.feed;
 
@@ -341,19 +346,18 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const historicalDataBySymbol = await this.fetchHistoricalBarsForSymbols(
-        broker,
-        symbols,
-        {
-          interval,
-          startDate,
-          endDate,
-          assetType,
-          feed,
-          credentialId,
-        },
-        context,
+      const warmupBarsRequested = parseWarmupPeriod(params.warmup_period);
+      const historicalDataService = new HistoricalDataService();
+      const strategyEntries = await Promise.all(
+        symbols.map(async (currentSymbol) => [
+          currentSymbol,
+          await historicalDataService.fetchRange(
+            { provider: broker, symbol: currentSymbol, interval, start: startDate, end: endDate, assetType, feed, credentialId },
+            context,
+          ),
+        ] as const),
       );
+      const historicalDataBySymbol = new Map(strategyEntries);
 
       if (historicalDataBySymbol.size === 0) {
         return toNodeResult(
@@ -368,12 +372,12 @@ export class BacktestExecutor implements INodeExecutor {
           createErrorOutput(`No historical bars returned for ${primarySymbol}`),
         );
       }
+      for (const secondarySymbol of symbols.slice(1)) {
+        if ((historicalDataBySymbol.get(secondarySymbol)?.length ?? 0) === 0) {
+          console.warn(`[BacktestExecutor] No strategy bars returned for secondary symbol ${secondarySymbol}`);
+        }
+      }
 
-      const warmupPeriodRaw = parseInt(params.warmup_period, 10) || 200;
-      const warmupPeriod = Math.min(
-        Math.max(warmupPeriodRaw, 0),
-        primaryBars.length,
-      );
       //const autoDetect = String(params.auto_detect ?? "true") === "true";
 
       const allNodes: WorkflowNode[] = context?.nodes || [];
@@ -406,33 +410,27 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const warmupBarsBySymbol = new Map<string, any[]>();
-      const remainingBarsBySymbol = new Map<string, any[]>();
-
-      for (const currentSymbol of symbols) {
-        const symbolBars = historicalDataBySymbol.get(currentSymbol) || [];
-        warmupBarsBySymbol.set(
+      const warmupEntries = await Promise.all(
+        symbols.map(async (currentSymbol) => [
           currentSymbol,
-          symbolBars.slice(0, warmupPeriod),
-        );
-        remainingBarsBySymbol.set(
-          currentSymbol,
-          symbolBars.slice(warmupPeriod),
-        );
-      }
+          await historicalDataService.fetchPreviousBars(
+            { provider: broker, symbol: currentSymbol, interval, count: warmupBarsRequested, endExclusive: startDate, assetType, feed, credentialId },
+            context,
+          ),
+        ] as const),
+      );
+      const warmupBarsBySymbol = new Map<string, HistoricalBar[]>(warmupEntries);
+      const warnings = symbols.flatMap((currentSymbol) => {
+        const available = warmupBarsBySymbol.get(currentSymbol)?.length ?? 0;
+        return available < warmupBarsRequested
+          ? [{ code: "INSUFFICIENT_WARMUP_HISTORY" as const, symbol: currentSymbol, requested: warmupBarsRequested, available, affectedNodes: warmupNodes.map((candidate) => candidate.nodeId) }]
+          : [];
+      });
 
       const stateManager = new IndicatorStateManager();
-      if (
-        stateManager &&
-        discoveredIndicators.length > 0 &&
-        Array.from(warmupBarsBySymbol.values()).some((bars) => bars.length > 0)
-      ) {
+      if (discoveredIndicators.length > 0) {
         for (const currentSymbol of symbols) {
           const symbolWarmupBars = warmupBarsBySymbol.get(currentSymbol) || [];
-          if (symbolWarmupBars.length === 0) {
-            continue;
-          }
-
           for (const ind of discoveredIndicators) {
             const { candle_data, ...restParams } = ind.params;
             const indParams = {
@@ -483,7 +481,7 @@ export class BacktestExecutor implements INodeExecutor {
       const barEvents = this.alignMultiSymbolBars(
         symbols,
         interval,
-        remainingBarsBySymbol,
+        historicalDataBySymbol,
       );
 
       // Build the BacktestInit result that downstream nodes need via templates
@@ -521,6 +519,7 @@ export class BacktestExecutor implements INodeExecutor {
         effectiveRunId,
         stateManager,
         rollingWindowSeed,
+        { interval, symbols, warmupBarsBySymbol, indicators: discoveredIndicators },
       );
 
       if (
@@ -571,10 +570,21 @@ export class BacktestExecutor implements INodeExecutor {
               (sum, bars) => sum + bars.length,
               0,
             ),
-            warmup_bars_used: warmupPeriod,
+            warmup_source: "pre_start",
+            warmup_bars_requested: warmupBarsRequested,
+            warmup_bars_used:
+              warmupBarsBySymbol.get(primarySymbol)?.length ?? 0,
+            warmup_bars_by_symbol: Object.fromEntries(
+              symbols.map((currentSymbol) => [currentSymbol, warmupBarsBySymbol.get(currentSymbol)?.length ?? 0]),
+            ),
+            first_warmup_timestamp: this.extremeTimestamp(warmupBarsBySymbol, "first"),
+            last_warmup_timestamp: this.extremeTimestamp(warmupBarsBySymbol, "last"),
+            first_strategy_timestamp: barEvents[0]?.timestamp ?? null,
             bars_emitted: barEvents.length,
             indicators_initialized: discoveredIndicators.length,
+            indicators_ready: await this.countReadyIndicators(stateManager, userId, workflowId, effectiveRunId, symbols, interval, discoveredIndicators),
             rolling_windows_initialized: rollingWindowsInitialized,
+            warnings,
             ...(rollingWindowsInitialized > 0
               ? { rolling_window_size: rollingWindowSize }
               : {}),
@@ -601,70 +611,31 @@ export class BacktestExecutor implements INodeExecutor {
     ];
   }
 
-  private async fetchHistoricalBarsForSymbols(
-    broker: string,
-    symbols: string[],
-    params: {
-      interval: string;
-      startDate: string;
-      endDate: string;
-      assetType: string;
-      feed: string;
-      credentialId: string;
-    },
-    context: any,
-  ): Promise<Map<string, any[]>> {
-    const brokerExecutor = new BrokerExecutor();
-
-    const results = await Promise.all(
-      symbols.map(async (symbol) => {
-        const brokerInput: NodeInput = {
-          operation: "get_candle",
-          symbol,
-          interval: params.interval,
-          start: params.startDate,
-          end: params.endDate,
-          asset_type: params.assetType,
-          feed: params.feed,
-          credential_id: params.credentialId,
-          limit: "50000",
-        };
-
-        const brokerNode: WorkflowNode = {
-          id: `broker:${broker}:get_candle:${symbol}`,
-          name: broker,
-          node_type: "main",
-          category: "Broker",
-          subCategory: broker,
-          values: brokerInput,
-        };
-
-        const brokerResult = await brokerExecutor.execute(
-          brokerNode,
-          brokerInput,
-          {
-            userId: context?.userId,
-            workflowId: context?.workflowId || "backtest-init",
-            runId:
-              context?.runId ||
-              context?.workflowSessionId ||
-              `backtest-${Date.now()}`,
-          },
-        );
-
-        if (!brokerResult.success) {
-          throw new Error(
-            `Failed to fetch historical data for ${symbol}: ${brokerResult.error}`,
-          );
-        }
-
-        const barSeries = brokerResult.data?.BarSeries;
-        const bars = barSeries?.[0]?.bars || [];
-        return [symbol, Array.isArray(bars) ? bars : []] as const;
-      }),
+  private extremeTimestamp(
+    barsBySymbol: Map<string, HistoricalBar[]>,
+    position: "first" | "last",
+  ): number | null {
+    const timestamps = [...barsBySymbol.values()].flatMap((bars) =>
+      bars.map(historicalBarTimestamp),
     );
+    if (timestamps.length === 0) return null;
+    return position === "first" ? Math.min(...timestamps) : Math.max(...timestamps);
+  }
 
-    return new Map(results.filter(([, bars]) => bars.length > 0));
+  private async countReadyIndicators(
+    manager: IndicatorStateManager,
+    userId: string,
+    workflowId: string,
+    executionId: string,
+    symbols: string[],
+    interval: string,
+    indicators: DiscoveredWarmupNode[],
+  ): Promise<number> {
+    const readiness = await Promise.all(symbols.flatMap((currentSymbol) => indicators.map(async (indicator) => {
+      const key = buildIndicatorKey(userId, workflowId, executionId, currentSymbol, interval, indicator.nodeId);
+      return (await manager.getState(key))?.isReady === true;
+    })));
+    return readiness.filter(Boolean).length;
   }
 
   private alignMultiSymbolBars(

@@ -91,6 +91,7 @@ function explicitRestingOrderPrice(
 }
 
 export class SimBroker {
+  private warmingUp = false;
   private backtestId: string;
   private config: SimBrokerConfig;
   private fillModel: IFillModel;
@@ -204,6 +205,7 @@ export class SimBroker {
    * Creates an immutable Order and wraps it in an OrderTicket.
    */
   placeOrder(request: OrderRequest, submittedAt?: number): OrderResult {
+    if (this.warmingUp) return { success: false, error: "ORDER_DURING_WARMUP" };
     // Validate order
     const validation = this.validateOrder(request, this.state);
     if (!validation.valid) {
@@ -251,18 +253,22 @@ export class SimBroker {
   }
 
   cancelOrder(orderId: string): boolean {
+    if (this.warmingUp) return false;
     return this.transitionPendingOrder(orderId, "canceled");
   }
 
   rejectOrder(orderId: string): boolean {
+    if (this.warmingUp) return false;
     return this.transitionPendingOrder(orderId, "rejected");
   }
 
   expireOrder(orderId: string): boolean {
+    if (this.warmingUp) return false;
     return this.transitionPendingOrder(orderId, "expired");
   }
 
   markOrderReplaced(orderId: string): boolean {
+    if (this.warmingUp) return false;
     return this.transitionPendingOrder(orderId, "replaced");
   }
 
@@ -458,17 +464,24 @@ export class SimBroker {
    * Updates that symbol's state, then attempts fills for its pending tickets
    * using the canonical resolved context.
    */
-  onBar(envelope: MarketBarEnvelope): OrderEvent[];
+  onBar(
+    envelope: MarketBarEnvelope,
+    options?: { warmup?: boolean },
+  ): OrderEvent[];
   /** @deprecated legacy positional signature */
   onBar(symbol: string, bar: Bar): OrderEvent[];
   onBar(
     envelopeOrSymbol: MarketBarEnvelope | string,
-    legacyBar?: Bar,
+    legacyBarOrOptions?: Bar | { warmup?: boolean },
   ): OrderEvent[] {
+    const options =
+      typeof envelopeOrSymbol === "string"
+        ? undefined
+        : (legacyBarOrOptions as { warmup?: boolean } | undefined);
     let envelope: MarketBarEnvelope;
     if (typeof envelopeOrSymbol === "string") {
       this.legacyOnBarCalls++;
-      const bar = legacyBar as Bar;
+      const bar = legacyBarOrOptions as Bar;
       const symbolBearingBar = bar as Bar & {
         symbol?: unknown;
         Symbol?: unknown;
@@ -527,6 +540,10 @@ export class SimBroker {
       };
     }
 
+    if (options?.warmup) {
+      return [];
+    }
+
     const context = this.resolveMarketContext({ symbol } as Order);
 
     // Process pending tickets for this symbol only
@@ -582,6 +599,12 @@ export class SimBroker {
    * so in-flight market orders are neutralized rather than double-counted.
    */
   liquidate(symbol: string, tag = "Liquidate"): LiquidationResult {
+    if (this.warmingUp)
+      return {
+        success: false,
+        error: "ORDER_DURING_WARMUP",
+        canceledOrderIds: [],
+      };
     const canceledOrderIds: string[] = [];
     if (this.liquidationLocks.has(symbol)) {
       return {
@@ -659,6 +682,10 @@ export class SimBroker {
     } finally {
       this.liquidationLocks.delete(symbol);
     }
+  }
+
+  setWarmingUp(warmingUp: boolean): void {
+    this.warmingUp = warmingUp;
   }
 
   recordEquitySnapshot(timestamp: string | number): void {

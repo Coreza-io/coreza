@@ -372,6 +372,18 @@
       "required": false
     },
     {
+      "key": "warmup_mode",
+      "label": "Warm-Up Mode",
+      "type": "select",
+      "options": [
+        { "id": "seed", "name": "Direct Seed (Compatibility)" },
+        { "id": "workflow_replay", "name": "Workflow Replay" }
+      ],
+      "default": "seed",
+      "description": "Replay runs pre-start bars through the strategy workflow; direct seed preserves legacy behavior.",
+      "required": false
+    },
+    {
       "key": "fill_model",
       "label": "Fill Model",
       "type": "select",

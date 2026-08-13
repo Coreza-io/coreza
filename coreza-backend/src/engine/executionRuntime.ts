@@ -16,6 +16,7 @@ import { NodeQueueManager } from "./nodeQueueManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ParameterResolver } from "./parameterResolver";
 import { ExecutionMode, NodeExecutionContext } from "./types";
+import { enforceWarmupPolicy } from "../backtest/warmup/WarmupPolicy";
 
 export type RuntimeOptions = {
   executionId: string;
@@ -32,7 +33,7 @@ export type RuntimeOptions = {
 };
 
 type ExecutionContextExtras = Partial<
-  Pick<NodeExecutionContext, "multiBarContext" | "runId">
+  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp">
 >;
 
 export abstract class BaseExecutionRuntime {
@@ -150,6 +151,7 @@ export abstract class BaseExecutionRuntime {
         abortSignal: this.options.abortSignal,
         checkCancellation: () => this.options.abortSignal?.aborted ?? false,
         executionMode: this.options.executionMode,
+        isWarmingUp: false,
         getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
         setState: (key: string, value: any) =>
           this.store.setNodeState(ctx.nodeId, key, value),
@@ -255,7 +257,10 @@ export abstract class BaseExecutionRuntime {
 
       const context = this.getExecutionContext(node.id);
       const t0 = performance.now();
-      const raw = executor.execute(node, item.input, context);
+      const warmupResult = context.isWarmingUp
+        ? enforceWarmupPolicy(node)
+        : undefined;
+      const raw = warmupResult ?? executor.execute(node, item.input, context);
 
       if (raw instanceof Promise) {
         return raw

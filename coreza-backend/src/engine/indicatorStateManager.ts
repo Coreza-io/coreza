@@ -76,7 +76,9 @@ function requiredWarmupBars(
     case "adx":
       return positivePeriod(params.period) * 2;
     case "stochastic":
-      return positivePeriod(params.k_period) + positivePeriod(params.d_period) - 1;
+      return (
+        positivePeriod(params.k_period) + positivePeriod(params.d_period) - 1
+      );
     case "ichimoku":
       return positivePeriod(params.leading_span_b_period);
     case "volume-oscillator":
@@ -175,6 +177,42 @@ export class IndicatorStateManager {
     return updater;
   }
 
+  async initialize(
+    key: string,
+    indicator: string,
+    params: Record<string, any>,
+    sync = false,
+  ): Promise<IndicatorState> {
+    const updater = this.getUpdater(indicator, params);
+    const empty = updater.warmUp([]);
+    const state: IndicatorState = {
+      version: STATE_VERSION,
+      indicator,
+      params,
+      currentValue: null,
+      previousValue: null,
+      lastBarTime: "",
+      warmupCompleted: false,
+      isReady: false,
+      observedBars: 0,
+      requiredWarmupBars: requiredWarmupBars(indicator, params),
+      internalState: empty.internalState,
+      lastWarmupTs: null,
+    };
+
+    if (sync) this.setStateSync(key, state);
+    else await this.setState(key, state);
+    return state;
+  }
+
+  markWarmupCompleted(key: string): IndicatorState | null {
+    const state = this.l1Cache.get(key);
+    if (!state) return null;
+    state.warmupCompleted = true;
+    this.dirtyKeys.add(key);
+    return state;
+  }
+
   async warmUp(
     key: string,
     indicator: string,
@@ -203,7 +241,9 @@ export class IndicatorStateManager {
       requiredWarmupBars: minimumBars,
       lastWarmupTs:
         bars.length > 0
-          ? ((bars[bars.length - 1]?.time ?? bars[bars.length - 1]?.t) as number | undefined) ?? null
+          ? (((bars[bars.length - 1]?.time ?? bars[bars.length - 1]?.t) as
+              | number
+              | undefined) ?? null)
           : null,
     };
 
@@ -342,7 +382,13 @@ export class IndicatorStateManager {
     let cursor = "0";
     let removed = 0;
     do {
-      const [next, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 200);
+      const [next, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        200,
+      );
       cursor = next;
       if (keys.length > 0) {
         removed += keys.length;

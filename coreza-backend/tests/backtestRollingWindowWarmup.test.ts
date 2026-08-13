@@ -20,6 +20,14 @@ describe("backtest rolling-window warmup", () => {
     );
   });
 
+  it("rejects a rolling window whose configuration was not serialized", () => {
+    expect(() =>
+      resolveRollingWindowSeedSize([{ nodeId: "missing-values", params: {} }]),
+    ).toThrow(
+      "RollingWindow node missing-values has no configuration; re-save the workflow",
+    );
+  });
+
   it("uses the clamped default and warns for unresolved sizes", () => {
     const warning = jest.spyOn(console, "warn").mockImplementation(() => {});
 

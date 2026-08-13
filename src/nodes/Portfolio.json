@@ -403,7 +403,8 @@
       "key": "symbol",
       "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. ETH/USD",
+      "placeholder": "e.g. ETH/USD (leave blank for all positions)",
+      "description": "For Get Position, leave blank to return all positions.",
       "required": false,
       "displayOptions": {
         "show": {

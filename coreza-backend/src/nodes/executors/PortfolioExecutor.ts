@@ -1529,9 +1529,17 @@ export class PortfolioExecutor implements INodeExecutor {
     symbol?: string,
   ): NodeResult {
     if (!symbol) {
-      return toNodeResult(
-        createErrorOutput("'symbol' is required for get_position"),
-      );
+      const state = simBroker.getPortfolioState();
+      const positions = Object.values(state.positions).map((position) => ({
+        ...formatPositionWithPnlPercent(position),
+        realized_pnl: state.realizedPnlBySymbol[position.symbol] ?? 0,
+      }));
+
+      return leanSuccess({
+        has_position: positions.length > 0,
+        positions,
+        positions_count: positions.length,
+      });
     }
     const position = simBroker.getPosition(symbol);
     const realizedPnl =

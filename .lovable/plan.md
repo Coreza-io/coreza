@@ -26,11 +26,39 @@ Verdict: the core requirement (pin/edit output -> executing the node returns the
 - In `ExecutionStoreContext`, make `setNodeData` ignore any `output` key for a node that is currently pinned (non-output keys such as `isListening` still apply).
 - In `useNodeOutput.syncPinnedOutput`, call `executionStore.setPinned(nodeId, value)` alongside the existing writes so pin/unpin registers and de-registers.
 
-### Fix 2 — persist pinned output (only if desired)
+### Fix 2 — persist pinned output across reloads, saves, export/import (confirmed: yes)
 
-- In `serializeNodes`, add `pinnedOutput: n.data.pinnedOutput` when defined.
-- On restore in `useWorkflowPersistence`, map `pinnedOutput` back onto `node.data` so `useNodeOutput`'s initial `overrideOutput` picks it up (it already reads `data.pinnedOutput`).
+Pinned output becomes part of the saved workflow so a reopened workflow keeps the hardcoded value.
 
-## Question before implementing
+1. Save path — `src/hooks/useWorkflowPersistence.ts` › `serializeNodes`
+   - Add `pinnedOutput` to the serialized node, alongside `values`, only when it is defined and non-null.
+   - Guard the payload size: run the value through a helper `safePinnedOutput(value)` that `JSON.stringify`s it and drops it (with a console warning) when it exceeds ~256 KB, so a huge stream/backtest payload cannot bloat the workflow row. Values that fail to stringify (circular refs) are dropped the same way.
 
-Should pinned output persist across reloads and workflow saves, or stay a session-only debugging override? Fix 1 is worth doing either way.
+2. Load path — `src/hooks/useWorkflowPersistence.ts` › restore mapping
+   - Read `(node as any).pinnedOutput ?? node.data?.pinnedOutput` and set both `pinnedOutput` and `output` on the restored `node.data`, so the panel shows the pinned value immediately and `useNodeOutput`'s initial `overrideOutput` (which already reads `data.pinnedOutput`) picks it up on mount.
+
+3. Stale-state exception — `useNodeOutput` initial state
+   - The current initializer downgrades `listening`/`streaming` statuses to `{ status: "pending" }`. Skip that downgrade when `data.pinnedOutput` is present, so a pinned value is never rewritten to pending on reload.
+
+4. Export/import — `src/utils/workflowExport.ts`
+   - Add `pinnedOutput` to the exported node shape (same size guard) and restore it on import, so pinned values survive file round-trips. Per the existing import rules, node IDs are still regenerated; `pinnedOutput` travels with its node.
+
+5. Unsaved-changes detection
+   - `computeHash` hashes whole nodes, so pinning/unpinning already marks the workflow dirty — no change needed, verified by reading the hook.
+
+6. Backend/DB
+   - No migration needed: workflow nodes are stored as JSONB, so the extra key is additive. Existing workflows without the key load unchanged.
+
+## Technical notes
+
+- Whitelist policy: node persistence intentionally saves only known keys; this plan adds exactly one new key (`pinnedOutput`) at the node level, not inside `values`, so field normalization rules are untouched.
+- Clearing: unpinning sets `data.pinnedOutput = undefined`, which drops it from the next serialization — no explicit delete path needed.
+
+## Verification
+
+- Pin an edited output, save, reload the workflow: panel shows the pinned value and the pin toggle is active.
+- Execute the pinned node after reload: no network request, output unchanged.
+- Run the full workflow: downstream node input shows the pinned value.
+- Unpin, save, reload: node returns to normal execution.
+- Export a workflow with a pinned node and re-import it: pinned value preserved.
+

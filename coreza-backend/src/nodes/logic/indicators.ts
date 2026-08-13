@@ -345,6 +345,7 @@ export class IndicatorService {
                 avgGain,
                 avgLoss,
                 prevClose: closes[closes.length - 1],
+                count: Math.max(0, closes.length - 1),
               },
               value,
 
@@ -354,6 +355,11 @@ export class IndicatorService {
           update: (state, bar) => {
             const close = asClose(bar);
             const prevClose = Number(state.prevClose);
+            if (!Number.isFinite(prevClose)) {
+              state.prevClose = close;
+              state.count = 0;
+              return { value: null, internalState: state };
+            }
             const change = close - prevClose;
             const gain = Math.max(change, 0);
             const loss = Math.max(-change, 0);
@@ -367,9 +373,10 @@ export class IndicatorService {
             state.prevClose = close;
             state.avgGain = avgGain;
             state.avgLoss = avgLoss;
+            state.count = Number(state.count || 0) + 1;
 
             return {
-              value,
+              value: state.count >= state.period ? value : null,
               internalState: state,
             };
           },
@@ -431,6 +438,19 @@ export class IndicatorService {
           },
           update: (state, bar) => {
             const close = asClose(bar);
+            if (
+              !Number.isFinite(state.shortEma) ||
+              !Number.isFinite(state.longEma) ||
+              !Number.isFinite(state.signalEma)
+            ) {
+              state.shortEma = close;
+              state.longEma = close;
+              state.signalEma = 0;
+              return {
+                value: { macd: 0, signal: 0, histogram: 0 },
+                internalState: state,
+              };
+            }
             const shortEma =
               close * state.shortMult + state.shortEma * (1 - state.shortMult);
             const longEma =

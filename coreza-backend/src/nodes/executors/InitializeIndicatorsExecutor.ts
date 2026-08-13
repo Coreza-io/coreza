@@ -16,6 +16,7 @@ import {
   WorkflowEdge,
 } from "../types";
 import { IndicatorStateManager, buildIndicatorKey } from "../../engine";
+import { parseWarmupPeriod } from "../../utils/warmupPeriod";
 import {
   normalizeOutput,
   createErrorOutput,
@@ -118,7 +119,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       // --- Parse inputs ---
       const symbol = String(resolvedParams.symbol || "");
       const timeframe = String(resolvedParams.timeframe || "");
-      const warmupPeriodRaw = parseInt(resolvedParams.warmup_period) || 200;
+      const warmupPeriodRaw = parseWarmupPeriod(resolvedParams.warmup_period);
       const autoDetect =
         String(resolvedParams.auto_detect ?? "true") === "true";
 
@@ -277,7 +278,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             nodeId: ind.nodeId,
             indicator: ind.type,
             warmupBars: warmupBars.length,
-            isReady: state.warmupCompleted,
+            isReady: state.isReady,
             currentValue: state.currentValue,
             previousValue: state.previousValue,
           };

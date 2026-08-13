@@ -25,6 +25,7 @@ interface UseNodeOutputProps {
 interface UseNodeOutputReturn {
   displayedData: any;
   isPinned: boolean;
+  pinnedOutput: any | null;
   handlePanelSave: (newData: any) => void;
   handlePanelPinToggle: () => void;
   setLastOutput: (output: any) => void;

@@ -253,7 +253,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     previousNodes,
     selectedInputData,
     setLastOutput: outputHook.setLastOutput,
-    overrideOutput: outputHook.isPinned ? outputHook.displayedData : null,
+    overrideOutput: outputHook.pinnedOutput,
     workflowId,
   });
 

@@ -737,6 +737,16 @@ export class WorkflowExecutor {
       return;
     }
 
+    // Pinned / manually edited output wins — use it instead of executing
+    const pinnedOutput = (node.data as any)?.pinnedOutput;
+    if (pinnedOutput !== undefined && pinnedOutput !== null) {
+      console.log(
+        `📌 [WORKFLOW EXECUTOR] Using pinned output for node ${nodeId}`,
+      );
+      this.nodeStore.setNodeData(nodeId, { output: pinnedOutput });
+      return pinnedOutput;
+    }
+
     // Check if this is a streaming node
     if (this.isStreamingNode(nodeId)) {
       console.log(`🌊 [WORKFLOW EXECUTOR] Detected streaming node: ${nodeId}`);

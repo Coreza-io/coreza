@@ -54,10 +54,19 @@ Because two rolling-window nodes on the same `symbol:timeframe` share one key, t
 - Add `rolling_windows_initialized` to the `BacktestInit` success `data` block.
 - `src/nodes/RollingWindow.json`: note in the `size` description that in backtests the window is pre-seeded from `BacktestInit` warmup bars.
 
+## Review corrections (verified against the code)
+
+- Node name matches: `src/nodes/RollingWindow.json` has `"name": "RollingWindow"`, so the BFS's `toUpperCase().replace(/\s+/g,"")` normalization yields `ROLLINGWINDOW`. Good.
+- `BacktestExecutor.ts` needs four new imports it doesn't have today: `RollingWindow` (`../engine/RollingWindow`), `clampWindowSize` / `normalizeSymbol` / `normalizeTimeframe` (`../engine/rollingWindowHelpers`), `buildExecutionScopedKey` (`../utils/executionKey`), and `DataContextManager` (`../engine/DataContext`). Import `rollingWindowHelpers` by its exact filename — do not use a `../engine/rollingWindow` path (the earlier case-collision bug).
+- Two other callers of `discoverIndicators` now see rolling-window entries and must skip `type === "rollingwindow"`: `InitializeIndicatorsExecutor.execute`'s warmup loop **and** the `POST /indicators/initialize` route that drives it (it just forwards to the executor, so the executor-side skip covers both). Also skip them in the `indicators_total` count so the live node's report stays accurate.
+- `ind.params.size` can be an unresolved `{{ ... }}` template; `clampWindowSize` already falls back to 20 via `parseInt(...) || 20`, so no crash — just log a warning when the raw value isn't numeric.
+- `RollingWindow`'s constructor throws for `size <= 0` or `> 500`; `clampWindowSize` clamps to 1..500 first, so construction is safe.
+- Shape check to confirm during implementation: seeding pushes raw historical bars, while the runtime `set` path pushes bars through `parseCandleData`. Confirm both produce the same bar object shape (they both come from the broker's bar format) so a seeded window and a live-appended window are homogeneous.
+
 ## Technical notes
 
 - Symbol/timeframe come from the backtest config (`symbols`, `interval`), exactly like the indicator keys — the node's own fields are usually unresolved templates at init time.
-- Seeding writes a real `RollingWindow` instance, which is what the executor's `set` path expects and what `get` reads.
+- Seeding writes a real `RollingWindow` instance, which is what the executor's `set` path expects and what `get` reads. `dataContext.setData` returns a `DataRef`; ignore the return value.
 - Observation (not part of this change): the indicator warmup keys use `runId` (line 430) while the session runs under `effectiveRunId`; in manual mode those differ. Rolling-window seeding uses `effectiveRunId` so it matches run time. Say the word if you want the indicator keys aligned too.
 - No change to `IndicatorsExecutor`, the `/storage/rolling-window` manual route, or the key format.
 

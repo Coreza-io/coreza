@@ -16,6 +16,16 @@ Adjusted: for conflicting sizes, take the **minimal-change option** — reject t
 
 Deferred: LEAN-style pre-start warmup bars (fetch extra bars before `start_date` instead of consuming the selected range). That is a real semantic gap, but it changes the historical fetch, the bar-alignment, and every existing backtest's results — a separate change, not folded in here.
 
+## End-to-end review of what is already implemented (verified)
+
+Done and correct on the backend:
+- `discoverWarmupNodes` + `discoverIndicators` wrapper in `InitializeIndicatorsExecutor.ts` (matches `ROLLINGWINDOW`, filters it out for the live path).
+- `BacktestExecutor.executeBacktestInit` splits `discoveredIndicators` / `discoveredWindows`, filters on `operation === "set"`, resolves size via `resolveRollingWindowSeedSize` and errors on conflicts.
+- Shared `backtest/rollingWindowSeed.ts` used by both the executor and `BacktestSession.reset()` re-seed, wired through `BacktestSessionManager`.
+- Indicator and window keys both on `effectiveRunId`.
+
+Remaining defect: the payload the editor sends, below.
+
 ## Root cause of the empty `params` you are seeing (verified)
 
 `discoverWarmupNodes` returns `params: {}` for every RollingWindow node because the frontend never sends their values. In `src/hooks/useNodeExecution.ts` (lines 277-291), when the executed node is `InitializeIndicators` or `BacktestInit`, the whole graph is serialized but values are attached **only** for indicator nodes:

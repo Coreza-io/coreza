@@ -1,104 +1,90 @@
-# BacktestInit: Warm Up Rolling Windows (reuse the indicator warmup path)
+# LEAN-Compatible Pre-Start Warm-Up for Backtests
 
 ## Goal
 
-`BacktestInit` already discovers downstream indicators and warms them from the warmup slice of bars. Reuse that same discovery + per-symbol loop to also seed downstream `RollingWindow` buffers, so the first strategy bar sees a ready window.
+Today `BacktestInit` fetches one range (`start_date` → `end_date`) and then eats the first `warmup_period` bars of it for indicator/rolling-window warm-up (`BacktestExecutor.ts:409-422`: `symbolBars.slice(0, warmupPeriod)` / `.slice(warmupPeriod)`). So a backtest configured from 2014-01-01 actually starts trading ~136 bars later, and the strategy never sees the first part of the selected range.
 
-## Why RollingWindow can't just be an indicator
+Target: keep `start_date`/`end_date` authoritative, fetch a **separate** block of N bars strictly *before* `start_date`, warm state from that block, and emit **every** bar in the configured range to the strategy.
 
-`IndicatorStateManager.warmUp()` calls `IndicatorService.createIncrementalUpdater(indicator, params)` and stores an `IndicatorState`. `RollingWindow` has no updater; at run time `IndicatorsExecutor.executeRollingWindowNode` reads its window from the shared `DataContext` under `buildExecutionScopedKey({ userId, workflowId, runId, scope: "rolling_window", parts: [symbol, timeframe] })`. So we reuse the *discovery walk and warmup loop*; only the "how to warm" leaf differs.
+## Verified current state
 
-## Review of the suggestions — what is adopted
+- `BacktestExecutor.executeBacktestInit` computes one `effectiveRunId` and uses it for indicator keys, rolling-window seeding, and session creation.
+- `discoverWarmupNodes` finds indicators and `RollingWindow` nodes downstream of BacktestInit.
+- `backtest/rollingWindowSeed.ts` exists (`resolveRollingWindowSeedSize`, `seedRollingWindows`) and its `RollingWindowSeed` is retained on the session and re-applied in `BacktestSession.reset()` (line ~871).
+- `reset()` calls `this.stateManager?.clearL1Cache()` only — Redis-resident indicator state is not deleted.
+- `fetchHistoricalBarsForSymbols` (line 604) builds one `get_candle` broker call per symbol with `start`/`end` and `limit: "50000"`; there is no previous-N-bars capability and no canonical historical service.
+- `warmup_period` is read in `BacktestExecutor` (`|| 200`, so `0` silently becomes 200), in `InitializeIndicatorsExecutor`, and forwarded by `routes/backtest.ts`.
 
-Adopted: (1) generic `discoverWarmupNodes` + filter so the live `InitializeIndicators` output is genuinely unchanged; (2) seed only `operation: "set"` nodes; (3) explicit handling of conflicting sizes; (4) reseeding after `BacktestSession.reset()` — verified: `reset()` calls `this.run.destroy()`, which calls `DataContextManager.destroyContext(executionId)`, so a seeded window would be lost; (5) unique-window count via a key set; (6) aligning indicator keys onto `effectiveRunId`.
+## Scope decisions
 
-Adjusted: for conflicting sizes, take the **minimal-change option** — reject the configuration with a clear error, not add `nodeId` to the key. The node-agnostic `symbol:timeframe` key is a deliberate design decision (locked in by `tests/executionKey.rollingWindow.test.ts`, which asserts two node ids produce the same key) and lets `get` on one node read what another node's `set` wrote. Adding `nodeId` would break that contract.
-
-Deferred: LEAN-style pre-start warmup bars (fetch extra bars before `start_date` instead of consuming the selected range). That is a real semantic gap, but it changes the historical fetch, the bar-alignment, and every existing backtest's results — a separate change, not folded in here.
-
-## End-to-end review of what is already implemented (verified)
-
-Done and correct on the backend:
-- `discoverWarmupNodes` + `discoverIndicators` wrapper in `InitializeIndicatorsExecutor.ts` (matches `ROLLINGWINDOW`, filters it out for the live path).
-- `BacktestExecutor.executeBacktestInit` splits `discoveredIndicators` / `discoveredWindows`, filters on `operation === "set"`, resolves size via `resolveRollingWindowSeedSize` and errors on conflicts.
-- Shared `backtest/rollingWindowSeed.ts` used by both the executor and `BacktestSession.reset()` re-seed, wired through `BacktestSessionManager`.
-- Indicator and window keys both on `effectiveRunId`.
-
-Remaining defect: the payload the editor sends, below.
-
-## Root cause of the empty `params` you are seeing (verified)
-
-`discoverWarmupNodes` returns `params: {}` for every RollingWindow node because the frontend never sends their values. In `src/hooks/useNodeExecution.ts` (lines 277-291), when the executed node is `InitializeIndicators` or `BacktestInit`, the whole graph is serialized but values are attached **only** for indicator nodes:
-
-```ts
-if (nodeDefinition?.category === "Indicators") {
-  serializedNode.values = n.data?.values || {};
-}
-```
-
-`RollingWindow.json` has `"category": "Data"`, so its `size`, `operation`, `symbol`, and `timeframe` are stripped. The backend's `node.values || node.data?.values` fallback then resolves to `{}` — which is why every discovered window shows `params: {}`, why the `operation === "set"` filter keeps `get` nodes (the `?? "set"` default), and why `clampWindowSize` silently returns 20.
-
-### 0. Fix the serialization — `src/hooks/useNodeExecution.ts`
-
-Widen the condition so warmup-relevant nodes keep their values:
-
-```ts
-if (
-  nodeDefinition?.category === "Indicators" ||
-  nodeDefinition?.name === "RollingWindow"
-) {
-  serializedNode.values = n.data?.values || {};
-}
-```
-
-Note this only affects the manual editor run. In the live/scheduled path the nodes come from the DB with `values` intact, so backend-only fixes would never have surfaced this.
-
-Backend hardening for the same class of bug: treat a RollingWindow node whose `params` is empty as a configuration error at init (`"RollingWindow node <id> has no configuration; re-save the workflow"`) instead of silently seeding a default-size window.
+- RollingWindow keeps its current class + `DataContext` storage and the existing same-size validation. Only its warm-up **input** changes to pre-start bars.
+- Indicators keep `IndicatorStateManager.warmUp/update` and the existing key scheme.
+- Warm-up never replays the workflow graph — only discovered stateful targets are seeded.
+- Request key stays `warmup_period` for backward compatibility; only label/description and semantics change.
 
 ## Changes
 
-### 1. `src/nodes/executors/InitializeIndicatorsExecutor.ts`
+### 1. New `coreza-backend/src/marketData/HistoricalDataService.ts`
 
-- Rename the BFS to `discoverWarmupNodes(startNodeId, allNodes, allEdges)`, matching `INDICATOR_NAMES` **or** `ROLLINGWINDOW`, returning the same `{ nodeId, type, params }` shape (`type: "rollingwindow"` for windows).
-- Keep `discoverIndicators` as a thin wrapper: `discoverWarmupNodes(...).filter(n => n.type !== "rollingwindow")`. Every existing caller (the executor itself, `POST /indicators/initialize`) keeps identical behavior — same `indicators_total`, same "No indicator nodes found downstream" path for a rolling-window-only workflow.
+Canonical service so provider range logic leaves `BacktestExecutor`:
 
-### 2. `src/backtest/BacktestExecutor.ts`
+```ts
+fetchRange(req: HistoricalRangeRequest, ctx): Promise<Bar[]>
+fetchPreviousBars(req: PreviousBarsRequest, ctx): Promise<Bar[]>   // count bars strictly before endExclusive
+```
 
-- **Run id alignment:** move `const effectiveRunId = context?.runId || \`manual-${backtestId}\`;` above the warmup block and use it for the indicator keys too, replacing the current `runId` (`context.runId || context.workflowSessionId || workflowId`). This fixes the existing manual-mode mismatch where indicator state was written under a key the session never reads. Same value then flows into the rolling-window keys, `BacktestSessionManager.createSession`, and the `DataContext`.
-- Call `discoverWarmupNodes(...)` once; split into `discoveredIndicators` (unchanged use) and `discoveredWindows = warmupNodes.filter(n => n.type === "rollingwindow" && String(n.params?.operation ?? "set").toLowerCase() === "set")`. `get` nodes are never seeded — they only consume what a `set` node defines.
-- **Size conflict check**, before seeding: group `discoveredWindows` by their resolved size (`clampWindowSize(params.size)`). Since all windows for a `symbol:timeframe` share one key, more than one distinct size is a configuration error — return `createErrorOutput("Conflicting RollingWindow sizes (…) for the same symbol/timeframe. All RollingWindow set nodes in a backtest must declare the same Window Size.")`. This matches runtime behavior, where `IndicatorsExecutor` recreates the window whenever `window.size !== size`.
-- **Seeding helper** — add a module-level `export function seedRollingWindows({ userId, workflowId, executionId, symbols, interval, size, warmupBarsBySymbol }): number` in `BacktestExecutor.ts` (or a small `backtest/rollingWindowSeed.ts` so `BacktestSession` can import it without a cycle). It:
-  - resolves `DataContextManager.getInstance().getContext({ executionId, workflowId, userId })`,
-  - for each symbol with non-empty warmup bars: builds the key with `buildExecutionScopedKey({ userId, workflowId, runId: executionId, scope: "rolling_window", parts: [normalizeSymbol(symbol), normalizeTimeframe(interval)] })`, creates `new RollingWindow(size)`, adds the last `size` warmup bars in order, `dataContext.setData(key, window)`, and records the key in a `Set`,
-  - returns `keys.size`.
-- Call it after the indicator warmup loop and before `BacktestSessionManager.createSession(...)`, and pass the seed inputs (`size`, `warmupBarsBySymbol`, `symbols`, `interval`) into `createSession` so the session can replay them.
+- `fetchRange` wraps the existing `BrokerExecutor` `get_candle` call (same node-shaping code moved out of `BacktestExecutor.fetchHistoricalBarsForSymbols`), so broker behavior is unchanged initially.
+- `normalizeHistoricalBars`: dedupe by timestamp into a `Map`, drop non-finite times, sort ascending. Timestamp read as `bar.time ?? bar.t`.
+- `fetchPreviousBars`: estimate a start date, fetch, filter `bar.time < startBoundary`, and if fewer than `count`, expand backward and retry up to `MAX_ATTEMPTS` (4). Return `eligible.slice(-count)`. Estimates: crypto `count × interval + margin`; daily `ceil(count × 1.6) + 10` days; intraday from session-count estimate. The estimate is an optimization — correctness comes from filtering real returned bars.
+- Failure policy: return fewer bars with a warning rather than fabricating; never invent bars; errors include provider, symbol, interval, requested range, attempt.
 
-### 3. `src/backtest/session/BacktestSession.ts` — survive `reset()`
+Pagination/limits stay with the existing broker adapters for this pass; the service just re-requests with an expanded window when short. A follow-up can push Alpaca `next_page_token` / Binance kline paging into the adapters (documented, not required for correctness here).
 
-- Accept an optional `rollingWindowSeed` payload (`{ size, interval, symbols, warmupBarsBySymbol }`) in `createSession` / the constructor and keep it on the instance.
-- In `reset()`, after `this.run = this.plan.createRun({...})` (which recreates the `DataContext`), call `seedRollingWindows({ ...seed, userId, workflowId, executionId: this.executionId })` again. Skip when no seed was provided.
-- Same for `cleanup()`: nothing to do — the session is going away.
+### 2. `coreza-backend/src/backtest/BacktestExecutor.ts`
 
-### 4. Output + docs
+- Parse warm-up correctly: `const raw = params.warmup_period; const warmupBars = raw === undefined || raw === null || raw === "" ? 200 : Math.max(0, parseInt(String(raw), 10) || 0);` — `0` disables warm-up instead of becoming 200.
+- Two datasets, both per symbol:
+  - `strategyBarsBySymbol` = `HistoricalDataService.fetchRange({ start: start_date, end: end_date })` (unchanged range).
+  - `warmupBarsBySymbol` = `fetchPreviousBars({ count: warmupBars, endExclusive: start_date })`, fetched **independently per symbol** — the primary symbol's availability must not cap the others.
+- Delete `slice(0, warmupPeriod)` / `slice(warmupPeriod)` and `remainingBarsBySymbol`. `alignMultiSymbolBars` receives `strategyBarsBySymbol` only, so the first event timestamp is on/after the configured start and fill-forward can never source a warm-up bar.
+- Indicator warm-up loop and `seedRollingWindows(...)` consume `warmupBarsBySymbol` (same call shapes, new input). `RollingWindowSeed` handed to `BacktestSessionManager.createSession` carries the pre-start map.
+- Validation: empty strategy data for the **primary** symbol → error; empty for a secondary symbol → warning; short warm-up history → warning.
+- Output additions on success: `warmup_source: "pre_start"`, `warmup_bars_requested`, `warmup_bars_by_symbol`, `first_warmup_timestamp` / `last_warmup_timestamp`, `first_strategy_timestamp`, plus the existing `rolling_windows_initialized`, and a `warnings[]` array of `{ code: "INSUFFICIENT_WARMUP_HISTORY", symbol, requested, available, affectedNodes }`.
 
-- `BacktestInit` success `data` gains `rolling_windows_initialized` (the `Set` size — unique `symbol:timeframe` windows, not attempts) and `rolling_window_size` when at least one window was seeded.
-- `src/nodes/RollingWindow.json`: in the `size` description, note that in a backtest the window is pre-seeded from `BacktestInit`'s warmup bars, and that all `set` nodes sharing a symbol/timeframe must declare the same size.
+### 3. `coreza-backend/src/backtest/session/BacktestSession.ts` — deterministic reset
 
-## Technical notes
+Reset must reproduce exactly the post-init, pre-first-bar state. Required order:
 
-- New imports needed in `BacktestExecutor.ts`: `RollingWindow` (`../engine/RollingWindow`), `clampWindowSize` / `normalizeSymbol` / `normalizeTimeframe` (`../engine/rollingWindowHelpers` — use that exact filename, not `../engine/rollingWindow`, to avoid the earlier case-collision bug), `buildExecutionScopedKey` (`../utils/executionKey`), `DataContextManager` (`../engine/DataContext`).
-- Symbol/timeframe come from the backtest config (`symbols`, `interval`), exactly like the indicator keys — the node's own fields are usually unresolved templates at init time.
-- `clampWindowSize` falls back to 20 for an unresolved `{{ ... }}` size; log a warning when the raw value isn't numeric so a template mistake is visible.
-- `RollingWindow`'s constructor throws outside 1..500; `clampWindowSize` clamps first, so construction is safe.
-- Confirm during implementation that seeded raw historical bars have the same shape as bars pushed at run time through `parseCandleData`, so a seeded window and a live-appended window stay homogeneous.
-- No change to `IndicatorsExecutor`, the `/storage/rolling-window` manual route, or the key format.
+1. Recreate the run / `DataContext`.
+2. Delete execution-scoped indicator state in Redis (new `IndicatorStateManager.clearExecutionScope(userId, workflowId, effectiveRunId)`), not just `clearL1Cache()`.
+3. Re-warm indicators from the retained pre-start seed (session must retain `warmupBarsBySymbol` + discovered indicator list alongside the existing `RollingWindowSeed`).
+4. `seedRollingWindows(...)` from the retained seed (existing behavior).
 
-## Verification
+### 4. `coreza-backend/src/engine/indicatorStateManager.ts`
 
-- Backtest with `BacktestInit -> ... -> RollingWindow (set)` and `size < warmup_period`: first bar returns `isReady: true`, `count: size`.
-- `RollingWindow (get)` for the same symbol/timeframe returns the seeded window before any `set` runs.
-- Multi-symbol run: `rolling_windows_initialized` equals the symbol count; running twice does not double-count.
-- Reset then re-run: the window is ready again on the first bar (regression test for the `DataContext` destroy).
-- Two `set` nodes with different sizes on the same symbol/timeframe: `BacktestInit` fails with the configuration error.
-- A `get`-only workflow seeds nothing and reports `rolling_windows_initialized: 0`.
-- Live `InitializeIndicators` node and `POST /indicators/initialize` output byte-identical to today for an indicator-only workflow, and still report "No indicator nodes found downstream" for a rolling-window-only workflow.
+- Add `clearExecutionScope(...)` deleting the Redis keys under the execution prefix.
+- Normalize timestamp access to `bar.time ?? bar.t` in `warmUp`, `update`, `updateSync`.
+- Distinguish `warmupCompleted` (loop ran) from `isReady` (enough history for the indicator's period) and surface the latter in the init output.
+
+### 5. `coreza-backend/src/nodes/executors/InitializeIndicatorsExecutor.ts`
+
+Same zero-vs-absent parsing for `warmup_period`. Discovery is unchanged.
+
+### 6. Frontend
+
+- `src/nodes/BacktestInit.json`: keep key `warmup_period`; label → "Warm-up Bars"; description → "Historical observations fetched before the configured start date to initialize indicators and RollingWindows. These bars are not traded. 0 disables warm-up."
+- `src/hooks/useNodeExecution.ts`: when serializing the graph for `BacktestInit` / `InitializeIndicators`, values are currently attached only for `category === "Indicators"`, so `RollingWindow` (category `Data`) nodes arrive with `params: {}` — which is why the `operation === "set"` filter and size resolution misbehave. Widen the condition to also include `nodeDefinition?.name === "RollingWindow"`.
+
+### 7. Tests
+
+- `fetchPreviousBars`: returns exactly N bars, all strictly before the boundary, deduped and ascending; expands when the first attempt is short; returns fewer + warning when history is genuinely short.
+- BacktestInit: strategy bar count equals the full configured range (no leading slice); first event ≥ start boundary; `warmup_period: 0` disables warm-up.
+- Multi-symbol: a short-history symbol does not reduce another symbol's warm-up.
+- Reset: indicator + window state after reset is byte-identical to post-init state.
+
+## Sequence
+
+1. `HistoricalDataService` + normalization + `fetchPreviousBars`.
+2. `BacktestExecutor` two-dataset wiring, remove slicing, zero handling.
+3. Reset safety (Redis scope clear + rewarm).
+4. UI wording, `useNodeExecution` params fix, warnings/observability, tests.

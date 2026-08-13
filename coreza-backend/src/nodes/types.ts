@@ -26,6 +26,7 @@ export interface NodeResult {
   code?: string;
   provider?: string;
   recoverable?: boolean;
+  warmupSuppressed?: boolean;
   /**
    * Execution context metadata (e.g., error summaries, timing info).
    * For loop iteration context, use IterMeta in QueueItem.

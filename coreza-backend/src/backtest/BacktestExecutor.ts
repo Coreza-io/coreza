@@ -50,6 +50,11 @@ import {
 } from "../marketData/HistoricalDataService";
 import type { HistoricalBar } from "../marketData/HistoricalDataService";
 import { parseWarmupPeriod } from "../utils/warmupPeriod";
+import {
+  alignMultiSymbolBars as alignBars,
+  buildWarmupEvents,
+} from "./warmup/WarmupReplay";
+import type { WarmupMode } from "./warmup/types";
 
 type AlignedMultiBarEvent = MultiBarEvent & {
   /** Symbols whose bars were copied from their latest real observation. */
@@ -327,7 +332,8 @@ export class BacktestExecutor implements INodeExecutor {
       const symbol = params.symbol;
       const symbols = this.parseSymbols(params.symbols, params.symbol);
       const interval = params.interval;
-      const startDate = params.start_date || new Date().toISOString().split("T")[0];
+      const startDate =
+        params.start_date || new Date().toISOString().split("T")[0];
       const endDate = params.end_date || new Date().toISOString().split("T")[0];
       const assetType = params.asset_type;
       const feed = params.feed;
@@ -347,15 +353,29 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const warmupBarsRequested = parseWarmupPeriod(params.warmup_period);
+      const warmupMode: WarmupMode =
+        params.warmup_mode === "workflow_replay" ? "workflow_replay" : "seed";
       const historicalDataService = new HistoricalDataService();
       const strategyEntries = await Promise.all(
-        symbols.map(async (currentSymbol) => [
-          currentSymbol,
-          await historicalDataService.fetchRange(
-            { provider: broker, symbol: currentSymbol, interval, start: startDate, end: endDate, assetType, feed, credentialId },
-            context,
-          ),
-        ] as const),
+        symbols.map(
+          async (currentSymbol) =>
+            [
+              currentSymbol,
+              await historicalDataService.fetchRange(
+                {
+                  provider: broker,
+                  symbol: currentSymbol,
+                  interval,
+                  start: startDate,
+                  end: endDate,
+                  assetType,
+                  feed,
+                  credentialId,
+                },
+                context,
+              ),
+            ] as const,
+        ),
       );
       const historicalDataBySymbol = new Map(strategyEntries);
 
@@ -374,7 +394,9 @@ export class BacktestExecutor implements INodeExecutor {
       }
       for (const secondarySymbol of symbols.slice(1)) {
         if ((historicalDataBySymbol.get(secondarySymbol)?.length ?? 0) === 0) {
-          console.warn(`[BacktestExecutor] No strategy bars returned for secondary symbol ${secondarySymbol}`);
+          console.warn(
+            `[BacktestExecutor] No strategy bars returned for secondary symbol ${secondarySymbol}`,
+          );
         }
       }
 
@@ -385,11 +407,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       let warmupNodes: DiscoveredWarmupNode[] = [];
       if (allNodes.length > 0) {
-        warmupNodes = discoverWarmupNodes(
-          node.id,
-          allNodes,
-          allEdges,
-        );
+        warmupNodes = discoverWarmupNodes(node.id, allNodes, allEdges);
       }
       const discoveredIndicators = warmupNodes.filter(
         (candidate) => candidate.type !== "rollingwindow",
@@ -411,24 +429,46 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const warmupEntries = await Promise.all(
-        symbols.map(async (currentSymbol) => [
-          currentSymbol,
-          await historicalDataService.fetchPreviousBars(
-            { provider: broker, symbol: currentSymbol, interval, count: warmupBarsRequested, endExclusive: startDate, assetType, feed, credentialId },
-            context,
-          ),
-        ] as const),
+        symbols.map(
+          async (currentSymbol) =>
+            [
+              currentSymbol,
+              await historicalDataService.fetchPreviousBars(
+                {
+                  provider: broker,
+                  symbol: currentSymbol,
+                  interval,
+                  count: warmupBarsRequested,
+                  endExclusive: startDate,
+                  assetType,
+                  feed,
+                  credentialId,
+                },
+                context,
+              ),
+            ] as const,
+        ),
       );
-      const warmupBarsBySymbol = new Map<string, HistoricalBar[]>(warmupEntries);
+      const warmupBarsBySymbol = new Map<string, HistoricalBar[]>(
+        warmupEntries,
+      );
       const warnings = symbols.flatMap((currentSymbol) => {
         const available = warmupBarsBySymbol.get(currentSymbol)?.length ?? 0;
         return available < warmupBarsRequested
-          ? [{ code: "INSUFFICIENT_WARMUP_HISTORY" as const, symbol: currentSymbol, requested: warmupBarsRequested, available, affectedNodes: warmupNodes.map((candidate) => candidate.nodeId) }]
+          ? [
+              {
+                code: "INSUFFICIENT_WARMUP_HISTORY" as const,
+                symbol: currentSymbol,
+                requested: warmupBarsRequested,
+                available,
+                affectedNodes: warmupNodes.map((candidate) => candidate.nodeId),
+              },
+            ]
           : [];
       });
 
       const stateManager = new IndicatorStateManager();
-      if (discoveredIndicators.length > 0) {
+      if (warmupMode === "seed" && discoveredIndicators.length > 0) {
         for (const currentSymbol of symbols) {
           const symbolWarmupBars = warmupBarsBySymbol.get(currentSymbol) || [];
           for (const ind of discoveredIndicators) {
@@ -459,7 +499,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const rollingWindowSeed: RollingWindowSeed | undefined =
-        rollingWindowSize === undefined
+        warmupMode === "workflow_replay" || rollingWindowSize === undefined
           ? undefined
           : { size: rollingWindowSize, interval, symbols, warmupBarsBySymbol };
       const rollingWindowsInitialized = rollingWindowSeed
@@ -519,8 +559,24 @@ export class BacktestExecutor implements INodeExecutor {
         effectiveRunId,
         stateManager,
         rollingWindowSeed,
-        { interval, symbols, warmupBarsBySymbol, indicators: discoveredIndicators },
+        warmupMode === "seed"
+          ? {
+              interval,
+              symbols,
+              warmupBarsBySymbol,
+              indicators: discoveredIndicators,
+            }
+          : undefined,
+        warmupMode,
+        warmupMode === "workflow_replay"
+          ? buildWarmupEvents(warmupBarsBySymbol, interval)
+          : [],
+        warmupMode === "workflow_replay"
+          ? { interval, symbols, indicators: discoveredIndicators }
+          : undefined,
       );
+
+      await session.initialize();
 
       if (
         !isManual &&
@@ -575,14 +631,31 @@ export class BacktestExecutor implements INodeExecutor {
             warmup_bars_used:
               warmupBarsBySymbol.get(primarySymbol)?.length ?? 0,
             warmup_bars_by_symbol: Object.fromEntries(
-              symbols.map((currentSymbol) => [currentSymbol, warmupBarsBySymbol.get(currentSymbol)?.length ?? 0]),
+              symbols.map((currentSymbol) => [
+                currentSymbol,
+                warmupBarsBySymbol.get(currentSymbol)?.length ?? 0,
+              ]),
             ),
-            first_warmup_timestamp: this.extremeTimestamp(warmupBarsBySymbol, "first"),
-            last_warmup_timestamp: this.extremeTimestamp(warmupBarsBySymbol, "last"),
+            first_warmup_timestamp: this.extremeTimestamp(
+              warmupBarsBySymbol,
+              "first",
+            ),
+            last_warmup_timestamp: this.extremeTimestamp(
+              warmupBarsBySymbol,
+              "last",
+            ),
             first_strategy_timestamp: barEvents[0]?.timestamp ?? null,
             bars_emitted: barEvents.length,
             indicators_initialized: discoveredIndicators.length,
-            indicators_ready: await this.countReadyIndicators(stateManager, userId, workflowId, effectiveRunId, symbols, interval, discoveredIndicators),
+            indicators_ready: await this.countReadyIndicators(
+              stateManager,
+              userId,
+              workflowId,
+              effectiveRunId,
+              symbols,
+              interval,
+              discoveredIndicators,
+            ),
             rolling_windows_initialized: rollingWindowsInitialized,
             warnings,
             ...(rollingWindowsInitialized > 0
@@ -619,7 +692,9 @@ export class BacktestExecutor implements INodeExecutor {
       bars.map(historicalBarTimestamp),
     );
     if (timestamps.length === 0) return null;
-    return position === "first" ? Math.min(...timestamps) : Math.max(...timestamps);
+    return position === "first"
+      ? Math.min(...timestamps)
+      : Math.max(...timestamps);
   }
 
   private async countReadyIndicators(
@@ -631,10 +706,21 @@ export class BacktestExecutor implements INodeExecutor {
     interval: string,
     indicators: DiscoveredWarmupNode[],
   ): Promise<number> {
-    const readiness = await Promise.all(symbols.flatMap((currentSymbol) => indicators.map(async (indicator) => {
-      const key = buildIndicatorKey(userId, workflowId, executionId, currentSymbol, interval, indicator.nodeId);
-      return (await manager.getState(key))?.isReady === true;
-    })));
+    const readiness = await Promise.all(
+      symbols.flatMap((currentSymbol) =>
+        indicators.map(async (indicator) => {
+          const key = buildIndicatorKey(
+            userId,
+            workflowId,
+            executionId,
+            currentSymbol,
+            interval,
+            indicator.nodeId,
+          );
+          return (await manager.getState(key))?.isReady === true;
+        }),
+      ),
+    );
     return readiness.filter(Boolean).length;
   }
 
@@ -643,77 +729,7 @@ export class BacktestExecutor implements INodeExecutor {
     interval: string,
     barsBySymbol: Map<string, any[]>,
   ): AlignedMultiBarEvent[] {
-    const timestamps = new Set<number>();
-
-    for (const bars of barsBySymbol.values()) {
-      for (const bar of bars) {
-        timestamps.add(bar.time as number);
-      }
-    }
-
-    const orderedTimestamps = [...timestamps].sort((a, b) => a - b);
-    const indexes = new Map<string, number>();
-    const previousBars = new Map<string, any>();
-
-    const events: AlignedMultiBarEvent[] = [];
-
-    for (const symbol of symbols) {
-      indexes.set(symbol, 0);
-    }
-
-    for (const [barIndex, timestamp] of orderedTimestamps.entries()) {
-      const alignedBars: Record<string, any> = {};
-      const activeSymbols: string[] = [];
-      const fillForwardSymbols: string[] = [];
-
-      for (const symbol of symbols) {
-        const symbolBars = barsBySymbol.get(symbol) || [];
-        const currentIndex = indexes.get(symbol) || 0;
-        const currentBar = symbolBars[currentIndex];
-
-        if (currentBar && (currentBar.time as number) === timestamp) {
-          const realBar = {
-            ...currentBar,
-            _sourceTimestamp: currentBar.time as number,
-            _isFillForward: false,
-          };
-          alignedBars[symbol] = realBar;
-          previousBars.set(symbol, realBar);
-          indexes.set(symbol, currentIndex + 1);
-          activeSymbols.push(symbol);
-          continue;
-        }
-
-        const previousBar = previousBars.get(symbol);
-
-        if (previousBar) {
-          // Fill-forward: keep the ORIGINAL observation timestamp so age is
-          // measured against the last real bar, not the aligned clock.
-          alignedBars[symbol] = {
-            ...previousBar,
-            time: timestamp,
-            _sourceTimestamp:
-              previousBar._sourceTimestamp ?? (previousBar.time as number),
-            _isFillForward: true,
-          };
-          activeSymbols.push(symbol);
-          fillForwardSymbols.push(symbol);
-        }
-      }
-
-      if (activeSymbols.length > 0) {
-        events.push({
-          timestamp: new Date(timestamp).toISOString(),
-          barIndex,
-          interval,
-          symbols: activeSymbols,
-          bars: alignedBars,
-          fillForwardSymbols,
-        });
-      }
-    }
-
-    return events;
+    return alignBars(symbols, barsBySymbol, interval);
   }
 
   // ============== ON BAR ==============

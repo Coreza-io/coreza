@@ -30,6 +30,7 @@ export interface NodeExecutionContext {
   abortSignal?: AbortSignal;
   checkCancellation: () => boolean;
   executionMode: ExecutionMode;
+  isWarmingUp: boolean;
   multiBarContext?: MultiBarExecutionContext;
   getState: (key: string) => any;
   setState: (key: string, value: any) => void;

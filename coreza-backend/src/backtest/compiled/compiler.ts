@@ -38,7 +38,13 @@ function branchHandleToEnum(handle: string): BranchEnum {
   }
 }
 
-const INELIGIBLE_NODE_NAMES = new Set(["Loop", "Switch", "AIAgent", "LLM", "InitializeIndicators"]);
+const INELIGIBLE_NODE_NAMES = new Set([
+  "Loop",
+  "Switch",
+  "AIAgent",
+  "LLM",
+  "InitializeIndicators",
+]);
 
 export function compilePlan(
   graph: GraphRuntime,
@@ -63,7 +69,9 @@ export function compilePlan(
 
   for (const node of nodes) {
     if (INELIGIBLE_NODE_NAMES.has(node.name ?? "")) {
-      console.log(`[CompiledPlan] Ineligible: node "${node.id}" is type "${node.name}"`);
+      console.log(
+        `[CompiledPlan] Ineligible: node "${node.id}" is type "${node.name}"`,
+      );
       return null;
     }
 
@@ -78,7 +86,9 @@ export function compilePlan(
 
     if (!executor.syncCapable) {
       const category = resolveCategory(node);
-      console.log(`[CompiledPlan] Ineligible: executor "${category}" is not syncCapable`);
+      console.log(
+        `[CompiledPlan] Ineligible: executor "${category}" is not syncCapable`,
+      );
       return null;
     }
 
@@ -123,7 +133,11 @@ export function compilePlan(
 
   for (const nodeId of topoOrder) {
     const cp = compiledParams.get(nodeId);
-    const resolver = compileParamsToSlots(cp ?? null, slotMap, cp?.templateDeps);
+    const resolver = compileParamsToSlots(
+      cp ?? null,
+      slotMap,
+      cp?.templateDeps,
+    );
     if (!resolver) {
       console.log(
         `[CompiledPlan] Ineligible: failed to compile params to slots for node "${nodeId}"`,
@@ -143,13 +157,15 @@ export function compilePlan(
     const outSlot = slotMap.get(nodeId)!;
     const isConditional = node.name === "If" || node.name === "Switch";
     const incoming = graph.getIncomingEdges(nodeId);
-    const nodeInputSlot = incoming.length > 0
-      ? (slotMap.get(incoming[0].source) ?? inputSlot)
-      : inputSlot;
+    const nodeInputSlot =
+      incoming.length > 0
+        ? (slotMap.get(incoming[0].source) ?? inputSlot)
+        : inputSlot;
 
     if (isConditional) {
       const branchTargets: number[][] = [[], [], [], []];
-      const branchStringMap = node.name === "Switch" ? new Map<string, number[]>() : undefined;
+      const branchStringMap =
+        node.name === "Switch" ? new Map<string, number[]>() : undefined;
       for (const edge of graph.getOutgoingEdges(nodeId)) {
         const handle = edge.sourceHandle ?? "";
         const targetInstrIdx = nodeIdToInstrIndex.get(edge.target);
@@ -213,6 +229,7 @@ export function compilePlan(
   }
 
   const ctx: CompiledExecContext = {
+    isWarmingUp: false,
     nodeId: "",
     runId: ctxBase.runId,
     workflowId: ctxBase.workflowId,
@@ -235,17 +252,22 @@ export function compilePlan(
       return plan.allNodeResultsCache;
     },
     getState: (key: string) => ctxBase.storeGetState(ctx.nodeId, key),
-    setState: (key: string, value: any) => ctxBase.storeSetState(ctx.nodeId, key, value),
+    setState: (key: string, value: any) =>
+      ctxBase.storeSetState(ctx.nodeId, key, value),
     checkCancellation: () => ctxBase.abortSignal?.aborted ?? false,
   };
 
-  const timingSampleRate = Number(process.env.COMPILED_PLAN_TIMING_SAMPLE_RATE ?? "0");
+  const timingSampleRate = Number(
+    process.env.COMPILED_PLAN_TIMING_SAMPLE_RATE ?? "0",
+  );
 
   const plan: CompiledPlan = {
     instructions,
     barCount: 0,
     timingSampleRate:
-      Number.isFinite(timingSampleRate) && timingSampleRate > 0 ? Math.floor(timingSampleRate) : 0,
+      Number.isFinite(timingSampleRate) && timingSampleRate > 0
+        ? Math.floor(timingSampleRate)
+        : 0,
     instructionTimingMs: new Float64Array(instructions.length),
     instructionTimingCount: new Uint32Array(instructions.length),
     slots,

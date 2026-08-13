@@ -9,6 +9,7 @@
  */
 
 import { Node, Edge } from '@xyflow/react';
+import { safePinnedOutput } from '@/utils/pinnedOutput';
 
 interface ExportedWorkflow {
   meta: {
@@ -25,6 +26,7 @@ interface ExportedWorkflow {
     position: { x: number; y: number };
     values?: Record<string, any>;
     displayName?: string;
+    pinnedOutput?: unknown;
   }>;
   edges: Array<{
     id: string;
@@ -44,6 +46,7 @@ export function exportWorkflow(
 ) {
   const minimalNodes = nodes.map((node) => {
     const def = node.data?.definition as any;
+    const pinnedOutput = safePinnedOutput(node.data?.pinnedOutput);
     return {
       id: node.id,
       type: def?.name || node.type || 'unknown',
@@ -52,6 +55,7 @@ export function exportWorkflow(
       position: node.position,
       values: (node.data as any)?.values || (node.data as any)?.fieldState,
       displayName: (node.data as any)?.label || def?.displayName,
+      ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
     };
   });
 

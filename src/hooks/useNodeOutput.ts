@@ -51,7 +51,10 @@ export function useNodeOutput({
     if (data.output !== undefined && data.output !== null) {
       // Don't restore stale "listening" or "streaming" states from previous sessions
       const status = data.output?.status;
-      if (status === 'listening' || status === 'streaming') {
+      if (
+        data.pinnedOutput == null &&
+        (status === 'listening' || status === 'streaming')
+      ) {
         return { status: "pending" };
       }
       return data.output;
@@ -80,9 +83,7 @@ export function useNodeOutput({
 
       if (!nodeId) return;
 
-      if (value !== null) {
-        executionStore.setNodeData(nodeId, { output: value });
-      }
+      executionStore.setPinned(nodeId, value);
 
       setNodes((nds) =>
         nds.map((n) =>
@@ -101,6 +102,13 @@ export function useNodeOutput({
     },
     [data, nodeId, executionStore, setNodes],
   );
+
+  useEffect(() => {
+    if (!nodeId || data.pinnedOutput == null) return;
+
+    executionStore.setPinned(nodeId, data.pinnedOutput);
+    return () => executionStore.setPinned(nodeId, null);
+  }, [data.pinnedOutput, executionStore, nodeId]);
 
   // Save output data (pins it)
   const handlePanelSave = useCallback(

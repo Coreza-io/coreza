@@ -1659,7 +1659,16 @@ const WorkflowEditorContent = () => {
                   id: n.id,
                   type: n.type,
                   position: n.position,
-                  data: { values: n.values, label: n.displayName },
+                  data: {
+                    values: n.values,
+                    label: n.displayName,
+                    ...(n.pinnedOutput != null
+                      ? {
+                          pinnedOutput: n.pinnedOutput,
+                          output: n.pinnedOutput,
+                        }
+                      : {}),
+                  },
                 })) as Node[];
                 const importedEdges = imported.edges.map((ed) => ({
                   id: ed.id,

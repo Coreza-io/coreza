@@ -17,6 +17,7 @@ import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
 import { getVisibleValues } from '@/utils/fieldVisibility';
 import { nodeManifest } from '@/nodes/manifest';
 import { reconcileNodeValues } from '@/utils/reconcileNodeValues';
+import { safePinnedOutput } from '@/utils/pinnedOutput';
 
 export interface WorkflowPersistenceOptions {
   projectId: string | null;
@@ -78,23 +79,27 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
   // Serialise nodes for DB (strips definitions, filters hidden fields)
   // ──────────────────────────────────────────────
   const serializeNodes = useCallback((nodes: Node[]) => {
-    return nodes.map((n) => ({
-      id: n.id,
-      name: (n.data.definition as any)?.name,
-      node_type: (n.data.definition as any)?.node_type,
-      category: (n.data.definition as any)?.category,
-      subCategory: (n.data.definition as any)?.subCategory,
-      provider: (n.data.definition as any)?.provider,
-      position: n.position,
-      sourcePosition: n.sourcePosition,
-      targetPosition: n.targetPosition,
-      values: getVisibleValues(
-        n.data.definition as any,
-        (n.data.values as Record<string, any>) || {},
-      ),
-      executionMode: (n.data.definition as any)?.executionMode,
-      streamingConfig: (n.data.definition as any)?.streamingConfig,
-    }));
+    return nodes.map((n) => {
+      const pinnedOutput = safePinnedOutput(n.data.pinnedOutput);
+      return {
+        id: n.id,
+        name: (n.data.definition as any)?.name,
+        node_type: (n.data.definition as any)?.node_type,
+        category: (n.data.definition as any)?.category,
+        subCategory: (n.data.definition as any)?.subCategory,
+        provider: (n.data.definition as any)?.provider,
+        position: n.position,
+        sourcePosition: n.sourcePosition,
+        targetPosition: n.targetPosition,
+        values: getVisibleValues(
+          n.data.definition as any,
+          (n.data.values as Record<string, any>) || {},
+        ),
+        executionMode: (n.data.definition as any)?.executionMode,
+        streamingConfig: (n.data.definition as any)?.streamingConfig,
+        ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
+      };
+    });
   }, []);
 
   const serializeEdges = useCallback(
@@ -295,6 +300,8 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
             nodeManifest[nodeName as keyof typeof nodeManifest];
 
           const rawValues = (node as any).values || node.data?.values || {};
+          const pinnedOutput = (node as { pinnedOutput?: unknown }).pinnedOutput ??
+            node.data?.pinnedOutput;
           const { merged } = reconcileNodeValues(definition, rawValues, node.data?.fieldState || {});
 
           return {
@@ -306,6 +313,9 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
               values: merged,
               fieldState: merged,
               displayName: node.id,
+              ...(pinnedOutput != null
+                ? { pinnedOutput, output: pinnedOutput }
+                : {}),
             },
           };
         });

@@ -319,6 +319,33 @@ export function useNodeExecution({
     async (e?: React.FormEvent, inputOverride?: any) => {
       if (e) e.preventDefault();
 
+      // Pinned / manually edited output wins: skip the request entirely and
+      // report the pinned value as this node's output.
+      if (overrideOutput !== null && overrideOutput !== undefined) {
+        console.log(
+          "📌 [NODE EXECUTION] Pinned output active — skipping execution for node:",
+          definition?.name || "Unknown",
+        );
+        setError("");
+        setLastOutput(overrideOutput);
+        data.output = overrideOutput;
+        if (nodeId) {
+          executionStore.setNodeData(nodeId, {
+            input: inputOverride ?? selectedInputData,
+            output: overrideOutput,
+          });
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === nodeId
+                ? { ...n, data: { ...n.data, output: overrideOutput } }
+                : n,
+            ),
+          );
+        }
+        setIsSending(false);
+        return;
+      }
+
       // Log the start of execution
       console.log(
         "🎯 [NODE EXECUTION] Starting execution for node:",

@@ -16,6 +16,35 @@ Adjusted: for conflicting sizes, take the **minimal-change option** — reject t
 
 Deferred: LEAN-style pre-start warmup bars (fetch extra bars before `start_date` instead of consuming the selected range). That is a real semantic gap, but it changes the historical fetch, the bar-alignment, and every existing backtest's results — a separate change, not folded in here.
 
+## Root cause of the empty `params` you are seeing (verified)
+
+`discoverWarmupNodes` returns `params: {}` for every RollingWindow node because the frontend never sends their values. In `src/hooks/useNodeExecution.ts` (lines 277-291), when the executed node is `InitializeIndicators` or `BacktestInit`, the whole graph is serialized but values are attached **only** for indicator nodes:
+
+```ts
+if (nodeDefinition?.category === "Indicators") {
+  serializedNode.values = n.data?.values || {};
+}
+```
+
+`RollingWindow.json` has `"category": "Data"`, so its `size`, `operation`, `symbol`, and `timeframe` are stripped. The backend's `node.values || node.data?.values` fallback then resolves to `{}` — which is why every discovered window shows `params: {}`, why the `operation === "set"` filter keeps `get` nodes (the `?? "set"` default), and why `clampWindowSize` silently returns 20.
+
+### 0. Fix the serialization — `src/hooks/useNodeExecution.ts`
+
+Widen the condition so warmup-relevant nodes keep their values:
+
+```ts
+if (
+  nodeDefinition?.category === "Indicators" ||
+  nodeDefinition?.name === "RollingWindow"
+) {
+  serializedNode.values = n.data?.values || {};
+}
+```
+
+Note this only affects the manual editor run. In the live/scheduled path the nodes come from the DB with `values` intact, so backend-only fixes would never have surfaced this.
+
+Backend hardening for the same class of bug: treat a RollingWindow node whose `params` is empty as a configuration error at init (`"RollingWindow node <id> has no configuration; re-save the workflow"`) instead of silently seeding a default-size window.
+
 ## Changes
 
 ### 1. `src/nodes/executors/InitializeIndicatorsExecutor.ts`

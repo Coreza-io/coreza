@@ -51,7 +51,7 @@
       "required": true,
       "placeholder": "20",
       "default": "20",
-      "description": "Max bars to hold (1-500). Window is 'ready' when full.",
+      "description": "Max bars to hold (1-500). Window is 'ready' when full. In backtests, BacktestInit pre-seeds the window from its warmup bars; all set nodes sharing a symbol/timeframe must declare the same size.",
       "displayOptions": {
         "show": {
           "operation": ["set"]

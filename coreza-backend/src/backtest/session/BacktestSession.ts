@@ -11,6 +11,8 @@ import { getNodeExecutor } from "../../nodes/registry";
 import { RedisKeys } from "../../infra/redisKeys";
 import { createWorkflowLifecycleService } from "../../workflow/lifecycleServiceInstance";
 import { toMarketBarEnvelope } from "../simBroker/marketEnvelope";
+import { seedRollingWindows } from "../rollingWindowSeed";
+import type { RollingWindowSeed } from "../rollingWindowSeed";
 
 export interface BarEvent {
   bar: any;
@@ -99,6 +101,7 @@ export class BacktestSession {
     private readonly bars: MultiBarEvent[],
     private readonly executionId: string,
     stateManager?: IndicatorStateManager,
+    private readonly rollingWindowSeed?: RollingWindowSeed,
   ) {
     this.abortController = new AbortController();
     this.stateManager = stateManager;
@@ -864,9 +867,18 @@ export class BacktestSession {
     if (this.stateManager) {
       this.run.setIndicatorStateManager(this.stateManager);
     }
+    if (this.rollingWindowSeed) {
+      seedRollingWindows({
+        ...this.rollingWindowSeed,
+        userId: this.userId,
+        workflowId: this.workflowId,
+        executionId: this.executionId,
+      });
+    }
     this.run.clearNodeTiming();
     this.run.pinResults(this.backtestInitResult);
     this.stateManager?.clearL1Cache();
+    this.tryCompilePlan();
 
     await this.reportProgress();
   }

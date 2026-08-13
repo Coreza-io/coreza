@@ -39,22 +39,22 @@ export const INDICATOR_NAMES = new Set([
   "ATR",
 ]);
 
-interface DiscoveredIndicator {
+export interface DiscoveredWarmupNode {
   nodeId: string;
   type: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
 }
 
 /**
  * BFS walk from startNodeId through all downstream edges to discover
- * every indicator node in the workflow graph.
+ * every node that can be initialized from warmup bars.
  */
-export function discoverIndicators(
+export function discoverWarmupNodes(
   startNodeId: string,
   allNodes: WorkflowNode[],
   allEdges: WorkflowEdge[],
-): DiscoveredIndicator[] {
-  const indicators: DiscoveredIndicator[] = [];
+): DiscoveredWarmupNode[] {
+  const warmupNodes: DiscoveredWarmupNode[] = [];
   const visited = new Set<string>();
   const queue = allEdges
     .filter((e) => e.source === startNodeId)
@@ -69,10 +69,13 @@ export function discoverIndicators(
     if (!node) continue;
 
     const name = (node.name || "").toUpperCase().replace(/\s+/g, "");
-    if (INDICATOR_NAMES.has(name)) {
-      indicators.push({
+    if (INDICATOR_NAMES.has(name) || name === "ROLLINGWINDOW") {
+      warmupNodes.push({
         nodeId: node.id,
-        type: (node.name || "").toLowerCase(),
+        type:
+          name === "ROLLINGWINDOW"
+            ? "rollingwindow"
+            : (node.name || "").toLowerCase(),
         params: node.values || (node.data?.values ?? {}),
       });
     }
@@ -85,7 +88,17 @@ export function discoverIndicators(
       });
   }
 
-  return indicators;
+  return warmupNodes;
+}
+
+export function discoverIndicators(
+  startNodeId: string,
+  allNodes: WorkflowNode[],
+  allEdges: WorkflowEdge[],
+): DiscoveredWarmupNode[] {
+  return discoverWarmupNodes(startNodeId, allNodes, allEdges).filter(
+    (node) => node.type !== "rollingwindow",
+  );
 }
 
 export class InitializeIndicatorsExecutor implements INodeExecutor {
@@ -176,7 +189,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
       }
 
       // --- Discover indicators ---
-      let discoveredIndicators: DiscoveredIndicator[] = [];
+      let discoveredIndicators: DiscoveredWarmupNode[] = [];
 
       if (autoDetect) {
         const allNodes: WorkflowNode[] = context?.nodes || [];

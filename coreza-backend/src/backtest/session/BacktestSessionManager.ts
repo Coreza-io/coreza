@@ -1,6 +1,7 @@
 import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { BacktestSession, MultiBarEvent } from "./BacktestSession";
 import { IndicatorStateManager } from "../../engine/indicatorStateManager";
+import type { RollingWindowSeed } from "../rollingWindowSeed";
 
 export class BacktestSessionManager {
   private static instance: BacktestSessionManager;
@@ -26,6 +27,7 @@ export class BacktestSessionManager {
     bars: MultiBarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
+    rollingWindowSeed?: RollingWindowSeed,
   ): BacktestSession {
     const scopeKey = `${workflowId}:${nodeId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
@@ -51,6 +53,7 @@ export class BacktestSessionManager {
       bars,
       runId,
       stateManager,
+      rollingWindowSeed,
     );
 
     this.sessions.set(backtestId, session);

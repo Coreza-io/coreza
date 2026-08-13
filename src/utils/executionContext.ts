@@ -51,6 +51,7 @@ export interface NodeExecutionData {
 
 export class ExecutionContext {
   private store = new Map<string, NodeExecutionData>();
+  private pinnedOutputs = new Map<string, unknown>();
   
   // CRITICAL FIX: Expose store for ID checking
   get storeMap() {
@@ -67,7 +68,27 @@ export class ExecutionContext {
 
   setNodeData(id: string, data: Partial<NodeExecutionData>): void {
     const prev = this.store.get(id) ?? {};
+    if (this.pinnedOutputs.has(id) && Object.prototype.hasOwnProperty.call(data, 'output')) {
+      const { output: _ignoredOutput, ...nonOutputData } = data;
+      this.store.set(id, {
+        ...prev,
+        ...nonOutputData,
+        output: this.pinnedOutputs.get(id),
+      });
+      return;
+    }
     this.store.set(id, { ...prev, ...data });
+  }
+
+  setPinned(id: string, value: unknown | null): void {
+    if (value === null) {
+      this.pinnedOutputs.delete(id);
+      return;
+    }
+
+    this.pinnedOutputs.set(id, value);
+    const prev = this.store.get(id) ?? {};
+    this.store.set(id, { ...prev, output: value });
   }
 
   /** Clear runtime-only loop fields. */
@@ -193,9 +214,12 @@ export class ExecutionContext {
     this.setNodeData(loopId, patch);
   }
 
-  /** Clear all stored execution data (useful when switching workflows) */
+  /** Clear transient execution data while retaining registered pinned outputs. */
   clear() {
     this.store.clear();
+    this.pinnedOutputs.forEach((output, id) => {
+      this.store.set(id, { output });
+    });
   }
 }
 

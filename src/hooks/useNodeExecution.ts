@@ -283,7 +283,10 @@ export function useNodeExecution({
             category: nodeDefinition?.category,
           };
 
-          if (nodeDefinition?.category === "Indicators") {
+          if (
+            nodeDefinition?.category === "Indicators" ||
+            nodeDefinition?.name === "RollingWindow"
+          ) {
             serializedNode.values = n.data?.values || {};
           }
 

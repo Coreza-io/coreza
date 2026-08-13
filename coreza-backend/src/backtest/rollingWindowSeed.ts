@@ -25,6 +25,12 @@ export function resolveRollingWindowSeedSize(
   const sizes = new Set<number>();
 
   for (const window of windows) {
+    if (Object.keys(window.params).length === 0) {
+      throw new Error(
+        `RollingWindow node ${window.nodeId} has no configuration; re-save the workflow`,
+      );
+    }
+
     const rawSize = window.params.size;
     const isNumeric =
       (typeof rawSize === "number" && Number.isFinite(rawSize)) ||

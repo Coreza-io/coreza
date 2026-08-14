@@ -2,40 +2,61 @@ import { resolveCategory } from "../../nodes/categoryMap";
 import type { NodeResult, WorkflowNode } from "../../nodes/types";
 import type { WarmupNodePolicy } from "./types";
 
-const EXECUTE_CATEGORIES = new Set(["indicators", "controlflow", "datasource"]);
+/**
+ * Warm-up node policy.
+ *
+ * Matching is exact on the *definition* identity (`node.name` from the node
+ * JSON, plus the resolved category) — never substring matching on the user's
+ * label, which would reject a Compute node named "CheckOrderCount".
+ *
+ * Anything unmatched defaults to `suppress`: a new node type is far more
+ * likely to be a side-effecting integration than a state accumulator.
+ */
+
+/** Categories whose nodes are pure state-builders and must run during warm-up. */
+const EXECUTE_CATEGORIES = new Set(["indicators", "controlflow", "logic"]);
+
+/** Explicit per-node allow list (definition names, lowercased). */
 const EXECUTE_NODES = new Set([
-  "indicators",
-  "initializeindicators",
   "rollingwindow",
+  "initializeindicators",
   "compute",
   "if",
   "switch",
   "loop",
   "edit fields",
+  "onbar",
 ]);
-const REJECT_TERMS = ["backtesttrade", "portfolio", "broker", "order", "trade"];
-const SUPPRESS_TERMS = [
-  "telegram",
-  "gmail",
-  "whatsapp",
-  "webhook",
-  "notification",
-  "storage",
-  "documentextract",
-  "aiagent",
-  "llm",
-  "store",
-];
+
+/** Nodes/categories that would create or mutate trading state. */
+const REJECT_CATEGORIES = new Set([
+  "broker",
+  "portfolio",
+  "risk management",
+  "trading",
+]);
+const REJECT_NODES = new Set([
+  "backtesttrade",
+  "backtestportfolio",
+  "portfolio",
+  "risk engine",
+]);
 
 export function resolveWarmupPolicy(node: WorkflowNode): WarmupNodePolicy {
-  const category = resolveCategory(node).toLowerCase();
-  const nodeName = (node.name ?? node.type ?? "").toLowerCase();
-  const identity = `${category} ${nodeName}`;
-  if (REJECT_TERMS.some((term) => identity.includes(term))) return "reject";
-  if (SUPPRESS_TERMS.some((term) => identity.includes(term))) return "suppress";
-  return EXECUTE_CATEGORIES.has(category) || EXECUTE_NODES.has(nodeName)
-    ? "execute"
-    : "suppress";
+  const category = (resolveCategory(node) ?? "").toLowerCase().trim();
+  const nodeName = (node.name ?? node.type ?? "").toLowerCase().trim();
+
+  if (REJECT_CATEGORIES.has(category) || REJECT_NODES.has(nodeName)) {
+    return "reject";
+  }
+
+  if (EXECUTE_NODES.has(nodeName) || EXECUTE_CATEGORIES.has(category)) {
+    return "execute";
+  }
+
+  // Everything else — data sources, communication, storage, AI, streams,
+  // documents — is suppressed: no external calls, no side effects, no cost.
+  return "suppress";
 }
 
 export function enforceWarmupPolicy(

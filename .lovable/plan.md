@@ -1,48 +1,41 @@
-# Fix: Rolling Window key mismatch between manual storage route and BacktestExecutor
+# Fix: Rolling Window read returns nothing even though the key matches
 
-## The problem (verified)
+## What the code shows (verified reads)
 
-Three different execution scopes are used for the same rolling-window buffer:
+Keys now match, so the failure is on the **write** side / lifecycle, not the key builder. Three concrete gaps exist:
 
-| Path | executionId used | Storage |
-|---|---|---|
-| `routes/storage.ts` (manual RollingWindow node) | `workflowSessionId` | local `rollingWindows` Map in the route file |
-| `BacktestExecutor` warm-up seeding (`rollingWindowSeed.ts`) | `context?.runId \|\| backtestId` | `DataContextManager` context |
-| `IndicatorsExecutor` (RollingWindow node in engine runs) | `context.runId` | `DataContext` |
+1. **No seeding at all in `workflow_replay` warm-up.** `BacktestExecutor` builds
+   `rollingWindowSeed = warmupMode === "workflow_replay" || size === undefined ? undefined : {...}`,
+   so with replay warm-up `seedRollingWindows` never runs and `rollingWindowsInitialized = 0`. Nothing is ever put in the DataContext at init; the window only appears if a RollingWindow `set` node actually executes during replay.
 
-The backtest engine and the indicators executor already agree (both use `context.runId`). The real break is the storage route: different identifier **and** a completely separate store. So swapping `workflowSessionId` for `backtestId` in the route would not fix anything — the stores still differ.
+2. **Silent fallback when `dataContext` is missing.** In `IndicatorsExecutor` the rolling-window `set` branch does:
+   ```ts
+   if (dataContext) { ...getDataByKey/setData... } else { window = new RollingWindow(size); }
+   ```
+   When the executor is invoked without `dataContext` (manual single-node execution from the editor, and any engine path that does not thread it), the window is built, filled, returned as payload, and **thrown away**. A later `get` then legitimately finds nothing. The `get` branch has the same blind spot: it reads `dataContext?.getDataByKey(...)` and returns an empty payload instead of an explicit error.
 
-## Decision on the reviewed suggestion
+3. **Manual `set` through the route vs. engine `set`.** The `/storage/rolling-window` route and `IndicatorsExecutor` must both write into the same `DataContext` instance for the same `executionId`; any path that still writes elsewhere (or writes nothing, per point 2) produces exactly the observed symptom.
 
-The suggestion is valid and adopted: standardize on one canonical `executionId` for all stateful data, keep `backtestId` strictly for DB records / SimBroker / results, add a non-creating `getExistingContext`, and return `execution_id` from BacktestInit.
-
-One addition on top of it: include `workflowSessionId` in the executor's fallback chain so manual editor runs converge with **zero frontend change** (the RollingWindow node already sends `workflowSessionId`, and `/backtest/init` already receives it). Returning `execution_id` still happens, so the client can pin the scope explicitly later.
+`InMemoryStore` stores by reference with no TTL and evicts only on the 256MB cap, and `cleanupStaleContexts` never deletes contexts — so expiry/eviction is not the cause.
 
 ## Plan
 
-1. **Canonical execution identity.** In `BacktestExecutor`, rename `effectiveRunId` to `executionId` and resolve it as
-   `context?.runId ?? context?.workflowSessionId ?? backtestId`
-   (same precedence `HistoricalDataService` already uses). Add `workflowSessionId?: string` to the executor's context type. This id drives indicator keys, rolling-window keys, `DataContext`, `BacktestSession`, node state, and reset/cleanup. `backtestId` stays for the DB row, SimBroker lookup, progress and results.
+1. **Instrument first (one run, then remove).** In the storage `get` branch, log `executionId`, `storeKey`, `dataContext.listDataRefs().map(r => r.ref)`. This immediately distinguishes "context empty" (nothing was written) from "context has other keys" (residual key mismatch). Keep the `getExistingContext` 404 as-is.
 
-2. **Non-creating context lookup.** Add to `DataContextManager`:
-   `getExistingContext(executionId: string): DataContext | undefined { return this.contexts.get(executionId); }`
-   Reads must never lazily create an empty context — that would hide an id mismatch behind an "empty window" result.
+2. **Never drop a rolling window write.** Remove the `else { new RollingWindow(size) }` silent path in `IndicatorsExecutor`. When no `dataContext` is available, resolve one through `DataContextManager.getInstance().getContext({ executionId, workflowId, userId })` using the same ids used to build the key, so a `set` is always persisted into the shared store.
 
-3. **Storage route uses the same DataContext.** In `routes/storage.ts`:
-   - accept `executionId` from the body, falling back to `workflowSessionId` (legacy); 400 when neither is present.
-   - delete the module-level `rollingWindows` Map, `sessionKeys` and `touchSession` (the DataContext manager already expires stale contexts).
-   - `get`: `getExistingContext(executionId)`; 404 `"Execution context not found or already completed"` when absent; otherwise `dataContext.getDataByKey(storeKey)`.
-   - `set`: `getContext({ executionId, workflowId, userId })`, reuse the stored window and replace it only when the declared `size` changed, then `setData(storeKey, window)`.
-   - key building is unchanged apart from passing the resolved `executionId`.
+3. **Make a missing window explicit on `get`.** In both `IndicatorsExecutor` and the storage route, when the key is absent return a clear error/flag (`ready: false`, `reason: "no window for <symbol>/<timeframe> in this execution"`) instead of an empty-but-successful payload, so this class of bug surfaces instead of looking like an empty buffer.
 
-4. **Expose the id.** Add `execution_id: executionId` alongside `backtest_id` in the BacktestInit output so the client can pass it back when inspecting rolling-window state.
+4. **Seed rolling windows in replay warm-up too.** Rolling windows are plain FIFO buffers with no side effects, so the `warmupMode === "workflow_replay"` exclusion is unnecessary and is what leaves the buffer empty until enough live bars arrive. Build `rollingWindowSeed` whenever `rollingWindowSize` is defined, and keep passing it to `BacktestSessionManager.createSession` so `session.reset()` re-seeds identically. Replay then only tops the pre-seeded window up.
+
+5. **Regression test.** Extend `coreza-backend/tests/rollingWindowOperations.test.ts`: a `set` executed without an injected `dataContext` must be readable afterwards through the storage-route key path for the same `executionId`; and a `get` for an unseeded symbol must return the explicit not-found shape.
 
 ## Technical details
 
 Files touched:
-- `coreza-backend/src/backtest/BacktestExecutor.ts` — rename + fallback chain (line ~325), context type widening, `execution_id` in the init payload.
-- `coreza-backend/src/engine/DataContext.ts` — add `getExistingContext`.
-- `coreza-backend/src/routes/storage.ts` — remove the local map/LRU, resolve `executionId`, route both branches through `DataContext`.
-- Tests: extend `coreza-backend/tests/rollingWindowOperations.test.ts` with a case asserting a window seeded via `seedRollingWindows({ executionId })` is readable through the storage-route key path, and that an unknown `executionId` yields the 404 branch rather than an empty window.
+- `coreza-backend/src/nodes/executors/IndicatorsExecutor.ts` — resolve `DataContext` when absent (both `get` and `set` branches), explicit not-found on `get`.
+- `coreza-backend/src/backtest/BacktestExecutor.ts` — drop the `workflow_replay` exclusion when building `rollingWindowSeed` (line ~501).
+- `coreza-backend/src/routes/storage.ts` — temporary diagnostic log, explicit not-found response shape.
+- `coreza-backend/tests/rollingWindowOperations.test.ts` — new cases.
 
-No frontend changes required; `execution_id` is additive.
+No frontend or schema changes.

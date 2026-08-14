@@ -30,6 +30,21 @@ describe("workflow replay warm-up", () => {
     });
   });
 
+  it("suppresses data sources and never matches on renamed labels", () => {
+    expect(resolveWarmupPolicy(node("YahooFinance", "Data"))).toBe("suppress");
+    expect(resolveWarmupPolicy(node("FMP", "Data"))).toBe("suppress");
+    expect(resolveWarmupPolicy(node("Gmail", "Communication"))).toBe(
+      "suppress",
+    );
+    expect(resolveWarmupPolicy(node("AIAgent", "AIAgent"))).toBe("suppress");
+    // Definition-name matching only: a Compute node is never rejected because
+    // its label happens to contain "order"/"trade"/"store".
+    expect(resolveWarmupPolicy(node("Compute", "Logic"))).toBe("execute");
+    expect(resolveWarmupPolicy(node("RollingWindow", "Data"))).toBe("execute");
+    expect(resolveWarmupPolicy(node("Portfolio", "Portfolio"))).toBe("reject");
+    expect(resolveWarmupPolicy(node("Alpaca", "Broker"))).toBe("reject");
+  });
+
   it("does not cap a longer symbol history", () => {
     const bar = (time: number) => ({
       time,

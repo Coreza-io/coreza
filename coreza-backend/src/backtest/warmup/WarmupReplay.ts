@@ -8,8 +8,14 @@ export interface AlignedMultiBarEvent extends MultiBarEvent {
   fillForwardSymbols: string[];
 }
 
+type AlignableBar = HistoricalBar & {
+  _sourceTimestamp?: number;
+  _isFillForward?: boolean;
+  time?: number;
+};
+
 /** Aligns symbols on the union of timestamps with causal fill-forward bars. */
-export function alignMultiSymbolBars<T extends HistoricalBar>(
+export function alignMultiSymbolBars<T extends AlignableBar>(
   symbols: string[],
   barsBySymbol: ReadonlyMap<string, readonly T[]>,
   interval: string,

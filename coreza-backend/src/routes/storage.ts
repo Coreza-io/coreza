@@ -21,6 +21,7 @@ import { buildStoreKey, extractVariableNameFromKey } from "../utils/store";
 import logger from "../utils/logger";
 import { buildExecutionScopedKey } from "../utils/executionKey";
 import { RollingWindow } from "../engine/RollingWindow";
+import { DataContextManager } from "../engine/DataContext";
 import {
   buildRollingWindowPayload,
   clampWindowSize,
@@ -31,29 +32,6 @@ import {
 } from "../engine/rollingWindowHelpers";
 
 const router = Router();
-const MAX_SESSIONS = 200;
-const rollingWindows = new Map<string, RollingWindow<unknown>>();
-const sessionKeys = new Map<string, Set<string>>();
-
-function touchSession(sessionId: string, storeKey: string): void {
-  let keys = sessionKeys.get(sessionId);
-  if (keys) {
-    sessionKeys.delete(sessionId);
-  } else {
-    keys = new Set<string>();
-  }
-  keys.add(storeKey);
-  sessionKeys.set(sessionId, keys);
-
-  while (sessionKeys.size > MAX_SESSIONS) {
-    const oldest = sessionKeys.entries().next();
-    if (oldest.done) break;
-
-    const [oldestSessionId, oldestKeys] = oldest.value;
-    for (const key of oldestKeys) rollingWindows.delete(key);
-    sessionKeys.delete(oldestSessionId);
-  }
-}
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
@@ -72,14 +50,15 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       symbol,
       timeframe,
       workflowId,
+      executionId: requestedExecutionId,
       workflowSessionId,
       operation = "set",
     } = req.body;
-    if (!workflowSessionId) {
+    const executionId = requestedExecutionId ?? workflowSessionId;
+    if (!executionId) {
       return res.status(400).json({
         success: false,
-        error:
-          "workflowSessionId is required for manual rolling-window execution",
+        error: "executionId or workflowSessionId is required",
       });
     }
 
@@ -104,12 +83,21 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       const storeKey = buildExecutionScopedKey({
         userId,
         workflowId,
-        executionId: workflowSessionId,
+        executionId,
         scope: "rolling_window",
         parts: [normalizedSymbol, normalizedTimeframe],
       });
-      const window = rollingWindows.get(storeKey);
-      touchSession(workflowSessionId, storeKey);
+      const dataContext =
+        DataContextManager.getInstance().getExistingContext(executionId);
+      if (!dataContext) {
+        return res.status(404).json({
+          success: false,
+          error: "Execution context not found or already completed",
+        });
+      }
+      const window = dataContext.getDataByKey(storeKey) as
+        | RollingWindow<unknown>
+        | undefined;
 
       return res.json({
         success: true,
@@ -127,7 +115,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
     const storeKey = buildExecutionScopedKey({
       userId,
       workflowId,
-      executionId: workflowSessionId,
+      executionId,
       scope: "rolling_window",
       parts: [normalizedSymbol || "_", normalizedTimeframe || "_"],
     });
@@ -136,16 +124,22 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: parsed.error });
     }
 
-    let window = rollingWindows.get(storeKey);
+    const dataContext = DataContextManager.getInstance().getContext({
+      executionId,
+      workflowId,
+      userId,
+    });
+    let window = dataContext.getDataByKey(storeKey) as
+      | RollingWindow<unknown>
+      | undefined;
     if (!window || window.size !== windowSize) {
       window = new RollingWindow<unknown>(windowSize);
-      rollingWindows.set(storeKey, window);
     }
-    touchSession(workflowSessionId, storeKey);
 
     for (const bar of parsed.bars) {
       window.add(bar);
     }
+    dataContext.setData(storeKey, window);
     res.json({
       success: true,
       status: "success",

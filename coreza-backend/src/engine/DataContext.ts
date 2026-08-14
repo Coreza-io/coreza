@@ -307,6 +307,13 @@ export class DataContextManager {
   }
 
   /**
+   * Get an existing DataContext without creating one.
+   */
+  getExistingContext(executionId: string): DataContext | undefined {
+    return this.contexts.get(executionId);
+  }
+
+  /**
    * Destroy a DataContext when workflow run completes
    */
   destroyContext(executionId: string): void {

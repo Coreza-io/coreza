@@ -339,15 +339,19 @@ export class BacktestSession {
       const broker = BacktestExecutor.getSimBrokerForBacktest(this.backtestId);
       broker?.setWarmingUp(true);
       const startedAt = performance.now();
-      const strategyPerf = { ...this.perf, warmup: { ...this.perf.warmup } };
+      // Snapshot only the accumulator fields — `mode`/`totalStart` must keep
+      // whatever the strategy run sets, and `warmup` is written below.
+      const { mode, totalStart, warmup, ...strategyAccumulators } = this.perf;
       try {
         for (const event of this.warmupEvents)
           await this.executeTimestampAsync(event);
       } finally {
         const totalMs = performance.now() - startedAt;
-        Object.assign(this.perf, strategyPerf);
-        this.perf.warmup.events = this.warmupEvents.length;
-        this.perf.warmup.totalMs = totalMs;
+        Object.assign(this.perf, strategyAccumulators);
+        this.perf.warmup = {
+          events: this.warmupEvents.length,
+          totalMs,
+        };
         broker?.setWarmingUp(false);
       }
     }

@@ -869,6 +869,7 @@ export class BacktestSession {
         snapshotTimestampMs: 0,
         runnerBookkeepingMs: 0,
         symbolExecutions: 0,
+        warmup: { ...this.perf.warmup },
       };
 
       if (this.compiledPlan) {

@@ -61,6 +61,16 @@ type AlignedMultiBarEvent = MultiBarEvent & {
   fillForwardSymbols?: string[];
 };
 
+interface BacktestInitContext {
+  userId?: string;
+  workflowId?: string;
+  runId?: string;
+  workflowSessionId?: string;
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
+  resolveNodeParameters?: (node: WorkflowNode, input: NodeInput) => NodeInput;
+}
+
 function extractStrategySubgraph(
   backtestNodeId: string,
   allNodes: WorkflowNode[],
@@ -243,7 +253,7 @@ export class BacktestExecutor implements INodeExecutor {
   public async executeBacktestInit(
     node: WorkflowNode,
     input: NodeInput,
-    context: any,
+    context?: BacktestInitContext,
   ): Promise<NodeResult> {
     try {
       const params = context?.resolveNodeParameters
@@ -322,7 +332,8 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const backtestId = (backtest as { id: string }).id;
-      const effectiveRunId = context?.runId || backtestId;
+      const executionId =
+        context?.runId ?? context?.workflowSessionId ?? backtestId;
       BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
@@ -481,7 +492,7 @@ export class BacktestExecutor implements INodeExecutor {
             const key = buildIndicatorKey(
               userId,
               workflowId,
-              effectiveRunId,
+              executionId,
               currentSymbol,
               interval,
               ind.nodeId,
@@ -507,7 +518,7 @@ export class BacktestExecutor implements INodeExecutor {
             ...rollingWindowSeed,
             userId,
             workflowId,
-            executionId: effectiveRunId,
+            executionId,
           })
         : 0;
 
@@ -527,6 +538,7 @@ export class BacktestExecutor implements INodeExecutor {
       // Build the BacktestInit result that downstream nodes need via templates
       const backtestInitData = {
         backtest_id: backtestId,
+        execution_id: executionId,
         symbol: primarySymbol,
         symbols,
         interval,
@@ -556,7 +568,7 @@ export class BacktestExecutor implements INodeExecutor {
         entryNodeIds,
         backtestInitResult,
         barEvents,
-        effectiveRunId,
+        executionId,
         stateManager,
         rollingWindowSeed,
         warmupMode === "seed"
@@ -606,6 +618,7 @@ export class BacktestExecutor implements INodeExecutor {
       return toNodeResult(
         createSuccessOutput({
           backtest_id: backtestId,
+          execution_id: executionId,
           mode: isManual ? "manual" : "batch",
           total_bars: barEvents.length,
           initial_capital: config.initialCapital,
@@ -651,7 +664,7 @@ export class BacktestExecutor implements INodeExecutor {
               stateManager,
               userId,
               workflowId,
-              effectiveRunId,
+              executionId,
               symbols,
               interval,
               discoveredIndicators,

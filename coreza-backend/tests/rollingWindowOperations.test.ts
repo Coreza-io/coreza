@@ -1,7 +1,22 @@
 import { IndicatorsExecutor } from "../src/nodes/executors/IndicatorsExecutor";
 import { WorkflowNode } from "../src/nodes/types";
+import express from "express";
+import request from "supertest";
+import storageRoutes from "../src/routes/storage";
+import { seedRollingWindows } from "../src/backtest/rollingWindowSeed";
+import { DataContextManager } from "../src/engine/DataContext";
 
 jest.mock("../src/engine", () => ({}));
+jest.mock("../src/middleware/jwtAuth", () => ({
+  requireAuth: (
+    req: { user?: { id: string } },
+    _res: unknown,
+    next: () => void,
+  ) => {
+    req.user = { id: "user-1" };
+    next();
+  },
+}));
 
 class TestDataContext {
   private readonly data = new Map<string, unknown>();
@@ -30,6 +45,10 @@ describe("Rolling Window operations", () => {
     runId,
     dataContext: new TestDataContext(),
   });
+
+  const storageApp = express()
+    .use(express.json())
+    .use("/storage", storageRoutes);
 
   it("gets a requested timeframe without mutating its window", () => {
     const executor = new IndicatorsExecutor();
@@ -246,6 +265,65 @@ describe("Rolling Window operations", () => {
     );
 
     expect(result).toMatchObject({ data: { found: false, window: [] } });
+  });
+
+  it("reads a backtest-seeded window through the storage route execution key", async () => {
+    const executionId = "shared-storage-run";
+    seedRollingWindows({
+      userId: "user-1",
+      workflowId: "workflow-1",
+      executionId,
+      symbols: ["btcusdt"],
+      interval: "1h",
+      size: 2,
+      warmupBarsBySymbol: new Map([
+        ["btcusdt", [{ close: 1 }, { close: 2 }, { close: 3 }]],
+      ]),
+    });
+
+    const response = await request(storageApp)
+      .post("/storage/rolling-window")
+      .send({
+        operation: "get",
+        executionId,
+        workflowId: "workflow-1",
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: {
+        found: true,
+        window: [{ close: 2 }, { close: 3 }],
+        count: 2,
+        size: 2,
+      },
+    });
+    DataContextManager.getInstance().destroyContext(executionId);
+  });
+
+  it("returns 404 without creating an unknown execution context", async () => {
+    const executionId = "missing-storage-run";
+    const manager = DataContextManager.getInstance();
+
+    const response = await request(storageApp)
+      .post("/storage/rolling-window")
+      .send({
+        operation: "get",
+        executionId,
+        workflowId: "workflow-1",
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      success: false,
+      error: "Execution context not found or already completed",
+    });
+    expect(manager.hasContext(executionId)).toBe(false);
   });
 
   it("reads a legacy set window whose blank timeframe used the fallback", () => {

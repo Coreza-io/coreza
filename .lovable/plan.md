@@ -7,31 +7,42 @@ Three different execution scopes are used for the same rolling-window buffer:
 | Path | executionId used | Storage |
 |---|---|---|
 | `routes/storage.ts` (manual RollingWindow node) | `workflowSessionId` | local `rollingWindows` Map in the route file |
-| `BacktestExecutor.execute` warm-up seeding (`rollingWindowSeed.ts`) | `context?.runId \|\| backtestId` — and `/backtest/init` never sets `runId`, so it is the freshly created `backtestId` | `DataContextManager` context |
+| `BacktestExecutor` warm-up seeding (`rollingWindowSeed.ts`) | `context?.runId \|\| backtestId` | `DataContextManager` context |
 | `IndicatorsExecutor` (RollingWindow node in engine runs) | `context.runId` | `DataContext` |
 
-So in a manual backtest the seeded window is written under `...executionId:<backtestId>` inside a DataContext, while the manual RollingWindow node reads `...executionId:<workflowSessionId>` from a completely separate in-memory Map. The `get` operation always returns an empty window.
+The backtest engine and the indicators executor already agree (both use `context.runId`). The real break is the storage route: different identifier **and** a completely separate store. So swapping `workflowSessionId` for `backtestId` in the route would not fix anything — the stores still differ.
 
-## Best solution
+## Decision on the reviewed suggestion
 
-Make the manual editor session the single canonical execution scope, and make all readers/writers use one store.
+The suggestion is valid and adopted: standardize on one canonical `executionId` for all stateful data, keep `backtestId` strictly for DB records / SimBroker / results, add a non-creating `getExistingContext`, and return `execution_id` from BacktestInit.
 
-1. **One execution identity for manual runs.** In `BacktestExecutor`, resolve
-   `effectiveRunId = context?.runId || context?.workflowSessionId || backtestId`
-   (same precedence already used by `HistoricalDataService`). Add `workflowSessionId?: string` to the executor's context type. Live/engine runs keep `runId`; manual runs now scope to `workflowSessionId`, which is exactly the key the storage route uses.
+One addition on top of it: include `workflowSessionId` in the executor's fallback chain so manual editor runs converge with **zero frontend change** (the RollingWindow node already sends `workflowSessionId`, and `/backtest/init` already receives it). Returning `execution_id` still happens, so the client can pin the scope explicitly later.
 
-2. **One store.** Replace the module-level `rollingWindows` Map + `sessionKeys` LRU in `routes/storage.ts` with `DataContextManager.getInstance().getContext({ executionId: workflowSessionId, workflowId, userId })` and `getDataByKey` / `setData`. This makes the manual route read exactly the objects `seedRollingWindows` wrote and the ones `IndicatorsExecutor` maintains — no duplicate buffers, no separate eviction policy.
+## Plan
 
-3. **Return the backtest scope to the frontend for reference.** `/backtest/init` response already carries backtest metadata; include `execution_id: effectiveRunId` in the result meta so the editor can confirm which scope the session is bound to (diagnostic only, no behaviour change).
+1. **Canonical execution identity.** In `BacktestExecutor`, rename `effectiveRunId` to `executionId` and resolve it as
+   `context?.runId ?? context?.workflowSessionId ?? backtestId`
+   (same precedence `HistoricalDataService` already uses). Add `workflowSessionId?: string` to the executor's context type. This id drives indicator keys, rolling-window keys, `DataContext`, `BacktestSession`, node state, and reset/cleanup. `backtestId` stays for the DB row, SimBroker lookup, progress and results.
 
-4. **Guard rails.** Keep `workflowSessionId` required on `/storage/rolling-window`; when it is absent the route keeps returning 400 rather than silently creating an orphan scope.
+2. **Non-creating context lookup.** Add to `DataContextManager`:
+   `getExistingContext(executionId: string): DataContext | undefined { return this.contexts.get(executionId); }`
+   Reads must never lazily create an empty context — that would hide an id mismatch behind an "empty window" result.
+
+3. **Storage route uses the same DataContext.** In `routes/storage.ts`:
+   - accept `executionId` from the body, falling back to `workflowSessionId` (legacy); 400 when neither is present.
+   - delete the module-level `rollingWindows` Map, `sessionKeys` and `touchSession` (the DataContext manager already expires stale contexts).
+   - `get`: `getExistingContext(executionId)`; 404 `"Execution context not found or already completed"` when absent; otherwise `dataContext.getDataByKey(storeKey)`.
+   - `set`: `getContext({ executionId, workflowId, userId })`, reuse the stored window and replace it only when the declared `size` changed, then `setData(storeKey, window)`.
+   - key building is unchanged apart from passing the resolved `executionId`.
+
+4. **Expose the id.** Add `execution_id: executionId` alongside `backtest_id` in the BacktestInit output so the client can pass it back when inspecting rolling-window state.
 
 ## Technical details
 
 Files touched:
-- `coreza-backend/src/backtest/BacktestExecutor.ts` — `effectiveRunId` precedence + context type widening (line ~325).
-- `coreza-backend/src/routes/storage.ts` — drop `rollingWindows`/`sessionKeys`/`touchSession`, use `DataContextManager`; both `get` and `set` branches; `set` still reuses/recreates the window when `size` changes.
-- `coreza-backend/src/engine/DataContext.ts` — no change expected; contexts already self-expire via `cleanupStaleContexts`, replacing the 200-session LRU.
-- Tests: extend `coreza-backend/tests/rollingWindowOperations.test.ts` (or add a small case) asserting that a window seeded with `executionId = workflowSessionId` is readable through the storage-route key builder.
+- `coreza-backend/src/backtest/BacktestExecutor.ts` — rename + fallback chain (line ~325), context type widening, `execution_id` in the init payload.
+- `coreza-backend/src/engine/DataContext.ts` — add `getExistingContext`.
+- `coreza-backend/src/routes/storage.ts` — remove the local map/LRU, resolve `executionId`, route both branches through `DataContext`.
+- Tests: extend `coreza-backend/tests/rollingWindowOperations.test.ts` with a case asserting a window seeded via `seedRollingWindows({ executionId })` is readable through the storage-route key path, and that an unknown `executionId` yields the 404 branch rather than an empty window.
 
-No frontend changes: the RollingWindow node already sends `workflowSessionId`, and `/backtest/init` already receives it.
+No frontend changes required; `execution_id` is additive.

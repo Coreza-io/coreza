@@ -1,138 +1,51 @@
-# LEAN-Style Workflow Replay Warm-Up (v3)
+# Review: LEAN-Style Workflow Replay Warm-Up (v3)
 
-## What the doc asks for
+Verified end to end against the code. The implementation is faithful to the plan — phase flags, policy gate on both execution paths, SimBroker guards, replay, metrics isolation, deterministic reset and mode exclusivity are all present. Two compile errors and three behavioral gaps need fixing.
 
-v2 (already shipped) fetches pre-start bars and *directly seeds* indicators + RollingWindows. v3 replaces that with LEAN's actual lifecycle: replay the pre-start bars **through the normal workflow** under an explicit warm-up phase, with trading and side effects blocked, then switch to the strategy range. Direct seeding stays as a compatibility mode behind `warmup_mode`.
+## What is correctly implemented (verified)
 
-The point: seeding only warms what `BacktestInit` knows how to seed. Replay warms *everything reachable* — custom node state, Compute accumulators, nested rolling windows — using the exact same code path as strategy bars, so warm-up behavior can never drift from run behavior.
+| Plan item | Status |
+|---|---|
+| `BacktestPhase`, `WarmupMode`, `WarmupNodePolicy`, `WarmupWarning` | `backtest/warmup/types.ts` — matches |
+| `isWarmingUp` in dynamic context | `engine/types/executionContext.ts:33`, defaulted false in `executionRuntime.ts:154`, set per bar from `phase === "warming_up"` (`BacktestSession.ts:313`) |
+| `isWarmingUp` in compiled context | `compiled/types.ts:138`, compiled default false, flipped per bar at `BacktestSession.ts:586,663` — mutable, not baked at compile time as required |
+| Single policy consulted by both engines | `enforceWarmupPolicy` called in `executionRuntime.ts:260` and `compiled/adapters.ts:29` |
+| Suppress returns routable success | `{ success: true, data: null, warmupSuppressed: true }` |
+| Reject returns `ORDER_DURING_WARMUP` | yes |
+| SimBroker defense in depth | `warmingUp` flag (`simBroker/index.ts:94`), guards on `placeOrder` (208), cancel/modify paths (256-271), `liquidate` (602), `setWarmingUp` (687) |
+| `onBar` market-state-only warm-up mode | `onBar(envelope, { warmup: true })` — ingests market state then returns before fill processing (index.ts:543) |
+| `buildWarmupEvents` reusing alignment | `warmup/WarmupReplay.ts:69` |
+| Replay via async path only | `initialize()` loops `executeTimestampAsync` |
+| Empty indicator init, no bulk warm-up in replay | `initializeIndicatorStates()` → `stateManager.initialize(...)`; `completeIndicatorWarmup()` after replay |
+| No equity snapshots / bars counted during warm-up | early `return` when `phase === "warming_up"` at lines 614 and 690 |
+| Seed vs replay mutual exclusivity | throws in `initialize()`; executor gates `rollingWindowSeed` (BacktestExecutor.ts:501) and the indicator seed at the `createSession` call site |
+| Deterministic reset | rejects while stepping/running, resets SimBroker, destroys run, `clearExecutionScope` (Redis-inclusive), recreates run, re-pins, recompiles, `phase = "initializing"` → `initialize()` |
+| `warmup_mode` field, default `seed` | `src/nodes/BacktestInit.json:374-385` |
+| Frontend RollingWindow serialization fix | `src/hooks/useNodeExecution.ts:286-291` |
 
-## Verified current state
+## Must fix
 
-- `HistoricalDataService.fetchPreviousBars` already returns per-symbol pre-start bars; `BacktestExecutor` builds `warmupBarsBySymbol` and `strategyBars`, and passes both `rollingWindowSeed` and `indicatorWarmupSeed` into `BacktestSessionManager.createSession` (BacktestExecutor.ts:422-522).
-- `BacktestSession` compiles a `WorkflowPlan`, optionally a compiled VM plan, then runs bars through `executeTimestamp`/`executeTimestampAsync` (lines ~450-580). Each timestamp: `SimBroker.onBar(envelope)` per symbol → per-symbol graph execution → `recordEquitySnapshot`.
-- There is no phase flag anywhere: `CompiledExecContext` (compiled/types.ts) and the dynamic run context carry no `isWarmingUp`.
-- `SimBroker.placeOrder` (simBroker/index.ts:206), `cancelOrder` (253), `liquidate` (584) are unguarded.
+### 1. Compile error — `perf` reset drops `warmup` (BacktestSession.ts:851)
+`runAll` reassigns `this.perf` with an object literal that omits the new `warmup` block, so the type no longer satisfies the field and warm-up timings are wiped on run start. Add `warmup: { events: 0, totalMs: 0 }` to that literal (keeping accumulated values is not required — warm-up already finished by then, but the field must exist).
 
-## Design
+### 2. Compile error — `_sourceTimestamp` on generic `T` (WarmupReplay.ts:51)
+`previous._sourceTimestamp` is read off a bare `T extends HistoricalBar`. Constrain the generic to `T & { _sourceTimestamp?: number }` (or read through a locally typed alias) so the fill-forward branch typechecks.
 
-### 1. Phase contract — `src/backtest/warmup/types.ts` (new)
+### 3. Warm-up perf snapshot restore also discards real work
+`initialize()` snapshots `this.perf` before replay and `Object.assign`s it back in `finally`. That is correct for isolation, but it restores `mode` and `totalStart` captured before compilation state may change. Take the snapshot after `tryCompilePlan`, or restore only the accumulator fields explicitly — safer than a whole-object assign.
 
-```ts
-export type BacktestPhase = "initializing" | "warming_up" | "ready" | "running" | "finished";
-export type WarmupMode = "seed" | "workflow_replay";
-export type WarmupNodePolicy = "execute" | "suppress" | "reject";
-export interface WarmupWarning { code: string; symbol?: string; requested?: number; available?: number; affectedNodes?: string[]; }
-```
+## Should fix
 
-`isWarmingUp: boolean` is threaded into both execution contexts:
-- Dynamic: a field on the run's execution-context extras (set alongside `multiBarContext` in `buildSymbolExecutionContext`), so every executor's `context.isWarmingUp` is populated.
-- Compiled: a mutable field on `CompiledExecContext` (`ctx.isWarmingUp`), flipped by the session — not baked in at compile time, so one compiled plan serves both phases.
+### 4. Policy substring matching is too eager
+`REJECT_TERMS` / `SUPPRESS_TERMS` are matched with `identity.includes(term)`, where identity is `"<category> <nodeName>"`. Any user-renamed node containing `order`, `trade`, `broker`, or `store` is silently rejected or suppressed — e.g. a Compute node named "CheckOrderCount" gets `ORDER_DURING_WARMUP`. Match on the resolved category and the node's *definition* name (`node.name` from the JSON definition, not the user label), and drop substring matching in favor of exact set membership plus a small explicit prefix list.
 
-Single source of truth is `BacktestSession.phase`; both contexts read from it when the session flips phase.
+### 5. `DataSource` executes during warm-up
+`EXECUTE_CATEGORIES` includes `datasource`, so FinnHub/YahooFinance nodes fire real HTTP fetches for every replayed bar. Warm-up replays 200 bars: that is 200x the external calls, plus non-determinism. Move `datasource` out of the execute allow-list (suppress it), keeping only `indicators`, `controlflow` and the explicit node allow-list.
 
-### 2. Central policy — `src/backtest/warmup/WarmupPolicy.ts` (new)
+### 6. Untested surface
+`tests/backtestWarmup.test.ts` and `backtestRollingWindowWarmup.test.ts` cover the seed path. No test covers the replay path. Add: order rejection during warm-up on every guarded method; suppressed node returns routable success; indicators consume each warm-up bar exactly once; reset reproduces an identical first-strategy-bar snapshot; `warmup_period = 0` skips replay; compiled and dynamic modes agree.
 
-One function `resolveWarmupPolicy(node): WarmupNodePolicy`, keyed on node category/name so compiled and dynamic modes cannot diverge:
+## Not blocking
 
-| Category | Policy | Reason |
-|---|---|---|
-| Indicators, Data/RollingWindow, Compute, If/Switch/Loop, Edit Fields | execute | state building, pure |
-| BacktestTrade, Portfolio mutations, Broker order ops | reject | would create trades |
-| Telegram/Gmail/WhatsApp/Webhook/Notification | suppress | external noise |
-| Storage writes, DocumentExtract downloads | suppress | side effects |
-| AIAgent / LLM nodes | suppress | cost + non-determinism |
-
-- **suppress** returns a deterministic success result (`{ success: true, data: null, warmupSuppressed: true }`) so routing/branching still works.
-- **reject** returns a structured error `{ code: "ORDER_DURING_WARMUP" }`.
-
-Enforcement point: the dynamic engine's node-execution wrapper and the compiled `ExecFn` adapter (`compiled/adapters.ts`) both consult the policy when `ctx.isWarmingUp` — a single shared helper called from two places.
-
-### 3. Defense in depth — SimBroker
-
-Add a `warmingUp` flag on `SimBroker` (set by the session on phase change). `placeOrder`, `cancelOrder`, `liquidate`, and any modify path return a rejected `OrderResult` with `ORDER_DURING_WARMUP` when set. This catches any executor path the policy table misses.
-
-`onBar` is the one exception discussed below.
-
-### 4. Warm-up events and replay — `src/backtest/warmup/WarmupReplay.ts` (new)
-
-- `buildWarmupEvents(warmupBarsBySymbol, interval)` reuses the existing `alignMultiSymbolBars` logic to produce `MultiBarEvent[]` from the pre-start maps. Per-symbol counts are independent: a symbol with 62 bars simply contributes to fewer aligned events; the global aligned-event count is never used as a readiness measure.
-- Events are retained on the session (`warmupEvents`) — this is the replay seed used by reset.
-- `replay(session)` iterates events through the **same** `executeTimestampAsync` path with `phase = "warming_up"`, then flips to `ready`.
-
-Market-state during warm-up: **do call** `SimBroker.onBar` for warm-up envelopes, but in a non-trading mode — orders can't exist (all order paths rejected), and `recordEquitySnapshot` is skipped. This keeps `SymbolMarketState` (used by `resolveMarketContext` and staleness policy) correctly primed for the first strategy bar instead of starting empty. Add a `SimBroker.onBar(envelope, { warmup: true })` overload that updates market state and skips pending-order processing and MTM equity recording.
-
-### 5. Indicators during replay
-
-Bulk `stateManager.warmUp(...)` must **not** run in replay mode — replaying the same bars afterwards double-counts them. Instead:
-
-- `BacktestInit` calls a new `stateManager.initialize(key, type, params)` that creates empty state + updater without consuming bars.
-- Each replayed event drives the existing `IndicatorsExecutor` incremental update path.
-- `IndicatorState` gains `isReady` distinct from `warmupCompleted`, so short history reports "not ready" rather than a silent wrong value.
-
-### 6. RollingWindow during replay
-
-No changes to the class or its DataContext key. `seedRollingWindows` is **not** called in replay mode. The reachable `set` nodes create and fill the window during replay; the same instance carries into strategy execution. Same-size validation stays. A `set` node not on the executed path simply isn't warmed — that matches workflow reachability semantics, and `get` nodes read whatever a reachable `set` produced.
-
-### 7. Metrics isolation
-
-During `warming_up`: no equity snapshots, no trade/fill records, no `barsProcessed` increment, no progress reporting, no finalize check. Warm-up timings and event counts go into a separate `perf.warmup` block. `currentIndex` starts at 0 for strategy event zero, so manual stepping begins at the first strategy bar.
-
-### 8. Session lifecycle
-
-`BacktestSessionManager.createSession` becomes two-stage:
-
-```
-createSession(...)            // constructs, compiles plan
-await session.initialize()    // phase=warming_up → replay → phase=ready
-```
-
-`BacktestExecutor.executeBacktestInit` awaits `initialize()` before returning, so `BacktestInit`'s output reflects post-warm-up state.
-
-### 9. Deterministic reset
-
-`BacktestSession.reset()` in replay mode, in this exact order:
-
-1. Reject reset while `stepping`/running is active (or abort and await).
-2. Reset SimBroker + strategy counters.
-3. Destroy the old `WorkflowRun` (destroys its `DataContext`).
-4. Clear execution-scoped indicator state: L1 cache, dirty keys, updater cache, **and Redis** (new `IndicatorStateManager.clearExecutionScope(userId, workflowId, executionId)` — today only `clearL1Cache()` runs, so Redis state survives a reset).
-5. Recreate `WorkflowRun` + `DataContext` under the same execution identity.
-6. Initialize empty indicator states.
-7. Replay the retained `warmupEvents` with `isWarmingUp = true`.
-8. Flip SimBroker + runtime to ready.
-9. Re-pin `BacktestInit` results, rebuild the compiled plan.
-10. `currentIndex = 0`, report ready.
-
-In seed mode, the existing `seedRollingWindows` + rewarm path is kept unchanged.
-
-### 10. Mode switch
-
-`warmup_mode: "seed" | "workflow_replay"` on `BacktestInit.json` (default `seed` initially). The two modes are **mutually exclusive per session** — a guard throws if both direct seeding and replay would run, which is the main double-warm risk. Flip the default to `workflow_replay` after comparison runs match; retire `rollingWindowSeed.ts` and the bulk warm-up path afterwards.
-
-## Where I'd deviate from the doc
-
-1. **`SimBroker.onBar` during warm-up: the doc says don't; I say do, in a market-state-only mode.** Since the cross-symbol liquidation work, `SimBroker` owns `SymbolMarketState` and enforces staleness/causality via `resolveMarketContext`. Skipping warm-up bars entirely means the first strategy bar sees empty or stale market state — and any `get_position`/MTM read on bar zero behaves differently than it would mid-run. Feeding envelopes through a `warmup: true` path (no fill attempts, no equity snapshots) is both safer and closer to LEAN, where warm-up updates securities' prices.
-2. **`TradingCalendarService` is deferred.** The doc lists it as a new file, but `fetchPreviousBars` already achieves count-correctness by filtering actual returned bars and expanding the window on shortfall. A calendar service would only reduce the number of fetch attempts. Ship it as a later optimization, not a correctness dependency.
-3. **Suppress by default for unknown categories.** The doc's table enumerates known categories; for anything unmatched I'd default to `suppress` rather than `execute`. A new node type added later is far more likely to be a side-effecting integration than a state accumulator, and a suppressed node degrades gracefully while an unexpectedly executed webhook does not. State-building categories are explicitly allow-listed.
-4. **Replay uses the async path only.** `executeTimestamp` (the sync/fire-and-forget variant) doesn't await node completion, which makes warm-up ordering non-deterministic. Replay always goes through `executeTimestampAsync` even when the compiled plan is active; the strategy loop keeps its current behavior.
-5. **Warm-up is per session, not per reset seed set.** Retaining the aligned `warmupEvents` array replaces `RollingWindowSeed` + `IndicatorWarmupSeed` in replay mode — one seed instead of a growing family of component-specific seeds.
-
-## Rollout
-
-1. **Phase flags + policy + order guards** — `BacktestPhase`, `isWarmingUp` in both contexts, `WarmupPolicy`, SimBroker rejection. Tests prove every order path is blocked.
-2. **Replay** — `buildWarmupEvents`, `session.initialize()`, empty indicator init, no seeding in replay mode, metrics isolation.
-3. **Reset** — execution-scoped Redis clear, replay-on-reset, first-strategy-state snapshot comparison.
-4. **Migration** — `warmup_mode` field, comparison runs, default flip, remove seed path.
-
-## Acceptance tests
-
-- `start_date` unchanged in DB; every strategy-range bar emitted.
-- Every warm-up bar is strictly pre-start; `isWarmingUp` true for all replayed events, false before strategy event zero.
-- Indicators and reachable RollingWindow `set` nodes process each warm-up bar exactly once (never twice — the seed/replay exclusivity guard).
-- RollingWindow `isReady` on the first strategy bar when history suffices.
-- place/close/liquidate/modify/cancel all rejected during warm-up; suppressed nodes return routable results.
-- No equity snapshots, trades, or `barsProcessed` increments from warm-up.
-- Reset reproduces a byte-identical first-strategy-bar state snapshot.
-- `warmup_period = 0` → no replay, starts at strategy event zero.
-- Compiled and dynamic modes produce identical warmed state and policy outcomes.
-- Multi-symbol: a 62-bar symbol does not cap a 136-bar symbol.
+- `TradingCalendarService` remains deferred, as agreed.
+- Default is still `seed`; flip to `workflow_replay` after comparison runs, then retire `rollingWindowSeed.ts` and the bulk warm-up branch in `reset()`.

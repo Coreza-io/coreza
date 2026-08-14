@@ -322,7 +322,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const backtestId = (backtest as { id: string }).id;
-      const effectiveRunId = context?.runId || `manual-${backtestId}`;
+      const effectiveRunId = context?.runId || backtestId;
       BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
@@ -1037,7 +1037,7 @@ export class BacktestExecutor implements INodeExecutor {
       .eq("id", backtestId);
 
     // Insert backtest results
-    const { error: resultsError } = await supabaseClient
+    const { error: resultsError } = await (supabaseClient as any)
       .from("backtest_results")
       .insert({
         backtest_id: backtestId,

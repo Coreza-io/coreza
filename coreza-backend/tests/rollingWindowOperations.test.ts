@@ -153,6 +153,26 @@ describe("Rolling Window operations", () => {
     ).toMatchObject({ data: { found: true, window: [{ close: 1 }] } });
   });
 
+  it("does not create a shared context for an invalid contextless set", () => {
+    const executionId = "invalid-contextless-set";
+    const manager = DataContextManager.getInstance();
+    const executor = new IndicatorsExecutor();
+
+    expect(
+      executor.execute(node, {
+        operation: "set",
+        size: 2,
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+        candle_data: [],
+        user_id: "user-1",
+        workflow_id: "workflow-1",
+        run_id: executionId,
+      }),
+    ).toMatchObject({ success: false });
+    expect(manager.hasContext(executionId)).toBe(false);
+  });
+
   it("uses shared parsing errors and returns a snapshot payload on set", () => {
     const executor = new IndicatorsExecutor();
     const context = createContext("run-parser-contract");
@@ -206,7 +226,7 @@ describe("Rolling Window operations", () => {
     expect(returnedWindow).not.toBe(storedWindow.values());
   });
 
-  it("returns an empty successful read and requires a symbol", () => {
+  it("returns an explicit not-found result and requires a symbol", () => {
     const executor = new IndicatorsExecutor();
     const context = createContext("run-2");
 
@@ -217,7 +237,7 @@ describe("Rolling Window operations", () => {
         context,
       ),
     ).toMatchObject({
-      success: true,
+      success: false,
       data: {
         window: [],
         count: 0,
@@ -226,6 +246,8 @@ describe("Rolling Window operations", () => {
         remaining: 0,
         latest: null,
         found: false,
+        ready: false,
+        reason: "no window for ETHUSDT/1h in this execution",
       },
     });
 
@@ -264,7 +286,15 @@ describe("Rolling Window operations", () => {
       createContext("run-4"),
     );
 
-    expect(result).toMatchObject({ data: { found: false, window: [] } });
+    expect(result).toMatchObject({
+      success: false,
+      data: {
+        found: false,
+        window: [],
+        ready: false,
+        reason: "no window for SOLUSDT/1m in this execution",
+      },
+    });
   });
 
   it("reads a backtest-seeded window through the storage route execution key", async () => {
@@ -302,6 +332,70 @@ describe("Rolling Window operations", () => {
       },
     });
     DataContextManager.getInstance().destroyContext(executionId);
+  });
+
+  it("persists an executor set without an injected context for route reads", async () => {
+    const executionId = "executor-route-run";
+    const executor = new IndicatorsExecutor();
+
+    executor.execute(node, {
+      operation: "set",
+      size: 2,
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      candle_data: [{ close: 42 }],
+      user_id: "user-1",
+      workflow_id: "workflow-1",
+      run_id: executionId,
+    });
+
+    const response = await request(storageApp)
+      .post("/storage/rolling-window")
+      .send({
+        operation: "get",
+        executionId,
+        workflowId: "workflow-1",
+        symbol: "BTCUSDT",
+        timeframe: "1h",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: { found: true, window: [{ close: 42 }] },
+    });
+    DataContextManager.getInstance().destroyContext(executionId);
+  });
+
+  it("returns an explicit not-found response for an unseeded route key", async () => {
+    const executionId = "unseeded-storage-run";
+    const manager = DataContextManager.getInstance();
+    manager.getContext({
+      executionId,
+      workflowId: "workflow-1",
+      userId: "user-1",
+    });
+
+    const response = await request(storageApp)
+      .post("/storage/rolling-window")
+      .send({
+        operation: "get",
+        executionId,
+        workflowId: "workflow-1",
+        symbol: "ETHUSDT",
+        timeframe: "4h",
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({
+      success: false,
+      data: {
+        found: false,
+        ready: false,
+        reason: "no window for ETHUSDT/4h in this execution",
+      },
+    });
+    manager.destroyContext(executionId);
   });
 
   it("returns 404 without creating an unknown execution context", async () => {

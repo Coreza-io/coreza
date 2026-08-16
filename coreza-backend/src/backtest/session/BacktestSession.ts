@@ -323,12 +323,9 @@ export class BacktestSession {
 
   async initialize(): Promise<void> {
     if (this.phase !== "initializing") return;
-    if (
-      this.warmupMode === "workflow_replay" &&
-      (this.rollingWindowSeed || this.indicatorWarmupSeed)
-    ) {
+    if (this.warmupMode === "workflow_replay" && this.indicatorWarmupSeed) {
       throw new Error(
-        "Warm-up replay and direct seeding are mutually exclusive",
+        "Warm-up replay and direct indicator seeding are mutually exclusive",
       );
     }
     if (this.warmupMode === "workflow_replay") {

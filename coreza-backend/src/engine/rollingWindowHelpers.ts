@@ -20,6 +20,11 @@ export interface RollingWindowPayload {
   found: boolean;
 }
 
+export interface RollingWindowNotFoundPayload extends RollingWindowPayload {
+  ready: false;
+  reason: string;
+}
+
 export const ROLLING_WINDOW_ERRORS = {
   symbolRequired: "symbol is required for get operation",
   timeframeRequired: "timeframe is required for get operation",
@@ -28,6 +33,17 @@ export const ROLLING_WINDOW_ERRORS = {
   invalidCandleData: "Invalid candle_data format",
   noBars: "No bars provided in candle_data",
 } as const;
+
+export function buildRollingWindowNotFoundPayload(
+  symbol: string,
+  timeframe: string,
+): RollingWindowNotFoundPayload {
+  return {
+    ...buildRollingWindowPayload(undefined),
+    ready: false,
+    reason: `no window for ${symbol}/${timeframe} in this execution`,
+  };
+}
 
 export function normalizeSymbol(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();

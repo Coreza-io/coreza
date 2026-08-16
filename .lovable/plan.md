@@ -1,29 +1,32 @@
-# Fix Store node erroring in live (compiled plan rejects async executors)
+# Fix Store node erroring in live — opt-in async, sync fast path untouched
 
 ## Root cause (confirmed by the debugger screenshot)
 
-In `coreza-backend/src/backtest/compiled/adapters.ts`, `buildExecAdapter` calls `executor.execute(...)` and, if the result is a thenable, immediately returns:
+`coreza-backend/src/backtest/compiled/adapters.ts` → `buildExecAdapter` calls `executor.execute(...)`; when the result is a thenable it discards it and returns `Compiled plan requires synchronous executor for category ...`. `DataSourceExecutor` (which serves the Store node) is async, so the `rpush` still lands in Redis while the node is marked failed and the engine hops back to OnBar with no visible error.
 
-```text
-{ success: false, data: null,
-  error: `Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})` }
-```
+## Approach: keep the synchronous hot path, allow async only where declared
 
-`DataSourceExecutor.execute` (which handles the Store node) returns a Promise. So on the compiled/live path the Redis `rpush` fires and succeeds — the LIST is populated — but the adapter has already discarded the pending promise and marked the node failed with an error the UI does not surface, and the engine continues back to OnBar. Manual runs use the non-compiled path, await the promise, and work.
+Do **not** make every node await. Instead:
 
-## Plan
+1. **Per-executor opt-in.** `INodeExecutor` already carries `syncCapable`. Treat `syncCapable === false` (or absent) as "may return a promise". `DataSourceExecutor` currently declares `syncCapable = true` while returning a promise — that lie is what the adapter is catching. Set it to `false`.
+2. **Two adapter shapes at compile time.** In `buildExecAdapter`, branch once on `executor.syncCapable`:
+   - sync executors (Indicators, Compute, IF, Portfolio, …) keep today's exact code path — no promise checks in the hot loop, zero added overhead;
+   - async-declared executors return the promise, and the compiled plan's node-step awaits only these nodes.
+3. **Async nodes stay off the per-bar hot path by policy.** Only categories that genuinely do I/O (DataSource/Store, Broker HTTP, AI) may opt in; keep the "requires synchronous executor" error for any executor that declares `syncCapable = true` yet returns a thenable, so a future regression is still caught loudly instead of silently.
+4. **Runner change is minimal.** The compiled runner's exec call becomes `const r = execFn(...); const res = isAsyncNode ? await r : r;` where `isAsyncNode` is a boolean precomputed per node at compile time — a property read, not a promise check.
+5. **Warm-up policy unchanged.** `enforceWarmupPolicy` still short-circuits before `executor.execute`, so suppressed/rejected nodes never start async work.
+6. **Surface failures.** Ensure a `success: false` from an async node reaches the node result/output panel and the live socket rather than a silent return to OnBar.
 
-1. **Let the compiled adapter await async executors.** Make `ExecFn` able to return `NodeResult | Promise<NodeResult>` and have `buildExecAdapter` return the promise instead of synthesising the error. Update the compiled plan runner to `await` the exec result (awaiting an already-resolved value is effectively free for the synchronous executors, so hot-path indicator nodes keep their behaviour).
-   - Keep the `syncCapable` notion: executors that declare `syncCapable` and return non-promises stay on the fast path; only genuinely async results are awaited.
-2. **Preserve warm-up policy.** `enforceWarmupPolicy` / `ctx.isWarmingUp` handling must wrap the awaited result, so a suppressed or rejected node still short-circuits before the async call.
-3. **Surface the failure instead of swallowing it.** Wherever the compiled runner receives `success: false`, ensure the error reaches the node result/output panel and the live socket, so a future adapter-level failure is visible rather than a silent hop back to OnBar.
-4. **Harden the Store handler** (secondary, from the same trace): in `services/storage/configs/store.ts`, coerce `ttl` with `Number()` and skip `EXPIRE` when it is not a finite positive integer, and make a TTL failure non-fatal after a successful `rpush`. In `storageService.ts`, log `error.stack` and fall back to `error.name`/`String(error)` so an empty message can never produce a blank node error.
+## Secondary hardening in the Store handler
+
+- `services/storage/configs/store.ts`: coerce `ttl` with `Number()`, skip `EXPIRE` unless it is a finite positive integer, and make a TTL failure non-fatal once `rpush` has succeeded.
+- `services/storage/storageService.ts`: log `error.stack` with `serviceKey`/`operation`, and use `error?.message || error?.name || String(error)` so a node error can never be blank.
 
 ## Tests
 
-- `coreza-backend/tests/compiledAdapterAsync.test.ts`: an async executor resolves through `buildExecAdapter` with its real result (no "requires synchronous executor" error); a sync executor still returns synchronously; warm-up suppression still short-circuits before execution.
-- `coreza-backend/tests/storeNodeTtl.test.ts`: `rpush` with empty/invalid `ttl` never calls `expire`; valid ttl calls `expire`; `expire` rejection still yields success; `rpush` rejection yields a non-empty error message.
+- `coreza-backend/tests/compiledAdapterAsync.test.ts`: an executor with `syncCapable: false` resolves its real result through the adapter; a `syncCapable: true` executor returning a promise still produces the explicit "requires synchronous executor" error; a sync executor returns without awaiting; warm-up suppression short-circuits before execution.
+- `coreza-backend/tests/storeNodeTtl.test.ts`: empty/invalid `ttl` never calls `expire`; valid ttl does; `expire` rejection still yields success; `rpush` rejection yields a non-empty error message.
 
 ## Technical details
 
-Files: `coreza-backend/src/backtest/compiled/adapters.ts` (+ its `ExecFn` type and the compiled plan runner that invokes it), `coreza-backend/src/services/storage/configs/store.ts`, `coreza-backend/src/services/storage/storageService.ts`, plus the two test files. No frontend or schema changes.
+Files: `coreza-backend/src/backtest/compiled/adapters.ts` and its `ExecFn`/`CompiledExecContext` types plus the compiled plan runner (precomputed `isAsyncNode` flag), `coreza-backend/src/nodes/executors/DataSourceExecutor.ts` (`syncCapable = false`), `coreza-backend/src/services/storage/configs/store.ts`, `coreza-backend/src/services/storage/storageService.ts`, and the two test files. No frontend or schema changes.

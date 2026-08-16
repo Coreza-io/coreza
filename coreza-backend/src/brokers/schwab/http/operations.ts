@@ -1,4 +1,111 @@
-import { BrokerOperation } from '../../types';
+import { BrokerOperation, toBarSeries } from '../../types';
+
+interface PriceHistoryInput {
+  symbol?: unknown;
+  periodType?: unknown;
+  period?: unknown;
+  frequencyType?: unknown;
+  frequency?: unknown;
+  needExtendedHoursData?: unknown;
+  start_date?: unknown;
+  startDate?: unknown;
+  end_date?: unknown;
+  endDate?: unknown;
+  start?: unknown;
+  end?: unknown;
+  interval?: unknown;
+}
+
+interface SchwabCandle {
+  datetime: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+interface SchwabPriceHistoryResponse {
+  symbol?: string;
+  candles?: SchwabCandle[];
+}
+
+function toEpochMilliseconds(value: unknown, fieldName: string): number {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`${fieldName} must be a valid date or numeric epoch`);
+    return Math.abs(value) < 1e12 ? value * 1000 : value;
+  }
+
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${fieldName} must be a valid date or numeric epoch`);
+  }
+
+  const trimmed = value.trim();
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+    const epoch = Number(trimmed);
+    if (!Number.isFinite(epoch)) throw new Error(`${fieldName} must be a valid date or numeric epoch`);
+    return Math.abs(epoch) < 1e12 ? epoch * 1000 : epoch;
+  }
+
+  const epoch = Date.parse(trimmed);
+  if (!Number.isFinite(epoch)) {
+    throw new Error(`${fieldName} must be a valid date or numeric epoch; received "${value}"`);
+  }
+  return epoch;
+}
+
+function firstPresent(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function makePriceHistoryParams(input: PriceHistoryInput): Record<string, unknown> {
+  if (!input.symbol) throw new Error('symbol parameter is required for get_price_history');
+
+  const startDate = firstPresent(input.start_date, input.startDate, input.start);
+  const endDate = firstPresent(input.end_date, input.endDate, input.end);
+  const params: Record<string, unknown> = {
+    symbol: input.symbol,
+    periodType: input.periodType || 'day',
+    frequencyType: input.frequencyType || 'minute',
+    frequency: input.frequency || '1',
+    needExtendedHoursData: input.needExtendedHoursData || 'false',
+  };
+
+  if (startDate !== undefined || endDate !== undefined) {
+    if (startDate !== undefined) params.startDate = toEpochMilliseconds(startDate, 'startDate');
+    if (endDate !== undefined) params.endDate = toEpochMilliseconds(endDate, 'endDate');
+  } else {
+    params.period = input.period || '10';
+  }
+
+  return params;
+}
+
+function schwabFrequency(interval: unknown): {
+  periodType: string;
+  frequencyType: string;
+  frequency: string;
+} {
+  const normalized = String(interval || '1d').trim().toLowerCase();
+  const match = normalized.match(/^(\d+)\s*(m|min|h|d|day|w|week|mo|month)$/);
+  if (!match) throw new Error(`Unsupported Schwab candle interval: "${normalized}"`);
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if ((unit === 'm' || unit === 'min') && [1, 5, 10, 15, 30].includes(amount)) {
+    return { periodType: 'day', frequencyType: 'minute', frequency: String(amount) };
+  }
+  if ((unit === 'd' || unit === 'day') && amount === 1) {
+    return { periodType: 'year', frequencyType: 'daily', frequency: '1' };
+  }
+  if ((unit === 'w' || unit === 'week') && amount === 1) {
+    return { periodType: 'year', frequencyType: 'weekly', frequency: '1' };
+  }
+  if ((unit === 'mo' || unit === 'month') && amount === 1) {
+    return { periodType: 'year', frequencyType: 'monthly', frequency: '1' };
+  }
+  throw new Error(`Unsupported Schwab candle interval: "${normalized}"`);
+}
 
 export const schwabOperations: Record<string, BrokerOperation> = {
   get_account_numbers: {
@@ -148,21 +255,31 @@ export const schwabOperations: Record<string, BrokerOperation> = {
   get_price_history: {
     method: 'get',
     path: '/pricehistory',
-    makeParams: (input: any) => {
-      if (!input.symbol) throw new Error('symbol parameter is required for get_price_history');
-      return {
-        symbol: input.symbol,
-        periodType: input.periodType || 'day',
-        period: input.period || '10',
-        frequencyType: input.frequencyType || 'minute',
-        frequency: input.frequency || '1',
-        needExtendedHoursData: input.needExtendedHoursData || 'false',
-      };
-    },
+    makeParams: makePriceHistoryParams,
     transformResult: (raw: any) => ({
       symbol: raw.symbol,
       candles: raw.candles || [],
       empty: raw.empty || false,
     }),
+  },
+  get_candle: {
+    method: 'get',
+    path: '/pricehistory',
+    makeParams: (input: PriceHistoryInput) => makePriceHistoryParams({
+      ...input,
+      ...schwabFrequency(input.interval),
+    }),
+    transformResult: (raw: SchwabPriceHistoryResponse, input: PriceHistoryInput) => toBarSeries(
+      raw.symbol || String(input.symbol),
+      String(input.interval || '1d'),
+      (raw.candles || []).map((candle) => ({
+        time: candle.datetime,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+      })),
+    ),
   },
 };

@@ -389,11 +389,52 @@
       "displayOptions": {
         "show": {
           "operation": [
+            "get_candle",
             "get_latest_bar"
           ]
         }
       },
       "description": "Currency for pricing data."
+    },
+    {
+      "key": "adjustment",
+      "label": "Adjustment",
+      "type": "select",
+      "options": [
+        {
+          "id": "raw",
+          "name": "Raw"
+        },
+        {
+          "id": "split",
+          "name": "Split"
+        },
+        {
+          "id": "dividend",
+          "name": "Dividend"
+        },
+        {
+          "id": "spin-off",
+          "name": "Spin-off"
+        },
+        {
+          "id": "all",
+          "name": "All"
+        }
+      ],
+      "default": "raw",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_candle"
+          ],
+          "assetType": [
+            "stock"
+          ]
+        }
+      },
+      "description": "Corporate-action adjustment for historical bars. Comma-separated values such as split,spin-off are also accepted."
     },
     {
       "key": "sort",

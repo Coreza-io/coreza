@@ -372,6 +372,27 @@
       "required": false
     },
     {
+      "key": "adjustment",
+      "label": "Bar Adjustment",
+      "type": "select",
+      "options": [
+        { "id": "raw", "name": "Raw" },
+        { "id": "split", "name": "Split" },
+        { "id": "dividend", "name": "Dividend" },
+        { "id": "spin-off", "name": "Spin-off" },
+        { "id": "all", "name": "All" }
+      ],
+      "default": "raw",
+      "description": "Corporate-action adjustment used consistently for strategy and warm-up bars. Comma-separated values such as split,spin-off are also accepted.",
+      "required": false,
+      "displayOptions": {
+        "show": {
+          "broker": ["alpaca"],
+          "asset_type": ["stock"]
+        }
+      }
+    },
+    {
       "key": "warmup_mode",
       "label": "Warm-Up Mode",
       "type": "select",

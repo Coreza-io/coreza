@@ -25,6 +25,7 @@ interface HistoricalRequestBase {
   interval: string;
   assetType?: string;
   feed?: string;
+  adjustment?: string;
   credentialId?: string;
 }
 
@@ -104,6 +105,7 @@ export class HistoricalDataService {
       end,
       asset_type: request.assetType,
       feed: request.feed,
+      adjustment: request.adjustment,
       credential_id: request.credentialId,
       limit: "50000",
     };

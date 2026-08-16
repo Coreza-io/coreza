@@ -3,7 +3,30 @@ import { BrokerOperation } from "../../types";
 import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
+const ALPACA_BAR_ADJUSTMENTS = new Set([
+  "raw",
+  "split",
+  "dividend",
+  "spin-off",
+  "all",
+]);
 const getAssetType = (input: any) => input?.assetType ?? input?.asset_type;
+
+function normalizeBarAdjustment(value: unknown): string {
+  const adjustment = String(value ?? "raw")
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const invalidToken = adjustment.find(
+    (token) => !ALPACA_BAR_ADJUSTMENTS.has(token),
+  );
+  if (invalidToken) {
+    throw new Error(
+      `Invalid Alpaca bar adjustment "${invalidToken}". Expected a comma-separated combination of raw, split, dividend, spin-off, or all.`,
+    );
+  }
+  return adjustment.length > 0 ? adjustment.join(",") : "raw";
+}
 const buildCryptoSymbolFromParts = (input: any): string | undefined => {
   const base = input?.crypto_base?.toString().trim().toUpperCase();
   const quote = input?.crypto_quote?.toString().trim().toUpperCase();
@@ -157,11 +180,14 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         symbols: input.symbol,
         timeframe: input.interval,
         start: input.start,
-        //adjustment: "raw",
         feed: input.feed,
-        sort: input.sort,
+        sort: input.sort || "asc",
         limit: Math.min(Number(input.limit) || 10000, 10000), // Max 10000 per request
       };
+      if (getAssetType(input) !== "crypto") {
+        params.adjustment = normalizeBarAdjustment(input.adjustment);
+      }
+      if (input.currency) params.currency = input.currency;
       if (input.end) params.end = input.end;
       if (input.page_token) params.page_token = input.page_token;
       return params;

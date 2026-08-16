@@ -84,14 +84,6 @@ export function compilePlan(
       return null;
     }
 
-    if (!executor.syncCapable) {
-      const category = resolveCategory(node);
-      console.log(
-        `[CompiledPlan] Ineligible: executor "${category}" is not syncCapable`,
-      );
-      return null;
-    }
-
     const cp = compiledParams.get(node.id);
     if (cp?.fallbackKeys && cp.fallbackKeys.length > 0) {
       console.log(
@@ -191,6 +183,7 @@ export function compilePlan(
         inputSlot: nodeInputSlot,
         node,
         exec: execFn,
+        isAsyncNode: executor.syncCapable !== true,
         resolveParams,
         downstreamSlots: [],
         branchTargets,
@@ -211,6 +204,7 @@ export function compilePlan(
       inputSlot: nodeInputSlot,
       node,
       exec: execFn,
+      isAsyncNode: executor.syncCapable !== true,
       resolveParams,
       downstreamSlots: downstream,
     });

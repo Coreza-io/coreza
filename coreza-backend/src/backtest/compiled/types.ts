@@ -42,7 +42,7 @@ export type ExecFn = (
   input: any,
   resolvedParams: Record<string, any>,
   ctx: CompiledExecContext,
-) => NodeResult;
+) => NodeResult | Promise<NodeResult>;
 
 /**
  * Resolves node parameters by reading from the slots array
@@ -64,6 +64,8 @@ export interface Instruction {
   node: WorkflowNode;
   /** Pre-bound executor adapter */
   exec: ExecFn;
+  /** Whether this executor is declared as potentially asynchronous. */
+  isAsyncNode: boolean;
   /** Resolves params from slots[] */
   resolveParams: SlotParamResolver;
   /**

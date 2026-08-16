@@ -22,6 +22,16 @@ import {
 import CredentialManager from "../../utils/credentialManager";
 import { getUserRedisConnection } from "./helpers/redisConnection";
 import { getRedisCache } from "../../config/redis";
+import logger from "../../utils/logger";
+
+const getErrorString = (
+  error: unknown,
+  property: "message" | "name" | "stack",
+): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined;
+  const value = Reflect.get(error, property);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
 
 export class StorageService implements IStorageService {
   readonly serviceKey: string;
@@ -96,9 +106,22 @@ export class StorageService implements IStorageService {
       // Execute operation
       const result = await operationConfig.handler(input, context);
       return createSuccessOutput(result, this.getContext());
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message =
+        getErrorString(error, "message") ||
+        getErrorString(error, "name") ||
+        String(error) ||
+        "Unknown storage error";
+      logger.error(
+        {
+          serviceKey: this.serviceKey,
+          operation: input.operation,
+          stack: getErrorString(error, "stack"),
+        },
+        message,
+      );
       return createErrorOutput(
-        error.message || String(error),
+        message,
         this.getContext()
       );
     }

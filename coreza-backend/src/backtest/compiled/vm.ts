@@ -9,6 +9,7 @@
  */
 
 import { OpCode, BranchEnum, CompiledPlan } from "./types";
+import type { NodeResult } from "../../nodes/types";
 
 /**
  * Compiled Plan VM
@@ -29,7 +30,7 @@ import { OpCode, BranchEnum, CompiledPlan } from "./types";
  * @param plan The pre-compiled execution plan (mutated in place — slots[] and active[])
  * @param barInput The bar event data for this bar
  */
-export function runBar(plan: CompiledPlan, barInput: any): void {
+export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
   const { instructions, slots, active, entryIndices, inputSlot, ctx } = plan;
   const len = instructions.length;
 
@@ -67,7 +68,17 @@ export function runBar(plan: CompiledPlan, barInput: any): void {
 
     // Execute node
     const execStart = timingEnabled ? performance.now() : 0;
-    const result = instr.exec(instr.node, slots[instr.inputSlot], params, ctx);
+    const execution = instr.exec(
+      instr.node,
+      slots[instr.inputSlot],
+      params,
+      ctx,
+    );
+    // The compiler binds sync adapters only when isAsyncNode is false. The
+    // adapter itself retains the thenable guard for contract regressions.
+    const result: NodeResult = instr.isAsyncNode
+      ? await execution
+      : (execution as NodeResult);
     if (timingEnabled) {
       const elapsed = performance.now() - execStart;
       plan.instructionTimingMs[i] += elapsed;

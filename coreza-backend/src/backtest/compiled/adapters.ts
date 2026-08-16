@@ -16,6 +16,26 @@ import { enforceWarmupPolicy } from "../warmup/WarmupPolicy";
 export { resolveCategory };
 
 export function buildExecAdapter(executor: INodeExecutor): ExecFn {
+  if (executor.syncCapable !== true) {
+    return async (
+      node: WorkflowNode,
+      input: any,
+      resolvedParams: Record<string, any>,
+      ctx: CompiledExecContext,
+    ): Promise<NodeResult> => {
+      ctx.nodeId = node.id;
+      ctx.resolvedParams = resolvedParams;
+
+      const warmupResult = ctx.isWarmingUp
+        ? enforceWarmupPolicy(node)
+        : undefined;
+      const result =
+        warmupResult ?? (await executor.execute(node, input, ctx));
+
+      return normalizeResult(result, executor);
+    };
+  }
+
   return (
     node: WorkflowNode,
     input: any,
@@ -37,25 +57,31 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
       };
     }
 
-    const syncResult = result as NodeResult;
-    if (
-      syncResult &&
-      typeof syncResult === "object" &&
-      "success" in syncResult
-    ) {
-      if (!syncResult.success) {
-        return {
-          success: false,
-          data: null,
-          error:
-            syncResult.error || `Node execution failed: ${executor.category}`,
-          meta: syncResult.meta,
-          control: syncResult.control,
-        };
-      }
-      return syncResult;
-    }
-
-    return { data: (syncResult as any)?.data ?? syncResult };
+    return normalizeResult(result as NodeResult, executor);
   };
+}
+
+function normalizeResult(
+  syncResult: NodeResult,
+  executor: INodeExecutor,
+): NodeResult {
+  if (
+    syncResult &&
+    typeof syncResult === "object" &&
+    "success" in syncResult
+  ) {
+    if (!syncResult.success) {
+      return {
+        success: false,
+        data: null,
+        error:
+          syncResult.error || `Node execution failed: ${executor.category}`,
+        meta: syncResult.meta,
+        control: syncResult.control,
+      };
+    }
+    return syncResult;
+  }
+
+  return { data: (syncResult as any)?.data ?? syncResult };
 }

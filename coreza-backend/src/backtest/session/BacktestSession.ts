@@ -544,7 +544,7 @@ export class BacktestSession {
     );
   }
 
-  private executeTimestamp(event: MultiBarEvent): void {
+  private async executeTimestamp(event: MultiBarEvent): Promise<void> {
     const symbols = event.symbols;
     let t0 = performance.now();
 
@@ -593,7 +593,7 @@ export class BacktestSession {
       if (this.compiledPlan) {
         t0 = performance.now();
         this.reusableBarInput.data = symbolEvent;
-        runBar(this.compiledPlan, this.reusableBarInput);
+        await runBar(this.compiledPlan, this.reusableBarInput);
         this.perf.executeLoopMs += performance.now() - t0;
       } else {
         t0 = performance.now();
@@ -669,7 +669,7 @@ export class BacktestSession {
 
       if (this.compiledPlan) {
         t0 = performance.now();
-        runBar(this.compiledPlan, { data: symbolEvent });
+        await runBar(this.compiledPlan, { data: symbolEvent });
         this.perf.executeLoopMs += performance.now() - t0;
       } else {
         t0 = performance.now();
@@ -888,7 +888,7 @@ export class BacktestSession {
           while (this.currentIndex < chunkEnd && !signal.aborted) {
             const currentEvent = this.bars[this.currentIndex];
             try {
-              this.executeTimestamp(currentEvent);
+              await this.executeTimestamp(currentEvent);
             } catch (error) {
               console.error(
                 "[BacktestSession] Compiled plan error on bar:",

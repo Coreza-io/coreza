@@ -25,7 +25,7 @@ import { toNodeResult } from "../../utils/normalizeOutput";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
-  readonly syncCapable = true;
+  readonly syncCapable = false;
   private cachedRunId: string | null = null;
 
   execute(

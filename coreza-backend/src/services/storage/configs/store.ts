@@ -22,8 +22,17 @@ import {
 
 // Helper to apply TTL
 const applyTTL = async (redis: any, key: string, ttl?: number) => {
-  if (ttl && ttl > 0) {
-    await redis.expire(key, ttl);
+  const normalizedTtl = Number(ttl);
+  if (
+    Number.isFinite(normalizedTtl) &&
+    normalizedTtl > 0 &&
+    Number.isInteger(normalizedTtl)
+  ) {
+    try {
+      await redis.expire(key, normalizedTtl);
+    } catch {
+      // The value has already been persisted; TTL is best-effort.
+    }
   }
 };
 

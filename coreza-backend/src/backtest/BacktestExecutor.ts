@@ -348,6 +348,7 @@ export class BacktestExecutor implements INodeExecutor {
       const endDate = params.end_date || new Date().toISOString().split("T")[0];
       const assetType = params.asset_type;
       const feed = params.feed;
+      const adjustment = params.adjustment;
 
       if (!broker || symbols.length === 0 || !interval) {
         return toNodeResult(
@@ -381,6 +382,7 @@ export class BacktestExecutor implements INodeExecutor {
                   end: endDate,
                   assetType,
                   feed,
+                  adjustment,
                   credentialId,
                 },
                 context,
@@ -453,6 +455,7 @@ export class BacktestExecutor implements INodeExecutor {
                   endExclusive: startDate,
                   assetType,
                   feed,
+                  adjustment,
                   credentialId,
                 },
                 context,

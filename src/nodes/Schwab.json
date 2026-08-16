@@ -194,6 +194,31 @@
       "showDescription": false
     },
     {
+      "key": "date_mode",
+      "label": "Date Mode",
+      "type": "select",
+      "options": [
+        {
+          "id": "period",
+          "name": "Period"
+        },
+        {
+          "id": "range",
+          "name": "Date Range"
+        }
+      ],
+      "default": "period",
+      "required": true,
+      "description": "Choose a rolling period or an explicit date range for price history.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_price_history"
+          ]
+        }
+      }
+    },
+    {
       "key": "periodType",
       "label": "Period Type",
       "type": "select",
@@ -219,6 +244,9 @@
         "show": {
           "operation": [
             "get_price_history"
+          ],
+          "date_mode": [
+            "period"
           ]
         }
       }
@@ -233,10 +261,49 @@
         "show": {
           "operation": [
             "get_price_history"
+          ],
+          "date_mode": [
+            "period"
           ]
         }
       },
       "showDescription": false
+    },
+    {
+      "key": "start_date",
+      "label": "Start Date",
+      "type": "text",
+      "placeholder": "2023-01-01 or {{ $('BacktestInit').json.start_date }}",
+      "required": false,
+      "description": "Start of the price history range. Accepts YYYY-MM-DD, an ISO date, or a numeric epoch.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_price_history"
+          ],
+          "date_mode": [
+            "range"
+          ]
+        }
+      }
+    },
+    {
+      "key": "end_date",
+      "label": "End Date",
+      "type": "text",
+      "placeholder": "2023-01-01 or {{ $('BacktestInit').json.end_date }}",
+      "required": false,
+      "description": "End of the price history range. Accepts YYYY-MM-DD, an ISO date, or a numeric epoch.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "get_price_history"
+          ],
+          "date_mode": [
+            "range"
+          ]
+        }
+      }
     },
     {
       "key": "frequencyType",

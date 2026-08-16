@@ -1,36 +1,29 @@
-# Fix Schwab price history: derive periodType from frequencyType
+# Fix Store node erroring in live mode (rpush path)
 
-## Root cause (verified in `coreza-backend/src/brokers/schwab/http/operations.ts`)
+## Symptom
 
-`makePriceHistoryParams` always sets `periodType: input.periodType || 'day'` (line 68) regardless of the chosen `frequencyType`. In Date Range mode the UI hides Period Type, so a `frequencyType=daily` request goes out as `periodType=day + frequencyType=daily`, which Schwab rejects with "When periodType=day valid values for frequencyType are: minute". Nothing in the backend validates the pair, so the bad combination reaches Schwab.
+In live mode the Store node writes the value to Redis (the `store:userId:...:ticker` LIST is populated) but the node is marked as errored and execution jumps straight back to OnBar, with no error text surfaced. Manual runs of the same node work and render output normally.
 
-## Plan
+## Investigation step (first, before the fix)
 
-1. **Derive a compatible `periodType`** in `makePriceHistoryParams`:
-   - normalize `frequencyType` (lowercase, default `minute`);
-   - when the caller supplied an explicit `periodType`, keep it (period mode still works, e.g. `month` + `daily`);
-   - otherwise derive: `minute -> day`, `daily | weekly | monthly -> year`.
+Confirm what actually throws after `await ctx.redis!.rpush(key, serialized)` in `coreza-backend/src/services/storage/configs/store.ts`. Candidates on the live path only:
+- `applyTTL(ctx.redis!, key, input.ttl)` running with a resolved template `ttl` that is `""`/`NaN` in live (Redis `EXPIRE` with a non-integer throws after the successful rpush — matches "data stored + error");
+- `createSuccessOutput(result, ...)` in `StorageService.execute` failing to serialize;
+- the live executor treating the returned `StandardNodeOutput` shape differently to manual runs.
 
-2. **Validate the pair before sending.** Add a small compatibility table and throw a clear Coreza-side error instead of relaying to Schwab:
-   - `day` → `minute`
-   - `month` → `daily`, `weekly`
-   - `year` → `daily`, `weekly`, `monthly`
-   - `ytd` → `daily`, `weekly`
-   Error message names both values and the allowed set.
+Add temporary structured logging (key, ttl value + typeof, error name/message) around the `catch` in `StorageService.execute` and run one live bar to identify the branch. The error is currently swallowed into an empty message, which is itself a defect.
 
-3. **Validate `frequency`** against the frequency type (minute: 1/5/10/15/30; daily/weekly/monthly: 1), defaulting to `1`, so an invalid `frequency` also fails locally with a readable message.
+## Fix
 
-4. **Keep `get_candle` behaviour intact.** It already spreads `schwabFrequency(interval)` which supplies an explicit `periodType`, so the derivation must not override it — this is covered by the "explicit wins" rule in step 1.
+1. **Never lose the error.** In `StorageService.execute`'s catch, log `error.stack` with `serviceKey`/`operation`/`key` context and build the message as `error?.message || error?.name || String(error)` so an empty message can no longer produce a blank node error.
+2. **Harden TTL.** In the store config helper `applyTTL`, coerce with `Number(ttl)` and skip when the value is not a finite positive integer (covers `""`, `null`, `"undefined"` from live template resolution) instead of calling `EXPIRE` with a bad argument.
+3. **Make post-write failures non-fatal.** Once `rpush` has succeeded, a TTL failure must not fail the node: wrap the TTL call so it logs a warning and the operation still returns its success payload. This removes the "stored but errored" contradiction.
+4. **Surface the error to the live path.** Verify the live executor propagates a failed `StandardNodeOutput` as a visible node error rather than silently returning to OnBar; if it does not, include the storage error in the node result so the output panel shows it in live as well as manual.
 
-5. **Fix `needExtendedHoursData`** to use `??` so an explicit `false` boolean is preserved instead of falling back to the string default.
+## Tests
 
-6. **Tests** in `coreza-backend/tests/schwabPriceHistory.test.ts`:
-   - Date Range + `daily` (no `periodType`) → `periodType: 'year'`, epoch `startDate`/`endDate`, no `period`;
-   - Date Range + `minute` → `periodType: 'day'`;
-   - explicit `periodType: 'month'` + `daily` preserved;
-   - invalid pair (`periodType: 'day'` + `daily`) throws the local validation error;
-   - existing period-mode and `get_candle` assertions still pass.
+Add `coreza-backend/tests/storeNodeTtl.test.ts` covering: `rpush` with `ttl: ""` / `ttl: undefined` / `ttl: "0"` succeeds and never calls `expire`; valid `ttl: 60` calls `expire`; an `expire` rejection still yields a success result; a `rpush` rejection yields an error result whose message is non-empty.
 
 ## Technical details
 
-Single backend file changed: `coreza-backend/src/brokers/schwab/http/operations.ts` (new `derivePeriodType` + `assertFrequencyCompatibility` helpers used by `makePriceHistoryParams`), plus the test file. No node JSON / frontend change is needed — the UI already hides Period Type in Date Range mode, which is the correct behaviour once the backend derives it.
+Files: `coreza-backend/src/services/storage/configs/store.ts` (TTL coercion + non-fatal TTL), `coreza-backend/src/services/storage/storageService.ts` (error logging and message fallback), plus the new test. No frontend or schema changes.

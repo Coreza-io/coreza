@@ -29,6 +29,7 @@ import {
   normalizeTimeframe,
   parseCandleData,
   ROLLING_WINDOW_ERRORS,
+  buildRollingWindowNotFoundPayload,
 } from "../engine/rollingWindowHelpers";
 
 const router = Router();
@@ -98,6 +99,21 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       const window = dataContext.getDataByKey(storeKey) as
         | RollingWindow<unknown>
         | undefined;
+
+      if (!window) {
+        return res.status(404).json({
+          success: false,
+          data: buildRollingWindowNotFoundPayload(
+            normalizedSymbol,
+            normalizedTimeframe,
+          ),
+          meta: {
+            key: storeKey,
+            timeframe: normalizedTimeframe,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
 
       return res.json({
         success: true,
@@ -351,8 +367,6 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-
 // Generic storage operation
 // POST /storage/:service/:operation
 router.post("/:service/:operation", async (req: Request, res: Response) => {

@@ -510,7 +510,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const rollingWindowSeed: RollingWindowSeed | undefined =
-        warmupMode === "workflow_replay" || rollingWindowSize === undefined
+        rollingWindowSize === undefined
           ? undefined
           : { size: rollingWindowSize, interval, symbols, warmupBarsBySymbol };
       const rollingWindowsInitialized = rollingWindowSeed

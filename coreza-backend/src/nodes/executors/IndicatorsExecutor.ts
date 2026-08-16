@@ -11,7 +11,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService } from "../../nodes/logic/indicators";
 import { extractPrices } from "../../nodes/logic/toolOutputProcessor";
-import { DataContext } from "../../engine";
+import { DataContext, DataContextManager } from "../../engine/DataContext";
 import {
   normalizeOutput,
   createErrorOutput,
@@ -28,6 +28,7 @@ import {
   normalizeTimeframe,
   parseCandleData,
   ROLLING_WINDOW_ERRORS,
+  buildRollingWindowNotFoundPayload,
 } from "../../engine/rollingWindowHelpers";
 
 export class IndicatorsExecutor implements INodeExecutor {
@@ -366,8 +367,6 @@ export class IndicatorsExecutor implements INodeExecutor {
     const operation = params.operation ?? "set";
     const requestedSymbol = normalizeSymbol(params.symbol);
     const requestedTimeframe = normalizeTimeframe(params.timeframe);
-    const dataContext = context?.dataContext as DataContext | undefined;
-
     if (operation === "get") {
       if (!requestedSymbol) {
         return toNodeResult(
@@ -389,10 +388,9 @@ export class IndicatorsExecutor implements INodeExecutor {
         );
       }
 
-      const userId = context?.userId || params.user_id || "system";
-      const workflowId = context?.workflowId || params.workflow_id || "manual";
-      const runId = context?.runId || params.run_id || "manual";
-      const rollingCacheKey = `${requestedSymbol}:${requestedTimeframe}`;
+      const { userId, workflowId, runId, dataContext } =
+        this.resolveRollingWindowContext(params, context);
+      const rollingCacheKey = `${userId}:${workflowId}:${runId}:${requestedSymbol}:${requestedTimeframe}`;
       let storeKey = this.rollingWindowKeyCache.get(rollingCacheKey);
       if (!storeKey) {
         storeKey = buildExecutionScopedKey({
@@ -404,9 +402,23 @@ export class IndicatorsExecutor implements INodeExecutor {
         });
         this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
       }
-      const window = dataContext?.getDataByKey(storeKey) as
+      const window = dataContext.getDataByKey(storeKey) as
         | RollingWindow<unknown>
         | undefined;
+
+      if (!window) {
+        return {
+          success: false,
+          data: buildRollingWindowNotFoundPayload(
+            requestedSymbol,
+            requestedTimeframe,
+          ),
+          meta: {
+            key: storeKey,
+            timeframe: requestedTimeframe,
+          },
+        };
+      }
 
       return {
         success: true,
@@ -422,11 +434,20 @@ export class IndicatorsExecutor implements INodeExecutor {
     const symbol = requestedSymbol || "_";
     const timeframe = requestedTimeframe || "_";
 
-    const userId = context?.userId || params.user_id || "system";
-    const workflowId = context?.workflowId || params.workflow_id || "manual";
-    const runId = context?.runId || params.run_id || "manual";
+    const parsed = parseCandleData(params.candle_data);
+    if (!parsed.ok) {
+      return toNodeResult(
+        createErrorOutput(parsed.error, {
+          nodeId: node.id,
+          nodeName: "RollingWindow",
+          category: this.category,
+        }),
+      );
+    }
 
-    const rollingCacheKey = `${symbol}:${timeframe}`;
+    const { userId, workflowId, runId, dataContext } =
+      this.resolveRollingWindowContext(params, context);
+    const rollingCacheKey = `${userId}:${workflowId}:${runId}:${symbol}:${timeframe}`;
     let storeKey = this.rollingWindowKeyCache.get(rollingCacheKey);
     if (!storeKey) {
       storeKey = buildExecutionScopedKey({
@@ -439,26 +460,12 @@ export class IndicatorsExecutor implements INodeExecutor {
       this.rollingWindowKeyCache.set(rollingCacheKey, storeKey);
     }
 
-    const parsed = parseCandleData(params.candle_data);
-    if (!parsed.ok) {
-      return toNodeResult(
-        createErrorOutput(parsed.error, {
-          nodeId: node.id,
-          nodeName: "RollingWindow",
-          category: this.category,
-        }),
-      );
-    }
-
-    let window: RollingWindow<unknown> | undefined;
-    if (dataContext) {
-      window = dataContext.getDataByKey(storeKey);
-      if (!window || window.size !== size) {
-        window = new RollingWindow(size);
-        dataContext.setData(storeKey, window);
-      }
-    } else {
+    let window = dataContext.getDataByKey(storeKey) as
+      | RollingWindow<unknown>
+      | undefined;
+    if (!window || window.size !== size) {
       window = new RollingWindow(size);
+      dataContext.setData(storeKey, window);
     }
 
     for (const bar of parsed.bars) {
@@ -472,6 +479,46 @@ export class IndicatorsExecutor implements INodeExecutor {
     Object.assign(rw.data, payload);
     this.rollingWindowResults.set(node.id, rw);
     return rw;
+  }
+
+  private resolveRollingWindowContext(
+    params: Record<string, any>,
+    context?: any,
+  ): {
+    userId: string;
+    workflowId: string;
+    runId: string;
+    dataContext: DataContext;
+  } {
+    const userId =
+      context?.userId ||
+      context?.user_id ||
+      params.userId ||
+      params.user_id ||
+      "system";
+    const workflowId =
+      context?.workflowId ||
+      context?.workflow_id ||
+      params.workflowId ||
+      params.workflow_id ||
+      "manual";
+    const runId =
+      context?.runId ||
+      context?.executionId ||
+      params.executionId ||
+      params.execution_id ||
+      params.run_id ||
+      "manual";
+    const injectedDataContext = context?.dataContext as DataContext | undefined;
+    const dataContext =
+      injectedDataContext ??
+      DataContextManager.getInstance().getContext({
+        executionId: runId,
+        workflowId,
+        userId,
+      });
+
+    return { userId, workflowId, runId, dataContext };
   }
 
   private extractIndicatorParams(

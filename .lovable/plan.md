@@ -1,29 +1,29 @@
-# Fix Store node erroring in live mode (rpush path)
+# Fix Store node erroring in live (compiled plan rejects async executors)
 
-## Symptom
+## Root cause (confirmed by the debugger screenshot)
 
-In live mode the Store node writes the value to Redis (the `store:userId:...:ticker` LIST is populated) but the node is marked as errored and execution jumps straight back to OnBar, with no error text surfaced. Manual runs of the same node work and render output normally.
+In `coreza-backend/src/backtest/compiled/adapters.ts`, `buildExecAdapter` calls `executor.execute(...)` and, if the result is a thenable, immediately returns:
 
-## Investigation step (first, before the fix)
+```text
+{ success: false, data: null,
+  error: `Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})` }
+```
 
-Confirm what actually throws after `await ctx.redis!.rpush(key, serialized)` in `coreza-backend/src/services/storage/configs/store.ts`. Candidates on the live path only:
-- `applyTTL(ctx.redis!, key, input.ttl)` running with a resolved template `ttl` that is `""`/`NaN` in live (Redis `EXPIRE` with a non-integer throws after the successful rpush — matches "data stored + error");
-- `createSuccessOutput(result, ...)` in `StorageService.execute` failing to serialize;
-- the live executor treating the returned `StandardNodeOutput` shape differently to manual runs.
+`DataSourceExecutor.execute` (which handles the Store node) returns a Promise. So on the compiled/live path the Redis `rpush` fires and succeeds — the LIST is populated — but the adapter has already discarded the pending promise and marked the node failed with an error the UI does not surface, and the engine continues back to OnBar. Manual runs use the non-compiled path, await the promise, and work.
 
-Add temporary structured logging (key, ttl value + typeof, error name/message) around the `catch` in `StorageService.execute` and run one live bar to identify the branch. The error is currently swallowed into an empty message, which is itself a defect.
+## Plan
 
-## Fix
-
-1. **Never lose the error.** In `StorageService.execute`'s catch, log `error.stack` with `serviceKey`/`operation`/`key` context and build the message as `error?.message || error?.name || String(error)` so an empty message can no longer produce a blank node error.
-2. **Harden TTL.** In the store config helper `applyTTL`, coerce with `Number(ttl)` and skip when the value is not a finite positive integer (covers `""`, `null`, `"undefined"` from live template resolution) instead of calling `EXPIRE` with a bad argument.
-3. **Make post-write failures non-fatal.** Once `rpush` has succeeded, a TTL failure must not fail the node: wrap the TTL call so it logs a warning and the operation still returns its success payload. This removes the "stored but errored" contradiction.
-4. **Surface the error to the live path.** Verify the live executor propagates a failed `StandardNodeOutput` as a visible node error rather than silently returning to OnBar; if it does not, include the storage error in the node result so the output panel shows it in live as well as manual.
+1. **Let the compiled adapter await async executors.** Make `ExecFn` able to return `NodeResult | Promise<NodeResult>` and have `buildExecAdapter` return the promise instead of synthesising the error. Update the compiled plan runner to `await` the exec result (awaiting an already-resolved value is effectively free for the synchronous executors, so hot-path indicator nodes keep their behaviour).
+   - Keep the `syncCapable` notion: executors that declare `syncCapable` and return non-promises stay on the fast path; only genuinely async results are awaited.
+2. **Preserve warm-up policy.** `enforceWarmupPolicy` / `ctx.isWarmingUp` handling must wrap the awaited result, so a suppressed or rejected node still short-circuits before the async call.
+3. **Surface the failure instead of swallowing it.** Wherever the compiled runner receives `success: false`, ensure the error reaches the node result/output panel and the live socket, so a future adapter-level failure is visible rather than a silent hop back to OnBar.
+4. **Harden the Store handler** (secondary, from the same trace): in `services/storage/configs/store.ts`, coerce `ttl` with `Number()` and skip `EXPIRE` when it is not a finite positive integer, and make a TTL failure non-fatal after a successful `rpush`. In `storageService.ts`, log `error.stack` and fall back to `error.name`/`String(error)` so an empty message can never produce a blank node error.
 
 ## Tests
 
-Add `coreza-backend/tests/storeNodeTtl.test.ts` covering: `rpush` with `ttl: ""` / `ttl: undefined` / `ttl: "0"` succeeds and never calls `expire`; valid `ttl: 60` calls `expire`; an `expire` rejection still yields a success result; a `rpush` rejection yields an error result whose message is non-empty.
+- `coreza-backend/tests/compiledAdapterAsync.test.ts`: an async executor resolves through `buildExecAdapter` with its real result (no "requires synchronous executor" error); a sync executor still returns synchronously; warm-up suppression still short-circuits before execution.
+- `coreza-backend/tests/storeNodeTtl.test.ts`: `rpush` with empty/invalid `ttl` never calls `expire`; valid ttl calls `expire`; `expire` rejection still yields success; `rpush` rejection yields a non-empty error message.
 
 ## Technical details
 
-Files: `coreza-backend/src/services/storage/configs/store.ts` (TTL coercion + non-fatal TTL), `coreza-backend/src/services/storage/storageService.ts` (error logging and message fallback), plus the new test. No frontend or schema changes.
+Files: `coreza-backend/src/backtest/compiled/adapters.ts` (+ its `ExecFn` type and the compiled plan runner that invokes it), `coreza-backend/src/services/storage/configs/store.ts`, `coreza-backend/src/services/storage/storageService.ts`, plus the two test files. No frontend or schema changes.

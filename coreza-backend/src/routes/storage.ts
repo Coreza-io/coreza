@@ -396,7 +396,7 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
       ...params,
     });
 
-    res.json(result);
+    res.status(result.success ? 200 : 400).json(result);
   } catch (error: any) {
     console.error("[STORAGE-ROUTE] Error:", error);
     res.status(500).json({ success: false, error: error.message });

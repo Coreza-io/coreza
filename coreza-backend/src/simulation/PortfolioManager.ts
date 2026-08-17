@@ -19,6 +19,10 @@ import {
   OrderTicket,
   isTicketPending,
 } from "../types/order";
+import {
+  PositionQueryPayload,
+  shapePositionQuery,
+} from "../utils/portfolioHelpers";
 
 // ============== NEW INTERFACES (v2 state model) ==============
 
@@ -1404,6 +1408,17 @@ export class PortfolioManager {
       openCostBasis,
       totalPnl: p.realizedPnl + unrealizedPnl,
     };
+  }
+
+  getPositionQuery(symbols: readonly string[]): PositionQueryPayload {
+    const positions =
+      symbols.length === 0
+        ? this.getPortfolioState().positions
+        : symbols
+            .map((symbol) => this.getPosition(symbol))
+            .filter((position): position is Position => position !== null);
+
+    return shapePositionQuery(positions);
   }
 
   getCash(): Record<string, number> {

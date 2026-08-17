@@ -16,6 +16,14 @@ export interface FormattedPosition extends Position {
   realizedPnlPct: number;
 }
 
+export interface PositionQueryPayload {
+  positions: FormattedPosition[];
+  has_position: boolean;
+  count: number;
+  /** @deprecated Use positions[0] instead. */
+  position: FormattedPosition | null;
+}
+
 /**
  * Format a position with PnL percentages as separate fields.
  * Does NOT overwrite the original unrealizedPnl / realizedPnl (keeps them as currency values).
@@ -26,5 +34,19 @@ export function formatPositionWithPnlPercent(position: Position): FormattedPosit
     ...position,
     unrealizedPnlPct: toPercent(position.unrealizedPnl, costBasis),
     realizedPnlPct: toPercent(position.realizedPnl, costBasis),
+  };
+}
+
+/** Build the stable get_position response shared by backtest and broker modes. */
+export function shapePositionQuery(
+  positions: readonly Position[],
+): PositionQueryPayload {
+  const formattedPositions = positions.map(formatPositionWithPnlPercent);
+
+  return {
+    positions: formattedPositions,
+    has_position: formattedPositions.length > 0,
+    count: formattedPositions.length,
+    position: formattedPositions[0] ?? null,
   };
 }

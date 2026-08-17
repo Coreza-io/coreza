@@ -768,6 +768,24 @@
       }
     }
   ],
+  "output": {
+    "positions": [
+      {
+        "symbol": "Position symbol",
+        "side": "long or short",
+        "quantity": "Open quantity",
+        "avgFillPrice": "Average fill price",
+        "currentPrice": "Current market price",
+        "unrealizedPnl": "Unrealized profit or loss",
+        "realizedPnl": "Realized profit or loss",
+        "marketValue": "Current market value",
+        "openCostBasis": "Open cost basis"
+      }
+    ],
+    "has_position": "True when positions is non-empty",
+    "count": "Number of returned positions",
+    "position": "Deprecated: first positions entry, or null. Use positions[0] instead."
+  },
   "operationDisplayOptions": {
     "register_order_intent": {
       "show": {

@@ -1,26 +1,23 @@
-# Investigate: backtest_trades not populated on recent runs
+# Store node: "Added 1 member(s)" but member missing in Redis
 
-Diagnosis is not confirmed yet, so step 1 is verification rather than a fix.
+The node reports success (`sadd`, variable `ticker`) while the Redis SET for `store:userId:<uid>:workflowId:<wid>:ticker` still shows only the older member. Cause is unconfirmed, so step 1 verifies before any change.
 
-## Step 1 — Confirm where the trades are lost
+## Step 1 — Confirm which of the three candidates it is
 
-For the most recent backtest run, check in order:
-1. Did the run close any round trips at all? Inspect the SimBroker/portfolio trade ledger at finalize time (log closed-trade count next to the backtest id).
-2. Did finalize run? Confirm `finalizeAll` / auto-finalize fired for that `backtestId` and that the run status reached `completed`.
-3. Did the insert run and fail? Check the Supabase insert path for `backtest_trades` for a swallowed error (row count, returned error, RLS/grant rejection) instead of assuming success.
-4. Compare identifiers: the rows are keyed by `backtest_id`, while state is now keyed by the canonical `executionId`. If finalize reads the ledger with `executionId` but writes with `backtestId` (or vice versa) after the recent execution-identity change, the ledger lookup returns empty and zero rows are inserted — this is the most likely regression given the recent identity refactor and must be confirmed before fixing.
+1. **Different key**: log the exact key the `sadd` handler builds (userId, resolved workflowId, variableName) and compare it with the key open in RedisInsight. The handler resolves workflowId from `input.workflow_id || input.workflowId || ctx.workflowId`, and `scope: local/global` may change it — a different workflowId writes a different key that looks "successful".
+2. **Different Redis instance**: the Store service uses the shared cache client unless credentials are supplied; confirm the node's connection (cache vs a user credential) points at the instance being browsed.
+3. **Member serialization / no-op add**: `sadd` returns 0 when the member already exists, and the value may be stored JSON-quoted (`"AAPL"`) vs raw (`AMD`). Confirm what the handler serializes and what `sadd` actually returned.
 
-## Step 2 — Fix per the finding
+## Step 2 — Fix per finding
 
-- Empty ledger from an ID mismatch: resolve the ledger with the same canonical `executionId` used at runtime, keeping `backtestId` only for the DB rows.
-- Insert error swallowed: log and propagate it, and mark the backtest with an error message rather than completing silently.
-- Finalize never invoked: ensure the completion path triggers it on the same code path as before.
+- Key mismatch: make workflowId resolution explicit and consistent for local vs global scope, so read and write paths build the same key.
+- Wrong instance: route the operation to the intended client and surface which one was used in the node output meta.
+- Serialization mismatch: use one consistent member encoding for `sadd`/`smembers` so members round-trip and dedupe correctly.
 
-## Step 3 — Guardrails
+## Step 3 — Make success honest
 
-- Log a one-line summary at finalize: `backtestId`, `executionId`, closed-trade count, rows inserted — so a future mismatch is visible immediately.
-- Add a regression test that a run producing N closed trades inserts N `backtest_trades` rows, exercising the ID resolution used by finalize.
+Return the real `sadd` result in the node output: the resolved key and the number of members actually added (`added: 0` instead of "Added 1 member(s)" when Redis added nothing), so a silent no-op is visible in the output panel.
 
 ## Technical details
 
-Investigation touches `coreza-backend/src/backtest/BacktestExecutor.ts` (finalize + identity resolution), the SimBroker trade ledger, and the `backtest_trades` persistence helper. No frontend changes expected.
+Touches `coreza-backend/src/services/storage/configs/store.ts` (sadd handler, key build, serialization), `coreza-backend/src/utils/store.ts` (`buildStoreKey`, value encoding), and the storage service context that picks the Redis client. No frontend changes expected.

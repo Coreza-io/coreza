@@ -36,6 +36,37 @@ const applyTTL = async (redis: any, key: string, ttl?: number) => {
   }
 };
 
+const isWrongTypeError = (error: unknown): boolean => {
+  if (typeof error === "string") return error.includes("WRONGTYPE");
+  if (typeof error !== "object" || error === null) return false;
+  const message = Reflect.get(error, "message");
+  return typeof message === "string" && message.includes("WRONGTYPE");
+};
+
+const runTypeSafeOperation = async <T>(
+  ctx: StorageContext,
+  key: string,
+  variableName: string,
+  requiredType: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error: unknown) {
+    if (!isWrongTypeError(error)) throw error;
+
+    let actualType = "another data type";
+    try {
+      actualType = await ctx.redis!.type(key);
+    } catch {
+      // Preserve an actionable error even when Redis cannot inspect the key.
+    }
+    throw new Error(
+      `Variable "${variableName}" already holds ${actualType === "another data type" ? actualType : `a ${actualType}`}; ${requiredType[0].toUpperCase()}${requiredType.slice(1)} operations require a ${requiredType} (delete the key or change Data Type)`,
+    );
+  }
+};
+
 // Helper to get variable name from input
 const getVarName = (input: StorageInput): string | undefined => {
   return (
@@ -483,7 +514,13 @@ export const storeConfig: StorageConfig = {
         if (memberList.length === 0) {
           throw new Error("members required for sadd");
         }
-        await ctx.redis!.sadd(key, ...memberList);
+        await runTypeSafeOperation(
+          ctx,
+          key,
+          input.variableName,
+          "set",
+          () => ctx.redis!.sadd(key, ...memberList),
+        );
         await applyTTL(ctx.redis!, key, input.ttl);
         return {
           operation: "sadd",

@@ -52,7 +52,13 @@ export class DataSourceExecutor implements INodeExecutor {
 
       if (nodeName === "Store") {
         const result = await this.executeStoreNode(resolvedParams, context);
-        return result;
+        return toNodeResult(
+          normalizeOutput(result, {
+            nodeId: node.id,
+            nodeName,
+            category: this.category,
+          }),
+        );
       }
 
       const operation = resolvedParams.operation ?? node.values?.operation;
@@ -82,13 +88,17 @@ export class DataSourceExecutor implements INodeExecutor {
           return toNodeResult(errOutput);
         }
 
-        const result = await this.executeStorageNode("redis", {
-          ...resolvedParams,
-          user_id: redisUserId,
-          credential_id: redisCredentialId,
-          workflow_id: context?.workflowId || input.workflowId,
-          subCategory: "redis",
-        });
+        const result = await this.executeStorageNode(
+          "redis",
+          {
+            ...resolvedParams,
+            user_id: redisUserId,
+            credential_id: redisCredentialId,
+            workflow_id: context?.workflowId || input.workflowId,
+            subCategory: "redis",
+          },
+          context,
+        );
 
         const normalized = normalizeOutput(result, {
           nodeId: node.id,
@@ -185,12 +195,17 @@ export class DataSourceExecutor implements INodeExecutor {
     params: StorageInput,
     context?: any,
   ): Promise<NodeResult> {
+    const outputContext = {
+      category: this.category,
+    };
     const storageService = getStorageService(serviceKey);
     if (!storageService) {
-      return {
-        success: false,
-        error: `Unsupported storage service: ${serviceKey}`,
-      };
+      return toNodeResult(
+        createErrorOutput(
+          `Unsupported storage service: ${serviceKey}`,
+          outputContext,
+        ),
+      );
     }
 
     params.user_id =
@@ -198,7 +213,17 @@ export class DataSourceExecutor implements INodeExecutor {
     params.workflow_id =
       params.workflow_id || params.workflowId || context?.workflowId;
 
-    return storageService.execute(params);
+    const result = await storageService.execute(params);
+    if (!result.success) {
+      return toNodeResult(
+        createErrorOutput(
+          result.error || `${serviceKey} ${params.operation} operation failed`,
+          outputContext,
+        ),
+      );
+    }
+
+    return toNodeResult(normalizeOutput(result.data, outputContext));
   }
 
   private clearResultCachesForRun(runId?: string): void {

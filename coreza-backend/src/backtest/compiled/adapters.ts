@@ -32,7 +32,7 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
       const result =
         warmupResult ?? (await executor.execute(node, input, ctx));
 
-      return normalizeResult(result, executor);
+      return normalizeResult(result);
     };
   }
 
@@ -57,14 +57,11 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
       };
     }
 
-    return normalizeResult(result as NodeResult, executor);
+    return normalizeResult(result as NodeResult);
   };
 }
 
-function normalizeResult(
-  syncResult: NodeResult,
-  executor: INodeExecutor,
-): NodeResult {
+function normalizeResult(syncResult: NodeResult): NodeResult {
   if (
     syncResult &&
     typeof syncResult === "object" &&
@@ -74,8 +71,7 @@ function normalizeResult(
       return {
         success: false,
         data: null,
-        error:
-          syncResult.error || `Node execution failed: ${executor.category}`,
+        error: syncResult.error,
         meta: syncResult.meta,
         control: syncResult.control,
       };

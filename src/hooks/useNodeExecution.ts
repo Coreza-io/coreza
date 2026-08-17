@@ -722,7 +722,7 @@ export function useNodeExecution({
           errOutput = {
             status: "error",
             success: false,
-            error: parsed.data || parsed.details || parsed.error || err.message,
+            error: parsed.error || parsed.data || parsed.details || err.message,
             timestamp: new Date().toISOString(),
           };
         } catch {

@@ -1,23 +1,24 @@
-# Store node: "Added 1 member(s)" but member missing in Redis
+# Portfolio `get_position`: always return an array
 
-The node reports success (`sadd`, variable `ticker`) while the Redis SET for `store:userId:<uid>:workflowId:<wid>:ticker` still shows only the older member. Cause is unconfirmed, so step 1 verifies before any change.
+Today the response shape differs by input: a single `position` object when a symbol is given, and a collection when the symbol field is blank. Downstream nodes then need two different reference paths.
 
-## Step 1 — Confirm which of the three candidates it is
+## Change
 
-1. **Different key**: log the exact key the `sadd` handler builds (userId, resolved workflowId, variableName) and compare it with the key open in RedisInsight. The handler resolves workflowId from `input.workflow_id || input.workflowId || ctx.workflowId`, and `scope: local/global` may change it — a different workflowId writes a different key that looks "successful".
-2. **Different Redis instance**: the Store service uses the shared cache client unless credentials are supplied; confirm the node's connection (cache vs a user credential) points at the instance being browsed.
-3. **Member serialization / no-op add**: `sadd` returns 0 when the member already exists, and the value may be stored JSON-quoted (`"AAPL"`) vs raw (`AMD`). Confirm what the handler serializes and what `sadd` actually returned.
+Make `get_position` always return `positions` as an array:
 
-## Step 2 — Fix per finding
+- Symbol given, position open: array with one entry.
+- Symbol given, no position: empty array.
+- Symbol blank: array with every open position (unchanged data, array shape).
 
-- Key mismatch: make workflowId resolution explicit and consistent for local vs global scope, so read and write paths build the same key.
-- Wrong instance: route the operation to the intended client and surface which one was used in the node output meta.
-- Serialization mismatch: use one consistent member encoding for `sadd`/`smembers` so members round-trip and dedupe correctly.
-
-## Step 3 — Make success honest
-
-Return the real `sadd` result in the node output: the resolved key and the number of members actually added (`added: 0` instead of "Added 1 member(s)" when Redis added nothing), so a silent no-op is visible in the output panel.
+Keep `has_position` as a boolean (true when the array is non-empty) and add `count`.
 
 ## Technical details
 
-Touches `coreza-backend/src/services/storage/configs/store.ts` (sadd handler, key build, serialization), `coreza-backend/src/utils/store.ts` (`buildStoreKey`, value encoding), and the storage service context that picks the Redis client. No frontend changes expected.
+- Update the `get_position` handler in the backtest path (`coreza-backend/src/nodes/executors/PortfolioExecutor.ts` / SimBroker portfolio read) and the live path (`PortfolioManager.ts`) so both build the same array payload through one shared shaping helper — no per-mode divergence.
+- Preserve the existing per-position fields (symbol, side, quantity, avgFillPrice, currentPrice, unrealizedPnl, realizedPnl, marketValue, openCostBasis).
+- Update the Portfolio node JSON `output` sample so the editor preview and reference picker suggest `positions[0]...`.
+- Keep `position` as a deprecated alias (first element, or null) for one release so existing workflows referencing `data.position` don't break; note it in the field description.
+
+## Verification
+
+Run the portfolio executor tests, plus a backtest with a symbol, without a symbol, and with a symbol that has no open position, confirming all three return an array.

@@ -29,8 +29,7 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
       const warmupResult = ctx.isWarmingUp
         ? enforceWarmupPolicy(node)
         : undefined;
-      const result =
-        warmupResult ?? (await executor.execute(node, input, ctx));
+      const result = warmupResult ?? (await executor.execute(node, input, ctx));
 
       return normalizeResult(result);
     };
@@ -62,11 +61,7 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
 }
 
 function normalizeResult(syncResult: NodeResult): NodeResult {
-  if (
-    syncResult &&
-    typeof syncResult === "object" &&
-    "success" in syncResult
-  ) {
+  if (syncResult && typeof syncResult === "object" && "success" in syncResult) {
     if (!syncResult.success) {
       return {
         success: false,

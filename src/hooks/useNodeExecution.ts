@@ -238,7 +238,8 @@ export function useNodeExecution({
             }
           }
 
-          const isToolToggled = (n.data as any)?.values?.__isTool === true ||
+          const isToolToggled =
+            (n.data as any)?.values?.__isTool === true ||
             (n.data as any)?.fieldState?.__isTool === true;
           return {
             id: n.id,
@@ -719,10 +720,19 @@ export function useNodeExecution({
         let errOutput;
         try {
           const parsed = JSON.parse(err.message);
+          const parsedError =
+            (typeof parsed.error === "string" && parsed.error) ||
+            (typeof parsed.message === "string" && parsed.message) ||
+            (typeof parsed.data?.error === "string" && parsed.data.error) ||
+            (typeof parsed.data?.message === "string" && parsed.data.message) ||
+            (typeof parsed.details === "string" && parsed.details) ||
+            (typeof parsed.details?.message === "string" &&
+              parsed.details.message);
+
           errOutput = {
             status: "error",
             success: false,
-            error: parsed.data || parsed.details || parsed.error || err.message,
+            error: parsedError || err.message || "Action failed",
             timestamp: new Date().toISOString(),
           };
         } catch {

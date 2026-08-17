@@ -23,6 +23,7 @@ import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import {
   FormattedPosition,
   formatPositionWithPnlPercent,
+  shapePositionQuery,
 } from "../../utils/portfolioHelpers";
 import { isOurOrder } from "../../utils/orderIdempotency";
 import { NodeExecutionContext } from "../../engine/types";
@@ -1528,49 +1529,13 @@ export class PortfolioExecutor implements INodeExecutor {
     simBroker: SimBroker,
     symbol?: string,
   ): NodeResult {
-    if (!symbol) {
-      const state = simBroker.getPortfolioState();
-      const positions = Object.values(state.positions).map((position) => ({
-        ...formatPositionWithPnlPercent(position),
-        realized_pnl: state.realizedPnlBySymbol[position.symbol] ?? 0,
-      }));
+    const positions = symbol
+      ? [simBroker.getPosition(symbol)].filter(
+          (position): position is Position => position !== null,
+        )
+      : Object.values(simBroker.getPortfolioState().positions);
 
-      return leanSuccess({
-        has_position: positions.length > 0,
-        positions,
-        positions_count: positions.length,
-      });
-    }
-    const position = simBroker.getPosition(symbol);
-    const realizedPnl =
-      simBroker.getPortfolioState().realizedPnlBySymbol[symbol] ?? 0;
-    // const formattedPosition = position
-    //   ? formatPositionWithPnlPercent(position)
-    //   : null;
-    // const positionCostBasis = position
-    //   ? Math.abs(position.avgFillPrice * position.quantity)
-    //   : 0;
-
-    return leanSuccess({
-      has_position: !!position,
-      position: position,
-      symbol,
-      quantity: position?.quantity || 0,
-      side: position?.side || null,
-      avgFillPrice: position?.avgFillPrice || 0,
-      current_price: position?.currentPrice || 0,
-      unrealized_pnl_pct: toPercent(
-        position?.unrealizedPnl || 0,
-        position?.openCostBasis || 0,
-      ),
-      unrealized_pnl: position?.unrealizedPnl || 0,
-      realized_pnl_pct: toPercent(
-        realizedPnl,
-        position?.openCostBasis || 0,
-      ),
-      realized_pnl: realizedPnl,
-      market_value: position?.marketValue || 0,
-    });
+    return leanSuccess(shapePositionQuery(positions));
   }
 
   private backtestUpdateMTM(
@@ -1795,22 +1760,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
-    let positions;
-
-    if (symbols.length === 0) {
-      // All positions
-      positions = pm.getPositions();
-    } else {
-      // One or multiple symbols
-      positions = symbols
-        .map((symbol) => pm.getPosition(symbol))
-        .filter(Boolean); // remove nulls
-    }
-
-    return leanSuccess({
-      positions: positions.map((p) => formatPositionWithPnlPercent(p)),
-      positions_count: positions.length,
-    });
+    return leanSuccess(pm.getPositionQuery(symbols));
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {

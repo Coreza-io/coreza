@@ -719,10 +719,20 @@ export function useNodeExecution({
         let errOutput;
         try {
           const parsed = JSON.parse(err.message);
+          const parsedError =
+            (typeof parsed.error === "string" && parsed.error) ||
+            (typeof parsed.message === "string" && parsed.message) ||
+            (typeof parsed.data?.error === "string" && parsed.data.error) ||
+            (typeof parsed.data?.message === "string" &&
+              parsed.data.message) ||
+            (typeof parsed.details === "string" && parsed.details) ||
+            (typeof parsed.details?.message === "string" &&
+              parsed.details.message);
+
           errOutput = {
             status: "error",
             success: false,
-            error: parsed.error || parsed.data || parsed.details || err.message,
+            error: parsedError || err.message || "Action failed",
             timestamp: new Date().toISOString(),
           };
         } catch {

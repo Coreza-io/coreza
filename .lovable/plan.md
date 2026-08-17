@@ -1,37 +1,26 @@
-# Fix Store node erroring in live — opt-in async, sync fast path untouched
+# Investigate: backtest_trades not populated on recent runs
 
-## Root cause (confirmed by the debugger screenshot)
+Diagnosis is not confirmed yet, so step 1 is verification rather than a fix.
 
-`coreza-backend/src/backtest/compiled/adapters.ts` → `buildExecAdapter` calls `executor.execute(...)`; when the result is a thenable it discards it and returns `Compiled plan requires synchronous executor for category ...`. `DataSourceExecutor` (which serves the Store node) is async, so the `rpush` still lands in Redis while the node is marked failed and the engine hops back to OnBar with no visible error.
+## Step 1 — Confirm where the trades are lost
 
-## Approach: keep the synchronous hot path, allow async only where declared
+For the most recent backtest run, check in order:
+1. Did the run close any round trips at all? Inspect the SimBroker/portfolio trade ledger at finalize time (log closed-trade count next to the backtest id).
+2. Did finalize run? Confirm `finalizeAll` / auto-finalize fired for that `backtestId` and that the run status reached `completed`.
+3. Did the insert run and fail? Check the Supabase insert path for `backtest_trades` for a swallowed error (row count, returned error, RLS/grant rejection) instead of assuming success.
+4. Compare identifiers: the rows are keyed by `backtest_id`, while state is now keyed by the canonical `executionId`. If finalize reads the ledger with `executionId` but writes with `backtestId` (or vice versa) after the recent execution-identity change, the ledger lookup returns empty and zero rows are inserted — this is the most likely regression given the recent identity refactor and must be confirmed before fixing.
 
-Do **not** make every node await. Instead:
+## Step 2 — Fix per the finding
 
-1. **Per-executor opt-in.** `INodeExecutor` already carries `syncCapable`. Treat `syncCapable === false` (or absent) as "may return a promise". `DataSourceExecutor` currently declares `syncCapable = true` while returning a promise — that lie is what the adapter is catching. Set it to `false`.
-2. **Two adapter shapes at compile time.** In `buildExecAdapter`, branch once on `executor.syncCapable`:
-   - sync executors (Indicators, Compute, IF, Portfolio, …) keep today's exact code path — no promise checks in the hot loop, zero added overhead;
-   - async-declared executors return the promise, and the compiled plan's node-step awaits only these nodes.
-3. **Async nodes stay off the per-bar hot path by policy.** Only categories that genuinely do I/O (DataSource/Store, Broker HTTP, AI) may opt in; keep the "requires synchronous executor" error for any executor that declares `syncCapable = true` yet returns a thenable, so a future regression is still caught loudly instead of silently.
-4. **Runner change is minimal.** The compiled runner's exec call becomes `const r = execFn(...); const res = isAsyncNode ? await r : r;` where `isAsyncNode` is a boolean precomputed per node at compile time — a property read, not a promise check.
-5. **Warm-up policy unchanged.** `enforceWarmupPolicy` still short-circuits before `executor.execute`, so suppressed/rejected nodes never start async work.
-6. **Surface failures.** Ensure a `success: false` from an async node reaches the node result/output panel and the live socket rather than a silent return to OnBar.
+- Empty ledger from an ID mismatch: resolve the ledger with the same canonical `executionId` used at runtime, keeping `backtestId` only for the DB rows.
+- Insert error swallowed: log and propagate it, and mark the backtest with an error message rather than completing silently.
+- Finalize never invoked: ensure the completion path triggers it on the same code path as before.
 
-## Error message not reaching the output panel
+## Step 3 — Guardrails
 
-The Store node now renders `error {...}` (an object) instead of readable text, and the actual failure is `WRONGTYPE Operation against a key holding the wrong kind of value` — the `ticker` key already exists as a LIST while the node is configured as a Set/`sadd`. Two separate defects:
-
-- **Wrong shape.** `StorageService.execute` returns a full `StandardNodeOutput` (`{ success, status, error, details, meta }`). `DataSourceExecutor` passes that object straight through as the node's payload for the Store branch instead of unwrapping it like the other branches do (`normalizeOutput` + `toNodeResult`, or `createErrorOutput(result.error, ...)` as done for the generic data-source path). The nested object lands in `error`, so the panel prints `{...}`. Fix: in `executeStorageNode`/`executeStoreNode`, when the storage result has `success === false`, return `toNodeResult(createErrorOutput(result.error ?? ..., { nodeId, nodeName, category }))`; on success return `toNodeResult(normalizeOutput(result.data, ...))` — matching the RedisStore branch that already works.
-- **Message preserved end to end.** In `storageService.ts` log `error.stack` with `serviceKey`/`operation` and build the message as `error?.message || error?.name || String(error)` so it can never be empty; in the compiled adapter keep `syncResult.error` verbatim rather than replacing it with the generic `Node execution failed: <category>`.
-- **Actionable WRONGTYPE.** In `store.ts`, wrap Redis type mismatches so the node reports e.g. `Variable "ticker" already holds a list; Set operations require a set (delete the key or change Data Type)` instead of the raw Redis string.
-- `services/storage/configs/store.ts`: also coerce `ttl` with `Number()`, skip `EXPIRE` unless it is a finite positive integer, and make a TTL failure non-fatal once the write has succeeded.
-
-
-## Tests
-
-- `coreza-backend/tests/compiledAdapterAsync.test.ts`: an executor with `syncCapable: false` resolves its real result through the adapter; a `syncCapable: true` executor returning a promise still produces the explicit "requires synchronous executor" error; a sync executor returns without awaiting; warm-up suppression short-circuits before execution.
-- `coreza-backend/tests/storeNodeTtl.test.ts`: empty/invalid `ttl` never calls `expire`; valid ttl does; `expire` rejection still yields success; `rpush` rejection yields a non-empty error message.
+- Log a one-line summary at finalize: `backtestId`, `executionId`, closed-trade count, rows inserted — so a future mismatch is visible immediately.
+- Add a regression test that a run producing N closed trades inserts N `backtest_trades` rows, exercising the ID resolution used by finalize.
 
 ## Technical details
 
-Files: `coreza-backend/src/backtest/compiled/adapters.ts` and its `ExecFn`/`CompiledExecContext` types plus the compiled plan runner (precomputed `isAsyncNode` flag), `coreza-backend/src/nodes/executors/DataSourceExecutor.ts` (`syncCapable = false`), `coreza-backend/src/services/storage/configs/store.ts`, `coreza-backend/src/services/storage/storageService.ts`, and the two test files. No frontend or schema changes.
+Investigation touches `coreza-backend/src/backtest/BacktestExecutor.ts` (finalize + identity resolution), the SimBroker trade ledger, and the `backtest_trades` persistence helper. No frontend changes expected.

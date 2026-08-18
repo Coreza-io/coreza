@@ -1,24 +1,30 @@
-# Portfolio `get_position`: always return an array
+# BacktestInit (Alpaca): "Bar Adjustment = split" appears to have no effect
 
-Today the response shape differs by input: a single `position` object when a symbol is given, and a collection when the symbol field is blank. Downstream nodes then need two different reference paths.
+The node exposes `adjustment` (default raw, shown for Alpaca + stock), but the returned bars look unadjusted. Where the value is lost is unconfirmed, so step 1 traces it.
 
-## Change
+## Step 1 — Trace the value along the whole path
 
-Make `get_position` always return `positions` as an array:
+Log/inspect `adjustment` at each hop and find the first one where it is missing:
 
-- Symbol given, position open: array with one entry.
-- Symbol given, no position: empty array.
-- Symbol blank: array with every open position (unchanged data, array shape).
+1. Frontend serialization of BacktestInit values sent to `/backtest/init`.
+2. The backtest init route/executor building the historical fetch request.
+3. `HistoricalDataService` fetch options for the Alpaca provider.
+4. The final Alpaca `get_candle` params (the operation already supports and validates `adjustment`, defaulting to `raw`).
 
-Keep `has_position` as a boolean (true when the array is non-empty) and add `count`.
+Also confirm the warm-up fetch carries the same value, so strategy and pre-start bars aren't mixed adjustments.
+
+## Step 2 — Fix at the first broken hop
+
+- Value never leaves the node: include `adjustment` in the serialized BacktestInit payload.
+- Value dropped server-side: thread it through the init request into `HistoricalDataService` options and into the Alpaca params builder for both strategy and warm-up fetches.
+- Value passed but overridden: remove the hardcoded `raw` default on the backtest path so the user selection wins.
+
+## Step 3 — Make it visible and verified
+
+- Echo the effective `adjustment` in the BacktestInit output `data` block (next to `bars_fetched` / `warmup_bars_used`) so the setting is auditable in the UI.
+- Add a test asserting a BacktestInit with `adjustment: "split"` reaches the Alpaca candle params as `split` for both strategy and warm-up ranges.
+- Manually verify against a symbol with a known split in the date range: split-adjusted closes differ from raw.
 
 ## Technical details
 
-- Update the `get_position` handler in the backtest path (`coreza-backend/src/nodes/executors/PortfolioExecutor.ts` / SimBroker portfolio read) and the live path (`PortfolioManager.ts`) so both build the same array payload through one shared shaping helper — no per-mode divergence.
-- Preserve the existing per-position fields (symbol, side, quantity, avgFillPrice, currentPrice, unrealizedPnl, realizedPnl, marketValue, openCostBasis).
-- Update the Portfolio node JSON `output` sample so the editor preview and reference picker suggest `positions[0]...`.
-- Keep `position` as a deprecated alias (first element, or null) for one release so existing workflows referencing `data.position` don't break; note it in the field description.
-
-## Verification
-
-Run the portfolio executor tests, plus a backtest with a symbol, without a symbol, and with a symbol that has no open position, confirming all three return an array.
+Touches the BacktestInit serialization in the frontend node execution hook, the backtest init handler, `HistoricalDataService`, and the Alpaca `get_candle` params builder. No change to the adjustment validation already covered by `tests/alpacaCandleAdjustment.test.ts`.

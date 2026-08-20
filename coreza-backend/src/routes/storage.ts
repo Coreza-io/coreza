@@ -31,11 +31,87 @@ import {
   ROLLING_WINDOW_ERRORS,
   buildRollingWindowNotFoundPayload,
 } from "../engine/rollingWindowHelpers";
+import { ConsolidationError } from "../engine/consolidation/TimeBarConsolidator";
+import {
+  buildConsolidatorStateKey,
+  ConsolidatorValidationError,
+  runConsolidatorStep,
+} from "../engine/consolidation/consolidatorShared";
 
 const router = Router();
 
 // Apply JWT auth to all routes
 router.use(requireAuth);
+
+// POST /storage/consolidator
+router.post("/consolidator", (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+
+  const {
+    runId,
+    workflowSessionId,
+    backtestId,
+    symbol,
+    source_timeframe: sourceTimeframe,
+    target_timeframe: targetTimeframe,
+    timezone: requestedTimezone,
+    anchor_time: requestedAnchorTime,
+    candle_data: candleData,
+  } = req.body;
+  const executionId = runId ?? workflowSessionId ?? backtestId;
+  if (!executionId) {
+    return res.status(400).json({
+      success: false,
+      error: "runId, workflowSessionId, or backtestId is required",
+    });
+  }
+
+  const parameters = {
+    symbol: String(symbol ?? "").trim(),
+    sourceTimeframe: String(sourceTimeframe ?? "").trim(),
+    targetTimeframe: String(targetTimeframe ?? "").trim(),
+    timezone: String(requestedTimezone ?? "UTC").trim() || "UTC",
+    anchorTime: String(requestedAnchorTime ?? "").trim(),
+  };
+
+  try {
+    const stateKey = buildConsolidatorStateKey(parameters);
+    const dataContext =
+      DataContextManager.getInstance().getExistingContext(executionId);
+    if (!dataContext) {
+      return res.status(404).json({
+        success: false,
+        error: "Execution context not found or already completed",
+        meta: { key: stateKey },
+      });
+    }
+
+    const result = runConsolidatorStep(
+      parameters,
+      candleData,
+      dataContext.getDataByKey(stateKey),
+    );
+    dataContext.setData(stateKey, result.state);
+    return res.json({
+      success: true,
+      data: result.payload,
+      meta: { key: stateKey },
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      code:
+        error instanceof ConsolidationError ||
+        error instanceof ConsolidatorValidationError
+          ? error.code
+          : "CONSOLIDATION_ERROR",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
 
 // POST /storage/rolling-window
 router.post("/rolling-window", async (req: Request, res: Response) => {

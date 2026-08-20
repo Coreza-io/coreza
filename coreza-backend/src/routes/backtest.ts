@@ -54,6 +54,8 @@ router.post("/init", async (req: Request, res: Response) => {
       asset_type,
       feed,
       warmup_period,
+      adjustment,
+      warmup_mode,
       nodes,
       edges,
     } = req.body;
@@ -85,6 +87,7 @@ router.post("/init", async (req: Request, res: Response) => {
           asset_type,
           feed,
           warmup_period,
+          adjustment,
         },
       } as any,
       {},

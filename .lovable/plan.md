@@ -2,20 +2,17 @@
 
 ## Cause
 
-`src/nodes/Consolidator.json` declares `"action": { "url": "/workflow/execute", "method": "POST" }`. Every other node points its `action` at a real backend REST route it owns — for example `RollingWindow.json` uses `/storage/rolling-window` and `Compute.json` uses `/comparator/compute`. `/workflow/execute` is not a route the manual single-node run can call, so the editor's execute request 404s with "route not found". The executor itself is fine — this only affects the manual/editor path; workflow and backtest runs go through the executor registry, not the node's `action` URL.
+`src/nodes/Consolidator.json` declares `"action": { "url": "/workflow/execute", "method": "POST" }`, which is not a manual single-node route, so the editor request 404s. Nodes that keep engine state route to the storage service instead — `RollingWindow.json` uses `/storage/rolling-window`.
 
-## Fix
+## Fix — route it exactly like Rolling Window
 
-1. **Add a backend route** that manually executes one consolidation step, mirroring how the rolling-window route works:
-   - `POST /consolidator/consolidate` accepting `candle_data`, `symbol`, `source_timeframe`, `target_timeframe`, `timezone`, `anchor_time`, plus the execution identity the editor already sends.
-   - It normalizes the bar with `parseBar`, runs `TimeBarConsolidator`, and persists the working bar in the same execution-scoped store the workflow path uses so a manual run and an engine run share one bucket (resolve the execution id with the existing canonical `runId ?? workflowSessionId ?? backtestId` chain, as rolling-window does).
-   - Response mirrors the executor: `{ emitted, bar, workingBar }` with `success: true` while a bucket is still building.
-2. **Register the route** in the backend router alongside the other node routes.
-3. **Point the node at it**: change `Consolidator.json`'s `action.url` to `/consolidator/consolidate`.
-4. **Avoid duplicated logic**: the route and `ConsolidatorExecutor` both call the same `TimeBarConsolidator` and the same state key builder — extract the key builder into the consolidation module so manual and live runs cannot drift (the same problem previously fixed for rolling window with `rollingWindowShared.ts`).
+1. **Add `/storage/consolidator`** in the same storage route module that serves `/storage/rolling-window`, following that handler step for step: resolve the canonical `executionId` (`runId ?? workflowSessionId ?? backtestId`), get the existing `DataContext`, build the state key, run the step, write the state back.
+2. **Share the key builder and step logic** the same way rolling window shares `rollingWindowShared.ts`: `ConsolidatorExecutor` and the route both call one helper that builds `symbol:source:target:timezone:anchor` and runs `TimeBarConsolidator`, so manual and engine runs can never drift onto different keys.
+3. **Point the node at it**: set `Consolidator.json` `action.url` to `/storage/consolidator`.
+4. **Same response shape as the executor**: `success: true` with `{ emitted, bar, workingBar }`; a still-building bucket is not an error. Missing execution context returns the same 404-style payload rolling window returns, with the resolved key in `meta` for debugging.
 
 ## Verification
 
-- Run the Consolidator node manually in the editor: no 404; four 1h inputs return `emitted: false`, the fifth returns `emitted: true` with the completed 4h bar.
-- Confirm the manual run and a backtest run resolve the same execution id and therefore the same working bucket.
-- Add a route test covering held vs emitted responses and the invalid-timeframe error path.
+- Manual run in the editor: no route error; four 1h inputs return `emitted: false`, the fifth returns `emitted: true` with the completed 4h bar.
+- Manual run and backtest run resolve the same `executionId` and the same working bucket.
+- Route test covering held vs emitted responses, missing context, and the invalid-timeframe error.

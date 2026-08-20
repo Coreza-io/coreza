@@ -1,23 +1,21 @@
-# Consolidator implementation — review result and remaining checks
+# Fix "route not found" when running the Consolidator node manually
 
-## Verified as correctly implemented
+## Cause
 
-- `utils/timeframe.ts`: alias normalization, exact-multiple ratio validation, rejects `3h → 4h`.
-- `utils/barParser.ts`: accepts `timestamp|time|t` and long/short OHLCV aliases, rejects non-finite values and numeric-string timestamps handled explicitly.
-- `engine/consolidation/TimeBarConsolidator.ts`: left-closed/right-open buckets, boundary input emits the previous bucket and opens the new one (no double count), first-open/max-high/min-low/last-close/summed-volume, idempotent duplicates, `DUPLICATE_BAR_CONFLICT` and `OUT_OF_ORDER_BAR`, timezone/anchor alignment via `date-fns-tz`, Monday alignment for weekly buckets.
-- `nodes/executors/ConsolidatorExecutor.ts`: `syncCapable = true`, state via `context.getState/setState` keyed by symbol+source+target+timezone+anchor, held bar returns `success: true` with `suppressDownstream`.
-- Routing: `suppressDownstream` on `ControlFlags`, honoured in `engine/executionRuntime.ts` (both routing sites) and `backtest/compiled/vm.ts`.
-- Registration: executor in `nodes/index.ts`, `Consolidator: "Consolidator"` in `categoryMap.ts`, `src/nodes/Consolidator.json` present.
-- Warm-up sizing: `backtest/warmup/ConsolidatorWarmup.ts` wired into `BacktestExecutor`.
-- Tests: `tests/timeBarConsolidator.test.ts` covers boundary, duplicates/conflict/out-of-order, DST, 09:30 anchor, weekly alignment, and executor hold-then-emit.
+`src/nodes/Consolidator.json` declares `"action": { "url": "/workflow/execute", "method": "POST" }`. Every other node points its `action` at a real backend REST route it owns — for example `RollingWindow.json` uses `/storage/rolling-window` and `Compute.json` uses `/comparator/compute`. `/workflow/execute` is not a route the manual single-node run can call, so the editor's execute request 404s with "route not found". The executor itself is fine — this only affects the manual/editor path; workflow and backtest runs go through the executor registry, not the node's `action` URL.
 
-## Remaining checks to close out
+## Fix
 
-1. **WarmupPolicy**: confirm `Consolidator` is in the explicit execute list so the node runs during `workflow_replay` and its partial bucket carries into the live/strategy phase (trading and portfolio nodes stay rejected).
-2. **Frontend serialization**: confirm `src/hooks/useNodeExecution.ts` includes Consolidator values in the BacktestInit graph payload — otherwise `resolveConsolidatorWarmup` sees empty params, exactly like the earlier RollingWindow issue.
-3. **Runtime routing test**: add a test asserting a held result activates no successors in the queue runtime and in the compiled VM, and that an emitted one does.
-4. **End-to-end backtest**: run 1h source / 4h target and confirm SimBroker still sees every 1h bar while RollingWindow/ATR only receive 4h bars.
+1. **Add a backend route** that manually executes one consolidation step, mirroring how the rolling-window route works:
+   - `POST /consolidator/consolidate` accepting `candle_data`, `symbol`, `source_timeframe`, `target_timeframe`, `timezone`, `anchor_time`, plus the execution identity the editor already sends.
+   - It normalizes the bar with `parseBar`, runs `TimeBarConsolidator`, and persists the working bar in the same execution-scoped store the workflow path uses so a manual run and an engine run share one bucket (resolve the execution id with the existing canonical `runId ?? workflowSessionId ?? backtestId` chain, as rolling-window does).
+   - Response mirrors the executor: `{ emitted, bar, workingBar }` with `success: true` while a bucket is still building.
+2. **Register the route** in the backend router alongside the other node routes.
+3. **Point the node at it**: change `Consolidator.json`'s `action.url` to `/consolidator/consolidate`.
+4. **Avoid duplicated logic**: the route and `ConsolidatorExecutor` both call the same `TimeBarConsolidator` and the same state key builder — extract the key builder into the consolidation module so manual and live runs cannot drift (the same problem previously fixed for rolling window with `rollingWindowShared.ts`).
 
-## Technical notes
+## Verification
 
-Items 1 and 2 are the only places where a miss would silently degrade behaviour (warm-up would under-fetch and the consolidator would run outside replay). Everything else in the design is in place as specified.
+- Run the Consolidator node manually in the editor: no 404; four 1h inputs return `emitted: false`, the fifth returns `emitted: true` with the completed 4h bar.
+- Confirm the manual run and a backtest run resolve the same execution id and therefore the same working bucket.
+- Add a route test covering held vs emitted responses and the invalid-timeframe error path.

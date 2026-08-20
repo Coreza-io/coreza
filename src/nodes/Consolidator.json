@@ -12,7 +12,7 @@
     { "type": "target", "position": "left", "id": "input" },
     { "type": "source", "position": "right", "id": "output" }
   ],
-  "action": { "url": "/workflow/execute", "method": "POST" },
+  "action": { "url": "/storage/consolidator", "method": "POST" },
   "fields": [
     { "key": "candle_data", "type": "textarea", "label": "Candle Data", "required": true, "description": "Historical OHLCV (time/timestamp) or live compact OHLCV (t/o/h/l/c/v)." },
     { "key": "symbol", "type": "text", "label": "Symbol", "required": true, "placeholder": "e.g. BTCUSDT" },

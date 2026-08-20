@@ -10,32 +10,49 @@
 
 import { Bar } from "../backtest/simBroker/interfaces";
 
+type UnknownRecord = Record<string, unknown>;
+
 /**
  * Parse a bar from various input formats (JSON string, object with .bar wrapper, OHLCV).
- * Optimized: uses Number() instead of parseFloat(), avoids Date allocation when timestamp
- * is already an ISO string.
+ * Uses Number() instead of permissive parseFloat() and rejects invalid timestamps
+ * or non-finite OHLCV values.
  */
-export function parseBar(data: any): Bar | null {
+export function parseBar(input: unknown): Bar | null {
+  let data = input;
   if (!data) return null;
 
   if (typeof data === "string") {
     try { data = JSON.parse(data); } catch { return null; }
   }
 
-  if (data.bar) data = data.bar;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const record = data as UnknownRecord;
+  data = record.bar ?? data;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const bar = data as UnknownRecord;
 
-  if (typeof data !== "object") return null;
-
-  const timestamp = data.timestamp ?? data.time;
-  if (timestamp === undefined) return null;
+  const timestamp = bar.timestamp ?? bar.time ?? bar.t;
+  const timestampMs = typeof timestamp === "number"
+    ? timestamp
+    : typeof timestamp === "string"
+      ? /^\d+(?:\.\d+)?$/.test(timestamp.trim())
+        ? Number(timestamp)
+        : new Date(timestamp).getTime()
+      : Number.NaN;
+  const open = Number(bar.open ?? bar.o);
+  const high = Number(bar.high ?? bar.h);
+  const low = Number(bar.low ?? bar.l);
+  const close = Number(bar.close ?? bar.c);
+  const volume = Number(bar.volume ?? bar.v ?? 0);
+  if (![timestampMs, open, high, low, close, volume].every(Number.isFinite)) return null;
 
   return {
-    timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : timestamp,
-    open: Number(data.open),
-    high: Number(data.high),
-    low: Number(data.low),
-    close: Number(data.close),
-    volume: Number(data.volume ?? 0),
+    timestamp: new Date(timestampMs).toISOString(),
+    open,
+    high,
+    low,
+    close,
+    volume,
   };
 }
 

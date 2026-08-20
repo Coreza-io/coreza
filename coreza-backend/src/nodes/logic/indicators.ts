@@ -1812,6 +1812,7 @@ export class IndicatorService {
       const candles = parseArray<any>(rawCandles, "candle_data");
       const shortPeriod = Number(short_period);
       const longPeriod = Number(long_period);
+      const outputType = type ?? "percentage";
 
       if (
         !Number.isFinite(shortPeriod) ||
@@ -1825,6 +1826,9 @@ export class IndicatorService {
       if (shortPeriod >= longPeriod) {
         throw createError("short_period must be less than long_period", 400);
       }
+      if (outputType !== "percentage" && outputType !== "absolute") {
+        throw createError("type must be percentage or absolute", 400);
+      }
 
       const volumes = candles.map((c) => Number(c.v ?? c.volume));
       if (volumes.some((v) => !Number.isFinite(v) || v < 0)) {
@@ -1835,7 +1839,7 @@ export class IndicatorService {
         volumes,
         shortPeriod,
         longPeriod,
-        type,
+        outputType,
       );
 
       return createSuccessOutput(out, {

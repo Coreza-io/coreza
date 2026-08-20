@@ -11,6 +11,7 @@
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import type { Bar } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
+import { parseTimeframe } from "../utils/timeframe";
 
 export interface HistoricalDataContext {
   userId?: string;
@@ -62,20 +63,13 @@ export function normalizeHistoricalBars(bars: HistoricalBar[]): HistoricalBar[] 
   );
 }
 
-function intervalMilliseconds(interval: string): number {
-  const normalized = interval.trim().toLowerCase();
-  const match = normalized.match(/^(\d+)\s*(m|min|h|d|day|w|week)$/);
-  if (!match) return DAY_MS;
-  const amount = Number(match[1]);
-  const unit = match[2];
-  if (unit === "m" || unit === "min") return amount * 60_000;
-  if (unit === "h") return amount * 3_600_000;
-  if (unit === "w" || unit === "week") return amount * 7 * DAY_MS;
-  return amount * DAY_MS;
-}
-
 function initialLookbackMs(request: PreviousBarsRequest): number {
-  const intervalMs = intervalMilliseconds(request.interval);
+  let intervalMs = DAY_MS;
+  try {
+    intervalMs = parseTimeframe(request.interval).milliseconds;
+  } catch {
+    // Preserve the historical service's conservative fallback for provider-specific intervals.
+  }
   const assetType = String(request.assetType ?? "").toLowerCase();
   if (assetType === "crypto") return Math.ceil(request.count * intervalMs * 1.15) + DAY_MS;
   if (intervalMs >= DAY_MS) return (Math.ceil(request.count * 1.6) + 10) * DAY_MS;

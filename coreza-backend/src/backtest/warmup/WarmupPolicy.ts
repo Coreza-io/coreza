@@ -26,6 +26,7 @@ const EXECUTE_NODES = new Set([
   "loop",
   "edit fields",
   "onbar",
+  "consolidator",
 ]);
 
 /** Nodes/categories that would create or mutate trading state. */

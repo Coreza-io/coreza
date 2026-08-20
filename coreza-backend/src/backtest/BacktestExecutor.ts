@@ -33,7 +33,10 @@ import {
 } from "../utils/normalizeOutput";
 import { discoverWarmupNodes } from "../nodes/executors/InitializeIndicatorsExecutor";
 import type { DiscoveredWarmupNode } from "../nodes/executors/InitializeIndicatorsExecutor";
-import { buildIndicatorKey, IndicatorStateManager } from "../engine";
+import {
+  buildIndicatorKey,
+  IndicatorStateManager,
+} from "../engine";
 import { parseBar, parsePrices, toPercent } from "../utils/barParser";
 import { formatPositionWithPnlPercent } from "../utils/portfolioHelpers";
 
@@ -55,6 +58,7 @@ import {
   buildWarmupEvents,
 } from "./warmup/WarmupReplay";
 import type { WarmupMode } from "./warmup/types";
+import { resolveConsolidatorWarmup } from "./warmup/ConsolidatorWarmup";
 
 type AlignedMultiBarEvent = MultiBarEvent & {
   /** Symbols whose bars were copied from their latest real observation. */
@@ -364,8 +368,8 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
-      const warmupBarsRequested = parseWarmupPeriod(params.warmup_period);
-      const warmupMode: WarmupMode =
+      const configuredWarmupBars = parseWarmupPeriod(params.warmup_period);
+      let warmupMode: WarmupMode =
         params.warmup_mode === "workflow_replay" ? "workflow_replay" : "seed";
       const historicalDataService = new HistoricalDataService();
       const strategyEntries = await Promise.all(
@@ -429,6 +433,26 @@ export class BacktestExecutor implements INodeExecutor {
         (candidate) =>
           candidate.type === "rollingwindow" &&
           String(candidate.params?.operation ?? "set").toLowerCase() === "set",
+      );
+      let consolidatorWarmup;
+      try {
+        consolidatorWarmup = resolveConsolidatorWarmup(
+          node.id,
+          allNodes,
+          allEdges,
+          warmupNodes,
+        );
+      } catch (error) {
+        return toNodeResult(
+          createErrorOutput(error instanceof Error ? error.message : String(error)),
+        );
+      }
+      if (consolidatorWarmup.requiresWorkflowReplay) {
+        warmupMode = "workflow_replay";
+      }
+      const warmupBarsRequested = Math.max(
+        configuredWarmupBars,
+        consolidatorWarmup.requiredSourceBars,
       );
       let rollingWindowSize: number | undefined;
       try {
@@ -513,7 +537,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const rollingWindowSeed: RollingWindowSeed | undefined =
-        rollingWindowSize === undefined
+        warmupMode === "workflow_replay" || rollingWindowSize === undefined
           ? undefined
           : { size: rollingWindowSize, interval, symbols, warmupBarsBySymbol };
       const rollingWindowsInitialized = rollingWindowSeed

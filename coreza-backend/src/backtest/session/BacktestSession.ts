@@ -370,17 +370,18 @@ export class BacktestSession {
     for (const symbol of symbols) {
       for (const indicator of indicators) {
         const { candle_data, ...params } = indicator.params;
+        const timeframe = String(params.timeframe || interval);
         await this.stateManager.initialize(
           buildIndicatorKey(
             this.userId,
             this.workflowId,
             this.executionId,
             symbol,
-            interval,
+            timeframe,
             indicator.nodeId,
           ),
           indicator.type,
-          { ...params, symbol, timeframe: interval },
+          { ...params, symbol, timeframe },
           true,
         );
       }
@@ -392,13 +393,14 @@ export class BacktestSession {
     const { interval, symbols, indicators } = this.indicatorInitialization;
     for (const symbol of symbols) {
       for (const indicator of indicators) {
+        const timeframe = String(indicator.params.timeframe || interval);
         this.stateManager.markWarmupCompleted(
           buildIndicatorKey(
             this.userId,
             this.workflowId,
             this.executionId,
             symbol,
-            interval,
+            timeframe,
             indicator.nodeId,
           ),
         );

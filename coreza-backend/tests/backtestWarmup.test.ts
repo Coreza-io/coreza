@@ -41,6 +41,7 @@ describe("workflow replay warm-up", () => {
     // its label happens to contain "order"/"trade"/"store".
     expect(resolveWarmupPolicy(node("Compute", "Logic"))).toBe("execute");
     expect(resolveWarmupPolicy(node("RollingWindow", "Data"))).toBe("execute");
+    expect(resolveWarmupPolicy(node("Consolidator", "Data"))).toBe("execute");
     expect(resolveWarmupPolicy(node("Portfolio", "Portfolio"))).toBe("reject");
     expect(resolveWarmupPolicy(node("Alpaca", "Broker"))).toBe("reject");
   });

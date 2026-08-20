@@ -93,6 +93,8 @@ export interface Item {
  * Optional flags that a node can return to influence engine behaviour.
  */
 export interface ControlFlags {
+  /** Store the result but do not activate successor nodes. */
+  suppressDownstream?: boolean;
   /** Re‑queue the current node for another pass (used by Loop). */
   requeueSelf?: boolean;
   /** Epoch milliseconds until the node should be executed again. */

@@ -286,7 +286,8 @@ export function useNodeExecution({
 
           if (
             nodeDefinition?.category === "Indicators" ||
-            nodeDefinition?.name === "RollingWindow"
+            nodeDefinition?.name === "RollingWindow" ||
+            nodeDefinition?.name === "Consolidator"
           ) {
             serializedNode.values = n.data?.values || {};
           }

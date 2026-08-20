@@ -17,6 +17,7 @@ export const CATEGORY_MAP: Record<string, string> = {
   YahooFinance: "DataSource",
   Store: "DataSource",
   RollingWindow: "Indicators",
+  Consolidator: "Consolidator",
   LLM: "LLM",
   AIAgent: "AIAgent",
   InitializeIndicators: "Indicators",

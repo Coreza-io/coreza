@@ -58,9 +58,9 @@ function positivePeriod(value: unknown, fallback = 1): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : fallback;
 }
 
-function requiredWarmupBars(
+export function requiredWarmupBars(
   indicator: string,
-  params: Record<string, any>,
+  params: Record<string, unknown>,
 ): number {
   switch (indicator.trim().toLowerCase()) {
     case "rsi":

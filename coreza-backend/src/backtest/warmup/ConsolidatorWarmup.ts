@@ -9,69 +9,64 @@ export interface ConsolidatorWarmupRequirement {
   requiresWorkflowReplay: boolean;
 }
 
-function collectReachableIds(
-  startIds: readonly string[],
-  outgoing: ReadonlyMap<string, readonly string[]>,
-): Set<string> {
-  const reachable = new Set<string>();
-  const queue = [...startIds];
-  for (let index = 0; index < queue.length; index += 1) {
-    const nodeId = queue[index];
-    if (reachable.has(nodeId)) continue;
-    reachable.add(nodeId);
-    for (const target of outgoing.get(nodeId) ?? []) queue.push(target);
-  }
-  return reachable;
-}
-
 function requiredBars(node: DiscoveredWarmupNode): number {
   return node.type === "rollingwindow"
     ? clampWindowSize(node.params.size)
     : requiredWarmupBars(node.type, node.params);
 }
 
+/** Resolves each warm-up path backwards, converting bars at consolidator boundaries. */
 export function resolveConsolidatorWarmup(
   backtestNodeId: string,
   nodes: readonly WorkflowNode[],
   edges: readonly WorkflowEdge[],
   warmupNodes: readonly DiscoveredWarmupNode[],
 ): ConsolidatorWarmupRequirement {
-  const outgoing = new Map<string, string[]>();
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map<string, string[]>();
   for (const edge of edges) {
-    const targets = outgoing.get(edge.source) ?? [];
-    targets.push(edge.target);
-    outgoing.set(edge.source, targets);
+    const sources = incoming.get(edge.target) ?? [];
+    sources.push(edge.source);
+    incoming.set(edge.target, sources);
   }
 
-  const strategyIds = collectReachableIds(
-    outgoing.get(backtestNodeId) ?? [],
-    outgoing,
-  );
   let requiredSourceBars = 0;
   let requiresWorkflowReplay = false;
+  const visit = (
+    nodeId: string,
+    downstreamBars: number,
+    hasConsolidator: boolean,
+    path: ReadonlySet<string>,
+  ): void => {
+    if (path.has(nodeId)) return;
+    const nextPath = new Set(path).add(nodeId);
+    const node = nodeById.get(nodeId);
+    let sourceBars = downstreamBars;
+    let pathHasConsolidator = hasConsolidator;
+    if (node?.name === "Consolidator") {
+      const values = node.values ?? node.data?.values ?? {};
+      const { ratio } = validateTimeframeRatio(
+        values.source_timeframe,
+        values.target_timeframe,
+      );
+      sourceBars = sourceBars * ratio + ratio;
+      pathHasConsolidator = true;
+    }
 
-  for (const consolidator of nodes) {
-    if (consolidator.name !== "Consolidator" || !strategyIds.has(consolidator.id)) continue;
-    const downstreamIds = collectReachableIds(
-      outgoing.get(consolidator.id) ?? [],
-      outgoing,
-    );
-    const downstreamRequiredBars = warmupNodes
-      .filter((candidate) => downstreamIds.has(candidate.nodeId))
-      .reduce((maximum, candidate) => Math.max(maximum, requiredBars(candidate)), 0);
-    if (downstreamRequiredBars === 0) continue;
+    if (nodeId === backtestNodeId) {
+      if (pathHasConsolidator) {
+        requiredSourceBars = Math.max(requiredSourceBars, sourceBars);
+        requiresWorkflowReplay = true;
+      }
+      return;
+    }
+    for (const sourceId of incoming.get(nodeId) ?? []) {
+      visit(sourceId, sourceBars, pathHasConsolidator, nextPath);
+    }
+  };
 
-    const values = consolidator.values ?? consolidator.data?.values ?? {};
-    const { ratio } = validateTimeframeRatio(
-      values.source_timeframe,
-      values.target_timeframe,
-    );
-    requiredSourceBars = Math.max(
-      requiredSourceBars,
-      downstreamRequiredBars * ratio + ratio,
-    );
-    requiresWorkflowReplay = true;
+  for (const warmupNode of warmupNodes) {
+    visit(warmupNode.nodeId, requiredBars(warmupNode), false, new Set());
   }
-
   return { requiredSourceBars, requiresWorkflowReplay };
 }

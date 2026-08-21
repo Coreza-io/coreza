@@ -53,6 +53,7 @@ export function parseBar(input: unknown): Bar | null {
     low,
     close,
     volume,
+    ...(bar._isFillForward === true ? { _isFillForward: true } : {}),
   };
 }
 

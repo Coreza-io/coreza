@@ -102,6 +102,11 @@ export class InMemoryStore {
     metadata: Partial<Omit<DataRef, 'ref' | 'cached'>>
   ): DataRef {
     const sizeBytes = this.estimateSize(data);
+    const existing = this.store.get(key);
+    if (existing) {
+      this.currentSizeBytes -= existing.sizeBytes;
+      this.store.delete(key);
+    }
     
     // Check if we need to evict old entries
     while (this.currentSizeBytes + sizeBytes > this.maxSizeBytes && this.store.size > 0) {

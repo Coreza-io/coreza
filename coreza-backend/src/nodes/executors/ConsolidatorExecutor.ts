@@ -31,7 +31,14 @@ export class ConsolidatorExecutor implements INodeExecutor {
         };
       }
 
-      const parameters = { symbol, sourceTimeframe, targetTimeframe, timezone, anchorTime };
+      const parameters = {
+        nodeId: node.id,
+        symbol,
+        sourceTimeframe,
+        targetTimeframe,
+        timezone,
+        anchorTime,
+      };
       const stateKey = buildConsolidatorStateKey(parameters);
       const storedState: unknown = dataContext.getDataByKey(stateKey);
       const result = runConsolidatorStep(

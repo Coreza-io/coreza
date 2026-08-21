@@ -94,6 +94,33 @@ describe("POST /storage/consolidator", () => {
     expect(manager.hasContext(missingId)).toBe(false);
   });
 
+  it("rejects requests that do not identify an execution context", async () => {
+    const { runId: _runId, ...requestBody } = body(executionId, 0, 1);
+    const response = await request(app)
+      .post("/storage/consolidator")
+      .send(requestBody);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      success: false,
+      error: "runId, workflowSessionId, or backtestId is required",
+    });
+  });
+
+  it("uses the editor workflow session id as the execution context", async () => {
+    const { runId: _runId, ...requestBody } = body(executionId, 0, 1);
+    const response = await request(app)
+      .post("/storage/consolidator")
+      .send({ ...requestBody, workflowSessionId: executionId });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: { emitted: false },
+      meta: { key: "SPY:1h:4h:UTC:" },
+    });
+  });
+
   it("returns the timeframe validation error", async () => {
     const response = await request(app)
       .post("/storage/consolidator")

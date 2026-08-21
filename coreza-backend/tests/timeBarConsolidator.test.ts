@@ -5,6 +5,7 @@ import { parseTimeframe, validateTimeframeRatio } from "../src/utils/timeframe";
 import { ConsolidatorExecutor } from "../src/nodes/executors/ConsolidatorExecutor";
 import type { NodeExecutionContext } from "../src/engine/types/executionContext";
 import type { WorkflowNode } from "../src/nodes/types";
+import { DataContext } from "../src/engine/DataContext";
 
 const bar = (timestamp: string, open: number, high = open, low = open, close = open, volume = 1): Bar =>
   ({ timestamp, open, high, low, close, volume });
@@ -86,7 +87,11 @@ describe("ConsolidatorExecutor", () => {
       category: "Data",
       values: { symbol: "SPY", source_timeframe: "1h", target_timeframe: "4h" },
     };
-    const states = new Map<string, unknown>();
+    const dataContext = new DataContext({
+      userId: "user",
+      executionId: "execution",
+      workflowId: "workflow",
+    });
     const context: NodeExecutionContext = {
       userId: "user",
       executionId: "execution",
@@ -100,15 +105,99 @@ describe("ConsolidatorExecutor", () => {
       checkCancellation: () => false,
       executionMode: "backtest",
       isWarmingUp: false,
-      getState: (key: string) => states.get(key),
-      setState: (key: string, value: unknown) => {
-        states.set(key, value);
-      },
+      dataContext,
+      getState: () => undefined,
+      setState: () => undefined,
     };
     const executor = new ConsolidatorExecutor();
     const held = executor.execute(node, { candle_data: bar("2026-01-01T00:00:00Z", 1) }, context);
     expect(held).toMatchObject({ success: true, data: { emitted: false }, control: { suppressDownstream: true } });
     const emitted = executor.execute(node, { candle_data: bar("2026-01-01T04:00:00Z", 2) }, context);
     expect(emitted).toMatchObject({ success: true, data: { emitted: true, bar: { open: 1 } }, control: { suppressDownstream: false } });
+  });
+
+  it("continues warm-up state from the shared data context", () => {
+    const node: WorkflowNode = {
+      id: "consolidator",
+      name: "Consolidator",
+      node_type: "main",
+      category: "Data",
+      values: { symbol: " spy ", source_timeframe: "1 H", target_timeframe: "4H" },
+    };
+    const dataContext = new DataContext({
+      userId: "user",
+      executionId: "warmup-execution",
+      workflowId: "workflow",
+    });
+    const context: NodeExecutionContext = {
+      userId: "user",
+      executionId: "warmup-execution",
+      workflowId: "workflow",
+      nodeId: node.id,
+      nodes: [node],
+      edges: [],
+      resolvedParams: {},
+      resolveNodeParameters: (currentNode, input) => ({ ...currentNode.values, ...input }),
+      getAllNodeResults: () => ({}),
+      checkCancellation: () => false,
+      executionMode: "backtest",
+      isWarmingUp: true,
+      dataContext,
+      getState: () => undefined,
+      setState: () => undefined,
+    };
+    const executor = new ConsolidatorExecutor();
+
+    for (let hour = 0; hour < 4; hour += 1) {
+      expect(executor.execute(node, {
+        candle_data: bar(`2026-01-01T0${hour}:00:00Z`, hour + 1),
+      }, context)).toMatchObject({ success: true, data: { emitted: false } });
+    }
+    context.isWarmingUp = false;
+
+    expect(executor.execute(node, {
+      candle_data: bar("2026-01-01T04:00:00Z", 5),
+    }, context)).toMatchObject({
+      success: true,
+      data: { emitted: true, bar: { open: 1, close: 4 } },
+    });
+    expect(dataContext.getDataByKey("spy:1h:4h:UTC:")).toBeDefined();
+  });
+
+  it("fails explicitly rather than using private node state without a data context", () => {
+    const node: WorkflowNode = {
+      id: "consolidator",
+      name: "Consolidator",
+      node_type: "main",
+      category: "Data",
+      values: { symbol: "SPY", source_timeframe: "1h", target_timeframe: "4h" },
+    };
+    const privateState = new Map<string, unknown>();
+    const context: NodeExecutionContext = {
+      userId: "user",
+      executionId: "execution",
+      workflowId: "workflow",
+      nodeId: node.id,
+      nodes: [node],
+      edges: [],
+      resolvedParams: {},
+      resolveNodeParameters: (currentNode, input) => ({ ...currentNode.values, ...input }),
+      getAllNodeResults: () => ({}),
+      checkCancellation: () => false,
+      executionMode: "manual",
+      isWarmingUp: false,
+      getState: (key) => privateState.get(key),
+      setState: (key, value) => privateState.set(key, value),
+    };
+
+    expect(new ConsolidatorExecutor().execute(node, {
+      candle_data: bar("2026-01-01T00:00:00Z", 1),
+    }, context)).toEqual({
+      success: false,
+      data: null,
+      code: "STATE_UNAVAILABLE",
+      error: "Consolidator requires an active execution data context",
+    });
+    expect(privateState.size).toBe(0);
   });
 });

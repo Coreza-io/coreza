@@ -21,23 +21,25 @@ export class ConsolidatorExecutor implements INodeExecutor {
       const targetTimeframe = String(params.target_timeframe ?? "").trim();
       const timezone = String(params.timezone ?? "UTC").trim() || "UTC";
       const anchorTime = String(params.anchor_time ?? "").trim();
-      if (!context?.getState || !context.setState) {
-        return { success: false, data: null, code: "STATE_UNAVAILABLE", error: "Consolidator requires node execution state" };
+      const dataContext = context?.dataContext;
+      if (!dataContext) {
+        return {
+          success: false,
+          data: null,
+          code: "STATE_UNAVAILABLE",
+          error: "Consolidator requires an active execution data context",
+        };
       }
 
       const parameters = { symbol, sourceTimeframe, targetTimeframe, timezone, anchorTime };
       const stateKey = buildConsolidatorStateKey(parameters);
-      const dataContext = context.dataContext;
-      const storedState: unknown = dataContext
-        ? dataContext.getDataByKey(stateKey)
-        : context.getState(stateKey);
+      const storedState: unknown = dataContext.getDataByKey(stateKey);
       const result = runConsolidatorStep(
         parameters,
         params.candle_data ?? input,
         storedState,
       );
-      if (dataContext) dataContext.setData(stateKey, result.state);
-      else context.setState(stateKey, result.state);
+      dataContext.setData(stateKey, result.state);
       return {
         success: true,
         data: result.payload,

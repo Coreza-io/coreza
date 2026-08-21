@@ -1,18 +1,21 @@
-# Fix "route not found" when running the Consolidator node manually
+# Consolidator end-to-end review
 
-## Cause
+## Confirmed working
 
-`src/nodes/Consolidator.json` declares `"action": { "url": "/workflow/execute", "method": "POST" }`, which is not a manual single-node route, so the editor request 404s. Nodes that keep engine state route to the storage service instead — `RollingWindow.json` uses `/storage/rolling-window`.
+- `TimeBarConsolidator` implements left-closed/right-open buckets, timezone + anchor alignment, Monday alignment for weekly, duplicate detection and out-of-order rejection.
+- `consolidatorShared.ts` is the single source of truth for the state key (`symbol:source:target:timezone:anchor`) and the step, used by both `ConsolidatorExecutor` and the route — manual and engine runs cannot drift apart.
+- `POST /storage/consolidator` resolves the canonical `executionId` (`runId ?? workflowSessionId ?? backtestId`), reads/writes state through the same `DataContext` the engine uses, and returns `{ emitted, bar, workingBar }` with `meta.key`.
+- `Consolidator.json` now points at `/storage/consolidator`; the executor suppresses downstream while a bucket is still building.
 
-## Fix — route it exactly like Rolling Window
+## Open items to verify and fix
 
-1. **Add `/storage/consolidator`** in the same storage route module that serves `/storage/rolling-window`, following that handler step for step: resolve the canonical `executionId` (`runId ?? workflowSessionId ?? backtestId`), get the existing `DataContext`, build the state key, run the step, write the state back.
-2. **Share the key builder and step logic** the same way rolling window shares `rollingWindowShared.ts`: `ConsolidatorExecutor` and the route both call one helper that builds `symbol:source:target:timezone:anchor` and runs `TimeBarConsolidator`, so manual and engine runs can never drift onto different keys.
-3. **Point the node at it**: set `Consolidator.json` `action.url` to `/storage/consolidator`.
-4. **Same response shape as the executor**: `success: true` with `{ emitted, bar, workingBar }`; a still-building bucket is not an error. Missing execution context returns the same 404-style payload rolling window returns, with the resolved key in `meta` for debugging.
+1. **Frontend must send an execution id.** The route 404s ("Execution context not found") without `runId`/`workflowSessionId`/`backtestId`. Confirm `useNodeExecution` includes the session id in the Consolidator payload, exactly as it does for Rolling Window; add it if missing.
+2. **Executor state fallback divergence.** `ConsolidatorExecutor` falls back to `context.getState/setState` when no `DataContext` exists, while the route only uses `DataContext`. A manual run right after an engine run without a context would silently start a fresh bucket. Make both paths read the same store, or return an explicit error instead of starting a new bucket.
+3. **Warm-up seeding.** Check `ConsolidatorWarmup` writes its state under the exact key from `buildConsolidatorStateKey` (same normalized timeframes, timezone default `UTC`, empty anchor), otherwise backtests start unwarmed while reporting `rolling_windows_initialized`-style success.
+4. **Partial final bucket.** By design no flush happens at the end of a backtest, so the last incomplete bar is dropped. Confirm this is intended; if not, add an explicit finalize step in `BacktestExecutor`.
 
 ## Verification
 
-- Manual run in the editor: no route error; four 1h inputs return `emitted: false`, the fifth returns `emitted: true` with the completed 4h bar.
-- Manual run and backtest run resolve the same `executionId` and the same working bucket.
-- Route test covering held vs emitted responses, missing context, and the invalid-timeframe error.
+- Editor: five 1h bars into a 1h→4h consolidator — first four `emitted:false`, fifth `emitted:true` with correct OHLCV.
+- Backtest with warm-up: first live bucket continues the warmed bucket instead of restarting.
+- Existing `consolidatorRoute.test.ts` / `consolidatorWarmup.test.ts` extended for the key-parity and missing-context cases.

@@ -73,6 +73,7 @@ describe("workflow replay warm-up", () => {
       time: 3,
       _sourceTimestamp: 2,
       _isFillForward: true,
+      volume: 0,
     });
   });
 

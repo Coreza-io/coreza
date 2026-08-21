@@ -53,6 +53,7 @@ export function alignMultiSymbolBars<T extends AlignableBar>(
           bars[symbol] = {
             ...previous,
             time: timestamp,
+            volume: 0,
             _sourceTimestamp:
               previous._sourceTimestamp ?? historicalBarTimestamp(previous),
             _isFillForward: true,

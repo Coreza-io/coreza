@@ -54,6 +54,8 @@ router.post("/consolidator", (req: Request, res: Response) => {
     runId,
     workflowSessionId,
     backtestId,
+    node_id: nodeId,
+    workflowId,
     symbol,
     source_timeframe: sourceTimeframe,
     target_timeframe: targetTimeframe,
@@ -68,8 +70,15 @@ router.post("/consolidator", (req: Request, res: Response) => {
       error: "runId, workflowSessionId, or backtestId is required",
     });
   }
+  if (typeof nodeId !== "string" || !nodeId.trim()) {
+    return res.status(400).json({ success: false, error: "node_id is required" });
+  }
+  if (typeof workflowId !== "string" || !workflowId.trim()) {
+    return res.status(400).json({ success: false, error: "workflowId is required" });
+  }
 
   const parameters = {
+    nodeId: nodeId.trim(),
     symbol: String(symbol ?? "").trim(),
     sourceTimeframe: String(sourceTimeframe ?? "").trim(),
     targetTimeframe: String(targetTimeframe ?? "").trim(),
@@ -81,7 +90,11 @@ router.post("/consolidator", (req: Request, res: Response) => {
     const stateKey = buildConsolidatorStateKey(parameters);
     const dataContext =
       DataContextManager.getInstance().getExistingContext(executionId);
-    if (!dataContext) {
+    if (
+      !dataContext ||
+      dataContext.getUserId() !== userId ||
+      dataContext.getWorkflowId() !== workflowId
+    ) {
       return res.status(404).json({
         success: false,
         error: "Execution context not found or already completed",

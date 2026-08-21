@@ -1,40 +1,51 @@
-# Consolidator hardening plan
+# LEAN-style Scan for the Consolidator node
 
-The findings match the code I read: the state key in `consolidatorShared.ts` has no node id, the `/storage/consolidator` route resolves a context purely by execution id, and `resolveConsolidatorWarmup` takes a max over independent consolidators rather than multiplying ratios along a chain. The compiled-join, fill-forward and InMemoryStore points are consistent with the sources cited and are addressed below (the compiled-join item begins with a confirming read of `vm.ts`/`compiler.ts`).
+Today a bucket only closes when an input from a later bucket arrives, so a missing boundary bar delays or loses the bar. Scan closes an expired bucket on the clock without fabricating data. The plan below follows the attached document's sequence.
 
-## 1. Node-scoped state key (High)
+## Phase 0 — prerequisites (from the earlier review)
 
-- `buildConsolidatorStateKey` takes `nodeId` and returns `consolidator:{nodeId}:{symbol}:{source}:{target}:{timezone}:{anchor}`; `nodeId` is required, so no unscoped key can be built.
-- `ConsolidatorExecutor` passes `node.id`; the route reads `node_id` from the body and rejects the request when it is missing.
-- `Consolidator.json` sends `node_id` with the manual request.
-- Warm-up seeding writes under the same builder so a warmed bucket is found by the node that owns it.
+- Node-scoped state key `consolidator:{nodeId}:{symbol}:{source}:{target}:{timezone}:{anchor}`, required everywhere (executor, route, warm-up).
+- `/storage/consolidator` verifies the `DataContext` belongs to the requesting user and workflow before reading state.
+- `InMemoryStore.set()` subtracts an existing entry's size before the capacity check.
 
-## 2. Route ownership verification (High)
+## Phase 1 — state and output contract
 
-- After resolving the context, verify `dataContext` belongs to `req.user.id` and to the requested workflow; on mismatch return the same 404 as "context not found" (no existence oracle).
-- If `DataContext` does not expose owner/workflow today, add read-only accessors populated at creation; do not trust any body-supplied user id.
+- `ConsolidatorState`: `workingBar?`, `lastInput?`, `lastEmittedEndTimestamp?`, `sourceBarCount`.
+- `ConsolidatorPayload`: adds `emissionReason` (`boundary_input` | `time_scan`), `emittedAt`, `symbol`, `sourceTimeframe`, `targetTimeframe`; `workingBar` becomes nullable. `data.bar` stays the downstream contract.
 
-## 3. Compiled VM join dependencies (High)
+## Phase 2 — pure `scan()` and unified close rule
 
-- Read `vm.ts` and `compiler.ts` first to confirm activation is any-of.
-- If confirmed, give the compiled plan per-node incoming dependency counts/masks matching the dynamic runtime's branch-aware rule (ANY-of within the same branch, ALL-of across independent branches), so a suppressed consolidator edge holds its join instead of letting a stale slot be read.
+- `scan(currentTime, previous)` in `TimeBarConsolidator`: no working bar ⇒ no output; not expired ⇒ unchanged; expired ⇒ emit the working bar once, clear it, record `lastEmittedEndTimestamp`, reset `sourceBarCount`.
+- `update()` applies the same expiry transition using the input timestamp so the two paths cannot drift; boundary emissions report `boundary_input`.
+- New `LATE_BAR_AFTER_EMIT` error when an input predates the emission watermark.
 
-## 4. Nested consolidator warm-up (Medium)
+## Phase 3 — discovery
 
-- Walk consolidator chains and multiply ratios along each path (`1h→4h→1d→SMA(20)` ⇒ `20 × 4 × 6` plus one bucket of cushion per stage) instead of taking the max of independent ratios.
-- Keep the single-stage result unchanged.
+- The executor stores registry metadata with the state (`kind: 'consolidator_state'`, node id, symbol, normalized timeframes, timezone, anchor).
+- `scanConsolidators(dataContext, scanTime)` finds due states, runs scan, writes state back, returns only real emissions.
 
-## 5. Fill-forward volume (Medium)
+## Phase 4 — runtime injection
 
-- Emit fill-forward bars in `WarmupReplay` with `volume: 0` and an explicit `_isFillForward` marker; the consolidator ignores volume on marked bars so a flat period cannot inflate consolidated volume.
+- `WorkflowRun.executeInjectedResults(emissions)`: reset per-event results once per batch (never the persistent consolidator state), store each result under its real node id, route through that node's real outgoing edges, inject all same-clock emissions before draining the queue, apply the normal dependency/suppression/warm-up/cancellation rules, and never re-run the executor or upstream triggers.
+- Touches `executionRuntime.ts`, `workflowRun.ts`, `workflowEngine.ts`.
 
-## 6. InMemoryStore size accounting (Medium)
+## Phase 5 — backtest clock
 
-- In `set()`, subtract an existing entry's `sizeBytes` before the capacity check and replacement so repeated overwrites of one key stop reporting growth and stop evicting unrelated state.
+Per source timestamp T, in order: `scanConsolidators(T)` → inject and execute emissions → `SimBroker.onBar(T)` → normal source-bar workflow → equity snapshot. Same ordering during warm-up replay (broker mutation still blocked). Before finalization, scan to the end-exclusive clock and emit only expired buckets — never a blanket flush. Scan once per timestamp, ordering simultaneous emissions by end time, node id, symbol.
 
-## Tests
+## Phase 6 — live scheduling (feature-flagged)
 
-- Two identically configured consolidators on one workflow both emit at their own boundaries.
-- Route rejects a foreign execution id and a missing `node_id`.
-- Join graph: indicator does not fire on held source bars.
-- Chained-ratio warm-up sizing; fill-forward volume neutrality; `InMemoryStore` overwrite keeps size flat.
+- `WorkflowRunner` starts a configurable interval (default 1s) after consumer-group setup and scans at wall clock minus a configurable grace (default 2s).
+- Timer ticks and `processMessage()` both enqueue onto one serialized promise chain so a read-modify-write cannot interleave.
+- Emissions get a run id tagged `source=consolidator_scan`; ticks with no emissions create no run record. Metrics: scans, emissions, late-bar rejects, scan latency, downstream failures. `stop()` clears the timer and waits for in-flight work.
+
+## Phase 7 — compiled VM and manual debug
+
+- Scan-enabled consolidator plans are ineligible for compiled execution until parity lands. Then `runInjectedResults(plan, emissions)` writes result slots, activates only real downstream instructions, and enforces incoming dependency masks/counts (the any-of activation fix), verified by dynamic-vs-compiled parity.
+- Manual `operation: "scan"` on the authenticated storage route (node id, workflow session id, current time) with ownership checks; production paths call the internal service, not HTTP.
+
+## Verification
+
+New tests: `timeBarConsolidatorScan`, `consolidatorScanRouting`, `workflowRunnerConsolidatorScan`, `backtestConsolidatorClock`, `compiledConsolidatorScan` — covering exactly-once emission, repeat scan, late input rejection, DST/anchor boundaries, multi-parent joins, serialized timer vs market event, scan-before-`onBar` fill ordering, expired vs unexpired final bucket, and unchanged continuous input-driven behaviour.
+
+Flags: `ENABLE_CONSOLIDATOR_SCAN=false` by default, with configurable scan interval and grace.

@@ -94,8 +94,8 @@ export class TimeBarConsolidator {
       const workingBar: ConsolidatedBar = { ...input, timestamp: bucketStart, endTimestamp: bucketEnd };
       return {
         emitted: expiry.emitted,
-        emissionReason: expiry.emitted ? "boundary_input" : undefined,
-        emittedAt: expiry.emitted ? new Date(input.timestamp).toISOString() : undefined,
+        emissionReason: expiry.emissionReason,
+        emittedAt: expiry.emittedAt,
         state: { ...current, workingBar, lastInput: input, sourceBarCount: 1 },
         duplicate: false,
       };

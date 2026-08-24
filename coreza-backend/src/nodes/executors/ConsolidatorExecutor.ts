@@ -22,6 +22,10 @@ export class ConsolidatorExecutor implements INodeExecutor {
       const targetTimeframe = String(params.target_timeframe ?? "").trim();
       const timezone = String(params.timezone ?? "UTC").trim() || "UTC";
       const anchorTime = String(params.anchor_time ?? "").trim();
+      const requestedScanGraceMs = Number(params.scan_grace_ms);
+      const scanGraceMs = Number.isFinite(requestedScanGraceMs) && requestedScanGraceMs >= 0
+        ? requestedScanGraceMs
+        : undefined;
       const dataContext = context?.dataContext;
       if (!dataContext) {
         return {
@@ -39,6 +43,7 @@ export class ConsolidatorExecutor implements INodeExecutor {
         targetTimeframe,
         timezone,
         anchorTime,
+        ...(scanGraceMs === undefined ? {} : { scanGraceMs }),
       };
       const stateKey = buildConsolidatorStateKey(parameters);
       const storedState: unknown = dataContext.getDataByKey(stateKey);
@@ -64,6 +69,11 @@ export class ConsolidatorExecutor implements INodeExecutor {
     } catch (error) {
       if (error instanceof ConsolidationError && error.code === "LATE_BAR_AFTER_EMIT") {
         consolidatorLateBarRejectsCounter.inc();
+        return {
+          success: true,
+          data: { emitted: false, bar: null, lateBarDropped: true },
+          control: { suppressDownstream: true },
+        };
       }
       return {
         success: false,

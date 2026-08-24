@@ -17,7 +17,7 @@ import { buildIndicatorKey } from "../../engine";
 import type { DiscoveredWarmupNode } from "../../nodes/executors/InitializeIndicatorsExecutor";
 import type { HistoricalBar } from "../../marketData/HistoricalDataService";
 import type { BacktestPhase, WarmupMode } from "../warmup/types";
-import { scanConsolidators } from "../../engine/consolidation/consolidatorScan";
+import { commitConsolidatorEmissions, scanConsolidators } from "../../engine/consolidation/consolidatorScan";
 import { parseTimeframe } from "../../utils/timeframe";
 
 export interface IndicatorWarmupSeed {
@@ -709,12 +709,15 @@ export class BacktestSession {
 
   private async executeConsolidatorClock(timestamp: string): Promise<void> {
     if (process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
-    const emissions = scanConsolidators(this.run.getDataContext(), timestamp);
+    const emissions = scanConsolidators(this.run.getDataContext(), timestamp, { commit: false });
     if (emissions.length === 0) return;
     this.run.setExecutionContextExtras({
       isWarmingUp: this.phase === "warming_up",
     });
-    await this.run.executeInjectedResults(emissions);
+    await this.run.executeInjectedResults(
+      emissions,
+      (delivered) => commitConsolidatorEmissions(this.run.getDataContext(), delivered),
+    );
   }
 
   async step(): Promise<Record<string, any>> {
@@ -1157,7 +1160,7 @@ export class BacktestSession {
     const clockAfterFinalSourceBar = new Date(finalEvent.timestamp).getTime() +
       parseTimeframe(finalEvent.interval).milliseconds;
     const endExclusive = Number.isFinite(requestedEnd)
-      ? Math.max(requestedEnd, clockAfterFinalSourceBar)
+      ? requestedEnd
       : clockAfterFinalSourceBar;
     await this.executeConsolidatorClock(new Date(endExclusive).toISOString());
   }

@@ -16,6 +16,7 @@ export interface ConsolidatorParameters {
 }
 
 export interface ConsolidatorPayload {
+  emissionId?: string;
   emitted: boolean;
   bar: Bar | null;
   workingBar: Bar | null;
@@ -126,7 +127,8 @@ export function isConsolidatorState(value: unknown): value is ConsolidatorState 
   const state = value as Partial<ConsolidatorState>;
   return Number.isSafeInteger(state.sourceBarCount) &&
     (state.sourceBarCount ?? -1) >= 0 &&
-    (state.workingBar === undefined || parseBar(state.workingBar) !== null) &&
+    (state.workingBar === undefined || (parseBar(state.workingBar) !== null &&
+      Number.isFinite(new Date(state.workingBar.endTimestamp).getTime()))) &&
     (state.lastInput === undefined || parseBar(state.lastInput) !== null) &&
     (state.lastEmittedEndTimestamp === undefined ||
       Number.isFinite(new Date(state.lastEmittedEndTimestamp).getTime()));

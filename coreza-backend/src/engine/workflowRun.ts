@@ -32,6 +32,7 @@ interface WorkflowRunOptions {
 interface ExecutionContextExtras {
   multiBarContext?: MultiBarExecutionContext;
   runId?: string;
+  isWarmingUp?: boolean;
 }
 
 export class WorkflowRun {
@@ -147,8 +148,21 @@ export class WorkflowRun {
 
   async executeInjectedResults(
     emissions: readonly ConsolidatorEmission[],
+    onBatchSuccess?: (delivered: readonly ConsolidatorEmission[]) => void,
   ): Promise<WorkflowExecutionResult> {
-    return this.runExecution(() => {
+    const symbols = new Set(emissions.map((emission) => emission.payload.symbol));
+    if (symbols.size > 1) {
+      let lastResult: WorkflowExecutionResult | undefined;
+      for (const symbol of symbols) {
+        lastResult = await this.executeInjectedResults(
+          emissions.filter((emission) => emission.payload.symbol === symbol),
+          onBatchSuccess,
+        );
+        if (!lastResult.success) return lastResult;
+      }
+      return lastResult ?? { success: true, nodeResults: {}, executionOrder: [] };
+    }
+    const result = await this.runExecution(() => {
       this.runtime.resetForNextBar(true);
       for (const emission of emissions) {
         this.ensureNodeExists(emission.nodeId);
@@ -158,6 +172,8 @@ export class WorkflowRun {
         });
       }
     });
+    if (result.success) onBatchSuccess?.(emissions);
+    return result;
   }
 
   resetForNextBar(full = false): void {

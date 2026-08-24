@@ -4,6 +4,7 @@ import { IndicatorStateManager } from "./indicatorStateManager";
 import { ExecutionMode, WorkflowExecutionResult } from "./types";
 import { WorkflowPlan } from "./workflowPlan";
 import { WorkflowRun } from "./workflowRun";
+import type { ConsolidatorEmission } from "./consolidation/consolidatorScan";
 
 export class WorkflowEngine {
   private readonly plan: WorkflowPlan;
@@ -128,6 +129,12 @@ export class WorkflowEngine {
     entryNodeIds: string[],
   ): Promise<WorkflowExecutionResult> {
     return this.run.executeFromEntries(input, entryNodeIds);
+}
+
+  async executeInjectedResults(
+    emissions: readonly ConsolidatorEmission[],
+  ): Promise<WorkflowExecutionResult> {
+    return this.run.executeInjectedResults(emissions);
   }
 
   destroy(): void {

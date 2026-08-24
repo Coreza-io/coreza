@@ -18,7 +18,12 @@ export interface ConsolidatorParameters {
 export interface ConsolidatorPayload {
   emitted: boolean;
   bar: Bar | null;
-  workingBar: Bar;
+  workingBar: Bar | null;
+  emissionReason: "boundary_input" | "time_scan" | null;
+  emittedAt: string | null;
+  symbol: string;
+  sourceTimeframe: string;
+  targetTimeframe: string;
 }
 
 export interface ConsolidatorStepResult {
@@ -106,17 +111,23 @@ export function runConsolidatorStep(
     payload: {
       emitted: Boolean(result.emitted),
       bar: result.emitted ?? null,
-      workingBar: result.state.workingBar,
+      workingBar: result.state.workingBar ?? null,
+      emissionReason: result.emissionReason ?? null,
+      emittedAt: result.emittedAt ?? null,
+      symbol: parameters.symbol,
+      sourceTimeframe: validateTimeframeRatio(parameters.sourceTimeframe, parameters.targetTimeframe).source.normalized,
+      targetTimeframe: validateTimeframeRatio(parameters.sourceTimeframe, parameters.targetTimeframe).target.normalized,
     },
   };
 }
 
-function isConsolidatorState(value: unknown): value is ConsolidatorState {
+export function isConsolidatorState(value: unknown): value is ConsolidatorState {
   if (!value || typeof value !== "object") return false;
-  return (
-    "workingBar" in value &&
-    Boolean(value.workingBar) &&
-    "lastInput" in value &&
-    Boolean(value.lastInput)
-  );
+  const state = value as Partial<ConsolidatorState>;
+  return Number.isSafeInteger(state.sourceBarCount) &&
+    (state.sourceBarCount ?? -1) >= 0 &&
+    (state.workingBar === undefined || parseBar(state.workingBar) !== null) &&
+    (state.lastInput === undefined || parseBar(state.lastInput) !== null) &&
+    (state.lastEmittedEndTimestamp === undefined ||
+      Number.isFinite(new Date(state.lastEmittedEndTimestamp).getTime()));
 }

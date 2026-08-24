@@ -69,6 +69,10 @@ export function compilePlan(
   const nodes = [...graph.nodeById.values()];
 
   for (const node of nodes) {
+    if (process.env.ENABLE_CONSOLIDATOR_SCAN === "true" && node.name === "Consolidator") {
+      console.log(`[CompiledPlan] Ineligible: consolidator scan parity is not available (node ${node.id})`);
+      return null;
+    }
     if (INELIGIBLE_NODE_NAMES.has(node.name ?? "")) {
       console.log(
         `[CompiledPlan] Ineligible: node "${node.id}" is type "${node.name}"`,

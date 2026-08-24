@@ -37,6 +37,7 @@ import {
   ConsolidatorValidationError,
   runConsolidatorStep,
 } from "../engine/consolidation/consolidatorShared";
+import { scanConsolidators } from "../engine/consolidation/consolidatorScan";
 
 const router = Router();
 
@@ -62,6 +63,8 @@ router.post("/consolidator", (req: Request, res: Response) => {
     timezone: requestedTimezone,
     anchor_time: requestedAnchorTime,
     candle_data: candleData,
+    operation = "update",
+    current_time: currentTime,
   } = req.body;
   const executionId = runId ?? workflowSessionId ?? backtestId;
   if (!executionId) {
@@ -77,17 +80,18 @@ router.post("/consolidator", (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: "workflowId is required" });
   }
 
-  const parameters = {
-    nodeId: nodeId.trim(),
-    symbol: String(symbol ?? "").trim(),
-    sourceTimeframe: String(sourceTimeframe ?? "").trim(),
-    targetTimeframe: String(targetTimeframe ?? "").trim(),
-    timezone: String(requestedTimezone ?? "UTC").trim() || "UTC",
-    anchorTime: String(requestedAnchorTime ?? "").trim(),
-  };
-
   try {
-    const stateKey = buildConsolidatorStateKey(parameters);
+    const parameters = {
+      nodeId: nodeId.trim(),
+      symbol: String(symbol ?? "").trim(),
+      sourceTimeframe: String(sourceTimeframe ?? "").trim(),
+      targetTimeframe: String(targetTimeframe ?? "").trim(),
+      timezone: String(requestedTimezone ?? "UTC").trim() || "UTC",
+      anchorTime: String(requestedAnchorTime ?? "").trim(),
+    };
+    const stateKey = operation === "update"
+      ? buildConsolidatorStateKey(parameters)
+      : undefined;
     const dataContext =
       DataContextManager.getInstance().getExistingContext(executionId);
     if (
@@ -98,16 +102,42 @@ router.post("/consolidator", (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: "Execution context not found or already completed",
-        meta: { key: stateKey },
+        ...(stateKey ? { meta: { key: stateKey } } : {}),
       });
     }
+
+    if (operation === "scan") {
+      if (currentTime === undefined) {
+        return res.status(400).json({ success: false, error: "current_time is required for scan" });
+      }
+      const normalizedNodeId = nodeId.trim();
+      const emissions = scanConsolidators(dataContext, currentTime, normalizedNodeId);
+      return res.json({
+        success: true,
+        data: emissions[0]?.payload ?? null,
+        meta: { nodeId: normalizedNodeId, emissionCount: emissions.length },
+      });
+    }
+    if (operation !== "update") {
+      return res.status(400).json({ success: false, error: `Unsupported operation: ${operation}` });
+    }
+
+    if (!stateKey) throw new Error("Consolidator state key was not initialized");
 
     const result = runConsolidatorStep(
       parameters,
       candleData,
       dataContext.getDataByKey(stateKey),
     );
-    dataContext.setData(stateKey, result.state);
+    dataContext.setData(stateKey, result.state, {
+      kind: "consolidator_state",
+      nodeId: parameters.nodeId,
+      symbol: parameters.symbol,
+      sourceTimeframe: result.payload.sourceTimeframe,
+      targetTimeframe: result.payload.targetTimeframe,
+      timezone: parameters.timezone,
+      anchorTime: parameters.anchorTime,
+    });
     return res.json({
       success: true,
       data: result.payload,

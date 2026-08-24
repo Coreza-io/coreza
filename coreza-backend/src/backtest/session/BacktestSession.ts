@@ -17,6 +17,8 @@ import { buildIndicatorKey } from "../../engine";
 import type { DiscoveredWarmupNode } from "../../nodes/executors/InitializeIndicatorsExecutor";
 import type { HistoricalBar } from "../../marketData/HistoricalDataService";
 import type { BacktestPhase, WarmupMode } from "../warmup/types";
+import { scanConsolidators } from "../../engine/consolidation/consolidatorScan";
+import { parseTimeframe } from "../../utils/timeframe";
 
 export interface IndicatorWarmupSeed {
   interval: string;
@@ -72,6 +74,7 @@ export class BacktestSession {
   private currentSymbolIndex = 0;
   private stepping = false;
   private compiledPlan: CompiledPlan | null = null;
+  private finalClockScanned = false;
   private readonly reusableBarInput: { data: any } = { data: null };
   private currentMultiBarBars: Record<string, any> = Object.create(null);
   private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
@@ -126,6 +129,7 @@ export class BacktestSession {
     private readonly warmupMode: WarmupMode = "seed",
     private readonly warmupEvents: MultiBarEvent[] = [],
     private readonly indicatorInitialization?: IndicatorInitialization,
+    private readonly endExclusiveClock?: string,
   ) {
     this.abortController = new AbortController();
     this.stateManager = stateManager;
@@ -550,6 +554,8 @@ export class BacktestSession {
     const symbols = event.symbols;
     let t0 = performance.now();
 
+    await this.executeConsolidatorClock(event.timestamp);
+
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
       if (bar) {
@@ -627,6 +633,8 @@ export class BacktestSession {
     const symbols = event.symbols;
     let t0 = performance.now();
 
+    await this.executeConsolidatorClock(event.timestamp);
+
     for (const symbol of symbols) {
       const bar = event.bars[symbol];
       if (bar) {
@@ -697,6 +705,16 @@ export class BacktestSession {
       this.backtestId,
     )?.recordEquitySnapshot(snapshotTimestamp);
     this.perf.equitySnapshotMs += performance.now() - t0;
+  }
+
+  private async executeConsolidatorClock(timestamp: string): Promise<void> {
+    if (process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
+    const emissions = scanConsolidators(this.run.getDataContext(), timestamp);
+    if (emissions.length === 0) return;
+    this.run.setExecutionContextExtras({
+      isWarmingUp: this.phase === "warming_up",
+    });
+    await this.run.executeInjectedResults(emissions);
   }
 
   async step(): Promise<Record<string, any>> {
@@ -1084,6 +1102,7 @@ export class BacktestSession {
   private async finalize(): Promise<void> {
     let t0 = performance.now();
     try {
+      await this.scanFinalEndExclusiveClock();
       const backtestExecutor = new BacktestExecutor();
       await backtestExecutor.finalizeBacktestById(this.backtestId);
 
@@ -1125,5 +1144,21 @@ export class BacktestSession {
     t0 = performance.now();
     await redis.del(RedisKeys.backtestProgress(this.userId, this.backtestId));
     this.perf.progressCleanupMs += performance.now() - t0;
+  }
+
+  private async scanFinalEndExclusiveClock(): Promise<void> {
+    if (this.finalClockScanned || process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
+    this.finalClockScanned = true;
+    const finalEvent = this.bars[this.bars.length - 1];
+    if (!finalEvent) return;
+    const requestedEnd = this.endExclusiveClock === undefined
+      ? Number.NaN
+      : new Date(this.endExclusiveClock).getTime();
+    const clockAfterFinalSourceBar = new Date(finalEvent.timestamp).getTime() +
+      parseTimeframe(finalEvent.interval).milliseconds;
+    const endExclusive = Number.isFinite(requestedEnd)
+      ? Math.max(requestedEnd, clockAfterFinalSourceBar)
+      : clockAfterFinalSourceBar;
+    await this.executeConsolidatorClock(new Date(endExclusive).toISOString());
   }
 }

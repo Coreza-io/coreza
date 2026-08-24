@@ -15,6 +15,7 @@ import {
   WorkflowExecutionResult,
   toExecutionError,
 } from "./types";
+import type { ConsolidatorEmission } from "./consolidation/consolidatorScan";
 
 type NodeResults = NonNullable<WorkflowExecutionResult["nodeResults"]>;
 
@@ -140,6 +141,21 @@ export class WorkflowRun {
         this.ensureNodeExists(entryNodeId);
         this.runtime.primeEntry(entryNodeId, input);
         this.runtime.enqueue({ nodeId: entryNodeId, input });
+      }
+    });
+  }
+
+  async executeInjectedResults(
+    emissions: readonly ConsolidatorEmission[],
+  ): Promise<WorkflowExecutionResult> {
+    return this.runExecution(() => {
+      this.runtime.resetForNextBar(true);
+      for (const emission of emissions) {
+        this.ensureNodeExists(emission.nodeId);
+        this.runtime.injectResult(emission.nodeId, {
+          success: true,
+          data: emission.payload,
+        });
       }
     });
   }

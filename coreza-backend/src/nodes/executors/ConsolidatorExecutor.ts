@@ -6,6 +6,7 @@ import {
 } from "../../engine/consolidation/consolidatorShared";
 import type { NodeExecutionContext } from "../../engine/types/executionContext";
 import type { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { consolidatorLateBarRejectsCounter } from "../../utils/metrics";
 
 export class ConsolidatorExecutor implements INodeExecutor {
   readonly category = "Consolidator";
@@ -46,13 +47,24 @@ export class ConsolidatorExecutor implements INodeExecutor {
         params.candle_data ?? input,
         storedState,
       );
-      dataContext.setData(stateKey, result.state);
+      dataContext.setData(stateKey, result.state, {
+        kind: "consolidator_state",
+        nodeId: node.id,
+        symbol,
+        sourceTimeframe: result.payload.sourceTimeframe,
+        targetTimeframe: result.payload.targetTimeframe,
+        timezone,
+        anchorTime,
+      });
       return {
         success: true,
         data: result.payload,
         control: { suppressDownstream: !result.payload.emitted },
       };
     } catch (error) {
+      if (error instanceof ConsolidationError && error.code === "LATE_BAR_AFTER_EMIT") {
+        consolidatorLateBarRejectsCounter.inc();
+      }
       return {
         success: false,
         data: null,

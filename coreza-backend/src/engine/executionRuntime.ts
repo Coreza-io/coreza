@@ -171,6 +171,14 @@ export abstract class BaseExecutionRuntime {
     }
   }
 
+  injectResult(nodeId: string, result: NodeResult): void {
+    const node = this.graph.nodeById.get(nodeId);
+    if (!node) throw new Error(`Unknown injected result node: ${nodeId}`);
+    this.executionOrder.push(nodeId);
+    this.store.setNodeResult(nodeId, result);
+    if (!result.control?.suppressDownstream) this.routeStandard(node, result);
+  }
+
   protected normalizeResult(raw: any, category: string): NodeResult {
     if (raw && typeof raw === "object" && "success" in raw) {
       if (!raw.success) {

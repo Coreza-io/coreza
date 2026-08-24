@@ -37,6 +37,7 @@ export class BacktestSessionManager {
     warmupMode: WarmupMode = "seed",
     warmupEvents: MultiBarEvent[] = [],
     indicatorInitialization?: IndicatorInitialization,
+    endExclusiveClock?: string,
   ): BacktestSession {
     const scopeKey = `${workflowId}:${nodeId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
@@ -67,6 +68,7 @@ export class BacktestSessionManager {
       warmupMode,
       warmupEvents,
       indicatorInitialization,
+      endExclusiveClock,
     );
 
     this.sessions.set(backtestId, session);

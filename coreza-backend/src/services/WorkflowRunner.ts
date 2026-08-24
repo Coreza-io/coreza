@@ -10,6 +10,16 @@ import {
 } from "../utils/redisRunStorage";
 import { WorkflowExecutionResult } from "../engine/types";
 import { RedisKeys } from "../infra/redisKeys";
+import {
+  scanConsolidators,
+  type ConsolidatorEmission,
+} from "../engine/consolidation/consolidatorScan";
+import {
+  consolidatorDownstreamFailuresCounter,
+  consolidatorEmissionsCounter,
+  consolidatorScanLatencyHistogram,
+  consolidatorScansCounter,
+} from "../utils/metrics";
 
 const STRATEGY_GROUP = "strategy-group";
 const AUTOCLAIM_IDLE_MS = 60_000; // 60s idle threshold for reclaiming
@@ -38,6 +48,8 @@ export class WorkflowRunner {
   private readonly streamKey: string;
   private readonly executionId: string;
   private running = false;
+  private workChain: Promise<void> = Promise.resolve();
+  private scanTimer?: NodeJS.Timeout;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
   private readonly serializedSnapshot: {
@@ -100,6 +112,7 @@ export class WorkflowRunner {
 
     await this.ensureConsumerGroup();
     await this.reclaimPendingMessages();
+    this.startConsolidatorScanTimer();
     await this.pollLoop();
   }
 
@@ -193,6 +206,13 @@ export class WorkflowRunner {
     messageId: string,
     fields: string[],
   ): Promise<void> {
+    return this.enqueueWork(() => this.processMessageInternal(messageId, fields));
+  }
+
+  private async processMessageInternal(
+    messageId: string,
+    fields: string[],
+  ): Promise<void> {
     // Phase 1: Extract payload — permanent failure if missing
     const rawPayload = this.extractPayload(fields);
     if (!rawPayload) {
@@ -266,6 +286,65 @@ export class WorkflowRunner {
 
     // Phase 6: Ack
     await this.ack(messageId);
+  }
+
+  private enqueueWork(work: () => Promise<void>): Promise<void> {
+    const next = this.workChain.then(work, work);
+    this.workChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private startConsolidatorScanTimer(): void {
+    if (process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
+    const intervalMs = this.positiveEnv("CONSOLIDATOR_SCAN_INTERVAL_MS", 1_000);
+    const graceMs = this.positiveEnv("CONSOLIDATOR_SCAN_GRACE_MS", 2_000, true);
+    this.scanTimer = setInterval(() => {
+      if (!this.running) return;
+      void this.enqueueWork(() =>
+        this.processConsolidatorScan(new Date(Date.now() - graceMs)),
+      ).catch((error) => {
+        console.error("[WorkflowRunner] Consolidator scan failed:", error);
+      });
+    }, intervalMs);
+  }
+
+  private positiveEnv(name: string, fallback: number, allowZero = false): number {
+    const parsed = Number(process.env[name]);
+    return Number.isFinite(parsed) && (allowZero ? parsed >= 0 : parsed > 0) ? parsed : fallback;
+  }
+
+  private async processConsolidatorScan(scanTime: Date): Promise<void> {
+    consolidatorScansCounter.inc();
+    const stopTimer = consolidatorScanLatencyHistogram.startTimer();
+    let emissions: ConsolidatorEmission[];
+    try {
+      emissions = scanConsolidators(this.engine.getDataContext(), scanTime);
+    } finally {
+      stopTimer();
+    }
+    if (emissions.length === 0) return;
+    consolidatorEmissionsCounter.inc(emissions.length);
+    const runId = randomUUID();
+    await createRunInRedis(this.userId, this.workflowId, runId, {
+      nodes: this.serializedSnapshot.nodes,
+      edges: this.serializedSnapshot.edges,
+      node_count: this.serializedSnapshot.nodeCount,
+      edge_count: this.serializedSnapshot.edgeCount,
+      source: "consolidator_scan",
+    }, this.executionId);
+    this.engine.setRunId(runId);
+    try {
+      const result = await this.engine.executeInjectedResults(emissions);
+      if (result.success) {
+        await this.recordSuccess(runId, result, "consolidator_scan");
+      } else {
+        consolidatorDownstreamFailuresCounter.inc();
+        await updateRunStatusInRedis(this.userId, runId, "failed", result);
+      }
+    } catch (error) {
+      consolidatorDownstreamFailuresCounter.inc();
+      await this.recordFailure(runId, error);
+    }
   }
 
   private parseAndSortMessages(
@@ -389,6 +468,8 @@ export class WorkflowRunner {
 
   async stop(): Promise<void> {
     this.running = false;
+    if (this.scanTimer) clearInterval(this.scanTimer);
+    await this.workChain;
     this.abortController.abort();
     this.engine.destroy();
     PortfolioManager.removeInstance(this.userId, this.executionId);

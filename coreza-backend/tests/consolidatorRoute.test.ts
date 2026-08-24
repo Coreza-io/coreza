@@ -171,4 +171,26 @@ describe("POST /storage/consolidator", () => {
       error: expect.stringContaining("exact multiple"),
     });
   });
+
+  it("scans by workflow session and node id without repeating node configuration", async () => {
+    await request(app)
+      .post("/storage/consolidator")
+      .send(body(executionId, 0, 1))
+      .expect(200);
+
+    const response = await request(app).post("/storage/consolidator").send({
+      operation: "scan",
+      workflowSessionId: executionId,
+      workflowId: "workflow-1",
+      node_id: "consolidator-1",
+      current_time: "2026-01-01T04:00:00Z",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: { emitted: true, emissionReason: "time_scan", bar: { open: 1 } },
+      meta: { nodeId: "consolidator-1", emissionCount: 1 },
+    });
+  });
 });

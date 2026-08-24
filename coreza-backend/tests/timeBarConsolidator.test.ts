@@ -30,7 +30,7 @@ describe("TimeBarConsolidator", () => {
       timestamp: "2026-01-01T00:00:00.000Z", endTimestamp: "2026-01-01T04:00:00.000Z",
       open: 10, high: 15, low: 8, close: 14, volume: 14,
     });
-    expect(boundary.state.workingBar.open).toBe(20);
+    expect(boundary.state.workingBar?.open).toBe(20);
   });
 
   it("ignores exact duplicates and rejects conflicting or older inputs", () => {
@@ -45,21 +45,21 @@ describe("TimeBarConsolidator", () => {
   it("aligns timezone buckets across DST and supports a 09:30 anchor", () => {
     const dst = new TimeBarConsolidator({ sourceTimeframe: "1h", targetTimeframe: "4h", timezone: "America/New_York" });
     const dstResult = dst.update(bar("2026-03-08T07:30:00Z", 1));
-    expect(dstResult.state.workingBar.timestamp).toBe("2026-03-08T05:00:00.000Z");
-    expect(dstResult.state.workingBar.endTimestamp).toBe("2026-03-08T08:00:00.000Z");
+    expect(dstResult.state.workingBar?.timestamp).toBe("2026-03-08T05:00:00.000Z");
+    expect(dstResult.state.workingBar?.endTimestamp).toBe("2026-03-08T08:00:00.000Z");
 
     const anchored = new TimeBarConsolidator({ sourceTimeframe: "1h", targetTimeframe: "4h", timezone: "America/New_York", anchorTime: "09:30" });
-    expect(anchored.update(bar("2026-01-15T16:00:00Z", 1)).state.workingBar.timestamp)
+    expect(anchored.update(bar("2026-01-15T16:00:00Z", 1)).state.workingBar?.timestamp)
       .toBe("2026-01-15T14:30:00.000Z");
   });
 
   it("aligns week buckets to Monday without shifting intraday buckets", () => {
     const weekly = new TimeBarConsolidator({ sourceTimeframe: "1d", targetTimeframe: "1w" });
-    expect(weekly.update(bar("2026-01-08T12:00:00Z", 1)).state.workingBar.timestamp)
+    expect(weekly.update(bar("2026-01-08T12:00:00Z", 1)).state.workingBar?.timestamp)
       .toBe("2026-01-05T00:00:00.000Z");
 
     const fiveHour = new TimeBarConsolidator({ sourceTimeframe: "1h", targetTimeframe: "5h" });
-    expect(fiveHour.update(bar("2026-01-01T11:00:00Z", 1)).state.workingBar.timestamp)
+    expect(fiveHour.update(bar("2026-01-01T11:00:00Z", 1)).state.workingBar?.timestamp)
       .toBe("2026-01-01T09:00:00.000Z");
   });
 });

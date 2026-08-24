@@ -10,14 +10,18 @@ export interface ConsolidatedBar extends Bar {
 }
 
 export interface ConsolidatorState {
-  workingBar: ConsolidatedBar;
-  lastInput: Bar;
+  workingBar?: ConsolidatedBar;
+  lastInput?: Bar;
+  lastEmittedEndTimestamp?: string;
+  sourceBarCount: number;
 }
 
 export interface ConsolidationResult {
   emitted?: ConsolidatedBar;
   state: ConsolidatorState;
   duplicate: boolean;
+  emissionReason?: "boundary_input" | "time_scan";
+  emittedAt?: string;
 }
 
 export interface TimeBarConsolidatorOptions {
@@ -42,7 +46,7 @@ function barsEqual(left: Bar, right: Bar): boolean {
 }
 
 export class ConsolidationError extends Error {
-  constructor(readonly code: "DUPLICATE_BAR_CONFLICT" | "OUT_OF_ORDER_BAR", message: string) {
+  constructor(readonly code: "DUPLICATE_BAR_CONFLICT" | "OUT_OF_ORDER_BAR" | "LATE_BAR_AFTER_EMIT", message: string) {
     super(message);
     this.name = "ConsolidationError";
   }
@@ -70,7 +74,10 @@ export class TimeBarConsolidator {
       ? input
       : { ...input, volume: inputVolume };
     input = normalizedInput;
-    if (previous) {
+    if (previous?.lastEmittedEndTimestamp && new Date(input.timestamp).getTime() < new Date(previous.lastEmittedEndTimestamp).getTime()) {
+      throw new ConsolidationError("LATE_BAR_AFTER_EMIT", `Bar ${input.timestamp} predates emitted bucket ending ${previous.lastEmittedEndTimestamp}`);
+    }
+    if (previous?.lastInput) {
       const currentTime = new Date(input.timestamp).getTime();
       const lastTime = new Date(previous.lastInput.timestamp).getTime();
       if (currentTime < lastTime) throw new ConsolidationError("OUT_OF_ORDER_BAR", `Bar ${input.timestamp} is older than ${previous.lastInput.timestamp}`);
@@ -80,24 +87,52 @@ export class TimeBarConsolidator {
       }
     }
 
+    const expiry = this.scan(input.timestamp, previous);
+    const current = expiry.state;
     const [bucketStart, bucketEnd] = this.bucket(input.timestamp);
-    if (!previous || previous.workingBar.timestamp !== bucketStart) {
+    if (!current.workingBar || current.workingBar.timestamp !== bucketStart) {
       const workingBar: ConsolidatedBar = { ...input, timestamp: bucketStart, endTimestamp: bucketEnd };
       return {
-        emitted: previous?.workingBar,
-        state: { workingBar, lastInput: input },
+        emitted: expiry.emitted,
+        emissionReason: expiry.emitted ? "boundary_input" : undefined,
+        emittedAt: expiry.emitted ? new Date(input.timestamp).toISOString() : undefined,
+        state: { ...current, workingBar, lastInput: input, sourceBarCount: 1 },
         duplicate: false,
       };
     }
 
     const workingBar: ConsolidatedBar = {
-      ...previous.workingBar,
-      high: Math.max(previous.workingBar.high, input.high),
-      low: Math.min(previous.workingBar.low, input.low),
+      ...current.workingBar,
+      high: Math.max(current.workingBar.high, input.high),
+      low: Math.min(current.workingBar.low, input.low),
       close: input.close,
-      volume: previous.workingBar.volume + input.volume,
+      volume: current.workingBar.volume + input.volume,
     };
-    return { state: { workingBar, lastInput: input }, duplicate: false };
+    return { state: { ...current, workingBar, lastInput: input, sourceBarCount: current.sourceBarCount + 1 }, duplicate: false };
+  }
+
+  scan(currentTime: string | number | Date, previous?: ConsolidatorState): ConsolidationResult {
+    const now = new Date(currentTime).getTime();
+    if (Number.isNaN(now)) throw new Error(`Invalid scan timestamp: ${currentTime}`);
+    if (!previous?.workingBar) {
+      return { state: previous ?? { sourceBarCount: 0 }, duplicate: false };
+    }
+    if (now < new Date(previous.workingBar.endTimestamp).getTime()) {
+      return { state: previous, duplicate: false };
+    }
+    const emitted = previous.workingBar;
+    return {
+      emitted,
+      emissionReason: "time_scan",
+      emittedAt: new Date(now).toISOString(),
+      duplicate: false,
+      state: {
+        ...previous,
+        workingBar: undefined,
+        lastEmittedEndTimestamp: emitted.endTimestamp,
+        sourceBarCount: 0,
+      },
+    };
   }
 
   private bucket(timestamp: string | number): [string, string] {

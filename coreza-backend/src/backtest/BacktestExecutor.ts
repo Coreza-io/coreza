@@ -613,6 +613,7 @@ export class BacktestExecutor implements INodeExecutor {
         warmupMode === "workflow_replay"
           ? { interval, symbols, indicators: discoveredIndicators }
           : undefined,
+        endDate,
       );
 
       await session.initialize();

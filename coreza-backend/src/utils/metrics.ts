@@ -41,6 +41,26 @@ export const websocketConnectionsCounter = new client.Counter({
   labelNames: ['action']
 });
 
+export const consolidatorScansCounter = new client.Counter({
+  name: 'coreza_consolidator_scans_total',
+  help: 'Total number of consolidator clock scans',
+});
+
+export const consolidatorEmissionsCounter = new client.Counter({
+  name: 'coreza_consolidator_emissions_total',
+  help: 'Total number of buckets emitted by consolidator clock scans',
+});
+
+export const consolidatorLateBarRejectsCounter = new client.Counter({
+  name: 'coreza_consolidator_late_bar_rejects_total',
+  help: 'Total number of input bars rejected after a consolidator emission watermark',
+});
+
+export const consolidatorDownstreamFailuresCounter = new client.Counter({
+  name: 'coreza_consolidator_downstream_failures_total',
+  help: 'Total number of failed downstream executions initiated by consolidator scans',
+});
+
 // Recovery metrics
 export const workflowRecoveryCounter = new client.Counter({
   name: 'coreza_workflow_recovery_total',
@@ -101,6 +121,12 @@ export const workflowExecutionDurationHistogram = new client.Histogram({
   help: 'Workflow execution duration in seconds',
   labelNames: ['workflow_id', 'status'],
   buckets: [0.1, 0.5, 1, 5, 10, 30, 60]
+});
+
+export const consolidatorScanLatencyHistogram = new client.Histogram({
+  name: 'coreza_consolidator_scan_latency_seconds',
+  help: 'Time spent discovering and scanning consolidator states',
+  buckets: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5],
 });
 
 export const register = client.register;

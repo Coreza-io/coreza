@@ -1,77 +1,37 @@
-# Consolidator Scan — review findings and remediation plan
+# Consolidator Scan Plan — implementation review
 
-The `scan()` core is correct (expiry close, `lastEmittedEndTimestamp`, `time_scan` reason, deterministic ordering, shared close path with `update()`). The wall-clock wiring around it is not production-ready. The external review is accurate — every claim below was re-verified in the repo.
+Verified end to end against the repo. The plan is essentially fully implemented, with one real defect (a failing test caused by a dropped field) and two small follow-ups.
 
-## Blocker — TypeScript build failure
+## Implemented and confirmed
 
-`ExecutionContextExtras` in `workflowRun.ts:32-35` has only `multiBarContext` and `runId`, but `BacktestSession.executeConsolidatorClock` calls `setExecutionContextExtras({ isWarmingUp })`. Under `strict` + `tsc` this is an excess-property error.
+- **Blocker (build)** — `isWarmingUp?: boolean` is present on `ExecutionContextExtras` (`src/engine/workflowRun.ts:32-35`); `BacktestSession.executeConsolidatorClock` compiles.
+- **High 1 (at-most-once loss)** — `scanConsolidators(..., { commit: false })` returns candidates carrying a deterministic `emissionId` and a `pendingCommit`; `commitConsolidatorEmissions` is invoked only from the delivery callback in both `WorkflowRunner.processConsolidatorScan` and `BacktestSession.executeConsolidatorClock`. Re-emit-until-committed is covered by a test.
+- **High 2 (multi-symbol collapse)** — `executeInjectedResults` splits emissions into one pass per symbol and only reports delivered batches; routing tests cover two symbols on one node id and partial-batch commit.
+- **High 3 (mixed join)** — the detection-and-warn option shipped in `WorkflowPlan.compile`, with a test.
+- **High 4 (late bars)** — `ConsolidatorExecutor` converts `LATE_BAR_AFTER_EMIT` into `success: true` + `lateBarDropped` + `suppressDownstream` and increments the counter; both runtimes clear `failed`/`failedNodeErrors` in `resetForNextBar`; live scan grace default is now 60s with a comment to set it from measured feed latency.
+- **High 5 (manual endpoint)** — `/storage/consolidator` scan defaults to `dryRun: true`, requires `current_time`, rejects future clocks for live sessions, requires a manual session to commit, and returns all emissions.
+- **Medium 1/2/3/4** — final backtest scan uses a finite `endExclusiveClock` verbatim; invalid states are metered (`consolidatorInvalidStatesCounter`), logged and skipped; `isConsolidatorState` validates `endTimestamp`; the compiled backtest VM declares consolidator workflows ineligible so the interpreted path (which owns the injection) is used.
+- **Medium 5** — `update()` propagates the inner `scan()` reason instead of relabelling.
 
-Fix: add `isWarmingUp?: boolean` to the interface. Do this first.
+## Defect to fix — per-node scan grace is never persisted
 
-## High 1 — emitted bar can be permanently lost
+`ConsolidatorExecutor` computes `scanGraceMs` and puts it in `parameters`, but the `dataContext.setData(...)` metadata object omits it. `scanConsolidators` reads the grace from `ref.meta.scanGraceMs`, so a node-configured `scan_grace_ms` is silently ignored and buckets close early.
 
-`scanConsolidators()` commits the post-emit state (`workingBar` cleared, `lastEmittedEndTimestamp` set) before `createRunInRedis` and `executeInjectedResults`. A Redis failure, crash, or downstream failure loses the bar with no way to recreate it — at-most-once delivery.
+This is why `tests/timeBarConsolidatorScan.test.ts` → "honors a per-consolidator feed-latency grace" fails today (emission at `04:00:59.999` instead of `04:01:00.000`).
 
-Fix: split discovery from commit.
-- `scanConsolidators(dataContext, time, { commit: false })` returns candidate emissions with a deterministic `emissionId` = `{executionId}:{nodeId}:{symbol}:{bucketEndTimestamp}`.
-- Persist the new state only after the run record exists and injection succeeded.
-- On failure, leave the working bar intact so the next tick retries; dedupe replays by `emissionId` (`lastEmittedEndTimestamp` already blocks double-emit once committed).
+Fix: include `...(scanGraceMs === undefined ? {} : { scanGraceMs })` in the metadata written by `ConsolidatorExecutor.execute`, matching the `isMetadata` contract in `consolidatorScan.ts`.
 
-## High 2 — multi-symbol emissions collapse on one node
+## Minor follow-ups
 
-One node holds one state per symbol, so a scan can return two emissions with the same `nodeId`. `executeInjectedResults` injects both into the single `nodeId` result slot; the live runtime's `enqueuedKeys` also dedupes the downstream node, so one symbol is dropped and template resolution can read a different symbol than the routed payload. Existing routing test uses two distinct node IDs (`scan-a`/`scan-b`) and misses this.
+1. **Late-bar payload shape.** The `lateBarDropped` result returns `{ emitted, bar, lateBarDropped }` only — no `symbol`/`sourceTimeframe`/`targetTimeframe`/`workingBar`/`emissionReason`/`emittedAt`, so it does not match `ConsolidatorPayload`. Fill the remaining fields (nulls plus the resolved symbol/timeframes) so downstream templates and the UI see a consistent shape.
+2. **`boundary_input` is now unreachable.** Every emission is labelled `time_scan`, including bucket closes triggered by an arriving bar. That follows the plan's Medium 5 wording, but the union member and any UI text referencing it should either be dropped or the input-triggered close relabelled — pick one and make the type honest.
 
-Fix: group emissions by symbol and run one injected pass per `(symbol)` batch (each pass injects at most one emission per node), then extend the routing test with two symbols on one node ID.
+## Test note
 
-## High 3 — scan cannot satisfy a mixed multi-parent join
-
-`executeInjectedResults` calls `resetForNextBar(true)`, clearing `edgePayload` (live) and `satisfiedCounts` (backtest) plus prior results. A join fed by a consolidator *and* a normal bar branch never becomes satisfied on a scan run. The current test only joins two consolidators emitting in the same scan.
-
-Fix: define the semantics explicitly rather than blindly preserving counters (which would route stale payloads):
-- Cache the latest non-consolidator branch payload per edge and seed it for scan runs, gated by a max-age, or
-- detect mixed joins at graph-build time and reject/warn that scan injection is unsupported for them.
-Pick the seeding option only with an explicit staleness bound; otherwise ship the detection and warn.
-
-## High 4 — timer can emit before the final source bar, and late bars poison the runtime
-
-Defaults `INTERVAL_MS=1000` / `GRACE_MS=2000` close a 12:00–16:00 bucket at ~16:00:02; a 15:00 bar delivered at 16:00:03 is then rejected as `LATE_BAR_AFTER_EMIT` and the emitted OHLCV is permanently incomplete. Today the executor returns `success: false`, and `resetForNextBar` clears results/queue but **not** `failed`/`failedNodeErrors` — so one late bar leaves the long-lived runtime reporting failures on later events.
-
-Fix:
-- Return late bars as benign: `success: true`, `data: { emitted: false, bar: null, lateBarDropped: true }`, `control: { suppressDownstream: true }`, still incrementing `consolidatorLateBarRejectsCounter`.
-- Clear `failed` and `failedNodeErrors` in `resetForNextBar`.
-- Raise the default grace and make it configurable per source/timeframe; document that it must be set from measured feed latency, not the 2s guess.
-
-## High 5 — manual scan endpoint mutates live state without routing
-
-`POST /storage/consolidator` with `operation: "scan"` calls `scanConsolidators()` against the real `DataContext` and returns `emissions[0]?.payload`, mutating state without injecting downstream. A future `current_time` can force-close a live bucket, hide the bar in an HTTP response, and make subsequent real bars late.
-
-Fix: default the endpoint to `dryRun` (no commit), require an explicit non-live/manual session for mutating scans, reject `current_time` beyond now for live sessions, and return all emissions rather than the first.
-
-## Medium
-
-1. **Final backtest scan overshoots.** `Math.max(requestedEnd, clockAfterFinalSourceBar)` can scan past the requested end-exclusive clock and emit a bucket that had not expired. When `endExclusiveClock` is finite, use it verbatim.
-2. **One corrupt state starves everything.** `scanConsolidators` throws on the first invalid state, failing the whole tick. Log, increment a metric, and skip the damaged ref.
-3. **`endTimestamp` is unvalidated.** `isConsolidatorState` only runs `parseBar(state.workingBar)`, which ignores `endTimestamp`; a missing/invalid value survives and NaN comparisons make the bucket emit immediately. Add `Number.isFinite(new Date(state.workingBar.endTimestamp).getTime())`.
-4. **Compiled backtest plan bypassed.** `executeConsolidatorClock` always uses the interpreted `this.run`, which holds none of the compiled VM's node results. Either route injection through the compiled plan or fall back to engine mode (logged) when a consolidator is present.
-5. **Emission reason mislabelled.** When `update()`'s inner `scan()` closes the bucket, the result is relabelled `boundary_input` with `emittedAt = input.timestamp`. Keep the inner reason.
+`tests/consolidatorRoute.test.ts` and `tests/consolidatorScanRouting.test.ts` fail to compile in this sandbox from missing `ioredis`/`express` type declarations — an environment issue, not an implementation defect. `tests/timeBarConsolidator.test.ts` passes; `tests/timeBarConsolidatorScan.test.ts` passes except the grace test above.
 
 ## Sequence
 
-1. Fix the build blocker (`isWarmingUp`).
-2. Late-bar benign handling + failure-state reset (High 4) — smallest fix that stops runtime poisoning.
-3. Validation and skip-on-corrupt hardening (Medium 2, 3).
-4. Multi-symbol batching (High 2) + per-symbol routing tests.
-5. Commit-after-delivery with `emissionId` (High 1).
-6. Mixed-join semantics decision + implementation (High 3).
-7. Manual endpoint hardening (High 5).
-8. Final-scan clock and compiled-plan handling (Medium 1, 4), emission reason (Medium 5).
-
-## Tests to add
-
-- Two symbols on one consolidator node produce two downstream executions with distinct bars.
-- Consolidator joined with a bar-driven branch: documented behaviour asserted (executes with seeded payload, or is rejected at build time).
-- Injection failure leaves state uncommitted and the next scan re-emits exactly once.
-- Late bar after `time_scan` returns success with suppression, increments the counter, and leaves the runtime unfailed on the next event.
-- Working bar with a broken `endTimestamp` is rejected by `isConsolidatorState`.
-- Final backtest scan does not exceed a finite `endExclusiveClock`.
-- Manual scan endpoint defaults to dry run and rejects a future `current_time` for a live session.
+1. Add `scanGraceMs` to the executor's state metadata; re-run `tests/timeBarConsolidatorScan.test.ts` (all green).
+2. Normalise the late-bar payload to the full `ConsolidatorPayload` shape.
+3. Decide and apply the `boundary_input` label decision.

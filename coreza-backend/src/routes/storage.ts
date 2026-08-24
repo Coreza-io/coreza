@@ -62,9 +62,11 @@ router.post("/consolidator", (req: Request, res: Response) => {
     target_timeframe: targetTimeframe,
     timezone: requestedTimezone,
     anchor_time: requestedAnchorTime,
+    scan_grace_ms: requestedScanGraceMs,
     candle_data: candleData,
     operation = "update",
     current_time: currentTime,
+    dryRun = true,
   } = req.body;
   const executionId = runId ?? workflowSessionId ?? backtestId;
   if (!executionId) {
@@ -89,6 +91,10 @@ router.post("/consolidator", (req: Request, res: Response) => {
       timezone: String(requestedTimezone ?? "UTC").trim() || "UTC",
       anchorTime: String(requestedAnchorTime ?? "").trim(),
     };
+    const parsedScanGraceMs = Number(requestedScanGraceMs);
+    const scanGraceMs = Number.isFinite(parsedScanGraceMs) && parsedScanGraceMs >= 0
+      ? parsedScanGraceMs
+      : undefined;
     const stateKey = operation === "update"
       ? buildConsolidatorStateKey(parameters)
       : undefined;
@@ -110,12 +116,26 @@ router.post("/consolidator", (req: Request, res: Response) => {
       if (currentTime === undefined) {
         return res.status(400).json({ success: false, error: "current_time is required for scan" });
       }
+      const scanTimestamp = new Date(currentTime).getTime();
+      if (!Number.isFinite(scanTimestamp)) {
+        return res.status(400).json({ success: false, error: "current_time must be a valid timestamp" });
+      }
+      const isManualSession = typeof workflowSessionId === "string" || typeof backtestId === "string";
+      if (!isManualSession && scanTimestamp > Date.now()) {
+        return res.status(400).json({ success: false, error: "current_time cannot be in the future for a live session" });
+      }
+      if (dryRun === false && !isManualSession) {
+        return res.status(400).json({ success: false, error: "Mutating scans require an explicit manual session" });
+      }
       const normalizedNodeId = nodeId.trim();
-      const emissions = scanConsolidators(dataContext, currentTime, normalizedNodeId);
+      const emissions = scanConsolidators(dataContext, currentTime, {
+        nodeId: normalizedNodeId,
+        commit: dryRun === false,
+      });
       return res.json({
         success: true,
-        data: emissions[0]?.payload ?? null,
-        meta: { nodeId: normalizedNodeId, emissionCount: emissions.length },
+        data: emissions.map((emission) => emission.payload),
+        meta: { nodeId: normalizedNodeId, emissionCount: emissions.length, dryRun: dryRun !== false },
       });
     }
     if (operation !== "update") {
@@ -137,6 +157,7 @@ router.post("/consolidator", (req: Request, res: Response) => {
       targetTimeframe: result.payload.targetTimeframe,
       timezone: parameters.timezone,
       anchorTime: parameters.anchorTime,
+      ...(scanGraceMs === undefined ? {} : { scanGraceMs }),
     });
     return res.json({
       success: true,

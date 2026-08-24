@@ -12,6 +12,7 @@ import { WorkflowExecutionResult } from "../engine/types";
 import { RedisKeys } from "../infra/redisKeys";
 import {
   scanConsolidators,
+  commitConsolidatorEmissions,
   type ConsolidatorEmission,
 } from "../engine/consolidation/consolidatorScan";
 import {
@@ -297,11 +298,13 @@ export class WorkflowRunner {
   private startConsolidatorScanTimer(): void {
     if (process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
     const intervalMs = this.positiveEnv("CONSOLIDATOR_SCAN_INTERVAL_MS", 1_000);
-    const graceMs = this.positiveEnv("CONSOLIDATOR_SCAN_GRACE_MS", 2_000, true);
+    // This default is deliberately conservative; production deployments should
+    // set it from the measured tail latency of their market-data feed.
+    const graceMs = this.positiveEnv("CONSOLIDATOR_SCAN_GRACE_MS", 60_000, true);
     this.scanTimer = setInterval(() => {
       if (!this.running) return;
       void this.enqueueWork(() =>
-        this.processConsolidatorScan(new Date(Date.now() - graceMs)),
+        this.processConsolidatorScan(new Date(), graceMs),
       ).catch((error) => {
         console.error("[WorkflowRunner] Consolidator scan failed:", error);
       });
@@ -313,12 +316,12 @@ export class WorkflowRunner {
     return Number.isFinite(parsed) && (allowZero ? parsed >= 0 : parsed > 0) ? parsed : fallback;
   }
 
-  private async processConsolidatorScan(scanTime: Date): Promise<void> {
+  private async processConsolidatorScan(scanTime: Date, graceMs: number): Promise<void> {
     consolidatorScansCounter.inc();
     const stopTimer = consolidatorScanLatencyHistogram.startTimer();
     let emissions: ConsolidatorEmission[];
     try {
-      emissions = scanConsolidators(this.engine.getDataContext(), scanTime);
+      emissions = scanConsolidators(this.engine.getDataContext(), scanTime, { commit: false, graceMs });
     } finally {
       stopTimer();
     }
@@ -334,7 +337,10 @@ export class WorkflowRunner {
     }, this.executionId);
     this.engine.setRunId(runId);
     try {
-      const result = await this.engine.executeInjectedResults(emissions);
+      const result = await this.engine.executeInjectedResults(
+        emissions,
+        (delivered) => commitConsolidatorEmissions(this.engine.getDataContext(), delivered),
+      );
       if (result.success) {
         await this.recordSuccess(runId, result, "consolidator_scan");
       } else {

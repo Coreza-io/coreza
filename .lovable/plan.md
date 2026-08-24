@@ -1,51 +1,63 @@
-# LEAN-style Scan for the Consolidator node
+# Consolidator completion — minimal, event-only
 
-Today a bucket only closes when an input from a later bucket arrives, so a missing boundary bar delays or loses the bar. Scan closes an expired bucket on the clock without fabricating data. The plan below follows the attached document's sequence.
+Replaces the wall-clock Scan plan. No timers, no scheduler, no state discovery, no result injection, no compiled VM changes, no manual scan endpoint. A target bar closes from the timestamp of a completed source bar.
 
-## Phase 0 — prerequisites (from the earlier review)
+## Behaviour change
 
-- Node-scoped state key `consolidator:{nodeId}:{symbol}:{source}:{target}:{timezone}:{anchor}`, required everywhere (executor, route, warm-up).
-- `/storage/consolidator` verifies the `DataContext` belongs to the requesting user and workflow before reading state.
-- `InMemoryStore.set()` subtracts an existing entry's size before the capacity check.
+Today a 1h→4h consolidator waits for a bar from the next bucket. Instead, derive each input's end (`inputStart + source.milliseconds`) and close the bucket once that end reaches `workingBar.endTimestamp`.
 
-## Phase 1 — state and output contract
+```text
+14:00 input ends 15:00 -> keep working
+15:00 input ends 16:00 -> aggregate first, then emit 12:00-16:00
+```
 
-- `ConsolidatorState`: `workingBar?`, `lastInput?`, `lastEmittedEndTimestamp?`, `sourceBarCount`.
-- `ConsolidatorPayload`: adds `emissionReason` (`boundary_input` | `time_scan`), `emittedAt`, `symbol`, `sourceTimeframe`, `targetTimeframe`; `workingBar` becomes nullable. `data.bar` stays the downstream contract.
+Accepted limitation: if no source bar arrives, nothing closes. Halts, feed silence and shutdown flushing belong to the later wall-clock feature.
 
-## Phase 2 — pure `scan()` and unified close rule
+Prerequisite: `Bar.timestamp` means interval start. A provider sending interval-end normalizes in its own adapter, never inside the consolidator.
 
-- `scan(currentTime, previous)` in `TimeBarConsolidator`: no working bar ⇒ no output; not expired ⇒ unchanged; expired ⇒ emit the working bar once, clear it, record `lastEmittedEndTimestamp`, reset `sourceBarCount`.
-- `update()` applies the same expiry transition using the input timestamp so the two paths cannot drift; boundary emissions report `boundary_input`.
-- New `LATE_BAR_AFTER_EMIT` error when an input predates the emission watermark.
+## Algorithm in `TimeBarConsolidator.update()`
 
-## Phase 3 — discovery
+1. normalize fill-forward volume
+2. validate duplicate / out-of-order
+3. compute the input bucket
+4. create or aggregate the working bar
+5. `inputEnd = inputStart + sourceMs`
+6. emit **after** aggregation when `inputEnd >= workingBar.endTimestamp`
+7. otherwise keep the working bar
+8. save `lastInput` on both paths
 
-- The executor stores registry metadata with the state (`kind: 'consolidator_state'`, node id, symbol, normalized timeframes, timezone, anchor).
-- `scanConsolidators(dataContext, scanTime)` finds due states, runs scan, writes state back, returns only real emissions.
+Aggregate first, check completion second — otherwise the emitted bar loses the final source bar's OHLCV and volume.
 
-## Phase 4 — runtime injection
+Boundary-gap precedence is unchanged: an input belonging to a later bucket while an older working bar exists emits the older bar and starts the new one; only one `data.bar` per event, so the freshly started bucket does not also emit.
 
-- `WorkflowRun.executeInjectedResults(emissions)`: reset per-event results once per batch (never the persistent consolidator state), store each result under its real node id, route through that node's real outgoing edges, inject all same-clock emissions before draining the queue, apply the normal dependency/suppression/warm-up/cancellation rules, and never re-run the executor or upstream triggers.
-- Touches `executionRuntime.ts`, `workflowRun.ts`, `workflowEngine.ts`.
+No `scan(currentTime)` method — that name implies a clock contract this release defers. The future feature can extract the shared close transition later.
 
-## Phase 5 — backtest clock
+## State and payload
 
-Per source timestamp T, in order: `scanConsolidators(T)` → inject and execute emissions → `SimBroker.onBar(T)` → normal source-bar workflow → equity snapshot. Same ordering during warm-up replay (broker mutation still blocked). Before finalization, scan to the end-exclusive clock and emit only expired buckets — never a blanket flush. Scan once per timestamp, ordering simultaneous emissions by end time, node id, symbol.
+- `ConsolidatorState`: `workingBar?` optional, `lastInput` required.
+- `ConsolidatorPayload`: `bar` and `workingBar` both nullable.
+- `isConsolidatorState()` accepts a closed state (`lastInput` present, no `workingBar`); when `workingBar` exists it must carry usable `timestamp` and `endTimestamp`.
+- No `lastEmittedEndTimestamp` watermark yet — `lastInput` covers duplicate/out-of-order for event-only closing.
 
-## Phase 6 — live scheduling (feature-flagged)
+## Files
 
-- `WorkflowRunner` starts a configurable interval (default 1s) after consumer-group setup and scans at wall clock minus a configurable grace (default 2s).
-- Timer ticks and `processMessage()` both enqueue onto one serialized promise chain so a read-modify-write cannot interleave.
-- Emissions get a run id tagged `source=consolidator_scan`; ticks with no emissions create no run record. Metrics: scans, emissions, late-bar rejects, scan latency, downstream failures. `stop()` clears the timer and waits for in-flight work.
+| File | Change |
+| --- | --- |
+| `TimeBarConsolidator.ts` | store `sourceMs`, optional `workingBar`, aggregate-then-close, handle state without a working bar (~40-70 lines) |
+| `consolidatorShared.ts` | nullable payload `workingBar`, validator accepts closed state (~15-30 lines) |
+| `ConsolidatorExecutor.ts` | type compatibility only |
+| tests | completion, transitions, gap and regression cases |
 
-## Phase 7 — compiled VM and manual debug
+Must not change: `WorkflowRunner.ts`, `workflowRun.ts`/`workflowEngine.ts`, `executionRuntime.ts`, `BacktestSession.ts`, compiled VM, storage route, and the frontend node JSON beyond nullable `workingBar` handling.
 
-- Scan-enabled consolidator plans are ineligible for compiled execution until parity lands. Then `runInjectedResults(plan, emissions)` writes result slots, activates only real downstream instructions, and enforces incoming dependency masks/counts (the any-of activation fix), verified by dynamic-vs-compiled parity.
-- Manual `operation: "scan"` on the authenticated storage route (node id, workflow session id, current time) with ownership checks; production paths call the internal service, not HTTP.
+## Sequence
 
-## Verification
+1. lock the timestamp-start contract in tests (15:00 1h input derives 16:00)
+2. refactor `update()` for optional working state
+3. add the post-aggregation completion check
+4. update shared validation and payload
+5. run all suites — no routing or warm-up regression
 
-New tests: `timeBarConsolidatorScan`, `consolidatorScanRouting`, `workflowRunnerConsolidatorScan`, `backtestConsolidatorClock`, `compiledConsolidatorScan` — covering exactly-once emission, repeat scan, late input rejection, DST/anchor boundaries, multi-parent joins, serialized timer vs market event, scan-before-`onBar` fill ordering, expired vs unexpired final bucket, and unchanged continuous input-driven behaviour.
+## Tests
 
-Flags: `ENABLE_CONSOLIDATOR_SCAN=false` by default, with configurable scan interval and grace.
+No early emission on the first in-bucket bar; continuous close emitting after the 15:00 bar with all four bars included; partial initial bucket (14, 15) emitting the 12-16 label; OHLCV correctness (first open, max high, min low, last close, summed volume); fill-forward volume contributes zero; closed state then a 16:00 bar creates the 16-20 bucket; exact duplicate returns `duplicate=true`; `suppressDownstream` still true while held.

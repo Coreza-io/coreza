@@ -1,83 +1,99 @@
-# Consolidator Scan — production fixes (review doc remediation)
+# Consolidator scan — production hardening round 2
 
-The review doc is accurate. I confirmed each open item against the merged code:
+I verified each finding against the current code. All seven are correct.
 
-- `scanConsolidators` applies `metadata.scanGraceMs ?? options.graceMs ?? 0` unconditionally, so `BacktestSession.scan(..., { commit: false })` (no graceMs) still subtracts the node's **live** grace from the historical clock. A bucket ending exactly at the finite `endExclusiveClock` is never emitted.
-- `consolidatorDeliveryReceipt` writes the receipt *after* downstream execution. `SET NX` de-dupes the receipt, not the execution — two runners can both execute.
-- `orderIdempotency.cacheOrderIntent` is a plain `SETEX` after a separate `getOrderFromCache`; concurrent identical orders both pass the check.
-- Only `BrokerExecutor` consumes `context.emissionId`; other side-effect executors do not.
+| Finding | Confirmed in code |
+| --- | --- |
+| Claim lease never renewed | `consolidatorDeliveryReceipt.ts` — `claimEmissionBatch` does a one-shot `SET NX EX 120`; there is no renew function and `WorkflowRunner` never touches the claim between claim and `markEmissionDelivered`. |
+| Effect keys too broad | `effectKey(runOrEmissionId, nodeId, discriminator)` — `DataSourceExecutor` passes `store:${operation}`, `CommunicationExecutor` passes `${serviceKey}:${operation}`. No parameters, no invocation index. |
+| Unknown outcomes released | `effectGuard.runOnce` catch block compare-and-deletes the claim on *any* throw, including a network timeout. |
+| Binance algo reconciliation wrong | `binance/http/operations.ts:371` — `get_order_by_client_id` hits `/fapi/v1/order` with `origClientOrderId`. Algo orders are submitted to the algo endpoint with `clientAlgoId` (line 259-262), and the algo lookups (`get_open_algo_orders`, `get_all_algo_orders`) are separate operations. |
+| Not all operations reconcilable | `BrokerExecutor` reconciles `place_order` and `close_position` identically; `close_position` carries no client order id for most brokers. |
+| Ownership loss ignored | `updateOrderCache` returns `boolean`, but both call sites (`BrokerExecutor.ts:385`, `:424`) discard it. Credential-missing returns happen *after* the claim, leaving a `pending` record until TTL. |
+| Side-effect coverage incomplete | Only `CommunicationExecutor` and the `DataSourceExecutor` store path call `runOnce`. |
 
-## Fix 1 — deterministic grace policy (backtest correctness)
+## Fix 1 — claim lease renewal (High)
 
-`consolidatorScan.ts`: add `gracePolicy?: "node" | "none"` to `ConsolidatorScanOptions`, defaulting to `"node"`.
-- `"none"` → effective grace is `0`, ignoring both `metadata.scanGraceMs` and `options.graceMs`.
-- Record the applied grace on the emission payload (`appliedGraceMs`) for audit.
-- Keep `TimeBarConsolidator.scan` pure — grace stays an orchestration concern.
+`consolidatorDeliveryReceipt.ts`
+- Add `renewEmissionClaim(userId, workflowId, executionId, emissionIds, ownerToken)` — Lua compare-and-`EXPIRE`, returns `false` when the token no longer matches.
+- Export `claimLeaseSeconds()` so callers can derive the renewal interval.
 
-Call sites:
-- `BacktestSession.ts:712` → `{ commit: false, gracePolicy: "none" }`.
-- Warm-up/replay scan paths → `gracePolicy: "none"`.
-- `WorkflowRunner.processConsolidatorScan` → keep `"node"` (per-node grace overrides the `CONSOLIDATOR_SCAN_GRACE_MS` fallback).
-- `routes/storage.ts` manual scan → accept an optional `grace_policy` body field; default `"none"` for backtest/manual identifiers, `"node"` for live; echo the applied value in the response.
+`WorkflowRunner.processConsolidatorScan`
+- After a successful claim, start a renewal `setInterval` at `ceil(lease / 3)` seconds for that batch.
+- Stop the interval before `markEmissionDelivered` or `releaseEmissionClaim`, and in a `finally` so it can never leak.
+- If a renewal returns `false`, abort the batch: signal the engine's abort controller, stop renewing, and skip the delivery commit (the new owner will handle it).
+- Wrap batch execution in `CONSOLIDATOR_BATCH_TIMEOUT_MS` (default `lease * 1000 * 5`, i.e. renewal keeps it alive but a hung batch still terminates); on timeout treat it as failure and release.
 
-## Fix 2 — atomic emission ownership
+## Fix 2 — parameter-specific effect keys (High)
 
-New `claimEmissionBatch` / `releaseEmissionClaim` / `markEmissionDelivered` in `consolidatorDeliveryReceipt.ts`, plus `RedisKeys.consolidatorClaim(userId, workflowId, executionId, batchHash)`.
+`effectGuard.ts`
+- Replace `effectKey` with:
+  ```ts
+  effectKey({ scopeId, nodeId, operation, params, invocationIndex })
+  // => `${scopeId}:${nodeId}:${operation}:${sha256(stableStringify(params))}${index}`
+  ```
+- Add a `stableStringify` helper (sorted keys, deep) so key ordering cannot change the hash.
+- `invocationIndex` is an optional caller-supplied counter for legitimate identical repeats inside one emission (e.g. a loop sending the same message twice).
 
-- `batchHash` = sha256 of the sorted `emissionId` list for one logical-clock batch.
-- Before executing a batch: `SET claimKey <ownerToken> NX EX CONSOLIDATOR_CLAIM_LEASE_SECONDS` (default 120). Failure to claim → skip the batch this tick (another owner has it); do not commit state.
-- On success: Lua script that verifies the claim value equals `ownerToken`, writes the delivery receipts with the long TTL, and deletes the claim — one round trip, no partial state.
-- On failure: delete the claim only when the value matches `ownerToken` (Lua compare-and-delete); otherwise let the lease expire.
-- `ownerToken` = `${runnerInstanceId}:${crypto.randomUUID()}`, held on `WorkflowRunner`.
-- Existing behaviour preserved: an already-delivered emission is not re-routed, and its `pendingCommit` is still committed to drain in-memory state.
+Call sites
+- `CommunicationExecutor` — hash `{ service, operation, recipient/chatId/to, channel, subject, body/message, attachments }`.
+- `DataSourceExecutor` — hash `{ provider, operation, key, field, value, ttl }`.
+- Both pass the loop iteration index as `invocationIndex` when the node runs inside a loop context.
 
-`WorkflowRunner.processConsolidatorScan` wraps each logical-clock group with claim → execute → mark-delivered/release.
+## Fix 3 — unknown-outcome handling (High)
 
-## Fix 3 — atomic broker order claim
+`effectGuard.ts` — widen `StoredEffect` to `pending | complete | failed | unknown`.
+- Classify the thrown error: network timeout / socket hangup / `ECONNRESET` / 5xx-without-body / aborted → **unknown**; explicit 4xx provider rejection → **failed**.
+- `failed` → compare-and-delete the claim (current behaviour, retry is safe).
+- `unknown` → compare-and-set the record to `{ status: "unknown", attemptedAt, error }` with the long TTL, and **do not delete**. A retry hitting an `unknown` record returns a `EFFECT_OUTCOME_UNKNOWN` failure with the original error rather than re-firing.
+- Add optional `reconcile?: () => Promise<TResult | null>` to `runOnce`; when present it is called on an `unknown` record before deciding, letting providers that support lookup self-heal.
+- Pass a provider idempotency key where supported (e.g. HTTP `Idempotency-Key` header for the generic HTTP/webhook path).
+- Document per-effect guarantees in a table in the README (exactly-once / at-most-once / at-least-once).
 
-In `orderIdempotency.ts`:
-- Replace `cacheOrderIntent` with `claimOrderIntent(userId, workflowId, idempotencyKey, broker, ownerToken)` using `SET key <json> NX EX ORDER_CACHE_TTL`. Returns `{ claimed: true }` or `{ claimed: false, existing }`.
-- Extend `CachedOrder` with `ownerToken` and `updatedAt`; keep `status: pending | success | failed`.
-- `updateOrderCache` becomes a compare-and-set on `ownerToken` (Lua), so a stale worker cannot overwrite another's record.
-- Raise `ORDER_CACHE_TTL` handling so it is at least the consolidator receipt TTL (`CONSOLIDATOR_DELIVERY_RECEIPT_TTL_SECONDS`); take the max of the two.
+## Fix 4 — Binance algo-order reconciliation (High)
 
-In `BrokerExecutor`:
-- `absent` → claim, then submit with `client_order_id = idempotencyKey` where the broker supports it (already the reverse-index assumption).
-- `pending` (claim lost or stale record) → **reconcile**: look up the broker by `client_order_id`/`idempotencyKey` through the existing broker `get_order` capability. Found → cache and return that result. Not found and the record is older than `ORDER_RECONCILE_STALE_MS` → allow one resubmission; otherwise return a `ORDER_IN_FLIGHT` soft failure instead of submitting.
-- `success` → return the cached broker response verbatim.
-- `failed` → return the failure; resubmit only when the caller passes an explicit retry flag.
-- Never turn an unknown/timeout broker outcome into a fresh submission — mark the record `pending` and leave reconciliation to the next attempt.
+- `orderIdempotency.CachedOrder` gains `orderKind: "standard" | "algo"` and `marketType`, set at claim time from the resolved params (futures + conditional/algo order type → `algo`).
+- Add `get_algo_order_by_client_id` to `binance/http/operations.ts`: `GET /fapi/v1/algoOrder` (falling back to a `clientAlgoId` filter over `get_all_algo_orders` when the single-order endpoint is unavailable) keyed by `clientAlgoId`.
+- `BrokerExecutor.reconcileOrder` selects the lookup operation from `orderKind` instead of always using `get_order_by_client_id`.
+- Until this lands and is tested, `binance` algo orders are excluded from scan-driven live execution by the capability matrix below.
 
-## Fix 4 — generic side-effect idempotency
+## Fix 5 — reconciliation capability matrix (High)
 
-Add `src/engine/idempotency/effectGuard.ts`:
+New `src/brokers/reconciliationCapabilities.ts`:
 
 ```ts
-runOnce(scope, key, fn)  // SET NX claim → run → store result; replay returns cached result
+type ReconcileSupport = "client_id" | "algo_client_id" | "position_based" | "none";
+// keyed by `${broker}:${operation}` with a per-broker default of "none"
 ```
 
-keyed by `context.emissionId ?? context.runId` + nodeId + a caller-supplied effect discriminator. Wire it into the executors that perform external mutations (webhook/HTTP mutation, Telegram/WhatsApp/notification, Gmail send, Store writes that are not idempotent by construction). Executors without `emissionId` fall back to current behaviour, so nothing regresses for manual runs.
+- Alpaca `place_order` → `client_id`; Binance standard `place_order` → `client_id`; Binance algo `place_order` → `algo_client_id` (marked `liveScanAllowed: false` until Fix 4 ships with tests); every `close_position` → `position_based`, `liveScanAllowed: false`; unknown brokers → `none`.
+- `BrokerExecutor` refuses to create an order claim for a scan-driven execution (`context.emissionId` present) when `liveScanAllowed` is false, returning `SCAN_UNSAFE_OPERATION`.
+- Graph validation surfaces the same rule as a workflow warning when `ENABLE_CONSOLIDATOR_SCAN` is on, so users see it before going live.
 
-## Config and docs
+## Fix 6 — order ownership loss (Medium)
 
-- `.env.example`: `CONSOLIDATOR_CLAIM_LEASE_SECONDS=120`, `ORDER_RECONCILE_STALE_MS=60000`.
-- `Consolidator.json`: note that scan grace applies to live scans only and is ignored in backtest/warm-up.
-- Short operator note in `coreza-backend/README.md` on in-memory restart behaviour (indicators, rolling windows, consolidator working bars do not survive a process restart) and the `ENABLE_CONSOLIDATOR_SCAN` flag.
+`BrokerExecutor`
+- Capture both `updateOrderCache` results. On `false`: log, re-read the canonical record with `getOrderFromCache`, and return that record's outcome (or `ORDER_OWNERSHIP_LOST` when the record is gone) — never report the local submission as authoritative.
+- Move the credentials/OAuth/validation checks so any direct return after a successful claim first calls `releaseOrderClaim` (new compare-and-delete in `orderIdempotency.ts`) or marks the record `failed`, so no `pending` record survives to TTL for an order that was never sent.
+
+## Fix 7 — side-effect coverage audit (Medium)
+
+- Enumerate executors reachable from a scan emission and classify each: pure, naturally idempotent, guarded, reconciled, or unsupported.
+- Add the guard to the remaining mutating paths found in the audit (RedisStore mutations, generic HTTP/webhook mutation operations, Gmail send).
+- Record the classification in a table in `coreza-backend/README.md` next to the existing in-memory-state notes, and add a comment marker on each unguarded-but-pure executor so the classification does not silently rot.
 
 ## Tests
 
-New/extended Jest specs (mocked Redis with real `SET NX` semantics):
-
-1. `consolidatorBacktestGrace.test.ts` — node grace 60s, finite `endExclusiveClock` equal to the bucket end → emits under `gracePolicy: "none"`, does not emit under `"node"`.
-2. `consolidatorEmissionClaim.test.ts` — two workers, same candidate → one downstream execution, one receipt; expired lease reclaimable; stale token cannot mark delivered.
-3. `consolidatorReceiptDrain.test.ts` — pre-seeded receipt with uncommitted state → state commits, no downstream execution.
-4. `orderIdempotencyAtomic.test.ts` — 20 concurrent identical claims → one broker submission; unknown outcome → reconcile by `client_order_id`, no duplicate.
-5. `effectGuardReplay.test.ts` — retried batch → one external mutation.
-6. Timer lifecycle with fake timers → no overlap, no backlog, no timer after stop.
+1. `consolidatorClaimRenewal.test.ts` — batch execution longer than the lease keeps the claim alive; renewal failure aborts the batch and never marks delivered.
+2. `effectGuardKeying.test.ts` — two different recipients in one emission produce two sends; identical repeats with distinct `invocationIndex` both fire; a true replay returns the cached result.
+3. `effectGuardUnknown.test.ts` — a simulated timeout leaves an `unknown` record; the retry does not re-fire and surfaces `EFFECT_OUTCOME_UNKNOWN`.
+4. `binanceAlgoReconcile.test.ts` — algo order timeout reconciles via the algo endpoint with `clientAlgoId`; no duplicate submission.
+5. `brokerScanCapability.test.ts` — `close_position` and Binance algo under a scan emission return `SCAN_UNSAFE_OPERATION`.
+6. `orderOwnershipLoss.test.ts` — a lost claim makes the executor re-read the canonical record; a post-claim credential failure leaves no `pending` record.
 
 ## Sequencing
 
-Phase A: Fix 1 + config/doc updates + test 1 (correctness, low risk).
-Phase B: Fix 2 (emission claims) + tests 2–3.
-Phase C: Fix 3 (broker claims and reconciliation) + test 4.
-Phase D: Fix 4 (generic effect guard) + test 5.
+Phase A (blockers for live beta): Fix 1, Fix 3, Fix 6 + tests 1, 3, 6.
+Phase B (correct keying): Fix 2 + test 2.
+Phase C (broker safety): Fix 5 gate first, then Fix 4 + tests 4, 5.
+Phase D: Fix 7 audit and README guarantee tables.

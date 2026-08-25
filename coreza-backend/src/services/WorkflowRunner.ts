@@ -12,8 +12,13 @@ import { WorkflowExecutionResult } from "../engine/types";
 import { RedisKeys } from "../infra/redisKeys";
 import {
   scanConsolidators,
+  commitConsolidatorEmissions,
   type ConsolidatorEmission,
 } from "../engine/consolidation/consolidatorScan";
+import {
+  findDeliveredEmissionIds,
+  recordDeliveredEmissions,
+} from "../engine/consolidation/consolidatorDeliveryReceipt";
 import {
   consolidatorDownstreamFailuresCounter,
   consolidatorEmissionsCounter,
@@ -297,15 +302,18 @@ export class WorkflowRunner {
   private startConsolidatorScanTimer(): void {
     if (process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
     const intervalMs = this.positiveEnv("CONSOLIDATOR_SCAN_INTERVAL_MS", 1_000);
-    const graceMs = this.positiveEnv("CONSOLIDATOR_SCAN_GRACE_MS", 2_000, true);
-    this.scanTimer = setInterval(() => {
+    // This default is deliberately conservative; production deployments should
+    // set it from the measured tail latency of their market-data feed.
+    const graceMs = this.positiveEnv("CONSOLIDATOR_SCAN_GRACE_MS", 60_000, true);
+    const scheduleNext = (): void => {
       if (!this.running) return;
-      void this.enqueueWork(() =>
-        this.processConsolidatorScan(new Date(Date.now() - graceMs)),
-      ).catch((error) => {
-        console.error("[WorkflowRunner] Consolidator scan failed:", error);
-      });
-    }, intervalMs);
+      this.scanTimer = setTimeout(() => {
+        void this.enqueueWork(() => this.processConsolidatorScan(new Date(), graceMs))
+          .catch((error) => console.error("[WorkflowRunner] Consolidator scan failed:", error))
+          .finally(scheduleNext);
+      }, intervalMs);
+    };
+    scheduleNext();
   }
 
   private positiveEnv(name: string, fallback: number, allowZero = false): number {
@@ -313,14 +321,25 @@ export class WorkflowRunner {
     return Number.isFinite(parsed) && (allowZero ? parsed >= 0 : parsed > 0) ? parsed : fallback;
   }
 
-  private async processConsolidatorScan(scanTime: Date): Promise<void> {
+  private async processConsolidatorScan(scanTime: Date, graceMs: number): Promise<void> {
     consolidatorScansCounter.inc();
     const stopTimer = consolidatorScanLatencyHistogram.startTimer();
     let emissions: ConsolidatorEmission[];
     try {
-      emissions = scanConsolidators(this.engine.getDataContext(), scanTime);
+      emissions = scanConsolidators(this.engine.getDataContext(), scanTime, { commit: false, graceMs });
     } finally {
       stopTimer();
+    }
+    if (emissions.length === 0) return;
+    const deliveredIds = await findDeliveredEmissionIds(
+      this.userId,
+      this.executionId,
+      emissions.map((emission) => emission.emissionId),
+    );
+    if (deliveredIds.size > 0) {
+      const alreadyDelivered = emissions.filter((emission) => deliveredIds.has(emission.emissionId));
+      commitConsolidatorEmissions(this.engine.getDataContext(), alreadyDelivered);
+      emissions = emissions.filter((emission) => !deliveredIds.has(emission.emissionId));
     }
     if (emissions.length === 0) return;
     consolidatorEmissionsCounter.inc(emissions.length);
@@ -334,7 +353,17 @@ export class WorkflowRunner {
     }, this.executionId);
     this.engine.setRunId(runId);
     try {
-      const result = await this.engine.executeInjectedResults(emissions);
+      const result = await this.engine.executeInjectedResults(
+        emissions,
+        async (delivered) => {
+          await recordDeliveredEmissions(
+            this.userId,
+            this.executionId,
+            delivered.map((emission) => emission.emissionId),
+          );
+          commitConsolidatorEmissions(this.engine.getDataContext(), delivered);
+        },
+      );
       if (result.success) {
         await this.recordSuccess(runId, result, "consolidator_scan");
       } else {
@@ -468,7 +497,7 @@ export class WorkflowRunner {
 
   async stop(): Promise<void> {
     this.running = false;
-    if (this.scanTimer) clearInterval(this.scanTimer);
+    if (this.scanTimer) clearTimeout(this.scanTimer);
     await this.workChain;
     this.abortController.abort();
     this.engine.destroy();

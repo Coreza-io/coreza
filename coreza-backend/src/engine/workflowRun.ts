@@ -32,10 +32,13 @@ interface WorkflowRunOptions {
 interface ExecutionContextExtras {
   multiBarContext?: MultiBarExecutionContext;
   runId?: string;
+  isWarmingUp?: boolean;
+  emissionId?: string;
 }
 
 export class WorkflowRun {
   private _lastBuildResultMs = 0;
+  private executionContextExtras: ExecutionContextExtras = {};
 
   private readonly store: NodeStoreV2;
   private runtime: BaseExecutionRuntime;
@@ -147,17 +150,61 @@ export class WorkflowRun {
 
   async executeInjectedResults(
     emissions: readonly ConsolidatorEmission[],
+    onBatchSuccess?: (delivered: readonly ConsolidatorEmission[]) => void | Promise<void>,
   ): Promise<WorkflowExecutionResult> {
-    return this.runExecution(() => {
-      this.runtime.resetForNextBar(true);
-      for (const emission of emissions) {
-        this.ensureNodeExists(emission.nodeId);
-        this.runtime.injectResult(emission.nodeId, {
-          success: true,
-          data: emission.payload,
-        });
+    const groups = new Map<string, ConsolidatorEmission[]>();
+    for (const emission of emissions) {
+      const endTimestamp = emission.payload.bar?.endTimestamp;
+      if (!endTimestamp) throw new Error(`Consolidator emission ${emission.emissionId} has no bucket end timestamp`);
+      const key = `${endTimestamp}\u0000${emission.payload.symbol}`;
+      const group = groups.get(key) ?? [];
+      group.push(emission);
+      groups.set(key, group);
+    }
+    const aggregate: WorkflowExecutionResult = {
+      success: true,
+      nodeResults: {},
+      executionOrder: [],
+      timing: {},
+      executionBatches: [],
+    };
+    const orderedGroups = [...groups.values()].sort((left, right) =>
+      (left[0].payload.bar?.endTimestamp ?? "").localeCompare(right[0].payload.bar?.endTimestamp ?? "") ||
+      left[0].payload.symbol.localeCompare(right[0].payload.symbol));
+
+    for (const group of orderedGroups) {
+      this.runtime.setExecutionContextExtras({
+        ...this.executionContextExtras,
+        emissionId: group.map((emission) => emission.emissionId).sort().join("|"),
+      });
+      const result = await this.runExecution(() => {
+        this.runtime.resetForNextBar(true);
+        for (const emission of group) {
+          this.ensureNodeExists(emission.nodeId);
+          this.runtime.injectResult(emission.nodeId, { success: true, data: emission.payload });
+        }
+      });
+      aggregate.executionBatches?.push({
+        symbol: group[0].payload.symbol,
+        endTimestamp: group[0].payload.bar?.endTimestamp ?? "",
+        emissionIds: group.map((emission) => emission.emissionId),
+        nodeResults: result.nodeResults,
+        executionOrder: [...result.executionOrder],
+      });
+      Object.assign(aggregate.nodeResults, result.nodeResults);
+      aggregate.executionOrder.push(...result.executionOrder);
+      for (const [nodeId, timing] of Object.entries(result.timing ?? {})) {
+        const previous = aggregate.timing?.[nodeId];
+        const totalMs = (previous?.totalMs ?? 0) + timing.totalMs;
+        const count = (previous?.count ?? 0) + timing.count;
+        if (aggregate.timing) {
+          aggregate.timing[nodeId] = { totalMs, count, avgMs: count === 0 ? 0 : totalMs / count };
+        }
       }
-    });
+      if (!result.success) return { ...aggregate, success: false, error: result.error };
+      await onBatchSuccess?.(group);
+    }
+    return aggregate;
   }
 
   resetForNextBar(full = false): void {
@@ -228,11 +275,13 @@ export class WorkflowRun {
   }
 
   setExecutionContextExtras(extras: ExecutionContextExtras): void {
+    this.executionContextExtras = extras;
     this.runtime.setExecutionContextExtras(extras);
   }
 
   setRunId(runId: string): void {
-    this.runtime.setExecutionContextExtras({ runId });
+    this.executionContextExtras = { ...this.executionContextExtras, runId, emissionId: undefined };
+    this.runtime.setExecutionContextExtras(this.executionContextExtras);
   }
 
   checkCancellation(): boolean {

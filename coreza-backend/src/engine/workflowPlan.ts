@@ -36,6 +36,28 @@ export class WorkflowPlan {
     const graph = new GraphRuntime(nodes, edges);
     const resolver = new ParameterResolver(nodes);
 
+    if (process.env.ENABLE_CONSOLIDATOR_SCAN === "true") {
+      const nodesById = new Map(nodes.map((node) => [node.id, node]));
+      const parentsByTarget = new Map<string, WorkflowNode[]>();
+      for (const edge of edges) {
+        const source = nodesById.get(edge.source);
+        if (!source) continue;
+        const parents = parentsByTarget.get(edge.target) ?? [];
+        parents.push(source);
+        parentsByTarget.set(edge.target, parents);
+      }
+      for (const [targetId, parents] of parentsByTarget) {
+        const hasConsolidator = parents.some((node) => node.name === "Consolidator");
+        const hasRegularParent = parents.some((node) => node.name !== "Consolidator");
+        if (hasConsolidator && hasRegularParent) {
+          console.warn(
+            `[WorkflowPlan] Mixed consolidator join at node ${targetId} is not triggered by clock scans; ` +
+            "use an all-consolidator join or a separate bounded payload cache",
+          );
+        }
+      }
+    }
+
     const executorMap = new Map<string, INodeExecutor>();
     for (const node of nodes) {
       const exec = getNodeExecutor(resolveCategory(node));

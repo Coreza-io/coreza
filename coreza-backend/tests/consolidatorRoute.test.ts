@@ -189,8 +189,42 @@ describe("POST /storage/consolidator", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       success: true,
-      data: { emitted: true, emissionReason: "time_scan", bar: { open: 1 } },
-      meta: { nodeId: "consolidator-1", emissionCount: 1 },
+      data: [{ emitted: true, emissionReason: "time_scan", bar: { open: 1 } }],
+      meta: { nodeId: "consolidator-1", emissionCount: 1, dryRun: true },
     });
+
+    const retry = await request(app).post("/storage/consolidator").send({
+      operation: "scan", workflowSessionId: executionId, workflowId: "workflow-1",
+      node_id: "consolidator-1", current_time: "2026-01-01T04:00:00Z",
+    });
+    expect(retry.body.meta.emissionCount).toBe(1);
+  });
+
+  it("rejects a future scan clock for a live run", async () => {
+    const response = await request(app).post("/storage/consolidator").send({
+      operation: "scan",
+      runId: executionId,
+      workflowId: "workflow-1",
+      node_id: "consolidator-1",
+      current_time: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain("future");
+  });
+
+  it("rejects ambiguous execution identifiers", async () => {
+    const response = await request(app).post("/storage/consolidator").send({
+      operation: "scan",
+      runId: executionId,
+      workflowSessionId: "manual-alias",
+      workflowId: "workflow-1",
+      node_id: "consolidator-1",
+      current_time: new Date().toISOString(),
+      dryRun: false,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain("exactly one");
   });
 });

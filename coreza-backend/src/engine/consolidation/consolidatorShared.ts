@@ -1,8 +1,8 @@
-import type { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar } from "../../utils/barParser";
 import { validateTimeframeRatio } from "../../utils/timeframe";
 import {
   TimeBarConsolidator,
+  type ConsolidatedBar,
   type ConsolidatorState,
 } from "./TimeBarConsolidator";
 
@@ -16,14 +16,16 @@ export interface ConsolidatorParameters {
 }
 
 export interface ConsolidatorPayload {
+  emissionId?: string;
   emitted: boolean;
-  bar: Bar | null;
-  workingBar: Bar | null;
+  bar: ConsolidatedBar | null;
+  workingBar: ConsolidatedBar | null;
   emissionReason: "boundary_input" | "time_scan" | null;
   emittedAt: string | null;
   symbol: string;
   sourceTimeframe: string;
   targetTimeframe: string;
+  lateBarDropped?: boolean;
 }
 
 export interface ConsolidatorStepResult {
@@ -126,7 +128,8 @@ export function isConsolidatorState(value: unknown): value is ConsolidatorState 
   const state = value as Partial<ConsolidatorState>;
   return Number.isSafeInteger(state.sourceBarCount) &&
     (state.sourceBarCount ?? -1) >= 0 &&
-    (state.workingBar === undefined || parseBar(state.workingBar) !== null) &&
+    (state.workingBar === undefined || (parseBar(state.workingBar) !== null &&
+      Number.isFinite(new Date(state.workingBar.endTimestamp).getTime()))) &&
     (state.lastInput === undefined || parseBar(state.lastInput) !== null) &&
     (state.lastEmittedEndTimestamp === undefined ||
       Number.isFinite(new Date(state.lastEmittedEndTimestamp).getTime()));

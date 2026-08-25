@@ -33,7 +33,7 @@ export type RuntimeOptions = {
 };
 
 type ExecutionContextExtras = Partial<
-  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp">
+  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp" | "emissionId">
 >;
 
 export abstract class BaseExecutionRuntime {
@@ -403,6 +403,8 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   resetForNextBar(full = false): void {
     this.store.clearResults();
     this.queue.clear();
+    this.failed.clear();
+    this.failedNodeErrors.clear();
     this.enqueuedKeys.clear();
     this.executionOrder.length = 0;
     if (full) this.edgePayload.clear();
@@ -475,6 +477,8 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.store.clearResults();
     this.lastStoreClearMs = performance.now() - t0;
     this.queue.clear();
+    this.failed.clear();
+    this.failedNodeErrors.clear();
     this.satisfiedCounts.clear();
     this.executionOrder.length = 0;
     if (full) this.execCtx = null;

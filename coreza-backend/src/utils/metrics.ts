@@ -61,6 +61,11 @@ export const consolidatorDownstreamFailuresCounter = new client.Counter({
   help: 'Total number of failed downstream executions initiated by consolidator scans',
 });
 
+export const consolidatorInvalidStatesCounter = new client.Counter({
+  name: "coreza_consolidator_invalid_states_total",
+  help: "Number of corrupt consolidator states skipped during clock scans",
+});
+
 // Recovery metrics
 export const workflowRecoveryCounter = new client.Counter({
   name: 'coreza_workflow_recovery_total',

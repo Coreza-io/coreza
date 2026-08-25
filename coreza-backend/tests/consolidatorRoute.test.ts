@@ -212,4 +212,19 @@ describe("POST /storage/consolidator", () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toContain("future");
   });
+
+  it("rejects ambiguous execution identifiers", async () => {
+    const response = await request(app).post("/storage/consolidator").send({
+      operation: "scan",
+      runId: executionId,
+      workflowSessionId: "manual-alias",
+      workflowId: "workflow-1",
+      node_id: "consolidator-1",
+      current_time: new Date().toISOString(),
+      dryRun: false,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain("exactly one");
+  });
 });

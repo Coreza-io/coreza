@@ -5,7 +5,7 @@
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "Consolidator",
-  "description": "Aggregates source bars into left-closed/right-open higher-timeframe UTC or timezone-aligned bars. Input-driven only: a completed bar is emitted when the next bucket receives input; partial final bars are not flushed.",
+  "description": "Aggregates source bars into left-closed/right-open higher-timeframe UTC or timezone-aligned bars. Completed buckets emit on boundary input or, when ENABLE_CONSOLIDATOR_SCAN is enabled, after the clock reaches the bucket end plus the configured feed-latency grace.",
   "color": "#6366f1",
   "size": { "width": 300, "height": 420 },
   "handles": [
@@ -19,7 +19,8 @@
     { "key": "source_timeframe", "type": "text", "label": "Source Timeframe", "required": true, "default": "1h", "placeholder": "e.g. 1h" },
     { "key": "target_timeframe", "type": "text", "label": "Target Timeframe", "required": true, "default": "4h", "placeholder": "e.g. 4h" },
     { "key": "timezone", "type": "text", "label": "Timezone", "default": "UTC", "placeholder": "e.g. America/New_York", "description": "Optional IANA timezone used for bucket alignment and DST." },
-    { "key": "anchor_time", "type": "text", "label": "Anchor Time", "placeholder": "09:30", "description": "Optional local HH:mm bucket anchor." }
+    { "key": "anchor_time", "type": "text", "label": "Anchor Time", "placeholder": "09:30", "description": "Optional local HH:mm bucket anchor." },
+    { "key": "scan_grace_ms", "type": "number", "label": "Scan Grace (ms)", "required": false, "placeholder": "60000", "description": "Optional clock-scan delay for this feed. Set from measured source latency; overrides the server default." }
   ],
   "output": {
     "description": "Held inputs return emitted=false and suppress downstream routing. Boundary inputs return emitted=true with bar (completed bucket) and workingBar (new partial bucket).",

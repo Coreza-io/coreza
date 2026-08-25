@@ -1,8 +1,8 @@
-import type { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar } from "../../utils/barParser";
 import { validateTimeframeRatio } from "../../utils/timeframe";
 import {
   TimeBarConsolidator,
+  type ConsolidatedBar,
   type ConsolidatorState,
 } from "./TimeBarConsolidator";
 
@@ -18,13 +18,14 @@ export interface ConsolidatorParameters {
 export interface ConsolidatorPayload {
   emissionId?: string;
   emitted: boolean;
-  bar: Bar | null;
-  workingBar: Bar | null;
+  bar: ConsolidatedBar | null;
+  workingBar: ConsolidatedBar | null;
   emissionReason: "boundary_input" | "time_scan" | null;
   emittedAt: string | null;
   symbol: string;
   sourceTimeframe: string;
   targetTimeframe: string;
+  lateBarDropped?: boolean;
 }
 
 export interface ConsolidatorStepResult {

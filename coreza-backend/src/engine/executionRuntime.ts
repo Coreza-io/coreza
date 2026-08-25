@@ -33,7 +33,7 @@ export type RuntimeOptions = {
 };
 
 type ExecutionContextExtras = Partial<
-  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp">
+  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp" | "emissionId">
 >;
 
 export abstract class BaseExecutionRuntime {

@@ -64,6 +64,9 @@ export const RedisKeys = {
   ): string =>
     `RollingWindow:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${symbol}:${timeframe}`,
 
+  consolidatorDelivery: (userId: string, executionId: string, emissionId: string): string =>
+    `consolidator-delivery:userId:${userId}:executionId:${executionId}:${emissionId}`,
+
   executionPattern: (
     userId: string,
     workflowId: string,

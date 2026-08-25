@@ -133,7 +133,7 @@ export class WorkflowEngine {
 
   async executeInjectedResults(
     emissions: readonly ConsolidatorEmission[],
-    onBatchSuccess?: (delivered: readonly ConsolidatorEmission[]) => void,
+    onBatchSuccess?: (delivered: readonly ConsolidatorEmission[]) => void | Promise<void>,
   ): Promise<WorkflowExecutionResult> {
     return this.run.executeInjectedResults(emissions, onBatchSuccess);
   }

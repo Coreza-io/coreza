@@ -47,7 +47,21 @@ describe("consolidator clock scan", () => {
     scanConsolidators(dataContext, "2026-01-01T04:00:00Z");
     const before = (await consolidatorLateBarRejectsCounter.get()).values[0]?.value ?? 0;
     expect(executor.execute(node, { candle_data: { ...input, timestamp: "2026-01-01T03:00:00Z" } }, context))
-      .toMatchObject({ success: true, data: { lateBarDropped: true }, control: { suppressDownstream: true } });
+      .toMatchObject({
+        success: true,
+        data: {
+          emitted: false,
+          bar: null,
+          workingBar: null,
+          emissionReason: null,
+          emittedAt: null,
+          symbol: "SPY",
+          sourceTimeframe: "1h",
+          targetTimeframe: "4h",
+          lateBarDropped: true,
+        },
+        control: { suppressDownstream: true },
+      });
     const after = (await consolidatorLateBarRejectsCounter.get()).values[0]?.value ?? 0;
     expect(after).toBe(before + 1);
   });

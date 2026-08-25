@@ -16,6 +16,10 @@ import {
   type ConsolidatorEmission,
 } from "../engine/consolidation/consolidatorScan";
 import {
+  findDeliveredEmissionIds,
+  recordDeliveredEmissions,
+} from "../engine/consolidation/consolidatorDeliveryReceipt";
+import {
   consolidatorDownstreamFailuresCounter,
   consolidatorEmissionsCounter,
   consolidatorScanLatencyHistogram,
@@ -301,14 +305,15 @@ export class WorkflowRunner {
     // This default is deliberately conservative; production deployments should
     // set it from the measured tail latency of their market-data feed.
     const graceMs = this.positiveEnv("CONSOLIDATOR_SCAN_GRACE_MS", 60_000, true);
-    this.scanTimer = setInterval(() => {
+    const scheduleNext = (): void => {
       if (!this.running) return;
-      void this.enqueueWork(() =>
-        this.processConsolidatorScan(new Date(), graceMs),
-      ).catch((error) => {
-        console.error("[WorkflowRunner] Consolidator scan failed:", error);
-      });
-    }, intervalMs);
+      this.scanTimer = setTimeout(() => {
+        void this.enqueueWork(() => this.processConsolidatorScan(new Date(), graceMs))
+          .catch((error) => console.error("[WorkflowRunner] Consolidator scan failed:", error))
+          .finally(scheduleNext);
+      }, intervalMs);
+    };
+    scheduleNext();
   }
 
   private positiveEnv(name: string, fallback: number, allowZero = false): number {
@@ -326,6 +331,17 @@ export class WorkflowRunner {
       stopTimer();
     }
     if (emissions.length === 0) return;
+    const deliveredIds = await findDeliveredEmissionIds(
+      this.userId,
+      this.executionId,
+      emissions.map((emission) => emission.emissionId),
+    );
+    if (deliveredIds.size > 0) {
+      const alreadyDelivered = emissions.filter((emission) => deliveredIds.has(emission.emissionId));
+      commitConsolidatorEmissions(this.engine.getDataContext(), alreadyDelivered);
+      emissions = emissions.filter((emission) => !deliveredIds.has(emission.emissionId));
+    }
+    if (emissions.length === 0) return;
     consolidatorEmissionsCounter.inc(emissions.length);
     const runId = randomUUID();
     await createRunInRedis(this.userId, this.workflowId, runId, {
@@ -339,7 +355,14 @@ export class WorkflowRunner {
     try {
       const result = await this.engine.executeInjectedResults(
         emissions,
-        (delivered) => commitConsolidatorEmissions(this.engine.getDataContext(), delivered),
+        async (delivered) => {
+          await recordDeliveredEmissions(
+            this.userId,
+            this.executionId,
+            delivered.map((emission) => emission.emissionId),
+          );
+          commitConsolidatorEmissions(this.engine.getDataContext(), delivered);
+        },
       );
       if (result.success) {
         await this.recordSuccess(runId, result, "consolidator_scan");
@@ -474,7 +497,7 @@ export class WorkflowRunner {
 
   async stop(): Promise<void> {
     this.running = false;
-    if (this.scanTimer) clearInterval(this.scanTimer);
+    if (this.scanTimer) clearTimeout(this.scanTimer);
     await this.workChain;
     this.abortController.abort();
     this.engine.destroy();

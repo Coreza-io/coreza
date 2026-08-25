@@ -68,13 +68,23 @@ router.post("/consolidator", (req: Request, res: Response) => {
     current_time: currentTime,
     dryRun = true,
   } = req.body;
-  const executionId = runId ?? workflowSessionId ?? backtestId;
-  if (!executionId) {
+  const identifiers = [runId, workflowSessionId, backtestId].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
+  if (identifiers.length === 0) {
     return res.status(400).json({
       success: false,
       error: "runId, workflowSessionId, or backtestId is required",
     });
   }
+  if (identifiers.length !== 1) {
+    return res.status(400).json({
+      success: false,
+      error: "Provide exactly one of runId, workflowSessionId, or backtestId",
+    });
+  }
+  const executionId = identifiers[0];
+  const sessionType = runId === executionId ? "live" : backtestId === executionId ? "backtest" : "manual";
   if (typeof nodeId !== "string" || !nodeId.trim()) {
     return res.status(400).json({ success: false, error: "node_id is required" });
   }
@@ -120,11 +130,10 @@ router.post("/consolidator", (req: Request, res: Response) => {
       if (!Number.isFinite(scanTimestamp)) {
         return res.status(400).json({ success: false, error: "current_time must be a valid timestamp" });
       }
-      const isManualSession = typeof workflowSessionId === "string" || typeof backtestId === "string";
-      if (!isManualSession && scanTimestamp > Date.now()) {
+      if (sessionType === "live" && scanTimestamp > Date.now()) {
         return res.status(400).json({ success: false, error: "current_time cannot be in the future for a live session" });
       }
-      if (dryRun === false && !isManualSession) {
+      if (dryRun === false && sessionType === "live") {
         return res.status(400).json({ success: false, error: "Mutating scans require an explicit manual session" });
       }
       const normalizedNodeId = nodeId.trim();

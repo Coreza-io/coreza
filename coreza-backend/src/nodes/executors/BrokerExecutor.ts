@@ -115,7 +115,7 @@ export class BrokerExecutor implements INodeExecutor {
         idempotencyKey = generateIdempotencyKey({
           workflowId,
           nodeId: node.id,
-          runId: context?.runId ?? `manual-${Date.now()}`,
+          runId: context?.emissionId ?? context?.runId ?? `manual-${Date.now()}`,
           symbol: resolvedParams.symbol ?? "",
           side:
             operation === "close_position"

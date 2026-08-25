@@ -13,13 +13,16 @@ export class ConsolidatorExecutor implements INodeExecutor {
   readonly syncCapable = true;
 
   execute(node: WorkflowNode, input: NodeInput, context?: NodeExecutionContext): NodeResult {
+    let symbol = "";
+    let sourceTimeframe = "";
+    let targetTimeframe = "";
     try {
       const params = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
-      const symbol = String(params.symbol ?? "").trim();
-      const sourceTimeframe = String(params.source_timeframe ?? "").trim();
-      const targetTimeframe = String(params.target_timeframe ?? "").trim();
+      symbol = String(params.symbol ?? "").trim();
+      sourceTimeframe = String(params.source_timeframe ?? "").trim();
+      targetTimeframe = String(params.target_timeframe ?? "").trim();
       const timezone = String(params.timezone ?? "UTC").trim() || "UTC";
       const anchorTime = String(params.anchor_time ?? "").trim();
       const requestedScanGraceMs = Number(params.scan_grace_ms);
@@ -60,6 +63,7 @@ export class ConsolidatorExecutor implements INodeExecutor {
         targetTimeframe: result.payload.targetTimeframe,
         timezone,
         anchorTime,
+        ...(scanGraceMs === undefined ? {} : { scanGraceMs }),
       });
       return {
         success: true,
@@ -71,7 +75,17 @@ export class ConsolidatorExecutor implements INodeExecutor {
         consolidatorLateBarRejectsCounter.inc();
         return {
           success: true,
-          data: { emitted: false, bar: null, lateBarDropped: true },
+          data: {
+            emitted: false,
+            bar: null,
+            workingBar: null,
+            emissionReason: null,
+            emittedAt: null,
+            symbol,
+            sourceTimeframe,
+            targetTimeframe,
+            lateBarDropped: true,
+          },
           control: { suppressDownstream: true },
         };
       }

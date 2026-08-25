@@ -73,7 +73,7 @@ describe("consolidator scan routing", () => {
     });
     const payload = {
       emitted: true,
-      bar: { timestamp: "2026-01-01T00:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
+      bar: { timestamp: "2026-01-01T00:00:00Z", endTimestamp: "2026-01-01T04:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
       workingBar: null,
       emissionReason: "time_scan" as const,
       emittedAt: "2026-01-01T04:00:00Z",
@@ -109,7 +109,7 @@ describe("consolidator scan routing", () => {
     });
     const payload = {
       emitted: true,
-      bar: { timestamp: "2026-01-01T00:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
+      bar: { timestamp: "2026-01-01T00:00:00Z", endTimestamp: "2026-01-01T04:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
       workingBar: null,
       emissionReason: "time_scan" as const,
       emittedAt: "2026-01-01T04:00:00Z",
@@ -136,6 +136,40 @@ describe("consolidator scan routing", () => {
     run.destroy();
   });
 
+  it("separates one symbol into ascending logical-clock passes", async () => {
+    const clockNodes: WorkflowNode[] = [
+      nodes[0], nodes[1],
+      { id: "after-4h", name: "Compute", node_type: "main", category: "Data", values: {} },
+      { id: "after-1d", name: "Compute", node_type: "main", category: "Data", values: {} },
+    ];
+    const run = WorkflowPlan.compile(clockNodes, [
+      { id: "4h-downstream", source: "scan-a", target: "after-4h" },
+      { id: "1d-downstream", source: "scan-b", target: "after-1d" },
+    ], "manual").createRun({
+      executionId: "injected-clock-routing", workflowId: "workflow", userId: "user",
+      executionMode: "manual", flushPolicy: "never",
+    });
+    const bar = { timestamp: "2026-01-01T00:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 };
+    const payload = {
+      emitted: true, workingBar: null, emissionReason: "time_scan" as const,
+      emittedAt: "2026-01-02T00:00:00Z", symbol: "SPY", sourceTimeframe: "1h", targetTimeframe: "4h",
+    };
+
+    const result = await run.executeInjectedResults([
+      { nodeId: "scan-b", emissionId: "daily", payload: { ...payload, targetTimeframe: "1d", bar: { ...bar, endTimestamp: "2026-01-02T00:00:00Z" } } },
+      { nodeId: "scan-a", emissionId: "four-hour", payload: { ...payload, bar: { ...bar, endTimestamp: "2026-01-01T16:00:00Z" } } },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.executionOrder).toEqual(["scan-a", "after-4h", "scan-b", "after-1d"]);
+    expect(result.nodeResults).toMatchObject({ "after-4h": { success: true }, "after-1d": { success: true } });
+    expect(result.executionBatches).toMatchObject([
+      { endTimestamp: "2026-01-01T16:00:00Z", emissionIds: ["four-hour"] },
+      { endTimestamp: "2026-01-02T00:00:00Z", emissionIds: ["daily"] },
+    ]);
+    run.destroy();
+  });
+
   it("reports only successfully delivered symbol batches to the commit callback", async () => {
     const run = WorkflowPlan.compile([nodes[0], nodes[2]], [edges[0]], "manual").createRun({
       executionId: "injected-retry-routing", workflowId: "workflow", userId: "user",
@@ -143,7 +177,7 @@ describe("consolidator scan routing", () => {
     });
     const payload = {
       emitted: true,
-      bar: { timestamp: "2026-01-01T00:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
+      bar: { timestamp: "2026-01-01T00:00:00Z", endTimestamp: "2026-01-01T04:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
       workingBar: null, emissionReason: "time_scan" as const,
       emittedAt: "2026-01-01T04:00:00Z", symbol: "SPY", sourceTimeframe: "1h", targetTimeframe: "4h",
     };
@@ -153,7 +187,9 @@ describe("consolidator scan routing", () => {
     const result = await run.executeInjectedResults([
       { nodeId: "scan-a", emissionId: "run:scan-a:SPY:end", payload },
       { nodeId: "scan-a", emissionId: "run:scan-a:QQQ:end", payload: { ...payload, symbol: "QQQ" } },
-    ], (batch) => committed.push(...batch.map((emission) => emission.emissionId)));
+    ], (batch) => {
+      committed.push(...batch.map((emission) => emission.emissionId));
+    });
 
     expect(result.success).toBe(false);
     expect(committed).toEqual(["run:scan-a:SPY:end"]);

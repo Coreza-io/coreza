@@ -19,6 +19,7 @@ export interface ConsolidatorScanOptions {
   nodeId?: string;
   commit?: boolean;
   graceMs?: number;
+  gracePolicy?: "node" | "none";
 }
 
 interface ConsolidatorMetadata {
@@ -68,7 +69,9 @@ export function scanConsolidators(
     }
     const state: ConsolidatorState = storedState;
     const parameters: ConsolidatorParameters = metadata;
-    const graceMs = metadata.scanGraceMs ?? options.graceMs ?? 0;
+    const graceMs = options.gracePolicy === "none"
+      ? 0
+      : metadata.scanGraceMs ?? options.graceMs ?? 0;
     const effectiveScanTimestamp = new Date(scanTimestamp.getTime() - graceMs);
     const result = new TimeBarConsolidator(parameters).scan(effectiveScanTimestamp, state);
     if (!result.emitted) continue;
@@ -86,6 +89,7 @@ export function scanConsolidators(
         bar: result.emitted,
         workingBar: null,
         emissionReason: "time_scan",
+        appliedGraceMs: graceMs,
         emittedAt: result.emittedAt ?? effectiveScanTimestamp.toISOString(),
         symbol: metadata.symbol,
         sourceTimeframe: metadata.sourceTimeframe,
@@ -106,4 +110,14 @@ export function commitConsolidatorEmissions(
     const commit = emission.pendingCommit;
     if (commit) dataContext.setData(commit.ref, commit.state, commit.metadata);
   }
+}
+
+export function drainDeliveredConsolidatorEmissions(
+  dataContext: DataContext,
+  emissions: readonly ConsolidatorEmission[],
+  deliveredIds: ReadonlySet<string>,
+): ConsolidatorEmission[] {
+  const delivered = emissions.filter((emission) => deliveredIds.has(emission.emissionId));
+  commitConsolidatorEmissions(dataContext, delivered);
+  return emissions.filter((emission) => !deliveredIds.has(emission.emissionId));
 }

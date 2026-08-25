@@ -368,6 +368,18 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       orders: raw,
     }),
   },
+  get_order_by_client_id: {
+    method: "get",
+    path: (input: any) => getMarketType(input) === "futures"
+      ? "/fapi/v1/order"
+      : "/api/v3/order",
+    makeParams: (input: any, creds: any) => signParams(creds, {
+      symbol: input.symbol,
+      origClientOrderId: input.client_order_id,
+      recvWindow: 60000,
+      timestamp: getBinanceTimestamp(getEnvironment(input), getMarketType(input)),
+    }),
+  },
   get_open_algo_orders: {
     method: "get",
     path: () => "/fapi/v1/openAlgoOrders",

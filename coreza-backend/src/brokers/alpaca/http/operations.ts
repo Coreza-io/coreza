@@ -133,6 +133,15 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         ? normalizeCryptoSymbolsInPayload(raw)
         : raw,
   },
+  get_order_by_client_id: {
+    method: "get",
+    path: "/v2/orders:by_client_order_id",
+    makeParams: (input: any) => ({ client_order_id: input.client_order_id }),
+    transformResult: (raw: any, input: any) =>
+      getAssetType(input) === "crypto"
+        ? normalizeCryptoSymbolsInPayload(raw)
+        : raw,
+  },
   cancel_orders: {
     method: "delete",
     path: "/v2/orders",

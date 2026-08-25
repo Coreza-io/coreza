@@ -22,9 +22,11 @@ jest.mock("../src/services/OrderOwnerRegistry", () => ({
   },
 }));
 jest.mock("../src/utils/orderIdempotency", () => ({
-  cacheOrderIntent: jest.fn().mockResolvedValue(undefined),
+  claimOrderIntent: jest.fn().mockResolvedValue({ claimed: true }),
+  cacheReconciledOrder: jest.fn().mockResolvedValue(true),
   generateIdempotencyKey: jest.fn().mockReturnValue("idem-1"),
   getOrderFromCache: jest.fn().mockResolvedValue(null),
+  takeOverOrderIntent: jest.fn().mockResolvedValue(true),
   updateOrderCache: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -159,6 +161,7 @@ describe("Dhan place_order enrichment", () => {
       "user-1",
       "workflow-1",
       "idem-1",
+      expect.any(String),
       "success",
       expect.objectContaining({ exchangeOrderId: "exchange-1" }),
       "order-1",

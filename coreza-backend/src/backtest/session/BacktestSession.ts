@@ -709,7 +709,10 @@ export class BacktestSession {
 
   private async executeConsolidatorClock(timestamp: string): Promise<void> {
     if (process.env.ENABLE_CONSOLIDATOR_SCAN !== "true") return;
-    const emissions = scanConsolidators(this.run.getDataContext(), timestamp, { commit: false });
+    const emissions = scanConsolidators(this.run.getDataContext(), timestamp, {
+      commit: false,
+      gracePolicy: "none",
+    });
     if (emissions.length === 0) return;
     this.run.setExecutionContextExtras({
       isWarmingUp: this.phase === "warming_up",

@@ -5,7 +5,7 @@
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "Consolidator",
-  "description": "Aggregates source bars into left-closed/right-open higher-timeframe UTC or timezone-aligned bars. Completed buckets emit on boundary input or, when ENABLE_CONSOLIDATOR_SCAN is enabled, after the clock reaches the bucket end plus the configured feed-latency grace.",
+  "description": "Aggregates source bars into left-closed/right-open higher-timeframe UTC or timezone-aligned bars. Completed buckets emit on boundary input or, when ENABLE_CONSOLIDATOR_SCAN is enabled, after the live clock reaches the bucket end plus the configured feed-latency grace. Scan grace is ignored during backtest and warm-up.",
   "color": "#6366f1",
   "size": { "width": 300, "height": 420 },
   "handles": [

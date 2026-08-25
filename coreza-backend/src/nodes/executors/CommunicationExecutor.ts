@@ -15,6 +15,7 @@ import {
   createErrorOutput,
   toNodeResult,
 } from "../../utils/normalizeOutput";
+import { effectKey, runOnce } from "../../engine/idempotency/effectGuard";
 
 export class CommunicationExecutor implements INodeExecutor {
   readonly category = "Communication";
@@ -49,13 +50,24 @@ export class CommunicationExecutor implements INodeExecutor {
         : { ...node.values, ...input };
 
       // Execute via registry service
-      const result = await service.execute({
-        operation,
-        user_id,
-        credential_id,
-        ...input,
-        ...resolvedParams,
-      });
+      const executeEffect = () => service.execute({
+          operation,
+          user_id,
+          credential_id,
+          ...input,
+          ...resolvedParams,
+        });
+      const result = context?.emissionId
+        ? await runOnce(
+          {
+            userId: context.userId ?? user_id ?? "system",
+            workflowId: context.workflowId ?? "manual",
+            executionId: context.executionId ?? context.runId ?? "manual",
+          },
+          effectKey(context.emissionId, node.id, `${serviceKey}:${operation}`),
+          executeEffect,
+        )
+        : await executeEffect();
 
       const normalized = normalizeOutput(result);
       return toNodeResult(normalized);

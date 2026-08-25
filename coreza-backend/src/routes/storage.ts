@@ -63,6 +63,7 @@ router.post("/consolidator", (req: Request, res: Response) => {
     timezone: requestedTimezone,
     anchor_time: requestedAnchorTime,
     scan_grace_ms: requestedScanGraceMs,
+    grace_policy: requestedGracePolicy,
     candle_data: candleData,
     operation = "update",
     current_time: currentTime,
@@ -123,6 +124,9 @@ router.post("/consolidator", (req: Request, res: Response) => {
     }
 
     if (operation === "scan") {
+      if (requestedGracePolicy !== undefined && requestedGracePolicy !== "node" && requestedGracePolicy !== "none") {
+        return res.status(400).json({ success: false, error: "grace_policy must be 'node' or 'none'" });
+      }
       if (currentTime === undefined) {
         return res.status(400).json({ success: false, error: "current_time is required for scan" });
       }
@@ -137,14 +141,16 @@ router.post("/consolidator", (req: Request, res: Response) => {
         return res.status(400).json({ success: false, error: "Mutating scans require an explicit manual session" });
       }
       const normalizedNodeId = nodeId.trim();
+      const gracePolicy: "node" | "none" = requestedGracePolicy ?? (sessionType === "live" ? "node" : "none");
       const emissions = scanConsolidators(dataContext, currentTime, {
         nodeId: normalizedNodeId,
         commit: dryRun === false,
+        gracePolicy,
       });
       return res.json({
         success: true,
         data: emissions.map((emission) => emission.payload),
-        meta: { nodeId: normalizedNodeId, emissionCount: emissions.length, dryRun: dryRun !== false },
+        meta: { nodeId: normalizedNodeId, emissionCount: emissions.length, dryRun: dryRun !== false, gracePolicy },
       });
     }
     if (operation !== "update") {

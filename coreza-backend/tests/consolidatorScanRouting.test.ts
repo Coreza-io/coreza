@@ -24,6 +24,7 @@ jest.mock("../src/nodes/registry", () => ({
 }));
 
 import { WorkflowPlan } from "../src/engine/workflowPlan";
+import { WorkflowEngine } from "../src/engine/workflowEngine";
 
 const nodes: WorkflowNode[] = [
   { id: "scan-a", name: "Consolidator", node_type: "main", category: "Data", values: {} },
@@ -40,6 +41,43 @@ describe("consolidator scan routing", () => {
     mockExecutedNodeIds.splice(0);
     mockDownstreamInputs.splice(0);
     mockFailureSymbol = undefined;
+  });
+
+  it("propagates batch ownership callbacks through WorkflowEngine", async () => {
+    const engine = new WorkflowEngine(
+      "claimed-routing",
+      "workflow",
+      "user",
+      [nodes[0], nodes[2]],
+      [edges[0]],
+      "best-effort",
+      undefined,
+      "live",
+    );
+    const beforeBatch = jest.fn(async () => false);
+    const onSuccess = jest.fn();
+    const payload = {
+      emitted: true,
+      bar: { timestamp: "2026-01-01T00:00:00Z", endTimestamp: "2026-01-01T04:00:00Z", open: 1, high: 1, low: 1, close: 1, volume: 1 },
+      workingBar: null,
+      emissionReason: "time_scan" as const,
+      emittedAt: "2026-01-01T04:00:00Z",
+      symbol: "SPY",
+      sourceTimeframe: "1h",
+      targetTimeframe: "4h",
+    };
+
+    const result = await engine.executeInjectedResults(
+      [{ nodeId: "scan-a", emissionId: "emission", payload }],
+      onSuccess,
+      beforeBatch,
+    );
+
+    expect(result.success).toBe(true);
+    expect(beforeBatch).toHaveBeenCalledTimes(1);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mockExecutedNodeIds).toEqual([]);
+    engine.destroy();
   });
 
   it("warns when a clock-scanned consolidator participates in a mixed join", () => {

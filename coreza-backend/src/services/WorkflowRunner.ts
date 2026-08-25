@@ -13,11 +13,14 @@ import { RedisKeys } from "../infra/redisKeys";
 import {
   scanConsolidators,
   commitConsolidatorEmissions,
+  drainDeliveredConsolidatorEmissions,
   type ConsolidatorEmission,
 } from "../engine/consolidation/consolidatorScan";
 import {
   findDeliveredEmissionIds,
-  recordDeliveredEmissions,
+  claimEmissionBatch,
+  markEmissionDelivered,
+  releaseEmissionClaim,
 } from "../engine/consolidation/consolidatorDeliveryReceipt";
 import {
   consolidatorDownstreamFailuresCounter,
@@ -57,6 +60,7 @@ export class WorkflowRunner {
   private scanTimer?: NodeJS.Timeout;
   private readonly abortController: AbortController;
   private readonly consumerName: string;
+  private readonly runnerInstanceId = randomUUID();
   private readonly serializedSnapshot: {
     nodes: string;
     edges: string;
@@ -326,7 +330,11 @@ export class WorkflowRunner {
     const stopTimer = consolidatorScanLatencyHistogram.startTimer();
     let emissions: ConsolidatorEmission[];
     try {
-      emissions = scanConsolidators(this.engine.getDataContext(), scanTime, { commit: false, graceMs });
+      emissions = scanConsolidators(this.engine.getDataContext(), scanTime, {
+        commit: false,
+        graceMs,
+        gracePolicy: "node",
+      });
     } finally {
       stopTimer();
     }
@@ -337,9 +345,11 @@ export class WorkflowRunner {
       emissions.map((emission) => emission.emissionId),
     );
     if (deliveredIds.size > 0) {
-      const alreadyDelivered = emissions.filter((emission) => deliveredIds.has(emission.emissionId));
-      commitConsolidatorEmissions(this.engine.getDataContext(), alreadyDelivered);
-      emissions = emissions.filter((emission) => !deliveredIds.has(emission.emissionId));
+      emissions = drainDeliveredConsolidatorEmissions(
+        this.engine.getDataContext(),
+        emissions,
+        deliveredIds,
+      );
     }
     if (emissions.length === 0) return;
     consolidatorEmissionsCounter.inc(emissions.length);
@@ -353,15 +363,41 @@ export class WorkflowRunner {
     }, this.executionId);
     this.engine.setRunId(runId);
     try {
+      const claimTokens = new Map<string, string>();
+      const batchKey = (batch: readonly ConsolidatorEmission[]): string =>
+        batch.map((emission) => emission.emissionId).sort().join("\n");
       const result = await this.engine.executeInjectedResults(
         emissions,
         async (delivered) => {
-          await recordDeliveredEmissions(
+          const key = batchKey(delivered);
+          const ownerToken = claimTokens.get(key);
+          if (!ownerToken || !(await markEmissionDelivered(
             this.userId,
+            this.workflowId,
             this.executionId,
             delivered.map((emission) => emission.emissionId),
-          );
+            ownerToken,
+          ))) throw new Error("Consolidator emission claim was lost before delivery");
+          claimTokens.delete(key);
           commitConsolidatorEmissions(this.engine.getDataContext(), delivered);
+        },
+        async (batch) => {
+          const ownerToken = `${this.runnerInstanceId}:${randomUUID()}`;
+          const claimed = await claimEmissionBatch(
+            this.userId, this.workflowId, this.executionId,
+            batch.map((emission) => emission.emissionId), ownerToken,
+          );
+          if (claimed) claimTokens.set(batchKey(batch), ownerToken);
+          return claimed;
+        },
+        async (batch) => {
+          const key = batchKey(batch);
+          const ownerToken = claimTokens.get(key);
+          if (ownerToken) await releaseEmissionClaim(
+            this.userId, this.workflowId, this.executionId,
+            batch.map((emission) => emission.emissionId), ownerToken,
+          );
+          claimTokens.delete(key);
         },
       );
       if (result.success) {

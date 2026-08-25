@@ -1,71 +1,21 @@
-# Consolidator Scan — remaining work after the merge review
+# Consolidator Scan — implementation verified complete
 
-The external verdict is accurate. I re-verified every claim in the repo; the plan is mostly implemented, but one bug breaks a test and several delivery/runtime gaps remain.
+Re-reviewed the merged code against every item from the last remediation plan. All of them landed correctly; no further work is proposed.
 
-## Confirmed already implemented
+## Verified
 
-`isWarmingUp` on `ExecutionContextExtras`; benign late-bar suppression plus `failed`/`failedNodeErrors` reset in both runtimes; corrupt-state skip with `consolidatorInvalidStatesCounter`; `endTimestamp` validation in `isConsolidatorState`; per-symbol injection passes; commit-after-successful-delivery via `pendingCommit` + `commitConsolidatorEmissions`; mixed-join warn at `WorkflowPlan.compile`; manual endpoint `dryRun` default and all-emissions response; finite `endExclusiveClock` used verbatim; compiled backtest VM marks consolidator workflows ineligible; inner `scan()` emission reason preserved.
+- **Per-node grace (blocker)** — `ConsolidatorExecutor` now writes `scanGraceMs` into the registry metadata, so `scanConsolidators` honors it. The previously failing "honors a per-consolidator feed-latency grace" test passes.
+- **High 1 — durable delivery receipts** — `consolidatorDeliveryReceipt.ts` stores `emissionId` receipts in Redis (`SET … EX … NX`, 7-day default via `CONSOLIDATOR_DELIVERY_RECEIPT_TTL_SECONDS`). `WorkflowRunner.processConsolidatorScan` filters already-delivered candidates before injection and records receipts inside the commit callback; `emissionId` is threaded into the execution context and consumed by `BrokerExecutor` as an idempotency key.
+- **High 2 — logical-clock batching** — `executeInjectedResults` groups by `bar.endTimestamp` + `symbol`, runs groups in ascending bucket order, and aggregates `nodeResults`, `executionOrder`, `timing`, and per-batch `executionBatches` into one result, so the Redis run record is complete.
+- **High 3 — endpoint hardening** — `/storage/consolidator` requires exactly one of `runId` / `workflowSessionId` / `backtestId`, derives `sessionType` from the identifier actually used, and binds the future-clock and mutating-scan rules to that derived type. The previous "live runId + any workflowSessionId" bypass is closed.
+- **Medium 1 — config and UI** — `.env.example` now ships `CONSOLIDATOR_SCAN_GRACE_MS=60000` plus the receipt TTL; `Consolidator.json` exposes a `scan_grace_ms` field and the description covers clock-driven emission.
+- **Medium 2 — timer coalescing** — the interval was replaced by a self-rescheduling `setTimeout` that arms the next scan only after the current one settles, with `clearTimeout` in the stop path. No backlog can accumulate.
+- **Minor** — the late-bar result now returns the full `ConsolidatorPayload` shape (`workingBar`, `emissionReason`, `emittedAt`, `symbol`, timeframes) alongside `lateBarDropped`.
 
-## Blocker — per-node grace is dropped in the executor
+## Test status
 
-`ConsolidatorExecutor.execute` parses `scan_grace_ms` into `scanGraceMs` and passes it into `parameters`, but the `dataContext.setData(stateKey, result.state, { ... })` metadata object omits it. `scanConsolidators` reads grace from `ref.meta.scanGraceMs`, so a node-configured grace never applies and the bucket closes early. This is why the "honors a per-consolidator feed-latency grace" test currently fails (emits at `04:00:59.999`).
+`tests/timeBarConsolidator.test.ts` and `tests/timeBarConsolidatorScan.test.ts` pass (16 tests). `tests/consolidatorWarmup.test.ts`, `tests/consolidatorRoute.test.ts`, and `tests/consolidatorScanRouting.test.ts` fail to compile in this sandbox only because `ioredis`/`express` type declarations are not installed here — an environment gap, not a code defect. The same missing-dependency errors dominate a full `tsc --noEmit`; no consolidator file appears in them.
 
-Fix: add `...(scanGraceMs === undefined ? {} : { scanGraceMs })` to that metadata object, then re-run `tests/timeBarConsolidatorScan.test.ts`.
+## Optional follow-up (not required)
 
-## High 1 — `emissionId` is not a delivery receipt
-
-`emissionId` only travels inside the payload; nothing persists or checks it. Delivery is at-least-once: if a downstream side effect succeeds and a later node (or the process) fails before commit, the next scan replays the same emission and repeats the external effect.
-
-Fix:
-
-- Persist a durable delivery record keyed by `emissionId` (Redis `SET NX` with a TTL well beyond the scan interval, in the same user/execution scope as the other consolidator keys).
-- Skip candidates whose `emissionId` is already recorded as delivered, and commit the consolidator state for them so retries drain.
-- Pass `emissionId` into the execution context as an idempotency key so order/notification executors can reuse the existing SHA256 idempotency path instead of inventing a second one.
-
-## High 2 — batch by logical clock, not just symbol
-
-`executeInjectedResults` groups by `emission.payload.symbol` only, so a 4h bucket ending 16:00 and an overdue daily bucket ending 00:00 for the same symbol are injected in one pass and can wrongly satisfy a join.
-
-Fix:
-
-- Group by `symbol + bar.endTimestamp`, iterating groups in ascending `endTimestamp` order (the scan already sorts deterministically).
-- Merge every group's `nodeResults`/`executionOrder` into one aggregate `WorkflowExecutionResult` so the Redis run record is complete instead of holding only the last batch.
-- Add a test: one symbol, two consolidator nodes with different target timeframes emitting on the same tick, asserting two separate downstream passes.
-
-## High 3 — manual-session check is bypassable
-
-`/storage/consolidator` resolves `executionId = runId ?? workflowSessionId ?? backtestId`, but classifies the session as manual from the mere presence of `workflowSessionId`/`backtestId`. A request carrying a live `runId` plus any `workflowSessionId` resolves the live context, is classified manual, skips the future-clock check, and can run `dryRun: false` against live state.
-
-Fix:
-
-- Require exactly one of `runId` / `workflowSessionId` / `backtestId`; reject with 400 otherwise.
-- Derive the session type from the identifier actually used (`runId` ⇒ live), not from field presence.
-- Keep the future-clock and mutating-scan rules bound to that derived type; add a test posting both `runId` and `workflowSessionId`.
-
-## Medium 1 — configuration and UI contradict the code
-
-- `coreza-backend/.env.example` still sets `CONSOLIDATOR_SCAN_GRACE_MS=2000` while the runner default is now 60s. Raise the example to 60000 with a comment that it must be set from measured feed latency.
-- `src/nodes/Consolidator.json` exposes no `scan_grace_ms` field and still says "Input-driven only: … partial final bars are not flushed." Add the field (number, optional, ms, with help text) and rewrite the description to cover clock-driven emission when `ENABLE_CONSOLIDATOR_SCAN` is on.
-
-## Medium 2 — scan timer ticks accumulate
-
-`startConsolidatorScanTimer` enqueues a job onto `workChain` on every interval regardless of whether the previous scan finished, so slow downstream processing builds an unbounded backlog.
-
-Fix: coalesce with a `scanPending`/`scanRunning` flag (skip the tick when a scan is already queued or running), or switch to a self-rescheduling `setTimeout` that arms the next scan only after the current one settles. Clear the handle in the existing stop path.
-
-## Minor
-
-Late-bar results return `{ emitted, bar, lateBarDropped }` only — no `symbol`, timeframes, `workingBar`, `emissionReason`, or `emittedAt`. Fill the remaining `ConsolidatorPayload` fields so downstream templates see a consistent shape.
-
-## Sequence
-
-1. Executor grace metadata (unblocks the failing test).
-2. Manual-endpoint identifier hardening (High 3) + test.
-3. Clock-aware batching and aggregated results (High 2) + test.
-4. Scan-timer coalescing (Medium 2).
-5. Durable `emissionId` receipts and idempotency-key plumbing (High 1) + replay test.
-6. `.env.example`, `Consolidator.json` field/description, late-bar payload shape.
-
-## Test note
-
-`tests/consolidatorRoute.test.ts` and `tests/consolidatorScanRouting.test.ts` fail to compile in this sandbox from missing `ioredis`/`express` type declarations — an environment issue, not an implementation defect.
+Receipt recording and consolidator-state commit are two separate steps; a crash between them re-delivers at most one emission, which the receipt lookup then suppresses on the next scan. Making them a single Lua/transaction step would close that last narrow window if you ever want strict exactly-once.

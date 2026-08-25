@@ -1,21 +1,83 @@
-# Consolidator Scan — implementation verified complete
+# Consolidator Scan — production fixes (review doc remediation)
 
-Re-reviewed the merged code against every item from the last remediation plan. All of them landed correctly; no further work is proposed.
+The review doc is accurate. I confirmed each open item against the merged code:
 
-## Verified
+- `scanConsolidators` applies `metadata.scanGraceMs ?? options.graceMs ?? 0` unconditionally, so `BacktestSession.scan(..., { commit: false })` (no graceMs) still subtracts the node's **live** grace from the historical clock. A bucket ending exactly at the finite `endExclusiveClock` is never emitted.
+- `consolidatorDeliveryReceipt` writes the receipt *after* downstream execution. `SET NX` de-dupes the receipt, not the execution — two runners can both execute.
+- `orderIdempotency.cacheOrderIntent` is a plain `SETEX` after a separate `getOrderFromCache`; concurrent identical orders both pass the check.
+- Only `BrokerExecutor` consumes `context.emissionId`; other side-effect executors do not.
 
-- **Per-node grace (blocker)** — `ConsolidatorExecutor` now writes `scanGraceMs` into the registry metadata, so `scanConsolidators` honors it. The previously failing "honors a per-consolidator feed-latency grace" test passes.
-- **High 1 — durable delivery receipts** — `consolidatorDeliveryReceipt.ts` stores `emissionId` receipts in Redis (`SET … EX … NX`, 7-day default via `CONSOLIDATOR_DELIVERY_RECEIPT_TTL_SECONDS`). `WorkflowRunner.processConsolidatorScan` filters already-delivered candidates before injection and records receipts inside the commit callback; `emissionId` is threaded into the execution context and consumed by `BrokerExecutor` as an idempotency key.
-- **High 2 — logical-clock batching** — `executeInjectedResults` groups by `bar.endTimestamp` + `symbol`, runs groups in ascending bucket order, and aggregates `nodeResults`, `executionOrder`, `timing`, and per-batch `executionBatches` into one result, so the Redis run record is complete.
-- **High 3 — endpoint hardening** — `/storage/consolidator` requires exactly one of `runId` / `workflowSessionId` / `backtestId`, derives `sessionType` from the identifier actually used, and binds the future-clock and mutating-scan rules to that derived type. The previous "live runId + any workflowSessionId" bypass is closed.
-- **Medium 1 — config and UI** — `.env.example` now ships `CONSOLIDATOR_SCAN_GRACE_MS=60000` plus the receipt TTL; `Consolidator.json` exposes a `scan_grace_ms` field and the description covers clock-driven emission.
-- **Medium 2 — timer coalescing** — the interval was replaced by a self-rescheduling `setTimeout` that arms the next scan only after the current one settles, with `clearTimeout` in the stop path. No backlog can accumulate.
-- **Minor** — the late-bar result now returns the full `ConsolidatorPayload` shape (`workingBar`, `emissionReason`, `emittedAt`, `symbol`, timeframes) alongside `lateBarDropped`.
+## Fix 1 — deterministic grace policy (backtest correctness)
 
-## Test status
+`consolidatorScan.ts`: add `gracePolicy?: "node" | "none"` to `ConsolidatorScanOptions`, defaulting to `"node"`.
+- `"none"` → effective grace is `0`, ignoring both `metadata.scanGraceMs` and `options.graceMs`.
+- Record the applied grace on the emission payload (`appliedGraceMs`) for audit.
+- Keep `TimeBarConsolidator.scan` pure — grace stays an orchestration concern.
 
-`tests/timeBarConsolidator.test.ts` and `tests/timeBarConsolidatorScan.test.ts` pass (16 tests). `tests/consolidatorWarmup.test.ts`, `tests/consolidatorRoute.test.ts`, and `tests/consolidatorScanRouting.test.ts` fail to compile in this sandbox only because `ioredis`/`express` type declarations are not installed here — an environment gap, not a code defect. The same missing-dependency errors dominate a full `tsc --noEmit`; no consolidator file appears in them.
+Call sites:
+- `BacktestSession.ts:712` → `{ commit: false, gracePolicy: "none" }`.
+- Warm-up/replay scan paths → `gracePolicy: "none"`.
+- `WorkflowRunner.processConsolidatorScan` → keep `"node"` (per-node grace overrides the `CONSOLIDATOR_SCAN_GRACE_MS` fallback).
+- `routes/storage.ts` manual scan → accept an optional `grace_policy` body field; default `"none"` for backtest/manual identifiers, `"node"` for live; echo the applied value in the response.
 
-## Optional follow-up (not required)
+## Fix 2 — atomic emission ownership
 
-Receipt recording and consolidator-state commit are two separate steps; a crash between them re-delivers at most one emission, which the receipt lookup then suppresses on the next scan. Making them a single Lua/transaction step would close that last narrow window if you ever want strict exactly-once.
+New `claimEmissionBatch` / `releaseEmissionClaim` / `markEmissionDelivered` in `consolidatorDeliveryReceipt.ts`, plus `RedisKeys.consolidatorClaim(userId, workflowId, executionId, batchHash)`.
+
+- `batchHash` = sha256 of the sorted `emissionId` list for one logical-clock batch.
+- Before executing a batch: `SET claimKey <ownerToken> NX EX CONSOLIDATOR_CLAIM_LEASE_SECONDS` (default 120). Failure to claim → skip the batch this tick (another owner has it); do not commit state.
+- On success: Lua script that verifies the claim value equals `ownerToken`, writes the delivery receipts with the long TTL, and deletes the claim — one round trip, no partial state.
+- On failure: delete the claim only when the value matches `ownerToken` (Lua compare-and-delete); otherwise let the lease expire.
+- `ownerToken` = `${runnerInstanceId}:${crypto.randomUUID()}`, held on `WorkflowRunner`.
+- Existing behaviour preserved: an already-delivered emission is not re-routed, and its `pendingCommit` is still committed to drain in-memory state.
+
+`WorkflowRunner.processConsolidatorScan` wraps each logical-clock group with claim → execute → mark-delivered/release.
+
+## Fix 3 — atomic broker order claim
+
+In `orderIdempotency.ts`:
+- Replace `cacheOrderIntent` with `claimOrderIntent(userId, workflowId, idempotencyKey, broker, ownerToken)` using `SET key <json> NX EX ORDER_CACHE_TTL`. Returns `{ claimed: true }` or `{ claimed: false, existing }`.
+- Extend `CachedOrder` with `ownerToken` and `updatedAt`; keep `status: pending | success | failed`.
+- `updateOrderCache` becomes a compare-and-set on `ownerToken` (Lua), so a stale worker cannot overwrite another's record.
+- Raise `ORDER_CACHE_TTL` handling so it is at least the consolidator receipt TTL (`CONSOLIDATOR_DELIVERY_RECEIPT_TTL_SECONDS`); take the max of the two.
+
+In `BrokerExecutor`:
+- `absent` → claim, then submit with `client_order_id = idempotencyKey` where the broker supports it (already the reverse-index assumption).
+- `pending` (claim lost or stale record) → **reconcile**: look up the broker by `client_order_id`/`idempotencyKey` through the existing broker `get_order` capability. Found → cache and return that result. Not found and the record is older than `ORDER_RECONCILE_STALE_MS` → allow one resubmission; otherwise return a `ORDER_IN_FLIGHT` soft failure instead of submitting.
+- `success` → return the cached broker response verbatim.
+- `failed` → return the failure; resubmit only when the caller passes an explicit retry flag.
+- Never turn an unknown/timeout broker outcome into a fresh submission — mark the record `pending` and leave reconciliation to the next attempt.
+
+## Fix 4 — generic side-effect idempotency
+
+Add `src/engine/idempotency/effectGuard.ts`:
+
+```ts
+runOnce(scope, key, fn)  // SET NX claim → run → store result; replay returns cached result
+```
+
+keyed by `context.emissionId ?? context.runId` + nodeId + a caller-supplied effect discriminator. Wire it into the executors that perform external mutations (webhook/HTTP mutation, Telegram/WhatsApp/notification, Gmail send, Store writes that are not idempotent by construction). Executors without `emissionId` fall back to current behaviour, so nothing regresses for manual runs.
+
+## Config and docs
+
+- `.env.example`: `CONSOLIDATOR_CLAIM_LEASE_SECONDS=120`, `ORDER_RECONCILE_STALE_MS=60000`.
+- `Consolidator.json`: note that scan grace applies to live scans only and is ignored in backtest/warm-up.
+- Short operator note in `coreza-backend/README.md` on in-memory restart behaviour (indicators, rolling windows, consolidator working bars do not survive a process restart) and the `ENABLE_CONSOLIDATOR_SCAN` flag.
+
+## Tests
+
+New/extended Jest specs (mocked Redis with real `SET NX` semantics):
+
+1. `consolidatorBacktestGrace.test.ts` — node grace 60s, finite `endExclusiveClock` equal to the bucket end → emits under `gracePolicy: "none"`, does not emit under `"node"`.
+2. `consolidatorEmissionClaim.test.ts` — two workers, same candidate → one downstream execution, one receipt; expired lease reclaimable; stale token cannot mark delivered.
+3. `consolidatorReceiptDrain.test.ts` — pre-seeded receipt with uncommitted state → state commits, no downstream execution.
+4. `orderIdempotencyAtomic.test.ts` — 20 concurrent identical claims → one broker submission; unknown outcome → reconcile by `client_order_id`, no duplicate.
+5. `effectGuardReplay.test.ts` — retried batch → one external mutation.
+6. Timer lifecycle with fake timers → no overlap, no backlog, no timer after stop.
+
+## Sequencing
+
+Phase A: Fix 1 + config/doc updates + test 1 (correctness, low risk).
+Phase B: Fix 2 (emission claims) + tests 2–3.
+Phase C: Fix 3 (broker claims and reconciliation) + test 4.
+Phase D: Fix 4 (generic effect guard) + test 5.

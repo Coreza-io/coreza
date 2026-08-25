@@ -17,6 +17,7 @@ export interface ConsolidatorParameters {
 
 export interface ConsolidatorPayload {
   emissionId?: string;
+  appliedGraceMs?: number;
   emitted: boolean;
   bar: ConsolidatedBar | null;
   workingBar: ConsolidatedBar | null;

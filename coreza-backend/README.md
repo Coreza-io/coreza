@@ -42,6 +42,10 @@ Workers are automatically started on server initialization and handle:
 
 ## Architecture
 
+### In-memory runtime state
+
+`ENABLE_CONSOLIDATOR_SCAN=true` enables clock-driven emission of completed consolidator bars. Indicator state, rolling windows, and consolidator working bars are process-local and do not survive a backend restart; operators must warm up workflows again before resuming live execution.
+
 ### Two-Layer Queue System
 
 The backend uses a two-layer node processing model:

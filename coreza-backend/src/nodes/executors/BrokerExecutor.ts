@@ -19,11 +19,15 @@ import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 import { isBrokerAuthError } from "../../utils/brokerAuthError";
 import {
-  cacheOrderIntent,
+  claimOrderIntent,
+  cacheReconciledOrder,
   generateIdempotencyKey,
   getOrderFromCache,
+  takeOverOrderIntent,
   updateOrderCache,
+  type CachedOrder,
 } from "../../utils/orderIdempotency";
+import { randomUUID } from "crypto";
 import {
   normalizeOutput,
   createSuccessOutput,
@@ -49,6 +53,8 @@ export class BrokerExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
+    let orderOwnerToken: string | null = null;
+    let orderToReconcile: CachedOrder | null = null;
     let isOrderOperation = false;
     let shouldPersistRedisState = true;
     const userId = context?.userId ?? "system";
@@ -133,11 +139,7 @@ export class BrokerExecutor implements INodeExecutor {
         });
 
         if (shouldPersistRedisState) {
-          const cached = await getOrderFromCache(
-            userId,
-            workflowId,
-            idempotencyKey,
-          );
+          const cached = await getOrderFromCache(userId, workflowId, idempotencyKey);
           if (cached) {
             if (cached.status === "success") {
               console.log(
@@ -151,15 +153,27 @@ export class BrokerExecutor implements INodeExecutor {
             }
 
             if (cached.status === "pending") {
-              return {
-                success: false,
-                error: "Order is already being processed",
-                meta: { cached: true },
-              };
+              orderToReconcile = cached;
+            }
+            if (cached.status === "failed" && resolvedParams.retry !== true) {
+              const cachedError = cached.result && typeof cached.result === "object" && "error" in cached.result
+                ? String(cached.result.error)
+                : String(cached.result ?? "Order previously failed");
+              return { success: false, data: cached.result, error: cachedError, meta: { cached: true } };
+            }
+            if (cached.status === "failed") orderToReconcile = cached;
+          }
+          if (!orderToReconcile) {
+            orderOwnerToken = randomUUID();
+            const claim = await claimOrderIntent(userId, workflowId, idempotencyKey, broker, orderOwnerToken);
+            if (!claim.claimed) {
+              const existing = claim.existing;
+              if (existing?.status === "success") return { success: true, data: existing.result, meta: { cached: true } };
+              if (!existing) return { success: false, error: "ORDER_IN_FLIGHT", meta: { cached: true, code: "ORDER_IN_FLIGHT" } };
+              orderToReconcile = existing;
+              orderOwnerToken = null;
             }
           }
-
-          await cacheOrderIntent(userId, workflowId, idempotencyKey, broker);
         }
         resolvedParams._idempotencyKey = idempotencyKey;
       }
@@ -199,6 +213,49 @@ export class BrokerExecutor implements INodeExecutor {
           : config.baseUrl;
 
       const headers = await config.makeAuthHeaders(workingCreds);
+
+      if (isOrderOperation && idempotencyKey && orderToReconcile) {
+        const reconciled = await this.reconcileOrder(
+          config,
+          orderToReconcile,
+          idempotencyKey,
+          resolvedParams,
+          workingCreds,
+          baseUrl,
+          headers,
+        );
+        if (reconciled.found) {
+          const orderId = this.extractOrderId(reconciled.result);
+          await cacheReconciledOrder(
+            userId,
+            workflowId,
+            idempotencyKey,
+            orderToReconcile.ownerToken,
+            orderToReconcile.updatedAt,
+            reconciled.result,
+            orderId,
+          );
+          return { success: true, data: reconciled.result, meta: { cached: true, reconciled: true } };
+        }
+
+        const staleMs = this.positiveEnv("ORDER_RECONCILE_STALE_MS", 60_000);
+        const isStale = Date.now() - Date.parse(orderToReconcile.updatedAt) >= staleMs;
+        const explicitRetry = orderToReconcile.status === "failed" && resolvedParams.retry === true;
+        if ((!isStale && !explicitRetry) || !reconciled.supported || !reconciled.notFound) {
+          return { success: false, error: "ORDER_IN_FLIGHT", meta: { cached: true, code: "ORDER_IN_FLIGHT" } };
+        }
+        orderOwnerToken = randomUUID();
+        if (!(await takeOverOrderIntent(
+          userId,
+          workflowId,
+          idempotencyKey,
+          orderToReconcile.ownerToken,
+          orderToReconcile.updatedAt,
+          orderOwnerToken,
+        ))) {
+          return { success: false, error: "ORDER_IN_FLIGHT", meta: { cached: true, code: "ORDER_IN_FLIGHT" } };
+        }
+      }
 
       let data: any;
 
@@ -324,11 +381,12 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
-      if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
+      if (shouldPersistRedisState && isOrderOperation && idempotencyKey && orderOwnerToken) {
         await updateOrderCache(
           userId,
           workflowId,
           idempotencyKey,
+          orderOwnerToken,
           "success",
           data,
           data?.orderId || data?.order_id || data?.id,
@@ -361,8 +419,9 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
-      if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
-        await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
+      if (shouldPersistRedisState && isOrderOperation && idempotencyKey && orderOwnerToken) {
+        const unknownOutcome = axios.isAxiosError(error) && !error.response;
+        await updateOrderCache(userId, workflowId, idempotencyKey, orderOwnerToken, unknownOutcome ? "pending" : "failed", {
           error:
             enrichedError instanceof Error
               ? enrichedError.message
@@ -408,6 +467,58 @@ export class BrokerExecutor implements INodeExecutor {
       );
       return toNodeResult(normalized);
     }
+  }
+
+  private async reconcileOrder(
+    config: NonNullable<ReturnType<typeof getBrokerConfig>>,
+    cached: CachedOrder,
+    idempotencyKey: string,
+    resolvedParams: Record<string, unknown>,
+    workingCreds: unknown,
+    baseUrl: string,
+    headers: Record<string, string>,
+  ): Promise<{ supported: boolean; found: boolean; notFound: boolean; result?: unknown }> {
+    if (cached.status === "failed") return { supported: true, found: false, notFound: true };
+    const op = config.operations.get_order_by_client_id;
+    if (!op) return { supported: false, found: false, notFound: false };
+    const input = { ...resolvedParams, client_order_id: idempotencyKey };
+    try {
+      const path = typeof op.path === "function" ? op.path(input, workingCreds) : op.path;
+      const body = op.makeBody ? await op.makeBody(input, workingCreds) : undefined;
+      const response = await axios({
+        method: op.method,
+        url: `${baseUrl}${path}`,
+        headers: body ? { ...headers, "Content-Type": "application/json" } : headers,
+        params: op.makeParams?.(input, workingCreds) ?? {},
+        data: body,
+        timeout: 30_000,
+      });
+      const result = op.transformResult
+        ? op.transformResult(response.data, input, response)
+        : response.data;
+      return { supported: true, found: true, notFound: false, result };
+    } catch (error) {
+      if (this.isOrderNotFound(error)) return { supported: true, found: false, notFound: true };
+      return { supported: true, found: false, notFound: false };
+    }
+  }
+
+  private isOrderNotFound(error: unknown): boolean {
+    if (!axios.isAxiosError(error)) return false;
+    const brokerCode = error.response?.data?.code;
+    return error.response?.status === 404 || brokerCode === -2013;
+  }
+
+  private extractOrderId(result: unknown): string | undefined {
+    if (!result || typeof result !== "object") return undefined;
+    const record = result as Record<string, unknown>;
+    const value = record.orderId ?? record.order_id ?? record.id;
+    return value === undefined || value === null ? undefined : String(value);
+  }
+
+  private positiveEnv(name: string, fallback: number): number {
+    const parsed = Number(process.env[name]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
   private async enrichPlacedOrder(input: {

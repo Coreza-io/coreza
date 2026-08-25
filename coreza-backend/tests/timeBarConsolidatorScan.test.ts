@@ -101,6 +101,10 @@ describe("consolidator clock scan", () => {
 
     expect(scanConsolidators(dataContext, "2026-01-01T04:00:59.999Z", { commit: false })).toEqual([]);
     expect(scanConsolidators(dataContext, "2026-01-01T04:01:00.000Z", { commit: false })).toHaveLength(1);
+    expect(scanConsolidators(dataContext, "2026-01-01T04:00:00.000Z", {
+      commit: false,
+      gracePolicy: "none",
+    })).toMatchObject([{ payload: { appliedGraceMs: 0 } }]);
   });
 
   it("re-emits an uncommitted candidate and stops after a successful commit", () => {

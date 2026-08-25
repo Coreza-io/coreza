@@ -22,6 +22,7 @@ import {
   leanSuccess,
 } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
+import { effectKey, runOnce } from "../../engine/idempotency/effectGuard";
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
@@ -51,7 +52,20 @@ export class DataSourceExecutor implements INodeExecutor {
         : { ...node.values, ...input };
 
       if (nodeName === "Store") {
-        const result = await this.executeStoreNode(resolvedParams, context);
+        const executeEffect = () => this.executeStoreNode(resolvedParams, context);
+        const operation = String(resolvedParams.operation ?? "set").toLowerCase();
+        const isMutation = !["get", "read", "list"].includes(operation);
+        const result = context?.emissionId && isMutation
+          ? await runOnce(
+            {
+              userId: context.userId ?? "system",
+              workflowId: context.workflowId ?? "manual",
+              executionId: context.executionId ?? context.runId ?? "manual",
+            },
+            effectKey(context.emissionId, node.id, `store:${operation}`),
+            executeEffect,
+          )
+          : await executeEffect();
         return toNodeResult(
           normalizeOutput(result, {
             nodeId: node.id,

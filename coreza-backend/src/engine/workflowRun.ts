@@ -151,6 +151,8 @@ export class WorkflowRun {
   async executeInjectedResults(
     emissions: readonly ConsolidatorEmission[],
     onBatchSuccess?: (delivered: readonly ConsolidatorEmission[]) => void | Promise<void>,
+    beforeBatch?: (batch: readonly ConsolidatorEmission[]) => boolean | Promise<boolean>,
+    onBatchFailure?: (batch: readonly ConsolidatorEmission[]) => void | Promise<void>,
   ): Promise<WorkflowExecutionResult> {
     const groups = new Map<string, ConsolidatorEmission[]>();
     for (const emission of emissions) {
@@ -173,17 +175,24 @@ export class WorkflowRun {
       left[0].payload.symbol.localeCompare(right[0].payload.symbol));
 
     for (const group of orderedGroups) {
+      if (beforeBatch && !(await beforeBatch(group))) continue;
       this.runtime.setExecutionContextExtras({
         ...this.executionContextExtras,
         emissionId: group.map((emission) => emission.emissionId).sort().join("|"),
       });
-      const result = await this.runExecution(() => {
-        this.runtime.resetForNextBar(true);
-        for (const emission of group) {
-          this.ensureNodeExists(emission.nodeId);
-          this.runtime.injectResult(emission.nodeId, { success: true, data: emission.payload });
-        }
-      });
+      let result: WorkflowExecutionResult;
+      try {
+        result = await this.runExecution(() => {
+          this.runtime.resetForNextBar(true);
+          for (const emission of group) {
+            this.ensureNodeExists(emission.nodeId);
+            this.runtime.injectResult(emission.nodeId, { success: true, data: emission.payload });
+          }
+        });
+      } catch (error) {
+        await onBatchFailure?.(group);
+        throw error;
+      }
       aggregate.executionBatches?.push({
         symbol: group[0].payload.symbol,
         endTimestamp: group[0].payload.bar?.endTimestamp ?? "",
@@ -201,7 +210,10 @@ export class WorkflowRun {
           aggregate.timing[nodeId] = { totalMs, count, avgMs: count === 0 ? 0 : totalMs / count };
         }
       }
-      if (!result.success) return { ...aggregate, success: false, error: result.error };
+      if (!result.success) {
+        await onBatchFailure?.(group);
+        return { ...aggregate, success: false, error: result.error };
+      }
       await onBatchSuccess?.(group);
     }
     return aggregate;

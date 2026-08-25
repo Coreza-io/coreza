@@ -67,6 +67,12 @@ export const RedisKeys = {
   consolidatorDelivery: (userId: string, executionId: string, emissionId: string): string =>
     `consolidator-delivery:userId:${userId}:executionId:${executionId}:${emissionId}`,
 
+  consolidatorClaim: (userId: string, workflowId: string, executionId: string, batchHash: string): string =>
+    `consolidator-claim:userId:${userId}:workflowId:${workflowId}:executionId:${executionId}:${batchHash}`,
+
+  effectGuard: (scope: string, key: string): string =>
+    `effect-guard:${scope}:${key}`,
+
   executionPattern: (
     userId: string,
     workflowId: string,

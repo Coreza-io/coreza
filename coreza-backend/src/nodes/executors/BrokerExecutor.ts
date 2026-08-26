@@ -23,6 +23,7 @@ import {
   cacheReconciledOrder,
   generateIdempotencyKey,
   getOrderFromCache,
+  releaseOrderClaim,
   takeOverOrderIntent,
   updateOrderCache,
   type CachedOrder,
@@ -40,6 +41,10 @@ import {
   getOrderOwnerExtractor,
   getPlaceOrderEnrichment,
 } from "../../brokers/capabilities";
+import {
+  getReconciliationCapability,
+  resolveOrderKind,
+} from "../../brokers/reconciliationCapabilities";
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
@@ -118,6 +123,15 @@ export class BrokerExecutor implements INodeExecutor {
         operation === "place_order" || operation === "close_position";
 
       if (isOrderOperation) {
+        const orderKind = resolveOrderKind(broker, resolvedParams);
+        const capability = getReconciliationCapability(broker, operation, orderKind);
+        if (context?.emissionId && !capability.liveScanAllowed) {
+          return {
+            success: false,
+            error: `SCAN_UNSAFE_OPERATION: ${broker}.${operation} cannot be safely reconciled`,
+            code: "SCAN_UNSAFE_OPERATION",
+          };
+        }
         idempotencyKey = generateIdempotencyKey({
           workflowId,
           nodeId: node.id,
@@ -165,7 +179,11 @@ export class BrokerExecutor implements INodeExecutor {
           }
           if (!orderToReconcile) {
             orderOwnerToken = randomUUID();
-            const claim = await claimOrderIntent(userId, workflowId, idempotencyKey, broker, orderOwnerToken);
+            const claim = await claimOrderIntent(
+              userId, workflowId, idempotencyKey, broker, orderOwnerToken,
+              orderKind,
+              String(resolvedParams.marketType ?? resolvedParams.asset_type ?? resolvedParams.assetType ?? "unknown"),
+            );
             if (!claim.claimed) {
               const existing = claim.existing;
               if (existing?.status === "success") return { success: true, data: existing.result, meta: { cached: true } };
@@ -187,6 +205,10 @@ export class BrokerExecutor implements INodeExecutor {
       );
 
       if (!credentials) {
+        if (idempotencyKey && orderOwnerToken) {
+          await releaseOrderClaim(userId, workflowId, idempotencyKey, orderOwnerToken);
+          orderOwnerToken = null;
+        }
         return {
           success: false,
           error: `Credentials not found for ${broker}`,
@@ -382,7 +404,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey && orderOwnerToken) {
-        await updateOrderCache(
+        const updated = await updateOrderCache(
           userId,
           workflowId,
           idempotencyKey,
@@ -391,6 +413,10 @@ export class BrokerExecutor implements INodeExecutor {
           data,
           data?.orderId || data?.order_id || data?.id,
         );
+        if (!updated) {
+          console.warn(`Order ownership lost before success commit: ${idempotencyKey}`);
+          return await this.canonicalOrderOutcome(userId, workflowId, idempotencyKey);
+        }
       }
 
       const normalized = createSuccessOutput(data);
@@ -421,12 +447,16 @@ export class BrokerExecutor implements INodeExecutor {
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey && orderOwnerToken) {
         const unknownOutcome = axios.isAxiosError(error) && !error.response;
-        await updateOrderCache(userId, workflowId, idempotencyKey, orderOwnerToken, unknownOutcome ? "pending" : "failed", {
+        const updated = await updateOrderCache(userId, workflowId, idempotencyKey, orderOwnerToken, unknownOutcome ? "pending" : "failed", {
           error:
             enrichedError instanceof Error
               ? enrichedError.message
               : String(enrichedError),
         });
+        if (!updated) {
+          console.warn(`Order ownership lost before failure commit: ${idempotencyKey}`);
+          return await this.canonicalOrderOutcome(userId, workflowId, idempotencyKey);
+        }
       }
 
       if (isBrokerAuthError(error)) {
@@ -479,10 +509,23 @@ export class BrokerExecutor implements INodeExecutor {
     headers: Record<string, string>,
   ): Promise<{ supported: boolean; found: boolean; notFound: boolean; result?: unknown }> {
     if (cached.status === "failed") return { supported: true, found: false, notFound: true };
-    const op = config.operations.get_order_by_client_id;
+    const lookupOperation = cached.orderKind === "algo"
+      ? "get_algo_order_by_client_id"
+      : "get_order_by_client_id";
+    const op = config.operations[lookupOperation];
     if (!op) return { supported: false, found: false, notFound: false };
     const input = { ...resolvedParams, client_order_id: idempotencyKey };
     try {
+      if (op.execute) {
+        const result = await op.execute({
+          input,
+          creds: workingCreds,
+          baseUrl,
+          headers,
+          request: axios,
+        });
+        return { supported: true, found: true, notFound: false, result };
+      }
       const path = typeof op.path === "function" ? op.path(input, workingCreds) : op.path;
       const body = op.makeBody ? await op.makeBody(input, workingCreds) : undefined;
       const response = await axios({
@@ -501,6 +544,24 @@ export class BrokerExecutor implements INodeExecutor {
       if (this.isOrderNotFound(error)) return { supported: true, found: false, notFound: true };
       return { supported: true, found: false, notFound: false };
     }
+  }
+
+  private async canonicalOrderOutcome(
+    userId: string,
+    workflowId: string,
+    idempotencyKey: string,
+  ): Promise<NodeResult> {
+    const canonical = await getOrderFromCache(userId, workflowId, idempotencyKey);
+    if (!canonical) {
+      return { success: false, error: "ORDER_OWNERSHIP_LOST", code: "ORDER_OWNERSHIP_LOST" };
+    }
+    if (canonical.status === "success") {
+      return { success: true, data: canonical.result, meta: { cached: true } };
+    }
+    const error = canonical.result && typeof canonical.result === "object" && "error" in canonical.result
+      ? String((canonical.result as { error: unknown }).error)
+      : canonical.status === "pending" ? "ORDER_IN_FLIGHT" : String(canonical.result ?? "Order failed");
+    return { success: false, data: canonical.result, error, code: canonical.status === "pending" ? "ORDER_IN_FLIGHT" : undefined, meta: { cached: true } };
   }
 
   private isOrderNotFound(error: unknown): boolean {

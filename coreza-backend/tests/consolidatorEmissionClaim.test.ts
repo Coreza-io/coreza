@@ -40,6 +40,7 @@ import {
   claimEmissionBatch,
   findDeliveredEmissionIds,
   markEmissionDelivered,
+  renewEmissionClaim,
   releaseEmissionClaim,
 } from "../src/engine/consolidation/consolidatorDeliveryReceipt";
 
@@ -76,6 +77,13 @@ describe("consolidator emission ownership", () => {
     expect(await claimEmissionBatch("user", "workflow", "execution", ids, "stale")).toBe(true);
     jest.advanceTimersByTime(120_001);
     expect(await claimEmissionBatch("user", "workflow", "execution", ids, "new-owner")).toBe(true);
+  });
+
+  it("renews a claim only for its current owner", async () => {
+    const ids = ["emission"];
+    expect(await claimEmissionBatch("user", "workflow", "execution", ids, "owner")).toBe(true);
+    expect(await renewEmissionClaim("user", "workflow", "execution", ids, "other")).toBe(false);
+    expect(await renewEmissionClaim("user", "workflow", "execution", ids, "owner")).toBe(true);
   });
 
   it("does not let a stale token deliver or release another owner's claim", async () => {

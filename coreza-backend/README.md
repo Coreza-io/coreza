@@ -46,6 +46,25 @@ Workers are automatically started on server initialization and handle:
 
 `ENABLE_CONSOLIDATOR_SCAN=true` enables clock-driven emission of completed consolidator bars. Indicator state, rolling windows, and consolidator working bars are process-local and do not survive a backend restart; operators must warm up workflows again before resuming live execution.
 
+### Scan-driven side-effect guarantees
+
+Scan delivery receipts use renewable, owner-checked Redis leases. Effect guarantees below apply to retries of the same emission; they do not turn an external provider without idempotency or reconciliation support into an exactly-once system.
+
+| Effect | Classification | Delivery guarantee |
+| --- | --- | --- |
+| Store and RedisStore reads | Pure | Exactly-once result semantics (no mutation) |
+| Store and RedisStore mutations | Guarded by parameter-specific effect receipt | At-most-once after an unknown outcome; cached replay after success |
+| Gmail, Telegram, WhatsApp and other communication sends | Guarded by parameter-specific effect receipt | At-most-once after an unknown outcome; cached replay after success |
+| Alpaca order placement | Client-order-id reconciled | Effectively exactly-once while provider lookup is available |
+| Binance standard order placement | Client-order-id reconciled | Effectively exactly-once while provider lookup is available |
+| Binance futures algo order placement | Algo-client-id reconciled, scan gate retained | Unsupported for live scan execution pending production qualification |
+| Broker close-position operations | Position-based only, scan gated | Unsupported for live scan execution |
+| Unknown broker mutations | No reconciliation capability | Unsupported for live scan execution |
+| HTTP/Webhook utility nodes | Payload processing only; no outbound mutation in the current executor | Pure |
+| Indicators, conditions, transforms, consolidators, and market-data reads | No external mutation | Pure or naturally idempotent |
+
+An external timeout, reset connection, abort, or body-less 5xx is persisted as an unknown effect outcome. Automatic replay is blocked with `EFFECT_OUTCOME_UNKNOWN` unless the provider supplies a reconciliation callback. Explicit provider rejections are released for a safe retry. Legitimate identical effects in a loop use their invocation index as part of the effect key.
+
 ### Two-Layer Queue System
 
 The backend uses a two-layer node processing model:

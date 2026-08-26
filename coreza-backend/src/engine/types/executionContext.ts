@@ -1,4 +1,4 @@
-import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
+import { IterMeta, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { ExecutionMode } from "./executionError";
 
 export interface MultiBarExecutionContext {
@@ -16,6 +16,7 @@ export interface NodeExecutionContext {
   executionId: string;
   runId?: string;
   emissionId?: string;
+  iteration?: IterMeta;
   workflowId: string;
   nodeId: string;
   nodes: WorkflowNode[];

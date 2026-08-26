@@ -30,6 +30,8 @@ export interface CachedOrder {
   updatedAt: string;
   ownerToken: string;
   broker: string;
+  orderKind: "standard" | "algo";
+  marketType: string;
 }
 
 const DEFAULT_ORDER_CACHE_TTL_SECONDS = 86_400;
@@ -85,6 +87,8 @@ export async function getOrderFromCache(
     updatedAt: parsed.updatedAt ?? parsed.createdAt,
     ownerToken: parsed.ownerToken ?? "__legacy__",
     broker: parsed.broker,
+    orderKind: parsed.orderKind ?? "standard",
+    marketType: parsed.marketType ?? "unknown",
   };
 }
 
@@ -95,11 +99,14 @@ export async function claimOrderIntent(
   idempotencyKey: string,
   broker: string,
   ownerToken: string,
+  orderKind: "standard" | "algo" = "standard",
+  marketType = "unknown",
 ): Promise<{ claimed: true } | { claimed: false; existing: CachedOrder | null }> {
   const redis = getRedisCache();
   const now = new Date().toISOString();
   const order: CachedOrder = {
     idempotencyKey, status: "pending", createdAt: now, updatedAt: now, broker, ownerToken,
+    orderKind, marketType,
   };
   const ttl = orderCacheTtlSeconds();
   const key = RedisKeys.order(userId, workflowId, idempotencyKey);
@@ -109,6 +116,23 @@ export async function claimOrderIntent(
   }
   await redis.set(RedisKeys.orderReverse(userId, workflowId, idempotencyKey), idempotencyKey, "EX", ttl);
   return { claimed: true };
+}
+
+/** Releases an unsent order intent only while the caller still owns it. */
+export async function releaseOrderClaim(
+  userId: string,
+  workflowId: string,
+  idempotencyKey: string,
+  ownerToken: string,
+): Promise<boolean> {
+  const key = RedisKeys.order(userId, workflowId, idempotencyKey);
+  const script = `
+    local current = redis.call('get', KEYS[1])
+    if not current then return 0 end
+    local decoded = cjson.decode(current)
+    if decoded.ownerToken ~= ARGV[1] then return 0 end
+    return redis.call('del', KEYS[1])`;
+  return await getRedisCache().eval(script, 1, key, ownerToken) === 1;
 }
 
 /** Updates an order only while the caller still owns its claim. */

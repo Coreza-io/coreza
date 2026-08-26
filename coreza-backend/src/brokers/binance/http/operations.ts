@@ -380,6 +380,58 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       timestamp: getBinanceTimestamp(getEnvironment(input), getMarketType(input)),
     }),
   },
+  get_algo_order_by_client_id: {
+    method: "get",
+    path: () => "/fapi/v1/algoOrder",
+    makeParams: (input: any, creds: any) => {
+      if (getMarketType(input) !== "futures") {
+        throw new Error("get_algo_order_by_client_id is only supported for futures accounts");
+      }
+      return signParams(creds, {
+        symbol: input.symbol,
+        clientAlgoId: input.client_order_id,
+        recvWindow: 60000,
+        timestamp: getBinanceTimestamp(getEnvironment(input), "futures"),
+      });
+    },
+    execute: async ({ input, creds, baseUrl, headers, request }) => {
+      const makeSignedParams = (extra: Record<string, unknown>) => signParams(creds, {
+        ...extra,
+        recvWindow: 60000,
+        timestamp: getBinanceTimestamp(getEnvironment(input), "futures"),
+      });
+      try {
+        const response = await request.get(`${baseUrl}/fapi/v1/algoOrder`, {
+          headers,
+          params: makeSignedParams({ symbol: input.symbol, clientAlgoId: input.client_order_id }),
+          timeout: 30_000,
+        });
+        return response.data;
+      } catch (error: unknown) {
+        const status = error && typeof error === "object" && "response" in error &&
+          error.response && typeof error.response === "object" && "status" in error.response
+          ? error.response.status
+          : undefined;
+        if (typeof status !== "number" || ![400, 404, 405].includes(status)) throw error;
+        const response = await request.get(`${baseUrl}/fapi/v1/allAlgoOrders`, {
+          headers,
+          params: makeSignedParams({ symbol: input.symbol }),
+          timeout: 30_000,
+        });
+        const orders: unknown[] = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.orders) ? response.data.orders : [];
+        const found = orders.find((order) => order !== null && typeof order === "object" &&
+          "clientAlgoId" in order && order.clientAlgoId === input.client_order_id);
+        if (!found) {
+          const notFound = new Error("Algo order not found") as Error & { response?: { status: number } };
+          notFound.response = { status: 404 };
+          throw notFound;
+        }
+        return found;
+      }
+    },
+  },
   get_open_algo_orders: {
     method: "get",
     path: () => "/fapi/v1/openAlgoOrders",

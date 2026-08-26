@@ -64,7 +64,21 @@ export class CommunicationExecutor implements INodeExecutor {
             workflowId: context.workflowId ?? "manual",
             executionId: context.executionId ?? context.runId ?? "manual",
           },
-          effectKey(context.emissionId, node.id, `${serviceKey}:${operation}`),
+          effectKey({
+            scopeId: context.emissionId,
+            nodeId: node.id,
+            operation: `${serviceKey}:${operation}`,
+            params: {
+              service: serviceKey,
+              operation,
+              recipient: resolvedParams.recipient ?? resolvedParams.chatId ?? resolvedParams.to,
+              channel: resolvedParams.channel,
+              subject: resolvedParams.subject,
+              body: resolvedParams.body ?? resolvedParams.message,
+              attachments: resolvedParams.attachments,
+            },
+            invocationIndex: context?.iteration?.iterIndex,
+          }),
           executeEffect,
         )
         : await executeEffect();

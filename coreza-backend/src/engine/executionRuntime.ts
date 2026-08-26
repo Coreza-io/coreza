@@ -264,6 +264,7 @@ export abstract class BaseExecutionRuntime {
       }
 
       const context = this.getExecutionContext(node.id);
+      context.iteration = item.meta;
       const t0 = performance.now();
       const warmupResult = context.isWarmingUp
         ? enforceWarmupPolicy(node)

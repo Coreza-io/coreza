@@ -109,7 +109,7 @@ export class UtilityExecutor implements INodeExecutor {
     context?: any,
     startTime?: number
   ): NodeResult {
-    // Webhook nodes typically receive data, so we just process and return it
+    // Scan classification: pure — this node only normalizes an already-received payload.
     const successOutput = createSuccessOutput({
       ...input,
       webhook_received_at: new Date().toISOString(),
@@ -129,6 +129,7 @@ export class UtilityExecutor implements INodeExecutor {
     context?: any,
     startTime?: number
   ): NodeResult {
+    // Scan classification: pure — outbound HTTP is not implemented by this executor.
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };

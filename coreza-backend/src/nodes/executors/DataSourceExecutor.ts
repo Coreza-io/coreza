@@ -62,7 +62,20 @@ export class DataSourceExecutor implements INodeExecutor {
               workflowId: context.workflowId ?? "manual",
               executionId: context.executionId ?? context.runId ?? "manual",
             },
-            effectKey(context.emissionId, node.id, `store:${operation}`),
+            effectKey({
+              scopeId: context.emissionId,
+              nodeId: node.id,
+              operation: `store:${operation}`,
+              params: {
+                provider: "store",
+                operation,
+                key: resolvedParams.key,
+                field: resolvedParams.field,
+                value: resolvedParams.value,
+                ttl: resolvedParams.ttl,
+              },
+              invocationIndex: context?.iteration?.iterIndex,
+            }),
             executeEffect,
           )
           : await executeEffect();
@@ -102,17 +115,40 @@ export class DataSourceExecutor implements INodeExecutor {
           return toNodeResult(errOutput);
         }
 
-        const result = await this.executeStorageNode(
-          "redis",
-          {
+        const storageInput = {
             ...resolvedParams,
             user_id: redisUserId,
             credential_id: redisCredentialId,
             workflow_id: context?.workflowId || input.workflowId,
             subCategory: "redis",
-          },
-          context,
-        );
+          };
+        const executeEffect = () => this.executeStorageNode("redis", storageInput, context);
+        const redisOperation = String(operation ?? "get").toLowerCase();
+        const isMutation = !["get", "read", "list", "keys", "exists"].includes(redisOperation);
+        const result = context?.emissionId && isMutation
+          ? await runOnce(
+            {
+              userId: context.userId ?? redisUserId,
+              workflowId: context.workflowId ?? "manual",
+              executionId: context.executionId ?? context.runId ?? "manual",
+            },
+            effectKey({
+              scopeId: context.emissionId,
+              nodeId: node.id,
+              operation: `redis:${redisOperation}`,
+              params: {
+                provider: "redis",
+                operation: redisOperation,
+                key: resolvedParams.key,
+                field: resolvedParams.field,
+                value: resolvedParams.value,
+                ttl: resolvedParams.ttl,
+              },
+              invocationIndex: context?.iteration?.iterIndex,
+            }),
+            executeEffect,
+          )
+          : await executeEffect();
 
         const normalized = normalizeOutput(result, {
           nodeId: node.id,

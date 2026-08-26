@@ -11,9 +11,24 @@ function receiptTtlSeconds(): number {
     : DEFAULT_DELIVERY_RECEIPT_TTL_SECONDS;
 }
 
-function claimLeaseSeconds(): number {
+export function claimLeaseSeconds(): number {
   const configured = Number(process.env.CONSOLIDATOR_CLAIM_LEASE_SECONDS);
   return Number.isSafeInteger(configured) && configured > 0 ? configured : 120;
+}
+
+export async function renewEmissionClaim(
+  userId: string,
+  workflowId: string,
+  executionId: string,
+  emissionIds: readonly string[],
+  ownerToken: string,
+): Promise<boolean> {
+  const key = RedisKeys.consolidatorClaim(userId, workflowId, executionId, emissionBatchHash(emissionIds));
+  const result = await getRedisCache().eval(
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end",
+    1, key, ownerToken, String(claimLeaseSeconds()),
+  );
+  return result === 1;
 }
 
 export function emissionBatchHash(emissionIds: readonly string[]): string {

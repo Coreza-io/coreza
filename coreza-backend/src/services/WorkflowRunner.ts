@@ -19,8 +19,10 @@ import {
 import {
   findDeliveredEmissionIds,
   claimEmissionBatch,
+  claimLeaseSeconds,
   markEmissionDelivered,
   releaseEmissionClaim,
+  renewEmissionClaim,
 } from "../engine/consolidation/consolidatorDeliveryReceipt";
 import {
   consolidatorDownstreamFailuresCounter,
@@ -362,15 +364,29 @@ export class WorkflowRunner {
       source: "consolidator_scan",
     }, this.executionId);
     this.engine.setRunId(runId);
+    const claimTimers = new Map<string, { renewal: NodeJS.Timeout; timeout: NodeJS.Timeout }>();
+    const claimTokens = new Map<string, string>();
+    const claimEmissionIds = new Map<string, readonly string[]>();
     try {
-      const claimTokens = new Map<string, string>();
+      let rejectTimedOutBatch: ((reason: Error) => void) | undefined;
+      const timedOutBatch = new Promise<never>((_resolve, reject) => {
+        rejectTimedOutBatch = reject;
+      });
+      const stopClaimTimers = (key: string): void => {
+        const timers = claimTimers.get(key);
+        if (!timers) return;
+        clearInterval(timers.renewal);
+        clearTimeout(timers.timeout);
+        claimTimers.delete(key);
+      };
       const batchKey = (batch: readonly ConsolidatorEmission[]): string =>
         batch.map((emission) => emission.emissionId).sort().join("\n");
-      const result = await this.engine.executeInjectedResults(
+      const execution = this.engine.executeInjectedResults(
         emissions,
         async (delivered) => {
           const key = batchKey(delivered);
           const ownerToken = claimTokens.get(key);
+          stopClaimTimers(key);
           if (!ownerToken || !(await markEmissionDelivered(
             this.userId,
             this.workflowId,
@@ -379,6 +395,7 @@ export class WorkflowRunner {
             ownerToken,
           ))) throw new Error("Consolidator emission claim was lost before delivery");
           claimTokens.delete(key);
+          claimEmissionIds.delete(key);
           commitConsolidatorEmissions(this.engine.getDataContext(), delivered);
         },
         async (batch) => {
@@ -387,19 +404,60 @@ export class WorkflowRunner {
             this.userId, this.workflowId, this.executionId,
             batch.map((emission) => emission.emissionId), ownerToken,
           );
-          if (claimed) claimTokens.set(batchKey(batch), ownerToken);
+          if (claimed) {
+            const key = batchKey(batch);
+            const emissionIds = batch.map((emission) => emission.emissionId);
+            const leaseMs = claimLeaseSeconds() * 1000;
+            let renewalRunning = false;
+            claimTokens.set(key, ownerToken);
+            claimEmissionIds.set(key, emissionIds);
+            const renewal = setInterval(() => {
+              if (renewalRunning) return;
+              renewalRunning = true;
+              void renewEmissionClaim(
+                this.userId, this.workflowId, this.executionId, emissionIds, ownerToken,
+              ).then((renewed) => {
+                if (!renewed) {
+                  stopClaimTimers(key);
+                  claimTokens.delete(key);
+                  claimEmissionIds.delete(key);
+                  const error = new Error("Consolidator emission claim ownership was lost");
+                  this.abortController.abort(error);
+                  rejectTimedOutBatch?.(error);
+                }
+              }).catch((error) => {
+                console.error("Failed to renew consolidator emission claim", error);
+              }).finally(() => { renewalRunning = false; });
+            }, Math.ceil(leaseMs / 3));
+            const configuredTimeout = this.positiveEnv("CONSOLIDATOR_BATCH_TIMEOUT_MS", leaseMs * 5);
+            const timeout = setTimeout(() => {
+              stopClaimTimers(key);
+              claimTokens.delete(key);
+              claimEmissionIds.delete(key);
+              const error = new Error("Consolidator batch execution timed out");
+              this.abortController.abort(error);
+              rejectTimedOutBatch?.(error);
+              void releaseEmissionClaim(
+                this.userId, this.workflowId, this.executionId, emissionIds, ownerToken,
+              );
+            }, configuredTimeout);
+            claimTimers.set(key, { renewal, timeout });
+          }
           return claimed;
         },
         async (batch) => {
           const key = batchKey(batch);
           const ownerToken = claimTokens.get(key);
+          stopClaimTimers(key);
           if (ownerToken) await releaseEmissionClaim(
             this.userId, this.workflowId, this.executionId,
             batch.map((emission) => emission.emissionId), ownerToken,
           );
           claimTokens.delete(key);
+          claimEmissionIds.delete(key);
         },
       );
+      const result = await Promise.race([execution, timedOutBatch]);
       if (result.success) {
         await this.recordSuccess(runId, result, "consolidator_scan");
       } else {
@@ -409,6 +467,23 @@ export class WorkflowRunner {
     } catch (error) {
       consolidatorDownstreamFailuresCounter.inc();
       await this.recordFailure(runId, error);
+    } finally {
+      // Batch callbacks normally clear these; this also covers unexpected engine exits.
+      for (const timers of claimTimers.values()) {
+        clearInterval(timers.renewal);
+        clearTimeout(timers.timeout);
+      }
+      const releases = await Promise.allSettled([...claimTokens].map(([key, ownerToken]) => {
+        const emissionIds = claimEmissionIds.get(key);
+        return emissionIds
+          ? releaseEmissionClaim(this.userId, this.workflowId, this.executionId, emissionIds, ownerToken)
+          : Promise.resolve(false);
+      }));
+      for (const release of releases) {
+        if (release.status === "rejected") {
+          console.error("Failed to release consolidator emission claim during cleanup", release.reason);
+        }
+      }
     }
   }
 

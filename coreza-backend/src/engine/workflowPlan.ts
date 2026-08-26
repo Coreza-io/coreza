@@ -5,6 +5,7 @@ import { GraphRuntime } from "./graphRuntime";
 import { ParameterResolver } from "./parameterResolver";
 import { ExecutionMode, FlushPolicy } from "./types";
 import { WorkflowRun } from "./workflowRun";
+import { getReconciliationCapability, resolveOrderKind } from "../brokers/reconciliationCapabilities";
 
 export class WorkflowPlan {
   readonly graph: GraphRuntime;
@@ -53,6 +54,27 @@ export class WorkflowPlan {
           console.warn(
             `[WorkflowPlan] Mixed consolidator join at node ${targetId} is not triggered by clock scans; ` +
             "use an all-consolidator join or a separate bounded payload cache",
+          );
+        }
+      }
+      const scanReachable = new Set<string>();
+      const queue = nodes.filter((node) => node.name === "Consolidator").map((node) => node.id);
+      while (queue.length > 0) {
+        const source = queue.shift()!;
+        for (const edge of edges) {
+          if (edge.source !== source || scanReachable.has(edge.target)) continue;
+          scanReachable.add(edge.target);
+          queue.push(edge.target);
+        }
+      }
+      for (const node of nodes) {
+        if (!scanReachable.has(node.id) || node.category !== "Broker") continue;
+        const broker = String(node.subCategory ?? node.name ?? "").toLowerCase();
+        const operation = String(node.values?.operation ?? "");
+        const orderKind = resolveOrderKind(broker, node.values ?? {});
+        if (!getReconciliationCapability(broker, operation, orderKind).liveScanAllowed) {
+          console.warn(
+            `[WorkflowPlan] ${broker}.${operation} at node ${node.id} is unsafe for consolidator scan execution and will be blocked`,
           );
         }
       }

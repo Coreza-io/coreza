@@ -161,7 +161,7 @@ describe("ConsolidatorExecutor", () => {
       success: true,
       data: { emitted: true, bar: { open: 1, close: 4 } },
     });
-    expect(dataContext.getDataByKey("consolidator:consolidator:spy:1h:4h:UTC:")).toBeDefined();
+    expect(dataContext.getDataByKey("spy:1h:4h:UTC:")).toBeDefined();
   });
 
   it("fails explicitly rather than using private node state without a data context", () => {

@@ -92,8 +92,6 @@ export interface Bar {
   low: number;
   close: number;
   volume: number;
-  /** Synthetic continuity bar; its volume must not contribute to aggregation. */
-  _isFillForward?: boolean;
 }
 
 export interface NumericBar {

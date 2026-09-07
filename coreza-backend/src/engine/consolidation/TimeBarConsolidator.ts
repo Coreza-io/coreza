@@ -65,11 +65,6 @@ export class TimeBarConsolidator {
   }
 
   update(input: Bar, previous?: ConsolidatorState): ConsolidationResult {
-    const inputVolume = input._isFillForward ? 0 : input.volume;
-    const normalizedInput = inputVolume === input.volume
-      ? input
-      : { ...input, volume: inputVolume };
-    input = normalizedInput;
     if (previous) {
       const currentTime = new Date(input.timestamp).getTime();
       const lastTime = new Date(previous.lastInput.timestamp).getTime();

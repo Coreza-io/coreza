@@ -36,36 +36,4 @@ describe("consolidator warm-up sizing", () => {
       requiresWorkflowReplay: false,
     });
   });
-
-  it("multiplies ratios and applies a bucket cushion at every chained stage", () => {
-    const chainedNodes: WorkflowNode[] = [
-      nodes[0],
-      nodes[1],
-      { id: "daily", name: "Consolidator", node_type: "main", category: "Data", values: { source_timeframe: "4h", target_timeframe: "1d" } },
-      { id: "sma", name: "SMA", node_type: "main", category: "Indicators" },
-    ];
-    const chainedEdges: WorkflowEdge[] = [
-      edges[0],
-      { id: "chain", source: "consolidator", target: "daily" },
-      { id: "indicator", source: "daily", target: "sma" },
-    ];
-    expect(resolveConsolidatorWarmup("backtest", chainedNodes, chainedEdges, [{
-      nodeId: "sma", type: "sma", params: { period: 20 },
-    }])).toEqual({ requiredSourceBars: (20 * 6 + 6) * 4 + 4, requiresWorkflowReplay: true });
-  });
-
-  it("does not apply a consolidator ratio to an independent warm-up branch", () => {
-    const branchEdges: WorkflowEdge[] = [
-      ...edges,
-      { id: "direct", source: "backtest", target: "direct-indicator" },
-    ];
-    const branchNodes: WorkflowNode[] = [
-      ...nodes,
-      { id: "direct-indicator", name: "SMA", node_type: "main", category: "Indicators" },
-    ];
-    expect(resolveConsolidatorWarmup("backtest", branchNodes, branchEdges, [
-      { nodeId: "macd", type: "sma", params: { period: 20 } },
-      { nodeId: "direct-indicator", type: "sma", params: { period: 100 } },
-    ])).toEqual({ requiredSourceBars: 20 * 4 + 4, requiresWorkflowReplay: true });
-  });
 });

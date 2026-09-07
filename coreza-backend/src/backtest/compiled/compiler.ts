@@ -20,7 +20,6 @@ import {
   PinnedSlotEntry,
   CompiledExecContext,
   SlotParamResolver,
-  type ActivationTarget,
 } from "./types";
 import { buildExecAdapter, resolveCategory } from "./adapters";
 
@@ -141,27 +140,6 @@ export function compilePlan(
   }
 
   const instructions: Instruction[] = [];
-  const requiredActivationCounts = new Uint32Array(topoOrder.length);
-  const dependencyGroupByEdgeId = new Map<string, number>();
-  let dependencyGroupCount = 0;
-
-  for (const nodeId of topoOrder) {
-    const groups = new Map<string, number>();
-    const branchOrigins = graph.branchOrigins.get(nodeId);
-    for (const edge of graph.getIncomingEdges(nodeId)) {
-      if (graph.isSubNode(edge.source)) continue;
-      const origin = branchOrigins?.get(edge.id);
-      const groupKey = origin ? `branch:${origin.ifNodeId}` : `edge:${edge.id}`;
-      let groupIndex = groups.get(groupKey);
-      if (groupIndex === undefined) {
-        groupIndex = dependencyGroupCount++;
-        groups.set(groupKey, groupIndex);
-      }
-      dependencyGroupByEdgeId.set(edge.id, groupIndex);
-    }
-    requiredActivationCounts[nodeIdToInstrIndex.get(nodeId)!] =
-      Math.max(1, groups.size);
-  }
 
   for (const nodeId of topoOrder) {
     const node = graph.nodeById.get(nodeId)!;
@@ -177,33 +155,26 @@ export function compilePlan(
         : inputSlot;
 
     if (isConditional) {
-      const branchTargets: ActivationTarget[][] = [[], [], [], []];
+      const branchTargets: number[][] = [[], [], [], []];
       const branchStringMap =
-        node.name === "Switch" ? new Map<string, ActivationTarget[]>() : undefined;
+        node.name === "Switch" ? new Map<string, number[]>() : undefined;
       for (const edge of graph.getOutgoingEdges(nodeId)) {
-        if (graph.isSubNode(edge.source)) continue;
         const handle = edge.sourceHandle ?? "";
         const targetInstrIdx = nodeIdToInstrIndex.get(edge.target);
-        const dependencyGroupIndex = dependencyGroupByEdgeId.get(edge.id);
-        if (targetInstrIdx === undefined || dependencyGroupIndex === undefined) continue;
-        const target = {
-          instructionIndex: targetInstrIdx,
-          dependencyGroupIndex,
-          inputSlot: outSlot,
-        };
+        if (targetInstrIdx === undefined) continue;
 
         if (branchStringMap) {
           const targets = branchStringMap.get(handle);
-          if (targets) targets.push(target);
-          else branchStringMap.set(handle, [target]);
+          if (targets) targets.push(targetInstrIdx);
+          else branchStringMap.set(handle, [targetInstrIdx]);
 
           if (handle === "" || handle === "default" || handle === "fallback") {
-            branchTargets[BranchEnum.DEFAULT].push(target);
+            branchTargets[BranchEnum.DEFAULT].push(targetInstrIdx);
           }
           continue;
         }
 
-        branchTargets[branchHandleToEnum(handle)].push(target);
+        branchTargets[branchHandleToEnum(handle)].push(targetInstrIdx);
       }
 
       instructions.push({
@@ -221,18 +192,10 @@ export function compilePlan(
       continue;
     }
 
-    const downstream: ActivationTarget[] = [];
+    const downstream: number[] = [];
     for (const edge of graph.getOutgoingEdges(nodeId)) {
-      if (graph.isSubNode(edge.source)) continue;
       const targetInstrIdx = nodeIdToInstrIndex.get(edge.target);
-      const dependencyGroupIndex = dependencyGroupByEdgeId.get(edge.id);
-      if (targetInstrIdx !== undefined && dependencyGroupIndex !== undefined) {
-        downstream.push({
-          instructionIndex: targetInstrIdx,
-          dependencyGroupIndex,
-          inputSlot: outSlot,
-        });
-      }
+      if (targetInstrIdx !== undefined) downstream.push(targetInstrIdx);
     }
 
     instructions.push({
@@ -303,10 +266,6 @@ export function compilePlan(
     instructionTimingCount: new Uint32Array(instructions.length),
     slots,
     active: new Uint8Array(instructions.length),
-    activationCounts: new Uint32Array(instructions.length),
-    satisfiedDependencyGroups: new Uint8Array(dependencyGroupCount),
-    requiredActivationCounts,
-    activeInputSlots: new Int32Array(instructions.length),
     entryIndices,
     pinnedSlotEntries,
     inputSlot,

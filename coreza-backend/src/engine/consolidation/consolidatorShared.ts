@@ -7,7 +7,6 @@ import {
 } from "./TimeBarConsolidator";
 
 export interface ConsolidatorParameters {
-  nodeId: string;
   symbol: string;
   sourceTimeframe: string;
   targetTimeframe: string;
@@ -44,13 +43,6 @@ export function buildConsolidatorStateKey(
   parameters: ConsolidatorParameters,
 ): string {
   const symbol = parameters.symbol.trim();
-  const nodeId = parameters.nodeId.trim();
-  if (!nodeId) {
-    throw new ConsolidatorValidationError(
-      "INVALID_CONSOLIDATOR_CONFIG",
-      "node_id is required",
-    );
-  }
   if (!symbol) {
     throw new ConsolidatorValidationError(
       "INVALID_CONSOLIDATOR_CONFIG",
@@ -63,8 +55,6 @@ export function buildConsolidatorStateKey(
     parameters.targetTimeframe,
   );
   return [
-    "consolidator",
-    nodeId,
     symbol,
     ratio.source.normalized,
     ratio.target.normalized,

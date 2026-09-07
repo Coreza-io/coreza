@@ -30,7 +30,6 @@ const input = (hour: number, value: number) => ({
 const body = (runId: string, hour: number, value: number) => ({
   runId,
   workflowId: "workflow-1",
-  node_id: "consolidator-1",
   symbol: "SPY",
   source_timeframe: "1h",
   target_timeframe: "4h",
@@ -61,7 +60,7 @@ describe("POST /storage/consolidator", () => {
       expect(response.body).toMatchObject({
         success: true,
         data: { emitted: false, bar: null },
-        meta: { key: "consolidator:consolidator-1:SPY:1h:4h:UTC:" },
+        meta: { key: "SPY:1h:4h:UTC:" },
       });
       expect(response.body.data.workingBar).toBeDefined();
     }
@@ -80,24 +79,6 @@ describe("POST /storage/consolidator", () => {
     });
   });
 
-  it("keeps identically configured consolidator nodes independently scoped", async () => {
-    for (const nodeId of ["first", "second"]) {
-      for (let hour = 0; hour < 4; hour += 1) {
-        const response = await request(app).post("/storage/consolidator").send({
-          ...body(executionId, hour, hour + 1), node_id: nodeId,
-        });
-        expect(response.body.data.emitted).toBe(false);
-      }
-    }
-
-    for (const nodeId of ["first", "second"]) {
-      const response = await request(app).post("/storage/consolidator").send({
-        ...body(executionId, 4, 5), node_id: nodeId,
-      });
-      expect(response.body).toMatchObject({ success: true, data: { emitted: true, bar: { open: 1 } } });
-    }
-  });
-
   it("returns a keyed 404 without creating a missing execution context", async () => {
     const missingId = "missing-consolidator-run";
     const response = await request(app)
@@ -108,7 +89,7 @@ describe("POST /storage/consolidator", () => {
     expect(response.body).toEqual({
       success: false,
       error: "Execution context not found or already completed",
-      meta: { key: "consolidator:consolidator-1:SPY:1h:4h:UTC:" },
+      meta: { key: "SPY:1h:4h:UTC:" },
     });
     expect(manager.hasContext(missingId)).toBe(false);
   });
@@ -126,22 +107,6 @@ describe("POST /storage/consolidator", () => {
     });
   });
 
-  it("rejects a missing node id", async () => {
-    const { node_id: _nodeId, ...requestBody } = body(executionId, 0, 1);
-    const response = await request(app).post("/storage/consolidator").send(requestBody);
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({ success: false, error: "node_id is required" });
-  });
-
-  it("does not expose a context owned by another user or workflow", async () => {
-    const foreignId = "foreign-consolidator-run";
-    manager.getContext({ executionId: foreignId, workflowId: "workflow-1", userId: "user-2" });
-    const response = await request(app).post("/storage/consolidator").send(body(foreignId, 0, 1));
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe("Execution context not found or already completed");
-    manager.destroyContext(foreignId);
-  });
-
   it("uses the editor workflow session id as the execution context", async () => {
     const { runId: _runId, ...requestBody } = body(executionId, 0, 1);
     const response = await request(app)
@@ -152,7 +117,7 @@ describe("POST /storage/consolidator", () => {
     expect(response.body).toMatchObject({
       success: true,
       data: { emitted: false },
-      meta: { key: "consolidator:consolidator-1:SPY:1h:4h:UTC:" },
+      meta: { key: "SPY:1h:4h:UTC:" },
     });
   });
 

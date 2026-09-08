@@ -5,6 +5,7 @@ export type IndicatorTypeId =
   | "macd"
   | "bb"
   | "adx"
+  | "atr"
   | "stoch"
   | "vwap"
   | "obv"
@@ -91,6 +92,13 @@ const INDICATOR_SPECS: Record<IndicatorTypeId, IndicatorSpec> = {
       { key: "pdi", label: "+DI", color: "#22c55e" },
       { key: "mdi", label: "-DI", color: "#ef4444" },
     ],
+  },
+  atr: {
+    id: "atr",
+    label: "ATR",
+    pane: "panel",
+    kind: "line",
+    channels: [{ key: "value", label: "ATR", color: "#f97316" }],
   },
   stoch: {
     id: "stoch",

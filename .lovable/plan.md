@@ -1,79 +1,100 @@
-# ATR Indicator — End-to-End Implementation Plan
+# ATR: selectable smoothing method (LEAN-style)
 
-Both attached documents are sound and consistent with the codebase: ATR belongs in the existing generic indicator framework, with no dedicated executor. The LEAN recommendation doc's calculation change (first-bar TR = high - low, readiness at `period` bars) is valid and is now folded in below.
+The current ATR is hardcoded to Wilder. This adds an explicit smoothing choice, matching LEAN's design: True Range is fixed, the moving average over it is configurable.
 
-## Verified against the code
+The document's analysis is correct and matches LEAN. One design decision to carry over: **never rely on a default**. LEAN's inconsistency (`new AverageTrueRange(14)` → Wilders, `ATR(symbol, 14)` → Simple) is exactly the trap to avoid, so Coreza will have a single explicit value everywhere, defaulting to `wilders` in one place only (parameter parsing) and stamping the resolved method into state and output.
 
-- `InitializeIndicatorsExecutor.ts:40` already lists `"ATR"` in `INDICATOR_NAMES` — discovery/warm-up wiring is genuinely already in place.
-- `IndicatorsExecutor` derives the type from `node.name.toLowerCase()`, so `ATR` maps to `atr` with no registry change.
-- `requiredWarmupBars()` (`indicatorStateManager.ts:61-94`) has no `atr` case and falls through to `1`.
-- `IndicatorService.createIncrementalUpdater()` (`indicators.ts:216`) and `IndicatorService.calculate()` (`indicators.ts:2040`) have no `atr` case.
-- `routes/indicators.ts` has no `/atr` route.
-- Frontend: `src/utils/indicatorRegistry.ts` has no `atr` spec; `src/utils/visualizeNormalize.ts:3` `OSCILLATOR_NAMES` has no `atr`; `src/nodes/Visualize.json` indicator picker has no `atr` option.
+## Current implementation (verified)
 
-## Corrections to the documents
+- `indicators.ts:134-243` — `AtrState`, `parseAtrPeriod`, `parseAtrBar`, `isAtrState`, `trueRange`, `updateAtrState`, `createAtrState`, `computeATRSeries`. Wilder only, first bar TR = high − low, ready at `period`.
+- `indicators.ts:333-356` — `case "atr"` incremental updater.
+- `indicators.ts:1737-1758` — `calculateATR`, returns the full series.
+- `indicatorStateManager.ts:78-79` — `case "atr": return positivePeriod(params.period);`.
+- `routes/indicators.ts:217` — `POST /indicators/atr`.
+- Frontend: `src/nodes/ATR.json`, `indicatorRegistry.ts:96`, `visualizeNormalize.ts:3`, `Visualize.json:80`.
 
-1. **Seeding follows LEAN, not ADX — warm-up is `period`.** The LEAN recommendation doc supersedes my earlier `period + 1` note, and it is right: LEAN's `AverageTrueRange` counts the first valid bar as True Range #1 using `high - low`, so ATR(14) is ready on bar 14. Use `case "atr": return positivePeriod(params.period);`. `count` means valid True Range observations, not bars. This differs from ADX's updater (which burns bar 1 to seed `prevHigh/prevLow/prevClose`); that divergence is intentional and should be commented in the code so nobody "fixes" it later.
-2. **Do not use `technicalindicators`' `ATR.calculate` for the batch path.** Its initialization differs and would break the parity rule. Implement one shared `trueRange()` + `updateAtrState()` pair; `computeATRSeries()` (batch) and the incremental `update()` both call it, so parity holds by construction.
-3. **No manifest edit is needed.** `src/nodes/manifest.ts` auto-discovers `./*.json` via `import.meta.glob`, so dropping in `ATR.json` is enough — but it must pass `NodeConfigSchema`, and there is **no `public/assets/icons/atr.svg`**. Use `/assets/icons/indicators.svg` rather than pointing at a missing file.
-4. **Visualization needs three edits, not one.** Beyond `indicatorRegistry.ts`, add `atr` to `OSCILLATOR_NAMES` in `visualizeNormalize.ts:3` (so it renders in its own panel, not on the price pane) and add the `{ "id": "atr", "name": "ATR" }` option to the picker list in `src/nodes/Visualize.json`.
-5. **Explicitly Wilder, v1 only.** LEAN's `QCAlgorithm.ATR(...)` can default to Simple smoothing; we hardcode Wilder (`alpha = 1/period`) so comparisons are deterministic. No moving-average-type field in this PR.
-6. **Skip the rest of LEAN's model.** No event-chain indicator objects, no partial pre-ready values (Coreza returns `null` until ready even though LEAN exposes a partial smoother value), no decimal/Big.js arithmetic — plain `number` with a tight comparison tolerance.
+## Scope
 
-Also: the first doc's "Consolidator -> If -> ATR" test row assumes explicit If gating. That is a separate in-flight change; write the test against whatever routing semantics are current at merge time and do not couple this PR to it.
-
-
-## Math (LEAN-aligned)
-
-```text
-TR_t = max(high - low, |high - prevClose|, |low - prevClose|)
-TR_1 = high_1 - low_1                       (no previous close)
-seed = (TR_1 + ... + TR_period) / period    (ready at bar `period`)
-ATR_t = ((ATR_(t-1) * (period - 1)) + TR_t) / period
-```
-
-Value is `null` until `count === period`. Deterministic ATR(3) fixture from the doc — bars (10/8/9), (12/9/11), (13/10/10.5), (12/7/8) → TR 2, 3, 3, 5; seed ATR₃ = 2.666667; ATR₄ = 3.444444.
+Support **`wilders` (default) and `simple`** in v1. Both are the only methods with real ATR meaning, and the shared state shape stays small. The state field is a string, not a boolean, so `exponential` and others can be added later without another migration.
 
 ## Changes
 
-**Backend**
+### 1. `coreza-backend/src/nodes/logic/indicators.ts`
 
-1. `coreza-backend/src/nodes/logic/indicators.ts`
-   - Add module-level `trueRange(high, low, prevClose)` (returns `high - low` when `prevClose` is not finite) and `updateAtrState(state, bar)` implementing the transition below; then `computeATRSeries(bars, period)` on top of it.
-   - State shape: `{ period, prevClose, count, trSum, atr, lastValue }`, where `count` = valid TR observations.
-   - Transition: non-finite high/low/close → return `state.lastValue ?? null` and mutate **nothing**. Otherwise compute TR, set `prevClose`, then while `count < period` accumulate `trSum`/`count` and return `null` until `count === period`, at which point `atr = trSum / period`; afterwards apply Wilder recurrence.
-   - Add `case "atr"` to `createIncrementalUpdater()`: `warmUp()` folds bars oldest→newest through `updateAtrState`, `update()` calls it once (O(1)).
-   - Add `static async calculateATR(input)` validating `period > 0` and candle numerics, returning through `createSuccessOutput({ ... nodeName: "ATR" })`.
-   - Add `case "atr": return this.calculateATR(input);` to `calculate()`.
-2. `coreza-backend/src/engine/indicatorStateManager.ts` — add `case "atr": return positivePeriod(params.period);`.
-3. `coreza-backend/src/routes/indicators.ts` — add `POST /atr` using `executeIndicatorWithState("atr", req, IndicatorService.calculateATR)`.
-4. `coreza-backend/src/nodes/logic/toolDefinitions.ts` — add an `ATR` entry mirroring the existing `ADX` entry so the AI Agent can call it. Confirm `ToolExecutor`/`AIAgentExecutor` route indicators generically; only touch them if ADX is special-cased there.
+- Add `type AtrSmoothing = "wilders" | "simple";` and `parseAtrSmoothing(value: unknown): AtrSmoothing` — trims, lowercases, accepts `wilder`/`wilders` and `simple`/`sma` as aliases, treats empty/undefined as `"wilders"`, throws a 400 on anything else. No silent fallback for unknown strings.
+- Extend `AtrState` with `smoothing: AtrSmoothing` and `trWindow: number[]` (used only by `simple`; stays empty for `wilders`).
+- `createAtrState(period, smoothing)` seeds both fields.
+- `isAtrState` validates `smoothing` is one of the two values and `trWindow` is a finite-number array. **Backward compatibility:** a persisted state missing `smoothing` is treated as `wilders` with an empty window rather than rejected, so existing Redis/L1 indicator states survive the deploy.
+- `updateAtrState` keeps the shared TR computation and the invalid-bar early return (no mutation), then branches:
+  - `wilders` — unchanged arithmetic.
+  - `simple` — push `tr` onto `trWindow`; while `trWindow.length > period` shift; `count += 1`; return `null` until `count >= period`; then `atr = sum(trWindow) / period`. Keep a running `trSum` for O(1): `trSum += tr` on push and `trSum -= removed` on shift, so the value is `trSum / period` with no re-summing per bar.
+  - Both paths end with `state.lastValue = state.atr`.
+- `computeATRSeries(bars, period, smoothing)` passes the method through.
+- `case "atr"` in `createIncrementalUpdater` reads `params.smoothing ?? params.smoothing_method ?? params.moving_average_type` through `parseAtrSmoothing` and threads it into `createAtrState`. Because `serializeParams` already sorts all params into the updater cache key, two ATR nodes with different smoothing get distinct cached updaters automatically.
+- `calculateATR` parses the smoothing param the same way and passes it to `computeATRSeries`.
 
-**Frontend**
+### 2. `coreza-backend/src/engine/indicatorStateManager.ts`
 
-5. `src/nodes/ATR.json` — modelled on `ADX.json`: fields `candle_data`, `symbol`, `timeframe`, `period` (default `14`), action `POST /indicators/atr`, category `Indicators`, existing icon path.
-6. `src/utils/indicatorRegistry.ts` — add `"atr"` to `IndicatorTypeId` and an `atr` spec: `pane: "panel"`, `kind: "line"`, one channel `{ key: "value", label: "ATR", color: "#f97316" }`.
-7. `src/utils/visualizeNormalize.ts` — add `"atr"` to `OSCILLATOR_NAMES`.
-8. `src/nodes/Visualize.json` — add the ATR picker option.
+`requiredWarmupBars` stays `positivePeriod(params.period)` for both methods — both become ready on the `period`-th valid TR. Add a short comment saying so. `params` already includes `smoothing`, so distinct states are keyed separately by `serializeParams`.
 
-## Tests — `coreza-backend/tests/atrIndicator.test.ts`
+### 3. `coreza-backend/src/routes/indicators.ts`
 
-- ATR(3) fixture above → exact seed `2.666667` and next value `3.444444`.
-- Fewer than `period` valid bars → `value === null`, `isReady === false`.
-- First bar → TR = `high - low`, `count` becomes 1, value `null` (unless `period === 1`).
-- Exactly `period` valid bars → seed equals mean of TR₁..TR_period.
-- Bar after readiness → exact Wilder recurrence.
-- Gap-up and gap-down bars → TR uses the previous close.
-- Normal inside bar → TR equals `high - low`.
-- `period = 0` / negative / non-numeric → validation error from both batch and updater.
-- Malformed OHLC bar → state completely unchanged (`prevClose`, `count`, `trSum`, `atr`), previous value retained, no NaN.
-- Parity: `calculateATR(bars)` === `warmUp(bars)` === `warmUp(bars[0..n-2]) + update(last)`.
-- `updateSync` vs async `update` produce identical state and value.
-- Duplicate timestamp → no double update; out-of-order timestamp → no state mutation (both enforced at the state-manager/route layer, not inside the formula helper).
-- `InitializeIndicators` discovers an `ATR` node and warms it with `period` bars.
+No route change. The smoothing field arrives in `req.body` and flows through `executeIndicatorWithState` → `calculateATR` / state manager params unchanged.
+
+### 4. `src/nodes/ATR.json`
+
+Add a required select field after `period`:
+
+```json
+{
+  "key": "smoothing",
+  "label": "Smoothing Method",
+  "type": "select",
+  "default": "wilders",
+  "required": true,
+  "options": [
+    { "value": "wilders", "label": "Wilder (standard ATR)" },
+    { "value": "simple", "label": "Simple (rolling average)" }
+  ],
+  "description": "Moving average applied to True Range. Wilder is the conventional ATR used by most charting platforms; Simple is a strict rolling window."
+}
+```
+
+Confirm the option shape against `src/nodes/schemas/nodeSchema.ts` and an existing select-bearing node before writing it, and re-run `npx tsx scripts/validate-nodes.ts`.
+
+### 5. `coreza-backend/src/nodes/logic/toolDefinitions.ts`
+
+Update the `ATR` entry: description becomes "Average True Range (ATR) volatility, with selectable Wilder or Simple smoothing", and add the `smoothing` parameter with its enum and default so the AI agent can set it explicitly.
+
+### 6. Frontend visualization
+
+No change needed — the panel spec and picker entry are method-agnostic. Optionally the legend label can show `ATR(14, Wilder)`; skip unless asked.
+
+## Tests — extend `coreza-backend/tests/atrIndicator.test.ts`
+
+Doc's ATR(3) worked example, TR series 2, 3, 4, 10, 2:
+
+| Step | Wilder | Simple |
+| --- | --- | --- |
+| after TR3 | 3 | 3 |
+| after TR4 | 5.333333 | 5.666667 |
+| after TR5 | 4.222222 | 5.333333 |
+
+- Both methods, both engines: assert the six values above exactly (tolerance 1e-9).
+- Default with no `smoothing` param → identical to explicit `wilders` (regression guard against a silent default flip).
+- Unknown `smoothing` value → 400 validation error from both `calculateATR` and `createIncrementalUpdater`; no fallback.
+- `simple`: readiness at `period` valid bars; a large TR leaving the window drops the value sharply (the divergence in the table already covers this).
+- `simple`: `trWindow` never grows past `period` over 200 bars — guards state size in Redis.
+- Invalid OHLC bar under `simple` leaves `trWindow`, `trSum`, `count` and `prevClose` untouched.
+- Parity per method: `calculateATR` final === `warmUp(all)` === `warmUp(all−1) + update(last)`; `updateSync` === async `update`.
+- Legacy state migration: a persisted state object without `smoothing`/`trWindow` passes `isAtrState` and continues as Wilder with the correct next value.
+- Two ATR nodes on the same symbol/timeframe with different smoothing keep separate state and values.
 
 ## Verification
 
-- `tsgo` typecheck + backend jest (`atrIndicator`, indicator parity, warm-up suites).
-- Manual: run an ATR node against fetched daily candles and compare the last value against a reference ATR(14) to ~1e-6.
-- Confirm the ATR node renders in the palette and plots in its own visualization panel.
+- `tsgo` typecheck, `npx tsx scripts/validate-nodes.ts`, backend jest ATR suites. (Note: the local sandbox lacks `ioredis`, so redis-importing suites can fail here for environmental reasons — run them in CI.)
+- Manual: same daily candles, run ATR(14) Wilder and Simple side by side; Wilder should match a reference charting ATR(14) to ~1e-6 and Simple should differ after any large TR exits the window.
+
+## Not doing in this PR
+
+`exponential`, `hull`, `t3`, and the rest of LEAN's `MovingAverageType` set. The parameter is a string so they can be added later without changing the state contract.

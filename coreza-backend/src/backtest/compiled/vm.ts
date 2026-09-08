@@ -8,14 +8,14 @@
  * See the LICENSE file for details.
  */
 
-import { OpCode, BranchEnum, CompiledPlan } from "./types";
+import { OpCode, BranchEnum, CompiledPlan, type ActivationTarget } from "./types";
 import type { NodeResult } from "../../nodes/types";
 
 /**
  * Compiled Plan VM
  * ================
  * The tight per-bar execution loop. No Maps, no Sets, no queue,
- * no dependency checks — pure array reads/writes.
+ * dependency counters use dense typed arrays rather than per-bar Maps or Sets.
  *
  * Per-bar cost:
  * - active.fill(0)             → single native memset
@@ -31,11 +31,32 @@ import type { NodeResult } from "../../nodes/types";
  * @param barInput The bar event data for this bar
  */
 export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
-  const { instructions, slots, active, entryIndices, inputSlot, ctx } = plan;
+  const {
+    instructions, slots, active, activationCounts, satisfiedDependencyGroups,
+    requiredActivationCounts, activeInputSlots, entryIndices, inputSlot, ctx,
+  } = plan;
   const len = instructions.length;
 
   // ── Reset ─────────────────────────────────────────────────────────
   active.fill(0);
+  activationCounts.fill(0);
+  satisfiedDependencyGroups.fill(0);
+
+  const activate = (
+    index: number,
+    dependencyGroupIndex: number,
+    activatingInputSlot: number,
+  ): void => {
+    if (dependencyGroupIndex >= 0) {
+      if (satisfiedDependencyGroups[dependencyGroupIndex]) return;
+      satisfiedDependencyGroups[dependencyGroupIndex] = 1;
+    }
+    activeInputSlots[index] = activatingInputSlot;
+    activationCounts[index] += 1;
+    if (activationCounts[index] >= requiredActivationCounts[index]) active[index] = 1;
+  };
+  const activateTarget = (target: ActivationTarget): void =>
+    activate(target.instructionIndex, target.dependencyGroupIndex, target.inputSlot);
 
 
   // ── Write bar input ───────────────────────────────────────────────
@@ -50,7 +71,7 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
 
   // ── Activate entry nodes ──────────────────────────────────────────
   for (let e = 0; e < entryIndices.length; e++) {
-    active[entryIndices[e]] = 1;
+    activate(entryIndices[e], -1, inputSlot);
   }
 
   // ── Execute instruction scan ──────────────────────────────────────
@@ -70,7 +91,7 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
     const execStart = timingEnabled ? performance.now() : 0;
     const execution = instr.exec(
       instr.node,
-      slots[instr.inputSlot],
+      slots[activeInputSlots[i]],
       params,
       ctx,
     );
@@ -112,12 +133,12 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
         const targets = instr.branchStringMap.get(resultData)
           ?? branchTargets[BranchEnum.DEFAULT];
         for (let t = 0; t < targets.length; t++) {
-          active[targets[t]] = 1;
+          activateTarget(targets[t]);
         }
       } else if (typeof resultData === "boolean") {
         const targets = branchTargets[resultData ? BranchEnum.TRUE : BranchEnum.FALSE];
         for (let t = 0; t < targets.length; t++) {
-          active[targets[t]] = 1;
+          activateTarget(targets[t]);
         }
       } else if (typeof resultData === "string") {
         const branchIndex = resultData === "true"
@@ -129,7 +150,7 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
               : BranchEnum.DEFAULT;
         const targets = branchTargets[branchIndex];
         for (let t = 0; t < targets.length; t++) {
-          active[targets[t]] = 1;
+          activateTarget(targets[t]);
         }
       } else if (
         resultData &&
@@ -139,40 +160,40 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
         if (resultData.true) {
           const trueTargets = branchTargets[BranchEnum.TRUE];
           for (let t = 0; t < trueTargets.length; t++) {
-            active[trueTargets[t]] = 1;
+            activateTarget(trueTargets[t]);
           }
         }
         if (resultData.false) {
           const falseTargets = branchTargets[BranchEnum.FALSE];
           for (let t = 0; t < falseTargets.length; t++) {
-            active[falseTargets[t]] = 1;
+            activateTarget(falseTargets[t]);
           }
         }
         if (!resultData.true && !resultData.false) {
           const defaultTargets = branchTargets[BranchEnum.DEFAULT];
           for (let t = 0; t < defaultTargets.length; t++) {
-            active[defaultTargets[t]] = 1;
+            activateTarget(defaultTargets[t]);
           }
           const emptyTargets = branchTargets[BranchEnum.EMPTY];
           for (let t = 0; t < emptyTargets.length; t++) {
-            active[emptyTargets[t]] = 1;
+            activateTarget(emptyTargets[t]);
           }
         }
       } else {
         const targets = branchTargets[BranchEnum.DEFAULT];
         for (let t = 0; t < targets.length; t++) {
-          active[targets[t]] = 1;
+          activateTarget(targets[t]);
         }
         const emptyTargets = branchTargets[BranchEnum.EMPTY];
         for (let t = 0; t < emptyTargets.length; t++) {
-          active[emptyTargets[t]] = 1;
+          activateTarget(emptyTargets[t]);
         }
       }
     } else {
       // Regular node: activate all downstream
       const downstream = instr.downstreamSlots;
       for (let d = 0; d < downstream.length; d++) {
-        active[downstream[d]] = 1;
+        activateTarget(downstream[d]);
       }
     }
     if (timingEnabled) {

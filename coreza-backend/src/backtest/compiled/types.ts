@@ -50,6 +50,14 @@ export type ExecFn = (
  */
 export type SlotParamResolver = (slots: any[]) => Record<string, any>;
 
+export interface ActivationTarget {
+  instructionIndex: number;
+  /** Global dependency-group slot, or -1 for an entry activation. */
+  dependencyGroupIndex: number;
+  /** Result slot carried by the edge that activated the target. */
+  inputSlot: number;
+}
+
 /**
  * A single instruction in the compiled plan.
  */
@@ -72,15 +80,15 @@ export interface Instruction {
    * For EXEC: all downstream instruction indices to activate.
    * For BRANCH: unused (branchMap is used instead).
    */
-  downstreamSlots: number[];
+  downstreamSlots: ActivationTarget[];
   /**
    * For BRANCH (If/Switch) nodes only.
    * Integer-indexed branch target arrays.
    * e.g. [falseTargets, trueTargets, defaultTargets, emptyTargets]
    */
-  branchTargets?: number[][];
+  branchTargets?: ActivationTarget[][];
   /** For Switch BRANCH nodes: maps result string → target instruction indices. */
-  branchStringMap?: Map<string, number[]>;
+  branchStringMap?: Map<string, ActivationTarget[]>;
 }
 
 /**
@@ -111,6 +119,14 @@ export interface CompiledPlan {
   slots: any[];
   /** Activation flags — active[i] = 1 means instruction i should execute */
   active: Uint8Array;
+  /** Number of incoming dependencies satisfied for each instruction this bar. */
+  activationCounts: Uint32Array;
+  /** Marks each distinct dependency group satisfied during the current bar. */
+  satisfiedDependencyGroups: Uint8Array;
+  /** Incoming dependency groups required before each instruction can execute. */
+  requiredActivationCounts: Uint32Array;
+  /** Input slot delivered by the most recently satisfied dependency. */
+  activeInputSlots: Int32Array;
   /** Instruction indices that are entry points (receive bar input) */
   entryIndices: number[];
   /** Pinned results to restore each bar (BacktestInit outputs) */

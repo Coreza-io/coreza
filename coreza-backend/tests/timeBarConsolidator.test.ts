@@ -111,9 +111,9 @@ describe("ConsolidatorExecutor", () => {
     };
     const executor = new ConsolidatorExecutor();
     const held = executor.execute(node, { candle_data: bar("2026-01-01T00:00:00Z", 1) }, context);
-    expect(held).toMatchObject({ success: true, data: { emitted: false }, control: { suppressDownstream: true } });
+    expect(held).toMatchObject({ success: true, data: { emitted: false } });
     const emitted = executor.execute(node, { candle_data: bar("2026-01-01T04:00:00Z", 2) }, context);
-    expect(emitted).toMatchObject({ success: true, data: { emitted: true, bar: { open: 1 } }, control: { suppressDownstream: false } });
+    expect(emitted).toMatchObject({ success: true, data: { emitted: true, bar: { open: 1 } } });
   });
 
   it("continues warm-up state from the shared data context", () => {

@@ -301,8 +301,6 @@ export abstract class BaseExecutionRuntime {
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
 
-    if (result.control?.suppressDownstream) return;
-
     if (node.name === "Loop") {
       this.routeLoop(node.id, result, meta);
       return;
@@ -420,8 +418,6 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
 
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
-
-    if (result.control?.suppressDownstream) return;
 
     if (node.name === "Loop") {
       this.routeLoop(node.id, result, meta);

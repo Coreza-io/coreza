@@ -11,14 +11,17 @@ The attached document is sound: ATR belongs in the existing generic indicator fr
 - `routes/indicators.ts` has no `/atr` route.
 - Frontend: `src/utils/indicatorRegistry.ts` has no `atr` spec; `src/utils/visualizeNormalize.ts:3` `OSCILLATOR_NAMES` has no `atr`; `src/nodes/Visualize.json` indicator picker has no `atr` option.
 
-## Corrections to the document
+## Corrections to the documents
 
-1. **Warm-up should be `period + 1`, not `period`.** ADX's incremental updater consumes the first bar only to seed `prevHigh/prevLow/prevClose` and returns `null`. ATR must behave the same way for consistency, so a full Wilder seed needs `period` true ranges after the seeding bar. Use `case "atr": return positivePeriod(params.period) + 1;` (same shape as `rsi`). Drop the doc's "first bar uses high-low" special case — it creates a batch/incremental parity trap.
-2. **Do not use `technicalindicators`' `ATR.calculate` for the batch path.** Its seeding differs from our updater and would break the doc's own parity rule. Instead implement one shared internal `computeATRSeries(high, low, close, period)` helper and have both `calculateATR()` and the incremental updater use identical TR + Wilder arithmetic. Parity then holds by construction, not by tolerance luck.
-3. **No manifest edit is needed.** `src/nodes/manifest.ts` auto-discovers `./*.json` via `import.meta.glob`, so dropping in `ATR.json` is enough — but it must pass `NodeConfigSchema`, and there is **no `public/assets/icons/atr.svg`**. Reuse `/assets/icons/indicators.svg` (or add an ATR icon) rather than pointing at a missing file.
-4. **Visualization needs three edits, not one.** Beyond `indicatorRegistry.ts`, add `atr` to `OSCILLATOR_NAMES` in `visualizeNormalize.ts` (so it renders in its own panel, not on the price pane) and add the `{ "id": "atr", "name": "ATR" }` option to the picker list in `src/nodes/Visualize.json`.
+1. **Seeding follows LEAN, not ADX — warm-up is `period`.** The LEAN recommendation doc supersedes my earlier `period + 1` note, and it is right: LEAN's `AverageTrueRange` counts the first valid bar as True Range #1 using `high - low`, so ATR(14) is ready on bar 14. Use `case "atr": return positivePeriod(params.period);`. `count` means valid True Range observations, not bars. This differs from ADX's updater (which burns bar 1 to seed `prevHigh/prevLow/prevClose`); that divergence is intentional and should be commented in the code so nobody "fixes" it later.
+2. **Do not use `technicalindicators`' `ATR.calculate` for the batch path.** Its initialization differs and would break the parity rule. Implement one shared `trueRange()` + `updateAtrState()` pair; `computeATRSeries()` (batch) and the incremental `update()` both call it, so parity holds by construction.
+3. **No manifest edit is needed.** `src/nodes/manifest.ts` auto-discovers `./*.json` via `import.meta.glob`, so dropping in `ATR.json` is enough — but it must pass `NodeConfigSchema`, and there is **no `public/assets/icons/atr.svg`**. Use `/assets/icons/indicators.svg` rather than pointing at a missing file.
+4. **Visualization needs three edits, not one.** Beyond `indicatorRegistry.ts`, add `atr` to `OSCILLATOR_NAMES` in `visualizeNormalize.ts:3` (so it renders in its own panel, not on the price pane) and add the `{ "id": "atr", "name": "ATR" }` option to the picker list in `src/nodes/Visualize.json`.
+5. **Explicitly Wilder, v1 only.** LEAN's `QCAlgorithm.ATR(...)` can default to Simple smoothing; we hardcode Wilder (`alpha = 1/period`) so comparisons are deterministic. No moving-average-type field in this PR.
+6. **Skip the rest of LEAN's model.** No event-chain indicator objects, no partial pre-ready values (Coreza returns `null` until ready even though LEAN exposes a partial smoother value), no decimal/Big.js arithmetic — plain `number` with a tight comparison tolerance.
 
-Also: the doc's "Consolidator -> If -> ATR" test row assumes explicit If gating. That is a separate in-flight change; write the test against whatever routing semantics are current at merge time and do not couple this PR to it.
+Also: the first doc's "Consolidator -> If -> ATR" test row assumes explicit If gating. That is a separate in-flight change; write the test against whatever routing semantics are current at merge time and do not couple this PR to it.
+
 
 ## Math (agreed with the doc)
 

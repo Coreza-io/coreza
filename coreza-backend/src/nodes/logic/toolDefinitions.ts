@@ -55,6 +55,10 @@ const STATIC_TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
     description: "Calculate Average Directional Index (ADX) for trend strength.",
     category: "Indicators",
   },
+  ATR: {
+    description: "Calculate Wilder's Average True Range (ATR) for volatility.",
+    category: "Indicators",
+  },
   Stoch: {
     description: "Compute Stochastic Oscillator values (fast/slow %K and %D).",
     category: "Indicators",

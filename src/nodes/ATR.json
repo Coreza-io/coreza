@@ -1,0 +1,29 @@
+{
+  "name": "ATR",
+  "def": "Average True Range",
+  "node_type": "main",
+  "icon": "/assets/icons/indicators.svg",
+  "category": "Indicators",
+  "description": "Wilder's Average True Range (ATR) measures market volatility.",
+  "color": "text-orange-500",
+  "size": { "width": 320, "height": 300 },
+  "handles": [
+    { "type": "target", "position": "left", "id": "input" },
+    { "type": "source", "position": "right", "id": "output" }
+  ],
+  "action": { "url": "/indicators/atr", "method": "POST" },
+  "fields": [
+    { "key": "candle_data", "label": "Candle Data", "type": "text", "required": true },
+    { "key": "symbol", "label": "Symbol", "type": "text", "placeholder": "e.g. AAPL", "required": true },
+    { "key": "timeframe", "label": "Timeframe", "type": "text", "placeholder": "e.g. 1d", "required": true },
+    {
+      "key": "period",
+      "label": "ATR Period",
+      "type": "text",
+      "placeholder": "e.g. 14",
+      "default": "14",
+      "required": true,
+      "description": "Number of true-range observations used by Wilder's smoothing."
+    }
+  ]
+}

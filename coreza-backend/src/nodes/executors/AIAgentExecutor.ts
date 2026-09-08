@@ -606,6 +606,7 @@ export class AIAgentExecutor implements INodeExecutor {
       MACD: "Indicators",
       BB: "Indicators",
       ADX: "Indicators",
+      ATR: "Indicators",
       Stoch: "Indicators",
       Ichimoku: "Indicators",
       OBV: "Indicators",

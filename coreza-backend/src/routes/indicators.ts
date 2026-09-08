@@ -213,6 +213,18 @@ router.post("/adx", async (req, res, next) => {
   }
 });
 
+// ATR endpoint
+router.post("/atr", async (req, res, next) => {
+  try {
+    const result = await executeIndicatorWithState("atr", req, (input) =>
+      IndicatorService.calculateATR(input),
+    );
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Stochastic Oscillator endpoint
 router.post("/stochastic", async (req, res, next) => {
   try {

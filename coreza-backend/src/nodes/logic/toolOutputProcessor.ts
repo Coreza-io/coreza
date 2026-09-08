@@ -85,6 +85,7 @@ const INDICATOR_NODES = [
   'MACD',
   'BB',
   'ADX',
+  'ATR',
   'Stoch',
   'VWAP',
   'OBV',

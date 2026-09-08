@@ -15,7 +15,8 @@ import {
   WorkflowNode,
   WorkflowEdge,
 } from "../types";
-import { IndicatorStateManager, buildIndicatorKey } from "../../engine";
+import { IndicatorStateManager } from "../../engine/indicatorStateManager";
+import { buildIndicatorKey } from "../../utils/executionKey";
 import { parseWarmupPeriod } from "../../utils/warmupPeriod";
 import {
   normalizeOutput,

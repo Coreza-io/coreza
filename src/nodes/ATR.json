@@ -23,7 +23,19 @@
       "placeholder": "e.g. 14",
       "default": "14",
       "required": true,
-      "description": "Number of true-range observations used by Wilder's smoothing."
+      "description": "Number of true-range observations used to seed and calculate ATR."
+    },
+    {
+      "key": "smoothing",
+      "label": "Smoothing Method",
+      "type": "select",
+      "default": "wilders",
+      "required": true,
+      "options": [
+        { "value": "wilders", "label": "Wilder (standard ATR)" },
+        { "value": "simple", "label": "Simple (rolling average)" }
+      ],
+      "description": "Moving average applied to True Range. Wilder is the conventional ATR used by most charting platforms; Simple is a strict rolling window."
     }
   ]
 }

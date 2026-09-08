@@ -1,4 +1,4 @@
-import { ZodTypeAny } from "zod";
+import { z, ZodTypeAny } from "zod";
 import { buildToolDefinitions } from "../../brokers/capabilities";
 
 export interface ToolDefinition {
@@ -56,8 +56,18 @@ const STATIC_TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
     category: "Indicators",
   },
   ATR: {
-    description: "Calculate Wilder's Average True Range (ATR) for volatility.",
+    description:
+      "Average True Range (ATR) volatility, with selectable Wilder or Simple smoothing.",
     category: "Indicators",
+    schema: z
+      .object({
+        candle_data: z.unknown().optional(),
+        symbol: z.string().optional(),
+        timeframe: z.string().optional(),
+        period: z.coerce.number().int().positive(),
+        smoothing: z.enum(["wilders", "simple"]).default("wilders"),
+      })
+      .passthrough(),
   },
   Stoch: {
     description: "Compute Stochastic Oscillator values (fast/slow %K and %D).",

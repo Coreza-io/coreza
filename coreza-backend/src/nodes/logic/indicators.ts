@@ -131,11 +131,15 @@ function asBarTime(bar: any): string {
   return String(bar?.time ?? "");
 }
 
+type AtrSmoothing = "wilders" | "simple";
+
 interface AtrState extends Record<string, unknown> {
   period: number;
+  smoothing: AtrSmoothing;
   prevClose: number | null;
   count: number;
   trSum: number;
+  trWindow: number[];
   atr: number | null;
   lastValue: number | null;
 }
@@ -152,6 +156,20 @@ function parseAtrPeriod(value: unknown): number {
     throw createError("period is required and must be a positive integer", 400);
   }
   return period;
+}
+
+function parseAtrSmoothing(value: unknown): AtrSmoothing {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized || normalized === "wilder" || normalized === "wilders") {
+    return "wilders";
+  }
+  if (normalized === "simple" || normalized === "sma") return "simple";
+  throw createError(
+    "smoothing must be one of: wilders (wilder) or simple (sma)",
+    400,
+  );
 }
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
@@ -174,11 +192,16 @@ function isAtrState(state: Record<string, unknown>): state is AtrState {
     typeof state.period === "number" &&
     Number.isInteger(state.period) &&
     state.period > 0 &&
+    (state.smoothing === "wilders" || state.smoothing === "simple") &&
     typeof state.count === "number" &&
     Number.isInteger(state.count) &&
     state.count >= 0 &&
     typeof state.trSum === "number" &&
     Number.isFinite(state.trSum) &&
+    Array.isArray(state.trWindow) &&
+    state.trWindow.every(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    ) &&
     (state.prevClose === null ||
       (typeof state.prevClose === "number" &&
         Number.isFinite(state.prevClose))) &&
@@ -188,6 +211,13 @@ function isAtrState(state: Record<string, unknown>): state is AtrState {
       (typeof state.lastValue === "number" &&
         Number.isFinite(state.lastValue)))
   );
+}
+
+function migrateAtrState(state: Record<string, unknown>): void {
+  if (state.smoothing === undefined) {
+    state.smoothing = "wilders";
+    state.trWindow = [];
+  }
 }
 
 function trueRange(high: number, low: number, prevClose: number | null): number {
@@ -207,28 +237,42 @@ function updateAtrState(state: AtrState, bar: unknown): number | null {
   const tr = trueRange(high, low, state.prevClose);
   state.prevClose = close;
 
-  // Unlike ADX, ATR treats the first bar's high-low range as observation one.
-  if (state.count < state.period) {
+  if (state.smoothing === "simple") {
+    state.trWindow.push(tr);
     state.trSum += tr;
     state.count += 1;
+    if (state.trWindow.length > state.period) {
+      const removed = state.trWindow.shift();
+      if (removed !== undefined) state.trSum -= removed;
+    }
     if (state.count < state.period) return null;
     state.atr = state.trSum / state.period;
   } else {
-    const previousAtr = state.atr ?? state.trSum / state.period;
-    state.atr = (previousAtr * (state.period - 1) + tr) / state.period;
-    state.count += 1;
+    // Unlike ADX, ATR treats the first bar's high-low range as observation one.
+    if (state.count < state.period) {
+      state.trSum += tr;
+      state.count += 1;
+      if (state.count < state.period) return null;
+      state.atr = state.trSum / state.period;
+    } else {
+      const previousAtr = state.atr ?? state.trSum / state.period;
+      state.atr = (previousAtr * (state.period - 1) + tr) / state.period;
+      state.count += 1;
+    }
   }
 
   state.lastValue = state.atr;
   return state.lastValue;
 }
 
-function createAtrState(period: number): AtrState {
+function createAtrState(period: number, smoothing: AtrSmoothing): AtrState {
   return {
     period,
+    smoothing,
     prevClose: null,
     count: 0,
     trSum: 0,
+    trWindow: [],
     atr: null,
     lastValue: null,
   };
@@ -237,8 +281,9 @@ function createAtrState(period: number): AtrState {
 function computeATRSeries(
   bars: unknown[],
   period: number,
+  smoothing: AtrSmoothing,
 ): Array<number | null> {
-  const state = createAtrState(period);
+  const state = createAtrState(period, smoothing);
   return bars.map((bar) => updateAtrState(state, bar));
 }
 
@@ -332,9 +377,14 @@ export class IndicatorService {
     switch (type) {
       case "atr": {
         const period = parseAtrPeriod(params.period);
+        const smoothing = parseAtrSmoothing(
+          params.smoothing ??
+            params.smoothing_method ??
+            params.moving_average_type,
+        );
         return {
           warmUp: (bars) => {
-            const state = createAtrState(period);
+            const state = createAtrState(period, smoothing);
             let value: number | null = null;
             for (const bar of bars) value = updateAtrState(state, bar);
             return {
@@ -344,6 +394,7 @@ export class IndicatorService {
             };
           },
           update: (state, bar) => {
+            migrateAtrState(state);
             if (!isAtrState(state)) {
               throw createError("Invalid ATR indicator state", 500);
             }
@@ -1736,8 +1787,13 @@ export class IndicatorService {
 
   static async calculateATR(input: IndicatorInput): Promise<IndicatorResult> {
     try {
-      const candles = parseArray<any>(input.candle_data, "candle_data");
+      const candles = parseArray<unknown>(input.candle_data, "candle_data");
       const period = parseAtrPeriod(input.period);
+      const smoothing = parseAtrSmoothing(
+        input.smoothing ??
+          input.smoothing_method ??
+          input.moving_average_type,
+      );
       const hasInvalidCandle = candles.some(
         (candle) => parseAtrBar(candle) === null,
       );
@@ -1745,10 +1801,16 @@ export class IndicatorService {
         throw createError("Invalid numeric value in candles", 400);
       }
 
-      return createSuccessOutput(computeATRSeries(candles, period), {
-        ...INDICATOR_CONTEXT,
-        nodeName: "ATR",
-      });
+      return {
+        ...createSuccessOutput(
+          computeATRSeries(candles, period, smoothing),
+          {
+            ...INDICATOR_CONTEXT,
+            nodeName: "ATR",
+          },
+        ),
+        meta: { ...INDICATOR_CONTEXT, nodeName: "ATR", smoothing },
+      };
     } catch (error) {
       return createErrorOutput(error, {
         ...INDICATOR_CONTEXT,

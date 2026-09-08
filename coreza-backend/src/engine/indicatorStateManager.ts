@@ -76,6 +76,7 @@ export function requiredWarmupBars(
     case "adx":
       return positivePeriod(params.period) * 2;
     case "atr":
+      // Wilder and Simple ATR both seed on the period-th valid True Range.
       return positivePeriod(params.period);
     case "stochastic":
       return (

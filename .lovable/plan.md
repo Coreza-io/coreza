@@ -1,100 +1,100 @@
-# ATR: selectable smoothing method (LEAN-style)
+# Store node: bounded deque append (`rpush_bounded`)
 
-The current ATR is hardcoded to Wilder. This adds an explicit smoothing choice, matching LEAN's design: True Range is fixed, the moving average over it is configurable.
+Add one Store List operation that is the equivalent of Python's `deque(maxlen=N).append(value)` — atomic `RPUSH` + `LTRIM -N -1`. The document's design is sound and matches the existing Store patterns; the notes below are adjustments needed to fit the current code.
 
-The document's analysis is correct and matches LEAN. One design decision to carry over: **never rely on a default**. LEAN's inconsistency (`new AverageTrueRange(14)` → Wilders, `ATR(symbol, 14)` → Simple) is exactly the trap to avoid, so Coreza will have a single explicit value everywhere, defaulting to `wilders` in one place only (parameter parsing) and stamping the resolved method into state and output.
+## Verified against the code
 
-## Current implementation (verified)
+- `configs/store.ts:182-225` — `lpush`/`rpush` handlers: resolve `workflow_id || workflowId || ctx.workflowId`, build the key with `buildStoreKey`, serialize with `typeof value === "string" ? value : JSON.stringify(value)`, then `applyTTL`.
+- `configs/store.ts:24-37` — `applyTTL` only expires on a positive integer TTL and swallows expiry failures (best-effort, value already written).
+- `configs/store.ts:39-77` — `isWrongTypeError` + `runTypeSafeOperation` already produce the actionable "variable holds another data type" error. The new operation must go through this wrapper rather than inventing its own message.
+- `configs/store.ts:331-345` — existing standalone `ltrim`, left untouched.
+- `types.ts:38-43` — list fields block where `maxLength` belongs.
+- `Store.json:114-119, 589-601` — the stream `maxLen` field already exists and is shown for `xadd`/`xadd_bulk`. **Use a separate `maxLength` key** for the deque bound so the two never collide in `displayOptions`.
 
-- `indicators.ts:134-243` — `AtrState`, `parseAtrPeriod`, `parseAtrBar`, `isAtrState`, `trueRange`, `updateAtrState`, `createAtrState`, `computeATRSeries`. Wilder only, first bar TR = high − low, ready at `period`.
-- `indicators.ts:333-356` — `case "atr"` incremental updater.
-- `indicators.ts:1737-1758` — `calculateATR`, returns the full series.
-- `indicatorStateManager.ts:78-79` — `case "atr": return positivePeriod(params.period);`.
-- `routes/indicators.ts:217` — `POST /indicators/atr`.
-- Frontend: `src/nodes/ATR.json`, `indicatorRegistry.ts:96`, `visualizeNormalize.ts:3`, `Visualize.json:80`.
+## Adjustments to the document
 
-## Scope
-
-Support **`wilders` (default) and `simple`** in v1. Both are the only methods with real ATR meaning, and the shared state shape stays small. The state field is a string, not a boolean, so `exponential` and others can be added later without another migration.
+1. **Transaction result must be inspected explicitly.** `multi().exec()` resolves even when a queued command fails — errors arrive as `[error, reply]` tuples, not a rejection. So `runTypeSafeOperation` alone will not catch a `WRONGTYPE` from inside the transaction. After `exec()`, walk the replies, and if any tuple has a non-null error, throw it — that throw then lands inside `runTypeSafeOperation` and gets converted to the friendly message. A null `exec()` result (aborted transaction) throws a plain "Store transaction aborted" error.
+2. **Keep TTL out of the transaction.** The doc prefers `EXPIRE` inside `MULTI`, but current Store semantics are "TTL is best-effort and never fails the write" (`applyTTL` catches). Putting `EXPIRE` in the transaction would change that contract. Call `applyTTL` after `exec()`, exactly like `rpush` does.
+3. **Return the resulting length.** `LTRIM` returns `OK`, but `RPUSH` returns the pre-trim length, so also read `LLEN` — simplest is to queue `llen` as the third transaction command and report the final length in the payload.
+4. **Upper bound.** Enforce the doc's safety cap (100000) as a hard validation error, not a silent clamp.
 
 ## Changes
 
-### 1. `coreza-backend/src/nodes/logic/indicators.ts`
+### 1. `coreza-backend/src/services/storage/types.ts`
 
-- Add `type AtrSmoothing = "wilders" | "simple";` and `parseAtrSmoothing(value: unknown): AtrSmoothing` — trims, lowercases, accepts `wilder`/`wilders` and `simple`/`sma` as aliases, treats empty/undefined as `"wilders"`, throws a 400 on anything else. No silent fallback for unknown strings.
-- Extend `AtrState` with `smoothing: AtrSmoothing` and `trWindow: number[]` (used only by `simple`; stays empty for `wilders`).
-- `createAtrState(period, smoothing)` seeds both fields.
-- `isAtrState` validates `smoothing` is one of the two values and `trWindow` is a finite-number array. **Backward compatibility:** a persisted state missing `smoothing` is treated as `wilders` with an empty window rather than rejected, so existing Redis/L1 indicator states survive the deploy.
-- `updateAtrState` keeps the shared TR computation and the invalid-bar early return (no mutation), then branches:
-  - `wilders` — unchanged arithmetic.
-  - `simple` — push `tr` onto `trWindow`; while `trWindow.length > period` shift; `count += 1`; return `null` until `count >= period`; then `atr = sum(trWindow) / period`. Keep a running `trSum` for O(1): `trSum += tr` on push and `trSum -= removed` on shift, so the value is `trSum / period` with no re-summing per bar.
-  - Both paths end with `state.lastValue = state.atr`.
-- `computeATRSeries(bars, period, smoothing)` passes the method through.
-- `case "atr"` in `createIncrementalUpdater` reads `params.smoothing ?? params.smoothing_method ?? params.moving_average_type` through `parseAtrSmoothing` and threads it into `createAtrState`. Because `serializeParams` already sorts all params into the updater cache key, two ATR nodes with different smoothing get distinct cached updaters automatically.
-- `calculateATR` parses the smoothing param the same way and passes it to `computeATRSeries`.
+Add `maxLength?: number | string;` to the list-fields block (after `index?: number;`).
 
-### 2. `coreza-backend/src/engine/indicatorStateManager.ts`
+### 2. `coreza-backend/src/services/storage/configs/store.ts`
 
-`requiredWarmupBars` stays `positivePeriod(params.period)` for both methods — both become ready on the `period`-th valid TR. Add a short comment saying so. `params` already includes `smoothing`, so distinct states are keyed separately by `serializeParams`.
+Add a shared validator near `applyTTL`:
 
-### 3. `coreza-backend/src/routes/indicators.ts`
-
-No route change. The smoothing field arrives in `req.body` and flows through `executeIndicatorWithState` → `calculateATR` / state manager params unchanged.
-
-### 4. `src/nodes/ATR.json`
-
-Add a required select field after `period`:
-
-```json
-{
-  "key": "smoothing",
-  "label": "Smoothing Method",
-  "type": "select",
-  "default": "wilders",
-  "required": true,
-  "options": [
-    { "value": "wilders", "label": "Wilder (standard ATR)" },
-    { "value": "simple", "label": "Simple (rolling average)" }
-  ],
-  "description": "Moving average applied to True Range. Wilder is the conventional ATR used by most charting platforms; Simple is a strict rolling window."
-}
+```ts
+const parseMaxLength = (value: unknown): number => {
+  const maxLength = Number(value);
+  if (!Number.isInteger(maxLength) || maxLength <= 0 || maxLength > 100000) {
+    throw new Error("maxLength must be a positive integer no greater than 100000");
+  }
+  return maxLength;
+};
 ```
 
-Confirm the option shape against `src/nodes/schemas/nodeSchema.ts` and an existing select-bearing node before writing it, and re-run `npx tsx scripts/validate-nodes.ts`.
+Add `rpush_bounded` directly after `rpush` in the LIST OPERATIONS section:
 
-### 5. `coreza-backend/src/nodes/logic/toolDefinitions.ts`
+- Resolve `workflowId` and require `variableName` (same guard text pattern as `rpush`).
+- `const maxLength = parseMaxLength(input.maxLength);` before touching Redis.
+- Serialize `input.value` identically to `rpush`.
+- Wrap the Redis work in `runTypeSafeOperation(ctx, key, input.variableName, "list", ...)`, and inside it:
+  ```ts
+  const replies = await ctx.redis!.multi()
+    .rpush(key, serialized)
+    .ltrim(key, -maxLength, -1)
+    .llen(key)
+    .exec();
+  if (!replies) throw new Error("Store transaction aborted; please retry");
+  for (const [error] of replies) if (error) throw error;
+  return Number(replies[2]?.[1] ?? 0);
+  ```
+- After the wrapper returns, `await applyTTL(ctx.redis!, key, input.ttl);`.
+- Return `{ operation: "rpush_bounded", variableName, maxLength, length, message: \`Value appended; list trimmed to latest ${maxLength}\` }`.
 
-Update the `ATR` entry: description becomes "Average True Range (ATR) volatility, with selectable Wilder or Simple smoothing", and add the `smoothing` parameter with its enum and default so the AI agent can set it explicitly.
+Leave `rpush` and `ltrim` untouched.
 
-### 6. Frontend visualization
+### 3. `src/nodes/Store.json`
 
-No change needed — the panel spec and picker entry are method-agnostic. Optionally the legend label can show `ATR(14, Wilder)`; skip unless asked.
+- List `conditionalOptions` (line ~71): add `{ "id": "rpush_bounded", "name": "Deque Append (keep latest N)" }` right after `rpush`.
+- Add `"rpush_bounded"` to the `operation` arrays of the existing `variableName` field (line ~327) and `value` field (line ~351) so both stay visible.
+- New field placed next to the other list fields:
+  ```json
+  {
+    "key": "maxLength",
+    "label": "Max Length",
+    "type": "text",
+    "placeholder": "e.g. 8",
+    "required": true,
+    "description": "Keeps only the newest N items, like deque(maxlen=N).",
+    "displayOptions": { "show": { "operation": ["rpush_bounded"] } }
+  }
+  ```
+- Add `"rpush_bounded"` to the `ttl` field's operation list so TTL stays available, matching `rpush`.
+- Re-run `npx tsx scripts/validate-nodes.ts`.
 
-## Tests — extend `coreza-backend/tests/atrIndicator.test.ts`
+### 4. `coreza-backend/tests/storeDequeAppend.test.ts`
 
-Doc's ATR(3) worked example, TR series 2, 3, 4, 10, 2:
+Modelled on `storeNodeTtl.test.ts` (mock `getRedisCache`, drive `storeConfig.operations.rpush_bounded.handler` with a fake redis whose `multi()` returns a chainable stub):
 
-| Step | Wilder | Simple |
-| --- | --- | --- |
-| after TR3 | 3 | 3 |
-| after TR4 | 5.333333 | 5.666667 |
-| after TR5 | 4.222222 | 5.333333 |
-
-- Both methods, both engines: assert the six values above exactly (tolerance 1e-9).
-- Default with no `smoothing` param → identical to explicit `wilders` (regression guard against a silent default flip).
-- Unknown `smoothing` value → 400 validation error from both `calculateATR` and `createIncrementalUpdater`; no fallback.
-- `simple`: readiness at `period` valid bars; a large TR leaving the window drops the value sharply (the divergence in the table already covers this).
-- `simple`: `trWindow` never grows past `period` over 200 bars — guards state size in Redis.
-- Invalid OHLC bar under `simple` leaves `trWindow`, `trSum`, `count` and `prevClose` untouched.
-- Parity per method: `calculateATR` final === `warmUp(all)` === `warmUp(all−1) + update(last)`; `updateSync` === async `update`.
-- Legacy state migration: a persisted state object without `smoothing`/`trWindow` passes `isAtrState` and continues as Wilder with the correct next value.
-- Two ATR nodes on the same symbol/timeframe with different smoothing keep separate state and values.
-
-## Verification
-
-- `tsgo` typecheck, `npx tsx scripts/validate-nodes.ts`, backend jest ATR suites. (Note: the local sandbox lacks `ioredis`, so redis-importing suites can fail here for environmental reasons — run them in CI.)
-- Manual: same daily candles, run ATR(14) Wilder and Simple side by side; Wilder should match a reference charting ATR(14) to ~1e-6 and Simple should differ after any large TR exits the window.
+- Appending with `maxLength: 8` issues exactly `rpush(key, serialized)`, `ltrim(key, -8, -1)`, `llen(key)` in one `multi()`, in that order.
+- Doc's worked example end to end against a real-ish in-memory list stub: start `[1..8]`, append `9`, final `[2..9]`, reported `length === 8`.
+- Object values are JSON-stringified; string values pass through unchanged (parity with `rpush`).
+- `maxLength` of `0`, `-1`, `1.5`, `"abc"`, `undefined`, and `100001` all reject before any Redis call (`multi` never invoked).
+- A `WRONGTYPE` error inside the transaction replies surfaces the friendly "holds another data type" message, not the raw Redis text.
+- `exec()` resolving `null` produces a clear aborted-transaction error.
+- Valid TTL calls `expire`; invalid/absent TTL does not; a failing `expire` still returns success.
+- `rpush` behaviour is unchanged (existing `storeNodeTtl` suite must still pass).
 
 ## Not doing in this PR
 
-`exponential`, `hull`, `t3`, and the rest of LEAN's `MovingAverageType` set. The parameter is a string so they can be added later without changing the state contract.
+RedisStore parity (doc §15). If it is wanted later, extract the handler body into a shared helper first rather than copying it.
+
+## Verification
+
+`tsgo` typecheck, `npx tsx scripts/validate-nodes.ts`, and the backend store test suites. Manual: a Store node with Data Type List / Deque Append / Max Length 8, run 10 times, then a `lrange` Store node showing exactly the last 8 values.

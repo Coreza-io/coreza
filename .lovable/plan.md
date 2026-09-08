@@ -1,21 +1,46 @@
-# Consolidator end-to-end review
+# Remove implicit `suppressDownstream` routing; require explicit If gating
 
-## Confirmed working
+The attached plan is accurate against the current code. Verified references:
 
-- `TimeBarConsolidator` implements left-closed/right-open buckets, timezone + anchor alignment, Monday alignment for weekly, duplicate detection and out-of-order rejection.
-- `consolidatorShared.ts` is the single source of truth for the state key (`symbol:source:target:timezone:anchor`) and the step, used by both `ConsolidatorExecutor` and the route — manual and engine runs cannot drift apart.
-- `POST /storage/consolidator` resolves the canonical `executionId` (`runId ?? workflowSessionId ?? backtestId`), reads/writes state through the same `DataContext` the engine uses, and returns `{ emitted, bar, workingBar }` with `meta.key`.
-- `Consolidator.json` now points at `/storage/consolidator`; the executor suppresses downstream while a bucket is still building.
+- `coreza-backend/src/nodes/types.ts:97` — `suppressDownstream?: boolean` on `ControlFlags`
+- `coreza-backend/src/nodes/executors/ConsolidatorExecutor.ts:46` — sets `control: { suppressDownstream: !emitted }`
+- `coreza-backend/src/engine/executionRuntime.ts:304` and `:424` — early return in both standard and backtest routing
+- `coreza-backend/src/backtest/compiled/vm.ts:101` — `continue` block skipping activation
+- `src/nodes/Consolidator.json:25` — output description promising suppression
+- Tests: `executionRuntimeSuppression.test.ts`, `compiledVmSuppression.test.ts`, `timeBarConsolidator.test.ts:114-116`
 
-## Open items to verify and fix
+No other producer sets the flag, so removal is contained.
 
-1. **Frontend must send an execution id.** The route 404s ("Execution context not found") without `runId`/`workflowSessionId`/`backtestId`. Confirm `useNodeExecution` includes the session id in the Consolidator payload, exactly as it does for Rolling Window; add it if missing.
-2. **Executor state fallback divergence.** `ConsolidatorExecutor` falls back to `context.getState/setState` when no `DataContext` exists, while the route only uses `DataContext`. A manual run right after an engine run without a context would silently start a fresh bucket. Make both paths read the same store, or return an explicit error instead of starting a new bucket.
-3. **Warm-up seeding.** Check `ConsolidatorWarmup` writes its state under the exact key from `buildConsolidatorStateKey` (same normalized timeframes, timezone default `UTC`, empty anchor), otherwise backtests start unwarmed while reporting `rolling_windows_initialized`-style success.
-4. **Partial final bucket.** By design no flush happens at the end of a backtest, so the last incomplete bar is dropped. Confirm this is intended; if not, add an explicit finalize step in `BacktestExecutor`.
+## New behavior
+
+A successful Consolidator result always propagates. Held buckets still return `emitted: false` (with `workingBar`); completed buckets return `emitted: true` with `bar`. Authors who want completed-bar-only logic insert an If node checking `emitted == true` between Consolidator and downstream nodes. Failure semantics (`success: false`) and all other control flags (loop routing, parallel distribution, `sourceHandle`, `setState`, `throttleUntil`, branch) are untouched.
+
+## Changes
+
+1. **Contract** — `coreza-backend/src/nodes/types.ts`: delete `suppressDownstream` and its comment from `ControlFlags`. Leave everything else.
+2. **Producer** — `ConsolidatorExecutor.ts`: drop the `control` field from the success return; keep state read/write and `runConsolidatorStep` untouched.
+3. **Queue runtimes** — `executionRuntime.ts`: remove the early return at both line 304 (standard) and line 424 (backtest). Routing then falls through to Loop / If-Switch / standard routing as for any other node.
+4. **Compiled VM** — `backtest/compiled/vm.ts`: remove the suppression `continue` block (lines 101-104), keeping the `success === false` skip above it and the timing accounting intact.
+5. **Node metadata** — `src/nodes/Consolidator.json`: rewrite the output description to state that every successful execution propagates, and that completed-bar-only branches must be gated with an If on `emitted == true`.
+
+## Tests
+
+- `executionRuntimeSuppression.test.ts` → rename/rewrite to assert both standard and backtest runtimes leave a pending successor after any successful result, and none after `success: false`.
+- `compiledVmSuppression.test.ts` → rewrite so `emitted: false` still activates the downstream instruction; add a BRANCH-based case where an If on `emitted` routes true/false correctly.
+- `timeBarConsolidator.test.ts:114-116` → drop the `control` expectations, keep `emitted`/`bar` assertions.
+- Add a cross-engine parity test: the same Consolidator → If(`emitted == true`) → sink graph produces identical sink activations under standard runtime, backtest runtime, and compiled VM.
+- Leave all consolidator state tests (DataContext persistence, timezone/DST, anchor, warm-up, partial final bar) unchanged — they must still pass.
 
 ## Verification
 
-- Editor: five 1h bars into a 1h→4h consolidator — first four `emitted:false`, fifth `emitted:true` with correct OHLCV.
-- Backtest with warm-up: first live bucket continues the warmed bucket instead of restarting.
-- Existing `consolidatorRoute.test.ts` / `consolidatorWarmup.test.ts` extended for the key-parity and missing-context cases.
+- `tsgo` typecheck plus the backend jest suites (consolidator, runtime, compiled backtest).
+- Final literal repo search for `suppressDownstream` must return zero matches outside this plan file.
+- Run a representative 1h→4h backtest with an explicit If gate and confirm trade cadence matches the pre-change run.
+
+## Breaking change
+
+Saved workflows that relied on implicit suppression will now execute downstream nodes on every source bar. This is intentional. Ship a release note with the migration pattern (insert If on `emitted == true`). Do not auto-insert If nodes into existing workflows. An optional editor warning when a Consolidator connects directly to a non-conditional node can follow later — not part of this change.
+
+## PR boundary
+
+One focused PR: (1) contract + runtime removal, (2) metadata + test migration, (3) explicit-If parity regression. No consolidator clock/scan, state persistence, warm-up, or VM optimization work mixed in.

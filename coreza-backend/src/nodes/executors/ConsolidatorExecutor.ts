@@ -43,7 +43,6 @@ export class ConsolidatorExecutor implements INodeExecutor {
       return {
         success: true,
         data: result.payload,
-        control: { suppressDownstream: !result.payload.emitted },
       };
     } catch (error) {
       return {

@@ -119,11 +119,6 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
       }
       continue;
     }
-    if (result?.control?.suppressDownstream) {
-      if (timingEnabled) activateMs += performance.now() - activateStart;
-      continue;
-    }
-
     if (instr.op === OpCode.BRANCH) {
       // Conditional node: selectively activate based on result
       const resultData = result?.data;

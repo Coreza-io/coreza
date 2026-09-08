@@ -1,46 +1,71 @@
-# Remove implicit `suppressDownstream` routing; require explicit If gating
+# ATR Indicator — End-to-End Implementation Plan
 
-The attached plan is accurate against the current code. Verified references:
+The attached document is sound: ATR belongs in the existing generic indicator framework, with no dedicated executor. Verified against the repo, with four corrections noted below.
 
-- `coreza-backend/src/nodes/types.ts:97` — `suppressDownstream?: boolean` on `ControlFlags`
-- `coreza-backend/src/nodes/executors/ConsolidatorExecutor.ts:46` — sets `control: { suppressDownstream: !emitted }`
-- `coreza-backend/src/engine/executionRuntime.ts:304` and `:424` — early return in both standard and backtest routing
-- `coreza-backend/src/backtest/compiled/vm.ts:101` — `continue` block skipping activation
-- `src/nodes/Consolidator.json:25` — output description promising suppression
-- Tests: `executionRuntimeSuppression.test.ts`, `compiledVmSuppression.test.ts`, `timeBarConsolidator.test.ts:114-116`
+## Verified against the code
 
-No other producer sets the flag, so removal is contained.
+- `InitializeIndicatorsExecutor.ts:40` already lists `"ATR"` in `INDICATOR_NAMES` — discovery/warm-up wiring is genuinely already in place.
+- `IndicatorsExecutor` derives the type from `node.name.toLowerCase()`, so `ATR` maps to `atr` with no registry change.
+- `requiredWarmupBars()` (`indicatorStateManager.ts:61-94`) has no `atr` case and falls through to `1`.
+- `IndicatorService.createIncrementalUpdater()` (`indicators.ts:216`) and `IndicatorService.calculate()` (`indicators.ts:2040`) have no `atr` case.
+- `routes/indicators.ts` has no `/atr` route.
+- Frontend: `src/utils/indicatorRegistry.ts` has no `atr` spec; `src/utils/visualizeNormalize.ts:3` `OSCILLATOR_NAMES` has no `atr`; `src/nodes/Visualize.json` indicator picker has no `atr` option.
 
-## New behavior
+## Corrections to the document
 
-A successful Consolidator result always propagates. Held buckets still return `emitted: false` (with `workingBar`); completed buckets return `emitted: true` with `bar`. Authors who want completed-bar-only logic insert an If node checking `emitted == true` between Consolidator and downstream nodes. Failure semantics (`success: false`) and all other control flags (loop routing, parallel distribution, `sourceHandle`, `setState`, `throttleUntil`, branch) are untouched.
+1. **Warm-up should be `period + 1`, not `period`.** ADX's incremental updater consumes the first bar only to seed `prevHigh/prevLow/prevClose` and returns `null`. ATR must behave the same way for consistency, so a full Wilder seed needs `period` true ranges after the seeding bar. Use `case "atr": return positivePeriod(params.period) + 1;` (same shape as `rsi`). Drop the doc's "first bar uses high-low" special case — it creates a batch/incremental parity trap.
+2. **Do not use `technicalindicators`' `ATR.calculate` for the batch path.** Its seeding differs from our updater and would break the doc's own parity rule. Instead implement one shared internal `computeATRSeries(high, low, close, period)` helper and have both `calculateATR()` and the incremental updater use identical TR + Wilder arithmetic. Parity then holds by construction, not by tolerance luck.
+3. **No manifest edit is needed.** `src/nodes/manifest.ts` auto-discovers `./*.json` via `import.meta.glob`, so dropping in `ATR.json` is enough — but it must pass `NodeConfigSchema`, and there is **no `public/assets/icons/atr.svg`**. Reuse `/assets/icons/indicators.svg` (or add an ATR icon) rather than pointing at a missing file.
+4. **Visualization needs three edits, not one.** Beyond `indicatorRegistry.ts`, add `atr` to `OSCILLATOR_NAMES` in `visualizeNormalize.ts` (so it renders in its own panel, not on the price pane) and add the `{ "id": "atr", "name": "ATR" }` option to the picker list in `src/nodes/Visualize.json`.
+
+Also: the doc's "Consolidator -> If -> ATR" test row assumes explicit If gating. That is a separate in-flight change; write the test against whatever routing semantics are current at merge time and do not couple this PR to it.
+
+## Math (agreed with the doc)
+
+```text
+TR   = max(high - low, |high - prevClose|, |low - prevClose|)
+seed = average of the first `period` TRs
+ATR  = ((prevATR * (period - 1)) + TR) / period
+```
+
+First bar: seed `prevClose` only, emit `null`.
 
 ## Changes
 
-1. **Contract** — `coreza-backend/src/nodes/types.ts`: delete `suppressDownstream` and its comment from `ControlFlags`. Leave everything else.
-2. **Producer** — `ConsolidatorExecutor.ts`: drop the `control` field from the success return; keep state read/write and `runConsolidatorStep` untouched.
-3. **Queue runtimes** — `executionRuntime.ts`: remove the early return at both line 304 (standard) and line 424 (backtest). Routing then falls through to Loop / If-Switch / standard routing as for any other node.
-4. **Compiled VM** — `backtest/compiled/vm.ts`: remove the suppression `continue` block (lines 101-104), keeping the `success === false` skip above it and the timing accounting intact.
-5. **Node metadata** — `src/nodes/Consolidator.json`: rewrite the output description to state that every successful execution propagates, and that completed-bar-only branches must be gated with an If on `emitted == true`.
+**Backend**
 
-## Tests
+1. `coreza-backend/src/nodes/logic/indicators.ts`
+   - Add a module-level `trueRange(high, low, prevClose)` helper and `computeATRSeries()`.
+   - Add `case "atr"` to `createIncrementalUpdater()` with state `{ period, prevClose, atr, trSum, count }`; `warmUp()` folds bars chronologically, `update()` is O(1) on one bar. Non-finite OHLC returns `{ value: state.lastValue ?? null }` without corrupting state, matching ADX.
+   - Add `static async calculateATR(input)` validating `period > 0` and candle numerics, returning through `createSuccessOutput({ ... nodeName: "ATR" })`.
+   - Add `case "atr": return this.calculateATR(input);` to `calculate()`.
+2. `coreza-backend/src/engine/indicatorStateManager.ts` — add `case "atr": return positivePeriod(params.period) + 1;`.
+3. `coreza-backend/src/routes/indicators.ts` — add `POST /atr` using `executeIndicatorWithState("atr", req, IndicatorService.calculateATR)`.
+4. `coreza-backend/src/nodes/logic/toolDefinitions.ts` — add an `ATR` entry mirroring the existing `ADX` entry so the AI Agent can call it. Confirm `ToolExecutor`/`AIAgentExecutor` route indicators generically; only touch them if ADX is special-cased there.
 
-- `executionRuntimeSuppression.test.ts` → rename/rewrite to assert both standard and backtest runtimes leave a pending successor after any successful result, and none after `success: false`.
-- `compiledVmSuppression.test.ts` → rewrite so `emitted: false` still activates the downstream instruction; add a BRANCH-based case where an If on `emitted` routes true/false correctly.
-- `timeBarConsolidator.test.ts:114-116` → drop the `control` expectations, keep `emitted`/`bar` assertions.
-- Add a cross-engine parity test: the same Consolidator → If(`emitted == true`) → sink graph produces identical sink activations under standard runtime, backtest runtime, and compiled VM.
-- Leave all consolidator state tests (DataContext persistence, timezone/DST, anchor, warm-up, partial final bar) unchanged — they must still pass.
+**Frontend**
+
+5. `src/nodes/ATR.json` — modelled on `ADX.json`: fields `candle_data`, `symbol`, `timeframe`, `period` (default `14`), action `POST /indicators/atr`, category `Indicators`, existing icon path.
+6. `src/utils/indicatorRegistry.ts` — add `"atr"` to `IndicatorTypeId` and an `atr` spec: `pane: "panel"`, `kind: "line"`, one channel `{ key: "value", label: "ATR", color: "#f97316" }`.
+7. `src/utils/visualizeNormalize.ts` — add `"atr"` to `OSCILLATOR_NAMES`.
+8. `src/nodes/Visualize.json` — add the ATR picker option.
+
+## Tests — `coreza-backend/tests/atrIndicator.test.ts`
+
+- Fewer than `period + 1` bars → `value === null`.
+- Exactly `period + 1` bars → seed ATR equals the simple mean of the first `period` TRs.
+- Next bar → Wilder recurrence exactly.
+- Gap-up and gap-down bars → TR uses the previous close, not `high - low`.
+- Normal inside bar → TR equals `high - low`.
+- `period = 0` / negative / non-numeric → validation error from both batch and updater.
+- Malformed OHLC bar → no NaN in state, previous value retained.
+- Parity: `calculateATR(bars)` final value === `warmUp(bars)` value === `warmUp(bars[0..n-2]) + update(last)`.
+- `updateSync` vs async `update` produce identical state and value.
+- Duplicate timestamp → no double update (route-level guard in `executeIndicatorWithState`).
+- `InitializeIndicators` discovers an `ATR` node and warms it with `period + 1` bars.
 
 ## Verification
 
-- `tsgo` typecheck plus the backend jest suites (consolidator, runtime, compiled backtest).
-- Final literal repo search for `suppressDownstream` must return zero matches outside this plan file.
-- Run a representative 1h→4h backtest with an explicit If gate and confirm trade cadence matches the pre-change run.
-
-## Breaking change
-
-Saved workflows that relied on implicit suppression will now execute downstream nodes on every source bar. This is intentional. Ship a release note with the migration pattern (insert If on `emitted == true`). Do not auto-insert If nodes into existing workflows. An optional editor warning when a Consolidator connects directly to a non-conditional node can follow later — not part of this change.
-
-## PR boundary
-
-One focused PR: (1) contract + runtime removal, (2) metadata + test migration, (3) explicit-If parity regression. No consolidator clock/scan, state persistence, warm-up, or VM optimization work mixed in.
+- `tsgo` typecheck + backend jest (`atrIndicator`, indicator parity, warm-up suites).
+- Manual: run an ATR node against fetched daily candles and compare the last value against a reference ATR(14) to ~1e-6.
+- Confirm the ATR node renders in the palette and plots in its own visualization panel.

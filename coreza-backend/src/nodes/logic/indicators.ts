@@ -131,6 +131,162 @@ function asBarTime(bar: any): string {
   return String(bar?.time ?? "");
 }
 
+type AtrSmoothing = "wilders" | "simple";
+
+interface AtrState extends Record<string, unknown> {
+  period: number;
+  smoothing: AtrSmoothing;
+  prevClose: number | null;
+  count: number;
+  trSum: number;
+  trWindow: number[];
+  atr: number | null;
+  lastValue: number | null;
+}
+
+interface AtrBar {
+  high: number;
+  low: number;
+  close: number;
+}
+
+function parseAtrPeriod(value: unknown): number {
+  const period = Number(value);
+  if (!Number.isInteger(period) || period <= 0) {
+    throw createError("period is required and must be a positive integer", 400);
+  }
+  return period;
+}
+
+function parseAtrSmoothing(value: unknown): AtrSmoothing {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized || normalized === "wilder" || normalized === "wilders") {
+    return "wilders";
+  }
+  if (normalized === "simple" || normalized === "sma") return "simple";
+  throw createError(
+    "smoothing must be one of: wilders (wilder) or simple (sma)",
+    400,
+  );
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseAtrBar(bar: unknown): AtrBar | null {
+  if (!isUnknownRecord(bar)) return null;
+
+  const high = Number(bar.h ?? bar.high);
+  const low = Number(bar.l ?? bar.low);
+  const close = Number(bar.c ?? bar.close);
+  return [high, low, close].every(Number.isFinite)
+    ? { high, low, close }
+    : null;
+}
+
+function isAtrState(state: Record<string, unknown>): state is AtrState {
+  return (
+    typeof state.period === "number" &&
+    Number.isInteger(state.period) &&
+    state.period > 0 &&
+    (state.smoothing === "wilders" || state.smoothing === "simple") &&
+    typeof state.count === "number" &&
+    Number.isInteger(state.count) &&
+    state.count >= 0 &&
+    typeof state.trSum === "number" &&
+    Number.isFinite(state.trSum) &&
+    Array.isArray(state.trWindow) &&
+    state.trWindow.every(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    ) &&
+    (state.prevClose === null ||
+      (typeof state.prevClose === "number" &&
+        Number.isFinite(state.prevClose))) &&
+    (state.atr === null ||
+      (typeof state.atr === "number" && Number.isFinite(state.atr))) &&
+    (state.lastValue === null ||
+      (typeof state.lastValue === "number" &&
+        Number.isFinite(state.lastValue)))
+  );
+}
+
+function migrateAtrState(state: Record<string, unknown>): void {
+  if (state.smoothing === undefined) {
+    state.smoothing = "wilders";
+    state.trWindow = [];
+  }
+}
+
+function trueRange(high: number, low: number, prevClose: number | null): number {
+  if (prevClose === null || !Number.isFinite(prevClose)) return high - low;
+  return Math.max(
+    high - low,
+    Math.abs(high - prevClose),
+    Math.abs(low - prevClose),
+  );
+}
+
+function updateAtrState(state: AtrState, bar: unknown): number | null {
+  const candle = parseAtrBar(bar);
+  if (!candle) return state.lastValue ?? null;
+  const { high, low, close } = candle;
+
+  const tr = trueRange(high, low, state.prevClose);
+  state.prevClose = close;
+
+  if (state.smoothing === "simple") {
+    state.trWindow.push(tr);
+    state.trSum += tr;
+    state.count += 1;
+    if (state.trWindow.length > state.period) {
+      const removed = state.trWindow.shift();
+      if (removed !== undefined) state.trSum -= removed;
+    }
+    if (state.count < state.period) return null;
+    state.atr = state.trSum / state.period;
+  } else {
+    // Unlike ADX, ATR treats the first bar's high-low range as observation one.
+    if (state.count < state.period) {
+      state.trSum += tr;
+      state.count += 1;
+      if (state.count < state.period) return null;
+      state.atr = state.trSum / state.period;
+    } else {
+      const previousAtr = state.atr ?? state.trSum / state.period;
+      state.atr = (previousAtr * (state.period - 1) + tr) / state.period;
+      state.count += 1;
+    }
+  }
+
+  state.lastValue = state.atr;
+  return state.lastValue;
+}
+
+function createAtrState(period: number, smoothing: AtrSmoothing): AtrState {
+  return {
+    period,
+    smoothing,
+    prevClose: null,
+    count: 0,
+    trSum: 0,
+    trWindow: [],
+    atr: null,
+    lastValue: null,
+  };
+}
+
+function computeATRSeries(
+  bars: unknown[],
+  period: number,
+  smoothing: AtrSmoothing,
+): Array<number | null> {
+  const state = createAtrState(period, smoothing);
+  return bars.map((bar) => updateAtrState(state, bar));
+}
+
 function clampWindow(window: number[], size: number): number[] {
   if (window.length > size) window.shift();
   return window;
@@ -219,6 +375,36 @@ export class IndicatorService {
   ): IncrementalUpdater {
     const type = indicatorType.toLowerCase();
     switch (type) {
+      case "atr": {
+        const period = parseAtrPeriod(params.period);
+        const smoothing = parseAtrSmoothing(
+          params.smoothing ??
+            params.smoothing_method ??
+            params.moving_average_type,
+        );
+        return {
+          warmUp: (bars) => {
+            const state = createAtrState(period, smoothing);
+            let value: number | null = null;
+            for (const bar of bars) value = updateAtrState(state, bar);
+            return {
+              internalState: state,
+              value,
+              lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
+            };
+          },
+          update: (state, bar) => {
+            migrateAtrState(state);
+            if (!isAtrState(state)) {
+              throw createError("Invalid ATR indicator state", 500);
+            }
+            return {
+              value: updateAtrState(state, bar),
+              internalState: state,
+            };
+          },
+        };
+      }
       case "ema": {
         const period = Number(params.window ?? params.period);
         if (!Number.isFinite(period) || period <= 0) {
@@ -1599,6 +1785,40 @@ export class IndicatorService {
     }
   }
 
+  static async calculateATR(input: IndicatorInput): Promise<IndicatorResult> {
+    try {
+      const candles = parseArray<unknown>(input.candle_data, "candle_data");
+      const period = parseAtrPeriod(input.period);
+      const smoothing = parseAtrSmoothing(
+        input.smoothing ??
+          input.smoothing_method ??
+          input.moving_average_type,
+      );
+      const hasInvalidCandle = candles.some(
+        (candle) => parseAtrBar(candle) === null,
+      );
+      if (hasInvalidCandle) {
+        throw createError("Invalid numeric value in candles", 400);
+      }
+
+      return {
+        ...createSuccessOutput(
+          computeATRSeries(candles, period, smoothing),
+          {
+            ...INDICATOR_CONTEXT,
+            nodeName: "ATR",
+          },
+        ),
+        meta: { ...INDICATOR_CONTEXT, nodeName: "ATR", smoothing },
+      };
+    } catch (error) {
+      return createErrorOutput(error, {
+        ...INDICATOR_CONTEXT,
+        nodeName: "ATR",
+      });
+    }
+  }
+
   static async calculateStochastic(
     input: IndicatorInput,
   ): Promise<IndicatorResult> {
@@ -2054,6 +2274,8 @@ export class IndicatorService {
         return this.calculateBollinger(input);
       case "adx":
         return this.calculateADX(input);
+      case "atr":
+        return this.calculateATR(input);
       case "stochastic":
         return this.calculateStochastic(input);
       case "ichimoku":

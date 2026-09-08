@@ -75,6 +75,9 @@ export function requiredWarmupBars(
       );
     case "adx":
       return positivePeriod(params.period) * 2;
+    case "atr":
+      // Wilder and Simple ATR both seed on the period-th valid True Range.
+      return positivePeriod(params.period);
     case "stochastic":
       return (
         positivePeriod(params.k_period) + positivePeriod(params.d_period) - 1
@@ -262,6 +265,15 @@ export class IndicatorStateManager {
     }
 
     const barTs = bar?.time ?? bar?.t;
+    const lastBarTs = Number(existing.lastBarTime);
+    if (
+      typeof barTs === "number" &&
+      existing.lastBarTime !== "" &&
+      Number.isFinite(lastBarTs) &&
+      barTs <= lastBarTs
+    ) {
+      return existing;
+    }
     if (typeof barTs === "number" && existing.lastWarmupTs != null) {
       if (barTs <= existing.lastWarmupTs) {
         return existing;
@@ -306,6 +318,15 @@ export class IndicatorStateManager {
     }
 
     const barTs = bar?.time ?? bar?.t;
+    const lastBarTs = Number(existing.lastBarTime);
+    if (
+      typeof barTs === "number" &&
+      existing.lastBarTime !== "" &&
+      Number.isFinite(lastBarTs) &&
+      barTs <= lastBarTs
+    ) {
+      return existing;
+    }
     if (typeof barTs === "number" && existing.lastWarmupTs != null) {
       if (barTs <= existing.lastWarmupTs) {
         return existing;

@@ -1,6 +1,6 @@
 import type { CorezaCandle, SeriesPoint, UTCTimestamp } from "@/components/charts/chartTypes";
 
-const OSCILLATOR_NAMES = ["rsi", "macd", "volume_oscillator", "pvo", "obv", "adx", "stoch"] as const;
+const OSCILLATOR_NAMES = ["rsi", "macd", "volume_oscillator", "pvo", "obv", "adx", "atr", "stoch"] as const;
 const PALETTE = ["#3b82f6", "#8b5cf6", "#22c55e", "#ef4444", "#f59e0b", "#06b6d4"];
 
 type Dict = Record<string, unknown>;

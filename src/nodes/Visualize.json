@@ -77,6 +77,10 @@
               "name": "ADX"
             },
             {
+              "id": "atr",
+              "name": "ATR"
+            },
+            {
               "id": "stoch",
               "name": "Stochastic"
             },

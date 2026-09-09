@@ -1,100 +1,115 @@
-# Store node: bounded deque append (`rpush_bounded`)
+# Edit Fields v2 — typed values and safe expressions
 
-Add one Store List operation that is the equivalent of Python's `deque(maxlen=N).append(value)` — atomic `RPUSH` + `LTRIM -N -1`. The document's design is sound and matches the existing Store patterns; the notes below are adjustments needed to fit the current code.
+The document's direction is right: typed rows (`fieldName` + `dataType` + `valueMode` + `value`) with a small, non-`eval` expression grammar, and untouched legacy rows. Below is the plan adjusted to how Coreza actually works today — three parts of the doc do not survive contact with the code and are corrected.
 
 ## Verified against the code
 
-- `configs/store.ts:182-225` — `lpush`/`rpush` handlers: resolve `workflow_id || workflowId || ctx.workflowId`, build the key with `buildStoreKey`, serialize with `typeof value === "string" ? value : JSON.stringify(value)`, then `applyTTL`.
-- `configs/store.ts:24-37` — `applyTTL` only expires on a positive integer TTL and swallows expiry failures (best-effort, value already written).
-- `configs/store.ts:39-77` — `isWrongTypeError` + `runTypeSafeOperation` already produce the actionable "variable holds another data type" error. The new operation must go through this wrapper rather than inventing its own message.
-- `configs/store.ts:331-345` — existing standalone `ltrim`, left untouched.
-- `types.ts:38-43` — list fields block where `maxLength` belongs.
-- `Store.json:114-119, 589-601` — the stream `maxLen` field already exists and is shown for `xadd`/`xadd_bulk`. **Use a separate `maxLength` key** for the deque bound so the two never collide in `displayOptions`.
+- `src/nodes/Field.json:19-56` — repeater `fields` with subFields `left` / `operator` (`set` | `copy` | `remove`) / `right`.
+- `coreza-backend/src/nodes/executors/ControlFlowExecutor.ts:165-263` — `executeFieldNode`, the engine path. Starts from `result = {}`.
+- `coreza-backend/src/routes/comparator.ts:162-243` — `POST /comparator/field`, the manual/HTTP path. Starts from `result = { ...data }`.
+- `src/components/nodes/layout/RepeaterNodeLayout.tsx:72-144` — one shared repeater layout for `conditions`, `fields`, and `cases`, already branching on `isFieldRepeater`.
+- `src/utils/resolveReferences.ts` — the existing template resolver: path lookups, negative indexes, slices. No operators, no arithmetic.
 
-## Adjustments to the document
+## Three corrections to the document
 
-1. **Transaction result must be inspected explicitly.** `multi().exec()` resolves even when a queued command fails — errors arrive as `[error, reply]` tuples, not a rejection. So `runTypeSafeOperation` alone will not catch a `WRONGTYPE` from inside the transaction. After `exec()`, walk the replies, and if any tuple has a non-null error, throw it — that throw then lands inside `runTypeSafeOperation` and gets converted to the friendly message. A null `exec()` result (aborted transaction) throws a plain "Store transaction aborted" error.
-2. **Keep TTL out of the transaction.** The doc prefers `EXPIRE` inside `MULTI`, but current Store semantics are "TTL is best-effort and never fails the write" (`applyTTL` catches). Putting `EXPIRE` in the transaction would change that contract. Call `applyTTL` after `exec()`, exactly like `rpush` does.
-3. **Return the resulting length.** `LTRIM` returns `OK`, but `RPUSH` returns the pre-trim length, so also read `LLEN` — simplest is to queue `llen` as the third transaction command and report the final length in the payload.
-4. **Upper bound.** Enforce the doc's safety cap (100000) as a hard validation error, not a silent clamp.
+**1. Expression text must not be pre-resolved (biggest risk).**
+Field values today pass through `resolveNodeParameters` → `resolveReferences` *before* the executor sees them. If a v2 expression row is left in that path, `{{ $json.Close > 100 }}` is handed to the template regex, which treats `Close > 100` as a property path and produces `undefined` — the evaluator would never see the real source. So:
+
+- Expression rows must be exempted from template pre-resolution and reach the executor as raw text.
+- The evaluator receives the context instead: `$json` = the resolved node input, `$nodes` = `getAllNodeResults()`, and resolves references itself.
+- Implement the exemption in `resolveNodeParameters`' handling of the `fields` array: skip any row where `valueMode === "expression"`, copying its `value` verbatim. Fixed rows keep today's behaviour, so `{{ $json.x }}` in a fixed row still works exactly as it does now.
+
+**2. Parity requires a shared module, because the two paths already disagree.**
+The route seeds `result` with the incoming `data`; the executor seeds it with `{}`. The route's `set` writes the new value; the executor's `set` prefers an already-persisted value over the new one (so a persistent `set` effectively never updates after the first run). These are pre-existing bugs and I am not silently changing v1 behaviour — but v2 cannot be written twice. Extract `coreza-backend/src/nodes/logic/editFields.ts` exporting `applyFieldRows(rows, input, ctx)`, have both call sites delegate, and keep a `legacyResultSeed` option so each path preserves its current seeding for v1 rows. v2 rows get one defined behaviour in both paths. Flag the persistent-`set` divergence in the PR description as a follow-up decision for the user rather than fixing it here.
+
+**3. Drop `binary` and `$state` from v1.**
+- A `Binary Data` dropdown option with no editor and no runtime meaning is a dead end that will be reported as a bug. Leave it out until binary handling exists.
+- There is no `$state` object in `NodeExecutionContext` matching the doc's description. What exists is `getState`/`setState` (per-execution scratch) and `getPersistentValue`/`setPersistentValue` (Edit Fields persistence). Expose `$state` in v1 as a **read-only snapshot of this node's persistent values only** — that is what strategy rows like `$json.Close > $state.last_high` actually need — and document it as such. No writes from expressions.
+
+Otherwise the doc's security posture is correct and adopted verbatim: no `eval`, no `Function`, no `vm`; parse to an AST and evaluate only whitelisted node types; reject `__proto__`, `prototype`, `constructor`; no function calls, assignment, or `new`.
+
+## Data model
+
+```ts
+type EditFieldDataType = "string" | "number" | "boolean" | "array" | "object";
+type EditFieldValueMode = "fixed" | "expression";
+
+interface EditFieldRowV2 {
+  fieldName: string;
+  dataType: EditFieldDataType;
+  valueMode: EditFieldValueMode;
+  value: unknown;          // fixed literal, or raw expression text
+}
+```
+
+No `schemaVersion` field and no row `id`: a row is v2 when `dataType` is present, v1 when `operator` is present. That keeps saved workflows byte-compatible and avoids a migration.
 
 ## Changes
 
-### 1. `coreza-backend/src/services/storage/types.ts`
+### 1. `coreza-backend/src/nodes/logic/safeExpression.ts` (new)
 
-Add `maxLength?: number | string;` to the list-fields block (after `index?: number;`).
+Hand-written tokenizer + Pratt parser + evaluator. No new dependency — pulling in a JS parser and then blacklisting most of the language is a larger attack surface than a ~300-line grammar.
 
-### 2. `coreza-backend/src/services/storage/configs/store.ts`
+- **Tokens:** numbers, single/double-quoted strings, identifiers, `$json` / `$nodes` / `$state`, `.`, `(`, `)`, `,` (only inside `$nodes['x']`-style access — see below), operators `== != === !== > >= < <= && || ! + - * / %`.
+- **Grammar:** literals (`null`, `true`, `false`, number, string), member access (dot, plus bracket access with a string or integer literal so `$nodes['ATR']` and `$json.bars[0]` work — this small addition is worth it because Coreza data is array-heavy), unary `!` and `-`, the binary operators above with standard precedence, and parentheses.
+- **Rejected at parse time:** any `(` following an expression (call), `new`, `=`, `++`, `=>`, template literals, and the identifiers `process`, `require`, `globalThis`, `this`, `import`.
+- **Rejected at member-access time:** `__proto__`, `prototype`, `constructor`, and any key inherited rather than own (`Object.prototype.hasOwnProperty.call`).
+- **Limits:** max input length 4000 chars, max AST depth 32, max node count 500, max member-access depth 12, max string literal 1000 chars. Each violation is a named parse error.
+- **Semantics:** `==`/`!=` compile to strict `===`/`!==` (there is no reason to inherit JS coercion here); `&&`/`||` short-circuit; missing paths yield `undefined`, not a throw; arithmetic on non-numbers yields a typed error rather than `NaN` propagation.
+- **Errors:** `ExpressionError` carrying message + character position, so the caller can render `Unexpected token "&&" at position 42`.
+- Entry point: `evaluateExpression(text, { $json, $nodes, $state })`, where `text` may be either bare (`$json.a > 1`) or wrapped in a single `{{ ... }}`, which is stripped first.
 
-Add a shared validator near `applyTTL`:
+### 2. `coreza-backend/src/nodes/logic/editFields.ts` (new)
 
-```ts
-const parseMaxLength = (value: unknown): number => {
-  const maxLength = Number(value);
-  if (!Number.isInteger(maxLength) || maxLength <= 0 || maxLength > 100000) {
-    throw new Error("maxLength must be a positive integer no greater than 100000");
-  }
-  return maxLength;
-};
-```
+- `coerceFixedValue(value, dataType)` — string passes through; number via `Number()` with a finite check; **boolean only from literal `true`/`false`/`"true"`/`"false"`** (never `Boolean(x)`); array/object via `JSON.parse` plus `Array.isArray` / plain-object checks.
+- `checkExpressionResult(value, dataType, fieldName)` — strict: a Number field must receive a finite number, Boolean a real boolean, Array an array, Object a plain non-null object. No silent coercion of `undefined`/`null` into `false`/`0`. String is the one relaxed case: numbers and booleans are stringified, objects are rejected.
+- `applyFieldRows(rows, { input, seed, context })` — iterates rows, dispatching v1 rows to the existing legacy switch (moved verbatim) and v2 rows to fixed/expression handling, honouring `persistent` for v2 with write-through semantics (evaluate, store, return).
+- Errors are returned as `leanError`-shaped failures with the doc's wording: `Edit Fields: expression failed for field "bull_bos": ...` and `Edit Fields: field "risk" expected Number, but expression returned String ("abc")`.
 
-Add `rpush_bounded` directly after `rpush` in the LIST OPERATIONS section:
+### 3. `ControlFlowExecutor.ts` and `routes/comparator.ts`
 
-- Resolve `workflowId` and require `variableName` (same guard text pattern as `rpush`).
-- `const maxLength = parseMaxLength(input.maxLength);` before touching Redis.
-- Serialize `input.value` identically to `rpush`.
-- Wrap the Redis work in `runTypeSafeOperation(ctx, key, input.variableName, "list", ...)`, and inside it:
-  ```ts
-  const replies = await ctx.redis!.multi()
-    .rpush(key, serialized)
-    .ltrim(key, -maxLength, -1)
-    .llen(key)
-    .exec();
-  if (!replies) throw new Error("Store transaction aborted; please retry");
-  for (const [error] of replies) if (error) throw error;
-  return Number(replies[2]?.[1] ?? 0);
-  ```
-- After the wrapper returns, `await applyTTL(ctx.redis!, key, input.ttl);`.
-- Return `{ operation: "rpush_bounded", variableName, maxLength, length, message: \`Value appended; list trimmed to latest ${maxLength}\` }`.
+Both replace their inline loops with `applyFieldRows`, passing their own seed (`{}` for the executor, `{ ...data }` for the route) so v1 behaviour is bit-identical. The executor keeps its existing sync/persistent guard (`isPromiseLike` → "requires async execution").
 
-Leave `rpush` and `ltrim` untouched.
+### 4. Template-resolution exemption
 
-### 3. `src/nodes/Store.json`
+In the resolver used by `resolveNodeParameters` for node values, add an Edit Fields carve-out: when resolving the `fields` array, rows with `valueMode === "expression"` keep `value` unresolved. Add a unit test asserting a raw expression survives resolution untouched, in both the frontend (`src/utils/resolveReferences.ts` callers) and backend resolvers, since the two are kept in parity by `tests/utils/resolveReferences-parity.test.ts`.
 
-- List `conditionalOptions` (line ~71): add `{ "id": "rpush_bounded", "name": "Deque Append (keep latest N)" }` right after `rpush`.
-- Add `"rpush_bounded"` to the `operation` arrays of the existing `variableName` field (line ~327) and `value` field (line ~351) so both stay visible.
-- New field placed next to the other list fields:
-  ```json
-  {
-    "key": "maxLength",
-    "label": "Max Length",
-    "type": "text",
-    "placeholder": "e.g. 8",
-    "required": true,
-    "description": "Keeps only the newest N items, like deque(maxlen=N).",
-    "displayOptions": { "show": { "operation": ["rpush_bounded"] } }
-  }
-  ```
-- Add `"rpush_bounded"` to the `ttl` field's operation list so TTL stays available, matching `rpush`.
-- Re-run `npx tsx scripts/validate-nodes.ts`.
+### 5. `src/nodes/Field.json`
 
-### 4. `coreza-backend/tests/storeDequeAppend.test.ts`
+Replace the `fields` repeater subFields with `fieldName` (string), `dataType` (select: String/Number/Boolean/Array/Object), `valueMode` (select: Fixed/Expression), `value` (text). Default row: `{ "fieldName": "", "dataType": "string", "valueMode": "fixed", "value": "" }`. `persistent` stays top-level. Legacy rows are not described in the schema — they are simply still accepted at runtime. Re-run `npx tsx scripts/validate-nodes.ts`.
 
-Modelled on `storeNodeTtl.test.ts` (mock `getRedisCache`, drive `storeConfig.operations.rpush_bounded.handler` with a fake redis whose `multi()` returns a chainable stub):
+### 6. `src/components/nodes/layout/RepeaterNodeLayout.tsx`
 
-- Appending with `maxLength: 8` issues exactly `rpush(key, serialized)`, `ltrim(key, -8, -1)`, `llen(key)` in one `multi()`, in that order.
-- Doc's worked example end to end against a real-ish in-memory list stub: start `[1..8]`, append `9`, final `[2..9]`, reported `length === 8`.
-- Object values are JSON-stringified; string values pass through unchanged (parity with `rpush`).
-- `maxLength` of `0`, `-1`, `1.5`, `"abc"`, `undefined`, and `100001` all reject before any Redis call (`multi` never invoked).
-- A `WRONGTYPE` error inside the transaction replies surfaces the friendly "holds another data type" message, not the raw Redis text.
-- `exec()` resolving `null` produces a clear aborted-transaction error.
-- Valid TTL calls `expire`; invalid/absent TTL does not; a failing `expire` still returns success.
-- `rpush` behaviour is unchanged (existing `storeNodeTtl` suite must still pass).
+Under the existing `isFieldRepeater` branch, render the row vertically: Field Name, Type, a Fixed/Expression segmented control, then the value editor. The value editor switches on type — plain input for string/number, a true/false select for boolean, a textarea for array/object JSON with inline parse feedback — and switches to a monospace multi-line textarea in Expression mode. Condition (`conditions`) and switch (`cases`) rendering is untouched.
 
-## Not doing in this PR
+Drag-and-drop reference insertion becomes cursor-aware: capture `selectionStart`/`selectionEnd` on the focused editor and splice the dragged reference in at that offset instead of appending. When inserting into an expression editor, insert the bare path (`$('ATR').json.atr`) rather than a nested `{{ ... }}`, since the doc's own example of nested braces is not valid input for the grammar.
 
-RedisStore parity (doc §15). If it is wanted later, extract the handler body into a shared helper first rather than copying it.
+Also show a live evaluation preview under an expression row using the same evaluator compiled for the browser (or a debounced backend preview call — decide during implementation based on whether the evaluator module can be imported cleanly by the frontend; if not, ship v1 without preview rather than duplicating the grammar).
+
+## Tests
+
+**`coreza-backend/tests/safeExpression.test.ts`**
+- Literals, comparison, arithmetic precedence, grouping, short-circuit `&&`/`||`, unary `!` and `-`.
+- Reference resolution from `$json`, `$nodes`, `$state`; missing path → `undefined`; array index access.
+- The doc's BOS example returns `true` with its stated inputs, and `false` when `last_high` is null.
+- Security, each rejected at **parse** time with a positional error: `process.env`, `require("fs")`, `globalThis`, `foo()`, `obj.__proto__`, `obj.constructor`, `obj.prototype`, `new Something()`, `x = 1`, `arr.push(1)`, `import("fs")`, `(() => 1)()`, `this`.
+- Every limit (length, depth, node count, member depth, string length) trips its own named error.
+- A prototype-polluted input object cannot leak inherited keys.
+
+**`coreza-backend/tests/editFieldsV2.test.ts`**
+- Fixed coercion per type, including `"false"` → `false` (not `true`) and `""`/`"abc"` rejected for Number.
+- Expression type mismatches produce the exact documented error strings.
+- `undefined`/`null` results are never coerced to `false`/`0`.
+- Persistent v2 rows write through and read back.
+- **Parity:** the same rows and input through `ControlFlowExecutor.executeFieldNode` and `POST /comparator/field` yield the same values, types, and error text.
+- **Compatibility:** legacy `set`, `copy`, `remove`, and a node mixing v1 and v2 rows all behave exactly as before (snapshot the current outputs first, then assert against them).
+
+**Frontend** — new row defaults to String + Fixed; the type dropdown holds the five types; toggling Value Mode swaps editors; drag-drop inserts at the caret, not the end.
+
+## Deferred
+
+Binary data, `$state` writes, ternary, optional chaining, object/array literals, function calls and helpers, automatic migration of legacy Copy/Remove rows. Legacy rows keep working indefinitely; no auto-rewrite on save.
 
 ## Verification
 
-`tsgo` typecheck, `npx tsx scripts/validate-nodes.ts`, and the backend store test suites. Manual: a Store node with Data Type List / Deque Append / Max Length 8, run 10 times, then a `lrange` Store node showing exactly the last 8 values.
+`tsgo` typecheck, `npx tsx scripts/validate-nodes.ts`, backend jest (new suites plus `tests/workflow/*`), frontend jest. Manual: build a node with a boolean BOS expression and a numeric `close - atr * 2` expression, run it manually and inside a backtest, and confirm identical typed output.

@@ -41,6 +41,7 @@ export interface StorageInput {
   startIndex?: number;
   endIndex?: number;
   index?: number;
+  maxLength?: number | string;
   // Sorted set fields
   score?: number;
   scoreMembers?: string | Array<{ score: number; member: string }>;

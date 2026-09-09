@@ -70,6 +70,7 @@
         "list": [
           { "id": "lpush", "name": "Push Left (prepend)" },
           { "id": "rpush", "name": "Push Right (append)" },
+          { "id": "rpush_bounded", "name": "Deque Append (keep latest N)" },
           { "id": "lpop", "name": "Pop Left" },
           { "id": "rpop", "name": "Pop Right" },
           { "id": "lrange", "name": "Get Range" },
@@ -328,6 +329,7 @@
             "set",
             "lpush",
             "rpush",
+            "rpush_bounded",
             "lset",
             "hset",
             "sadd",
@@ -353,6 +355,7 @@
             "append",
             "lpush",
             "rpush",
+            "rpush_bounded",
             "lset",
             "hset",
             "xadd"
@@ -478,6 +481,19 @@
       "displayOptions": {
         "show": {
           "operation": ["lindex", "lset"]
+        }
+      }
+    },
+    {
+      "key": "maxLength",
+      "label": "Max Length",
+      "type": "text",
+      "placeholder": "e.g. 8",
+      "required": true,
+      "description": "Keeps only the newest N items, like deque(maxlen=N).",
+      "displayOptions": {
+        "show": {
+          "operation": ["rpush_bounded"]
         }
       }
     },
@@ -611,6 +627,7 @@
             "set",
             "lpush",
             "rpush",
+            "rpush_bounded",
             "hset",
             "sadd",
             "zadd",

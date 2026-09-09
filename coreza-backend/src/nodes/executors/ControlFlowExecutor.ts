@@ -19,6 +19,7 @@ import {
   leanSuccess,
   leanError,
 } from "../../utils/normalizeOutput";
+import { applyFieldRows } from "../logic/editFields";
 
 export class ControlFlowExecutor implements INodeExecutor {
   private isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -175,90 +176,29 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? resolvedParams.fields
       : [];
     const persistent = !!resolvedParams.persistent;
-    let result: Record<string, any> = {};
-
-    // Process each field operation
-    for (const field of fields) {
-      const { left: fieldName, operator, right: value } = field;
-
-      if (!fieldName) {
-        continue; // Skip empty field names
-      }
-
-      switch (operator) {
-        case "set":
-          if (
-            persistent &&
-            context?.getPersistentValue &&
-            context?.setPersistentValue
-          ) {
-            // Handle persistent field - get current value or use new value
-            const currentPersistentValue =
-              context.getPersistentValue(fieldName);
-            const finalValue =
-              currentPersistentValue !== undefined
-                ? currentPersistentValue
-                : value;
-
-            // Set the persistent value and save to DB
-            if (currentPersistentValue !== finalValue) {
-              const persistResult = context.setPersistentValue(
-                fieldName,
-                finalValue,
-              ); // Save only if changed
-              if (this.isPromiseLike(persistResult)) {
-                return leanError(
-                  "Edit Fields persistent operations require async execution",
-                );
-              }
-            }
-            // Also set in result for immediate use in current execution
-            result[fieldName] = finalValue;
-          } else {
-            // Regular non-persistent field
-            result[fieldName] = value;
-          }
-          break;
-
-        case "copy":
-          // Copy value from another field
-          if (value && result[value] !== undefined) {
-            if (persistent && context?.setPersistentValue) {
-              const persistResult = context.setPersistentValue(
-                fieldName,
-                result[value],
-              );
-              if (this.isPromiseLike(persistResult)) {
-                return leanError(
-                  "Edit Fields persistent operations require async execution",
-                );
-              }
-            }
-            result[fieldName] = result[value];
-          }
-          break;
-
-        case "remove":
-          // Remove the field
-          if (persistent && context?.setPersistentValue) {
-            const persistResult = context.setPersistentValue(
-              fieldName,
-              undefined,
+    const setPersistentValue = context?.setPersistentValue
+      ? (key: string, value: unknown) => {
+          const operation = context.setPersistentValue(key, value);
+          if (this.isPromiseLike(operation))
+            throw new Error(
+              "Edit Fields persistent operations require async execution",
             );
-            if (this.isPromiseLike(persistResult)) {
-              return leanError(
-                "Edit Fields persistent operations require async execution",
-              );
-            }
-          }
-          delete result[fieldName];
-          break;
-
-        default:
-          break;
-      }
-    }
-
+          return operation;
+        }
+      : undefined;
+    const result = applyFieldRows(fields, {
+      input,
+      legacyResultSeed: {},
+      legacyPersistentRead: true,
+      context: {
+        persistent,
+        getPersistentValue: context?.getPersistentValue,
+        setPersistentValue,
+        $nodes: context?.getAllNodeResults?.() ?? {},
+        $state: context?.persistentValues ?? {},
+        nodes: context?.nodes,
+      },
+    });
     return leanSuccess(result);
   }
 

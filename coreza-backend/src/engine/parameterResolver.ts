@@ -84,7 +84,17 @@ export class ParameterResolver {
       return resolveReferences(val, input, allNodeData, this.nodes);
     }
     if (Array.isArray(val)) {
-      return val.map((item) => this.resolveDeep(item, input, allNodeData));
+      return val.map((item) => {
+        if (item && typeof item === "object" && item.valueMode === "expression") {
+          return Object.fromEntries(
+            Object.entries(item).map(([key, value]) => [
+              key,
+              key === "value" ? value : this.resolveDeep(value, input, allNodeData),
+            ]),
+          );
+        }
+        return this.resolveDeep(item, input, allNodeData);
+      });
     }
     if (val !== null && typeof val === "object") {
       return Object.fromEntries(

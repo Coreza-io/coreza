@@ -8,15 +8,19 @@
  * See the LICENSE file for details.
  */
 
+import { pickJsonSource, resolveNodeKey } from "./referenceResolution";
+import type { ReferenceNode } from "./referenceResolution";
+
 type SliceObject = { type: "slice"; start: number | null; end: number | null };
 type PathKey = string | number | SliceObject;
 
 /**
  * Turn a path like "0.candles[1].value" or "['foo'].bar" into an array of keys/indexes.
- * Supports negative numbers (e.g. -1, -2) and slice syntax (e.g. [0:10], [-5:], [:10]).
+ * Now supports negative numbers (e.g. -1, -2) and slice syntax (e.g. [0:10], [-5:], [:10]).
  */
 function parsePath(path: string): PathKey[] {
   const parts: PathKey[] = [];
+  // Match slice patterns [start:end] before single indices
   const regex = /([^[.\]]+)|\[(-?\d+)?:(-?\d+)?\]|\[(-?\d+|["'][^"']+["'])\]/g;
   let match: RegExpExecArray | null;
 
@@ -26,16 +30,18 @@ function parsePath(path: string): PathKey[] {
     if (dotKey !== undefined) {
       parts.push(dotKey);
     } else if (sliceStart !== undefined || sliceEnd !== undefined) {
+      // Slice pattern detected: [start:end], [:end], [start:], or [:]
       parts.push({
         type: "slice",
         start: sliceStart ? parseInt(sliceStart, 10) : null,
         end: sliceEnd ? parseInt(sliceEnd, 10) : null,
       });
     } else {
+      // Single index or quoted key
       if (/^-?\d+$/.test(bracketKey!)) {
-        parts.push(Number(bracketKey));
+        parts.push(Number(bracketKey)); // e.g. "-1" → -1
       } else {
-        parts.push(bracketKey!.slice(1, -1));
+        parts.push(bracketKey!.slice(1, -1)); // strip quotes from 'foo' or "foo"
       }
     }
   }
@@ -43,71 +49,25 @@ function parsePath(path: string): PathKey[] {
   return parts;
 }
 
-// Hoisted to module scope to avoid recompilation on every call
-const TEMPLATE_REGEX =
-  /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
-
-const PURE_TEMPLATE_REGEX =
-  /^\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}$/;
-
+/**
+ * Replaces {{ $json.x.y }} or {{ $('Node').json.x.y }} templates using inputData.
+ * Now with support for negative array indexes, multi-node data lookup, and display name resolution.
+ */
 export function resolveReferences(
   expr: string,
   inputData: any,
   allNodeData?: Record<string, any>,
-  nodes?: any[],
+  nodes?: ReferenceNode[],
 ): unknown {
   if (typeof expr !== "string") {
     return expr;
   }
 
-  function pickJsonSource(d: any) {
-    if (d == null) return d;
+  const templateRegex =
+    /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
 
-    const candidates = [
-      d.json,
-      d.output?.json,
-      d.output,
-      d.input?.json,
-      d.input,
-      d.data?.output?.json,
-      d.data?.output,
-      d.data?.input?.json,
-      d.data?.input,
-      d,
-    ];
-
-    for (const c of candidates) {
-      if (c !== undefined) return c;
-    }
-
-    return d;
-  }
-
-  function resolveNodeKey(
-    nodeName: string,
-    allNodeData?: Record<string, any>,
-    nodes?: Array<{ id: string; data?: any; label?: string; name?: string }>,
-  ): string | undefined {
-    if (!nodeName) return undefined;
-    if (allNodeData?.[nodeName] !== undefined) return nodeName;
-
-    const candidate = nodes?.find(
-      (n) =>
-        n.id === nodeName ||
-        (n as any).label === nodeName ||
-        (n as any).name === nodeName ||
-        n.data?.title === nodeName ||
-        n.data?.name === nodeName ||
-        n.data?.label === nodeName ||
-        (n.data as any)?.displayName === nodeName,
-    );
-
-    if (candidate && allNodeData?.[candidate.id] !== undefined) {
-      return candidate.id;
-    }
-
-    return undefined;
-  }
+  const pureTemplateRegex =
+    /^\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}$/;
 
   function getValueByPath(targetData: any, cleanPath: string) {
     if (!cleanPath) return targetData;
@@ -121,9 +81,7 @@ export function resolveReferences(
       if (result == null) return undefined;
 
       if (typeof key === "object" && key.type === "slice") {
-        if (!Array.isArray(result)) {
-          return undefined;
-        }
+        if (!Array.isArray(result)) return undefined;
 
         const len = result.length;
         const start =
@@ -203,7 +161,7 @@ export function resolveReferences(
 
     if (nodeName && allNodeData) {
       const resolvedKey =
-        resolveNodeKey(nodeName, allNodeData, nodes as any) || nodeName;
+        resolveNodeKey(nodeName, allNodeData, nodes) || nodeName;
 
       if (allNodeData[resolvedKey] === undefined) {
         return undefined;
@@ -224,33 +182,26 @@ export function resolveReferences(
   }
 
   // No template at all -> undefined
-  TEMPLATE_REGEX.lastIndex = 0;
-  if (!TEMPLATE_REGEX.test(expr)) {
+  templateRegex.lastIndex = 0;
+  if (!templateRegex.test(expr)) {
     return undefined;
   }
 
   // Pure expression: return raw value, missing path -> undefined
-  const pureMatch = expr.match(PURE_TEMPLATE_REGEX);
+  const pureMatch = expr.match(pureTemplateRegex);
   if (pureMatch) {
-    TEMPLATE_REGEX.lastIndex = 0;
-    const m = TEMPLATE_REGEX.exec(expr);
+    const [, g1, g1b, g2, g3, rawPath] = pureMatch;
+    const nodeName = g1 || g1b || g2 || g3;
+    const value = resolveSingleReference(nodeName, rawPath);
 
-    if (m) {
-      const [, g1, g1b, g2, g3, rawPath] = m;
-      const nodeName = g1 || g1b || g2 || g3;
-      const value = resolveSingleReference(nodeName, rawPath);
-
-      if (value === undefined || value === null) return undefined;
-      if (value instanceof Date) return value.toISOString();
-      return value;
-    }
-
-    return undefined;
+    if (value === undefined || value === null) return undefined;
+    if (value instanceof Date) return value.toISOString();
+    return value;
   }
 
   // Mixed/interpolated string: missing path -> "undefined"
-  TEMPLATE_REGEX.lastIndex = 0;
-  return expr.replace(TEMPLATE_REGEX, (full, g1, g1b, g2, g3, rawPath) => {
+  templateRegex.lastIndex = 0;
+  return expr.replace(templateRegex, (full, g1, g1b, g2, g3, rawPath) => {
     const nodeName = g1 || g1b || g2 || g3;
     const value = resolveSingleReference(nodeName, rawPath);
 

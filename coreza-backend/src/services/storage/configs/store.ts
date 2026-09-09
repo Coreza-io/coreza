@@ -36,6 +36,16 @@ const applyTTL = async (redis: any, key: string, ttl?: number) => {
   }
 };
 
+const parseMaxLength = (value: unknown): number => {
+  const maxLength = Number(value);
+  if (!Number.isInteger(maxLength) || maxLength <= 0 || maxLength > 100000) {
+    throw new Error(
+      "maxLength must be a positive integer no greater than 100000",
+    );
+  }
+  return maxLength;
+};
+
 const isWrongTypeError = (error: unknown): boolean => {
   if (typeof error === "string") return error.includes("WRONGTYPE");
   if (typeof error !== "object" || error === null) return false;
@@ -220,6 +230,51 @@ export const storeConfig: StorageConfig = {
           operation: "rpush",
           variableName: input.variableName,
           message: "Value pushed right",
+        };
+      },
+    },
+
+    rpush_bounded: {
+      handler: async (input: StorageInput, ctx: StorageContext) => {
+        const workflowId =
+          input.workflow_id || input.workflowId || ctx.workflowId;
+        if (!workflowId || !input.variableName) {
+          throw new Error(
+            "workflow_id and variableName required for rpush_bounded",
+          );
+        }
+        const maxLength = parseMaxLength(input.maxLength);
+        const key = buildStoreKey(ctx.userId, workflowId, input.variableName);
+        const serialized =
+          typeof input.value === "string"
+            ? input.value
+            : JSON.stringify(input.value);
+        const length = await runTypeSafeOperation(
+          ctx,
+          key,
+          input.variableName,
+          "list",
+          async () => {
+            const replies = await ctx
+              .redis!.multi()
+              .rpush(key, serialized)
+              .ltrim(key, -maxLength, -1)
+              .llen(key)
+              .exec();
+            if (!replies) {
+              throw new Error("Store transaction aborted; please retry");
+            }
+            for (const [error] of replies) if (error) throw error;
+            return Number(replies[2]?.[1] ?? 0);
+          },
+        );
+        await applyTTL(ctx.redis!, key, input.ttl);
+        return {
+          operation: "rpush_bounded",
+          variableName: input.variableName,
+          maxLength,
+          length,
+          message: `Value appended; list trimmed to latest ${maxLength}`,
         };
       },
     },

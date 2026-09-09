@@ -127,6 +127,18 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       : reference;
     update(index, "value", value.slice(0, start) + inserted + value.slice(end));
   };
+  const onDragOver = (
+    event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+  };
+  const onDragEnter = (
+    event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    event.preventDefault();
+  };
   const editorClass =
     "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
   return (
@@ -220,6 +232,8 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
             value={value}
             onChange={(e) => update(index, "value", e.target.value)}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
             onDrop={onDrop}
             disabled={disabled}
           />
@@ -228,6 +242,8 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             className={editorClass}
             value={value}
             onChange={(e) => update(index, "value", e.target.value)}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
             onDrop={onDrop}
             disabled={disabled}
           />

@@ -51,14 +51,16 @@ No `schemaVersion` field and no row `id`: a row is v2 when `dataType` is present
 
 Hand-written tokenizer + Pratt parser + evaluator. No new dependency — pulling in a JS parser and then blacklisting most of the language is a larger attack surface than a ~300-line grammar.
 
-- **Tokens:** numbers, single/double-quoted strings, identifiers, `$json` / `$nodes` / `$state`, `.`, `(`, `)`, `,` (only inside `$nodes['x']`-style access — see below), operators `== != === !== > >= < <= && || ! + - * / %`.
-- **Grammar:** literals (`null`, `true`, `false`, number, string), member access (dot, plus bracket access with a string or integer literal so `$nodes['ATR']` and `$json.bars[0]` work — this small addition is worth it because Coreza data is array-heavy), unary `!` and `-`, the binary operators above with standard precedence, and parentheses.
-- **Rejected at parse time:** any `(` following an expression (call), `new`, `=`, `++`, `=>`, template literals, and the identifiers `process`, `require`, `globalThis`, `this`, `import`.
+- **Tokens:** numbers, single/double-quoted strings, identifiers, the roots `$json` / `$nodes` / `$state` / `$(` / `$node[`, `.`, `[`, `]`, `(`, `)`, operators `== != === !== > >= < <= && || ! + - * / %`.
+- **Grammar:** literals (`null`, `true`, `false`, number, string), the reference roots below, member access (dot, plus bracket access with a string or integer literal so `$nodes['ATR']` and `$json.bars[0]` work — worth it because Coreza data is array-heavy), unary `!` and `-`, the binary operators above with standard precedence, and parentheses.
+- **Reference roots (n8n-compatible, matching Coreza's existing syntax):** `$json...`, `$('Node Name').json...`, `$node["Node Name"].json...`, `$nodes...`, `$state...`. `$(` and `$node[` are parsed as dedicated root forms taking a single string literal — this is the *only* place a `(` may follow a token, and it is not a call node. Node lookup and `pickJsonSource` precedence come from the helper shared with `resolveReferences`.
+- **Rejected at parse time:** any other `(` following an expression (call), `new`, `=`, `++`, `=>`, template literals, and the identifiers `process`, `require`, `globalThis`, `this`, `import`.
 - **Rejected at member-access time:** `__proto__`, `prototype`, `constructor`, and any key inherited rather than own (`Object.prototype.hasOwnProperty.call`).
 - **Limits:** max input length 4000 chars, max AST depth 32, max node count 500, max member-access depth 12, max string literal 1000 chars. Each violation is a named parse error.
-- **Semantics:** `==`/`!=` compile to strict `===`/`!==` (there is no reason to inherit JS coercion here); `&&`/`||` short-circuit; missing paths yield `undefined`, not a throw; arithmetic on non-numbers yields a typed error rather than `NaN` propagation.
+- **Semantics:** `==`/`!=` compile to strict `===`/`!==` (no reason to inherit JS coercion here); `&&`/`||` short-circuit; missing paths yield `undefined`, not a throw; arithmetic on non-numbers yields a typed error rather than `NaN` propagation.
 - **Errors:** `ExpressionError` carrying message + character position, so the caller can render `Unexpected token "&&" at position 42`.
-- Entry point: `evaluateExpression(text, { $json, $nodes, $state })`, where `text` may be either bare (`$json.a > 1`) or wrapped in a single `{{ ... }}`, which is stripped first.
+- Entry point: `evaluateExpression(text, { $json, $nodes, $state, nodes })`, where `text` may be bare (`$json.a > 1`) or wrapped in a single `{{ ... }}`, which is stripped first. A bare reference with no operators — the plain dragged `{{ $('ATR').json.atr }}` — is a valid expression and returns the raw typed value, so a fixed-mode row and an expression-mode row containing the same reference agree.
+
 
 ### 2. `coreza-backend/src/nodes/logic/editFields.ts` (new)
 

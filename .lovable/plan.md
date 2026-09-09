@@ -12,12 +12,13 @@ The document's direction is right: typed rows (`fieldName` + `dataType` + `value
 
 ## Three corrections to the document
 
-**1. Expression text must not be pre-resolved (biggest risk).**
-Field values today pass through `resolveNodeParameters` → `resolveReferences` *before* the executor sees them. If a v2 expression row is left in that path, `{{ $json.Close > 100 }}` is handed to the template regex, which treats `Close > 100` as a property path and produces `undefined` — the evaluator would never see the real source. So:
+**1. One resolution pass, done by the evaluator (the n8n model).**
+n8n does not pre-resolve an expression and then evaluate the leftovers — the whole `{{ ... }}` goes into its expression engine, which resolves `$json`, `$('Node').json.x`, and the operators around them in a single pass, and renders the outcome in the Result panel. Coreza must do the same, because today's `resolveReferences` would eat the expression first: `{{ $json.Close > 100 }}` matches the template regex, which reads `Close > 100` as a property path and returns `undefined`, so the evaluator would never see the source text. So:
 
-- Expression rows must be exempted from template pre-resolution and reach the executor as raw text.
-- The evaluator receives the context instead: `$json` = the resolved node input, `$nodes` = `getAllNodeResults()`, and resolves references itself.
-- Implement the exemption in `resolveNodeParameters`' handling of the `fields` array: skip any row where `valueMode === "expression"`, copying its `value` verbatim. Fixed rows keep today's behaviour, so `{{ $json.x }}` in a fixed row still works exactly as it does now.
+- Expression rows bypass template pre-resolution and reach the executor as raw text. Implement it in `ParameterResolver.resolveDeep`'s handling of the `fields` array (`coreza-backend/src/engine/parameterResolver.ts:78-98`, plus the compiled path in `templateCompiler` and the matching frontend resolver): a row with `valueMode === "expression"` keeps `value` verbatim. Fixed rows keep today's behaviour, so `{{ $json.x }}` in a fixed row still works exactly as now.
+- The evaluator then does the resolution itself, from the same context: `$json` = resolved node input, `$nodes` = `getAllNodeResults()`, `$state` = this node's persistent values.
+- **The grammar therefore has to accept Coreza's existing reference syntax**, not just the doc's `$json.a`: `$('Node Name').json.path` and `$node["Node Name"].json.path` resolve through the same node-name/label/id lookup and `pickJsonSource` precedence that `resolveReferences` uses (`resolveReferences.ts:63-110`). Otherwise every dragged reference breaks the moment a user adds an operator to it. Factor that lookup into a shared helper so the two resolvers cannot drift.
+
 
 **2. Parity requires a shared module, because the two paths already disagree.**
 The route seeds `result` with the incoming `data`; the executor seeds it with `{}`. The route's `set` writes the new value; the executor's `set` prefers an already-persisted value over the new one (so a persistent `set` effectively never updates after the first run). These are pre-existing bugs and I am not silently changing v1 behaviour — but v2 cannot be written twice. Extract `coreza-backend/src/nodes/logic/editFields.ts` exporting `applyFieldRows(rows, input, ctx)`, have both call sites delegate, and keep a `legacyResultSeed` option so each path preserves its current seeding for v1 rows. v2 rows get one defined behaviour in both paths. Flag the persistent-`set` divergence in the PR description as a follow-up decision for the user rather than fixing it here.
@@ -50,14 +51,16 @@ No `schemaVersion` field and no row `id`: a row is v2 when `dataType` is present
 
 Hand-written tokenizer + Pratt parser + evaluator. No new dependency — pulling in a JS parser and then blacklisting most of the language is a larger attack surface than a ~300-line grammar.
 
-- **Tokens:** numbers, single/double-quoted strings, identifiers, `$json` / `$nodes` / `$state`, `.`, `(`, `)`, `,` (only inside `$nodes['x']`-style access — see below), operators `== != === !== > >= < <= && || ! + - * / %`.
-- **Grammar:** literals (`null`, `true`, `false`, number, string), member access (dot, plus bracket access with a string or integer literal so `$nodes['ATR']` and `$json.bars[0]` work — this small addition is worth it because Coreza data is array-heavy), unary `!` and `-`, the binary operators above with standard precedence, and parentheses.
-- **Rejected at parse time:** any `(` following an expression (call), `new`, `=`, `++`, `=>`, template literals, and the identifiers `process`, `require`, `globalThis`, `this`, `import`.
+- **Tokens:** numbers, single/double-quoted strings, identifiers, the roots `$json` / `$nodes` / `$state` / `$(` / `$node[`, `.`, `[`, `]`, `(`, `)`, operators `== != === !== > >= < <= && || ! + - * / %`.
+- **Grammar:** literals (`null`, `true`, `false`, number, string), the reference roots below, member access (dot, plus bracket access with a string or integer literal so `$nodes['ATR']` and `$json.bars[0]` work — worth it because Coreza data is array-heavy), unary `!` and `-`, the binary operators above with standard precedence, and parentheses.
+- **Reference roots (n8n-compatible, matching Coreza's existing syntax):** `$json...`, `$('Node Name').json...`, `$node["Node Name"].json...`, `$nodes...`, `$state...`. `$(` and `$node[` are parsed as dedicated root forms taking a single string literal — this is the *only* place a `(` may follow a token, and it is not a call node. Node lookup and `pickJsonSource` precedence come from the helper shared with `resolveReferences`.
+- **Rejected at parse time:** any other `(` following an expression (call), `new`, `=`, `++`, `=>`, template literals, and the identifiers `process`, `require`, `globalThis`, `this`, `import`.
 - **Rejected at member-access time:** `__proto__`, `prototype`, `constructor`, and any key inherited rather than own (`Object.prototype.hasOwnProperty.call`).
 - **Limits:** max input length 4000 chars, max AST depth 32, max node count 500, max member-access depth 12, max string literal 1000 chars. Each violation is a named parse error.
-- **Semantics:** `==`/`!=` compile to strict `===`/`!==` (there is no reason to inherit JS coercion here); `&&`/`||` short-circuit; missing paths yield `undefined`, not a throw; arithmetic on non-numbers yields a typed error rather than `NaN` propagation.
+- **Semantics:** `==`/`!=` compile to strict `===`/`!==` (no reason to inherit JS coercion here); `&&`/`||` short-circuit; missing paths yield `undefined`, not a throw; arithmetic on non-numbers yields a typed error rather than `NaN` propagation.
 - **Errors:** `ExpressionError` carrying message + character position, so the caller can render `Unexpected token "&&" at position 42`.
-- Entry point: `evaluateExpression(text, { $json, $nodes, $state })`, where `text` may be either bare (`$json.a > 1`) or wrapped in a single `{{ ... }}`, which is stripped first.
+- Entry point: `evaluateExpression(text, { $json, $nodes, $state, nodes })`, where `text` may be bare (`$json.a > 1`) or wrapped in a single `{{ ... }}`, which is stripped first. A bare reference with no operators — the plain dragged `{{ $('ATR').json.atr }}` — is a valid expression and returns the raw typed value, so a fixed-mode row and an expression-mode row containing the same reference agree.
+
 
 ### 2. `coreza-backend/src/nodes/logic/editFields.ts` (new)
 
@@ -82,9 +85,10 @@ Replace the `fields` repeater subFields with `fieldName` (string), `dataType` (s
 
 Under the existing `isFieldRepeater` branch, render the row vertically: Field Name, Type, a Fixed/Expression segmented control, then the value editor. The value editor switches on type — plain input for string/number, a true/false select for boolean, a textarea for array/object JSON with inline parse feedback — and switches to a monospace multi-line textarea in Expression mode. Condition (`conditions`) and switch (`cases`) rendering is untouched.
 
-Drag-and-drop reference insertion becomes cursor-aware: capture `selectionStart`/`selectionEnd` on the focused editor and splice the dragged reference in at that offset instead of appending. When inserting into an expression editor, insert the bare path (`$('ATR').json.atr`) rather than a nested `{{ ... }}`, since the doc's own example of nested braces is not valid input for the grammar.
+Drag-and-drop reference insertion becomes cursor-aware: capture `selectionStart`/`selectionEnd` on the focused editor and splice the dragged reference in at that offset instead of appending. In an expression editor insert the bare reference (`$('ATR').json.atr`), not a nested `{{ ... }}` — the doc's nested-brace example is not valid input; the row's single outer `{{ }}` wraps the whole expression, exactly like n8n.
 
-Also show a live evaluation preview under an expression row using the same evaluator compiled for the browser (or a debounced backend preview call — decide during implementation based on whether the evaluator module can be imported cleanly by the frontend; if not, ship v1 without preview rather than duplicating the grammar).
+**Result preview panel** (the screenshot): under an expression row, show a debounced live `Result` block rendering the evaluated value, `[empty]` when the input is blank, and the positional parse/type error when it fails — plus the "Execute previous nodes to use input data" hint when no upstream output is cached. Drive it from the same evaluator: build `safeExpression.ts` as a dependency-free module importable by both the backend and the browser bundle, and feed it the cached upstream node outputs the panel already has. Sharing one module is what guarantees the preview and the run agree; do not reimplement the grammar for the frontend.
+
 
 ## Tests
 

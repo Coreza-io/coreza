@@ -6,35 +6,41 @@
  * Target: coreza-backend/src/utils/resolveReferences.ts
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const SOURCE = path.join(__dirname, '../src/utils/resolveReferences.ts');
-const TARGET = path.join(__dirname, '../coreza-backend/src/utils/resolveReferences.ts');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const SOURCE = path.join(__dirname, "../src/utils/resolveReferences.ts");
+const TARGET = path.join(
+  __dirname,
+  "../coreza-backend/src/utils/resolveReferences.ts",
+);
 
 try {
-  console.log('🔄 Syncing resolveReferences.ts...');
+  console.log("🔄 Syncing resolveReferences.ts...");
   console.log(`   Source: ${SOURCE}`);
   console.log(`   Target: ${TARGET}`);
 
   if (!fs.existsSync(SOURCE)) {
-    console.error('❌ Source file not found:', SOURCE);
+    console.error("❌ Source file not found:", SOURCE);
     process.exit(1);
   }
 
-  const content = fs.readFileSync(SOURCE, 'utf8');
-  
+  const content = fs.readFileSync(SOURCE, "utf8");
+
   // Ensure target directory exists
   const targetDir = path.dirname(TARGET);
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
 
-  fs.writeFileSync(TARGET, content, 'utf8');
-  
-  console.log('✅ Successfully synced resolveReferences.ts');
-  console.log(`   ${content.split('\n').length} lines copied`);
+  fs.writeFileSync(TARGET, content, "utf8");
+
+  console.log("✅ Successfully synced resolveReferences.ts");
+  console.log(`   ${content.split("\n").length} lines copied`);
 } catch (error) {
-  console.error('❌ Sync failed:', error.message);
+  console.error("❌ Sync failed:", error.message);
   process.exit(1);
 }

@@ -9,6 +9,7 @@
  */
 
 import { WorkflowNode } from "../nodes/types";
+import { pickJsonSource, resolveNodeAlias } from "./referenceResolution";
 
 /**
  * Template Pre-Compilation
@@ -53,39 +54,8 @@ function resolveNodeKeyStatic(
   nodes: WorkflowNode[],
 ): string {
   if (!nodeName) return nodeName;
-  // Already an ID?
   if (nodeIdSet.has(nodeName)) return nodeName;
-  // Search by display name / label
-  const candidate = nodes.find(
-    (n) =>
-      (n as any).id === nodeName ||
-      (n as any).label === nodeName ||
-      (n as any).name === nodeName ||
-      (n as any).data?.title === nodeName ||
-      (n as any).data?.name === nodeName ||
-      (n as any).data?.label === nodeName ||
-      (n as any).data?.displayName === nodeName,
-  );
-  return candidate?.id ?? nodeName;
-}
-
-/**
- * pickJsonSource at runtime — tries the most common shapes first.
- * This is the same fallback chain as resolveReferences.ts but we inline it
- * into compiled accessors so it only runs when the shape is unknown.
- */
-function pickJsonSource(d: any): any {
-  if (d == null) return d;
-  if (d.json !== undefined) return d.json;
-  if (d.output?.json !== undefined) return d.output.json;
-  if (d.output !== undefined) return d.output;
-  if (d.input?.json !== undefined) return d.input.json;
-  if (d.input !== undefined) return d.input;
-  if (d.data?.output?.json !== undefined) return d.data.output.json;
-  if (d.data?.output !== undefined) return d.data.output;
-  if (d.data?.input?.json !== undefined) return d.data.input.json;
-  if (d.data?.input !== undefined) return d.data.input;
-  return d;
+  return resolveNodeAlias(nodeName, nodes);
 }
 
 /**
@@ -156,7 +126,11 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
 
     const openSliceMatch = part.match(/^\[:(-?\d+)\]$/);
     if (openSliceMatch) {
-      segments.push({ type: "SLICE", start: 0, end: Number(openSliceMatch[1]) });
+      segments.push({
+        type: "SLICE",
+        start: 0,
+        end: Number(openSliceMatch[1]),
+      });
       continue;
     }
 
@@ -182,7 +156,8 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
       if (!Array.isArray(current)) return undefined;
 
       if (segment.type === "INDEX") {
-        const index = segment.index >= 0 ? segment.index : current.length + segment.index;
+        const index =
+          segment.index >= 0 ? segment.index : current.length + segment.index;
         current = current[index];
         continue;
       }
@@ -211,7 +186,8 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
       if (!Array.isArray(current)) return undefined;
 
       if (segment.type === "INDEX") {
-        const index = segment.index >= 0 ? segment.index : current.length + segment.index;
+        const index =
+          segment.index >= 0 ? segment.index : current.length + segment.index;
         current = current[index];
         continue;
       }
@@ -285,7 +261,7 @@ function compileTemplate(
       // }
 
       // return pathAccessor(cachedExtractor(nodeData));
-      return pathAccessor(nodeData);
+      return pathAccessor(pickJsonSource(nodeData));
     };
 
     matches.push({
@@ -373,6 +349,14 @@ function compileValue(
   | { compiled: true; accessor: AccessorFn; deps: Set<string> }
   | { compiled: true; staticValue: any; deps: Set<string> }
   | { compiled: false } {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    value.valueMode === "expression"
+  ) {
+    return { compiled: true, staticValue: value, deps: new Set<string>() };
+  }
   if (typeof value === "string") {
     if (!value.includes("{{")) {
       return { compiled: true, staticValue: value, deps: new Set<string>() };
@@ -391,8 +375,7 @@ function compileValue(
       accessor?: AccessorFn;
       staticValue?: any;
       deps: Set<string>;
-    }> =
-      [];
+    }> = [];
     const deps = new Set<string>();
     for (const item of value) {
       const result = compileValue(item, nodeIdSet, nodes);
@@ -630,9 +613,10 @@ export function compileParamsToSlots(
   // Runtime resolver just refreshes a reusable plain object from slots[],
   // avoiding Proxy creation/inspection overhead on every bar.
   const deps: Array<[string, number]> = [];
-  const depNames = templateDeps && templateDeps.length > 0
-    ? templateDeps
-    : Array.from(slotMap.keys());
+  const depNames =
+    templateDeps && templateDeps.length > 0
+      ? templateDeps
+      : Array.from(slotMap.keys());
   for (let i = 0; i < depNames.length; i++) {
     const name = depNames[i];
     const slotIdx = slotMap.get(name);

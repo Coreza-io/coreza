@@ -85,9 +85,10 @@ Replace the `fields` repeater subFields with `fieldName` (string), `dataType` (s
 
 Under the existing `isFieldRepeater` branch, render the row vertically: Field Name, Type, a Fixed/Expression segmented control, then the value editor. The value editor switches on type — plain input for string/number, a true/false select for boolean, a textarea for array/object JSON with inline parse feedback — and switches to a monospace multi-line textarea in Expression mode. Condition (`conditions`) and switch (`cases`) rendering is untouched.
 
-Drag-and-drop reference insertion becomes cursor-aware: capture `selectionStart`/`selectionEnd` on the focused editor and splice the dragged reference in at that offset instead of appending. When inserting into an expression editor, insert the bare path (`$('ATR').json.atr`) rather than a nested `{{ ... }}`, since the doc's own example of nested braces is not valid input for the grammar.
+Drag-and-drop reference insertion becomes cursor-aware: capture `selectionStart`/`selectionEnd` on the focused editor and splice the dragged reference in at that offset instead of appending. In an expression editor insert the bare reference (`$('ATR').json.atr`), not a nested `{{ ... }}` — the doc's nested-brace example is not valid input; the row's single outer `{{ }}` wraps the whole expression, exactly like n8n.
 
-Also show a live evaluation preview under an expression row using the same evaluator compiled for the browser (or a debounced backend preview call — decide during implementation based on whether the evaluator module can be imported cleanly by the frontend; if not, ship v1 without preview rather than duplicating the grammar).
+**Result preview panel** (the screenshot): under an expression row, show a debounced live `Result` block rendering the evaluated value, `[empty]` when the input is blank, and the positional parse/type error when it fails — plus the "Execute previous nodes to use input data" hint when no upstream output is cached. Drive it from the same evaluator: build `safeExpression.ts` as a dependency-free module importable by both the backend and the browser bundle, and feed it the cached upstream node outputs the panel already has. Sharing one module is what guarantees the preview and the run agree; do not reimplement the grammar for the frontend.
+
 
 ## Tests
 

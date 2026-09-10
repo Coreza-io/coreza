@@ -59,6 +59,7 @@ For this release, typed rows do not support persistence: reject enabling `persis
 ## 6. UI: preview and drag-and-drop
 
 - `EditFieldEditor` preview switches to the shared template evaluator and shows value, actual type and the type error separately, e.g. `Result: "105 > 100" · String — expected Boolean`. Keep `false`, `0`, `""`, `null` and "no data" as visibly distinct states. Keep the 200-250 ms debounce and add a generation counter so a stale async result can never overwrite a newer one; cancel on unmount.
+- Immediate fix: `EditFieldEditor` calls `useRef` at `RepeaterNodeLayout.tsx:89` but the React import on line 11 omits it, crashing the whole node panel with `ReferenceError: useRef is not defined`. Add `useRef` to the named React import.
 - Fix drag-and-drop: add `onDragOver` (with `preventDefault` and `dropEffect = "copy"`) and `onDragEnter` to the Value input and textarea. Without it the browser suppresses the drop entirely.
 - Insertion rules: empty value → insert `{{ $('Node').json.path }}` and switch to Expression; inside a code block → insert the bare reference; in template text → insert a wrapped block; over a selection → replace it in its syntactic context. Use the template scanner to decide, never a brace-counting regex.
 - Escape node names as string literals, use bracket notation for keys with spaces or quotes, and emit `.json[0]` (not `.json.[0]`) for a root array. Restore focus and caret after the controlled update, and clear drag classes in a `finally`.

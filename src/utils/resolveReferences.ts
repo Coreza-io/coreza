@@ -8,6 +8,9 @@
  * See the LICENSE file for details.
  */
 
+import { pickJsonSource, resolveNodeKey } from "./referenceResolution";
+import type { ReferenceNode } from "./referenceResolution";
+
 type SliceObject = { type: "slice"; start: number | null; end: number | null };
 type PathKey = string | number | SliceObject;
 
@@ -54,7 +57,7 @@ export function resolveReferences(
   expr: string,
   inputData: any,
   allNodeData?: Record<string, any>,
-  nodes?: any[],
+  nodes?: ReferenceNode[],
 ): unknown {
   if (typeof expr !== "string") {
     return expr;
@@ -65,55 +68,6 @@ export function resolveReferences(
 
   const pureTemplateRegex =
     /^\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}$/;
-
-  function pickJsonSource(d: any) {
-    if (d == null) return d;
-
-    const candidates = [
-      d.json,
-      d.output?.json,
-      d.output,
-      d.input?.json,
-      d.input,
-      d.data?.output?.json,
-      d.data?.output,
-      d.data?.input?.json,
-      d.data?.input,
-      d,
-    ];
-
-    for (const c of candidates) {
-      if (c !== undefined) return c;
-    }
-
-    return d;
-  }
-
-  function resolveNodeKey(
-    nodeName: string,
-    allNodeData?: Record<string, any>,
-    nodes?: Array<{ id: string; data?: any; label?: string; name?: string }>,
-  ): string | undefined {
-    if (!nodeName) return undefined;
-    if (allNodeData?.[nodeName] !== undefined) return nodeName;
-
-    const candidate = nodes?.find(
-      (n) =>
-        n.id === nodeName ||
-        (n as any).label === nodeName ||
-        (n as any).name === nodeName ||
-        n.data?.title === nodeName ||
-        n.data?.name === nodeName ||
-        n.data?.label === nodeName ||
-        (n.data as any)?.displayName === nodeName,
-    );
-
-    if (candidate && allNodeData?.[candidate.id] !== undefined) {
-      return candidate.id;
-    }
-
-    return undefined;
-  }
 
   function getValueByPath(targetData: any, cleanPath: string) {
     if (!cleanPath) return targetData;
@@ -207,7 +161,7 @@ export function resolveReferences(
 
     if (nodeName && allNodeData) {
       const resolvedKey =
-        resolveNodeKey(nodeName, allNodeData, nodes as any) || nodeName;
+        resolveNodeKey(nodeName, allNodeData, nodes) || nodeName;
 
       if (allNodeData[resolvedKey] === undefined) {
         return undefined;

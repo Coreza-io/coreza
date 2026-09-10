@@ -30,28 +30,43 @@
       "type":  "repeater",
       "subFields": [
         {
-          "key":         "left",
+          "key":         "fieldName",
           "type":        "string",
+          "label":        "Field Name",
           "placeholder": "Field name"
         },
         {
-          "key":     "operator",
-          "type":    "string",
+          "key":     "dataType",
+          "label":   "Type",
+          "type":    "select",
           "options": [
-            { "label": "Set Value",     "value": "set"    },
-            { "label": "Copy From...",  "value": "copy"   },
-            { "label": "Remove Field",  "value": "remove" }
+            { "label": "String",  "value": "string"  },
+            { "label": "Number",  "value": "number"  },
+            { "label": "Boolean", "value": "boolean" },
+            { "label": "Array",   "value": "array"   },
+            { "label": "Object",  "value": "object"  }
           ],
-          "default": "set"
+          "default": "string"
         },
         {
-          "key":         "right",
+          "key": "valueMode",
+          "label": "Value Mode",
+          "type": "select",
+          "options": [
+            { "label": "Fixed", "value": "fixed" },
+            { "label": "Expression", "value": "expression" }
+          ],
+          "default": "fixed"
+        },
+        {
+          "key":         "value",
+          "label":       "Value",
           "type":        "string",
-          "placeholder": "Value or expression"
+          "placeholder": "Value"
         }
       ],
       "default": [
-        { "left": "", "operator": "set", "right": "" }
+        { "fieldName": "", "dataType": "string", "valueMode": "fixed", "value": "" }
       ]
     }
   ]

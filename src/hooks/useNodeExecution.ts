@@ -116,7 +116,14 @@ export function useNodeExecution({
         }
 
         if (Array.isArray(value)) {
-          return value.map(_resolve);
+          return value.map((item) => {
+            if (item && typeof item === "object" && item.valueMode === "expression") {
+              return Object.fromEntries(
+                Object.entries(item).map(([key, nested]) => [key, key === "value" ? nested : _resolve(nested)]),
+              );
+            }
+            return _resolve(item);
+          });
         }
 
         if (

@@ -12,6 +12,7 @@ import express from "express";
 import { ComparatorService, ComparatorInput } from "../nodes/logic/comparator";
 import { ComputeService } from "../nodes/logic/compute";
 import { requireAuth } from "../middleware/jwtAuth";
+import { applyFieldRows } from "../nodes/logic/editFields";
 
 const router = express.Router();
 
@@ -170,64 +171,32 @@ router.post("/field", async (req, res) => {
       });
     }
 
-    let result = { ...data };
     const persistentContext = context; // Context passed from WorkflowEngine
-
-    // Process each field operation
-    for (const field of fields) {
-      const { left: fieldName, operator, right: value } = field;
-
-      if (!fieldName) {
-        continue; // Skip empty field names
-      }
-
-      switch (operator) {
-        case "set":
-          if (persistent && persistentContext) {
-            // Handle persistent field - get current value or use new value
-            const currentPersistentValue =
-              persistentContext.getPersistentValue(fieldName);
-            const finalValue = value;
-
-            if (currentPersistentValue !== finalValue) {
-              await context.setPersistentValue(fieldName, finalValue); // Save only if changed
-            }
-
-            // Also set in result for immediate use in current execution
-            result[fieldName] = finalValue;
-
-            console.log(`💾 Persistent field ${fieldName} set to:`, finalValue);
-          } else {
-            // Regular non-persistent field
-            result[fieldName] = value;
-          }
-          break;
-
-        case "copy":
-          // Copy value from another field
-          if (value && result[value] !== undefined) {
-            if (persistent && persistentContext) {
-              await persistentContext.setPersistentValue(
-                fieldName,
-                result[value],
+    const pending: Promise<unknown>[] = [];
+    const result = applyFieldRows(fields, {
+      input: data,
+      legacyResultSeed: { ...data },
+      context: {
+        persistent: !!persistent,
+        getPersistentValue:
+          persistentContext?.getPersistentValue?.bind(persistentContext),
+        setPersistentValue: persistentContext?.setPersistentValue
+          ? (key, value) => {
+              const operation = persistentContext.setPersistentValue(
+                key,
+                value,
               );
+              if (operation && typeof operation.then === "function")
+                pending.push(operation);
+              return operation;
             }
-            result[fieldName] = result[value];
-          }
-          break;
-
-        case "remove":
-          // Remove the field
-          if (persistent && persistentContext) {
-            await persistentContext.setPersistentValue(fieldName, undefined);
-          }
-          delete result[fieldName];
-          break;
-
-        default:
-          console.warn(`Unknown field operator: ${operator}`);
-      }
-    }
+          : undefined,
+        $nodes: persistentContext?.getAllNodeResults?.() ?? {},
+        $state: persistentContext?.persistentValues ?? {},
+        nodes: persistentContext?.nodes,
+      },
+    });
+    await Promise.all(pending);
 
     res.json({
       success: true,

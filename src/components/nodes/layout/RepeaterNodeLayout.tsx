@@ -35,6 +35,239 @@ import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
+import { evaluateExpression } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
+import {
+  checkExpressionResult,
+  EDIT_FIELD_DATA_TYPES,
+  isEditFieldDataType,
+} from "../../../../coreza-backend/src/nodes/logic/editFields";
+import { pickJsonSource } from "../../../../coreza-backend/src/utils/referenceResolution";
+import type { ReferenceNode } from "../../../../coreza-backend/src/utils/referenceResolution";
+
+interface EditFieldEditorProps {
+  row: Record<string, unknown>;
+  index: number;
+  disabled?: boolean;
+  update: (index: number, field: string, value: unknown) => void;
+  updateMany: (index: number, values: Record<string, unknown>) => void;
+  remove: (index: number) => void;
+  getExpressionContext: () => {
+    input: unknown;
+    nodes: Record<string, unknown>;
+    definitions: ReferenceNode[];
+    hasInput: boolean;
+  };
+  makeReference: (event: React.DragEvent) => string | null;
+  canRemove: boolean;
+}
+
+const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
+  row,
+  index,
+  disabled,
+  update,
+  updateMany,
+  remove,
+  getExpressionContext,
+  makeReference,
+  canRemove,
+}) => {
+  const value = String(row.value ?? "");
+  const expression = row.valueMode === "expression";
+  const [preview, setPreview] = useState<string>("");
+  const [hasInput, setHasInput] = useState(false);
+  useEffect(() => {
+    if (!expression) return;
+    const timer = window.setTimeout(() => {
+      if (!value.trim()) {
+        setPreview("[empty]");
+        return;
+      }
+      const context = getExpressionContext();
+      setHasInput(context.hasInput);
+      try {
+        const dataType = isEditFieldDataType(row.dataType)
+          ? row.dataType
+          : "string";
+        const result = checkExpressionResult(
+          evaluateExpression(value, {
+            $json: pickJsonSource(context.input),
+            $nodes: context.nodes,
+            $state: {},
+            nodes: context.definitions,
+          }),
+          dataType,
+          String(row.fieldName ?? ""),
+        );
+        setPreview(
+          result === undefined
+            ? "undefined"
+            : typeof result === "string"
+              ? result
+              : JSON.stringify(result),
+        );
+      } catch (error) {
+        setPreview(error instanceof Error ? error.message : String(error));
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
+  const onDrop = (
+    event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const reference = makeReference(event);
+    if (!reference) return;
+    const target = event.currentTarget;
+    const start = target.selectionStart ?? value.length;
+    const end = target.selectionEnd ?? start;
+    const inserted = expression
+      ? reference.replace(/^\{\{\s*|\s*\}\}$/g, "")
+      : reference;
+    update(index, "value", value.slice(0, start) + inserted + value.slice(end));
+  };
+  const editorClass =
+    "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
+  return (
+    <div className="space-y-2 rounded border border-white/10 bg-white/[0.03] p-3">
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <Label>Field Name</Label>
+          <input
+            className={editorClass}
+            value={String(row.fieldName ?? "")}
+            onChange={(e) => update(index, "fieldName", e.target.value)}
+            disabled={disabled}
+          />
+        </div>
+        <div className="w-32">
+          <Label>Type</Label>
+          <Select
+            value={String(row.dataType ?? "string")}
+            onValueChange={(dataType) =>
+              updateMany(index, {
+                dataType,
+                ...(dataType === "boolean" &&
+                value !== "true" &&
+                value !== "false"
+                  ? { value: "false" }
+                  : {}),
+              })
+            }
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EDIT_FIELD_DATA_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {type[0].toUpperCase() + type.slice(1)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {canRemove && (
+          <Button
+            type="button"
+            variant="nodeIconGhost"
+            size="icon"
+            onClick={() => remove(index)}
+            disabled={disabled}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+      <div>
+        <Label>Value Mode</Label>
+        <div className="grid grid-cols-2 rounded-md bg-muted p-1">
+          {["fixed", "expression"].map((mode) => (
+            <button
+              type="button"
+              key={mode}
+              disabled={disabled}
+              onClick={() => update(index, "valueMode", mode)}
+              className={`rounded px-2 py-1 text-xs ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
+            >
+              {mode === "fixed" ? "Fixed" : "Expression"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Label>Value</Label>
+        {!expression && row.dataType === "boolean" ? (
+          <Select
+            value={value || "false"}
+            onValueChange={(v) => update(index, "value", v)}
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="true">true</SelectItem>
+              <SelectItem value="false">false</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : expression ||
+          row.dataType === "array" ||
+          row.dataType === "object" ? (
+          <textarea
+            className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
+            value={value}
+            onChange={(e) => update(index, "value", e.target.value)}
+            onDrop={onDrop}
+            disabled={disabled}
+          />
+        ) : (
+          <input
+            className={editorClass}
+            value={value}
+            onChange={(e) => update(index, "value", e.target.value)}
+            onDrop={onDrop}
+            disabled={disabled}
+          />
+        )}
+        {!expression &&
+          (row.dataType === "array" || row.dataType === "object") &&
+          value &&
+          (() => {
+            try {
+              const parsed = JSON.parse(value);
+              const valid =
+                row.dataType === "array"
+                  ? Array.isArray(parsed)
+                  : parsed !== null &&
+                    typeof parsed === "object" &&
+                    !Array.isArray(parsed);
+              return valid ? null : (
+                <p className="text-xs text-destructive">
+                  JSON must be a {String(row.dataType)}.
+                </p>
+              );
+            } catch {
+              return <p className="text-xs text-destructive">Invalid JSON.</p>;
+            }
+          })()}
+      </div>
+      {expression && (
+        <div className="rounded bg-muted/50 p-2 text-xs">
+          <strong>Result</strong>
+          <pre className="mt-1 whitespace-pre-wrap font-mono">{preview}</pre>
+          {!hasInput && (
+            <p className="text-muted-foreground">
+              Execute previous nodes to use input data
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
   nodes?: any[];
   readOnly?: boolean;
@@ -272,6 +505,18 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [conditions, handleChange, repeaterKey],
   );
 
+  const updateFieldsRow = useCallback(
+    (index: number, values: Record<string, unknown>) => {
+      handleChange(
+        "fields",
+        conditions.map((row, rowIndex) =>
+          rowIndex === index ? { ...row, ...values } : row,
+        ),
+      );
+    },
+    [conditions, handleChange],
+  );
+
   const handleOperatorSelect = useCallback(
     (idx: number, value: string, dataType?: string) => {
       handleChange(
@@ -492,6 +737,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [previousNodes, executionContext, getNodes, executionStoreVersion],
   );
 
+  const getEditExpressionContext = useCallback(() => {
+    const { allNodeData, getSourceData } = getPreviewData();
+    const input = getSourceData(selectedPrevNodeId);
+    return {
+      input,
+      nodes: allNodeData,
+      definitions: getNodes(),
+      hasInput: input !== undefined,
+    };
+  }, [getPreviewData, getNodes, selectedPrevNodeId]);
+
   const getOverlayPreviewFor = useCallback(
     (expr: unknown) => {
       if (typeof expr !== "string" || !expr.includes("{{")) return null;
@@ -549,7 +805,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return "";
       }
     },
-    [selectedPrevNodeId, sourceMap, getPreviewData, resolveDeep, executionStoreVersion],
+    [
+      selectedPrevNodeId,
+      sourceMap,
+      getPreviewData,
+      resolveDeep,
+      executionStoreVersion,
+    ],
   );
 
   const getSwitchPreviewFor = useCallback(
@@ -641,6 +903,24 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
             {(isConditional || isFieldRepeater) &&
               conditions.map((cond, i) => {
+                if (isFieldRepeater) {
+                  return (
+                    <EditFieldEditor
+                      key={i}
+                      row={cond}
+                      index={i}
+                      disabled={readOnly}
+                      canRemove={conditions.length > 1}
+                      update={updateCondition}
+                      updateMany={updateFieldsRow}
+                      remove={removeCondition}
+                      getExpressionContext={getEditExpressionContext}
+                      makeReference={(event) =>
+                        computeDropInsert(event)?.insert ?? null
+                      }
+                    />
+                  );
+                }
                 const leftField = repeaterField.subFields?.find(
                   (sf: any) => sf.key === "left",
                 );
@@ -1031,7 +1311,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               Add Case
             </Button>
 
-
             {fallbackField && (
               <NodeFieldRenderer
                 field={fallbackField}
@@ -1082,11 +1361,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {/* Submit Button */}
         {!readOnly && definition?.name !== "Visualize" && (
           <div className="pt-2">
-            <Button
-              type="submit"
-              variant="nodeExecute"
-              disabled={isSending}
-            >
+            <Button type="submit" variant="nodeExecute" disabled={isSending}>
               {isSending ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

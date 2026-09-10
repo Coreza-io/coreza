@@ -9,6 +9,7 @@
  */
 
 import { WorkflowNode } from "../nodes/types";
+import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { pickJsonSource, resolveNodeAlias } from "./referenceResolution";
 
 /**
@@ -345,16 +346,12 @@ function compileValue(
   value: any,
   nodeIdSet: Set<string>,
   nodes: WorkflowNode[],
+  editFieldsRows = false,
 ):
   | { compiled: true; accessor: AccessorFn; deps: Set<string> }
   | { compiled: true; staticValue: any; deps: Set<string> }
   | { compiled: false } {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    value.valueMode === "expression"
-  ) {
+  if (editFieldsRows && isTypedEditFieldRow(value)) {
     return { compiled: true, staticValue: value, deps: new Set<string>() };
   }
   if (typeof value === "string") {
@@ -378,7 +375,7 @@ function compileValue(
     }> = [];
     const deps = new Set<string>();
     for (const item of value) {
-      const result = compileValue(item, nodeIdSet, nodes);
+      const result = compileValue(item, nodeIdSet, nodes, editFieldsRows);
       if (!result.compiled) return { compiled: false };
       compiledItems.push(result as any);
       for (const dep of (result as any).deps) deps.add(dep);
@@ -484,9 +481,18 @@ export function compileNodeParams(
   const templateDeps = new Set<string>();
 
   let hasFallback = false;
+  const isEditFieldsNode =
+    node.name === "Edit Fields" ||
+    node.type === "Edit Fields" ||
+    node.data?.definition?.name === "Edit Fields";
 
   for (const [key, value] of entries) {
-    const result = compileValue(value, nodeIdSet, nodes);
+    const result = compileValue(
+      value,
+      nodeIdSet,
+      nodes,
+      isEditFieldsNode && key === "fields",
+    );
     if (!result.compiled) {
       // This entry can't be compiled — mark for runtime fallback
       compiledEntries.push({ key, fallback: true, staticValue: value });

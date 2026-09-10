@@ -1,4 +1,6 @@
-import { evaluateExpression, ExpressionContext } from "./safeExpression";
+import { ExpressionContext, ExpressionError } from "./safeExpression";
+import { compileEditTemplate, evaluateEditTemplate } from "./editTemplate";
+import { isTypedEditFieldRow } from "./typedEditFieldRow";
 import { pickJsonSource } from "../../utils/referenceResolution";
 
 export type EditFieldDataType =
@@ -47,6 +49,37 @@ export interface ApplyFieldRowsOptions {
   context?: EditFieldsContext;
   /** Preserve the executor's historical read-before-write persistent Set behavior. */
   legacyPersistentRead?: boolean;
+  nodeId?: string;
+}
+
+export type EditFieldErrorPhase =
+  | "configuration"
+  | "compile"
+  | "evaluate"
+  | "type"
+  | "coerce";
+
+export class EditFieldError extends Error {
+  readonly code = "EDIT_FIELD_ERROR";
+  readonly cause?: unknown;
+
+  constructor(
+    message: string,
+    public readonly details: {
+      nodeId?: string;
+      rowIndex: number;
+      fieldName: string;
+      phase: EditFieldErrorPhase;
+      position?: number;
+      expected?: string;
+      actual?: string;
+    },
+    options?: { cause?: unknown },
+  ) {
+    super(message);
+    this.name = "EditFieldError";
+    this.cause = options?.cause;
+  }
 }
 
 const labels: Record<EditFieldDataType, string> = {
@@ -119,6 +152,17 @@ function describe(value: unknown): string {
   return `${type} (${rendered})`;
 }
 
+export function editFieldValueType(value: unknown): string {
+  if (value === null) return "Null";
+  if (value === undefined) return "Undefined";
+  if (Array.isArray(value)) return "Array";
+  if (typeof value === "number" && !Number.isFinite(value))
+    return "Non-finite Number";
+  return typeof value === "object"
+    ? "Object"
+    : `${typeof value}`[0].toUpperCase() + `${typeof value}`.slice(1);
+}
+
 export function checkExpressionResult(
   value: unknown,
   type: EditFieldDataType,
@@ -139,38 +183,94 @@ export function checkExpressionResult(
   );
 }
 
-function isV2(row: EditFieldRow): row is EditFieldRowV2 {
-  return "dataType" in row;
-}
+const isV2 = (row: EditFieldRow): row is EditFieldRowV2 =>
+  isTypedEditFieldRow(row);
 
-function readPersistentState(
-  expression: unknown,
-  state: Record<string, unknown>,
-  getter?: (key: string) => unknown,
-): void {
-  if (!getter || typeof expression !== "string") return;
-  const stateReference =
-    /\$state(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])/g;
-  let match: RegExpExecArray | null;
-  while ((match = stateReference.exec(expression))) {
-    const key = match[1] ?? match[2];
-    if (Object.prototype.hasOwnProperty.call(state, key)) continue;
-    const value = getter(key);
-    if (isPromiseLike(value)) {
-      throw new Error(
-        "Edit Fields persistent operations require async execution",
+export function applyTypedFieldRow(
+  row: EditFieldRowV2,
+  rowIndex: number,
+  input: unknown,
+  context: EditFieldsContext,
+  nodeId?: string,
+): unknown {
+  const expressionContext: ExpressionContext = {
+    $json: pickJsonSource(input),
+    $nodes: context.$nodes,
+    $state: context.$state,
+    nodes: context.nodes,
+  };
+  let value: unknown;
+  if (row.valueMode === "fixed") {
+    try {
+      return coerceFixedValue(row.value, row.dataType);
+    } catch (error) {
+      throw new EditFieldError(
+        `Edit Fields: invalid fixed value for field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
+        {
+          nodeId,
+          rowIndex,
+          fieldName: row.fieldName,
+          phase: "coerce",
+          expected: labels[row.dataType],
+          actual: editFieldValueType(row.value),
+        },
+        { cause: error },
       );
     }
-    state[key] = value;
   }
-}
-
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
+  let compiled: ReturnType<typeof compileEditTemplate>;
+  try {
+    compiled = compileEditTemplate(String(row.value ?? ""));
+  } catch (error) {
+    const position =
+      error instanceof ExpressionError ? error.position : undefined;
+    throw new EditFieldError(
+      `Edit Fields: expression failed for field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
+      {
+        nodeId,
+        rowIndex,
+        fieldName: row.fieldName,
+        phase: "compile",
+        position,
+        expected: labels[row.dataType],
+        actual: "Unavailable",
+      },
+      { cause: error },
+    );
+  }
+  try {
+    value = evaluateEditTemplate(compiled, expressionContext);
+  } catch (error) {
+    throw new EditFieldError(
+      `Edit Fields: expression failed for field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
+      {
+        nodeId,
+        rowIndex,
+        fieldName: row.fieldName,
+        phase: "evaluate",
+        position: error instanceof ExpressionError ? error.position : undefined,
+        expected: labels[row.dataType],
+        actual: "Unavailable",
+      },
+      { cause: error },
+    );
+  }
+  try {
+    return checkExpressionResult(value, row.dataType, row.fieldName);
+  } catch (error) {
+    throw new EditFieldError(
+      error instanceof Error ? error.message : String(error),
+      {
+        nodeId,
+        rowIndex,
+        fieldName: row.fieldName,
+        phase: "type",
+        expected: labels[row.dataType],
+        actual: editFieldValueType(value),
+      },
+      { cause: error },
+    );
+  }
 }
 
 export function applyFieldRows(
@@ -178,52 +278,32 @@ export function applyFieldRows(
   options: ApplyFieldRowsOptions,
 ): Record<string, unknown> {
   const hasV2Rows = rows.some(isV2);
+  if (hasV2Rows && options.context?.persistent)
+    throw new EditFieldError(
+      "Edit Fields: typed rows do not support persistence",
+      {
+        nodeId: options.nodeId,
+        rowIndex: rows.findIndex(isV2),
+        fieldName: "",
+        phase: "configuration",
+      },
+    );
   const inputRecord = isPlainObject(options.input) ? options.input : {};
   const result = hasV2Rows
     ? { ...inputRecord }
     : { ...options.legacyResultSeed };
   const legacyResult = { ...options.legacyResultSeed };
   const context = options.context ?? {};
-  const state: Record<string, unknown> = { ...(context.$state ?? {}) };
-  for (const row of rows) {
+  for (const [rowIndex, row] of rows.entries()) {
     if (isV2(row)) {
       if (!row.fieldName) continue;
-      let value: unknown;
-      try {
-        if (row.valueMode === "expression") {
-          readPersistentState(row.value, state, context.getPersistentValue);
-        }
-        value =
-          row.valueMode === "expression"
-            ? checkExpressionResult(
-                evaluateExpression(String(row.value ?? ""), {
-                  $json: pickJsonSource(options.input),
-                  $nodes: context.$nodes,
-                  $state: state,
-                  nodes: context.nodes,
-                }),
-                row.dataType,
-                row.fieldName,
-              )
-            : coerceFixedValue(row.value, row.dataType);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (
-          message.startsWith("Edit Fields:") ||
-          message ===
-            "Edit Fields persistent operations require async execution"
-        )
-          throw error;
-        const prefix =
-          row.valueMode === "expression"
-            ? `expression failed for field "${row.fieldName}"`
-            : `field "${row.fieldName}"`;
-        throw new Error(`Edit Fields: ${prefix}: ${message}`);
-      }
-      if (context.persistent && context.setPersistentValue) {
-        context.setPersistentValue(row.fieldName, value);
-        state[row.fieldName] = value;
-      }
+      const value = applyTypedFieldRow(
+        row,
+        rowIndex,
+        options.input,
+        context,
+        options.nodeId,
+      );
       result[row.fieldName] = value;
       continue;
     }

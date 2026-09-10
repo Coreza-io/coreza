@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
+import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
 import { createListeningHandler } from "@/hooks/useListeningHandler";
@@ -208,14 +209,9 @@ export function useNodeExecution({
         for (const row of Array.isArray(payload.fields) ? payload.fields : []) {
           if (!isTypedEditFieldRow(row) || row.valueMode !== "expression")
             continue;
-          const source = String(row.value ?? "");
-          const referencePattern =
-            /\$\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*\)|\$node\[\s*(['"])((?:\\.|(?!\3).)*)\3\s*\]/g;
-          let match: RegExpExecArray | null;
-          while ((match = referencePattern.exec(source)))
-            referencedNodes.add(
-              (match[2] ?? match[4]).replace(/\\(['"\\])/g, "$1"),
-            );
+          for (const name of compileEditTemplate(String(row.value ?? ""))
+            .nodeReferences)
+            referencedNodes.add(name);
         }
         const referencedResults = Object.fromEntries(
           Object.entries(allNodeData).filter(([key]) => {

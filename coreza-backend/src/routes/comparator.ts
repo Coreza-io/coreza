@@ -195,6 +195,27 @@ router.post("/field", async (req, res) => {
       return res
         .status(400)
         .json({ error: "expressionContext.nodeIdentities must be an array" });
+    if (
+      Array.isArray(nodeIdentities) &&
+      !nodeIdentities.every(
+        (identity) =>
+          identity !== null &&
+          typeof identity === "object" &&
+          !Array.isArray(identity) &&
+          typeof identity.id === "string" &&
+          (identity.name === undefined || typeof identity.name === "string") &&
+          (identity.label === undefined || typeof identity.label === "string"),
+      )
+    )
+      return res.status(400).json({
+        error: "expressionContext.nodeIdentities contains an invalid identity",
+      });
+    const safeNodeResults = nodeResults
+      ? Object.fromEntries(Object.entries(nodeResults))
+      : {};
+    const safeNodeIdentities = Array.isArray(nodeIdentities)
+      ? nodeIdentities.map(({ id, name, label }) => ({ id, name, label }))
+      : [];
     const result = applyFieldRows(fields, {
       nodeId:
         typeof req.body.node_id === "string" ? req.body.node_id : undefined,
@@ -202,8 +223,8 @@ router.post("/field", async (req, res) => {
       legacyResultSeed: { ...data },
       context: {
         persistent: !!persistent,
-        $nodes: nodeResults ?? {},
-        nodes: nodeIdentities,
+        $nodes: safeNodeResults,
+        nodes: safeNodeIdentities,
       },
     });
 

@@ -61,6 +61,7 @@ export type EditFieldErrorPhase =
 
 export class EditFieldError extends Error {
   readonly code = "EDIT_FIELD_ERROR";
+  readonly cause?: unknown;
 
   constructor(
     message: string,
@@ -75,8 +76,9 @@ export class EditFieldError extends Error {
     },
     options?: { cause?: unknown },
   ) {
-    super(message, options);
+    super(message);
     this.name = "EditFieldError";
+    this.cause = options?.cause;
   }
 }
 
@@ -198,42 +200,63 @@ export function applyTypedFieldRow(
     nodes: context.nodes,
   };
   let value: unknown;
+  if (row.valueMode === "fixed") {
+    try {
+      return coerceFixedValue(row.value, row.dataType);
+    } catch (error) {
+      throw new EditFieldError(
+        `Edit Fields: invalid fixed value for field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
+        {
+          nodeId,
+          rowIndex,
+          fieldName: row.fieldName,
+          phase: "coerce",
+          expected: labels[row.dataType],
+          actual: editFieldValueType(row.value),
+        },
+        { cause: error },
+      );
+    }
+  }
+  let compiled: ReturnType<typeof compileEditTemplate>;
   try {
-    value =
-      row.valueMode === "expression"
-        ? evaluateEditTemplate(
-            compileEditTemplate(String(row.value ?? "")),
-            expressionContext,
-          )
-        : coerceFixedValue(row.value, row.dataType);
+    compiled = compileEditTemplate(String(row.value ?? ""));
   } catch (error) {
-    if (error instanceof EditFieldError) throw error;
     const position =
       error instanceof ExpressionError ? error.position : undefined;
-    const phase: EditFieldErrorPhase =
-      row.valueMode === "fixed"
-        ? "coerce"
-        : error instanceof ExpressionError &&
-            /Template|delimiter/.test(error.message)
-          ? "compile"
-          : "evaluate";
     throw new EditFieldError(
-      `Edit Fields: ${row.valueMode === "expression" ? "expression failed for" : "invalid fixed value for"} field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
+      `Edit Fields: expression failed for field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
       {
         nodeId,
         rowIndex,
         fieldName: row.fieldName,
-        phase,
+        phase: "compile",
         position,
         expected: labels[row.dataType],
+        actual: "Unavailable",
       },
       { cause: error },
     );
   }
   try {
-    return row.valueMode === "expression"
-      ? checkExpressionResult(value, row.dataType, row.fieldName)
-      : value;
+    value = evaluateEditTemplate(compiled, expressionContext);
+  } catch (error) {
+    throw new EditFieldError(
+      `Edit Fields: expression failed for field "${row.fieldName}": ${error instanceof Error ? error.message : String(error)}`,
+      {
+        nodeId,
+        rowIndex,
+        fieldName: row.fieldName,
+        phase: "evaluate",
+        position: error instanceof ExpressionError ? error.position : undefined,
+        expected: labels[row.dataType],
+        actual: "Unavailable",
+      },
+      { cause: error },
+    );
+  }
+  try {
+    return checkExpressionResult(value, row.dataType, row.fieldName);
   } catch (error) {
     throw new EditFieldError(
       error instanceof Error ? error.message : String(error),

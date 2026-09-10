@@ -1,8 +1,5 @@
-import {
-  evaluateExpression,
-  ExpressionContext,
-  ExpressionError,
-} from "./safeExpression";
+import { compileExpression, ExpressionError } from "./safeExpression";
+import type { CompiledExpression, ExpressionContext } from "./safeExpression";
 
 const MAX_SOURCE = 8192;
 const MAX_SEGMENTS = 64;
@@ -16,11 +13,13 @@ export type EditTemplateSegment =
       start: number;
       end: number;
       expressionStart: number;
+      expression: CompiledExpression;
     };
 
 export interface CompiledEditTemplate {
   readonly source: string;
   readonly segments: readonly EditTemplateSegment[];
+  readonly nodeReferences: readonly string[];
 }
 
 const cache = new Map<string, CompiledEditTemplate>();
@@ -86,12 +85,26 @@ export function compileEditTemplate(source: string): CompiledEditTemplate {
     if (i >= source.length)
       throw new ExpressionError("Unclosed template delimiter", open);
     const rawCode = source.slice(open + 2, i);
+    const expressionStart =
+      open + 2 + rawCode.length - rawCode.trimStart().length;
+    let expression: CompiledExpression;
+    try {
+      expression = compileExpression(rawCode.trim());
+    } catch (error) {
+      if (error instanceof ExpressionError)
+        throw new ExpressionError(
+          error.message.replace(/ at position \d+$/, ""),
+          expressionStart + error.position,
+        );
+      throw error;
+    }
     segments.push({
       kind: "code",
       value: rawCode.trim(),
       start: open,
       end: i + 2,
-      expressionStart: open + 2 + rawCode.length - rawCode.trimStart().length,
+      expressionStart,
+      expression,
     });
     cursor = i + 2;
     if (segments.length > MAX_SEGMENTS)
@@ -104,8 +117,20 @@ export function compileEditTemplate(source: string): CompiledEditTemplate {
       start: 0,
       end: source.length,
     });
-  const compiled = Object.freeze({ source, segments: Object.freeze(segments) });
-  if (cache.size >= 500) cache.delete(cache.keys().next().value as string);
+  const nodeReferences = new Set<string>();
+  for (const segment of segments)
+    if (segment.kind === "code")
+      for (const name of segment.expression.nodeReferences)
+        nodeReferences.add(name);
+  const compiled = Object.freeze({
+    source,
+    segments: Object.freeze(segments),
+    nodeReferences: Object.freeze([...nodeReferences]),
+  });
+  if (cache.size >= 500) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
   cache.set(source, compiled);
   return compiled;
 }
@@ -127,7 +152,7 @@ function evaluateSegment(
   context: ExpressionContext,
 ): unknown {
   try {
-    return evaluateExpression(segment.value, context);
+    return segment.expression.evaluate(context);
   } catch (error) {
     if (error instanceof ExpressionError) {
       throw new ExpressionError(

@@ -8,7 +8,13 @@
  * See the LICENSE file for details.
  */
 
-import React, { useCallback, useState, useEffect, useMemo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -138,7 +144,6 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
     }, 250);
     return () => {
       window.clearTimeout(timer);
-      if (previewGeneration.current === generation) previewGeneration.current++;
     };
   }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
   const onDrop = (
@@ -948,7 +953,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               value={fieldState[f.key]}
               selectOptions={selectOptions}
               loadingSelect={loadingSelect}
-              onChange={(fieldKey, nextValue, dataType) => {
+              onChange={(fieldKey, nextValue) => {
                 if (
                   isFieldRepeater &&
                   fieldKey === "persistent" &&
@@ -956,7 +961,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   conditions.some(isTypedEditFieldRow)
                 )
                   return;
-                handleChange(fieldKey, nextValue, dataType);
+                handleChange(fieldKey, nextValue);
               }}
               onBatchChange={handleFieldStateBatch}
               onDrop={(fieldDef, e, currentValue) => {

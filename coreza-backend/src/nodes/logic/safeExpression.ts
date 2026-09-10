@@ -11,6 +11,12 @@ export interface ExpressionContext {
   nodes?: ReferenceNode[];
 }
 
+export interface CompiledExpression {
+  readonly source: string;
+  readonly nodeReferences: readonly string[];
+  evaluate(context: ExpressionContext): unknown;
+}
+
 export class ExpressionError extends Error {
   constructor(
     message: string,
@@ -369,6 +375,8 @@ class Parser {
         const readInteger = (): number | undefined => {
           let sign = 1;
           if (this.peek().value === "-") {
+            if (this.tokens[this.index + 1]?.kind !== "number")
+              return undefined;
             this.take();
             sign = -1;
           }
@@ -598,9 +606,29 @@ export function evaluateExpression(
   text: string,
   context: ExpressionContext,
 ): unknown {
+  return compileExpression(text).evaluate(context);
+}
+
+export function compileExpression(text: string): CompiledExpression {
   if (text.length > MAX_INPUT)
     throw new ExpressionError("Input length limit exceeded", MAX_INPUT);
   const source = text.trim();
   if (!source) throw new ExpressionError("Expression is empty", 0);
-  return evaluate(new Parser(tokenize(source)).parse(), context);
+  const ast = new Parser(tokenize(source)).parse();
+  const nodeReferences = new Set<string>();
+  const visit = (node: Ast): void => {
+    if (node.kind === "node") nodeReferences.add(node.name);
+    if (node.kind === "member" || node.kind === "slice") visit(node.object);
+    else if (node.kind === "unary") visit(node.value);
+    else if (node.kind === "binary") {
+      visit(node.left);
+      visit(node.right);
+    }
+  };
+  visit(ast);
+  return Object.freeze({
+    source,
+    nodeReferences: Object.freeze([...nodeReferences]),
+    evaluate: (context: ExpressionContext) => evaluate(ast, context),
+  });
 }

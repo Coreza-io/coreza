@@ -67,6 +67,14 @@ describe("Edit Fields templates", () => {
     ).toBe(false);
   });
 
+  test("compiles only real named-node dependencies", () => {
+    expect(
+      compileEditTemplate(
+        "text $('Ignored').json.value {{ $('Used').json.value }} {{ '$node[\\\"Also ignored\\\"]' }}",
+      ).nodeReferences,
+    ).toEqual(["Used"]);
+  });
+
   test.each([
     "{{ $json['__proto__'] }}",
     "{{ $json['prototype'] }}",

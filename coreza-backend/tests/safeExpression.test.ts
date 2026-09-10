@@ -39,6 +39,7 @@ describe("safe expressions", () => {
     "$json.__proto__",
     "$json.constructor",
     "$json.prototype",
+    "$json[-'constructor']",
     "new Something()",
     "x = 1",
     "$json.bars.push(1)",

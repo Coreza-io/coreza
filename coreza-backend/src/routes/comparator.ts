@@ -12,7 +12,7 @@ import express from "express";
 import { ComparatorService, ComparatorInput } from "../nodes/logic/comparator";
 import { ComputeService } from "../nodes/logic/compute";
 import { requireAuth } from "../middleware/jwtAuth";
-import { applyFieldRows } from "../nodes/logic/editFields";
+import { applyFieldRows, EditFieldError } from "../nodes/logic/editFields";
 
 const router = express.Router();
 
@@ -162,7 +162,7 @@ router.post("/switch", async (req, res) => {
 // Field manipulation endpoint
 router.post("/field", async (req, res) => {
   try {
-    const { fields = [], data = {}, persistent, context } = req.body;
+    const { fields = [], data = {}, persistent, expressionContext } = req.body;
 
     if (!Array.isArray(fields)) {
       return res.status(400).json({
@@ -171,32 +171,41 @@ router.post("/field", async (req, res) => {
       });
     }
 
-    const persistentContext = context; // Context passed from WorkflowEngine
-    const pending: Promise<unknown>[] = [];
+    if (
+      expressionContext !== undefined &&
+      (!expressionContext ||
+        typeof expressionContext !== "object" ||
+        Array.isArray(expressionContext))
+    )
+      return res
+        .status(400)
+        .json({ error: "expressionContext must be an object" });
+    const nodeResults = expressionContext?.nodeResults;
+    const nodeIdentities = expressionContext?.nodeIdentities;
+    if (
+      nodeResults !== undefined &&
+      (!nodeResults ||
+        typeof nodeResults !== "object" ||
+        Array.isArray(nodeResults))
+    )
+      return res
+        .status(400)
+        .json({ error: "expressionContext.nodeResults must be an object" });
+    if (nodeIdentities !== undefined && !Array.isArray(nodeIdentities))
+      return res
+        .status(400)
+        .json({ error: "expressionContext.nodeIdentities must be an array" });
     const result = applyFieldRows(fields, {
+      nodeId:
+        typeof req.body.node_id === "string" ? req.body.node_id : undefined,
       input: data,
       legacyResultSeed: { ...data },
       context: {
         persistent: !!persistent,
-        getPersistentValue:
-          persistentContext?.getPersistentValue?.bind(persistentContext),
-        setPersistentValue: persistentContext?.setPersistentValue
-          ? (key, value) => {
-              const operation = persistentContext.setPersistentValue(
-                key,
-                value,
-              );
-              if (operation && typeof operation.then === "function")
-                pending.push(operation);
-              return operation;
-            }
-          : undefined,
-        $nodes: persistentContext?.getAllNodeResults?.() ?? {},
-        $state: persistentContext?.persistentValues ?? {},
-        nodes: persistentContext?.nodes,
+        $nodes: nodeResults ?? {},
+        nodes: nodeIdentities,
       },
     });
-    await Promise.all(pending);
 
     res.json({
       success: true,
@@ -206,7 +215,10 @@ router.post("/field", async (req, res) => {
     console.error("Field manipulation error:", error);
     res.status(500).json({
       error: "Failed to process field operations",
-      details: error instanceof Error ? error.message : String(error),
+      details:
+        error instanceof EditFieldError
+          ? { code: error.code, message: error.message, ...error.details }
+          : { message: error instanceof Error ? error.message : String(error) },
     });
   }
 });

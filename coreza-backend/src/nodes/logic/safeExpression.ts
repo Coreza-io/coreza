@@ -37,10 +37,19 @@ type Ast =
   | { kind: "literal"; value: unknown; position: number }
   | { kind: "root"; name: "$json" | "$nodes" | "$state"; position: number }
   | { kind: "node"; name: string; position: number }
+  | { kind: "identifier"; name: string; position: number }
   | {
       kind: "member";
       object: Ast;
       key: string | number;
+      position: number;
+      memberDepth: number;
+    }
+  | {
+      kind: "slice";
+      object: Ast;
+      start?: number;
+      end?: number;
       position: number;
       memberDepth: number;
     }
@@ -53,10 +62,10 @@ type Ast =
       position: number;
     };
 
-const MAX_INPUT = 4000;
+const MAX_INPUT = 8192;
 const MAX_DEPTH = 32;
-const MAX_NODES = 500;
-const MAX_MEMBERS = 12;
+const MAX_NODES = 1024;
+const MAX_MEMBERS = 32;
 const MAX_STRING = 1000;
 const BLOCKED_IDENTIFIERS = new Set([
   "process",
@@ -162,7 +171,7 @@ function tokenize(source: string): Token[] {
       i += op.length;
       continue;
     }
-    if (".[]()".includes(c)) {
+    if (".[]():".includes(c)) {
       tokens.push({ kind: "punctuation", value: c, position: i++ });
       continue;
     }
@@ -275,12 +284,18 @@ class Parser {
     if (
       token.value === "true" ||
       token.value === "false" ||
-      token.value === "null"
+      token.value === "null" ||
+      token.value === "undefined"
     )
       return this.make(
         {
           kind: "literal",
-          value: token.value === "null" ? null : token.value === "true",
+          value:
+            token.value === "null"
+              ? null
+              : token.value === "undefined"
+                ? undefined
+                : token.value === "true",
           position: token.position,
         },
         depth,
@@ -331,9 +346,9 @@ class Parser {
         depth,
       );
     }
-    throw new ExpressionError(
-      `Identifier "${token.value}" is not allowed`,
-      token.position,
+    return this.make(
+      { kind: "identifier", name: token.value, position: token.position },
+      depth,
     );
   }
   private members(initial: Ast, depth: number): Ast {
@@ -350,12 +365,56 @@ class Parser {
         key = token.value;
         position = token.position;
       } else {
-        let negative = false;
-        if (this.peek().value === "-") {
+        const slicePosition = opener.position;
+        const readInteger = (): number | undefined => {
+          let sign = 1;
+          if (this.peek().value === "-") {
+            this.take();
+            sign = -1;
+          }
+          const part = this.peek();
+          if (part.kind !== "number") return undefined;
+          if (!/^\d+$/.test(part.value))
+            throw new ExpressionError(
+              "Array index must be an integer",
+              part.position,
+            );
           this.take();
-          negative = true;
+          return sign * Number(part.value);
+        };
+        const first = readInteger();
+        if (this.peek().value === ":") {
+          this.take();
+          const end = readInteger();
+          this.take("]");
+          if (++memberDepth > MAX_MEMBERS)
+            throw new ExpressionError(
+              "Member-access depth limit exceeded",
+              slicePosition,
+            );
+          result = this.make(
+            {
+              kind: "slice",
+              object: result,
+              start: first,
+              end,
+              position: slicePosition,
+              memberDepth,
+            },
+            depth + memberDepth,
+          );
+          continue;
         }
-        const token = this.take();
+        let negative = false;
+        const token =
+          first !== undefined
+            ? {
+                kind: "number" as const,
+                value: String(Math.abs(first)),
+                position: slicePosition,
+              }
+            : this.take();
+        negative = first !== undefined && first < 0;
         if (token.kind !== "string" && token.kind !== "number")
           throw new ExpressionError(
             "Bracket access requires a string or integer literal",
@@ -407,8 +466,24 @@ function lookupNode(name: string, context: ExpressionContext): unknown {
 
 function evaluate(node: Ast, context: ExpressionContext): unknown {
   if (node.kind === "literal") return node.value;
+  if (node.kind === "identifier") {
+    const input = context.$json;
+    if (
+      input === null ||
+      typeof input !== "object" ||
+      BLOCKED_MEMBERS.has(node.name)
+    )
+      return undefined;
+    return Object.prototype.hasOwnProperty.call(input, node.name)
+      ? (input as Record<string, unknown>)[node.name]
+      : undefined;
+  }
   if (node.kind === "root") return context[node.name];
   if (node.kind === "node") return lookupNode(node.name, context);
+  if (node.kind === "slice") {
+    const value = evaluate(node.object, context);
+    return Array.isArray(value) ? value.slice(node.start, node.end) : undefined;
+  }
   if (node.kind === "member") {
     const object = evaluate(node.object, context);
     if (
@@ -416,7 +491,21 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
       (typeof object !== "object" && typeof object !== "string")
     )
       return undefined;
-    const key = String(node.key);
+    if (Array.isArray(object) && typeof node.key === "string") {
+      if (BLOCKED_MEMBERS.has(node.key)) return undefined;
+      return object.map((item) =>
+        item !== null &&
+        typeof item === "object" &&
+        Object.prototype.hasOwnProperty.call(item, node.key)
+          ? (item as Record<string, unknown>)[node.key]
+          : undefined,
+      );
+    }
+    const actualKey =
+      Array.isArray(object) && typeof node.key === "number" && node.key < 0
+        ? object.length + node.key
+        : node.key;
+    const key = String(actualKey);
     if (
       BLOCKED_MEMBERS.has(key) ||
       !Object.prototype.hasOwnProperty.call(object, key)
@@ -441,12 +530,24 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
     return left ? left : evaluate(node.right, context);
   const right = evaluate(node.right, context);
   switch (node.operator) {
-    case "==":
     case "===":
       return left === right;
-    case "!=":
     case "!==":
       return left !== right;
+    case "==":
+    case "!=": {
+      if (
+        (left !== null && typeof left === "object") ||
+        (right !== null && typeof right === "object")
+      )
+        throw new ExpressionError(
+          `Operator "${node.operator}" does not accept objects`,
+          node.position,
+        );
+      // Deliberately implements JavaScript primitive loose equality (no object coercion).
+      const equal = left == right;
+      return node.operator === "==" ? equal : !equal;
+    }
   }
   if ([">", ">=", "<", "<="].includes(node.operator)) {
     const comparable =
@@ -464,6 +565,12 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
     if (node.operator === "<") return comparison < 0;
     return comparison <= 0;
   }
+  if (
+    node.operator === "+" &&
+    typeof left === "string" &&
+    typeof right === "string"
+  )
+    return left + right;
   if (typeof left !== "number" || typeof right !== "number")
     throw new ExpressionError(
       `Operator "${node.operator}" requires numbers`,
@@ -493,8 +600,7 @@ export function evaluateExpression(
 ): unknown {
   if (text.length > MAX_INPUT)
     throw new ExpressionError("Input length limit exceeded", MAX_INPUT);
-  const wrapped = text.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
-  const source = wrapped ? wrapped[1].trim() : text.trim();
+  const source = text.trim();
   if (!source) throw new ExpressionError("Expression is empty", 0);
   return evaluate(new Parser(tokenize(source)).parse(), context);
 }

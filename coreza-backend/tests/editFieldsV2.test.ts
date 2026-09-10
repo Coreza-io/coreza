@@ -1,6 +1,7 @@
 import {
   applyFieldRows,
   coerceFixedValue,
+  EditFieldError,
 } from "../src/nodes/logic/editFields";
 describe("Edit Fields v2", () => {
   test("coerces fixed values without truthiness coercion", () => {
@@ -18,7 +19,7 @@ describe("Edit Fields v2", () => {
         fieldName: "risk",
         dataType: "number" as const,
         valueMode: "expression" as const,
-        value: "$json.close - $nodes.atr.json.value * 2",
+        value: "{{ $json.close - $nodes.atr.json.value * 2 }}",
       },
     ];
     expect(
@@ -29,7 +30,7 @@ describe("Edit Fields v2", () => {
       }),
     ).toEqual({ close: 10, risk: 6 });
     expect(() =>
-      applyFieldRows([{ ...rows[0], value: "'abc'" }], {
+      applyFieldRows([{ ...rows[0], value: "{{ 'abc' }}" }], {
         input: {},
         legacyResultSeed: {},
       }),
@@ -37,69 +38,102 @@ describe("Edit Fields v2", () => {
       'Edit Fields: field "risk" expected Number, but expression returned String ("abc")',
     );
     expect(() =>
-      applyFieldRows([{ ...rows[0], value: "$json.missing" }], {
+      applyFieldRows([{ ...rows[0], value: "{{ $json.missing }}" }], {
         input: {},
         legacyResultSeed: {},
       }),
     ).toThrow("Undefined");
   });
 
-  test("writes persistent v2 values through and preserves mixed legacy behavior", () => {
+  test("rejects typed persistence before any writes", () => {
     const persisted: Array<[string, unknown]> = [];
     const setPersistentValue = (key: string, value: unknown) => {
       persisted.push([key, value]);
     };
-    const result = applyFieldRows(
-      [
-        { left: "old", operator: "set", right: 2 },
+    expect(() =>
+      applyFieldRows(
+        [
+          { left: "old", operator: "set", right: 2 },
+          {
+            fieldName: "typed",
+            dataType: "boolean",
+            valueMode: "fixed",
+            value: "false",
+          },
+          {
+            fieldName: "readBack",
+            dataType: "boolean",
+            valueMode: "expression",
+            value: "{{ $state.typed === false }}",
+          },
+          { left: "copy", operator: "copy", right: "old" },
+          { left: "old", operator: "remove" },
+        ],
         {
-          fieldName: "typed",
-          dataType: "boolean",
-          valueMode: "fixed",
-          value: "false",
+          input: {},
+          legacyResultSeed: {},
+          context: { persistent: true, setPersistentValue },
         },
-        {
-          fieldName: "readBack",
-          dataType: "boolean",
-          valueMode: "expression",
-          value: "$state.typed === false",
-        },
-        { left: "copy", operator: "copy", right: "old" },
-        { left: "old", operator: "remove" },
-      ],
-      {
-        input: {},
-        legacyResultSeed: {},
-        context: { persistent: true, setPersistentValue },
-      },
-    );
-    expect(result).toEqual({ typed: false, readBack: true, copy: 2 });
-    expect(persisted).toContainEqual(["typed", false]);
+      ),
+    ).toThrow("typed rows do not support persistence");
+    expect(persisted).toEqual([]);
   });
 
-  test("reads a persistent snapshot without permitting expression writes", () => {
-    const reads: string[] = [];
-    const getPersistentValue = (key: string) => {
-      reads.push(key);
-      return key === "last_high" ? 100 : undefined;
-    };
+  test("uses one input snapshot and applies duplicate fields in row order", () => {
     const result = applyFieldRows(
       [
+        {
+          fieldName: "close",
+          dataType: "number",
+          valueMode: "fixed",
+          value: "200",
+        },
         {
           fieldName: "breakout",
           dataType: "boolean",
           valueMode: "expression",
-          value: "$json.close > $state.last_high",
+          value: "{{ $json.close === 110 }}",
+        },
+        {
+          fieldName: "close",
+          dataType: "number",
+          valueMode: "fixed",
+          value: "300",
         },
       ],
       {
         input: { close: 110 },
         legacyResultSeed: {},
-        context: { getPersistentValue },
       },
     );
-    expect(result).toEqual({ close: 110, breakout: true });
-    expect(reads).toContain("last_high");
+    expect(result).toEqual({ close: 300, breakout: true });
+  });
+
+  test("reports structured row and type error details", () => {
+    try {
+      applyFieldRows(
+        [
+          {
+            fieldName: "enabled",
+            dataType: "boolean",
+            valueMode: "expression",
+            value: "{{ 1 }}",
+          },
+        ],
+        { input: {}, legacyResultSeed: {}, nodeId: "field-1" },
+      );
+      throw new Error("expected evaluation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EditFieldError);
+      expect((error as EditFieldError).details).toEqual({
+        nodeId: "field-1",
+        rowIndex: 0,
+        fieldName: "enabled",
+        phase: "type",
+        expected: "Boolean",
+        actual: "Number",
+      });
+    }
   });
 
   test("gives v2 rows the same result regardless of the legacy seed", () => {
@@ -108,7 +142,7 @@ describe("Edit Fields v2", () => {
         fieldName: "risk",
         dataType: "number" as const,
         valueMode: "expression" as const,
-        value: "$json.close - 2",
+        value: "{{ $json.close - 2 }}",
       },
     ];
     const executorResult = applyFieldRows(rows, {

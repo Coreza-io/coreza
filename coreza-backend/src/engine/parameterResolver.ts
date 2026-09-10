@@ -4,6 +4,7 @@ import {
   CompiledNodeParams,
   preCompileAllNodes,
 } from "../utils/templateCompiler";
+import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 //import { loadNodeDefinition } from "../nodes/nodeDefinitions";
 
 export class ParameterResolver {
@@ -45,7 +46,12 @@ export class ParameterResolver {
         const resolved = compiled.resolve(allNodeData, input);
         if (compiled.fallbackKeys?.length) {
           for (const key of compiled.fallbackKeys) {
-            resolved[key] = this.resolveDeep(resolved[key], input, allNodeData);
+            resolved[key] = this.resolveDeep(
+              resolved[key],
+              input,
+              allNodeData,
+              this.isEditFieldsNode(node) && key === "fields",
+            );
           }
         }
         return resolved;
@@ -66,7 +72,12 @@ export class ParameterResolver {
     const resolvedParams: Record<string, any> = {};
     for (const [key, value] of Object.entries(nodeParams)) {
       if (key === "credential_id") continue;
-      resolvedParams[key] = this.resolveDeep(value, input, allNodeData);
+      resolvedParams[key] = this.resolveDeep(
+        value,
+        input,
+        allNodeData,
+        this.isEditFieldsNode(node) && key === "fields",
+      );
     }
     return resolvedParams;
   }
@@ -79,20 +90,14 @@ export class ParameterResolver {
     val: any,
     input: any,
     allNodeData: Record<string, any>,
+    editFieldsRows = false,
   ): any {
     if (typeof val === "string" && val.includes("{{")) {
       return resolveReferences(val, input, allNodeData, this.nodes);
     }
     if (Array.isArray(val)) {
       return val.map((item) => {
-        if (item && typeof item === "object" && item.valueMode === "expression") {
-          return Object.fromEntries(
-            Object.entries(item).map(([key, value]) => [
-              key,
-              key === "value" ? value : this.resolveDeep(value, input, allNodeData),
-            ]),
-          );
-        }
+        if (editFieldsRows && isTypedEditFieldRow(item)) return item;
         return this.resolveDeep(item, input, allNodeData);
       });
     }
@@ -124,5 +129,13 @@ export class ParameterResolver {
       return Object.values(value).some((v) => this.containsTemplates(v));
     }
     return false;
+  }
+
+  private isEditFieldsNode(node: WorkflowNode): boolean {
+    return (
+      node.name === "Edit Fields" ||
+      node.type === "Edit Fields" ||
+      node.data?.definition?.name === "Edit Fields"
+    );
   }
 }

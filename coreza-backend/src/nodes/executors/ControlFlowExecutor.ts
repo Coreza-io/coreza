@@ -187,6 +187,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         }
       : undefined;
     const result = applyFieldRows(fields, {
+      nodeId: node.id,
       input,
       legacyResultSeed: {},
       legacyPersistentRead: true,

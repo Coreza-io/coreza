@@ -14,6 +14,7 @@ import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
+import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
 import { apiClient } from "@/lib/apiClient";
 import { createListeningHandler } from "@/hooks/useListeningHandler";
@@ -97,7 +98,12 @@ export function useNodeExecution({
   // Resolve references recursively
   // Resolve references recursively
   const resolveDeep = useCallback(
-    (val: any, selectedInputData: any, allNodeData: any): any => {
+    (
+      val: any,
+      selectedInputData: any,
+      allNodeData: any,
+      editFieldsRows = false,
+    ): any => {
       const nodes = getNodes(); // only once per call
 
       const _resolve = (value: any): any => {
@@ -117,11 +123,7 @@ export function useNodeExecution({
 
         if (Array.isArray(value)) {
           return value.map((item) => {
-            if (item && typeof item === "object" && item.valueMode === "expression") {
-              return Object.fromEntries(
-                Object.entries(item).map(([key, nested]) => [key, key === "value" ? nested : _resolve(nested)]),
-              );
-            }
+            if (editFieldsRows && isTypedEditFieldRow(item)) return item;
             return _resolve(item);
           });
         }
@@ -189,8 +191,52 @@ export function useNodeExecution({
             fieldState[field.key],
             selectedInputData,
             allNodeData,
+            definition?.name === "Edit Fields" && field.key === "fields",
           );
         }
+      }
+
+      if (definition?.name === "Edit Fields") {
+        const nodeIdentityName = (node: Node): string => {
+          const nodeData = node.data as {
+            displayName?: unknown;
+            label?: unknown;
+          };
+          return String(nodeData.displayName ?? nodeData.label ?? node.id);
+        };
+        const referencedNodes = new Set<string>();
+        for (const row of Array.isArray(payload.fields) ? payload.fields : []) {
+          if (!isTypedEditFieldRow(row) || row.valueMode !== "expression")
+            continue;
+          const source = String(row.value ?? "");
+          const referencePattern =
+            /\$\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*\)|\$node\[\s*(['"])((?:\\.|(?!\3).)*)\3\s*\]/g;
+          let match: RegExpExecArray | null;
+          while ((match = referencePattern.exec(source)))
+            referencedNodes.add(
+              (match[2] ?? match[4]).replace(/\\(['"\\])/g, "$1"),
+            );
+        }
+        const referencedResults = Object.fromEntries(
+          Object.entries(allNodeData).filter(([key]) => {
+            if (referencedNodes.has(key)) return true;
+            const node = nodes.find((candidate) => candidate.id === key);
+            const label = node ? nodeIdentityName(node) : key;
+            return referencedNodes.has(label);
+          }),
+        );
+        payload.expressionContext = {
+          nodeResults: referencedResults,
+          nodeIdentities: nodes
+            .filter((node) => {
+              const name = nodeIdentityName(node);
+              return referencedNodes.has(node.id) || referencedNodes.has(name);
+            })
+            .map((node) => ({
+              id: node.id,
+              name: nodeIdentityName(node),
+            })),
+        };
       }
 
       if (definition?.name === "If") {

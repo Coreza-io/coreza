@@ -72,15 +72,15 @@ describe("safe expressions", () => {
   });
 
   test.each([
-    ["Input length limit exceeded", "1".repeat(4001)],
+    ["Input length limit exceeded", "1".repeat(8193)],
     ["AST depth limit exceeded", `${"(".repeat(33)}1${")".repeat(33)}`],
     [
       "AST node limit exceeded",
-      Array.from({ length: 251 }, () => "1").join(" + "),
+      Array.from({ length: 513 }, () => "1").join(" + "),
     ],
     [
       "Member-access depth limit exceeded",
-      "$json" + Array.from({ length: 13 }, (_, index) => `.p${index}`).join(""),
+      "$json" + Array.from({ length: 33 }, (_, index) => `.p${index}`).join(""),
     ],
     ["String literal limit exceeded", `'${"a".repeat(1001)}'`],
   ])("enforces %s", (message, expression) => {

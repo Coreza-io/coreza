@@ -35,14 +35,19 @@ import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
-import { evaluateExpression } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
+import {
+  compileEditTemplate,
+  evaluateEditTemplate,
+} from "../../../../coreza-backend/src/nodes/logic/editTemplate";
 import {
   checkExpressionResult,
+  editFieldValueType,
   EDIT_FIELD_DATA_TYPES,
   isEditFieldDataType,
 } from "../../../../coreza-backend/src/nodes/logic/editFields";
 import { pickJsonSource } from "../../../../coreza-backend/src/utils/referenceResolution";
 import type { ReferenceNode } from "../../../../coreza-backend/src/utils/referenceResolution";
+import { isTypedEditFieldRow } from "../../../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 
 interface EditFieldEditorProps {
   row: Record<string, unknown>;
@@ -74,58 +79,112 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
 }) => {
   const value = String(row.value ?? "");
   const expression = row.valueMode === "expression";
-  const [preview, setPreview] = useState<string>("");
+  const [preview, setPreview] = useState<{
+    value: string;
+    type: string;
+    typeError?: string;
+    evaluationError?: string;
+  }>({ value: "No data", type: "No data" });
   const [hasInput, setHasInput] = useState(false);
+  const previewGeneration = useRef(0);
   useEffect(() => {
-    if (!expression) return;
+    const generation = ++previewGeneration.current;
+    if (!expression) return () => undefined;
     const timer = window.setTimeout(() => {
       if (!value.trim()) {
-        setPreview("[empty]");
+        if (generation === previewGeneration.current)
+          setPreview({ value: '""', type: "String" });
         return;
       }
       const context = getExpressionContext();
+      if (generation !== previewGeneration.current) return;
       setHasInput(context.hasInput);
       try {
         const dataType = isEditFieldDataType(row.dataType)
           ? row.dataType
           : "string";
-        const result = checkExpressionResult(
-          evaluateExpression(value, {
-            $json: pickJsonSource(context.input),
-            $nodes: context.nodes,
-            $state: {},
-            nodes: context.definitions,
-          }),
-          dataType,
-          String(row.fieldName ?? ""),
-        );
-        setPreview(
-          result === undefined
-            ? "undefined"
-            : typeof result === "string"
-              ? result
-              : JSON.stringify(result),
-        );
+        const result = evaluateEditTemplate(compileEditTemplate(value), {
+          $json: pickJsonSource(context.input),
+          $nodes: context.nodes,
+          nodes: context.definitions,
+        });
+        const rendered =
+          typeof result === "string"
+            ? JSON.stringify(result)
+            : result === undefined
+              ? "undefined"
+              : JSON.stringify(result);
+        let typeError: string | undefined;
+        try {
+          checkExpressionResult(result, dataType, String(row.fieldName ?? ""));
+        } catch {
+          typeError = `expected ${dataType[0].toUpperCase()}${dataType.slice(1)}`;
+        }
+        if (generation === previewGeneration.current)
+          setPreview({
+            value: rendered ?? String(result),
+            type: editFieldValueType(result),
+            typeError,
+          });
       } catch (error) {
-        setPreview(error instanceof Error ? error.message : String(error));
+        if (generation === previewGeneration.current)
+          setPreview({
+            value: "Evaluation failed",
+            type: "Error",
+            evaluationError:
+              error instanceof Error ? error.message : String(error),
+          });
       }
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (previewGeneration.current === generation) previewGeneration.current++;
+    };
   }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
   const onDrop = (
     event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    const reference = makeReference(event);
-    if (!reference) return;
-    const target = event.currentTarget;
-    const start = target.selectionStart ?? value.length;
-    const end = target.selectionEnd ?? start;
-    const inserted = expression
-      ? reference.replace(/^\{\{\s*|\s*\}\}$/g, "")
-      : reference;
-    update(index, "value", value.slice(0, start) + inserted + value.slice(end));
+    try {
+      const reference = makeReference(event);
+      if (!reference) return;
+      const target = event.currentTarget;
+      const start = target.selectionStart ?? value.length;
+      const end = target.selectionEnd ?? start;
+      const compiledReference = compileEditTemplate(reference);
+      const referenceCode = compiledReference.segments.find(
+        (segment) => segment.kind === "code",
+      );
+      if (!referenceCode || referenceCode.kind !== "code") return;
+      const compiled = compileEditTemplate(value);
+      const insideCode = compiled.segments.some(
+        (segment) =>
+          segment.kind === "code" &&
+          start >= segment.expressionStart &&
+          start <= segment.end - 2,
+      );
+      const inserted = insideCode ? referenceCode.value : reference;
+      updateMany(index, {
+        value: value.slice(0, start) + inserted + value.slice(end),
+        ...(value.length === 0 ? { valueMode: "expression" } : {}),
+      });
+      window.requestAnimationFrame(() => {
+        target.focus();
+        target.setSelectionRange(
+          start + inserted.length,
+          start + inserted.length,
+        );
+      });
+    } finally {
+      document.body.classList.remove("cursor-grabbing", "select-none");
+    }
+  };
+  const onDragOver = (
+    event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
   };
   const editorClass =
     "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
@@ -221,6 +280,8 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             value={value}
             onChange={(e) => update(index, "value", e.target.value)}
             onDrop={onDrop}
+            onDragOver={onDragOver}
+            onDragEnter={onDragOver}
             disabled={disabled}
           />
         ) : (
@@ -229,6 +290,8 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             value={value}
             onChange={(e) => update(index, "value", e.target.value)}
             onDrop={onDrop}
+            onDragOver={onDragOver}
+            onDragEnter={onDragOver}
             disabled={disabled}
           />
         )}
@@ -256,8 +319,17 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       </div>
       {expression && (
         <div className="rounded bg-muted/50 p-2 text-xs">
-          <strong>Result</strong>
-          <pre className="mt-1 whitespace-pre-wrap font-mono">{preview}</pre>
+          <strong>Result: </strong>
+          <span className="font-mono">{preview.value}</span>
+          <span> · {preview.type}</span>
+          {preview.typeError && (
+            <span className="text-destructive"> — {preview.typeError}</span>
+          )}
+          {preview.evaluationError && (
+            <pre className="mt-1 whitespace-pre-wrap font-mono text-destructive">
+              {preview.evaluationError}
+            </pre>
+          )}
           {!hasInput && (
             <p className="text-muted-foreground">
               Execute previous nodes to use input data
@@ -658,11 +730,25 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           (sourceNode
             ? getDisplayName(sourceNode, previousNodes)
             : selectedPrevNodeId);
-        const kp = (keyPath ?? "").trim();
-        const suffix = kp ? `.${kp}` : "";
+        const kp = String(keyPath ?? "").trim();
+        const suffix = kp
+          ? kp.startsWith("[")
+            ? kp
+            : kp
+                .split(".")
+                .filter(Boolean)
+                .map((part) =>
+                  /^-?\d+$/.test(part)
+                    ? `[${part}]`
+                    : /^[A-Za-z_$][\w$]*$/.test(part)
+                      ? `.${part}`
+                      : `[${JSON.stringify(part)}]`,
+                )
+                .join("")
+          : "";
 
         return {
-          insert: `{{ $('${sourceDisplayName}').json${suffix} }}`,
+          insert: `{{ $(${JSON.stringify(sourceDisplayName)}).json${suffix} }}`,
           sourceId: selectedPrevNodeId,
         };
       } catch (error) {
@@ -862,7 +948,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               value={fieldState[f.key]}
               selectOptions={selectOptions}
               loadingSelect={loadingSelect}
-              onChange={handleChange}
+              onChange={(fieldKey, nextValue, dataType) => {
+                if (
+                  isFieldRepeater &&
+                  fieldKey === "persistent" &&
+                  nextValue === true &&
+                  conditions.some(isTypedEditFieldRow)
+                )
+                  return;
+                handleChange(fieldKey, nextValue, dataType);
+              }}
               onBatchChange={handleFieldStateBatch}
               onDrop={(fieldDef, e, currentValue) => {
                 if (isSwitch) {

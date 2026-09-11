@@ -15,23 +15,27 @@ Review of what is now in the tree, and the two defects that remain.
 
 Fix: add `useRef` to that import.
 
-## Defect 2 — the drop target is not marked `nodrag`
+## Defect 2 — array paths are malformed before the drop
 
-Every drop target that works today (`NodeFieldRenderer`, lines 221, 408-433) carries the `nodrag` class alongside its `onDragOver`/`onDrop`. The two Edit Fields controls do not: `editorClass` is `"w-full rounded-md border border-input bg-background px-3 py-2 text-sm"` with no `nodrag`. Without it React Flow's own pointer handling owns the element, so the native drag sequence over the field is disrupted.
+The screenshot proves the native drop does fire: the `timestamp` chip appears in Value. The failure occurs earlier when `DraggableFieldsPanel.buildPath` constructs an array path. For `data → [0] → timestamp`, it returns `data.[0].timestamp` because line 42 always inserts a dot between parent and child. `computeDropInsert` then splits on dots and treats `"[0]"` as a quoted property name, producing a reference equivalent to `.data["[0]"].timestamp`. Arrays have index `0`, not property `"[0]"`, so preview resolves `undefined` and displays an empty string.
 
-Fix: add `nodrag` to `editorClass` so both the Value input and the Value textarea (and the Field Name input, for consistent typing/selection behaviour) opt out of React Flow's drag handling.
+Fix the source path contract in `DraggableFieldsPanel.buildPath`: append numeric segments directly (`data[0]`), while object segments continue as `.name` or `["quoted key"]`. Then replace `computeDropInsert`'s dot-split parser with a shared path formatter/parser that preserves bracket indexes and quoted keys. This also fixes all other consumers of field dragging, not only Edit Fields.
+
+Keep `nodrag` on the Edit Fields value controls as a defensive React Flow interaction guard, matching `NodeFieldRenderer`, but do not treat that as the root cause shown in the screenshot.
 
 ## Verification
 
 After both changes, with the node open and an upstream node selected in the Input Data panel:
 
 1. The Edit Fields panel renders with no console error.
-2. Dragging `timestamp` onto an empty Value inserts `{{ $("window").json.data[0].timestamp }}` and flips Value Mode to Expression.
-3. Dragging into the middle of an existing `{{ ... }}` block inserts the bare reference, not a nested block.
-4. Dragging into plain template text inserts a wrapped `{{ ... }}` block.
-5. The caret lands after the inserted text and the field keeps focus.
-6. The Result line shows the evaluated value and its type; a type mismatch shows the expected type without replacing the value.
+2. A regression test confirms `DraggableFieldsPanel` emits `data[0].timestamp`, never `data.[0].timestamp`.
+3. Dragging `timestamp` onto an empty Value inserts `{{ $("window").json.data[0].timestamp }}` and flips Value Mode to Expression.
+4. The Result line shows the actual timestamp string, not `""`, proving the generated reference resolves.
+5. Dragging into the middle of an existing `{{ ... }}` block inserts the bare reference, not a nested block.
+6. Dragging into plain template text inserts a wrapped `{{ ... }}` block.
+7. The caret lands after the inserted text and the field keeps focus.
+8. Object keys containing dots, spaces or quotes and nested array indexes resolve correctly.
 
 ## Technical notes
 
-Both changes are confined to `src/components/nodes/layout/RepeaterNodeLayout.tsx` — one import line and one class string. No backend, evaluator, or persisted-shape changes. The remaining items from the previous plan (manual-run `expressionContext` envelope for `POST /comparator/field`, typed-Fixed preservation scoping, loose-equality and slice semantics, typed persistence rejection) are unaffected and stay open.
+The crash fix is confined to `RepeaterNodeLayout.tsx`. The path fix belongs in `DraggableFieldsPanel.tsx` plus the shared reference-path formatter used by `RepeaterNodeLayout.tsx`; add focused frontend tests. No backend or persisted-shape change is needed. Existing saved references with the historical `.[0]` form must remain readable by the generic resolver. The remaining items from the previous plan (manual-run `expressionContext` envelope for `POST /comparator/field`, typed-Fixed preservation scoping, loose-equality and slice semantics, typed persistence rejection) are unaffected and stay open.

@@ -1,42 +1,69 @@
-# Edit Fields: D1-D9 correction plan
+# Edit Fields review and remaining drag/drop correction
 
-Adopting the fix document. Each defect below was re-confirmed against the current tree before being planned.
+## Review outcome
 
-## Batch 1 — authoring and references (P1)
+Static review confirms D1-D9 are implemented in the current tree:
 
-**D1 — dragged references corrupt array indexes.** `DraggableFieldsPanel.buildPath` joins with a dot unconditionally, so `data → [0] → timestamp` becomes `data.[0].timestamp`; `computeDropInsert` then splits on dots and quotes `"[0]"` as a property, yielding `.json.data["[0]"].timestamp`.
+- **D1:** structured path segments and legacy-path fallback now preserve array indexes and quoted keys.
+- **D2:** insertion tolerates incomplete expressions.
+- **D3:** manual Edit Fields requests now send the selected input as `payload.data`.
+- **D4:** changing Type preserves non-empty authored source.
+- **D5:** typed versus legacy controls are selected per row, so mixed arrays remain editable.
+- **D6:** ordinary array members/indexes are separated from explicit slice projection.
+- **D7:** malformed typed-shaped rows are rejected before execution.
+- **D8:** Fixed Number rejects null, Boolean, array and object values.
+- **D9:** unsafe destination names are rejected before writes, and result maps use own-property assignment on null-prototype objects.
 
-- Add one shared path utility with a `PathSegment = string | number` representation and a single `formatPath` that emits `[0]` for numeric indexes, `.name` for identifiers and `[JSON.stringify(key)]` otherwise.
-- `buildPath` appends bracket segments directly and carries segment types, so an object key `"01"` stays a string while a real array index stays a number.
-- `computeDropInsert` consumes structured `pathSegments` from the drag payload and formats once; keep a validated `keyPath` parse as fallback for older payloads.
-- Include the source node id in the drag payload so a panel-selection change during the drag cannot rewrite the reference's identity.
-- Legacy stored references using `.[0]` must remain readable through the existing resolver.
+The existing unit coverage confirms most of these behaviors. Two release checks remain incomplete: a real browser drag test and full preview/manual/workflow parity through the HTTP route.
 
-**D2 — insertion fails while the expression is incomplete.** `onDrop` compiles the whole current value before inserting, so unclosed braces or a half-written operand throw and the drop is silently discarded. Wrap the compile in a guard: on a compile error, fall back to plain caret insertion of the wrapped reference rather than aborting.
+## Confirmed remaining drag/drop difference
 
-**D4 — changing Type destroys the authored source.** Selecting Boolean overwrites `value` with `"false"` whenever the text isn't exactly `true`/`false`. Keep the source text on every type change; surface the mismatch through the existing type-error line instead. Only seed a default when the value is empty.
+The If node works because `NodeFieldRenderer` treats the complete value area as a drop zone: both its wrapper and input receive drag handlers, and drag-over calls both `preventDefault()` and `stopPropagation()`.
 
-Exit check: a real browser drop into empty and unfinished fields works, and the source text survives every type change.
+Typed Edit Fields bypasses `NodeFieldRenderer` and uses `EditFieldEditor`. Its handlers exist only on the raw input/textarea, drag-over does not stop propagation, and Fixed Boolean renders a Select with no drop handlers. The screenshot showing plain selected text such as `high` is consistent with the browser's native text drop rather than Coreza inserting a `{{ ... }}` reference.
 
-## Batch 2 — execution parity (P1)
+There is also a state defect: Edit Fields switches to Expression only when the old value is empty. Dropping onto a non-empty Fixed value inserts expression source but leaves it in Fixed mode, so it is treated as literal text.
 
-**D3 — manual runs evaluate against empty input.** `buildPayload` now sends `expressionContext` but never sets `payload.data`; the route destructures `data = {}`, so `$json` and bare aliases are empty and a condition can flip. Send the effective selected input as `payload.data` and assert parity against preview and engine execution.
+## Implementation plan
 
-**D5 — legacy rows are unusable when mixed.** The typed editor renders whenever `conditions.some(isTypedEditFieldRow)`, so a legacy Set/Copy/Remove row inside a mixed array is drawn with typed controls and cannot be edited correctly. Decide rendering per row, not per array: typed rows get the typed editor, legacy rows keep the operator controls.
+### 1. Use one reusable reference drop target
 
-Exit check: manual, preview and workflow agree; legacy rows display, edit, save, reload and execute unchanged.
+- Extract or reuse the working `NodeFieldRenderer` drop-zone behavior instead of maintaining an Edit Fields-only variant.
+- Wrap the Edit Fields Value control in `className="nodrag"` and attach `onDragEnter`, `onDragOver`, and `onDrop` to the wrapper as well as the editable input/textarea.
+- On drag enter/over, call `preventDefault()` and `stopPropagation()`, then set `dropEffect = "copy"` so the React Flow canvas cannot claim the event.
+- Route input, textarea and Boolean controls through the same wrapper. A drop on the label, control padding or Boolean selector must reach the same handler.
+- Keep the target stable across Fixed/Expression and data-type changes so a drag cannot lose its destination during re-render.
 
-## Batch 3 — value and safety semantics (P2)
+### 2. Make drop semantics deterministic
 
-- **D6** — separate ordinary array property access from slice projection: `bars.length` → `2`, `bars["0"].Close` → first close, `bars[-1].Close` → last close, and only an explicit slice such as `bars[-2:].Close` projects over elements. Represent the distinction in the AST.
-- **D7** — split typed-row detection from validation. A row carrying the new keys with an invalid `dataType` must raise a structured configuration error, not fall through to legacy handling and be skipped.
-- **D8** — Fixed Number must reject `null`, Booleans and objects rather than coercing them to `0`.
-- **D9** — validate destination keys before assignment: reject `__proto__`, `prototype` and `constructor`, and build the result on a null-prototype accumulator with explicit own-property definition. Pre-validate all row configurations before executing any row so a malformed later row cannot land after an earlier legacy side effect. Keep the existing rejection of typed persistence.
+- Parse the `application/reactflow` payload once at the shared drop boundary.
+- Reject non-reference payloads; never fall through to browser-native text insertion.
+- Always set `valueMode: "expression"` after a valid field drop, including when the previous Fixed value is non-empty.
+- Preserve caret-aware replacement for text controls. If no valid selection exists, append predictably rather than inserting at an accidental offset.
+- Continue using the shared structured path formatter, producing `{{ $("window").json.data[0].high }}` for the screenshot fixture.
+- Clean up drag cursor classes on successful, rejected and cancelled drags.
 
-## Batch 4 — tests and gates
+### 3. Remove source-payload ambiguity
 
-- Fix `tests/utils/editFieldsParameterResolution.test.ts`: a Fixed `{{ $json.close }}` stays the literal string under the planned Fixed semantics, so the `120` expectation is wrong. Add a Fixed String execution assertion and a Fixed Number case that fails numeric validation.
-- Regression coverage: real browser drop (asserting persisted source and evaluated value, not the drag ghost) across root arrays, nested arrays and keys with dots, spaces, quotes and backslashes; unfinished braces, selections, boundary insertion and caret restoration; transport parity through `/comparator/field`; legacy, mixed and malformed rows; evaluator array/index/slice, null guards, zero and false rendering, mixed templates; BOS repeated with changed bars in normal and compiled paths with a named upstream reference.
-- Confirm the runner split before running: the parameter-resolution test imports Vitest while the backend suites use Jest globals.
+- `DraggableFieldsPanel` currently writes the rich payload, then calls `useNodeReferences.handleDragStart`, which writes the same MIME type again with a reduced legacy payload. Change this to one owner for `application/reactflow` so `pathSegments` and `sourceNodeId` cannot be overwritten.
+- Keep the callback only for shared drag UI state, or pass the full payload through it without rewriting the MIME entry.
+- Add a stable plain-text fallback only for browser interoperability; Edit Fields must prefer and validate the structured MIME payload.
 
-**Done when:** D1-D9 have passing regressions, the screenshot fixture inserts `{{ $("window").json.data[0].timestamp }}` and previews the real timestamp, the BOS signal agrees across preview/manual/workflow, legacy rows stay editable, and no configuration failure silently changes a signal.
+### 4. Add regression coverage
+
+- Unit-test the final drag payload after the complete `DraggableFieldsPanel` callback sequence, asserting that `pathSegments` and `sourceNodeId` survive.
+- Component-test Edit Fields drops onto input, textarea, wrapper padding and Boolean controls in both Fixed and Expression modes.
+- Assert that browser-native text such as `high` is never persisted by itself.
+- Verify empty, non-empty, selected-range and incomplete-expression insertion plus caret restoration.
+- Browser-test the actual Input Data panel → Edit Fields interaction and compare it with If using the same field.
+- Assert persisted source and preview value, not merely the drag ghost: `{{ $("window").json.data[0].high }}` must preview `27` for the supplied fixture.
+
+### 5. Finish release verification
+
+- Run the focused path, editor, evaluator, Edit Fields route and parameter-resolution suites with their configured Vitest/Jest runners.
+- Run frontend node validation/build and backend build.
+- Compare the same expression across preview, manual Execute and workflow execution, including a named upstream node and changed bar input.
+
+## Definition of done
+
+Dragging any Input Data field onto any Edit Fields Value area always inserts a valid reference, switches the row to Expression, previews the real value and persists the source. The same gesture remains working in If, D1-D9 regressions pass, and preview/manual/workflow outputs agree.

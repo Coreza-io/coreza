@@ -9,7 +9,11 @@
  */
 
 import React, { useMemo } from "react";
-import { formatPath, type PathSegment } from "./referencePath";
+import {
+  createJsonReferenceDragPayload,
+  formatPath,
+  type PathSegment,
+} from "./referencePath";
 
 type DraggableFieldsPanelProps = {
   data: unknown;
@@ -92,19 +96,26 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                 onDragStart={(e) => {
                   if (!draggable) return;
                   const asString = toStringValue(value);
+                  onDragStart(e, fullKey, asString);
                   e.dataTransfer.setData(
                     "application/reactflow",
-                    JSON.stringify({
-                      type: "jsonReference",
-                      keyPath: fullKey,
-                      pathSegments: fullSegments,
-                      sourceNodeId,
-                      value: asString,
-                    }),
+                    JSON.stringify(
+                      createJsonReferenceDragPayload(
+                        fullSegments,
+                        sourceNodeId,
+                        asString,
+                      ),
+                    ),
                   );
+                  e.dataTransfer.setData("text/plain", fullKey);
                   e.dataTransfer.effectAllowed = "copy";
-                  onDragStart(e, fullKey, asString);
                 }}
+                onDragEnd={() =>
+                  document.body.classList.remove(
+                    "cursor-grabbing",
+                    "select-none",
+                  )
+                }
                 onMouseDown={(e) => e.stopPropagation()}
                 title={
                   isNestedObject

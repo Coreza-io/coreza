@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatPath, parseLegacyPath } from "../../src/utils/referencePath";
+import {
+  createJsonReferenceDragPayload,
+  formatPath,
+  parseJsonReferenceDragPayload,
+  parseLegacyPath,
+} from "../../src/utils/referencePath";
 import { resolveReferences } from "../../src/utils/resolveReferences";
 
 describe("reference paths", () => {
@@ -35,5 +40,38 @@ describe("reference paths", () => {
         [{ id: "window", data: { displayName: "window" } }],
       ),
     ).toBe("2026-09-12");
+  });
+
+  it("retains structured segments and source identity in the final drag payload", () => {
+    expect(
+      createJsonReferenceDragPayload(["data", 0, "high"], "window", "27"),
+    ).toEqual({
+      type: "jsonReference",
+      keyPath: "data[0].high",
+      pathSegments: ["data", 0, "high"],
+      sourceNodeId: "window",
+      value: "27",
+    });
+  });
+
+  it("validates structured and legacy reference payloads", () => {
+    expect(
+      parseJsonReferenceDragPayload(
+        JSON.stringify({
+          type: "jsonReference",
+          keyPath: "data.[0].high",
+          sourceNodeId: "window",
+          value: "27",
+        }),
+      ),
+    ).toEqual({
+      type: "jsonReference",
+      keyPath: "data[0].high",
+      pathSegments: ["data", 0, "high"],
+      sourceNodeId: "window",
+      value: "27",
+    });
+    expect(parseJsonReferenceDragPayload('{"type":"node"}')).toBeNull();
+    expect(parseJsonReferenceDragPayload("not JSON")).toBeNull();
   });
 });

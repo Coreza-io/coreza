@@ -1,6 +1,58 @@
 export type PathSegment = string | number;
 
+export interface JsonReferenceDragPayload {
+  type: "jsonReference";
+  keyPath: string;
+  pathSegments: PathSegment[];
+  sourceNodeId?: string;
+  value: string;
+}
+
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+export function createJsonReferenceDragPayload(
+  pathSegments: PathSegment[],
+  sourceNodeId: string | undefined,
+  value: string,
+): JsonReferenceDragPayload {
+  return {
+    type: "jsonReference",
+    keyPath: formatPath(pathSegments).replace(/^\./, ""),
+    pathSegments,
+    sourceNodeId,
+    value,
+  };
+}
+
+export function parseJsonReferenceDragPayload(
+  raw: string,
+): JsonReferenceDragPayload | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return null;
+    const payload = value as Record<string, unknown>;
+    if (
+      payload.type !== "jsonReference" ||
+      (payload.sourceNodeId !== undefined &&
+        (typeof payload.sourceNodeId !== "string" || !payload.sourceNodeId))
+    )
+      return null;
+    const pathSegments = isPathSegments(payload.pathSegments)
+      ? payload.pathSegments
+      : parseLegacyPath(
+          typeof payload.keyPath === "string" ? payload.keyPath.trim() : "",
+        );
+    if (!pathSegments) return null;
+    return createJsonReferenceDragPayload(
+      pathSegments,
+      payload.sourceNodeId,
+      typeof payload.value === "string" ? payload.value : "",
+    );
+  } catch {
+    return null;
+  }
+}
 
 export function formatPath(segments: readonly PathSegment[]): string {
   return segments

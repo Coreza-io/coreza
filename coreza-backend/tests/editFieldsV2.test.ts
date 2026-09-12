@@ -11,6 +11,9 @@ describe("Edit Fields v2", () => {
     expect(coerceFixedValue('{"ok":true}', "object")).toEqual({ ok: true });
     expect(() => coerceFixedValue("", "number")).toThrow("expected Number");
     expect(() => coerceFixedValue("abc", "number")).toThrow("expected Number");
+    expect(() => coerceFixedValue(null, "number")).toThrow("expected Number");
+    expect(() => coerceFixedValue(false, "number")).toThrow("expected Number");
+    expect(() => coerceFixedValue({}, "number")).toThrow("expected Number");
   });
 
   test("evaluates expressions and enforces the selected type", () => {
@@ -154,5 +157,58 @@ describe("Edit Fields v2", () => {
       legacyResultSeed: { close: 10 },
     });
     expect(executorResult).toEqual(routeResult);
+  });
+
+  test("rejects malformed typed rows and dangerous destinations before writes", () => {
+    const persisted: Array<[string, unknown]> = [];
+    expect(() =>
+      applyFieldRows(
+        [
+          { left: "safe", operator: "set", right: 1 },
+          {
+            fieldName: "bad",
+            dataType: "decimal",
+            valueMode: "fixed",
+            value: "2",
+          } as never,
+        ],
+        {
+          input: {},
+          legacyResultSeed: {},
+          context: {
+            persistent: true,
+            setPersistentValue: (key, value) => persisted.push([key, value]),
+          },
+        },
+      ),
+    ).toThrow("invalid typed row configuration");
+    expect(persisted).toEqual([]);
+
+    expect(() =>
+      applyFieldRows(
+        [
+          { left: "safe", operator: "set", right: 1 },
+          { left: "broken", operator: "unknown", right: 2 } as never,
+        ],
+        {
+          input: {},
+          legacyResultSeed: {},
+          context: {
+            persistent: true,
+            setPersistentValue: (key, value) => persisted.push([key, value]),
+          },
+        },
+      ),
+    ).toThrow("invalid legacy row configuration");
+    expect(persisted).toEqual([]);
+
+    for (const fieldName of ["__proto__", "prototype", "constructor"]) {
+      expect(() =>
+        applyFieldRows([{ left: fieldName, operator: "set", right: 1 }], {
+          input: {},
+          legacyResultSeed: {},
+        }),
+      ).toThrow("is not allowed");
+    }
   });
 });

@@ -54,6 +54,11 @@ import {
 import { pickJsonSource } from "../../../../coreza-backend/src/utils/referenceResolution";
 import type { ReferenceNode } from "../../../../coreza-backend/src/utils/referenceResolution";
 import { isTypedEditFieldRow } from "../../../../coreza-backend/src/nodes/logic/typedEditFieldRow";
+import {
+  formatPath,
+  isPathSegments,
+  parseLegacyPath,
+} from "@/utils/referencePath";
 
 interface EditFieldEditorProps {
   row: Record<string, unknown>;
@@ -162,13 +167,18 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
         (segment) => segment.kind === "code",
       );
       if (!referenceCode || referenceCode.kind !== "code") return;
-      const compiled = compileEditTemplate(value);
-      const insideCode = compiled.segments.some(
-        (segment) =>
-          segment.kind === "code" &&
-          start >= segment.expressionStart &&
-          start <= segment.end - 2,
-      );
+      let insideCode = false;
+      try {
+        const compiled = compileEditTemplate(value);
+        insideCode = compiled.segments.some(
+          (segment) =>
+            segment.kind === "code" &&
+            start >= segment.expressionStart &&
+            start <= segment.end - 2,
+        );
+      } catch {
+        // Incomplete authoring is valid; insert the complete wrapped reference.
+      }
       const inserted = insideCode ? referenceCode.value : reference;
       updateMany(index, {
         value: value.slice(0, start) + inserted + value.slice(end),
@@ -212,10 +222,8 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             onValueChange={(dataType) =>
               updateMany(index, {
                 dataType,
-                ...(dataType === "boolean" &&
-                value !== "true" &&
-                value !== "false"
-                  ? { value: "false" }
+                ...(value === ""
+                  ? { value: dataType === "boolean" ? "false" : "" }
                   : {}),
               })
             }
@@ -726,35 +734,29 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (!raw) return null;
 
       try {
-        const { keyPath = "" } = JSON.parse(raw);
-        const sourceNode = previousNodes.find(
-          (n) => n.id === selectedPrevNodeId,
-        );
+        const payload: unknown = JSON.parse(raw);
+        if (!payload || typeof payload !== "object" || Array.isArray(payload))
+          return null;
+        const drag = payload as Record<string, unknown>;
+        const sourceId =
+          typeof drag.sourceNodeId === "string"
+            ? drag.sourceNodeId
+            : selectedPrevNodeId;
+        const sourceNode = previousNodes.find((n) => n.id === sourceId);
         const sourceDisplayName =
           sourceNode?.data?.displayName ||
-          (sourceNode
-            ? getDisplayName(sourceNode, previousNodes)
-            : selectedPrevNodeId);
-        const kp = String(keyPath ?? "").trim();
-        const suffix = kp
-          ? kp.startsWith("[")
-            ? kp
-            : kp
-                .split(".")
-                .filter(Boolean)
-                .map((part) =>
-                  /^-?\d+$/.test(part)
-                    ? `[${part}]`
-                    : /^[A-Za-z_$][\w$]*$/.test(part)
-                      ? `.${part}`
-                      : `[${JSON.stringify(part)}]`,
-                )
-                .join("")
-          : "";
+          (sourceNode ? getDisplayName(sourceNode, previousNodes) : sourceId);
+        const segments = isPathSegments(drag.pathSegments)
+          ? drag.pathSegments
+          : parseLegacyPath(
+              typeof drag.keyPath === "string" ? drag.keyPath.trim() : "",
+            );
+        if (!segments) return null;
+        const suffix = formatPath(segments);
 
         return {
           insert: `{{ $(${JSON.stringify(sourceDisplayName)}).json${suffix} }}`,
-          sourceId: selectedPrevNodeId,
+          sourceId,
         };
       } catch (error) {
         console.error("Drop error:", error);
@@ -1003,7 +1005,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
             {(isConditional || isFieldRepeater) &&
               conditions.map((cond, i) => {
-                if (isFieldRepeater) {
+                if (isFieldRepeater && isTypedEditFieldRow(cond)) {
                   return (
                     <EditFieldEditor
                       key={i}

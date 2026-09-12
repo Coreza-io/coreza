@@ -1,6 +1,9 @@
 import { ExpressionContext, ExpressionError } from "./safeExpression";
 import { compileEditTemplate, evaluateEditTemplate } from "./editTemplate";
-import { isTypedEditFieldRow } from "./typedEditFieldRow";
+import {
+  hasTypedEditFieldShape,
+  isTypedEditFieldRow,
+} from "./typedEditFieldRow";
 import { pickJsonSource } from "../../utils/referenceResolution";
 
 export type EditFieldDataType =
@@ -103,6 +106,8 @@ export function coerceFixedValue(
   if (type === "string")
     return typeof value === "string" ? value : String(value ?? "");
   if (type === "number") {
+    if (typeof value !== "string" && typeof value !== "number")
+      throw new Error(`expected Number, but fixed value is ${describe(value)}`);
     if (value === "" || (typeof value === "string" && value.trim() === ""))
       throw new Error("expected Number, but fixed value is empty");
     const number = Number(value);
@@ -185,6 +190,70 @@ export function checkExpressionResult(
 
 const isV2 = (row: EditFieldRow): row is EditFieldRowV2 =>
   isTypedEditFieldRow(row);
+
+const BLOCKED_DESTINATIONS = new Set(["__proto__", "prototype", "constructor"]);
+
+function validateRows(rows: EditFieldRow[], nodeId?: string): void {
+  rows.forEach((row, rowIndex) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new EditFieldError("Edit Fields: invalid row configuration", {
+        nodeId,
+        rowIndex,
+        fieldName: "",
+        phase: "configuration",
+      });
+    }
+    const typedShape = hasTypedEditFieldShape(row);
+    if (typedShape && !isV2(row)) {
+      const candidate = row as Partial<EditFieldRowV2>;
+      throw new EditFieldError("Edit Fields: invalid typed row configuration", {
+        nodeId,
+        rowIndex,
+        fieldName:
+          typeof candidate.fieldName === "string" ? candidate.fieldName : "",
+        phase: "configuration",
+      });
+    }
+    if (!typedShape) {
+      const legacy = row as LegacyFieldRow;
+      if (
+        (legacy.left !== undefined && typeof legacy.left !== "string") ||
+        (legacy.operator !== undefined &&
+          !["set", "copy", "remove"].includes(legacy.operator)) ||
+        (legacy.left && legacy.operator === undefined) ||
+        (legacy.operator === "copy" && typeof legacy.right !== "string")
+      )
+        throw new EditFieldError(
+          "Edit Fields: invalid legacy row configuration",
+          {
+            nodeId,
+            rowIndex,
+            fieldName: typeof legacy.left === "string" ? legacy.left : "",
+            phase: "configuration",
+          },
+        );
+    }
+    const fieldName = isV2(row) ? row.fieldName : row.left;
+    if (fieldName && BLOCKED_DESTINATIONS.has(fieldName))
+      throw new EditFieldError(
+        `Edit Fields: destination field "${fieldName}" is not allowed`,
+        { nodeId, rowIndex, fieldName, phase: "configuration" },
+      );
+  });
+}
+
+function defineResultValue(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
 
 export function applyTypedFieldRow(
   row: EditFieldRowV2,
@@ -277,6 +346,7 @@ export function applyFieldRows(
   rows: EditFieldRow[],
   options: ApplyFieldRowsOptions,
 ): Record<string, unknown> {
+  validateRows(rows, options.nodeId);
   const hasV2Rows = rows.some(isV2);
   if (hasV2Rows && options.context?.persistent)
     throw new EditFieldError(
@@ -289,10 +359,14 @@ export function applyFieldRows(
       },
     );
   const inputRecord = isPlainObject(options.input) ? options.input : {};
-  const result = hasV2Rows
-    ? { ...inputRecord }
-    : { ...options.legacyResultSeed };
-  const legacyResult = { ...options.legacyResultSeed };
+  const result: Record<string, unknown> = Object.create(null);
+  const legacyResult: Record<string, unknown> = Object.create(null);
+  Object.entries(hasV2Rows ? inputRecord : options.legacyResultSeed).forEach(
+    ([key, value]) => defineResultValue(result, key, value),
+  );
+  Object.entries(options.legacyResultSeed).forEach(([key, value]) =>
+    defineResultValue(legacyResult, key, value),
+  );
   const context = options.context ?? {};
   for (const [rowIndex, row] of rows.entries()) {
     if (isV2(row)) {
@@ -304,7 +378,7 @@ export function applyFieldRows(
         context,
         options.nodeId,
       );
-      result[row.fieldName] = value;
+      defineResultValue(result, row.fieldName, value);
       continue;
     }
     const fieldName = row.left;
@@ -324,8 +398,8 @@ export function applyFieldRows(
           context.setPersistentValue(fieldName, finalValue);
       } else if (context.persistent && context.setPersistentValue)
         context.setPersistentValue(fieldName, value);
-      legacyResult[fieldName] = finalValue;
-      result[fieldName] = finalValue;
+      defineResultValue(legacyResult, fieldName, finalValue);
+      defineResultValue(result, fieldName, finalValue);
     } else if (
       row.operator === "copy" &&
       typeof value === "string" &&
@@ -333,8 +407,8 @@ export function applyFieldRows(
     ) {
       if (context.persistent && context.setPersistentValue)
         context.setPersistentValue(fieldName, legacyResult[value]);
-      legacyResult[fieldName] = legacyResult[value];
-      result[fieldName] = legacyResult[value];
+      defineResultValue(legacyResult, fieldName, legacyResult[value]);
+      defineResultValue(result, fieldName, legacyResult[value]);
     } else if (row.operator === "remove") {
       if (context.persistent && context.setPersistentValue)
         context.setPersistentValue(fieldName, undefined);

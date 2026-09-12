@@ -198,6 +198,7 @@ export function useNodeExecution({
       }
 
       if (definition?.name === "Edit Fields") {
+        payload.data = selectedInputData;
         const nodeIdentityName = (node: Node): string => {
           const nodeData = node.data as {
             displayName?: unknown;

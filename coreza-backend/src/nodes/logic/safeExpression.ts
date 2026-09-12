@@ -59,6 +59,13 @@ type Ast =
       position: number;
       memberDepth: number;
     }
+  | {
+      kind: "projection";
+      object: Ast;
+      key: string | number;
+      position: number;
+      memberDepth: number;
+    }
   | { kind: "unary"; operator: "!" | "-"; value: Ast; position: number }
   | {
       kind: "binary";
@@ -453,7 +460,16 @@ class Parser {
           position,
         );
       result = this.make(
-        { kind: "member", object: result, key, position, memberDepth },
+        {
+          kind:
+            result.kind === "slice" || result.kind === "projection"
+              ? "projection"
+              : "member",
+          object: result,
+          key,
+          position,
+          memberDepth,
+        },
         depth + memberDepth,
       );
     }
@@ -492,34 +508,18 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
     const value = evaluate(node.object, context);
     return Array.isArray(value) ? value.slice(node.start, node.end) : undefined;
   }
-  if (node.kind === "member") {
+  if (node.kind === "member" || node.kind === "projection") {
     const object = evaluate(node.object, context);
     if (
       object == null ||
       (typeof object !== "object" && typeof object !== "string")
     )
       return undefined;
-    if (Array.isArray(object) && typeof node.key === "string") {
-      if (BLOCKED_MEMBERS.has(node.key)) return undefined;
-      return object.map((item) =>
-        item !== null &&
-        typeof item === "object" &&
-        Object.prototype.hasOwnProperty.call(item, node.key)
-          ? (item as Record<string, unknown>)[node.key]
-          : undefined,
-      );
-    }
-    const actualKey =
-      Array.isArray(object) && typeof node.key === "number" && node.key < 0
-        ? object.length + node.key
-        : node.key;
-    const key = String(actualKey);
-    if (
-      BLOCKED_MEMBERS.has(key) ||
-      !Object.prototype.hasOwnProperty.call(object, key)
-    )
-      return undefined;
-    return (object as Record<string, unknown>)[key];
+    if (node.kind === "projection")
+      return Array.isArray(object)
+        ? object.map((item) => readMember(item, node.key))
+        : undefined;
+    return readMember(object, node.key);
   }
   if (node.kind === "unary") {
     const value = evaluate(node.value, context);
@@ -602,6 +602,23 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
   return result;
 }
 
+function readMember(object: unknown, key: string | number): unknown {
+  if (
+    object == null ||
+    (typeof object !== "object" && typeof object !== "string")
+  )
+    return undefined;
+  const actualKey =
+    Array.isArray(object) && typeof key === "number" && key < 0
+      ? object.length + key
+      : key;
+  const property = String(actualKey);
+  return BLOCKED_MEMBERS.has(property) ||
+    !Object.prototype.hasOwnProperty.call(object, property)
+    ? undefined
+    : (object as Record<string, unknown>)[property];
+}
+
 export function evaluateExpression(
   text: string,
   context: ExpressionContext,
@@ -618,7 +635,12 @@ export function compileExpression(text: string): CompiledExpression {
   const nodeReferences = new Set<string>();
   const visit = (node: Ast): void => {
     if (node.kind === "node") nodeReferences.add(node.name);
-    if (node.kind === "member" || node.kind === "slice") visit(node.object);
+    if (
+      node.kind === "member" ||
+      node.kind === "slice" ||
+      node.kind === "projection"
+    )
+      visit(node.object);
     else if (node.kind === "unary") visit(node.value);
     else if (node.kind === "binary") {
       visit(node.left);

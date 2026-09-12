@@ -9,16 +9,23 @@
  */
 
 import React, { useMemo } from "react";
+import {
+  createJsonReferenceDragPayload,
+  formatPath,
+  type PathSegment,
+} from "./referencePath";
 
 type DraggableFieldsPanelProps = {
   data: unknown;
   onDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   parentKey?: string;
+  pathSegments?: PathSegment[];
+  sourceNodeId?: string;
   maxItems?: number;
   draggable?: boolean;
 };
 
-type Entry = { key: string; value: unknown };
+type Entry = { key: PathSegment; value: unknown };
 
 const isObjectLike = (v: unknown): v is Record<string, unknown> | unknown[] =>
   v !== null && typeof v === "object";
@@ -34,18 +41,12 @@ const toStringValue = (value: unknown): string => {
   }
 };
 
-// Build property path segments for reference expressions
-const buildPath = (parent: string, rawKey: string): string => {
-  const isNumeric = /^\d+$/.test(rawKey);
-  const needsQuote = /[^A-Za-z0-9_]/.test(rawKey);
-  const seg = isNumeric ? `[${rawKey}]` : needsQuote ? `["${rawKey}"]` : rawKey;
-  return parent ? `${parent}.${seg}` : seg;
-};
-
 const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   data,
   onDragStart,
   parentKey = "",
+  pathSegments,
+  sourceNodeId,
   maxItems = 25,
   draggable = true,
 }) => {
@@ -53,11 +54,14 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
     if (!isObjectLike(data)) return [];
     if (Array.isArray(data)) {
       return (data as unknown[]).slice(0, maxItems).map((item, idx) => ({
-        key: String(idx),
+        key: idx,
         value: item,
       }));
     }
-    return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({ key: k, value: v }));
+    return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({
+      key: k,
+      value: v,
+    }));
   }, [data, maxItems]);
 
   if (!isObjectLike(data)) return null;
@@ -70,35 +74,55 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   return (
     <div className="flex flex-col gap-2 mb-2">
       {entriesToShow.map(({ key, value }) => {
-        const fullKey = buildPath(parentKey, key);
+        const fullSegments = [...(pathSegments ?? []), key];
+        const fullKey = pathSegments
+          ? formatPath(fullSegments).replace(/^\./, "")
+          : parentKey
+            ? `${parentKey}${formatPath([key])}`
+            : formatPath([key]).replace(/^\./, "");
         const isNestedObject = isObjectLike(value);
-        const displayKey = isArray ? `[${key}]` : key;
+        const displayKey = isArray ? `[${key}]` : String(key);
 
         return (
           <div key={fullKey} className="flex flex-col ml-2">
             <div className="flex items-center gap-2">
               <div
                 className={`nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs font-semibold w-fit text-primary transition-colors ${
-                  draggable ? "cursor-pointer cursor-grab active:cursor-grabbing" : "cursor-default"
+                  draggable
+                    ? "cursor-pointer cursor-grab active:cursor-grabbing"
+                    : "cursor-default"
                 }`}
                 draggable={draggable}
                 onDragStart={(e) => {
                   if (!draggable) return;
                   const asString = toStringValue(value);
+                  onDragStart(e, fullKey, asString);
                   e.dataTransfer.setData(
                     "application/reactflow",
-                    JSON.stringify({
-                      type: "jsonReference",
-                      keyPath: fullKey,
-                      value: asString,
-                    })
+                    JSON.stringify(
+                      createJsonReferenceDragPayload(
+                        fullSegments,
+                        sourceNodeId,
+                        asString,
+                      ),
+                    ),
                   );
+                  e.dataTransfer.setData("text/plain", fullKey);
                   e.dataTransfer.effectAllowed = "copy";
-                  onDragStart(e, fullKey, asString);
                 }}
+                onDragEnd={() =>
+                  document.body.classList.remove(
+                    "cursor-grabbing",
+                    "select-none",
+                  )
+                }
                 onMouseDown={(e) => e.stopPropagation()}
                 title={
-                  isNestedObject ? (Array.isArray(value) ? "Array" : "Object") : toStringValue(value)
+                  isNestedObject
+                    ? Array.isArray(value)
+                      ? "Array"
+                      : "Object"
+                    : toStringValue(value)
                 }
               >
                 {displayKey}
@@ -121,6 +145,8 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   data={value}
                   onDragStart={onDragStart}
                   parentKey={fullKey}
+                  pathSegments={fullSegments}
+                  sourceNodeId={sourceNodeId}
                   maxItems={maxItems}
                   draggable={draggable}
                 />
@@ -133,7 +159,8 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
       {/* Show remaining items indicator for arrays */}
       {isArray && remainingCount > 0 && (
         <div className="ml-2 mt-1 text-xs text-muted-foreground italic">
-          ... and {remainingCount.toLocaleString()} more item{remainingCount !== 1 ? 's' : ''}
+          ... and {remainingCount.toLocaleString()} more item
+          {remainingCount !== 1 ? "s" : ""}
         </div>
       )}
     </div>

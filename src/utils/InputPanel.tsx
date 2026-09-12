@@ -196,6 +196,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
               <DraggableFieldsPanel
                 data={outputData}
                 onDragStart={handleDragStart ?? (() => {})}
+                sourceNodeId={selectedPrevNodeId}
               />
             </div>
           </>
@@ -225,6 +226,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
               <DraggableFieldsPanel
                 data={outputData}
                 onDragStart={handleDragStart ?? (() => {})}
+                sourceNodeId={selectedPrevNodeId}
               />
             </div>
           </>

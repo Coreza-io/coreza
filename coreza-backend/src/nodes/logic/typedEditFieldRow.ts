@@ -5,6 +5,13 @@ export interface TypedEditFieldRow {
   value: unknown;
 }
 
+export function hasTypedEditFieldShape(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return ["fieldName", "dataType", "valueMode", "value"].some(
+    (key) => key in value,
+  );
+}
+
 export function isTypedEditFieldRow(
   value: unknown,
 ): value is TypedEditFieldRow {

@@ -15,6 +15,10 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { buildPreviewData } from "@/utils/previewDataResolver";
+import {
+  formatPath,
+  parseJsonReferenceDragPayload,
+} from "@/utils/referencePath";
 
 interface UseNodeReferencesProps {
   fieldState: Record<string, any>;
@@ -29,7 +33,7 @@ interface UseNodeReferencesReturn {
     fieldKey: string,
     setter: React.Dispatch<React.SetStateAction<string>>,
     e: React.DragEvent,
-    currentValue: string
+    currentValue: string,
   ) => void;
   getFieldPreview: (fieldKey: string) => string | null;
   referenceStyle: React.CSSProperties;
@@ -51,15 +55,10 @@ export function useNodeReferences({
 
   // Handle drag start for reference expressions
   const handleDragStart = useCallback(
-    (e: React.DragEvent, keyPath: string, value: string) => {
-      e.dataTransfer.setData(
-        "application/reactflow",
-        JSON.stringify({ type: "jsonReference", keyPath, value })
-      );
-      e.dataTransfer.effectAllowed = "copy";
+    (_e: React.DragEvent, _keyPath: string, _value: string) => {
       document.body.classList.add("cursor-grabbing", "select-none");
     },
-    []
+    [],
   );
 
   // Handle drop of reference expressions
@@ -68,55 +67,36 @@ export function useNodeReferences({
       fieldKey: string,
       setter: React.Dispatch<React.SetStateAction<string>>,
       e: React.DragEvent,
-      currentValue: string
+      currentValue: string,
     ) => {
       e.preventDefault();
       e.stopPropagation();
 
       try {
-        const raw = e.dataTransfer.getData("application/reactflow");
-
-        if (!raw) {
-          // Try alternative data types
-          for (const type of e.dataTransfer.types) {
-            e.dataTransfer.getData(type);
-          }
-          return;
-        }
-
-        const data = JSON.parse(raw);
-
-        // Handle both old format (direct keyPath) and new format (structured object)
-        let keyPath: string;
-        let displayValue: any;
-
-        if (data.type === "jsonReference") {
-          keyPath = data.keyPath;
-          displayValue = data.value; // Use the actual value for display
-        } else {
-          keyPath = data.keyPath || data;
-          displayValue = data;
-        }
-
+        const data = parseJsonReferenceDragPayload(
+          e.dataTransfer.getData("application/reactflow"),
+        );
+        if (!data) return;
+        const sourceId = data.sourceNodeId || selectedPrevNodeId;
+        if (!sourceId) return;
         // Read nodes imperatively at drop time - avoids subscription re-renders
         const nodes = getNodes();
-        const sourceNode = nodes.find((n) => n.id === selectedPrevNodeId);
+        const sourceNode = nodes.find((n) => n.id === sourceId);
         const sourceDisplayName =
-          sourceNode?.data?.displayName || sourceNode?.id;
-        const kp = (keyPath ?? "").trim();
-        const suffix = kp ? `.${kp}` : "";
-        const insert = `{{ $('${sourceDisplayName}').json${suffix} }}`;
+          sourceNode?.data?.displayName || sourceNode?.id || sourceId;
+        const suffix = formatPath(data.pathSegments);
+        const insert = `{{ $(${JSON.stringify(sourceDisplayName)}).json${suffix} }}`;
         const newValue = currentValue + insert;
 
         setter(newValue);
-        setSourceMap((sm) => ({ ...sm, [fieldKey]: selectedPrevNodeId }));
+        setSourceMap((sm) => ({ ...sm, [fieldKey]: sourceId }));
       } catch (err) {
         console.error("❌ Drop error:", err);
+      } finally {
+        document.body.classList.remove("cursor-grabbing", "select-none");
       }
-
-      document.body.classList.remove("cursor-grabbing", "select-none");
     },
-    [getNodes, selectedPrevNodeId]
+    [getNodes, selectedPrevNodeId],
   );
 
   // Get preview of resolved reference expression
@@ -132,7 +112,7 @@ export function useNodeReferences({
       const { allNodeData, getSourceData } = buildPreviewData(
         previousNodes,
         executionStore,
-        getNodes
+        getNodes,
       );
 
       const srcData = srcNode ? getSourceData(srcId) : {};
@@ -161,7 +141,7 @@ export function useNodeReferences({
       selectedPrevNode,
       executionStore,
       getNodes,
-    ]
+    ],
   );
 
   // Visual styling now handled via [data-node-surface="dark"] CSS rules

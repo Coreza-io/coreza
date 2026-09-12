@@ -47,6 +47,44 @@ describe("Edit Fields templates", () => {
     ).toBe("before a }} b after");
   });
 
+  test("distinguishes array properties and indexes from explicit slice projection", () => {
+    const context = {
+      $json: {
+        bars: [
+          { Close: 10, quote: { currency: "USD" } },
+          { Close: 20, quote: { currency: "EUR" } },
+        ],
+      },
+    };
+    expect(
+      evaluateEditTemplate(compileEditTemplate("{{ bars.length }}"), context),
+    ).toBe(2);
+    expect(
+      evaluateEditTemplate(
+        compileEditTemplate('{{ bars["0"].Close }}'),
+        context,
+      ),
+    ).toBe(10);
+    expect(
+      evaluateEditTemplate(
+        compileEditTemplate("{{ bars[-1].Close }}"),
+        context,
+      ),
+    ).toBe(20);
+    expect(
+      evaluateEditTemplate(
+        compileEditTemplate("{{ bars[-2:].Close }}"),
+        context,
+      ),
+    ).toEqual([10, 20]);
+    expect(
+      evaluateEditTemplate(
+        compileEditTemplate("{{ bars[-2:].quote.currency }}"),
+        context,
+      ),
+    ).toEqual(["USD", "EUR"]);
+  });
+
   test("reports expression positions in template-source coordinates", () => {
     expect(() =>
       evaluateEditTemplate(compileEditTemplate("prefix {{   1 + }}"), context),

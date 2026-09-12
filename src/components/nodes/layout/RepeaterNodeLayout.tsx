@@ -39,6 +39,10 @@ import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
+import {
+  ReferenceDropTarget,
+  referenceDropEventHandlers,
+} from "@/components/nodes/layout/components/ReferenceDropTarget";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
 import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
 import {
@@ -54,6 +58,11 @@ import {
 import { pickJsonSource } from "../../../../coreza-backend/src/utils/referenceResolution";
 import type { ReferenceNode } from "../../../../coreza-backend/src/utils/referenceResolution";
 import { isTypedEditFieldRow } from "../../../../coreza-backend/src/nodes/logic/typedEditFieldRow";
+import {
+  formatPath,
+  parseJsonReferenceDragPayload,
+} from "@/utils/referencePath";
+import { insertEditFieldReference } from "@/utils/editFieldReferenceDrop";
 
 interface EditFieldEditorProps {
   row: Record<string, unknown>;
@@ -146,50 +155,37 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       window.clearTimeout(timer);
     };
   }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
-  const onDrop = (
-    event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
+  const onDrop = (event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
     try {
       const reference = makeReference(event);
       if (!reference) return;
-      const target = event.currentTarget;
-      const start = target.selectionStart ?? value.length;
-      const end = target.selectionEnd ?? start;
-      const compiledReference = compileEditTemplate(reference);
-      const referenceCode = compiledReference.segments.find(
-        (segment) => segment.kind === "code",
+      const eventTarget = event.target;
+      const textControl =
+        eventTarget instanceof HTMLInputElement ||
+        eventTarget instanceof HTMLTextAreaElement
+          ? eventTarget
+          : null;
+      const insertion = insertEditFieldReference(
+        value,
+        reference,
+        textControl?.selectionStart ?? undefined,
+        textControl?.selectionEnd ?? undefined,
       );
-      if (!referenceCode || referenceCode.kind !== "code") return;
-      const compiled = compileEditTemplate(value);
-      const insideCode = compiled.segments.some(
-        (segment) =>
-          segment.kind === "code" &&
-          start >= segment.expressionStart &&
-          start <= segment.end - 2,
-      );
-      const inserted = insideCode ? referenceCode.value : reference;
+      if (!insertion) return;
       updateMany(index, {
-        value: value.slice(0, start) + inserted + value.slice(end),
-        ...(value.length === 0 ? { valueMode: "expression" } : {}),
+        value: insertion.value,
+        valueMode: "expression",
       });
-      window.requestAnimationFrame(() => {
-        target.focus();
-        target.setSelectionRange(
-          start + inserted.length,
-          start + inserted.length,
-        );
-      });
+      if (textControl)
+        window.requestAnimationFrame(() => {
+          textControl.focus();
+          textControl.setSelectionRange(insertion.caret, insertion.caret);
+        });
     } finally {
       document.body.classList.remove("cursor-grabbing", "select-none");
     }
-  };
-  const onDragOver = (
-    event: React.DragEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
   };
   const editorClass =
     "nodrag w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
@@ -212,10 +208,8 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             onValueChange={(dataType) =>
               updateMany(index, {
                 dataType,
-                ...(dataType === "boolean" &&
-                value !== "true" &&
-                value !== "false"
-                  ? { value: "false" }
+                ...(value === ""
+                  ? { value: dataType === "boolean" ? "false" : "" }
                   : {}),
               })
             }
@@ -262,44 +256,44 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
         </div>
       </div>
       <div>
-        <Label>Value</Label>
-        {!expression && row.dataType === "boolean" ? (
-          <Select
-            value={value || "false"}
-            onValueChange={(v) => update(index, "value", v)}
-            disabled={disabled}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="true">true</SelectItem>
-              <SelectItem value="false">false</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : expression ||
-          row.dataType === "array" ||
-          row.dataType === "object" ? (
-          <textarea
-            className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
-            value={value}
-            onChange={(e) => update(index, "value", e.target.value)}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onDragEnter={onDragOver}
-            disabled={disabled}
-          />
-        ) : (
-          <input
-            className={editorClass}
-            value={value}
-            onChange={(e) => update(index, "value", e.target.value)}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onDragEnter={onDragOver}
-            disabled={disabled}
-          />
-        )}
+        <ReferenceDropTarget onDrop={onDrop}>
+          <Label>Value</Label>
+          {!expression && row.dataType === "boolean" ? (
+            <Select
+              value={value || "false"}
+              onValueChange={(v) => update(index, "value", v)}
+              disabled={disabled}
+            >
+              <SelectTrigger {...referenceDropEventHandlers} onDrop={onDrop}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">true</SelectItem>
+                <SelectItem value="false">false</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : expression ||
+            row.dataType === "array" ||
+            row.dataType === "object" ? (
+            <textarea
+              className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
+              value={value}
+              onChange={(e) => update(index, "value", e.target.value)}
+              onDrop={onDrop}
+              {...referenceDropEventHandlers}
+              disabled={disabled}
+            />
+          ) : (
+            <input
+              className={editorClass}
+              value={value}
+              onChange={(e) => update(index, "value", e.target.value)}
+              onDrop={onDrop}
+              {...referenceDropEventHandlers}
+              disabled={disabled}
+            />
+          )}
+        </ReferenceDropTarget>
         {!expression &&
           (row.dataType === "array" || row.dataType === "object") &&
           value &&
@@ -726,35 +720,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (!raw) return null;
 
       try {
-        const { keyPath = "" } = JSON.parse(raw);
-        const sourceNode = previousNodes.find(
-          (n) => n.id === selectedPrevNodeId,
-        );
+        const drag = parseJsonReferenceDragPayload(raw);
+        if (!drag) return null;
+        const sourceId = drag.sourceNodeId ?? selectedPrevNodeId;
+        if (!sourceId) return null;
+        const sourceNode = previousNodes.find((n) => n.id === sourceId);
         const sourceDisplayName =
           sourceNode?.data?.displayName ||
-          (sourceNode
-            ? getDisplayName(sourceNode, previousNodes)
-            : selectedPrevNodeId);
-        const kp = String(keyPath ?? "").trim();
-        const suffix = kp
-          ? kp.startsWith("[")
-            ? kp
-            : kp
-                .split(".")
-                .filter(Boolean)
-                .map((part) =>
-                  /^-?\d+$/.test(part)
-                    ? `[${part}]`
-                    : /^[A-Za-z_$][\w$]*$/.test(part)
-                      ? `.${part}`
-                      : `[${JSON.stringify(part)}]`,
-                )
-                .join("")
-          : "";
+          (sourceNode ? getDisplayName(sourceNode, previousNodes) : sourceId);
+        const suffix = formatPath(drag.pathSegments);
 
         return {
           insert: `{{ $(${JSON.stringify(sourceDisplayName)}).json${suffix} }}`,
-          sourceId: selectedPrevNodeId,
+          sourceId,
         };
       } catch (error) {
         console.error("Drop error:", error);
@@ -1003,7 +981,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
             {(isConditional || isFieldRepeater) &&
               conditions.map((cond, i) => {
-                if (isFieldRepeater) {
+                if (isFieldRepeater && isTypedEditFieldRow(cond)) {
                   return (
                     <EditFieldEditor
                       key={i}

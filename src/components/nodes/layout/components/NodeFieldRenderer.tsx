@@ -1,4 +1,5 @@
 import React from "react";
+import { referenceDropEventHandlers } from "./ReferenceDropTarget";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -223,11 +224,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     "data-is-reference": isReference || undefined,
     onClick: handleInputClick,
     onFocus: handleInputFocus,
-    onDragOver: (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "copy";
-    },
+    ...referenceDropEventHandlers,
     onDrop: handleDropWrapper,
     disabled: readOnly,
   };
@@ -406,7 +403,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         return (
           <div
             className="nodrag"
-            onDragOver={commonInputProps.onDragOver}
+            {...referenceDropEventHandlers}
             onDrop={handleDropWrapper}
             ref={fieldWrapperRef}
           >
@@ -429,13 +426,15 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         return (
           <div
             className="nodrag"
-            onDragOver={commonInputProps.onDragOver}
+            {...referenceDropEventHandlers}
             onDrop={handleDropWrapper}
             ref={fieldWrapperRef}
           >
             <textarea
               {...commonInputProps}
-              className={cn("w-full border border-input bg-background text-foreground placeholder:text-muted-foreground p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+              className={cn(
+                "w-full border border-input bg-background text-foreground placeholder:text-muted-foreground p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
             />
             {renderPreviewCard()}
           </div>
@@ -844,7 +843,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     <FieldWrapper
       key={field.key}
       label={
-        field.type === "checkbox" || field.type === "toggle" ? undefined : displayLabel
+        field.type === "checkbox" || field.type === "toggle"
+          ? undefined
+          : displayLabel
       }
       hideLabel={field.type === "checkbox" || field.type === "toggle"}
       description={undefined}

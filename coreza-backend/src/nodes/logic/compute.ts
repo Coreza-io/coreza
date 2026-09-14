@@ -1012,6 +1012,22 @@ export class ComputeService {
           );
         }
 
+        case "getIndex": {
+          const validation = this.validateArray(value);
+          if (!validation.valid) return createErrorOutput(validation.error);
+
+          const index =
+            (typeof arg1 === "number" || typeof arg1 === "string") &&
+            String(arg1).trim() !== ""
+              ? Number(arg1)
+              : Number.NaN;
+          if (!Number.isFinite(index) || !Number.isInteger(index)) {
+            return createErrorOutput("Index is required and must be an integer");
+          }
+
+          return createSuccessOutput(validation.array.at(index) ?? null);
+        }
+
         case "arrayContains": {
           const validation = this.validateArray(value);
           if (!validation.valid) return createErrorOutput(validation.error);

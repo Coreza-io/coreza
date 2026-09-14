@@ -329,6 +329,10 @@
               "value": "last"
             },
             {
+              "label": "Get by Index",
+              "value": "getIndex"
+            },
+            {
               "label": "Contains",
               "value": "arrayContains"
             },
@@ -438,6 +442,7 @@
             "unshift",
             "arrayConcat",
             "slice",
+            "getIndex",
             "sort",
             "arrayContains",
             "join",
@@ -483,6 +488,7 @@
           "unshift": "Item to Add",
           "arrayConcat": "Array (JSON)",
           "slice": "Start Index",
+          "getIndex": "Index",
           "sort": "Order (asc/desc)",
           "arrayContains": "Item to Find",
           "join": "Delimiter",

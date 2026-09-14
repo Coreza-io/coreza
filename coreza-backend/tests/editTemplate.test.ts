@@ -26,6 +26,27 @@ describe("Edit Fields templates", () => {
     ).toBe("x");
   });
 
+  test("preserves array literals as native values and serializes mixed text", () => {
+    expect(
+      evaluateEditTemplate(compileEditTemplate("{{ [1, 2] }}"), context),
+    ).toEqual([1, 2]);
+    expect(
+      evaluateEditTemplate(
+        compileEditTemplate("values={{ [1, 2] }}"),
+        context,
+      ),
+    ).toBe("values=[1,2]");
+    expect(
+      evaluateEditTemplate(
+        compileEditTemplate(`{{ [
+          a - b,
+          bars[-1].Close + 24
+        ] }}`),
+        context,
+      ),
+    ).toEqual([5, 26]);
+  });
+
   test("supports negative indexes, slices, projection, and quoted delimiters", () => {
     expect(
       evaluateEditTemplate(

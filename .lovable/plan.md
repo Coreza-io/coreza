@@ -67,6 +67,31 @@ No changes to `editTemplate.ts`, `editFields.ts`, `ControlFlowExecutor.ts`, or a
 - Run the backend Jest suites for the expression engine, template, Edit Fields and the Edit Fields route, plus the frontend Vitest suites, and read full output.
 - Manually confirm in the editor that the Array + Expression row previews `[26,26] · Array`, executes successfully, and that a downstream Compute Max consumes it without a workaround.
 
+## Added: Compute "Get by Index"
+
+Compute today offers First, Last and Slice for arrays, but no single-element lookup by position, so an array produced by Edit Fields still needs a workaround. Add a dedicated operation.
+
+**Behavior**
+- New Array operation labelled "Get by Index" (`getIndex`), using Argument 1 as the index with the dynamic label "Index".
+- Accepts the same array inputs as the existing array operations, including a JSON string.
+- Supports negative indexes counted from the end, matching the expression engine (`-1` is the last element).
+- Out-of-range index returns `null`, consistent with First and Last on an empty array.
+- A missing, empty, non-integer or non-numeric index returns a clear validation error rather than silently using `0`.
+
+**Changes**
+- `coreza-backend/src/nodes/logic/compute.ts`: add the `getIndex` case next to `first`/`last`, reusing `validateArray` and the shared success/error output helpers.
+- `src/nodes/Compute.json`: add the option to the Array group, add `getIndex` to the Argument 1 visibility list, and add its dynamic label.
+
+**Tests** (`tests/workflow/compute.test.ts`)
+- Positive index, negative index, out-of-range returning `null`, JSON-string array input, and the invalid-index error.
+- One end-to-end case through `ControlFlowExecutor`.
+- Existing Compute operations unchanged.
+
+## Backend repository note
+
+Backend work here lives in the separated `coreza-io/coreza-backend` repository and must be copied across manually, as usual.
+
 ## Done when
 
-The reported multi-line array expression previews and executes as a genuine array, mixed-text templates still produce strings, indexing and slicing are unchanged, malformed literals fail with precise messages, and all parser security limits still hold.
+The reported multi-line array expression previews and executes as a genuine array, mixed-text templates still produce strings, indexing and slicing are unchanged, malformed literals fail with precise messages, all parser security limits still hold, and Compute exposes a working Get by Index operation that consumes that array directly.
+

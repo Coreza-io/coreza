@@ -41,6 +41,7 @@ interface Token {
 }
 type Ast =
   | { kind: "literal"; value: unknown; position: number }
+  | { kind: "array"; elements: Ast[]; position: number }
   | { kind: "root"; name: "$json" | "$nodes" | "$state"; position: number }
   | { kind: "node"; name: string; position: number }
   | { kind: "identifier"; name: string; position: number }
@@ -78,6 +79,7 @@ type Ast =
 const MAX_INPUT = 8192;
 const MAX_DEPTH = 32;
 const MAX_NODES = 1024;
+const MAX_ARRAY_ELEMENTS = 256;
 const MAX_MEMBERS = 32;
 const MAX_STRING = 1000;
 const BLOCKED_IDENTIFIERS = new Set([
@@ -184,7 +186,7 @@ function tokenize(source: string): Token[] {
       i += op.length;
       continue;
     }
-    if (".[]():".includes(c)) {
+    if (".[]():,".includes(c)) {
       tokens.push({ kind: "punctuation", value: c, position: i++ });
       continue;
     }
@@ -268,6 +270,8 @@ class Parser {
       this.take();
       result = this.expression(0, depth + 1);
       this.take(")");
+    } else if (token.value === "[") {
+      result = this.arrayLiteral(depth);
     } else if (token.kind === "number") {
       this.take();
       result = this.make(
@@ -291,6 +295,45 @@ class Parser {
         token.position,
       );
     return this.members(result, depth);
+  }
+  private arrayLiteral(depth: number): Ast {
+    const opener = this.take("[");
+    const elements: Ast[] = [];
+    if (this.peek().value === "]") {
+      this.take();
+      return this.make(
+        { kind: "array", elements, position: opener.position },
+        depth,
+      );
+    }
+    while (true) {
+      const elementPosition = this.peek().position;
+      if (elements.length >= MAX_ARRAY_ELEMENTS)
+        throw new ExpressionError(
+          "Array literal element limit exceeded",
+          elementPosition,
+        );
+      elements.push(this.expression(0, depth + 1));
+      const separator = this.peek();
+      if (separator.value === "]") {
+        this.take();
+        break;
+      }
+      if (separator.value === ":")
+        throw new ExpressionError(
+          "Array slices are only valid on an existing array value",
+          separator.position,
+        );
+      if (separator.value !== ",")
+        throw new ExpressionError('Expected "," or "]"', separator.position);
+      this.take();
+      if (this.peek().value === "]")
+        throw new ExpressionError('Unexpected token ","', separator.position);
+    }
+    return this.make(
+      { kind: "array", elements, position: opener.position },
+      depth,
+    );
   }
   private rootOrLiteral(depth: number): Ast {
     const token = this.take();
@@ -416,7 +459,7 @@ class Parser {
               position: slicePosition,
               memberDepth,
             },
-            depth + memberDepth,
+            depth + memberDepth - 1,
           );
           continue;
         }
@@ -470,7 +513,7 @@ class Parser {
           position,
           memberDepth,
         },
-        depth + memberDepth,
+        depth + memberDepth - 1,
       );
     }
     if (this.peek().value === "(")
@@ -490,6 +533,8 @@ function lookupNode(name: string, context: ExpressionContext): unknown {
 
 function evaluate(node: Ast, context: ExpressionContext): unknown {
   if (node.kind === "literal") return node.value;
+  if (node.kind === "array")
+    return node.elements.map((element) => evaluate(element, context));
   if (node.kind === "identifier") {
     const input = context.$json;
     if (
@@ -635,7 +680,8 @@ export function compileExpression(text: string): CompiledExpression {
   const nodeReferences = new Set<string>();
   const visit = (node: Ast): void => {
     if (node.kind === "node") nodeReferences.add(node.name);
-    if (
+    if (node.kind === "array") node.elements.forEach(visit);
+    else if (
       node.kind === "member" ||
       node.kind === "slice" ||
       node.kind === "projection"

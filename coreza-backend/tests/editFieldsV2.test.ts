@@ -3,6 +3,7 @@ import {
   coerceFixedValue,
   EditFieldError,
 } from "../src/nodes/logic/editFields";
+import { ComputeService } from "../src/nodes/logic/compute";
 describe("Edit Fields v2", () => {
   test("coerces fixed values without truthiness coercion", () => {
     expect(coerceFixedValue("42", "number")).toBe(42);
@@ -46,6 +47,69 @@ describe("Edit Fields v2", () => {
         legacyResultSeed: {},
       }),
     ).toThrow("Undefined");
+  });
+
+  test("produces typed arrays from expressions for downstream Compute nodes", () => {
+    const rows = [
+      {
+        fieldName: "ranges",
+        dataType: "array" as const,
+        valueMode: "expression" as const,
+        value: `{{ [
+          $("getimpulseHigh").json.value - $("bars").json.bars[-1].Low,
+          $("bars").json.bars[-1].High - $("getimpulseHigh").json.value
+        ] }}`,
+      },
+    ];
+    const result = applyFieldRows(rows, {
+      input: {},
+      legacyResultSeed: {},
+      context: {
+        $nodes: {
+          getimpulseHigh: { json: { value: 100 } },
+          bars: { json: { bars: [{ Low: 74, High: 126 }] } },
+        },
+      },
+    });
+
+    expect(result.ranges).toEqual([26, 26]);
+    expect(
+      ComputeService.compute({ value: result.ranges, operator: "max" }),
+    ).toMatchObject({ success: true, data: 26 });
+    expect(() =>
+      applyFieldRows(
+        [
+          {
+            ...rows[0],
+            dataType: "string" as const,
+            value: "{{ [1, 2] }}",
+          },
+        ],
+        { input: {}, legacyResultSeed: {} },
+      ),
+    ).toThrow('field "ranges" expected String');
+  });
+
+  test("accepts empty and populated array literals for Array fields", () => {
+    expect(
+      applyFieldRows(
+        [
+          {
+            fieldName: "empty",
+            dataType: "array",
+            valueMode: "expression",
+            value: "{{ [] }}",
+          },
+          {
+            fieldName: "values",
+            dataType: "array",
+            valueMode: "expression",
+            value: "{{ [1, 2] }}",
+          },
+        ],
+        { input: {}, legacyResultSeed: {} },
+      ),
+    ).toEqual({ empty: [], values: [1, 2] });
   });
 
   test("rejects typed persistence before any writes", () => {

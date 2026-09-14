@@ -1,69 +1,72 @@
-# Edit Fields review and remaining drag/drop correction
+# Array literals in Edit Fields expressions
 
-## Review outcome
+## Review of the suggestion
 
-Static review confirms D1-D9 are implemented in the current tree:
+The suggestion is correct in approach and in its file targeting. Verified against the current code:
 
-- **D1:** structured path segments and legacy-path fallback now preserve array indexes and quoted keys.
-- **D2:** insertion tolerates incomplete expressions.
-- **D3:** manual Edit Fields requests now send the selected input as `payload.data`.
-- **D4:** changing Type preserves non-empty authored source.
-- **D5:** typed versus legacy controls are selected per row, so mixed arrays remain editable.
-- **D6:** ordinary array members/indexes are separated from explicit slice projection.
-- **D7:** malformed typed-shaped rows are rejected before execution.
-- **D8:** Fixed Number rejects null, Boolean, array and object values.
-- **D9:** unsafe destination names are rejected before writes, and result maps use own-property assignment on null-prototype objects.
+- The tokenizer rejects `,` outright (`safeExpression.ts` punctuation set is `".[]():"`), which is exactly the reported failure.
+- Bracket handling for `items[0]`, `items[-1]`, `items[1:3]` lives in `members()`, which only runs after an operand, so adding a prefix-position `[` cannot disturb it.
+- The template layer already returns the raw value for a single complete `{{ ... }}` and stringifies mixed text via `JSON.stringify`, so no change is needed there.
+- The template scanner already balances `[`/`]` and tolerates newlines, so the multi-line example compiles once the parser accepts it.
+- The typed Edit Fields layer already accepts `array` and validates with `Array.isArray`, both for Expression mode and for Fixed mode via `JSON.parse`.
+- The frontend preview imports the same evaluator, so it gains array support with no separate frontend work.
 
-The existing unit coverage confirms most of these behaviors. Two release checks remain incomplete: a real browser drag test and full preview/manual/workflow parity through the HTTP route.
+### Improvements on top of the suggestion
 
-## Confirmed remaining drag/drop difference
+1. Add an explicit element-count cap for one literal in addition to the global AST-node cap, so a single huge literal fails with a clear message.
+2. Give slice-like input in prefix position (`{{ [1:3] }}`) a deliberate, readable error instead of a generic token error.
+3. Parse elements at the assignment-free precedence used elsewhere and treat `,` strictly as a separator, so `[1,]`, `[,1]`, `[1,,2]` fail at the offending comma with accurate positions.
+4. Keep `this.members()` running after an array literal so `{{ [3,1,2][0] }}` and `{{ [[1,2],[3,4]][1][0] }}` behave predictably rather than being an accidental parse error.
+5. Confirm empty `{{ [] }}` returns a real empty array and passes Array validation, rather than being treated as no value.
+6. Add the round-trip case where an array result feeds a downstream Compute node, since that is the actual reported goal.
 
-The If node works because `NodeFieldRenderer` treats the complete value area as a drop zone: both its wrapper and input receive drag handlers, and drag-over calls both `preventDefault()` and `stopPropagation()`.
+## Implementation
 
-Typed Edit Fields bypasses `NodeFieldRenderer` and uses `EditFieldEditor`. Its handlers exist only on the raw input/textarea, drag-over does not stop propagation, and Fixed Boolean renders a Select with no drop handlers. The screenshot showing plain selected text such as `high` is consistent with the browser's native text drop rather than Coreza inserting a `{{ ... }}` reference.
+All production changes are in `coreza-backend/src/nodes/logic/safeExpression.ts`.
 
-There is also a state defect: Edit Fields switches to Expression only when the old value is empty. Dropping onto a non-empty Fixed value inserts expression source but leaves it in Fixed mode, so it is treated as literal text.
+1. **Tokenizer**: add `,` to the punctuation character set. No other token changes.
+2. **AST**: add `{ kind: "array"; elements: Ast[]; position: number }` to the union, so each element keeps its own expression tree.
+3. **Prefix parsing**: when `prefix()` sees `[` as the start of an operand, parse an array literal, then continue through the existing `members()` chain.
+4. **Array literal parser**:
+   - consume `[`; return an empty array node immediately on `]`.
+   - otherwise parse one element expression, then require either `]` or `,`; a `,` immediately followed by `]` is an error (no trailing commas).
+   - a leading `,` and a doubled `,` are errors reported at that comma.
+   - a `:` where `,` or `]` is expected raises a dedicated message stating that slices are only valid on an existing array value.
+   - enforce a per-literal element cap and build the node through `make()` with `depth + 1` for elements so existing depth and node limits still apply.
+5. **Evaluation**: evaluate an array node by evaluating each element in order and returning a real array.
+6. **Node-reference collection**: visit array elements when gathering `nodeReferences`, so expressions inside a literal still register their upstream node dependencies.
 
-## Implementation plan
+No changes to `editTemplate.ts`, `editFields.ts`, `ControlFlowExecutor.ts`, or any node JSON. Object literals stay out of scope.
 
-### 1. Use one reusable reference drop target
+## Tests
 
-- Extract or reuse the working `NodeFieldRenderer` drop-zone behavior instead of maintaining an Edit Fields-only variant.
-- Wrap the Edit Fields Value control in `className="nodrag"` and attach `onDragEnter`, `onDragOver`, and `onDrop` to the wrapper as well as the editable input/textarea.
-- On drag enter/over, call `preventDefault()` and `stopPropagation()`, then set `dropEffect = "copy"` so the React Flow canvas cannot claim the event.
-- Route input, textarea and Boolean controls through the same wrapper. A drop on the label, control padding or Boolean selector must reach the same handler.
-- Keep the target stable across Fixed/Expression and data-type changes so a drag cannot lose its destination during re-render.
+**Expression parser** (`coreza-backend/tests/safeExpression.test.ts`)
+- `[]`, `[1]`, `[1,2,3]`, `[1 + 2, 3 * 4]`, `[true, false, null]`, `['a', "b"]`.
+- Node references: `[$("A").json.value, $("B").json.value]`.
+- Nesting and indexing: `[[1,2],[3,4]][1][0]`, `[3,1,2][0]`.
+- Rejections with clear errors: `[1,]`, `[,1]`, `[1,,2]`, `[1`, `[1:3]`.
+- Limits: deeply nested literals and an oversized literal must still hit depth/node/element caps rather than bypass them.
+- Existing rejections stay intact, including `someFunction()` and blocked identifiers/members.
 
-### 2. Make drop semantics deterministic
+**Template layer** (`coreza-backend/tests/editTemplate.test.ts`)
+- `{{ [1,2] }}` returns a real array.
+- `values={{ [1,2] }}` returns the string `values=[1,2]`.
+- The multi-line literal from the report compiles and evaluates.
 
-- Parse the `application/reactflow` payload once at the shared drop boundary.
-- Reject non-reference payloads; never fall through to browser-native text insertion.
-- Always set `valueMode: "expression"` after a valid field drop, including when the previous Fixed value is non-empty.
-- Preserve caret-aware replacement for text controls. If no valid selection exists, append predictably rather than inserting at an accidental offset.
-- Continue using the shared structured path formatter, producing `{{ $("window").json.data[0].high }}` for the screenshot fixture.
-- Clean up drag cursor classes on successful, rejected and cancelled drags.
+**Edit Fields** (`coreza-backend/tests/editFieldsV2.test.ts`)
+- Type Array + Expression `{{ [1,2] }}` produces `[1,2]` and passes validation.
+- The reported expression against mocked `getimpulseHigh` and `bars` inputs produces `[26,26]`.
+- Type String + Expression `{{ [1,2] }}` still fails type validation.
+- Type Array + Fixed `[1,2]` still parses as before.
 
-### 3. Remove source-payload ambiguity
+**Regression**
+- `1 + 2`, `a > b`, `a && b`, `$json.value`, `$("Node").json.data.value`, `$json.items[0]`, `$json.items[-1]`, `$json.items[1:3]`, `$json.items[-2:].close` unchanged.
 
-- `DraggableFieldsPanel` currently writes the rich payload, then calls `useNodeReferences.handleDragStart`, which writes the same MIME type again with a reduced legacy payload. Change this to one owner for `application/reactflow` so `pathSegments` and `sourceNodeId` cannot be overwritten.
-- Keep the callback only for shared drag UI state, or pass the full payload through it without rewriting the MIME entry.
-- Add a stable plain-text fallback only for browser interoperability; Edit Fields must prefer and validate the structured MIME payload.
+## Verification
 
-### 4. Add regression coverage
+- Run the backend Jest suites for the expression engine, template, Edit Fields and the Edit Fields route, plus the frontend Vitest suites, and read full output.
+- Manually confirm in the editor that the Array + Expression row previews `[26,26] · Array`, executes successfully, and that a downstream Compute Max consumes it without a workaround.
 
-- Unit-test the final drag payload after the complete `DraggableFieldsPanel` callback sequence, asserting that `pathSegments` and `sourceNodeId` survive.
-- Component-test Edit Fields drops onto input, textarea, wrapper padding and Boolean controls in both Fixed and Expression modes.
-- Assert that browser-native text such as `high` is never persisted by itself.
-- Verify empty, non-empty, selected-range and incomplete-expression insertion plus caret restoration.
-- Browser-test the actual Input Data panel → Edit Fields interaction and compare it with If using the same field.
-- Assert persisted source and preview value, not merely the drag ghost: `{{ $("window").json.data[0].high }}` must preview `27` for the supplied fixture.
+## Done when
 
-### 5. Finish release verification
-
-- Run the focused path, editor, evaluator, Edit Fields route and parameter-resolution suites with their configured Vitest/Jest runners.
-- Run frontend node validation/build and backend build.
-- Compare the same expression across preview, manual Execute and workflow execution, including a named upstream node and changed bar input.
-
-## Definition of done
-
-Dragging any Input Data field onto any Edit Fields Value area always inserts a valid reference, switches the row to Expression, previews the real value and persists the source. The same gesture remains working in If, D1-D9 regressions pass, and preview/manual/workflow outputs agree.
+The reported multi-line array expression previews and executes as a genuine array, mixed-text templates still produce strings, indexing and slicing are unchanged, malformed literals fail with precise messages, and all parser security limits still hold.

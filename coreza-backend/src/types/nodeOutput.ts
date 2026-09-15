@@ -31,6 +31,7 @@ export interface NodeOutputMeta {
   category?: string;
   cached?: boolean;
   smoothing?: string;
+  series?: unknown[];
 }
 
 export interface StandardErrorDetails {

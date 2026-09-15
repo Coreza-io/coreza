@@ -48,17 +48,97 @@ export interface IndicatorInput {
   [key: string]: any;
 }
 
-export type IndicatorResult = StandardNodeOutput<any[]>;
+export type IndicatorResult = StandardNodeOutput<unknown>;
+export type IndicatorValue = number | Record<string, unknown>;
+
+export interface IndicatorOutput {
+  IsReady: boolean;
+  SampleCount: number;
+  Current: IndicatorValue;
+  Previous: IndicatorValue;
+  currentValue: IndicatorValue;
+  previousValue: IndicatorValue;
+  TrueRange?: number;
+}
+
+const OUTPUT_CHANNELS: Record<string, readonly string[]> = {
+  macd: ["macd", "signal", "histogram"],
+  bollinger: ["upper", "middle", "lower"],
+  "bollinger bands": ["upper", "middle", "lower"],
+  adx: ["adx", "pdi", "mdi"],
+  stochastic: ["k", "d"],
+  ichimoku: ["conversion", "base", "spanA", "spanB"],
+};
+
+function outputValue(indicatorType: string, value: unknown): IndicatorValue {
+  const type = indicatorType.trim().toLowerCase();
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (isUnknownRecord(value)) {
+    if (type === "ichimoku") {
+      return {
+        conversion: Number(value.conversion ?? value.tenkan) || 0,
+        base: Number(value.base ?? value.kijun) || 0,
+        spanA: Number(value.spanA ?? value.senkouA) || 0,
+        spanB: Number(value.spanB ?? value.senkouB) || 0,
+      };
+    }
+    if (type === "obv") return Number(value.obv) || 0;
+    if (type === "vwap") return Number(value.vwap) || 0;
+    if (type === "volume-oscillator" || type === "volumeoscillator") {
+      return Number(value.oscillator ?? value.value) || 0;
+    }
+    return value;
+  }
+  if (
+    type === "support-resistance" ||
+    type === "support & resistance" ||
+    type === "supportresistance"
+  ) {
+    return { resistance: [], support: [] };
+  }
+  const channels = OUTPUT_CHANNELS[type];
+  return channels ? Object.fromEntries(channels.map((key) => [key, 0])) : 0;
+}
+
+export function toIndicatorOutput(
+  indicatorType: string,
+  state: {
+    currentValue?: unknown;
+    previousValue?: unknown;
+    isReady?: boolean;
+    observedBars?: number;
+    internalState?: Record<string, unknown>;
+  },
+): IndicatorOutput {
+  const Current = outputValue(indicatorType, state.currentValue);
+  const Previous = outputValue(indicatorType, state.previousValue);
+  const output: IndicatorOutput = {
+    IsReady: state.isReady === true,
+    SampleCount: Math.max(0, Math.trunc(Number(state.observedBars) || 0)),
+    Current,
+    Previous,
+    currentValue: Current,
+    previousValue: Previous,
+  };
+  if (indicatorType.trim().toLowerCase() === "atr") {
+    const value = state.internalState?.trueRange;
+    output.TrueRange = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  }
+  return output;
+}
 
 export interface IncrementalWarmupResult {
   internalState: Record<string, any>;
   value: number | Record<string, any> | null;
   lastBarTime: string;
+  acceptedCount?: number;
+  previousValue?: number | Record<string, any> | null;
 }
 
 export interface IncrementalUpdateResult {
   value: number | Record<string, any> | null;
   internalState: Record<string, any>;
+  accepted?: boolean;
 }
 
 export interface IncrementalUpdater {
@@ -128,7 +208,7 @@ function asVolume(bar: any): number {
 }
 
 function asBarTime(bar: any): string {
-  return String(bar?.time ?? "");
+  return String(bar?.time ?? bar?.t ?? "");
 }
 
 type AtrSmoothing = "wilders" | "simple";
@@ -140,8 +220,10 @@ interface AtrState extends Record<string, unknown> {
   count: number;
   trSum: number;
   trWindow: number[];
-  atr: number | null;
-  lastValue: number | null;
+  atr: number;
+  previousAtr: number;
+  trueRange: number;
+  lastValue: number;
 }
 
 interface AtrBar {
@@ -179,10 +261,19 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
 function parseAtrBar(bar: unknown): AtrBar | null {
   if (!isUnknownRecord(bar)) return null;
 
-  const high = Number(bar.h ?? bar.high);
-  const low = Number(bar.l ?? bar.low);
-  const close = Number(bar.c ?? bar.close);
-  return [high, low, close].every(Number.isFinite)
+  const raw = [bar.h ?? bar.high, bar.l ?? bar.low, bar.c ?? bar.close];
+  if (
+    raw.some(
+      (value) =>
+        value === null || value === "" || typeof value === "boolean",
+    )
+  )
+    return null;
+  const [high, low, close] = raw.map(Number);
+  return [high, low, close].every(Number.isFinite) &&
+    high >= low &&
+    close >= low &&
+    close <= high
     ? { high, low, close }
     : null;
 }
@@ -205,11 +296,12 @@ function isAtrState(state: Record<string, unknown>): state is AtrState {
     (state.prevClose === null ||
       (typeof state.prevClose === "number" &&
         Number.isFinite(state.prevClose))) &&
-    (state.atr === null ||
-      (typeof state.atr === "number" && Number.isFinite(state.atr))) &&
-    (state.lastValue === null ||
-      (typeof state.lastValue === "number" &&
-        Number.isFinite(state.lastValue)))
+    typeof state.atr === "number" && Number.isFinite(state.atr) &&
+    typeof state.previousAtr === "number" &&
+    Number.isFinite(state.previousAtr) &&
+    typeof state.trueRange === "number" &&
+    Number.isFinite(state.trueRange) &&
+    typeof state.lastValue === "number" && Number.isFinite(state.lastValue)
   );
 }
 
@@ -218,6 +310,10 @@ function migrateAtrState(state: Record<string, unknown>): void {
     state.smoothing = "wilders";
     state.trWindow = [];
   }
+  state.atr ??= 0;
+  state.previousAtr ??= 0;
+  state.trueRange ??= 0;
+  state.lastValue ??= 0;
 }
 
 function trueRange(high: number, low: number, prevClose: number | null): number {
@@ -229,13 +325,15 @@ function trueRange(high: number, low: number, prevClose: number | null): number 
   );
 }
 
-function updateAtrState(state: AtrState, bar: unknown): number | null {
+function updateAtrState(state: AtrState, bar: unknown): IncrementalUpdateResult {
   const candle = parseAtrBar(bar);
-  if (!candle) return state.lastValue ?? null;
+  if (!candle) {
+    return { value: state.lastValue, internalState: state, accepted: false };
+  }
   const { high, low, close } = candle;
 
   const tr = trueRange(high, low, state.prevClose);
-  state.prevClose = close;
+  const previousAtr = state.count === 0 ? 0 : state.atr;
 
   if (state.smoothing === "simple") {
     state.trWindow.push(tr);
@@ -245,15 +343,13 @@ function updateAtrState(state: AtrState, bar: unknown): number | null {
       const removed = state.trWindow.shift();
       if (removed !== undefined) state.trSum -= removed;
     }
-    if (state.count < state.period) return null;
-    state.atr = state.trSum / state.period;
+    state.atr = state.trSum / state.trWindow.length;
   } else {
     // Unlike ADX, ATR treats the first bar's high-low range as observation one.
     if (state.count < state.period) {
       state.trSum += tr;
       state.count += 1;
-      if (state.count < state.period) return null;
-      state.atr = state.trSum / state.period;
+      state.atr = state.trSum / state.count;
     } else {
       const previousAtr = state.atr ?? state.trSum / state.period;
       state.atr = (previousAtr * (state.period - 1) + tr) / state.period;
@@ -261,8 +357,11 @@ function updateAtrState(state: AtrState, bar: unknown): number | null {
     }
   }
 
+  state.previousAtr = previousAtr;
+  state.trueRange = tr;
+  state.prevClose = close;
   state.lastValue = state.atr;
-  return state.lastValue;
+  return { value: state.lastValue, internalState: state, accepted: true };
 }
 
 function createAtrState(period: number, smoothing: AtrSmoothing): AtrState {
@@ -273,8 +372,10 @@ function createAtrState(period: number, smoothing: AtrSmoothing): AtrState {
     count: 0,
     trSum: 0,
     trWindow: [],
-    atr: null,
-    lastValue: null,
+    atr: 0,
+    previousAtr: 0,
+    trueRange: 0,
+    lastValue: 0,
   };
 }
 
@@ -282,9 +383,9 @@ function computeATRSeries(
   bars: unknown[],
   period: number,
   smoothing: AtrSmoothing,
-): Array<number | null> {
+): number[] {
   const state = createAtrState(period, smoothing);
-  return bars.map((bar) => updateAtrState(state, bar));
+  return bars.map((bar) => Number(updateAtrState(state, bar).value));
 }
 
 function clampWindow(window: number[], size: number): number[] {
@@ -384,12 +485,19 @@ export class IndicatorService {
         );
         return {
           warmUp: (bars) => {
+            if (bars.some((bar) => parseAtrBar(bar) === null)) {
+              throw createError("Invalid numeric value in candles", 400);
+            }
             const state = createAtrState(period, smoothing);
-            let value: number | null = null;
-            for (const bar of bars) value = updateAtrState(state, bar);
+            let value = 0;
+            for (const bar of bars) {
+              value = Number(updateAtrState(state, bar).value);
+            }
             return {
               internalState: state,
               value,
+              previousValue: state.previousAtr,
+              acceptedCount: state.count,
               lastBarTime: bars.length ? asBarTime(bars[bars.length - 1]) : "",
             };
           },
@@ -398,10 +506,7 @@ export class IndicatorService {
             if (!isAtrState(state)) {
               throw createError("Invalid ATR indicator state", 500);
             }
-            return {
-              value: updateAtrState(state, bar),
-              internalState: state,
-            };
+            return updateAtrState(state, bar);
           },
         };
       }
@@ -1801,15 +1906,23 @@ export class IndicatorService {
         throw createError("Invalid numeric value in candles", 400);
       }
 
+      const series = computeATRSeries(candles, period, smoothing);
+      const warmed = this.createIncrementalUpdater("atr", {
+        period,
+        smoothing,
+      }).warmUp(candles);
       return {
         ...createSuccessOutput(
-          computeATRSeries(candles, period, smoothing),
-          {
-            ...INDICATOR_CONTEXT,
-            nodeName: "ATR",
-          },
+          toIndicatorOutput("atr", {
+            currentValue: warmed.value,
+            previousValue: warmed.previousValue,
+            isReady: (warmed.acceptedCount ?? 0) >= period,
+            observedBars: warmed.acceptedCount,
+            internalState: warmed.internalState,
+          }),
+          { ...INDICATOR_CONTEXT, nodeName: "ATR" },
         ),
-        meta: { ...INDICATOR_CONTEXT, nodeName: "ATR", smoothing },
+        meta: { ...INDICATOR_CONTEXT, nodeName: "ATR", smoothing, series },
       };
     } catch (error) {
       return createErrorOutput(error, {

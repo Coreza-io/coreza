@@ -9,7 +9,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { IndicatorService } from "../../nodes/logic/indicators";
+import { IndicatorService, toIndicatorOutput } from "../../nodes/logic/indicators";
 import { extractPrices } from "../../nodes/logic/toolOutputProcessor";
 import { DataContext, DataContextManager } from "../../engine/DataContext";
 import {
@@ -17,7 +17,12 @@ import {
   createErrorOutput,
   toNodeResult,
 } from "../../utils/normalizeOutput";
-import { IndicatorStateManager, buildIndicatorKey } from "../../engine";
+import {
+  IndicatorStateManager,
+  buildIndicatorKey,
+  isIndicatorStateCompatible,
+  requiredWarmupBars,
+} from "../../engine";
 import { InitializeIndicatorsExecutor } from "./InitializeIndicatorsExecutor";
 import { buildExecutionScopedKey } from "../../utils/executionKey";
 import { RollingWindow } from "../../engine/RollingWindow";
@@ -36,7 +41,6 @@ export class IndicatorsExecutor implements INodeExecutor {
   readonly syncCapable = true;
   private readonly initExecutor = new InitializeIndicatorsExecutor();
   private readonly indicatorKeyCache = new Map<string, string>();
-  private readonly indicatorResults = new Map<string, NodeResult>();
   private readonly rollingWindowKeyCache = new Map<string, string>();
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
@@ -57,7 +61,6 @@ export class IndicatorsExecutor implements INodeExecutor {
     const runId = context?.runId;
     if (runId && runId !== this.cachedRunId) {
       this.indicatorKeyCache.clear();
-      this.indicatorResults.clear();
       this.rollingWindowKeyCache.clear();
       this.rollingWindowResults.clear();
       this.cachedRunId = runId;
@@ -125,7 +128,10 @@ export class IndicatorsExecutor implements INodeExecutor {
         }
 
         let state = stateManager.getStateSync(key);
-        if (!state) {
+        if (
+          !state ||
+          !isIndicatorStateCompatible(state, indicatorType, processedParams)
+        ) {
           return toNodeResult(
             createErrorOutput("Indicator state not warmed for sync execution", {
               nodeId: node.id,
@@ -138,10 +144,10 @@ export class IndicatorsExecutor implements INodeExecutor {
         const latestBar = barsData[barsData.length - 1];
         const latestBarTime = String(latestBar?.time ?? "");
         if (latestBarTime && latestBarTime !== state.lastBarTime) {
-          state = stateManager.updateSync(key, latestBar);
+          for (const bar of barsData) state = stateManager.updateSync(key, bar);
         }
 
-        return this.getCachedIndicatorResult(node.id, state);
+        return this.getCachedIndicatorResult(indicatorType, state);
       }
     }
 
@@ -158,7 +164,6 @@ export class IndicatorsExecutor implements INodeExecutor {
       const runId = context?.runId;
       if (runId && runId !== this.cachedRunId) {
         this.indicatorKeyCache.clear();
-        this.indicatorResults.clear();
         this.rollingWindowKeyCache.clear();
         this.rollingWindowResults.clear();
         this.cachedRunId = runId;
@@ -287,6 +292,12 @@ export class IndicatorsExecutor implements INodeExecutor {
           let state;
           if (isBacktest) {
             state = stateManager.getStateSync(key);
+            if (
+              state &&
+              !isIndicatorStateCompatible(state, indicatorType, processedParams)
+            ) {
+              state = null;
+            }
             if (!state) {
               state = await stateManager.warmUp(
                 key,
@@ -299,11 +310,17 @@ export class IndicatorsExecutor implements INodeExecutor {
               const latestBar = barsData[barsData.length - 1];
               const latestBarTime = String(latestBar?.time ?? "");
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                state = stateManager.updateSync(key, latestBar);
+                for (const bar of barsData) state = stateManager.updateSync(key, bar);
               }
             }
           } else {
             state = await stateManager.getState(key);
+            if (
+              state &&
+              !isIndicatorStateCompatible(state, indicatorType, processedParams)
+            ) {
+              state = null;
+            }
             if (!state) {
               state = await stateManager.warmUp(
                 key,
@@ -316,12 +333,12 @@ export class IndicatorsExecutor implements INodeExecutor {
               const latestBar = barsData[barsData.length - 1];
               const latestBarTime = String(latestBar?.time ?? "");
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                state = await stateManager.update(key, latestBar, true);
+                for (const bar of barsData) state = await stateManager.update(key, bar, true);
               }
             }
           }
 
-          return this.getCachedIndicatorResult(node.id, state);
+          return this.getCachedIndicatorResult(indicatorType, state);
         }
       }
 
@@ -329,10 +346,25 @@ export class IndicatorsExecutor implements INodeExecutor {
         `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`,
       );
 
-      const result = await IndicatorService.calculate(
+      const calculated = await IndicatorService.calculate(
         indicatorType,
         processedParams,
       );
+      const result =
+        calculated.success && Array.isArray(calculated.data)
+          ? {
+              ...calculated,
+              data: toIndicatorOutput(indicatorType, {
+                currentValue: calculated.data.at(-1),
+                previousValue: calculated.data.at(-2),
+                observedBars: candleData.length || calculated.data.length,
+                isReady:
+                  (candleData.length || calculated.data.length) >=
+                  requiredWarmupBars(indicatorType, processedParams),
+              }),
+              meta: { ...calculated.meta, series: calculated.data },
+            }
+          : calculated;
 
       const normalized = normalizeOutput(result, {
         nodeId: node.id,
@@ -551,21 +583,9 @@ export class IndicatorsExecutor implements INodeExecutor {
   }
 
   private getCachedIndicatorResult(
-    nodeId: string,
-    state: { currentValue: any; previousValue: any },
+    indicatorType: string,
+    state: Parameters<typeof toIndicatorOutput>[1],
   ): NodeResult {
-    if (!this.indicatorResults.has(nodeId)) {
-      this.indicatorResults.set(nodeId, {
-        success: true,
-        data: {
-          currentValue: null,
-          previousValue: null,
-        },
-      });
-    }
-    const result = this.indicatorResults.get(nodeId)!;
-    result.data.currentValue = state.currentValue;
-    result.data.previousValue = state.previousValue;
-    return result;
+    return { success: true, data: toIndicatorOutput(indicatorType, state) };
   }
 }

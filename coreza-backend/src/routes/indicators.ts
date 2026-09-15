@@ -12,8 +12,13 @@ import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { InitializeIndicatorsExecutor } from "../nodes/executors/InitializeIndicatorsExecutor";
 import { WorkflowNode } from "../nodes/types";
-import { buildIndicatorKey, IndicatorStateManager } from "../engine";
-import { IndicatorResult, IndicatorService } from "../nodes/logic/indicators";
+import {
+  buildIndicatorKey,
+  IndicatorStateManager,
+  isIndicatorStateCompatible,
+  requiredWarmupBars,
+} from "../engine";
+import { IndicatorResult, IndicatorService, toIndicatorOutput } from "../nodes/logic/indicators";
 
 const router = express.Router();
 const initializeIndicatorsExecutor = new InitializeIndicatorsExecutor();
@@ -59,43 +64,58 @@ async function executeIndicatorWithState(
       node_id,
     );
 
-    const state = await indicatorStateManager.getState(key);
+    const candles = parseCandles(req.body.candle_data);
+    let state = await indicatorStateManager.getState(key);
+    if (
+      state &&
+      !isIndicatorStateCompatible(state, indicatorType, req.body) &&
+      candles.length > 0
+    ) {
+      state = await indicatorStateManager.warmUp(
+        key,
+        indicatorType,
+        req.body,
+        candles,
+      );
+    }
     if (state && state.warmupCompleted) {
-      const candles = parseCandles(req.body.candle_data);
-
       if (candles.length > 0) {
         const latestBar = candles[candles.length - 1];
-        const latestBarTime = String(latestBar?.time ?? "");
+        const latestBarTime = String(latestBar?.time ?? latestBar?.t ?? "");
 
         if (latestBarTime && latestBarTime !== state.lastBarTime) {
-          const updated = await indicatorStateManager.update(key, latestBar);
+          let updated = state;
+          for (const bar of candles) updated = await indicatorStateManager.update(key, bar);
           return {
             success: true,
             status: "success",
-            data: [
-              {
-                currentValue: updated.currentValue,
-                previousValue: updated.previousValue,
-              },
-            ],
+            data: toIndicatorOutput(indicatorType, updated),
           };
         }
 
         return {
           success: true,
           status: "success",
-          data: [
-            {
-              currentValue: state.currentValue,
-              previousValue: state.previousValue,
-            },
-          ],
+          data: toIndicatorOutput(indicatorType, state),
         };
       }
     }
   }
 
-  return batchCalculate(req.body);
+  const result = await batchCalculate(req.body);
+  if (!result.success || !Array.isArray(result.data)) return result;
+  const series = result.data;
+  const required = requiredWarmupBars(indicatorType, req.body);
+  return {
+    ...result,
+    data: toIndicatorOutput(indicatorType, {
+      currentValue: series.at(-1),
+      previousValue: series.at(-2),
+      observedBars: parseCandles(req.body.candle_data).length || series.length,
+      isReady: (parseCandles(req.body.candle_data).length || series.length) >= required,
+    }),
+    meta: { ...result.meta, series },
+  };
 }
 
 // Apply JWT authentication to all routes

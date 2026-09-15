@@ -1,5 +1,6 @@
 import {
   IndicatorStateManager,
+  isIndicatorStateCompatible,
   requiredWarmupBars,
 } from "../src/engine/indicatorStateManager";
 import { discoverIndicators } from "../src/nodes/executors/InitializeIndicatorsExecutor";
@@ -23,6 +24,35 @@ const smoothingBars = [
 ];
 
 describe("ATR indicator", () => {
+  it.each([
+    ["wilders", [5, 6, 20 / 3, 58 / 9]],
+    ["simple", [5, 6, 20 / 3, 7]],
+  ] as const)("exposes provisional %s snapshots and readiness", (smoothing, expected) => {
+    const fixture = [
+      { time: 1, high: 105, low: 100, close: 103 },
+      { time: 2, high: 110, low: 104, close: 108 },
+      { time: 3, high: 109, low: 101, close: 102 },
+      { time: 4, high: 106, low: 100, close: 105 },
+    ];
+    const updater = IndicatorService.createIncrementalUpdater("atr", {
+      period: 3,
+      smoothing,
+    });
+    let state = updater.warmUp([]).internalState;
+    expected.forEach((value, index) => {
+      const result = updater.update(state, fixture[index]);
+      state = result.internalState;
+      expect(result.accepted).toBe(true);
+      expect(result.value).toBeCloseTo(value, 9);
+      expect(state.previousAtr).toBeCloseTo(index === 0 ? 0 : expected[index - 1], 9);
+      expect(state.trueRange).toBe([5, 7, 8, 6][index]);
+    });
+    const warmed = updater.warmUp(fixture);
+    expect(warmed.value).toBeCloseTo(expected[3], 9);
+    expect(warmed.previousValue).toBeCloseTo(expected[2], 9);
+    expect(warmed.acceptedCount).toBe(4);
+  });
+
   it("seeds from the first bar and then applies Wilder smoothing", () => {
     const updater = IndicatorService.createIncrementalUpdater("atr", {
       period: 3,
@@ -30,7 +60,7 @@ describe("ATR indicator", () => {
     const first = updater.warmUp(bars.slice(0, 1));
     const warmed = updater.warmUp(bars);
 
-    expect(first).toMatchObject({ value: null });
+    expect(first).toMatchObject({ value: 2, previousValue: 0, acceptedCount: 1 });
     expect(first.internalState).toMatchObject({ count: 1, trSum: 2 });
     expect(warmed.internalState.count).toBe(4);
     expect(warmed.internalState.trSum).toBe(8);
@@ -39,7 +69,7 @@ describe("ATR indicator", () => {
       2.666666667,
       9,
     );
-    expect(updater.warmUp(bars.slice(0, 2)).value).toBeNull();
+    expect(updater.warmUp(bars.slice(0, 2)).value).toBeCloseTo(2.5, 9);
   });
 
   it.each([
@@ -66,7 +96,7 @@ describe("ATR indicator", () => {
       });
 
       expected.forEach((value, index) => {
-        expect(batch.data?.[index + 2]).toBeCloseTo(value, 9);
+        expect(batch.meta?.series?.[index + 2]).toBeCloseTo(value, 9);
         expect(incrementalValues[index + 2]).toBeCloseTo(value, 9);
       });
       expect(warmup.value).toBeCloseTo(expected[2], 9);
@@ -272,8 +302,13 @@ describe("ATR indicator", () => {
         smoothing,
       });
 
-      expect(batch.data?.slice(0, 2)).toEqual([null, null]);
-      expect(batch.data?.at(-1)).toBe(full.value);
+      expect(batch.meta?.series?.slice(0, 2)).toEqual([2, 2.5]);
+      expect(batch.data).toMatchObject({
+        Current: full.value,
+        Previous: full.previousValue,
+        IsReady: true,
+        SampleCount: smoothingBars.length,
+      });
       expect(full.value).toBe(incremental.value);
       expect(full.internalState).toEqual(incremental.internalState);
     },
@@ -288,7 +323,69 @@ describe("ATR indicator", () => {
       bars.slice(0, 2),
       true,
     );
-    expect(state).toMatchObject({ currentValue: null, isReady: false });
+    expect(state).toMatchObject({ currentValue: 2.5, previousValue: 2, isReady: false });
+  });
+
+  it("treats numeric-string timestamps as idempotent and rejects without outer mutation", async () => {
+    const manager = new IndicatorStateManager();
+    await manager.warmUp(
+      "string-time",
+      "atr",
+      { period: 2 },
+      bars.slice(0, 2).map((bar) => ({ ...bar, time: String(bar.time) })),
+      true,
+    );
+    const before = structuredClone(manager.getStateSync("string-time"));
+
+    expect(
+      manager.updateSync("string-time", { ...bars[1], time: "2" }),
+    ).toEqual(before);
+    expect(
+      manager.updateSync("string-time", {
+        time: "3",
+        high: 1,
+        low: 2,
+        close: 1,
+      }),
+    ).toEqual(before);
+  });
+
+  it("keeps a ready zero value for period one", async () => {
+    const result = await IndicatorService.calculateATR({
+      candle_data: [{ time: 1, high: 10, low: 10, close: 10 }],
+      period: 1,
+    });
+    expect(result.data).toMatchObject({
+      IsReady: true,
+      SampleCount: 1,
+      Current: 0,
+      Previous: 0,
+      TrueRange: 0,
+    });
+  });
+
+  it("detects calculation parameter mismatches in cached state", async () => {
+    const manager = new IndicatorStateManager();
+    const state = await manager.warmUp(
+      "parameters",
+      "atr",
+      { period: 3, smoothing: "wilders" },
+      bars,
+      true,
+    );
+
+    expect(
+      isIndicatorStateCompatible(state, "atr", {
+        period: "3",
+        smoothing: "wilders",
+      }),
+    ).toBe(true);
+    expect(
+      isIndicatorStateCompatible(state, "atr", {
+        period: 2,
+        smoothing: "wilders",
+      }),
+    ).toBe(false);
   });
 
   it.each(["wilders", "simple"] as const)(

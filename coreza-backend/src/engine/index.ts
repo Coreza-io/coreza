@@ -8,7 +8,15 @@ export type { BarEvent, BacktestSessionStatus, CompiledPlan, CompiledExecContext
 export { GraphRuntime } from "./graphRuntime";
 export { ParameterResolver } from "./parameterResolver";
 export { NodeStoreV2 } from "./nodeStoreV2";
-export { IndicatorStateManager, buildIndicatorKey, serializeParams } from "./indicatorStateManager";
+export {
+  IndicatorStateManager,
+  buildIndicatorKey,
+  isIndicatorStateCompatible,
+  normalizeIndicatorTimestamp,
+  normalizeIndicatorType,
+  requiredWarmupBars,
+  serializeParams,
+} from "./indicatorStateManager";
 export type { IndicatorState } from "./indicatorStateManager";
 export { DataContext, DataContextManager } from "./DataContext";
 export type { DataContextConfig } from "./DataContext";

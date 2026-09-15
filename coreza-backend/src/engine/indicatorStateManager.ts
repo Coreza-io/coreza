@@ -31,6 +31,28 @@ export interface IndicatorState {
   lastWarmupTs?: number | null;
 }
 
+export function normalizeIndicatorTimestamp(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function normalizeIndicatorType(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "bollinger") return "bollinger bands";
+  if (normalized === "volumeoscillator") return "volume-oscillator";
+  if (
+    normalized === "support & resistance" ||
+    normalized === "supportresistance"
+  ) {
+    return "support-resistance";
+  }
+  return normalized;
+}
+
 export function serializeParams(params: Record<string, any>): string {
   const normalize = (value: any): string => {
     if (Array.isArray(value)) {
@@ -51,7 +73,57 @@ export function serializeParams(params: Record<string, any>): string {
     .join(":");
 }
 
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
+
+const CALCULATION_PARAM_KEYS = [
+  "period",
+  "window",
+  "fastPeriod",
+  "slowPeriod",
+  "signalPeriod",
+  "stdDev",
+  "k_period",
+  "d_period",
+  "conversion_period",
+  "base_period",
+  "leading_span_b_period",
+  "displacement",
+  "session_type",
+  "custom_start_time",
+  "method",
+  "lookback_period",
+  "sensitivity",
+  "num_levels",
+  "short_period",
+  "long_period",
+  "smoothing",
+  "smoothing_method",
+  "moving_average_type",
+] as const;
+
+function calculationParams(
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    CALCULATION_PARAM_KEYS.flatMap((key) =>
+      params[key] === undefined ? [] : [[key, params[key]]],
+    ),
+  );
+}
+
+export function isIndicatorStateCompatible(
+  state: IndicatorState,
+  indicator: string,
+  params: Record<string, unknown>,
+): boolean {
+  return (
+    state.version === STATE_VERSION &&
+    normalizeIndicatorType(state.indicator) ===
+      normalizeIndicatorType(indicator) &&
+    serializeParams(calculationParams(state.params)) ===
+      serializeParams(calculationParams(params))
+  );
+}
 
 function positivePeriod(value: unknown, fallback = 1): number {
   const parsed = Number(value);
@@ -62,7 +134,7 @@ export function requiredWarmupBars(
   indicator: string,
   params: Record<string, unknown>,
 ): number {
-  switch (indicator.trim().toLowerCase()) {
+  switch (normalizeIndicatorType(indicator)) {
     case "rsi":
       return positivePeriod(params.period ?? params.window) + 1;
     case "ema":
@@ -114,12 +186,14 @@ export class IndicatorStateManager {
     if (!raw) return null;
 
     const state = JSON.parse(raw) as IndicatorState;
+    if (state.version !== STATE_VERSION) return null;
     this.l1Cache.set(key, state);
     return state;
   }
 
   getStateSync(key: string): IndicatorState | null {
-    return this.l1Cache.get(key) ?? null;
+    const state = this.l1Cache.get(key);
+    return state?.version === STATE_VERSION ? state : null;
   }
 
   async setState(key: string, state: IndicatorState): Promise<void> {
@@ -171,10 +245,14 @@ export class IndicatorStateManager {
     indicator: string,
     params: Record<string, any>,
   ): IncrementalUpdater {
-    const cacheKey = `${indicator}:${serializeParams(params)}`;
+    const normalizedIndicator = normalizeIndicatorType(indicator);
+    const cacheKey = `${normalizedIndicator}:${serializeParams(params)}`;
     let updater = this.updaterCache.get(cacheKey);
     if (!updater) {
-      updater = IndicatorService.createIncrementalUpdater(indicator, params);
+      updater = IndicatorService.createIncrementalUpdater(
+        normalizedIndicator,
+        params,
+      );
       this.updaterCache.set(cacheKey, updater);
     }
     return updater;
@@ -192,8 +270,8 @@ export class IndicatorStateManager {
       version: STATE_VERSION,
       indicator,
       params,
-      currentValue: null,
-      previousValue: null,
+      currentValue: 0,
+      previousValue: 0,
       lastBarTime: "",
       warmupCompleted: false,
       isReady: false,
@@ -231,22 +309,19 @@ export class IndicatorStateManager {
       version: STATE_VERSION,
       indicator,
       params,
-      currentValue: warmup.value,
-      previousValue: null,
+      currentValue: warmup.value ?? 0,
+      previousValue: warmup.previousValue ?? 0,
       lastBarTime: warmup.lastBarTime,
       warmupCompleted: true,
-      isReady:
-        bars.length >= minimumBars &&
-        warmup.value !== null &&
-        warmup.value !== undefined,
+      isReady: (warmup.acceptedCount ?? bars.length) >= minimumBars,
       internalState: warmup.internalState,
-      observedBars: bars.length,
+      observedBars: warmup.acceptedCount ?? bars.length,
       requiredWarmupBars: minimumBars,
       lastWarmupTs:
         bars.length > 0
-          ? (((bars[bars.length - 1]?.time ?? bars[bars.length - 1]?.t) as
-              | number
-              | undefined) ?? null)
+          ? normalizeIndicatorTimestamp(
+              bars[bars.length - 1]?.time ?? bars[bars.length - 1]?.t,
+            )
           : null,
     };
 
@@ -264,44 +339,8 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const barTs = bar?.time ?? bar?.t;
-    const lastBarTs = Number(existing.lastBarTime);
-    if (
-      typeof barTs === "number" &&
-      existing.lastBarTime !== "" &&
-      Number.isFinite(lastBarTs) &&
-      barTs <= lastBarTs
-    ) {
-      return existing;
-    }
-    if (typeof barTs === "number" && existing.lastWarmupTs != null) {
-      if (barTs <= existing.lastWarmupTs) {
-        return existing;
-      }
-
-      existing.lastWarmupTs = undefined;
-    }
-
-    const updater = this.getUpdater(existing.indicator, existing.params);
-
-    const { value, internalState } = updater.update(
-      existing.internalState,
-      bar,
-    );
-
-    existing.previousValue = existing.currentValue;
-    existing.currentValue = value;
-    existing.observedBars = (existing.observedBars ?? 0) + 1;
-    existing.requiredWarmupBars ??= requiredWarmupBars(
-      existing.indicator,
-      existing.params,
-    );
-    existing.isReady =
-      existing.observedBars >= existing.requiredWarmupBars &&
-      value !== null &&
-      value !== undefined;
-    existing.lastBarTime = String(bar?.time ?? bar?.t ?? "");
-    existing.internalState = internalState;
+    const updated = this.applyUpdate(existing, bar);
+    if (!updated) return existing;
 
     if (sync) {
       this.setStateSync(key, existing);
@@ -317,45 +356,44 @@ export class IndicatorStateManager {
       throw new Error(`Indicator state not found for key ${key}`);
     }
 
-    const barTs = bar?.time ?? bar?.t;
-    const lastBarTs = Number(existing.lastBarTime);
-    if (
-      typeof barTs === "number" &&
-      existing.lastBarTime !== "" &&
-      Number.isFinite(lastBarTs) &&
-      barTs <= lastBarTs
-    ) {
-      return existing;
-    }
-    if (typeof barTs === "number" && existing.lastWarmupTs != null) {
-      if (barTs <= existing.lastWarmupTs) {
-        return existing;
-      }
+    const updated = this.applyUpdate(existing, bar);
+    if (!updated) return existing;
+    this.dirtyKeys.add(key);
+    return existing;
+  }
 
-      existing.lastWarmupTs = undefined;
+  private applyUpdate(existing: IndicatorState, bar: any): boolean {
+    const barTime = bar?.time ?? bar?.t;
+    const barTs = normalizeIndicatorTimestamp(barTime);
+    const lastBarTs = normalizeIndicatorTimestamp(existing.lastBarTime);
+    if (barTs !== null && lastBarTs !== null && barTs <= lastBarTs) return false;
+    if (
+      barTs !== null &&
+      existing.lastWarmupTs != null &&
+      barTs <= existing.lastWarmupTs
+    ) {
+      return false;
     }
 
     const updater = this.getUpdater(existing.indicator, existing.params);
-    const { value, internalState } = updater.update(
+    const { value, internalState, accepted = true } = updater.update(
       existing.internalState,
       bar,
     );
+    if (!accepted) return false;
 
     existing.previousValue = existing.currentValue;
-    existing.currentValue = value;
+    existing.currentValue = value ?? 0;
     existing.observedBars = (existing.observedBars ?? 0) + 1;
     existing.requiredWarmupBars ??= requiredWarmupBars(
       existing.indicator,
       existing.params,
     );
-    existing.isReady =
-      existing.observedBars >= existing.requiredWarmupBars &&
-      value !== null &&
-      value !== undefined;
-    existing.lastBarTime = String(bar?.time ?? bar?.t ?? "");
+    existing.isReady = existing.observedBars >= existing.requiredWarmupBars;
+    existing.lastBarTime = String(barTime ?? "");
+    existing.lastWarmupTs = undefined;
     existing.internalState = internalState;
-    this.dirtyKeys.add(key);
-    return existing;
+    return true;
   }
 
   async invalidate(key: string): Promise<void> {

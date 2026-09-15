@@ -1,81 +1,110 @@
-# ATR four-field output — reviewed implementation plan
+# Indicator output and readiness contract — reviewed implementation plan (ATR first)
 
-## Review of the attached plan
+## Review of the attached ATR plan
 
-The attached plan is technically sound and matches the code as it stands today. Confirmed by reading the current sources:
+The attached plan is technically sound and matches the code today. Confirmed by reading the sources:
 
-- `indicators.ts` holds a dedicated ATR kernel with `period`, `smoothing`, `prevClose`, `count`, `trSum`, a Simple TR window, `atr`, `lastValue`, plus `migrateAtrState` and `isAtrState`. Wilder and Simple both exist and are validated.
-- `updateAtrState` returns `null` until `period` observations, so no provisional value and no True Range are exposed today.
-- `calculateATR` returns an array of numbers/nulls; the stateful route returns only `currentValue`/`previousValue`; `IndicatorsExecutor` exposes the same two fields from cached state.
-- The current test suite explicitly asserts warm-up nulls, so it must be updated alongside the contract.
+- `coreza-backend/src/nodes/logic/indicators.ts` has a dedicated ATR kernel (`period`, `smoothing`, `prevClose`, `count`, `trSum`, Simple TR window, `atr`, `lastValue`) plus `migrateAtrState`/`isAtrState`. Wilder and Simple both exist.
+- `updateAtrState` returns `null` until `period` samples, so no provisional value and no True Range are exposed.
+- `calculateATR` returns an array of numbers/nulls; `routes/indicators.ts` returns a one-item array of `{currentValue, previousValue}` for **every** indicator; `IndicatorsExecutor` exposes the same two fields from cached state.
+- The existing test file asserts warm-up nulls, so it changes with the contract.
 
-So the plan's gap table is accurate and its calculation and readiness rules match Lean's ATR semantics. I would adopt it with the following corrections.
+### Corrections and improvements to the attached plan
 
-### Corrections and improvements
+1. **Do not drop the batch series.** The attached plan swaps `calculateATR`'s array for a snapshot; charts need history. Keep the series and add the snapshot beside it.
+2. **Additive output instead of a contract version flag.** Emit new fields alongside existing `currentValue`/`previousValue` for one release, so saved workflows keep working. Remove the old pair only after a consumer audit.
+3. **Zero is a valid ready value.** Node help must tell authors to gate on readiness, never on a non-zero value.
+4. **Verify before rebuilding idempotency.** Duplicate and older timestamps already fail to advance state; extend that behaviour to new fields rather than re-implementing.
+5. **Lean-pinned parity fixtures, chart rework and AI schema edits are follow-ups**, not part of the first change.
 
-1. **Do not drop the batch series.** The plan replaces `calculateATR`'s array with a single snapshot. Charting depends on history, and a snapshot cannot rebuild an ATR line. Keep the full series and add the snapshot beside it rather than swapping one for the other.
-2. **Prefer additive output over a contract version flag.** Rather than a versioned serializer plus migration machinery, emit the four new fields alongside the existing `currentValue`/`previousValue` for one release. Existing saved workflows keep working untouched, and the old pair is removed only after an audit. This removes the risk of version selection being derived from cache presence.
-3. **`Previous: 0` needs an explicit warning in the node help, not only the plan.** A zero previous value is indistinguishable from a real flat reading, so the UI text must tell authors to gate on `IsReady` and, where two mature readings matter, to hold readiness downstream.
-4. **Verify before rebuilding idempotency.** Current tests already show duplicate and older timestamps not advancing state. Treat that as a behavior to confirm and extend to the new fields, not as new work.
-5. **Scope down the first change.** Lean-pinned parity fixtures, chart-adapter rework, AI tool-schema edits and workflow migration tooling are follow-ups. The first change is the kernel, the snapshot, the state manager, the executor, the route and tests.
-6. **Field naming.** The PascalCase keys are unlike the rest of Coreza, but they match the requested contract and Lean, so keep them and treat the capitalization as part of the contract asserted by tests.
+## Scope change: this applies to all indicators, not only ATR
 
-## Output contract
+The attached plan is ATR-only, but the gaps it names — no provisional warm-up value, no readiness flag, previous reset to `null`, state advancing on rejected input, differing shapes between batch/cached/route paths — are shared by every indicator that flows through the same kernel, state manager, executor and route. So the plan below defines **one shared contract and one shared set of state rules for all indicators**, then applies it indicator by indicator, with ATR as the first and reference implementation.
+
+## Shared indicator contract
+
+Every indicator returns an object inside `data`, with these common fields:
 
 ```json
 {
   "success": true,
   "status": "success",
   "data": {
+    "IsReady": true,
+    "SampleCount": 37,
     "Current": 6.444444444444445,
     "Previous": 6.666666666666667,
-    "TrueRange": 6,
-    "IsReady": true,
     "currentValue": 6.444444444444445,
     "previousValue": 6.666666666666667
   }
 }
 ```
 
-- Fresh, reset, or valid-but-empty input: `Current`, `Previous`, `TrueRange` are `0` and `IsReady` is `false`.
-- Missing `candle_data` stays a validation error; a short valid batch is a success with provisional values and `IsReady: false`.
-- The batch path additionally returns the existing ATR series in `meta`, so charts keep their history.
-- The same object shape is returned by batch, cached, live, backtest and stateless fallback paths.
+- `IsReady` (boolean) and `SampleCount` (integer) are **mandatory on every indicator**.
+- `Current` and `Previous` are the primary scalar values. For multi-channel indicators they are objects holding that indicator's channels, matching the existing channel keys in `src/utils/indicatorRegistry.ts`:
+  - MACD: `{ macd, signal, histogram }`
+  - Bollinger: `{ upper, middle, lower }`
+  - ADX: `{ adx, pdi, mdi }`
+  - Stochastic: `{ k, d }`
+  - Ichimoku: `{ conversion, base, spanA, spanB }`
+  - RSI, EMA, SMA, ATR, VWAP, OBV, Volume Oscillator: plain numbers
+  - Support & Resistance keeps its level arrays under `Current`
+- Indicator-specific extras sit beside these. ATR adds `TrueRange` (number).
+- Before any accepted sample, numeric fields are `0` (or channel objects of zeros), `IsReady` is `false`, `SampleCount` is `0`. No nulls.
+- `currentValue`/`previousValue` remain for one release for backward compatibility.
+- The same shape is returned by batch, cached, stateful route, stateless fallback, live and backtest paths. The batch path additionally returns the full historical series in `meta` so charts keep their history.
 
-## Calculation and readiness
+## Shared readiness and state rules
 
-- First accepted bar: `TR = high - low`. Later bars: `TR = max(high - low, abs(high - prevClose), abs(low - prevClose))`; store `prevClose` only after computing TR.
-- With period `n` and accepted count `k`:
-  - `k < n`: both modes return the mean of all TR observations so far (provisional).
-  - `k = n`: both modes return the mean of the first `n` TR observations.
-  - `k > n`: Wilder uses `prev + (TR - prev) / n`; Simple uses the mean of the latest `n` TR values.
-- `IsReady = k >= n`. For period 1 the first bar is ready and ATR equals TR.
-- `Previous` is the ATR from the preceding accepted bar, `0` before one exists. It may be provisional on the first ready bar.
-- A ready ATR can legitimately be `0`; readiness must never be inferred from the value.
+- Readiness is derived from **accepted sample count vs. the indicator's required sample count**, never from array length and never from a non-null value.
+- `warmupCompleted` stays distinct from `IsReady`: a short warm-up can complete without the indicator being ready.
+- Warm-up produces provisional values using the same code path as live updates, so warming up N bars at once equals processing them one at a time — including `Previous`.
+- `Previous` is the value from the preceding accepted sample, `0` (or zeros) before one exists; it is never reset to `null` after warm-up.
+- A bar is validated **before** any mutation. Rejected input advances nothing: not the value, not the count, not `lastBarTime`.
+- Identical timestamps are idempotent; older timestamps do not advance state. Corrections require explicit replay.
+- Every path uses one timestamp normalisation helper; no per-value guessing between seconds and milliseconds.
+- Persisted state carries a calculation-state version. On reload, a version or parameter mismatch rebuilds rather than exposing stale values.
+
+## ATR calculation specifics
+
+- First accepted bar: `TR = high - low`. Later: `TR = max(high - low, abs(high - prevClose), abs(low - prevClose))`; store `prevClose` only after computing TR.
+- With period `n` and accepted count `k`: `k <= n` both modes return the mean of the TR observations so far; `k > n` Wilder uses `prev + (TR - prev) / n` and Simple uses the mean of the latest `n` TR values.
+- `IsReady = k >= n`. Period 1 is ready on the first bar, where ATR equals TR.
+- Reject before mutating: missing, null, empty, boolean or non-finite prices, `high < low`, close outside the bar range. Non-empty finite numeric strings stay supported.
 
 ## Implementation
 
-**1. Snapshot type and formatter** — `coreza-backend/src/nodes/logic/indicators.ts`
-Add an exported `AtrOutput` type and a single pure `toAtrOutput(state)` used by every ATR path. No renaming of other indicators' internals.
+**1. Shared types and formatter** — `coreza-backend/src/nodes/logic/indicators.ts`
+Add an exported `IndicatorOutput` base type (`IsReady`, `SampleCount`, `Current`, `Previous`) and a single `toIndicatorOutput(indicatorType, state)` formatter used by batch, executor and route. ATR extends it with `TrueRange`.
 
-**2. ATR kernel** — same file
-Add `previousAtr` and `trueRange` to the ATR state, initialise public numbers to `0`, and bump the ATR state version so stale persisted state is rebuilt rather than silently reused. On each accepted bar, capture the old current value first, compute TR, update the count and the smoother, then commit previous/current/TR/prevClose/count together. Return an explicit accepted flag. Keep full precision in state; rounding is presentation only.
+**2. Kernel changes, indicator by indicator** — same file
+Each incremental updater returns an explicit accepted flag, keeps a `previous` value, and reports accepted count and required sample count. ATR additionally stores `previousAtr` and `trueRange`; capture the old current value before computing, then commit previous/current/TR/prevClose/count together. Keep full precision in state; round only for display.
 
-**3. Validation and acceptance**
-Reject before mutating: missing, null, empty, boolean, non-finite prices, `high < low`, and a close outside the bar range. Keep numeric-string support for non-empty finite strings only. Validate a whole batch before processing it so a bad bar cannot leave state half-advanced. A rejected bar never counts as a sample and never advances timestamps.
+**3. Validation and acceptance** — same file
+One shared pre-mutation validator for price/bar input, extended per indicator for what it needs (close-only vs. OHLC vs. volume). Validate a whole batch before processing so a bad bar cannot leave state half-advanced.
 
 **4. State manager** — `coreza-backend/src/engine/indicatorStateManager.ts`
-Initialise ATR with zeros and `IsReady: false`; after warm-up copy current, previous, TR, accepted count and last accepted timestamp from the kernel instead of resetting previous to `null`. Derive readiness from accepted count, keep `warmupCompleted` separate from readiness, share one apply helper between `update` and `updateSync`, and persist everything needed to return an unchanged snapshot after a restart. Advance outer state only on an accepted update.
+Initialise every indicator with zeros, `IsReady: false`, `SampleCount: 0`. After warm-up copy current, previous, accepted count and last accepted timestamp from the kernel instead of resetting previous to `null`. Advance outer state only on an accepted update. Share one apply helper between `update` and `updateSync`. Persist everything needed to return an unchanged snapshot after a restart.
 
 **5. Executor and route** — `IndicatorsExecutor.ts`, `routes/indicators.ts`
-Use the shared formatter in the stateful branch, the cached branch and the stateless fallback, so all three return the same object. Process every unseen bar in order rather than only the latest. Validate parameters even when cached state exists.
+`executeIndicatorWithState` already receives `indicatorType`; use it to pick the formatter and return the same object in the new-bar, cached and fallback branches for all thirteen endpoints. Process every unseen bar in order, not only the latest. Validate parameters even when cached state exists.
 
-**6. Node help** — `src/nodes/ATR.json`
-Describe both smoothing options and the four outputs, and state plainly that `IsReady` must be checked before using ATR, since `0` is a valid ready value. No new node or handle.
+**6. Node help** — `src/nodes/ATR.json` first, then the other indicator JSONs
+Describe outputs and state plainly that `IsReady` must be checked before use, since `0` is a valid ready value. No new nodes or handles.
 
-**Follow-ups, not part of this change:** chart adapter mapping of `Current` to candle time, AI tool guidance, Lean-pinned parity fixtures, and retiring `currentValue`/`previousValue` after a consumer audit.
+**Follow-ups:** chart adapters mapping `Current` to candle time, AI tool guidance in `toolDefinitions.ts`, Lean-pinned parity fixtures, and retiring `currentValue`/`previousValue` after a consumer audit.
 
-## Acceptance fixture
+## Rollout order
+
+1. ATR: shared types, formatter, kernel, state, executor, route, tests — the reference implementation.
+2. Single-value indicators: RSI, EMA, SMA, VWAP, OBV, Volume Oscillator.
+3. Multi-channel indicators: MACD, Bollinger, ADX, Stochastic, Ichimoku.
+4. Support & Resistance, which keeps its level-array shape under the shared envelope.
+5. Node help, chart and AI follow-ups.
+
+Each stage ships with its own tests, and stages 2 to 4 must not change the fields already shipped in stage 1.
+
+## ATR acceptance fixture
 
 Period 3, bars `(high, low, close)`: `(105,100,103)`, `(110,104,108)`, `(109,101,102)`, `(106,100,105)`.
 
@@ -87,33 +116,33 @@ Period 3, bars `(high, low, close)`: `(105,100,103)`, `(110,104,108)`, `(109,101
 | 3 | 8 | 6.666666667 | 6 | 6.666666667 | 6 | true |
 | 4 | 6 | 6.444444444 | 6.666666667 | 7 | 6.666666667 | true |
 
-Warming up all four bars at once must produce the same `Previous` as processing them one at a time.
+Warming up all four bars at once must give the same `Previous` as one-at-a-time processing.
 
 ## Tests
 
-Extend `coreza-backend/tests/atrIndicator.test.ts`, keeping its existing gap, alias, smoothing, period-validation, discovery and isolation coverage, and replacing the warm-up null assertions.
+Extend `coreza-backend/tests/atrIndicator.test.ts` (keeping its gap, alias, smoothing, period-validation, discovery and isolation coverage, replacing the warm-up null assertions), and add a **shared contract suite parameterised over every indicator**:
 
-- Exact four-field schema: three finite numbers plus a boolean, exact capitalization.
-- Empty/reset snapshot, and period 1 ready on the first bar.
-- Readiness boundary at `n-1`, `n`, `n+1`, with correct provisional values and `Previous`.
-- The fixture above, both smoothing modes, after every bar.
+- Exact envelope: `IsReady` boolean, `SampleCount` integer, `Current`/`Previous` present with the right channel keys, exact capitalization.
+- Empty/reset snapshot is all zeros and not ready; readiness boundary at `n-1`, `n`, `n+1`.
 - Batch, full warm-up, split warm-up, async and sync updates all agree; the batch series is unchanged.
-- Repeated and older bars return an identical snapshot and do not advance count, previous or timestamps.
+- Repeated and older bars return an identical snapshot and advance nothing.
 - Several unseen bars equal ordered single-bar updates.
-- Invalid bars leave inner and outer state untouched.
-- Zero-range bars: a ready ATR of `0` survives output normalization, and `false` is not coerced.
-- Redis round-trip: a restored snapshot and the next update match uninterrupted execution; a state-version or parameter mismatch rebuilds rather than reusing stale values.
+- Invalid input leaves inner and outer state untouched.
+- Flat/zero-range input: a ready value of `0` survives output normalization and `false` is not coerced.
+- Redis round-trip matches uninterrupted execution; version or parameter mismatch rebuilds.
 - Multiple symbols, nodes and runs stay isolated.
-- Route, executor and cached paths return the same shape; other indicators are unchanged.
+- Route, executor and cached paths return the same shape for all thirteen endpoints.
+
+ATR-specific: the fixture above for both smoothing modes after every bar, plus period 1 ready on the first bar.
 
 ## Verification
 
-Run the backend Jest suites for ATR, the indicator state manager, the executor and the indicator routes, plus frontend node validation, and read full output. Then confirm in the editor that an ATR node shows all four fields and that `{{ $('ATR').json.data.IsReady }}` resolves as a boolean in an IF node.
+Run the backend Jest suites for ATR, the shared contract suite, the indicator state manager, the executor and the indicator routes, plus frontend node validation, reading the full output. Then confirm in the editor that an ATR node shows all its fields and that `{{ $('ATR').json.data.IsReady }}` resolves as a boolean in an IF node.
 
 ## Backend repository note
 
-This work is in the separated `coreza-io/coreza-backend` repository and must be copied across manually, as usual.
+This work lives in the separated `coreza-io/coreza-backend` repository and must be copied across manually, as usual.
 
 ## Done when
 
-Every ATR execution path returns `Current`, `Previous`, `TrueRange` and `IsReady` with matching values, warm-up produces provisional numbers instead of nulls, readiness comes from accepted sample count, restarts and repeated deliveries preserve state, the chart series still works, and existing `currentValue`/`previousValue` consumers keep running.
+Every indicator returns `IsReady` and `SampleCount` with values in a consistent shape across batch, cached, route, live and backtest paths; warm-up produces provisional numbers instead of nulls; readiness comes from accepted sample count; rejected input and repeated deliveries never advance state; restarts preserve state; chart series still work; and existing `currentValue`/`previousValue` consumers keep running.

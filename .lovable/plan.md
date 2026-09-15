@@ -1,148 +1,143 @@
-# Indicator output and readiness contract — reviewed implementation plan (ATR first)
+# Compute: dynamic nth root — reviewed implementation plan
 
-## Review of the attached ATR plan
+## Review of the attached plan
 
-The attached plan is technically sound and matches the code today. Confirmed by reading the sources:
+Verified against the current code, and the attached plan's findings hold:
 
-- `coreza-backend/src/nodes/logic/indicators.ts` has a dedicated ATR kernel (`period`, `smoothing`, `prevClose`, `count`, `trSum`, Simple TR window, `atr`, `lastValue`) plus `migrateAtrState`/`isAtrState`. Wilder and Simple both exist.
-- `updateAtrState` returns `null` until `period` samples, so no provisional value and no True Range are exposed.
-- `calculateATR` returns an array of numbers/nulls; `routes/indicators.ts` returns a one-item array of `{currentValue, previousValue}` for **every** indicator; `IndicatorsExecutor` exposes the same two fields from cached state.
-- The existing test file asserts warm-up nulls, so it changes with the contract.
+- `coreza-backend/src/nodes/logic/compute.ts` has no `sqrt`, `cbrt`, `root` or `pow` case. Its Number group is Round, Floor, Ceil, Abs, Add, Subtract, Multiply, Divide, Modulo. `Math.sqrt` appears only inside the array standard-deviation operation.
+- `src/nodes/Compute.json` lists the same Number options, and `arg1` already uses `displayOptions.show.operator` plus `dynamicLabel.labelsByValue` — exactly the two places a new operation plugs into (as `getIndex` recently did).
+- `ComputeInput` already carries `value`, `operator`, `arg1`, so no shape change is needed.
 
-### Corrections and improvements to the attached plan
+So the design — one `root` operation using the existing `arg1` as the degree — is the right shape. Adopt it with these corrections.
 
-1. **Do not drop the batch series.** The attached plan swaps `calculateATR`'s array for a snapshot; charts need history. Keep the series and add the snapshot beside it.
-2. **Additive output instead of a contract version flag.** Emit new fields alongside existing `currentValue`/`previousValue` for one release, so saved workflows keep working. Remove the old pair only after a consumer audit.
-3. **Zero is a valid ready value.** Node help must tell authors to gate on readiness, never on a non-zero value.
-4. **Verify before rebuilding idempotency.** Duplicate and older timestamps already fail to advance state; extend that behaviour to new fields rather than re-implementing.
-5. **Lean-pinned parity fixtures, chart rework and AI schema edits are follow-ups**, not part of the first change.
+### Corrections and improvements
 
-## Scope change: this applies to all indicators, not only ATR
+1. **Return errors, do not throw.** The attached sample `calculateRoot` throws for even roots of negatives. Every case in `compute.ts` returns `createErrorOutput(...)`; keep that and have the helper return a discriminated result instead of throwing, so the even-root domain error is not caught by the generic catch and reworded.
+2. **Keep strict validation local, and say so in code.** Existing Number operators use loose `Number(value)`, where `null`, `false` and `[]` become `0`. The new strict parser must be a separate helper used only by `root`, with a comment, so nobody "harmonises" the others later by accident.
+3. **Degree 1 and zero must be exact.** `Math.pow(x, 1/1)` is not guaranteed to round-trip exactly for all inputs; short-circuit `n === 1` to return `x` and `x === 0` to return `0` before any exponentiation, and normalise `-0` to `0`.
+4. **Placeholder, not default.** Agreed with the attached plan: never give shared `arg1` a default of `2`, since it is shared with add, divide, slice, getIndex, string and object operations. Use the dynamic label to carry the hint.
+5. **No `power` operation in this change.** Fractional and negative exponents are a separate feature; mention it as a follow-up so `root` does not quietly grow into it.
+6. **Test-file naming follows the existing focused style** already in the repo: `coreza-backend/tests/computeGetIndex.test.ts`, `computeExtremeByValue.test.ts` — so `computeRoot.test.ts` fits.
 
-The attached plan is ATR-only, but the gaps it names — no provisional warm-up value, no readiness flag, previous reset to `null`, state advancing on rejected input, differing shapes between batch/cached/route paths — are shared by every indicator that flows through the same kernel, state manager, executor and route. So the plan below defines **one shared contract and one shared set of state rules for all indicators**, then applies it indicator by indicator, with ATR as the first and reference implementation.
+## Feature
 
-## Shared indicator contract
+One Number operation, **Root (Nth Root)**, operator id `root`.
 
-Every indicator returns an object inside `data`, with these common fields:
+| UI field | Stored field | Meaning |
+| --- | --- | --- |
+| Value | `value` | The number to take the root of |
+| Operation | `operator: "root"` | Selects the operation |
+| Root Degree (2 = square, 3 = cube) | `arg1` | Positive safe-integer degree, literal or resolved reference |
+
+Semantics: for `x >= 0` the result is `x^(1/n)`. For `x < 0` with odd `n` the result is `-(|x|^(1/n))`. For `x < 0` with even `n` it is a domain error. Only the principal real root is returned.
+
+| Value | Degree | Result |
+| ---: | ---: | ---: |
+| 81 | 2 | 9 |
+| 27 | 3 | 3 |
+| 81 | 4 | 3 |
+| 32 | 5 | 2 |
+| 1024 | 10 | 2 |
+| -27 | 3 | -3 |
+| -32 | 5 | -2 |
+| 0.008 | 3 | ≈0.2 |
+| 49 | 1 | 49 |
+| 0 | 7 | 0 |
+
+Request and output reuse the existing contract; `data` stays a bare number:
 
 ```json
-{
-  "success": true,
-  "status": "success",
-  "data": {
-    "IsReady": true,
-    "SampleCount": 37,
-    "Current": 6.444444444444445,
-    "Previous": 6.666666666666667,
-    "currentValue": 6.444444444444445,
-    "previousValue": 6.666666666666667
-  }
+{ "value": 81, "operator": "root", "arg1": 4 }
+{ "success": true, "status": "success", "data": 3 }
+```
+
+## Backend — `coreza-backend/src/nodes/logic/compute.ts`
+
+Add a local strict parser plus a `root` case beside the other Number operations:
+
+1. `parseStrictFiniteNumber(input)` — accepts finite primitive numbers and non-empty trimmed numeric strings, including scientific notation. Rejects `null`, `undefined`, empty/whitespace strings, booleans, arrays, objects, BigInt, `NaN`, `Infinity`, and unresolved `{{ ... }}` strings. Type-check before calling `Number`.
+2. Degree validation: `Number.isSafeInteger(n) && n >= 1`.
+3. Domain check: negative value with even degree returns an error before calculating.
+4. Calculation, returning a result rather than throwing:
+
+```ts
+// strict on purpose: other Number ops keep their historical loose coercion
+function calculateRoot(x: number, n: number): number {
+  if (x === 0) return 0;          // also normalises -0
+  if (n === 1) return x;
+  if (n === 2) return Math.sqrt(x);
+  if (n === 3) return Math.cbrt(x);
+  const magnitude = Math.pow(Math.abs(x), 1 / n);
+  return x < 0 ? -magnitude : magnitude;
 }
 ```
 
-- `IsReady` (boolean) and `SampleCount` (integer) are **mandatory on every indicator**.
-- `Current` and `Previous` are the primary scalar values. For multi-channel indicators they are objects holding that indicator's channels, matching the existing channel keys in `src/utils/indicatorRegistry.ts`:
-  - MACD: `{ macd, signal, histogram }`
-  - Bollinger: `{ upper, middle, lower }`
-  - ADX: `{ adx, pdi, mdi }`
-  - Stochastic: `{ k, d }`
-  - Ichimoku: `{ conversion, base, spanA, spanB }`
-  - RSI, EMA, SMA, ATR, VWAP, OBV, Volume Oscillator: plain numbers
-  - Support & Resistance keeps its level arrays under `Current`
-- Indicator-specific extras sit beside these. ATR adds `TrueRange` (number).
-- Before any accepted sample, numeric fields are `0` (or channel objects of zeros), `IsReady` is `false`, `SampleCount` is `0`. No nulls.
-- `currentValue`/`previousValue` remain for one release for backward compatibility.
-- The same shape is returned by batch, cached, stateful route, stateless fallback, live and backtest paths. The batch path additionally returns the full historical series in `meta` so charts keep their history.
+5. Reject a non-finite result, normalise `-0` to `0`, and return via `createSuccessOutput` / `createErrorOutput` like every other case. Keep full precision; users chain the existing Round operation if they want fewer decimals.
 
-## Shared readiness and state rules
+| Condition | Message |
+| --- | --- |
+| Invalid value | `Value must be a finite number` |
+| Missing degree | `Root degree is required; use 2 for square root` |
+| Invalid degree | `Root degree must be a positive safe integer` |
+| Negative value, even degree | `Even roots of negative values have no real result` |
+| Non-finite result | `Root result is not a finite number` |
 
-- Readiness is derived from **accepted sample count vs. the indicator's required sample count**, never from array length and never from a non-null value.
-- `warmupCompleted` stays distinct from `IsReady`: a short warm-up can complete without the indicator being ready.
-- Warm-up produces provisional values using the same code path as live updates, so warming up N bars at once equals processing them one at a time — including `Previous`.
-- `Previous` is the value from the preceding accepted sample, `0` (or zeros) before one exists; it is never reset to `null` after warm-up.
-- A bar is validated **before** any mutation. Rejected input advances nothing: not the value, not the count, not `lastBarTime`.
-- Identical timestamps are idempotent; older timestamps do not advance state. Corrections require explicit replay.
-- Every path uses one timestamp normalisation helper; no per-value guessing between seconds and milliseconds.
-- Persisted state carries a calculation-state version. On reload, a version or parameter mismatch rebuilds rather than exposing stale values.
+No change is expected in `routes/comparator.ts` or `ControlFlowExecutor.ts`: the executor already resolves parameters via `context.resolveNodeParameters` before calling `ComputeService.compute`, and the route forwards `value`/`operator`/`arg1`. Both are verified, not edited.
 
-## ATR calculation specifics
+## Frontend — `src/nodes/Compute.json`
 
-- First accepted bar: `TR = high - low`. Later: `TR = max(high - low, abs(high - prevClose), abs(low - prevClose))`; store `prevClose` only after computing TR.
-- With period `n` and accepted count `k`: `k <= n` both modes return the mean of the TR observations so far; `k > n` Wilder uses `prev + (TR - prev) / n` and Simple uses the mean of the latest `n` TR values.
-- `IsReady = k >= n`. Period 1 is ready on the first bar, where ATR equals TR.
-- Reject before mutating: missing, null, empty, boolean or non-finite prices, `high < low`, close outside the bar range. Non-empty finite numeric strings stay supported.
+1. Add `{ "label": "Root (Nth Root)", "value": "root" }` to `operator.groupedOptions.number.options`.
+2. Add `"root"` to `arg1.displayOptions.show.operator`.
+3. Add `"root": "Root Degree (2 = square, 3 = cube)"` to `arg1.dynamicLabel.labelsByValue`.
+4. Extend the node help to describe the degree, the negative-odd behaviour and the even-negative error.
 
-## Implementation
+No new node, field type, output handle or dropdown of degrees. The existing text input keeps reference drag/drop working.
 
-**1. Shared types and formatter** — `coreza-backend/src/nodes/logic/indicators.ts`
-Add an exported `IndicatorOutput` base type (`IsReady`, `SampleCount`, `Current`, `Previous`) and a single `toIndicatorOutput(indicatorType, state)` formatter used by batch, executor and route. ATR extends it with `TrueRange`.
+## Dynamic inputs
 
-**2. Kernel changes, indicator by indicator** — same file
-Each incremental updater returns an explicit accepted flag, keeps a `previous` value, and reports accepted count and required sample count. ATR additionally stores `previousAtr` and `trueRange`; capture the old current value before computing, then commit previous/current/TR/prevClose/count together. Keep full precision in state; round only for display.
+Both operands must work as references:
 
-**3. Validation and acceptance** — same file
-One shared pre-mutation validator for price/bar input, extended per indicator for what it needs (close-only vs. OHLC vs. volume). Validate a whole batch before processing so a bad bar cannot leave state half-advanced.
+```text
+Value:       {{ $json.amount }}
+Root Degree: {{ $json.degree }}
+```
 
-**4. State manager** — `coreza-backend/src/engine/indicatorStateManager.ts`
-Initialise every indicator with zeros, `IsReady: false`, `SampleCount: 0`. After warm-up copy current, previous, accepted count and last accepted timestamp from the kernel instead of resetting previous to `null`. Advance outer state only on an accepted update. Share one apply helper between `update` and `updateSync`. Persist everything needed to return an unchanged snapshot after a restart.
+`{ amount: 81, degree: 4 }` gives 3; the next run with `{ amount: 32, degree: 5 }` gives 2 with no config change. The service never evaluates expressions itself — it only sees resolved numbers or numeric strings.
 
-**5. Executor and route** — `IndicatorsExecutor.ts`, `routes/indicators.ts`
-`executeIndicatorWithState` already receives `indicatorType`; use it to pick the formatter and return the same object in the new-bar, cached and fallback branches for all thirteen endpoints. Process every unseen bar in order, not only the latest. Validate parameters even when cached state exists.
+## Tests — `coreza-backend/tests/computeRoot.test.ts`
 
-**6. Node help** — `src/nodes/ATR.json` first, then the other indicator JSONs
-Describe outputs and state plainly that `IsReady` must be checked before use, since `0` is a valid ready value. No new nodes or handles.
+| Area | Cases |
+| --- | --- |
+| Ordinary roots | Square, cube, fourth, fifth, tenth from the table above |
+| Negative values | Odd degree gives a negative result; even degree errors |
+| Boundaries | `0`, `-0` normalised, degree 1 exact, value 1, largest safe-integer degree |
+| Decimal and string inputs | `0.008`, `"81"`, `" 4 "`, `"1e-12"` |
+| Invalid value | Missing, null, empty, whitespace, boolean, array, object, NaN, Infinity, unresolved `{{ }}` |
+| Invalid degree | Missing, null, zero, negative, fractional, non-finite, unsafe integer |
+| Scale | Very small positives and values near `Number.MAX_VALUE` stay finite |
+| Contract | `data` is a number; no NaN/Infinity serialised as a successful value |
+| Dynamic execution | Value and degree both change between runs; no stale argument |
+| Regression | Existing Number operations and array standard deviation unchanged |
 
-**Follow-ups:** chart adapters mapping `Current` to candle time, AI tool guidance in `toolDefinitions.ts`, Lean-pinned parity fixtures, and retiring `currentValue`/`previousValue` after a consumer audit.
+Use relative tolerance (about `1e-12`) for general roots and scale-appropriate tolerance for tiny values so a wrongly returned `0` cannot pass. Assert exact equality only where the contract guarantees it — degree 1 and zero.
 
-## Rollout order
+Add integration assertions to the existing Compute route and executor suites where their harnesses allow, plus a UI check that Root appears under Number with the right label and that a dropped reference survives save and reopen.
 
-1. ATR: shared types, formatter, kernel, state, executor, route, tests — the reference implementation.
-2. Single-value indicators: RSI, EMA, SMA, VWAP, OBV, Volume Oscillator.
-3. Multi-channel indicators: MACD, Bollinger, ADX, Stochastic, Ichimoku.
-4. Support & Resistance, which keeps its level-array shape under the shared envelope.
-5. Node help, chart and AI follow-ups.
+## Delivery
 
-Each stage ships with its own tests, and stages 2 to 4 must not change the fields already shipped in stage 1.
+1. Backend operator, strict parser and focused tests.
+2. The three `Compute.json` changes and help text.
+3. Verify through workflow execution, single-node execution and the HTTP route.
+4. Run the focused Compute suites and the repository type/build checks, reading full output.
 
-## ATR acceptance fixture
+Ship backend before or with the frontend option, so the dropdown never offers an unsupported operation. No migration is needed — `root` is additive and keeps the existing scalar output.
 
-Period 3, bars `(high, low, close)`: `(105,100,103)`, `(110,104,108)`, `(109,101,102)`, `(106,100,105)`.
-
-| After bar | TrueRange | Wilder Current | Wilder Previous | Simple Current | Simple Previous | IsReady |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| none | 0 | 0 | 0 | 0 | 0 | false |
-| 1 | 5 | 5 | 0 | 5 | 0 | false |
-| 2 | 7 | 6 | 5 | 6 | 5 | false |
-| 3 | 8 | 6.666666667 | 6 | 6.666666667 | 6 | true |
-| 4 | 6 | 6.444444444 | 6.666666667 | 7 | 6.666666667 | true |
-
-Warming up all four bars at once must give the same `Previous` as one-at-a-time processing.
-
-## Tests
-
-Extend `coreza-backend/tests/atrIndicator.test.ts` (keeping its gap, alias, smoothing, period-validation, discovery and isolation coverage, replacing the warm-up null assertions), and add a **shared contract suite parameterised over every indicator**:
-
-- Exact envelope: `IsReady` boolean, `SampleCount` integer, `Current`/`Previous` present with the right channel keys, exact capitalization.
-- Empty/reset snapshot is all zeros and not ready; readiness boundary at `n-1`, `n`, `n+1`.
-- Batch, full warm-up, split warm-up, async and sync updates all agree; the batch series is unchanged.
-- Repeated and older bars return an identical snapshot and advance nothing.
-- Several unseen bars equal ordered single-bar updates.
-- Invalid input leaves inner and outer state untouched.
-- Flat/zero-range input: a ready value of `0` survives output normalization and `false` is not coerced.
-- Redis round-trip matches uninterrupted execution; version or parameter mismatch rebuilds.
-- Multiple symbols, nodes and runs stay isolated.
-- Route, executor and cached paths return the same shape for all thirteen endpoints.
-
-ATR-specific: the fixture above for both smoothing modes after every bar, plus period 1 ready on the first bar.
-
-## Verification
-
-Run the backend Jest suites for ATR, the shared contract suite, the indicator state manager, the executor and the indicator routes, plus frontend node validation, reading the full output. Then confirm in the editor that an ATR node shows all its fields and that `{{ $('ATR').json.data.IsReady }}` resolves as a boolean in an IF node.
+**Follow-up, not in this change:** a separate `power` operation for fractional and negative exponents.
 
 ## Backend repository note
 
-This work lives in the separated `coreza-io/coreza-backend` repository and must be copied across manually, as usual.
+`compute.ts` and its tests live in the separated `coreza-io/coreza-backend` repository and must be copied across manually, as usual.
 
 ## Done when
 
-Every indicator returns `IsReady` and `SampleCount` with values in a consistent shape across batch, cached, route, live and backtest paths; warm-up produces provisional numbers instead of nulls; readiness comes from accepted sample count; rejected input and repeated deliveries never advance state; restarts preserve state; chart series still work; and existing `currentValue`/`previousValue` consumers keep running.
+A single Compute node computes any supported nth root from runtime-provided value and degree, negative odd roots work, invalid domains give clear messages, output stays a plain number, and every existing operation behaves exactly as before.

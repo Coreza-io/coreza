@@ -77,6 +77,58 @@ type ObjectValidationResult =
   | { valid: true; object: Record<string, any>; error?: undefined }
   | { valid: false; error: string; object?: undefined };
 
+type StrictNumberParseResult =
+  | { valid: true; number: number }
+  | { valid: false };
+
+type RootCalculationResult =
+  | { valid: true; number: number }
+  | { valid: false; error: string };
+
+// Strict on purpose: existing Number operations retain their historical loose
+// coercion, while roots must reject values such as null, booleans, and arrays.
+function parseStrictFiniteNumber(input: unknown): StrictNumberParseResult {
+  if (typeof input === "number") {
+    return Number.isFinite(input)
+      ? { valid: true, number: input }
+      : { valid: false };
+  }
+
+  if (typeof input !== "string" || input.trim() === "") {
+    return { valid: false };
+  }
+
+  const number = Number(input.trim());
+  return Number.isFinite(number)
+    ? { valid: true, number }
+    : { valid: false };
+}
+
+function calculateRoot(x: number, n: number): RootCalculationResult {
+  if (x < 0 && n % 2 === 0) {
+    return {
+      valid: false,
+      error: "Even roots of negative values have no real result",
+    };
+  }
+
+  let result: number;
+  if (x === 0) result = 0;
+  else if (n === 1) result = x;
+  else if (n === 2) result = Math.sqrt(x);
+  else if (n === 3) result = Math.cbrt(x);
+  else {
+    const magnitude = Math.pow(Math.abs(x), 1 / n);
+    result = x < 0 ? -magnitude : magnitude;
+  }
+
+  if (!Number.isFinite(result)) {
+    return { valid: false, error: "Root result is not a finite number" };
+  }
+
+  return { valid: true, number: Object.is(result, -0) ? 0 : result };
+}
+
 export interface ComputeInput {
   value: any;
   operator: string;
@@ -440,6 +492,43 @@ export class ComputeService {
           const num = Number(value);
           if (isNaN(num)) return createErrorOutput("Value must be a number");
           return createSuccessOutput(Math.abs(num));
+        }
+
+        case "root": {
+          const parsedValue = parseStrictFiniteNumber(value);
+          if (!parsedValue.valid) {
+            return createErrorOutput("Value must be a finite number");
+          }
+
+          if (
+            arg1 === undefined ||
+            (typeof arg1 === "string" && arg1.trim() === "")
+          ) {
+            return createErrorOutput(
+              "Root degree is required; use 2 for square root",
+            );
+          }
+
+          const parsedDegree = parseStrictFiniteNumber(arg1);
+          if (
+            !parsedDegree.valid ||
+            !Number.isSafeInteger(parsedDegree.number) ||
+            parsedDegree.number < 1
+          ) {
+            return createErrorOutput(
+              "Root degree must be a positive safe integer",
+            );
+          }
+
+          const result = calculateRoot(
+            parsedValue.number,
+            parsedDegree.number,
+          );
+          if (!result.valid) {
+            return createErrorOutput(result.error);
+          }
+
+          return createSuccessOutput(result.number);
         }
 
         case "add": {

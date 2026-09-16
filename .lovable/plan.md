@@ -12,6 +12,31 @@ This plan is Coreza's own design. Nothing is copied from n8n: not source, not ty
 
 The feature is called **Clusters** in the UI ("Group selection into a cluster").
 
+## Review of the current code (16 Sep, this workspace)
+
+I searched the whole repository for the feature before planning further, and **none of it is present in this project**:
+
+- No `clusters` / `NodeCluster` / `node_clusters` anywhere in `src`, `coreza-backend/src` or `setup/database-schema.sql`.
+- No cluster frame component, no validator module, no document provider.
+- `src/pages/WorkflowEditor.tsx` still passes only `onNodesChange`, `onEdgesChange`, `onConnect`, `onDrop`, `onDragOver`, `onMouseMove`, `onNodeDoubleClick`, `onPaneClick` to `ReactFlow` — there is no `onSelectionContextMenu`, `onNodeContextMenu` or `onPaneContextMenu`, which is exactly why right-click still shows the browser's own menu.
+- Keyboard handling at `src/pages/WorkflowEditor.tsx:1290` covers undo, copy, paste and delete, but has no grouping shortcut, and undo is still pop-only with no redo.
+- Recent commits are plan updates plus the Compute nth-root merge; no grouping commit landed here.
+
+So the work was either done on a branch or repository that this workspace does not see, or it did not save. Before re-implementing, confirm which branch holds it. The plan below stands as written, with the context menu now specified explicitly.
+
+## Canvas context menu (right-click)
+
+Right-click currently falls through to the browser menu. Add a Coreza canvas menu, worded in our own terms, in `src/pages/WorkflowEditor.tsx`:
+
+- Wire `onSelectionContextMenu`, `onNodeContextMenu` and `onPaneContextMenu`; each calls `event.preventDefault()` and opens our menu at the pointer position. Use the existing `src/components/ui/context-menu.tsx` primitives with a controlled open state anchored to the flow position, so styling matches the app.
+- Selection menu items, disabled with a reason when unavailable: **Group nodes into a cluster** (`Ctrl/Cmd+G`), **Dissolve cluster** (`Ctrl/Cmd+Shift+G`, only when the selection is exactly one cluster), **Copy**, **Duplicate**, **Delete nodes**. Counts appear in the label the way our other bulk actions read.
+- Node menu: the same entries scoped to that node, plus **Rename** and **Open**.
+- Pane menu: **Select all**, **Clear selection**, **Paste**, **Add node**.
+- Close on Escape, pane click, scroll and zoom; never open while a connection drag is in progress or on a read-only canvas.
+- The grouping entries call the same validated command-boundary mutations as the shortcuts — no separate code path — and show the validator's reason code when the selection cannot become a cluster.
+- Add the `Ctrl/Cmd+G` and `Ctrl/Cmd+Shift+G` branches to the existing keydown effect, honouring its current editable-target guard.
+- Tests: menu opens on right-click over selection, node and pane; the browser menu is suppressed; disabled entries carry reasons; grouping from the menu and from the shortcut produce identical documents.
+
 ## Review of the attached plan
 
 Verified against the code, and its Coreza claims hold:

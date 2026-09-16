@@ -5,7 +5,7 @@
   "node_type": "main",
   "icon": "/assets/icons/compute.svg",
   "category": "Logic",
-  "description": "Data computations for strings, numbers, dates, arrays, objects. Includes statistical and advanced date operations. Regex patterns run as native JavaScript RegExp and should be author-trusted.",
+  "description": "Data computations for strings, numbers, dates, arrays, objects. Root (Nth Root) accepts a positive integer degree; negative values support odd degrees, while even roots of negative values return an error. Includes statistical and advanced date operations. Regex patterns run as native JavaScript RegExp and should be author-trusted.",
   "color": "text-yellow-500",
   "size": {
     "width": 320,
@@ -151,6 +151,10 @@
             {
               "label": "Abs",
               "value": "abs"
+            },
+            {
+              "label": "Root (Nth Root)",
+              "value": "root"
             },
             {
               "label": "Add",
@@ -431,6 +435,7 @@
             "endsWith",
             "contains",
             "round",
+            "root",
             "add",
             "subtract",
             "multiply",
@@ -475,6 +480,7 @@
           "endsWith": "Suffix",
           "contains": "Substring",
           "round": "Decimal Places",
+          "root": "Root Degree (2 = square, 3 = cube)",
           "add": "Number",
           "subtract": "Number",
           "multiply": "Number",

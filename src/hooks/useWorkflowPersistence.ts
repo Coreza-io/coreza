@@ -36,6 +36,7 @@ export interface LoadedWorkflow {
   nodes: Node[];
   edges: Edge[];
   clusters: NodeCluster[];
+  invalidClusterEntries: Array<{ index: number; value: unknown }>;
 }
 
 /**
@@ -60,8 +61,37 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
   // Unsaved-change tracking via simple JSON hash
   // ──────────────────────────────────────────────
   const computeHash = useCallback(
-    (nodes: Node[], edges: Edge[], name: string, clusters: readonly NodeCluster[] = []) =>
-      JSON.stringify({ name, nodes, edges, clusters: normalizeClusters(clusters) }),
+    (nodes: Node[], edges: Edge[], name: string, clusters: readonly NodeCluster[] = []) => {
+      const persistedNodes = nodes.map((node) => {
+        const definition = node.data.definition as Record<string, unknown> | undefined;
+        const pinnedOutput = safePinnedOutput(node.data.pinnedOutput);
+        return {
+          id: node.id,
+          name: definition?.name,
+          node_type: definition?.node_type,
+          category: definition?.category,
+          subCategory: definition?.subCategory,
+          provider: definition?.provider,
+          position: node.position,
+          sourcePosition: node.sourcePosition,
+          targetPosition: node.targetPosition,
+          values: getVisibleValues(definition, (node.data.values as Record<string, unknown>) ?? {}),
+          executionMode: definition?.executionMode,
+          streamingConfig: definition?.streamingConfig,
+          ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
+        };
+      });
+      const nodeIds = new Set(persistedNodes.map(({ id }) => id));
+      const persistedEdges = edges.filter(({ source, target }) => nodeIds.has(source) && nodeIds.has(target)).map((edge) => ({
+        id: edge.id,
+        type: edge.type,
+        source: edge.source,
+        target: edge.target,
+        ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+        ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      }));
+      return JSON.stringify({ name, nodes: persistedNodes, edges: persistedEdges, clusters: normalizeClusters(clusters) });
+    },
     [],
   );
 
@@ -385,12 +415,21 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           },
         }));
 
+        const parsedClusters = parseNodeClusters(data.node_clusters);
+        const validClusters: NodeCluster[] = [];
+        const semanticInvalidEntries: Array<{ index: number; value: unknown }> = [];
+        parsedClusters.clusters.forEach((cluster, index) => {
+          const validation = validateClusters(restoredNodes, restoredEdges, [...validClusters, cluster]);
+          if (validation.valid) validClusters.push(cluster);
+          else semanticInvalidEntries.push({ index, value: cluster });
+        });
         const result: LoadedWorkflow = {
           name: data.name || 'Untitled Workflow',
           isActive: !!data.is_active,
           nodes: restoredNodes,
           edges: restoredEdges,
-          clusters: parseNodeClusters(data.node_clusters).clusters,
+          clusters: validClusters,
+          invalidClusterEntries: [...parsedClusters.invalidEntries, ...semanticInvalidEntries],
         };
 
         markSaved(restoredNodes, restoredEdges, result.name, result.clusters);

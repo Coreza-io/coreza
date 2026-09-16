@@ -16,6 +16,7 @@ import {
   useRef,
   type ComponentType,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ConnectionDragContext,
   DragSource,
@@ -24,6 +25,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ReactFlow,
   addEdge,
+  applyEdgeChanges,
   MiniMap,
   Controls,
   Background,
@@ -31,6 +33,7 @@ import {
   useEdgesState,
   Connection,
   Edge,
+  EdgeChange,
   Node,
   NodeChange,
   BackgroundVariant,
@@ -91,7 +94,7 @@ import {
   ExecutionStoreProvider,
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
-import { StableNodeProvider } from "@/contexts/StableNodeContext";
+import { StableNodeProvider, useCanonicalGraphSync } from "@/contexts/StableNodeContext";
 import { appendNewsItem, createWaitingNewsOutput } from "@/utils/newsStream";
 import {
   isNewsStreamNode,
@@ -101,10 +104,13 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
 import type { NodeCluster } from "@/domain/clusters/types";
 import { parseNodeClusters } from "@/domain/clusters/parse";
+import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
+import { deleteNodesFromDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
+import { ToastAction } from "@/components/ui/toast";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -187,6 +193,20 @@ const initialNodes: Node[] = [
 
 const initialEdges: Edge[] = [];
 
+interface CanvasMenuState {
+  x: number;
+  y: number;
+  nodeIds: string[];
+  kind: "selection" | "pane";
+}
+
+interface ClusterDragState {
+  clusterId: string;
+  startClient: { x: number; y: number };
+  baseline: WorkflowDocument;
+  moved: boolean;
+}
+
 const WorkflowEditorContent = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -227,6 +247,12 @@ const WorkflowEditorContent = () => {
   );
   const [isActive, setIsActive] = useState(false);
   const [clusters, setClusters] = useState<NodeCluster[]>([]);
+  const [invalidClusterEntries, setInvalidClusterEntries] = useState<Array<{ index: number; value: unknown }>>([]);
+  const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
+  const [editingClusterId, setEditingClusterId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  const contextMenuFocusRef = useRef<HTMLElement | null>(null);
+  const clusterDragRef = useRef<ClusterDragState | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingExecution, setLoadingExecution] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
@@ -337,11 +363,12 @@ const WorkflowEditorContent = () => {
   const [nodes, setNodes, applyNodeChanges] = useNodesState(
     isNewWorkflow ? initialNodes : [],
   );
-  const [edges, setEdges, onEdgesChange] = useEdgesState(
+  const [edges, setEdges] = useEdgesState(
     isNewWorkflow ? initialEdges : [],
   );
+  useCanonicalGraphSync(nodes, edges);
   const rf = useReactFlow();
-  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[]; clusters: NodeCluster[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
 
   // Connection drag tracking for hiding source handle icon
@@ -360,7 +387,10 @@ const WorkflowEditorContent = () => {
   const onConnectEnd = useCallback(() => {
     setDragSource({ nodeId: null, handleId: null, handleType: null });
   }, []);
-  const historyRef = useRef<{ nodes: Node[]; edges: Edge[] }[]>([]);
+  const historyRef = useRef<{ past: WorkflowDocument[]; future: WorkflowDocument[] }>({ past: [], future: [] });
+  const commitEdgeCandidateRef = useRef<(candidateEdges: Edge[]) => void>(() => undefined);
+  const canonicalEdgesRef = useRef(edges);
+  canonicalEdgesRef.current = edges;
 
   const cloneNodes = useCallback((sourceNodes: Node[]) => {
     return sourceNodes.map((node) => ({
@@ -390,11 +420,161 @@ const WorkflowEditorContent = () => {
   }, []);
 
   const saveHistorySnapshot = useCallback(() => {
-    historyRef.current.push({
+    historyRef.current.past.push({
       nodes: cloneNodes(nodes),
       edges: cloneEdges(edges),
+      clusters: clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })),
     });
-  }, [cloneEdges, cloneNodes, edges, nodes]);
+    historyRef.current.future = [];
+  }, [cloneEdges, cloneNodes, clusters, edges, nodes]);
+
+  const restoreDocument = useCallback((document: WorkflowDocument) => {
+    setNodes(stampNodesWithWorkflowSession(cloneNodes(document.nodes)));
+    setEdges(cloneEdges(document.edges));
+    setClusters(document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })));
+  }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession]);
+
+  const deleteNodeIds = useCallback((nodeIds: readonly string[]) => {
+    if (nodeIds.length === 0 || dragSource.nodeId) return;
+    saveHistorySnapshot();
+    const result = deleteNodesFromDocument({ nodes, edges, clusters }, new Set(nodeIds));
+    restoreDocument(result.document);
+    if (result.dissolvedClusters.length > 0) {
+      toast({ title: "Cluster dissolved", description: result.dissolvedClusters.map(({ title }) => title).join(", ") });
+    }
+  }, [clusters, dragSource.nodeId, edges, nodes, restoreDocument, saveHistorySnapshot, toast]);
+
+  const dissolveClustersForNodes = useCallback((nodeIds: readonly string[]) => {
+    const selected = new Set(nodeIds);
+    const matching = clusters.filter((cluster) => cluster.memberNodeIds.some((id) => selected.has(id)));
+    if (matching.length === 0 || dragSource.nodeId) return;
+    saveHistorySnapshot();
+    setClusters((current) => current.filter((cluster) => !matching.some(({ id }) => id === cluster.id)));
+    setCanvasMenu(null);
+  }, [clusters, dragSource.nodeId, saveHistorySnapshot]);
+
+  const nextClusterTitle = useMemo(() => {
+    const usedTitles = new Set(clusters.map(({ title }) => title.toLocaleLowerCase()));
+    let index = 1;
+    while (usedTitles.has(`cluster ${index}`)) index += 1;
+    return `Cluster ${index}`;
+  }, [clusters]);
+
+  const createClusterFromSelection = useCallback((requestedIds?: readonly string[]) => {
+    if (dragSource.nodeId) return;
+    const selectedIds = requestedIds?.length ? [...requestedIds] : nodes.filter(({ selected }) => selected).map(({ id }) => id);
+    const candidate: NodeCluster = { id: crypto.randomUUID(), title: nextClusterTitle, memberNodeIds: selectedIds };
+    const result = validateClusterSelection(selectedIds, nodes, edges, clusters, candidate);
+    if (!result.valid) {
+      toast({ title: "Cannot create cluster", description: result.violations[0]?.message });
+      return;
+    }
+    saveHistorySnapshot();
+    setClusters((current) => [...current, { ...candidate, memberNodeIds: result.resolvedMemberNodeIds ?? selectedIds }]);
+    setEditingClusterId(candidate.id);
+    setCanvasMenu(null);
+  }, [clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, saveHistorySnapshot, toast]);
+
+  const startClusterDrag = useCallback((event: React.PointerEvent, cluster: NodeCluster) => {
+    if (dragSource.nodeId || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const memberIds = new Set(cluster.memberNodeIds);
+    setNodes((current) => current.map((node) => ({ ...node, selected: memberIds.has(node.id) })));
+    clusterDragRef.current = {
+      clusterId: cluster.id,
+      startClient: { x: event.clientX, y: event.clientY },
+      baseline: {
+        nodes: cloneNodes(nodes),
+        edges: cloneEdges(edges),
+        clusters: clusters.map((item) => ({ ...item, memberNodeIds: [...item.memberNodeIds] })),
+      },
+      moved: false,
+    };
+  }, [cloneEdges, cloneNodes, clusters, dragSource.nodeId, edges, nodes, setNodes]);
+
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const drag = clusterDragRef.current;
+      if (!drag) return;
+      const cluster = drag.baseline.clusters.find(({ id }) => id === drag.clusterId);
+      if (!cluster) return;
+      const memberIds = new Set(cluster.memberNodeIds);
+      const dx = (event.clientX - drag.startClient.x) / viewport.zoom;
+      const dy = (event.clientY - drag.startClient.y) / viewport.zoom;
+      if (dx === 0 && dy === 0) return;
+      drag.moved = true;
+      setNodes(drag.baseline.nodes.map((node) => memberIds.has(node.id)
+        ? { ...node, position: { x: node.position.x + dx, y: node.position.y + dy }, selected: true }
+        : node));
+    };
+    const finish = () => {
+      const drag = clusterDragRef.current;
+      if (!drag) return;
+      if (drag.moved) {
+        historyRef.current.past.push(drag.baseline);
+        historyRef.current.future = [];
+      }
+      clusterDragRef.current = null;
+    };
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !clusterDragRef.current) return;
+      const baseline = clusterDragRef.current.baseline;
+      clusterDragRef.current = null;
+      restoreDocument(baseline);
+      event.preventDefault();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("keydown", cancel);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("keydown", cancel);
+    };
+  }, [restoreDocument, setNodes, viewport.zoom]);
+
+  const commitEdgeCandidate = useCallback((candidateEdges: Edge[]) => {
+    const currentInvalid = new Set(validateClusters(nodes, edges, clusters).violations.flatMap(
+      ({ clusterId }) => clusterId ? [clusterId] : [],
+    ));
+    const candidateValidation = validateClusters(nodes, candidateEdges, clusters);
+    const newlyInvalidIds = new Set(candidateValidation.violations.flatMap(
+      ({ clusterId }) => clusterId && !currentInvalid.has(clusterId) ? [clusterId] : [],
+    ));
+    if (newlyInvalidIds.size === 0) {
+      saveHistorySnapshot();
+      setEdges(candidateEdges);
+      return;
+    }
+    const affected = clusters.filter(({ id }) => newlyInvalidIds.has(id));
+    const firstViolation = candidateValidation.violations.find(({ clusterId }) => clusterId && newlyInvalidIds.has(clusterId));
+    toast({
+      title: "Connection would invalidate a cluster",
+      description: firstViolation?.message,
+      variant: "destructive",
+      action: (
+        <ToastAction
+          altText="Dissolve affected clusters and apply connection change"
+          onClick={() => {
+            saveHistorySnapshot();
+            setClusters((current) => current.filter(({ id }) => !newlyInvalidIds.has(id)));
+            setEdges(candidateEdges);
+          }}
+        >
+          Dissolve cluster and apply
+        </ToastAction>
+      ),
+    });
+  }, [clusters, edges, nodes, saveHistorySnapshot, setEdges, toast]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    const structural = changes.some(({ type }) => type === "add" || type === "remove" || type === "replace");
+    const candidate = applyEdgeChanges(changes, edges);
+    if (structural) commitEdgeCandidate(candidate);
+    else setEdges(candidate);
+  }, [commitEdgeCandidate, edges, setEdges]);
+  commitEdgeCandidateRef.current = commitEdgeCandidate;
 
   // Inject execution state into node data for visual feedback
   useEffect(() => {
@@ -513,9 +693,15 @@ const WorkflowEditorContent = () => {
         });
       }
 
+      if (removedNodeIds.length > 0) {
+        deleteNodeIds(removedNodeIds);
+        const nonRemovalChanges = changes.filter(({ type }) => type !== "remove");
+        if (nonRemovalChanges.length > 0) applyNodeChanges(nonRemovalChanges);
+        return;
+      }
       applyNodeChanges(changes);
     },
-    [applyNodeChanges, cleanupNewsSubscription, executionStore, nodes],
+    [applyNodeChanges, cleanupNewsSubscription, deleteNodeIds, executionStore, nodes],
   );
 
   const handleNodeOutputMessage = useCallback(
@@ -567,8 +753,10 @@ const WorkflowEditorContent = () => {
   }, [handleNodeOutputMessage]);
 
   const removeEdge = useCallback(
-    (edgeId: string) => setEdges((es) => es.filter((e) => e.id !== edgeId)),
-    [setEdges],
+    (edgeId: string) => commitEdgeCandidateRef.current(
+      canonicalEdgesRef.current.filter((edge) => edge.id !== edgeId),
+    ),
+    [],
   );
 
   // Handle "+" click on Loop node to add a new downstream node
@@ -599,11 +787,9 @@ const WorkflowEditorContent = () => {
 
   const handleRemoveLoop = useCallback(
     (loopNodeId: string) => {
-      setEdges((es) =>
-        es.filter((e) => e.source !== loopNodeId && e.target !== loopNodeId),
-      );
+      commitEdgeCandidate(edges.filter((edge) => edge.source !== loopNodeId && edge.target !== loopNodeId));
     },
-    [setEdges],
+    [commitEdgeCandidate, edges],
   );
 
   useEffect(() => {
@@ -719,18 +905,17 @@ const WorkflowEditorContent = () => {
   }, [handleAddNode, workflowId]);
 
   const onConnect = useCallback(
-    (params: Connection) =>
-      setEdges((eds) => {
-        const id = `edge_${Date.now()}`;
-        const newEdge: Edge = {
-          id,
-          ...params,
-          type: "removable",
-          data: { onRemoveEdge: () => removeEdge(id) },
-        };
-        return addEdge(newEdge, eds);
-      }),
-    [removeEdge, setEdges],
+    (params: Connection) => {
+      const id = `edge_${crypto.randomUUID()}`;
+      const newEdge: Edge = {
+        id,
+        ...params,
+        type: "removable",
+        data: { onRemoveEdge: () => removeEdge(id) },
+      };
+      commitEdgeCandidate(addEdge(newEdge, edges));
+    },
+    [commitEdgeCandidate, edges, removeEdge],
   );
 
   // Memoized WorkflowExecutor instance - only recreate when structure changes
@@ -770,6 +955,14 @@ const WorkflowEditorContent = () => {
       toast({
         title: "Error",
         description: "Workflow ID is missing. Please save the workflow first.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    if (invalidClusterEntries.length > 0) {
+      toast({
+        title: "Cluster metadata needs attention",
+        description: "Remove or repair the preserved invalid cluster entries before saving or running this workflow.",
         variant: "destructive",
       });
       return false;
@@ -817,6 +1010,7 @@ const WorkflowEditorContent = () => {
     toast,
     projectId,
     navigate,
+    invalidClusterEntries.length,
   ]);
 
   const hasBacktestInitNode = useCallback(
@@ -879,6 +1073,14 @@ const WorkflowEditorContent = () => {
 
   // Save workflow via persistence hook
   const handleSaveWorkflow = async (skipConfirmation: boolean = false) => {
+    if (invalidClusterEntries.length > 0) {
+      toast({
+        title: "Save blocked",
+        description: "Invalid cluster metadata is preserved. Remove it explicitly before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!authUser) {
       toast({
         title: "Error",
@@ -1175,16 +1377,29 @@ const WorkflowEditorContent = () => {
         },
       }));
 
+      saveHistorySnapshot();
       setNodes(stampNodesWithWorkflowSession(nodesWithDefinitions));
       setEdges(edgesWithHandlers);
-      if (restoredClusters) setClusters(restoredClusters);
+      if (restoredClusters) {
+        const validClusters: NodeCluster[] = [];
+        const invalidEntries: Array<{ index: number; value: unknown }> = [];
+        restoredClusters.forEach((cluster, index) => {
+          const result = validateClusters(nodesWithDefinitions, edgesWithHandlers, [...validClusters, cluster]);
+          if (result.valid) validClusters.push(cluster);
+          else invalidEntries.push({ index, value: cluster });
+        });
+        setClusters(validClusters);
+        if (invalidEntries.length > 0) {
+          setInvalidClusterEntries((current) => [...current, ...invalidEntries]);
+        }
+      }
 
       toast({
         title: "Version Restored",
         description: `Restored ${nodesWithDefinitions.length} nodes. Remember to save your changes.`,
       });
     },
-    [setNodes, setEdges, removeEdge, stampNodesWithWorkflowSession, toast],
+    [removeEdge, saveHistorySnapshot, setEdges, setNodes, stampNodesWithWorkflowSession, toast],
   );
 
   // Check for user authentication and load latest workflow
@@ -1242,6 +1457,7 @@ const WorkflowEditorContent = () => {
           setNodes(stampNodesWithWorkflowSession(loaded.nodes));
           setEdges(loaded.edges);
           setClusters(loaded.clusters);
+          setInvalidClusterEntries(loaded.invalidClusterEntries);
           setHasLoadedWorkflowId(workflowId);
         } else {
           navigate("/dashboard/workflows");
@@ -1288,10 +1504,55 @@ const WorkflowEditorContent = () => {
 
   // Handle ReactFlow clicks specifically
   const onPaneClick = useCallback(() => {
+    setCanvasMenu(null);
     if (isPaletteVisible) {
       setIsPaletteVisible(false);
     }
   }, [isPaletteVisible]);
+
+  const openCanvasMenu = useCallback((event: React.MouseEvent, nodeIds: string[], kind: CanvasMenuState["kind"]) => {
+    event.preventDefault();
+    event.stopPropagation();
+    contextMenuFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const menuWidth = 260;
+    const menuHeight = kind === "pane" ? 180 : 230;
+    setCanvasMenu({
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+      nodeIds,
+      kind,
+    });
+  }, []);
+
+  const closeCanvasMenu = useCallback(() => {
+    setCanvasMenu(null);
+    requestAnimationFrame(() => contextMenuFocusRef.current?.focus({ preventScroll: true }));
+  }, []);
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    const nodeIds = node.selected ? nodes.filter(({ selected }) => selected).map(({ id }) => id) : [node.id];
+    if (!node.selected) setNodes((current) => current.map((item) => ({ ...item, selected: item.id === node.id })));
+    openCanvasMenu(event, nodeIds, "selection");
+  }, [nodes, openCanvasMenu, setNodes]);
+
+  const onSelectionContextMenu = useCallback((event: React.MouseEvent, selectedNodes: Node[]) => {
+    openCanvasMenu(event, selectedNodes.map(({ id }) => id), "selection");
+  }, [openCanvasMenu]);
+
+  const menuValidation = useMemo(() => {
+    if (!canvasMenu || canvasMenu.kind !== "selection") return null;
+    const candidate: NodeCluster = { id: crypto.randomUUID(), title: nextClusterTitle, memberNodeIds: canvasMenu.nodeIds };
+    return validateClusterSelection(canvasMenu.nodeIds, nodes, edges, clusters, candidate);
+  }, [canvasMenu, clusters, edges, nextClusterTitle, nodes]);
+
+  useEffect(() => {
+    if (!canvasMenu) return;
+    const close = () => closeCanvasMenu();
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", escape); };
+  }, [canvasMenu, closeCanvasMenu]);
 
   // Handle delete key to remove selected nodes
   useEffect(() => {
@@ -1310,16 +1571,25 @@ const WorkflowEditorContent = () => {
       const isModKey = event.metaKey || event.ctrlKey;
 
       if (isModKey && event.key.toLowerCase() === "z") {
-        const previousState = historyRef.current.pop();
+        const direction = event.shiftKey ? "redo" : "undo";
+        const source = direction === "undo" ? historyRef.current.past : historyRef.current.future;
+        const destination = direction === "undo" ? historyRef.current.future : historyRef.current.past;
+        const previousState = source.pop();
         if (!previousState) {
           return;
         }
+        destination.push({ nodes: cloneNodes(nodes), edges: cloneEdges(edges), clusters: clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })) });
+        restoreDocument(previousState);
+        event.preventDefault();
+        toast({ description: direction === "undo" ? "Undid last change" : "Redid last change" });
+        return;
+      }
 
-        setNodes(
-          stampNodesWithWorkflowSession(cloneNodes(previousState.nodes)),
-        );
-        setEdges(cloneEdges(previousState.edges));
-        toast({ description: "Undid last change" });
+      if (isModKey && event.key.toLowerCase() === "g") {
+        const selectedIds = nodes.filter(({ selected }) => selected).map(({ id }) => id);
+        if (event.shiftKey) dissolveClustersForNodes(selectedIds);
+        else createClusterFromSelection(selectedIds);
+        event.preventDefault();
         return;
       }
 
@@ -1346,7 +1616,11 @@ const WorkflowEditorContent = () => {
           data: { ...edge.data },
         }));
 
-        clipboardRef.current = { nodes: nodesCopy, edges: edgesCopy };
+        clipboardRef.current = {
+          nodes: nodesCopy,
+          edges: edgesCopy,
+          clusters: clusters.filter((cluster) => cluster.memberNodeIds.every((id) => selectedNodeIds.has(id))),
+        };
         toast({ description: "Selection copied" });
         return;
       }
@@ -1376,23 +1650,16 @@ const WorkflowEditorContent = () => {
           data: { ...edge.data },
         }));
 
-        clipboardRef.current = { nodes: nodesCopy, edges: edgesCopy };
+        clipboardRef.current = {
+          nodes: nodesCopy,
+          edges: edgesCopy,
+          clusters: clusters.filter((cluster) => cluster.memberNodeIds.every((id) => selectedNodeIds.has(id))),
+        };
 
         // 2. Delete selected nodes from canvas (same as Delete key)
         const selectedNodeIdArray = Array.from(selectedNodeIds);
 
-        saveHistorySnapshot();
-
-        setNodes((nds) => nds.filter((node) => !node.selected));
-
-        setEdges((eds) =>
-          eds.filter(
-            (edge) =>
-              !edge.selected &&
-              !selectedNodeIdArray.includes(edge.source) &&
-              !selectedNodeIdArray.includes(edge.target),
-          ),
-        );
+        deleteNodeIds(selectedNodeIdArray);
 
         toast({ description: "Selection cut" });
         return;
@@ -1403,7 +1670,7 @@ const WorkflowEditorContent = () => {
           return;
         }
 
-        const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
+        const { nodes: copiedNodes, edges: copiedEdges, clusters: copiedClusters } = clipboardRef.current;
         if (copiedNodes.length === 0) {
           return;
         }
@@ -1525,6 +1792,15 @@ const WorkflowEditorContent = () => {
         });
 
         setEdges((eds) => [...eds, ...newEdges]);
+        const existingTitles = new Set(clusters.map(({ title }) => title.toLocaleLowerCase()));
+        const pastedClusters = copiedClusters.map((cluster) => {
+          let title = cluster.title;
+          let suffix = 2;
+          while (existingTitles.has(title.toLocaleLowerCase())) title = `${cluster.title} ${suffix++}`;
+          existingTitles.add(title.toLocaleLowerCase());
+          return { ...cluster, id: crypto.randomUUID(), title, memberNodeIds: cluster.memberNodeIds.map((id) => nodeIdMap[id]) };
+        });
+        setClusters((current) => [...current, ...pastedClusters]);
 
         toast({ description: "Selection pasted" });
         return;
@@ -1542,20 +1818,7 @@ const WorkflowEditorContent = () => {
           return;
         }
 
-        saveHistorySnapshot();
-
-        // Remove selected nodes
-        setNodes((nds) => nds.filter((node) => !node.selected));
-
-        // Remove selected edges AND edges connected to deleted nodes
-        setEdges((eds) =>
-          eds.filter(
-            (edge) =>
-              !edge.selected &&
-              !selectedNodeIds.includes(edge.source) &&
-              !selectedNodeIds.includes(edge.target),
-          ),
-        );
+        deleteNodeIds(selectedNodeIds);
       }
       if (event.key === "Backspace") {
         //console.log("Backspace key pressed but should NOT delete nodes");
@@ -1575,6 +1838,11 @@ const WorkflowEditorContent = () => {
     cloneNodes,
     stampNodesWithWorkflowSession,
     saveHistorySnapshot,
+    clusters,
+    createClusterFromSelection,
+    deleteNodeIds,
+    dissolveClustersForNodes,
+    restoreDocument,
   ]);
 
   // Add visibility change handler to prevent state loss on tab switching
@@ -1685,8 +1953,8 @@ const WorkflowEditorContent = () => {
                   sourceHandle: ed.sourceHandle,
                   targetHandle: ed.targetHandle,
                 })) as Edge[];
-                handleRestoreFromVersion(importedNodes, importedEdges);
-                setClusters(imported.clusters);
+                setInvalidClusterEntries(imported.invalidClusterEntries);
+                handleRestoreFromVersion(importedNodes, importedEdges, imported.clusters);
                 toast({
                   title: "Workflow imported",
                   description: imported.clusterDiagnostics.length > 0
@@ -1740,6 +2008,17 @@ const WorkflowEditorContent = () => {
         </div>
       </div>
 
+      {invalidClusterEntries.length > 0 && (
+        <div role="alert" className="flex items-center justify-between border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm">
+          <span>
+            {invalidClusterEntries.length} invalid cluster metadata {invalidClusterEntries.length === 1 ? "entry was" : "entries were"} preserved and must be repaired or removed before saving.
+          </span>
+          <Button variant="destructive" size="sm" onClick={() => setInvalidClusterEntries([])}>
+            Remove invalid metadata
+          </Button>
+        </div>
+      )}
+
       {/* Main Content Area */}
       {activeTab === "editor" ? (
         // Editor View
@@ -1760,6 +2039,10 @@ const WorkflowEditorContent = () => {
                 onMouseMove={onMouseMove}
                 onNodeDoubleClick={onNodeDoubleClick}
                 onPaneClick={onPaneClick}
+                onNodeContextMenu={onNodeContextMenu}
+                onSelectionContextMenu={onSelectionContextMenu}
+                onPaneContextMenu={(event) => openCanvasMenu(event, [], "pane")}
+                onMove={(_, nextViewport) => { setViewport(nextViewport); setCanvasMenu(null); }}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 connectionLineComponent={EdgeManager.PlugConnectionLine}
@@ -1790,6 +2073,59 @@ const WorkflowEditorContent = () => {
                 <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
               </ReactFlow>
             </ConnectionDragContext.Provider>
+            <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-label="Workflow clusters">
+              {clusters.map((cluster) => {
+                const members = nodes.filter((node) => cluster.memberNodeIds.includes(node.id));
+                if (members.length === 0) return null;
+                const padding = 24;
+                const header = 42;
+                const minX = Math.min(...members.map(({ position }) => position.x)) - padding;
+                const minY = Math.min(...members.map(({ position }) => position.y)) - padding - header;
+                const maxX = Math.max(...members.map((node) => node.position.x + (node.measured?.width ?? node.width ?? 280))) + padding;
+                const maxY = Math.max(...members.map((node) => node.position.y + (node.measured?.height ?? node.height ?? 180))) + padding;
+                return (
+                  <section
+                    key={cluster.id}
+                    className="absolute rounded-xl border-2 border-primary/40 bg-primary/[0.04]"
+                    style={{
+                      transform: `translate(${minX * viewport.zoom + viewport.x}px, ${minY * viewport.zoom + viewport.y}px)`,
+                      width: (maxX - minX) * viewport.zoom,
+                      height: (maxY - minY) * viewport.zoom,
+                    }}
+                  >
+                    <header className="nodrag pointer-events-auto flex min-h-10 items-center gap-2 rounded-t-lg bg-card/95 px-3 py-1 shadow-sm" onPointerDown={(event) => startClusterDrag(event, cluster)}>
+                      {editingClusterId === cluster.id ? (
+                        <Input
+                          autoFocus
+                          className="h-7 min-w-0 flex-1"
+                          value={cluster.title}
+                          onChange={(event) => setClusters((current) => current.map((item) => item.id === cluster.id ? { ...item, title: event.target.value } : item))}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onBlur={() => setEditingClusterId(null)}
+                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Escape") setEditingClusterId(null); }}
+                        />
+                      ) : (
+                        <button className="min-w-0 flex-1 truncate text-left text-sm font-semibold" onDoubleClick={() => setEditingClusterId(cluster.id)}>{cluster.title}</button>
+                      )}
+                      <Input
+                        aria-label={`${cluster.title} note`}
+                        className="h-7 w-36"
+                        maxLength={200}
+                        placeholder="Add note"
+                        value={cluster.note ?? ""}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onChange={(event) => setClusters((current) => current.map((item) => item.id === cluster.id
+                          ? { ...item, note: event.target.value || undefined }
+                          : item))}
+                      />
+                      <span className="text-xs text-muted-foreground">{members.length} nodes</span>
+                      <button className="text-xs text-muted-foreground hover:text-foreground" onPointerDown={(event) => event.stopPropagation()} onClick={() => dissolveClustersForNodes(cluster.memberNodeIds)}>Dissolve</button>
+                      <button className="text-xs text-destructive" onPointerDown={(event) => event.stopPropagation()} onClick={() => deleteNodeIds(cluster.memberNodeIds)}>Delete nodes</button>
+                    </header>
+                  </section>
+                );
+              })}
+            </div>
             <div className="pointer-events-auto absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
               <ExecuteAllControl
                 isExecuting={isAutoExecuting}
@@ -1799,6 +2135,30 @@ const WorkflowEditorContent = () => {
               />
             </div>
           </div>
+
+          {canvasMenu && createPortal(
+            <div
+              role="menu"
+              aria-label="Workflow actions"
+              className="fixed z-[100] w-64 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              style={{ left: canvasMenu.x, top: canvasMenu.y }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {canvasMenu.kind === "selection" ? <>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={!menuValidation?.valid || Boolean(dragSource.nodeId)} title={menuValidation?.violations[0]?.message} onClick={() => createClusterFromSelection(canvasMenu.nodeIds)}>
+                  Create cluster from selection
+                  {!menuValidation?.valid && <span className="block truncate text-xs text-muted-foreground">{menuValidation?.violations[0]?.message}</span>}
+                </button>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => dissolveClustersForNodes(canvasMenu.nodeIds)}>Dissolve cluster</button>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))}>Copy</button>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm text-destructive hover:bg-accent" onClick={() => deleteNodeIds(canvasMenu.nodeIds)}>Delete nodes</button>
+              </> : <>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50" disabled={!clipboardRef.current || Boolean(dragSource.nodeId)} onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }))}>Paste</button>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => setNodes((current) => current.map((node) => ({ ...node, selected: true })))}>Select all</button>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => setNodes((current) => current.map((node) => ({ ...node, selected: false })))}>Clear selection</button>
+                <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setIsPaletteVisible(true); setCanvasMenu(null); }}>Add node</button>
+              </>}
+            </div>, document.body)}
 
           {/* Right Sidebar - Node Palette */}
           {isPaletteVisible && (

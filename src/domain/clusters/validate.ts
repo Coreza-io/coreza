@@ -82,6 +82,8 @@ function validateTopology(
   if (members.size === 0 || [...members].some((id) => !nodeById.has(id))) return;
   const adjacency = new Map([...members].map((id) => [id, new Set<string>()]));
   const internalMain: Edge[] = [];
+  const incomingMain: Edge[] = [];
+  const outgoingMain: Edge[] = [];
   const incoming = new Set<string>();
   const outgoing = new Set<string>();
 
@@ -101,8 +103,8 @@ function validateTopology(
       adjacency.get(edge.source)?.add(edge.target);
       adjacency.get(edge.target)?.add(edge.source);
       if (kind === 'main') internalMain.push(edge);
-    } else if (kind === 'main' && targetInside) incoming.add(edge.target);
-    else if (kind === 'main' && sourceInside) outgoing.add(edge.source);
+    } else if (kind === 'main' && targetInside) { incoming.add(edge.target); incomingMain.push(edge); }
+    else if (kind === 'main' && sourceInside) { outgoing.add(edge.source); outgoingMain.push(edge); }
   }
 
   const first = members.values().next().value as string;
@@ -119,9 +121,32 @@ function validateTopology(
 
   const entry = incoming.size === 1 ? [...incoming][0] : undefined;
   const exit = outgoing.size === 1 ? [...outgoing][0] : undefined;
-  if (entry && internalMain.some((edge) => edge.target === entry)) violations.push(violation('entry-not-root', 'The cluster entry must be an internal root.', cluster.id, [entry]));
-  if (exit && internalMain.some((edge) => edge.source === exit)) violations.push(violation('exit-not-leaf', 'The cluster exit must be an internal leaf.', cluster.id, [exit]));
+  const acceptedLoop = entry && exit
+    ? isAcceptedLoopBoundary(entry, exit, internalMain, incomingMain, outgoingMain, nodeById)
+    : false;
+  if (entry && !acceptedLoop && internalMain.some((edge) => edge.target === entry)) violations.push(violation('entry-not-root', 'The cluster entry must be an internal root.', cluster.id, [entry]));
+  if (exit && !acceptedLoop && internalMain.some((edge) => edge.source === exit)) violations.push(violation('exit-not-leaf', 'The cluster exit must be an internal leaf.', cluster.id, [exit]));
   if (entry && exit && !hasDirectedPath(entry, exit, internalMain)) violations.push(violation('no-entry-exit-path', 'The cluster entry must connect to its exit.', cluster.id, [entry, exit]));
+}
+
+function isAcceptedLoopBoundary(
+  entry: string,
+  exit: string,
+  internalEdges: readonly Edge[],
+  incomingEdges: readonly Edge[],
+  outgoingEdges: readonly Edge[],
+  nodeById: ReadonlyMap<string, Node>,
+): boolean {
+  if (entry !== exit) return false;
+  const definition = nodeById.get(entry)?.data?.definition;
+  if (typeof definition !== 'object' || definition === null ||
+      (definition as { name?: unknown }).name !== 'Loop') return false;
+  if (!incomingEdges.every((edge) => edge.targetHandle == null || edge.targetHandle === 'in')) return false;
+  if (!outgoingEdges.every((edge) => edge.sourceHandle === 'done')) return false;
+  const loopBranches = internalEdges.filter((edge) => edge.source === entry && edge.sourceHandle === 'loop');
+  const returns = internalEdges.filter((edge) => edge.target === entry && (edge.targetHandle == null || edge.targetHandle === 'in'));
+  return loopBranches.length === 1 && returns.length >= 1 &&
+    returns.some((edge) => hasDirectedPath(loopBranches[0].target, edge.source, internalEdges));
 }
 
 function hasDirectedPath(source: string, target: string, edges: readonly Edge[]): boolean {
@@ -155,41 +180,37 @@ export function validateClusterSelection(
   const violations: ClusterViolation[] = [];
   const queue = [...members];
 
-  for (const edge of edges) {
-    if (!initiallySelected.has(edge.target) || initiallySelected.has(edge.source)) continue;
-    const kind = kindOf(edge, nodeById.get(edge.source), nodeById.get(edge.target));
-    if (kind !== 'attachment') continue;
-    const sharedEdges = edges.filter((candidate) =>
-      candidate.source === edge.source &&
-      candidate.id !== edge.id &&
-      kindOf(candidate, nodeById.get(candidate.source), nodeById.get(candidate.target)) === 'attachment' &&
-      !initiallySelected.has(candidate.target));
-    if (sharedEdges.length > 0) {
-      violations.push(violation(
-        'shared-attachment',
-        'An attachment shared with a node outside the selection cannot be clustered.',
-        candidate.id,
-        [edge.source, ...sharedEdges.map((shared) => shared.target)],
-        [edge.id, ...sharedEdges.map((shared) => shared.id)],
-      ));
-    }
-  }
-
+  // Attachments flow from dependency (source) to owner (target). Expand only
+  // owner -> dependency; traversing both ways can silently add another owner.
   while (queue.length > 0) {
     const memberId = queue.shift()!;
     for (const edge of edges) {
-      if (edge.source !== memberId && edge.target !== memberId) continue;
+      if (edge.target !== memberId) continue;
       const kind = kindOf(edge, nodeById.get(edge.source), nodeById.get(edge.target));
       if (!kind) {
         violations.push(violation('unknown-semantics', 'This selection contains a connection with unknown clustering semantics.', candidate.id, [edge.source, edge.target], [edge.id]));
         continue;
       }
       if (kind !== 'attachment') continue;
-      const dependencyId = edge.source === memberId ? edge.target : edge.source;
+      const dependencyId = edge.source;
       if (!members.has(dependencyId)) {
         members.add(dependencyId);
         queue.push(dependencyId);
       }
+    }
+  }
+
+  // Every included attachment must be exclusively owned by included nodes,
+  // including attachments that were selected directly or found recursively.
+  for (const attachmentId of members) {
+    const ownershipEdges = edges.filter((edge) => edge.source === attachmentId &&
+      kindOf(edge, nodeById.get(edge.source), nodeById.get(edge.target)) === 'attachment');
+    const outside = ownershipEdges.filter((edge) => !members.has(edge.target));
+    if (ownershipEdges.length > 0 && outside.length > 0) {
+      violations.push(violation('shared-attachment',
+        'An attachment shared with a node outside the selection cannot be clustered.',
+        candidate.id, [attachmentId, ...outside.map((edge) => edge.target)],
+        outside.map((edge) => edge.id)));
     }
   }
 

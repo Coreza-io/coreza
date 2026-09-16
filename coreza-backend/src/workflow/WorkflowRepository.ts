@@ -46,6 +46,7 @@ export class WorkflowRepository {
         edges: input.edges,
         project_id: input.project_id,
         schedule_cron: input.schedule_cron,
+        node_clusters: input.node_clusters,
         is_active: false,
       } as any)
       .select()

@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo, useRef } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 
@@ -16,6 +16,7 @@ interface StableNodeContextValue {
   getNodes: () => Node[];
   getEdges: () => Edge[];
   getNodeById: (id: string) => Node | undefined;
+  setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[]) => void;
 }
 
 const StableNodeContext = createContext<StableNodeContextValue | null>(null);
@@ -31,11 +32,16 @@ const StableNodeContext = createContext<StableNodeContextValue | null>(null);
  */
 export function StableNodeProvider({ children }: { children: React.ReactNode }) {
   const reactFlow = useReactFlow();
+  const canonicalRef = useRef<{ nodes?: readonly Node[]; edges?: readonly Edge[] }>({});
   
   const value = useMemo(() => ({
-    getNodes: () => reactFlow.getNodes(),
-    getEdges: () => reactFlow.getEdges(),
-    getNodeById: (id: string) => reactFlow.getNodes().find(n => n.id === id),
+    getNodes: () => [...(canonicalRef.current.nodes ?? reactFlow.getNodes())],
+    getEdges: () => [...(canonicalRef.current.edges ?? reactFlow.getEdges())],
+    getNodeById: (id: string) =>
+      (canonicalRef.current.nodes ?? reactFlow.getNodes()).find(n => n.id === id),
+    setCanonicalDocument: (nextNodes: readonly Node[], nextEdges: readonly Edge[]) => {
+      canonicalRef.current = { nodes: nextNodes, edges: nextEdges };
+    },
   }), [reactFlow]);
   
   return (
@@ -51,4 +57,9 @@ export function useStableNodes() {
     throw new Error('useStableNodes must be used within StableNodeProvider');
   }
   return ctx;
+}
+
+export function useCanonicalGraphSync(nodes: readonly Node[], edges: readonly Edge[]): void {
+  const context = useStableNodes();
+  context.setCanonicalDocument(nodes, edges);
 }

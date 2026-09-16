@@ -18,6 +18,9 @@ import { getVisibleValues } from '@/utils/fieldVisibility';
 import { nodeManifest } from '@/nodes/manifest';
 import { reconcileNodeValues } from '@/utils/reconcileNodeValues';
 import { safePinnedOutput } from '@/utils/pinnedOutput';
+import type { NodeCluster } from '@/domain/clusters/types';
+import { normalizeClusters, validateClusters } from '@/domain/clusters/validate';
+import { parseNodeClusters } from '@/domain/clusters/parse';
 
 export interface WorkflowPersistenceOptions {
   projectId: string | null;
@@ -32,6 +35,7 @@ export interface LoadedWorkflow {
   isActive: boolean;
   nodes: Node[];
   edges: Edge[];
+  clusters: NodeCluster[];
 }
 
 /**
@@ -56,22 +60,22 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
   // Unsaved-change tracking via simple JSON hash
   // ──────────────────────────────────────────────
   const computeHash = useCallback(
-    (nodes: Node[], edges: Edge[], name: string) =>
-      JSON.stringify({ name, nodes, edges }),
+    (nodes: Node[], edges: Edge[], name: string, clusters: readonly NodeCluster[] = []) =>
+      JSON.stringify({ name, nodes, edges, clusters: normalizeClusters(clusters) }),
     [],
   );
 
   const markSaved = useCallback(
-    (nodes: Node[], edges: Edge[], name: string) => {
-      lastSavedHashRef.current = computeHash(nodes, edges, name);
+    (nodes: Node[], edges: Edge[], name: string, clusters: readonly NodeCluster[] = []) => {
+      lastSavedHashRef.current = computeHash(nodes, edges, name, clusters);
     },
     [computeHash],
   );
 
   const hasUnsavedChanges = useCallback(
-    (nodes: Node[], edges: Edge[], name: string) =>
+    (nodes: Node[], edges: Edge[], name: string, clusters: readonly NodeCluster[] = []) =>
       lastSavedHashRef.current !== '' &&
-      computeHash(nodes, edges, name) !== lastSavedHashRef.current,
+      computeHash(nodes, edges, name, clusters) !== lastSavedHashRef.current,
     [computeHash],
   );
 
@@ -166,7 +170,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       workflowName: string,
       nodes: Node[],
       edges: Edge[],
-      opts: { isNew?: boolean } = {},
+      opts: { isNew?: boolean; clusters?: readonly NodeCluster[] } = {},
     ): Promise<{ success: boolean; newId?: string }> => {
       if (!authUser) {
         toast({
@@ -180,6 +184,17 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       setSaving(true);
 
       try {
+        const candidateClusters = opts.clusters ?? [];
+        const clusterValidation = validateClusters(nodes, edges, candidateClusters);
+        if (!clusterValidation.valid) {
+          toast({
+            title: 'Save Blocked',
+            description: clusterValidation.violations[0].message,
+            variant: 'destructive',
+          });
+          return { success: false };
+        }
+        const clusters = normalizeClusters(candidateClusters);
         // Block empty saves for existing workflows
         if (workflowId && !opts.isNew) {
           const shouldBlock = await shouldBlockEmptySave(workflowId, nodes.length);
@@ -209,6 +224,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           name: workflowName,
           nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
           edges: JSON.parse(JSON.stringify(cleanEdges)) as any,
+          node_clusters: JSON.parse(JSON.stringify(clusters)) as any,
           updated_at: new Date().toISOString(),
           ...(projectId && { project_id: projectId }),
         };
@@ -222,7 +238,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
 
           if (error) throw error;
 
-          markSaved(nodes, edges, workflowName);
+          markSaved(nodes, edges, workflowName, clusters);
           toast({ title: 'Success', description: 'Workflow updated!' });
           return { success: true };
         } else {
@@ -236,7 +252,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
 
           if (error) throw error;
 
-          markSaved(nodes, edges, workflowName);
+          markSaved(nodes, edges, workflowName, clusters);
           toast({ title: 'Success', description: 'Workflow saved!' });
           return { success: true, newId: data.id };
         }
@@ -374,9 +390,10 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           isActive: !!data.is_active,
           nodes: restoredNodes,
           edges: restoredEdges,
+          clusters: parseNodeClusters(data.node_clusters).clusters,
         };
 
-        markSaved(restoredNodes, restoredEdges, result.name);
+        markSaved(restoredNodes, restoredEdges, result.name, result.clusters);
         return result;
       } catch (error: any) {
         console.error('Error loading workflow:', error);

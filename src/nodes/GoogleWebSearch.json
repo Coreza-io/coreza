@@ -27,7 +27,7 @@
   "authAction": { "url": "/googlesearch/auth", "method": "POST" },
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 340, "height": 320 },
-  "handles": [{ "type": "source", "position": "top", "id": "tool" }],
+  "handles": [{ "type": "source", "position": "top", "id": "tool", "connectionKind": "attachment" }],
   "action": {
     "url": "/googlesearch/execute",
     "method": "POST"

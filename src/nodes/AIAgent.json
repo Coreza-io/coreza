@@ -12,6 +12,7 @@
       "type": "target",
       "position": "bottom",
       "id": "chatModel",
+      "connectionKind": "attachment",
       "label": "Chat Model",
       "required": true
     },
@@ -19,9 +20,10 @@
       "type": "target",
       "position": "bottom",
       "id": "memory",
+      "connectionKind": "attachment",
       "label": "Memory"
     },
-    { "type": "target", "position": "bottom", "id": "tool", "label": "Tool" },
+    { "type": "target", "position": "bottom", "id": "tool", "label": "Tool", "connectionKind": "attachment" },
     { "type": "source", "position": "right", "id": "output" }
   ],
   "action": { "url": "/aiagent/execute", "method": "POST" },

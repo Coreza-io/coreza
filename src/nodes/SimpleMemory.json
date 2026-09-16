@@ -6,7 +6,7 @@
   "icon": "/assets/icons/store.svg",
   "description": "Single-worker, non-persistent. History is lost on restart.",
   "size": { "width": 300, "height": 180 },
-  "handles": [{ "type": "source", "position": "top", "id": "memory" }],
+  "handles": [{ "type": "source", "position": "top", "id": "memory", "connectionKind": "attachment" }],
   "fields": [
     {
       "key": "sessionKey",

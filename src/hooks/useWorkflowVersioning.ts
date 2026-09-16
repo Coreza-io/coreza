@@ -29,7 +29,7 @@ export const useWorkflowVersioning = () => {
         // Fetch current state from DB before it gets overwritten
         const { data: current, error: fetchError } = await supabase
           .from("workflows")
-          .select("name, nodes, edges, is_active")
+          .select("name, nodes, edges, node_clusters, is_active")
           .eq("id", workflowId)
           .single();
 
@@ -70,6 +70,7 @@ export const useWorkflowVersioning = () => {
             name: current.name,
             nodes: current.nodes,
             edges: current.edges,
+            node_clusters: current.node_clusters,
             is_active: current.is_active,
             node_count: nodes.length,
             edge_count: Array.isArray(edges) ? edges.length : 0,

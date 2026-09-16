@@ -6,7 +6,7 @@
   "provider": "gemini",
   "icon": "/assets/icons/gemini.svg",
   "size": { "width": 300, "height": 280 },
-  "handles": [{ "type": "source", "position": "top", "id": "chatModel" }],
+  "handles": [{ "type": "source", "position": "top", "id": "chatModel", "connectionKind": "attachment" }],
   "auth": "GenericAuthModal",
   "authFields": [
     {

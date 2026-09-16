@@ -73,6 +73,7 @@ export interface ExecutionRun {
   // Workflow snapshot at execution time
   nodes: unknown[] | null;
   edges: unknown[] | null;
+  node_clusters: unknown;
   node_count: number | null;
   edge_count: number | null;
 }

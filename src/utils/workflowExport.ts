@@ -110,6 +110,7 @@ export async function importWorkflow(file: File): Promise<{
   isActive: boolean;
   clusters: NodeCluster[];
   clusterDiagnostics: string[];
+  invalidClusterEntries: Array<{ index: number; value: unknown }>;
 }> {
   const text = await file.text();
   let parsed: any;
@@ -142,5 +143,6 @@ export async function importWorkflow(file: File): Promise<{
     isActive: parsed.isActive ?? false,
     clusters: normalizeClusters(parsedClusters.clusters),
     clusterDiagnostics,
+    invalidClusterEntries: parsedClusters.invalidEntries,
   };
 }

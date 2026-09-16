@@ -77,6 +77,7 @@ describe('cluster validation', () => {
     expect(parseNodeClusters([{ id: 'id', title: 'Title', memberNodeIds: [42] }])).toEqual({
       clusters: [],
       invalidIndexes: [0],
+      invalidEntries: [{ index: 0, value: { id: 'id', title: 'Title', memberNodeIds: [42] } }],
     });
   });
 
@@ -143,5 +144,69 @@ describe('cluster validation', () => {
     expect(result.violations).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'shared-attachment', nodeIds: ['model', 'agent-b'] }),
     ]));
+  });
+
+  it('rejects a directly selected shared attachment without adding its owners', () => {
+    const model = node('model', 'sub');
+    model.data.definition = { ...(model.data.definition as object), handles: [{ id: 'chatModel', type: 'source', connectionKind: 'attachment' }] };
+    const agents = ['agent-a', 'agent-b'].map((id) => {
+      const owner = node(id);
+      owner.data.definition = { ...(owner.data.definition as object), handles: [{ id: 'chatModel', type: 'target', connectionKind: 'attachment' }] };
+      return owner;
+    });
+    const result = validateClusterSelection(
+      ['model', 'action'], [model, ...agents, node('action')],
+      [
+        edge('owner-a', 'model', 'agent-a', { sourceHandle: 'chatModel', targetHandle: 'chatModel' }),
+        edge('owner-b', 'model', 'agent-b', { sourceHandle: 'chatModel', targetHandle: 'chatModel' }),
+        edge('main', 'model', 'action'),
+      ], [], cluster([]),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.resolvedMemberNodeIds).toEqual(expect.arrayContaining(['model', 'action']));
+    expect(result.resolvedMemberNodeIds).not.toEqual(expect.arrayContaining(['agent-a', 'agent-b']));
+    expect(result.violations).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'shared-attachment' })]));
+  });
+
+  it('does not interpret an unknown supplied handle as main flow', () => {
+    const result = validateClusters(
+      [node('a'), node('b')],
+      [edge('bad-handle', 'a', 'b', { sourceHandle: 'misspelled', targetHandle: 'input' })],
+      [cluster(['a', 'b'])],
+    );
+    expect(result.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'unknown-semantics', edgeIds: ['bad-handle'] }),
+    ]));
+  });
+
+  it('accepts a configured dynamic Switch handle and rejects a removed one', () => {
+    const switchNode = node('switch');
+    switchNode.data.definition = {
+      name: 'Switch', node_type: 'main',
+      handles: [{ id: 'input', type: 'target' }, { id: 'fallback', type: 'source' }],
+    };
+    switchNode.data.values = { cases: [{ outputName: 'winner' }], enableFallback: true };
+    const nodes = [switchNode, node('target')];
+    expect(validateClusters(nodes, [edge('valid', 'switch', 'target', { sourceHandle: 'winner', targetHandle: 'input' })], [cluster(['switch', 'target'])]).valid).toBe(true);
+    expect(validateClusters(nodes, [edge('removed', 'switch', 'target', { sourceHandle: 'old-branch', targetHandle: 'input' })], [cluster(['switch', 'target'])]).violations)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'unknown-semantics', edgeIds: ['removed'] })]));
+  });
+
+  it('accepts only the explicit Loop loop/in cycle with a done boundary', () => {
+    const loop = node('loop');
+    loop.data.definition = {
+      name: 'Loop', node_type: 'main',
+      handles: [{ id: 'in', type: 'target' }, { id: 'loop', type: 'source' }, { id: 'done', type: 'source' }],
+    };
+    const nodes = [node('before'), loop, node('body'), node('after')];
+    const edges = [
+      edge('incoming', 'before', 'loop', { sourceHandle: 'output', targetHandle: 'in' }),
+      edge('branch', 'loop', 'body', { sourceHandle: 'loop', targetHandle: 'input' }),
+      edge('return', 'body', 'loop', { sourceHandle: 'output', targetHandle: 'in' }),
+      edge('done', 'loop', 'after', { sourceHandle: 'done', targetHandle: 'input' }),
+    ];
+    expect(validateClusters(nodes, edges, [cluster(['loop', 'body'])]).valid).toBe(true);
+    const arbitraryCycle = edges.map((item) => item.id === 'done' ? { ...item, sourceHandle: 'loop' } : item);
+    expect(validateClusters(nodes, arbitraryCycle, [cluster(['loop', 'body'])]).valid).toBe(false);
   });
 });

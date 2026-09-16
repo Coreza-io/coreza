@@ -8,6 +8,7 @@ interface ClusterHandleDefinition {
 }
 
 interface ClusterNodeDefinition {
+  name?: unknown;
   node_type?: unknown;
   handles?: unknown;
 }
@@ -25,11 +26,30 @@ const getHandle = (
   type: 'source' | 'target',
 ): ClusterHandleDefinition | undefined => {
   if (!definition || !Array.isArray(definition.handles)) return undefined;
-  return definition.handles.find((handle): handle is ClusterHandleDefinition => {
+  const handles = definition.handles.filter((handle): handle is ClusterHandleDefinition => {
     if (typeof handle !== 'object' || handle === null) return false;
     const candidate = handle as ClusterHandleDefinition;
-    return candidate.id === id && candidate.type === type;
+    return candidate.type === type;
   });
+  if (id == null) return handles.length === 1 ? handles[0] : undefined;
+  return handles.find((handle) => handle.id === id);
+};
+
+const isSupportedDynamicSourceHandle = (node: Node | undefined, id: string): boolean => {
+  const definition = getDefinition(node);
+  if (definition?.name !== 'Switch') return false;
+  const values = node?.data?.values;
+  if (typeof values !== 'object' || values === null) return false;
+  const record = values as Record<string, unknown>;
+  const cases = Array.isArray(record.cases) ? record.cases : [];
+  const caseIds = cases.flatMap((item, index) => {
+    if (typeof item !== 'object' || item === null) return [`case${index + 1}`];
+    const value = item as Record<string, unknown>;
+    const candidate = value.outputName ?? value.caseName ?? value.caseValue;
+    return [typeof candidate === 'string' && candidate.length > 0 ? candidate : `case${index + 1}`];
+  });
+  const fallback = typeof record.defaultCase === 'string' ? record.defaultCase : 'fallback';
+  return caseIds.includes(id) || (record.enableFallback !== false && id === fallback);
 };
 
 /** Resolves execution semantics from node definitions and explicit handle metadata. */
@@ -42,8 +62,16 @@ export function getClusterEdgeKind(
   const targetDefinition = getDefinition(target);
   if (!sourceDefinition || !targetDefinition) return undefined;
 
-  const sourceHandle = getHandle(sourceDefinition, edge.sourceHandle, 'source');
+  const sourceHandle = getHandle(sourceDefinition, edge.sourceHandle, 'source') ??
+    (typeof edge.sourceHandle === 'string' && isSupportedDynamicSourceHandle(source, edge.sourceHandle)
+      ? { id: edge.sourceHandle, type: 'source', connectionKind: 'main' }
+      : undefined);
   const targetHandle = getHandle(targetDefinition, edge.targetHandle, 'target');
+  // An explicitly supplied handle must resolve. Falling through to `main`
+  // would make removed or misspelled dynamic handles executable metadata.
+  if ((edge.sourceHandle != null && !sourceHandle) || (edge.targetHandle != null && !targetHandle)) {
+    return undefined;
+  }
   const explicitKinds = [sourceHandle?.connectionKind, targetHandle?.connectionKind]
     .filter((kind): kind is SemanticEdgeKind => kind === 'main' || kind === 'attachment');
 

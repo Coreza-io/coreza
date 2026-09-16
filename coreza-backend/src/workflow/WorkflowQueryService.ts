@@ -2,6 +2,7 @@ import { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
 import { CreateWorkflowInput, UpdateWorkflowInput } from "./schemas";
 import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
+import { validateNodeClusterDocument } from "./validateNodeClusters";
 
 export class WorkflowQueryService {
   constructor(
@@ -15,10 +16,21 @@ export class WorkflowQueryService {
   }
 
   async createWorkflow(userId: string, input: CreateWorkflowInput) {
+    validateNodeClusterDocument({ nodes: input.nodes, edges: input.edges, node_clusters: input.node_clusters });
     return this.workflowRepo.create(userId, input);
   }
 
   async updateWorkflow(userId: string, workflowId: string, input: UpdateWorkflowInput) {
+    const existing = await this.workflowRepo.getOwnedWorkflow(userId, workflowId, "nodes,edges,node_clusters") as {
+      nodes?: Array<{ id?: unknown }>;
+      edges?: Array<{ id?: unknown; source?: unknown; target?: unknown }>;
+      node_clusters?: CreateWorkflowInput["node_clusters"];
+    };
+    validateNodeClusterDocument({
+      nodes: input.nodes ?? existing.nodes ?? [],
+      edges: input.edges ?? existing.edges ?? [],
+      node_clusters: input.node_clusters ?? existing.node_clusters ?? [],
+    });
     return this.workflowRepo.update(userId, workflowId, input);
   }
 

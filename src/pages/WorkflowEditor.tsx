@@ -99,6 +99,8 @@ import {
 } from "@/utils/brokerRegistry";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 import { cn } from "@/lib/utils";
+import type { NodeCluster } from "@/domain/clusters/types";
+import { parseNodeClusters } from "@/domain/clusters/parse";
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
@@ -224,6 +226,7 @@ const WorkflowEditorContent = () => {
     isNewWorkflow ? "My workflow 1" : "Loading...",
   );
   const [isActive, setIsActive] = useState(false);
+  const [clusters, setClusters] = useState<NodeCluster[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingExecution, setLoadingExecution] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
@@ -773,7 +776,7 @@ const WorkflowEditorContent = () => {
     }
 
     const requiresSave =
-      !hasPersistedRef.current || hasUnsavedChanges(nodes, edges, workflowName);
+      !hasPersistedRef.current || hasUnsavedChanges(nodes, edges, workflowName, clusters);
 
     if (!requiresSave) {
       return true;
@@ -781,6 +784,7 @@ const WorkflowEditorContent = () => {
 
     const saveResult = await saveWorkflow(workflowId, workflowName, nodes, edges, {
       isNew: !hasPersistedRef.current,
+      clusters,
     });
 
     if (!saveResult.success) {
@@ -808,6 +812,7 @@ const WorkflowEditorContent = () => {
     nodes,
     edges,
     workflowName,
+    clusters,
     saveWorkflow,
     toast,
     projectId,
@@ -909,6 +914,7 @@ const WorkflowEditorContent = () => {
     const isFirstSave = !hasPersistedRef.current;
     const result = await saveWorkflow(workflowId, workflowName, nodes, edges, {
       isNew: isFirstSave,
+      clusters,
     });
 
     if (result.success && isFirstSave && workflowId) {
@@ -1131,7 +1137,7 @@ const WorkflowEditorContent = () => {
 
   // Restore workflow from a version snapshot
   const handleRestoreFromVersion = useCallback(
-    (restoredNodes: Node[], restoredEdges: Edge[]) => {
+    (restoredNodes: Node[], restoredEdges: Edge[], restoredClusters?: NodeCluster[]) => {
       // Restore nodes with definitions from manifest
       const nodesWithDefinitions = restoredNodes.map((node) => {
         const nodeName = (node as any).name || node.type || node.id;
@@ -1171,6 +1177,7 @@ const WorkflowEditorContent = () => {
 
       setNodes(stampNodesWithWorkflowSession(nodesWithDefinitions));
       setEdges(edgesWithHandlers);
+      if (restoredClusters) setClusters(restoredClusters);
 
       toast({
         title: "Version Restored",
@@ -1234,6 +1241,7 @@ const WorkflowEditorContent = () => {
           setIsActive(loaded.isActive);
           setNodes(stampNodesWithWorkflowSession(loaded.nodes));
           setEdges(loaded.edges);
+          setClusters(loaded.clusters);
           setHasLoadedWorkflowId(workflowId);
         } else {
           navigate("/dashboard/workflows");
@@ -1678,9 +1686,12 @@ const WorkflowEditorContent = () => {
                   targetHandle: ed.targetHandle,
                 })) as Edge[];
                 handleRestoreFromVersion(importedNodes, importedEdges);
+                setClusters(imported.clusters);
                 toast({
                   title: "Workflow imported",
-                  description: `Loaded "${imported.name}" with ${imported.nodes.length} nodes.`,
+                  description: imported.clusterDiagnostics.length > 0
+                    ? `Loaded "${imported.name}" with ${imported.nodes.length} nodes. ${imported.clusterDiagnostics.join(" ")}`
+                    : `Loaded "${imported.name}" with ${imported.nodes.length} nodes.`,
                 });
               } catch (err: any) {
                 toast({
@@ -1702,7 +1713,7 @@ const WorkflowEditorContent = () => {
             <Upload className="h-4 w-4" />
           </Button>
           <Button
-            onClick={() => exportWorkflow(workflowName, nodes, edges, isActive)}
+            onClick={() => exportWorkflow(workflowName, nodes, edges, isActive, clusters)}
             variant="outline"
             size="icon"
             className="h-10 w-10"
@@ -1886,6 +1897,7 @@ const WorkflowEditorContent = () => {
                   handleRestoreFromVersion(
                     selectedExecution.nodes as Node[],
                     selectedExecution.edges as Edge[],
+                    parseNodeClusters(selectedExecution.node_clusters).clusters,
                   );
                   toast({
                     title: "Workflow restored",

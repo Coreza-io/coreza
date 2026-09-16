@@ -4,6 +4,7 @@ export const HandleSchema = z.object({
   type: z.enum(["source", "target"]),
   position: z.enum(["left", "right", "top", "bottom"]),
   id: z.string().min(1),
+  connectionKind: z.enum(["main", "attachment"]).optional(),
 });
 
 export const ValueMapSchema = z.object({

@@ -14,7 +14,8 @@
     {
       "type": "source",
       "position": "top",
-      "id": "memory"
+      "id": "memory",
+      "connectionKind": "attachment"
     }
   ],
   "auth": "GenericAuthModal",

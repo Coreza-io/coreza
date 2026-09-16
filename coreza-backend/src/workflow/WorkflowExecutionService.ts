@@ -23,6 +23,7 @@ export class WorkflowExecutionService {
       userId,
       workflow.nodes,
       workflow.edges,
+      workflow.node_clusters,
     );
 
     const runId = (run as any).id;

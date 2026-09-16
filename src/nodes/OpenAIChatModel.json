@@ -6,7 +6,7 @@
   "provider": "openai",
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 300, "height": 320 },
-  "handles": [{ "type": "source", "position": "top", "id": "chatModel" }],
+  "handles": [{ "type": "source", "position": "top", "id": "chatModel", "connectionKind": "attachment" }],
   "auth": "GenericAuthModal",
   "authFields": [
     {

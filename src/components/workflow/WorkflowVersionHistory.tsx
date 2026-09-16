@@ -24,7 +24,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { Node, Edge } from "@xyflow/react";
-import { Json } from "@/integrations/supabase/types";
+import type { NodeCluster } from "@/domain/clusters/types";
+import { parseNodeClusters } from "@/domain/clusters/parse";
 
 interface WorkflowVersion {
   id: string;
@@ -38,7 +39,7 @@ interface WorkflowVersion {
 
 interface WorkflowVersionHistoryProps {
   workflowId: string | null;
-  onRestore: (nodes: Node[], edges: Edge[]) => void;
+  onRestore: (nodes: Node[], edges: Edge[], clusters: NodeCluster[]) => void;
   disabled?: boolean;
 }
 
@@ -86,7 +87,7 @@ export const WorkflowVersionHistory: React.FC<WorkflowVersionHistoryProps> = ({
     if (workflowId) {
       fetchVersions();
     }
-  }, [workflowId]);
+  }, [workflowId, fetchVersions]);
 
   // Refresh when sheet opens
   useEffect(() => {
@@ -100,18 +101,17 @@ export const WorkflowVersionHistory: React.FC<WorkflowVersionHistoryProps> = ({
     try {
       const { data, error } = await supabase
         .from("workflow_versions")
-        .select("nodes, edges")
+        .select("nodes, edges, node_clusters")
         .eq("id", version.id)
         .single();
 
       if (error) throw error;
 
       if (data) {
-        // Convert from Json to proper types
         const nodes = data.nodes as unknown as Node[];
         const edges = data.edges as unknown as Edge[];
 
-        onRestore(nodes, edges);
+        onRestore(nodes, edges, parseNodeClusters(data.node_clusters).clusters);
         setOpen(false);
         toast({
           title: "Version Restored",

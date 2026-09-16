@@ -10,6 +10,9 @@
 
 import { Node, Edge } from '@xyflow/react';
 import { safePinnedOutput } from '@/utils/pinnedOutput';
+import type { NodeCluster } from '@/domain/clusters/types';
+import { normalizeClusters } from '@/domain/clusters/validate';
+import { parseNodeClusters } from '@/domain/clusters/parse';
 
 interface ExportedWorkflow {
   meta: {
@@ -36,6 +39,7 @@ interface ExportedWorkflow {
     targetHandle?: string | null;
   }>;
   isActive: boolean;
+  clusters?: NodeCluster[];
 }
 
 export function exportWorkflow(
@@ -43,6 +47,7 @@ export function exportWorkflow(
   nodes: Node[],
   edges: Edge[],
   isActive: boolean,
+  clusters: readonly NodeCluster[] = [],
 ) {
   const minimalNodes = nodes.map((node) => {
     const def = node.data?.definition as any;
@@ -70,13 +75,14 @@ export function exportWorkflow(
   const exported: ExportedWorkflow = {
     meta: {
       exportedAt: new Date().toISOString(),
-      version: '1.0',
+      version: '1.1',
       source: 'coreza',
     },
     name,
     nodes: minimalNodes,
     edges: minimalEdges,
     isActive,
+    clusters: normalizeClusters(clusters),
   };
 
   const json = JSON.stringify(exported, null, 2);
@@ -102,6 +108,8 @@ export async function importWorkflow(file: File): Promise<{
   nodes: ExportedWorkflow['nodes'];
   edges: ExportedWorkflow['edges'];
   isActive: boolean;
+  clusters: NodeCluster[];
+  clusterDiagnostics: string[];
 }> {
   const text = await file.text();
   let parsed: any;
@@ -123,11 +131,16 @@ export async function importWorkflow(file: File): Promise<{
   if (typeof parsed.name !== 'string' || !parsed.name.trim()) {
     throw new Error('Workflow file is missing a name');
   }
+  const parsedClusters = parseNodeClusters(parsed.clusters);
+  const clusterDiagnostics = parsedClusters.invalidIndexes.map((index) =>
+    `Cluster metadata entry ${index + 1} is invalid and was not loaded.`);
 
   return {
     name: parsed.name,
     nodes: parsed.nodes,
     edges: parsed.edges,
     isActive: parsed.isActive ?? false,
+    clusters: normalizeClusters(parsedClusters.clusters),
+    clusterDiagnostics,
   };
 }

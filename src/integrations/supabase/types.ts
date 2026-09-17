@@ -824,6 +824,7 @@ export type Database = {
           execution_id: string | null
           id: string
           initiated_by: string | null
+          node_clusters: Json
           node_count: number | null
           nodes: Json | null
           result: Json | null
@@ -840,6 +841,7 @@ export type Database = {
           execution_id?: string | null
           id?: string
           initiated_by?: string | null
+          node_clusters?: Json
           node_count?: number | null
           nodes?: Json | null
           result?: Json | null
@@ -856,6 +858,7 @@ export type Database = {
           execution_id?: string | null
           id?: string
           initiated_by?: string | null
+          node_clusters?: Json
           node_count?: number | null
           nodes?: Json | null
           result?: Json | null
@@ -891,6 +894,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          node_clusters: Json
           node_count: number
           nodes: Json
           version_number: number
@@ -905,6 +909,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          node_clusters?: Json
           node_count: number
           nodes: Json
           version_number: number
@@ -919,6 +924,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          node_clusters?: Json
           node_count?: number
           nodes?: Json
           version_number?: number
@@ -942,9 +948,11 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          node_clusters: Json
           nodes: Json
           persistent_state: Json | null
           project_id: string | null
+          revision: number
           schedule_cron: string | null
           updated_at: string | null
           user_id: string
@@ -956,9 +964,11 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          node_clusters?: Json
           nodes: Json
           persistent_state?: Json | null
           project_id?: string | null
+          revision?: number
           schedule_cron?: string | null
           updated_at?: string | null
           user_id: string
@@ -970,9 +980,11 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          node_clusters?: Json
           nodes?: Json
           persistent_state?: Json | null
           project_id?: string | null
+          revision?: number
           schedule_cron?: string | null
           updated_at?: string | null
           user_id?: string

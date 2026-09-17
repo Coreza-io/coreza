@@ -57,7 +57,10 @@ import {
 } from "../../../../coreza-backend/src/nodes/logic/editFields";
 import { pickJsonSource } from "../../../../coreza-backend/src/utils/referenceResolution";
 import type { ReferenceNode } from "../../../../coreza-backend/src/utils/referenceResolution";
-import { isTypedEditFieldRow } from "../../../../coreza-backend/src/nodes/logic/typedEditFieldRow";
+import {
+  isTypedEditFieldRow,
+  type TypedEditFieldRow,
+} from "../../../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import {
   formatPath,
   parseJsonReferenceDragPayload,
@@ -65,7 +68,7 @@ import {
 import { insertEditFieldReference } from "@/utils/editFieldReferenceDrop";
 
 interface EditFieldEditorProps {
-  row: Record<string, unknown>;
+  row: TypedEditFieldRow;
   index: number;
   disabled?: boolean;
   update: (index: number, field: string, value: unknown) => void;

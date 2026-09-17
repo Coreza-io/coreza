@@ -1510,7 +1510,12 @@ const WorkflowEditorContent = () => {
     }
   }, [isPaletteVisible]);
 
-  const openCanvasMenu = useCallback((event: React.MouseEvent, nodeIds: string[], kind: CanvasMenuState["kind"]) => {
+  const openCanvasMenu = useCallback((event: {
+    clientX: number;
+    clientY: number;
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }, nodeIds: string[], kind: CanvasMenuState["kind"]) => {
     event.preventDefault();
     event.stopPropagation();
     contextMenuFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;

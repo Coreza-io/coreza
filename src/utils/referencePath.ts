@@ -44,9 +44,13 @@ export function parseJsonReferenceDragPayload(
           typeof payload.keyPath === "string" ? payload.keyPath.trim() : "",
         );
     if (!pathSegments) return null;
+    const sourceNodeId =
+      typeof payload.sourceNodeId === "string"
+        ? payload.sourceNodeId
+        : undefined;
     return createJsonReferenceDragPayload(
       pathSegments,
-      payload.sourceNodeId,
+      sourceNodeId,
       typeof payload.value === "string" ? payload.value : "",
     );
   } catch {

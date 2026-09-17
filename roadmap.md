@@ -1,7 +1,7 @@
 ## Build gate
-- [ ] Fix reported TypeScript errors
-- [ ] Apply and verify grouping schema migration
-- [ ] Verify focused tests and compile checks
+- [x] Fix reported TypeScript errors
+- [x] Apply and verify grouping schema migration
+- [x] Verify focused tests and compile checks
 
 ## Cluster completion
 - [ ] Canonical document and command paths
@@ -10,3 +10,8 @@
 - [ ] Runtime-independent execution controllers
 - [ ] Compact expand/collapse projection
 - [ ] Browser and regression acceptance
+
+## External blockers
+- [ ] Set a shorter authentication email-code expiry in Supabase settings
+- [ ] Enable leaked-password protection in Supabase settings
+- [ ] Upgrade the Supabase Postgres version to the available patched release

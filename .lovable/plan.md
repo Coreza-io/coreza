@@ -11,7 +11,7 @@ Persist every workflow as one consistent document so a saved cluster returns aft
 
 Nodes and connections will remain canonical in the workflow's `nodes` and `edges` arrays. Each cluster will reference its nodes through `memberNodeIds`; it will not duplicate node or edge payloads inside `node_clusters`. This avoids stale copies while still restoring the complete clustered graph.
 
-Cluster expansion/collapse remains local view state and will not dirty or persist the executable workflow. In the current model, persisted cluster settings are `title` and optional `note`; future settings must be added as explicit typed fields rather than an unrestricted object.
+Cluster expansion/collapse remains local view state and will not dirty or persist the executable workflow. It will follow Coreza's existing node interaction: compact by default, expand on double-click or a chevron, and close from the expanded header. In the current model, persisted cluster settings are `title` and optional `note`; future settings must be added as explicit typed fields rather than an unrestricted object.
 
 ## Confirmed baseline
 
@@ -21,6 +21,7 @@ Cluster expansion/collapse remains local view state and will not dirty or persis
 - The primary editor save bypasses backend validation, performs an unconditional last-write-wins update, and does not use `revision`.
 - Creating a version and updating a workflow are separate operations, so they can partially succeed or race.
 - Persistence round-trip, concurrent-save, and browser reload coverage is missing.
+- Cluster expand/collapse is not implemented. The active editor always renders every member plus an expanded frame; there is no cluster expansion state, chevron action, compact cluster node, projected boundary edge, or collapse test.
 
 ## 1. Define one persisted workflow document
 
@@ -142,7 +143,98 @@ Legacy rows with missing cluster metadata load as `[]`. Invalid metadata remains
 - Audit scheduler, streaming, webhook, and recovery run creators; every run snapshot must include clusters from the same workflow read as its nodes and edges.
 - Runtime execution continues receiving canonical real nodes and edges only; clusters are descriptive snapshot metadata and must not alter execution order.
 
-## 8. Regression and acceptance coverage
+## 8. Add node-style cluster expand/collapse
+
+Implement the uploaded reference behavior only after cluster persistence uses one canonical document. Do not copy external names or implementation details; keep Coreza's `NodeCluster` model and existing node interaction conventions.
+
+### Separate document and view state
+
+Maintain expansion outside `NodeCluster`:
+
+```text
+clusterViewState[clusterId] = {
+  expanded: boolean
+}
+```
+
+- New and loaded clusters default compact, matching ordinary Coreza nodes.
+- A newly created cluster may remain expanded while its title is initially edited, then follow the normal compact behavior.
+- Expansion is not stored in `node_clusters`, versions, runs, exports, undo history, or the dirty hash.
+- Remove stale view entries when clusters are dissolved/deleted; initialize missing entries safely after load/restore/import.
+
+### Match the existing node controls
+
+- Add an icon-only chevron button at the right side of the expanded header, in the position shown in the reference.
+- The expanded header chevron collapses the cluster.
+- A compact cluster card expands on double-click and through the paired chevron button.
+- Support `Enter` and `Space` on the focused toggle.
+- Add `aria-expanded`, `aria-controls`, and clear tooltips.
+- Toggle controls stop pointer propagation so they never drag the frame, select members, connect handles, or pan the canvas.
+- Escape closes title/note editing before any other cluster action.
+- Use the existing semantic button component and tokenized styles; respect reduced-motion preferences.
+
+### Build a display-only compact cluster node
+
+Create a dedicated React Flow display type for a collapsed cluster. It is a visual projection, never an executable workflow node.
+
+The compact card shows:
+
+- cluster title and optional truncated note;
+- member count;
+- execution/error summary derived from member runtime state;
+- expand control;
+- stable compact dimensions so toggling does not cause layout jitter.
+
+Use reserved collision-safe display IDs. Exclude these IDs from persistence, references, clipboard data, node counts, validators, execution queues, backtests, versions, and run snapshots.
+
+### Project nodes and connections without changing the saved graph
+
+Derive React Flow's displayed nodes/edges from the canonical nodes, edges, clusters, and expansion state:
+
+- expanded cluster: render all real member nodes, real internal edges, real boundary edges, and the existing frame;
+- collapsed cluster: hide member visuals and internal display edges, then render one compact display node;
+- unclustered nodes always render normally;
+- boundary edges terminate visually at the compact card while retaining the canonical real source/target node IDs, edge ID, and handle information in a projection index;
+- edges between two collapsed clusters project both endpoints;
+- initially render one display edge per real edge; do not aggregate several real connections behind one deletable edge;
+- compact display handles are non-connectable in the first release, avoiding ambiguous edits while members are hidden.
+
+Maintain explicit maps from display IDs to canonical cluster/node/edge IDs. All edit, delete, inspect, focus, and restore actions must resolve through those maps and mutate only the canonical document. Toggling must never rewrite nodes, edges, membership, or positions.
+
+### Preserve placement and cluster movement
+
+- Anchor the compact card to a deterministic point derived from the expanded frame's top-left/header position.
+- Collapsing and expanding restores every member at its exact canonical position.
+- Dragging an expanded frame continues moving all real members once from a fixed flow-space baseline.
+- If compact-card dragging is enabled, it moves all canonical members by the same delta and records one history entry; otherwise mark the compact card non-draggable for the first release.
+- Fit view, minimap, selection, context menus, and focus use the visible projection while commands operate on canonical IDs.
+- Searching for or focusing a hidden member expands its owning cluster before centering that real node.
+
+### Keep execution independent from visibility
+
+Before hidden members are removed from the React Flow display array, verify that execution ownership does not rely on their visual components being mounted. Move any required registration, listeners, input resolution, callbacks, and cleanup to workflow-owned runtime controllers.
+
+Hard gates:
+
+- a member that has never rendered still resolves inputs and executes;
+- collapse during execution or streaming does not interrupt delivery;
+- repeated toggles create no duplicate listeners, submissions, or callbacks;
+- expanding restores exact real nodes, edges, handles, outputs, and status;
+- deleting or renaming a member reconciles its controller exactly once.
+
+If that runtime gate is not yet met, ship the header toggle only behind a disabled capability flag until renderer-independent controllers pass; never expose a collapse control that can break execution.
+
+### Expand/collapse tests
+
+- view-state reducer: default compact, toggle, cleanup after dissolve, and no dirty/history change;
+- projection: expanded, collapsed, unclustered, cluster-to-cluster, boundary-handle, Loop, and attachment fixtures;
+- canonical safety: no display ID reaches serialization, execution, export, version, run snapshot, or clipboard;
+- geometry: collapse/expand preserves positions and repeated toggles do not drift;
+- runtime: hidden members execute identically and register exactly once;
+- accessibility: keyboard toggle, focus restoration, labels, tooltips, and reduced motion;
+- browser: click the expanded-header chevron shown in the reference, verify one compact card replaces the members, reload the saved workflow, expand it, and verify the complete persisted graph is unchanged.
+
+## 9. Regression and acceptance coverage
 
 ### Frontend/domain
 
@@ -176,4 +268,4 @@ Using an authenticated preview:
 
 ## Completion gate
 
-Cluster persistence is complete only when manual save, tab-hide save, execution-before-save, reload, version restore, import/export, and run snapshots all preserve one matching nodes/edges/clusters document, and concurrent saves cannot silently lose cluster changes.
+Cluster persistence and expand/collapse are complete only when manual save, tab-hide save, execution-before-save, reload, version restore, import/export, and run snapshots all preserve one matching nodes/edges/clusters document; concurrent saves cannot silently lose cluster changes; and toggling changes only the display while canonical execution remains identical.

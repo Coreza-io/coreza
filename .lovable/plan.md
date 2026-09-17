@@ -1,182 +1,334 @@
-# Complete Coreza Clusters and fix the missing right-click action
+# Complete Coreza node clusters, including node-style expand and collapse
 
-## Review verdict
+## Review result
 
-The current implementation is a **partial data and persistence foundation**, not the end-to-end feature. The cluster types, parser, validator, database columns, save/load plumbing, version snapshots, export/import fields, run snapshot field, and nine domain tests exist.
+The current checkout contains a **cluster data foundation**, but not an end-to-end canvas feature.
 
-The screenshot shows the browser menu because the live React Flow in `src/pages/WorkflowEditor.tsx` has no `onSelectionContextMenu`, `onNodeContextMenu`, or `onPaneContextMenu`, and no application menu is rendered. The editor also has no cluster creation command, shortcut, frame/card renderer, or cluster-aware undo/clipboard path. This is missing integration, not a styling or visibility issue.
+Confirmed working foundations:
 
-The current code also confirms these correctness defects:
+- `NodeCluster` metadata, parsing, normalization, and topology validation exist.
+- Workflow save/load, version snapshots, export/import, and execution snapshot types include `node_clusters` in several paths.
+- The editor stores `clusters` and includes them in dirty checks and saves.
+- Focused domain tests cover basic topology, triggers, attachment expansion, shared attachments, and malformed persisted entries.
 
-- Rename updates node and edge IDs but not `memberNodeIds`; delete/cut and edge edits can likewise leave clusters invalid and block saving.
-- `WorkflowLifecycleService` reads only `id,user_id,nodes,edges,is_active,schedule_cron`, then passes absent `workflow.node_clusters` into backtest run creation.
-- Backend create/update schemas do not accept `node_clusters`; the backend write path does not validate a merged `{nodes, edges, clusters}` document.
-- The validator has no Loop-specific exception.
-- Shared attachments can expand into an unselected owner when the attachment itself was selected.
-- Unknown supplied handle IDs can fall back to `main`.
-- Loading drops malformed entries by ignoring `invalidIndexes`; shape-valid but semantically invalid clusters remain invisible until save fails.
+Confirmed missing or incorrect behavior:
 
-Keep the Coreza-owned names `NodeCluster`, `clusters`, `memberNodeIds`, `title`, `note`, and `node_clusters`. Do not copy n8n naming, UI text, limits, source, or implementation.
+- The live canvas is the `ReactFlow` rendered directly by `src/pages/WorkflowEditor.tsx`; it has no cluster renderer or context-menu callbacks. `WorkflowCanvas.tsx` is not the active editor path and must not be treated as the integration point.
+- There is no create/dissolve command, cluster frame, compact cluster card, cluster expand/collapse state, or grouping keyboard shortcut in the live editor.
+- The native browser menu appears because the live canvas does not handle selection/node/pane context-menu events.
+- The existing node interaction is local view state: `NodeWrapper` starts collapsed, opens on double-click, and closes from an icon button without modifying executable node data. Clusters need the same interaction contract, adapted to a frame/card.
+- Current undo snapshots restore nodes and edges only; clusters are omitted. Clipboard, cut/delete, rename, and paste are also not cluster-aware.
+- `useNodeRenaming` does not remap cluster membership.
+- The shared-attachment traversal is effectively bidirectional after its initial check and can absorb an owner that was not selected.
+- Unknown handle IDs can fall back to `main` in `edgeSemantics.ts`.
+- Load ignores `invalidIndexes`, so malformed cluster metadata is silently discarded.
+- `WorkflowLifecycleService` omits `node_clusters` from its activation query but later passes that missing field into backtest run creation.
+- Backend create/update schemas currently reject or strip `node_clusters`.
+- `StableNodeContext` reads React Flow’s rendered nodes. Collapsing by removing/hiding member renderers would therefore alter upstream discovery and component-mounted auto-execution.
 
-## Phase 1 — make all graph edits atomic and cluster-safe
+Keep the independent Coreza terms `NodeCluster`, `clusters`, `memberNodeIds`, `title`, `note`, and `node_clusters`. Do not copy external product naming, text, limits, visuals, source, or algorithms. The screenshots define only the expected compact/expanded interaction.
 
-Create one document command layer over `{nodes, edges, clusters}` and route grouping plus existing graph mutations through it:
+## 1. Establish one canonical workflow document
+
+Introduce a single editor document boundary:
 
 ```text
-current document + command
-  -> candidate nodes/edges/clusters
-  -> normalize affected metadata
-  -> validate the complete candidate
-  -> commit once + one history entry
+WorkflowDocument
+  nodes: Node[]
+  edges: Edge[]
+  clusters: NodeCluster[]
 ```
 
-Cover create/dissolve cluster, rename, node delete, cut, paste, duplicate, connect, reconnect, edge delete, insert-on-edge, node replacement, dynamic handle removal, import and history restore.
+All structural operations produce a candidate document, validate it, and commit it once. Do not perform independent `setNodes`, `setEdges`, and `setClusters` updates for one user action.
 
-- Rename remaps the old node id to the new id in membership in the same commit as nodes and edges.
-- Delete/cut removes deleted ids, drops empty clusters, keeps valid singleton clusters, and dissolves only metadata when survivors become disconnected. Explain which cluster was dissolved; never block normal node deletion.
-- Invalid edge mutations are rejected before graph state changes. Offer **Dissolve cluster and apply** as one undoable operation.
-- Replace the current pop-only history with a cursor supporting undo and redo. Every snapshot includes nodes, edges and clusters; a new mutation clears redo.
-- Update `StableNodeContext` to read canonical document nodes/edges rather than React Flow's projected/rendered graph. Keep React Flow reads for canvas-only concerns.
+Create commands for:
 
-## Phase 2 — correct validation and semantic edge handling
+- create cluster from selection;
+- dissolve cluster without deleting nodes;
+- rename cluster and update note;
+- move cluster members;
+- rename node ID;
+- delete/cut nodes;
+- paste/duplicate;
+- connect, reconnect, and delete an edge;
+- replace a node or remove a dynamic handle;
+- import or restore a snapshot.
+
+Command behavior:
+
+- Validate the complete candidate before commit.
+- Record nodes, edges, and clusters in one history entry.
+- Add a history cursor for undo and redo; new edits clear redo.
+- Node rename remaps membership in the same transaction.
+- Node deletion removes deleted IDs, removes empty clusters, keeps valid singleton clusters, and dissolves metadata only when surviving members can no longer form a valid cluster.
+- Invalid edge changes are rejected without partially mutating the graph. Where appropriate, offer one atomic “Dissolve cluster and apply” action.
+- Route node-card deletion through this command layer; `NodeWrapper` must not bypass it by directly mutating React Flow state.
+
+## 2. Correct validation before exposing creation
 
 ### Attachment ownership
 
-Traverse dependencies from owner to attachment, not indiscriminately in both directions. For every included attachment, inspect all owners whether it was selected initially or discovered recursively. Reject when an owner remains outside the intended selection; never silently add that owner.
+Represent attachment direction as owner-to-dependency semantics instead of traversing attachment edges in both directions.
 
-Add cases for agent-only, agent-plus-model, model-only, shared model, and recursively discovered shared attachment selections.
+- Starting from selected owner nodes, recursively include required dependencies.
+- For each dependency, inspect every owner.
+- Reject `shared-attachment` when any owner is outside the intended selection.
+- Selecting a dependency alone must never pull all its owners into the cluster.
+- Add fixtures for owner-only, owner plus dependency, dependency-only, shared dependency, and recursively shared dependencies.
 
 ### Handles
 
-Resolve static handles and supported dynamic handles explicitly from Coreza definitions. Preserve valid absent/default handles only where Coreza permits them. A supplied handle id that cannot be resolved returns `unknown-semantics`; it must not silently become `main`. Add valid dynamic Switch and removed/misspelled handle tests.
+Resolve each endpoint against static and supported dynamic handles from Coreza node definitions.
 
-### Loops
+- An absent handle may use a default only for node definitions that explicitly permit it.
+- A supplied handle ID that cannot be resolved returns `unknown-semantics`.
+- Never classify a misspelled, removed, or stale handle as `main`.
+- Cover Switch branches, fallback handles, Loop handles, attachments, and ordinary main handles.
 
-Model Coreza Loop routing explicitly from `in`, `loop`, and `done` semantics. Add narrowly defined accepted closed-loop shapes and use strongly connected components where needed. Do not relax root/leaf checks for arbitrary cycles. Each accepted topology must match executor behavior in a fixture.
+### Loop topology
 
-### Validation architecture
+Model Coreza Loop semantics explicitly using the actual `in`, `loop`, and `done` routes. Permit only closed-loop patterns that the executor supports; do not globally relax entry-root or exit-leaf checks for cycles. Pair each accepted validator fixture with an execution fixture.
 
-Expose selection, single-cluster, and whole-document validators sharing one indexed semantic graph per transaction. Every failure returns a stable Coreza reason code and implicated node/edge ids. Recompute only after node, edge, type, or handle changes.
+### Shared validator
 
-## Phase 3 — implement the right-click menu and real creation command
+Use one indexed semantic graph per command and expose selection, one-cluster, and whole-document validation. Every violation retains a stable Coreza code plus affected node and edge IDs for disabled-menu explanations and recovery UI.
 
-Work in `src/pages/WorkflowEditor.tsx`, which renders the live canvas; changing `WorkflowCanvas.tsx` alone will not affect this screen.
+## 3. Add the live right-click menu and create command
 
-### Event integration
+Implement this in `src/pages/WorkflowEditor.tsx` or extracted components mounted by it.
 
-- Add `onSelectionContextMenu`, `onNodeContextMenu`, and `onPaneContextMenu` to the live `ReactFlow`.
-- Suppress the browser menu only inside those canvas handlers, stopping propagation so one click cannot open two menus.
-- For a selected node, preserve the full selection; for an unselected node, target that node; pane right-click targets no nodes.
-- Position a portaled menu from `clientX/clientY` and clamp it to the viewport. Do not apply flow zoom/pan to screen coordinates.
-- Use the existing context-menu primitives according to their actual trigger/open API; do not combine a prevented native event with a primitive that needs that same event.
-- Close on Escape, outside click, pan, zoom, and editor navigation. Restore keyboard focus predictably.
-- Disable graph mutations in read-only mode and while a connection drag is active.
+### Event wiring
 
-### Menu contents
+Add live handlers for selection, node, and pane context menus:
 
-Selection/node menu:
+- suppress the browser menu only within the workflow canvas;
+- preserve the current multi-selection when right-clicking one selected node;
+- make an unselected right-clicked node the target selection;
+- use no node target for pane right-click;
+- stop propagation so one event opens only one menu;
+- position from screen coordinates in a portal and clamp to the viewport;
+- close on Escape, outside click, pan, zoom, navigation, or command completion;
+- disable mutations in read-only mode or during connection dragging.
 
-- **Create cluster from selection** — enabled only for a currently valid selection; otherwise visible but disabled with the first specific reason.
-- **Dissolve cluster** — removes metadata only.
-- Existing working actions such as Copy, Duplicate, and Delete nodes, operating on the same resolved selection.
+Inspect the installed menu primitive’s real controlled/anchor API before choosing it. Do not assume a prevented browser event can also trigger the primitive automatically.
 
-Pane menu:
+### Commands shown
 
-- Paste, Select all, Clear selection, and Add node where those commands already exist and work. Do not add decorative menu items without implementations.
+For node/selection targets:
 
-Add `Ctrl/Cmd+G` for create and `Ctrl/Cmd+Shift+G` for dissolve to the current keyboard handler, preserving its input/textarea/contenteditable guard. Prevent the browser shortcut only when the editor handles it.
+- **Create cluster** — enabled only when current selection validation succeeds; otherwise disabled with the first specific reason.
+- **Dissolve cluster** — metadata only.
+- Existing implemented Copy, Duplicate, and Delete actions, all targeting the same resolved selection.
 
-### One command for menu and keyboard
+For the pane, retain only implemented actions such as Paste, Select all, Clear selection, and Add node.
 
-Both entry points call `createClusterFromSelection`:
+Add `Ctrl/Cmd+G` for create and `Ctrl/Cmd+Shift+G` for dissolve. Preserve the existing input, textarea, and contenteditable keyboard guard. Menu and shortcut must call the same command and produce byte-equivalent metadata.
 
-1. Read current canonical selected ids.
-2. Mint a UUID and collision-free `Cluster N` title.
-3. Run the corrected selection validator.
-4. Use `resolvedMemberNodeIds` for valid required attachments.
-5. Commit metadata once with one history entry.
-6. Open the frame title editor.
+`createClusterFromSelection` must:
 
-Revalidate when invoked so a menu left open cannot act on stale graph state.
+1. Read selected IDs from the canonical document.
+2. Generate a UUID and collision-free `Cluster N` title.
+3. Revalidate at invocation time.
+4. Store corrected `resolvedMemberNodeIds`, including legitimate dependencies.
+5. Commit once with one history entry.
+6. Select the new cluster and enter title editing in its expanded frame.
 
-## Phase 4 — render and edit expanded clusters
+## 4. Build one cluster renderer with node-style view state
 
-A metadata row alone is not a visible feature. Add an expanded frame layer derived from canonical member positions and measured/fallback node dimensions.
+Create a dedicated `NodeClusterLayer` and `NodeClusterView`. Do not model a cluster as an executable React Flow node and do not add synthetic IDs to canonical edges.
 
-- Draw frames behind nodes using the active React Flow viewport projection.
-- Header owns selection and drag; frame body does not intercept node clicks, fields, handles, or connection gestures.
-- Show editable title, optional note, member count, and distinct **Dissolve** and **Delete nodes** actions.
-- Header drag translates every real member from one fixed flow-coordinate baseline; do not rebase per pointer event or apply zoom twice. Escape cancels; drop creates one history entry; overlapping logical selections move each real node once.
-- Cache dimensions so temporarily unmounted nodes cannot collapse bounds to zero.
-- Clicking a frame selects the cluster and all members as a logical selection.
+### View state contract
 
-Deliver this phase together with Phase 3 so choosing the menu action immediately creates something visible and editable.
+Keep expand/collapse separate from persisted workflow metadata:
 
-## Phase 5 — complete clipboard, load, import, persistence and backend parity
+```text
+clusterViewState[clusterId] = {
+  expanded: boolean,
+  selected: boolean,
+  editingTitle: boolean
+}
+```
 
-### Clipboard and import
+- New clusters open expanded so the result is immediately visible and title editing can begin.
+- Loaded clusters default collapsed, matching ordinary nodes’ initial compact state.
+- Expand/collapse is local editor view state, not `node_clusters` data, not part of dirty checking, versions, exports, or execution snapshots.
+- Remove stale view entries when a cluster is dissolved or deleted.
+- Optionally persist only `expanded` as a user/workflow-scoped local preference after the base behavior is stable; never put it in the database contract.
 
-- Copy cluster metadata only when every member is copied. Partial copies paste as plain nodes.
-- Allocate node ids first, remap edges and membership through one map, mint new cluster UUIDs, resolve title collisions, and commit paste once.
-- Parse metadata, hydrate node definitions/handles, then run semantic validation.
-- Preserve invalid raw metadata separately, display exact diagnostics, and provide repair/remove actions. Never silently discard malformed entries or overwrite them during an unrelated save.
+### Match the node interaction logic
 
-### Dirty tracking and versions
+Use the same behavioral pattern as `NodeWrapper`, without copying its layout implementation:
 
-- Hash only normalized fields that are actually persisted, excluding selection, dimensions and runtime/transient node data.
-- Include clusters in every undo/redo and saved-version snapshot.
-- Make version snapshot plus workflow save transactional with revision conflict detection; a failed save never advances the saved baseline.
+- Compact cluster card opens on double-click.
+- A clearly labeled chevron/icon button also opens it for discoverability and keyboard access.
+- Expanded frame closes from the corresponding header button.
+- Button clicks stop propagation and never start frame dragging.
+- `Enter`/`Space` activates the focused toggle; `Escape` exits title/note editing before it collapses anything.
+- Use `aria-expanded`, `aria-controls`, and tooltips “Expand cluster” / “Collapse cluster”.
+- Keep stable compact and expanded dimensions during toggle animations and respect reduced motion.
 
-### Run snapshots
+### Collapsed presentation
 
-- Add `node_clusters` to `WorkflowLifecycleService` activation selection.
-- Audit manual, backtest, scheduler, streaming and webhook run-creation paths; assert each run snapshot preserves exact title, note and membership while execution receives only canonical nodes/edges.
+Render one compact header card derived from member bounds:
 
-### Backend contract
+- title, optional information indicator, member count/status summary, and expand chevron;
+- one stable flow-space position based on the expanded frame’s top-left anchor;
+- boundary connection previews only; no internal edges;
+- no connectable synthetic handles in the first release—expanding is required before rewiring;
+- selecting or dragging the compact card applies to the logical cluster, while each real member moves exactly once.
 
-- Extend backend create/update schemas and repository mappings for `node_clusters`.
-- On update, load the owned workflow, merge supplied fields, and validate the complete candidate. Omitted clusters preserve existing metadata; explicit `[]` clears it.
-- Use a backend adapter over the same pure rules and persisted node definitions. The browser validator is for feedback, never the only authority for backend API writes.
-- Apply equivalent changes manually to the separate `coreza-io/coreza-backend` repository.
+The compact card is a view projection only. It must never enter saved nodes, executor payloads, upstream lookup, node counts, clipboard node lists, or snapshots.
 
-### Database verification
+### Expanded presentation
 
-The repository schema defines `node_clusters`, but the connected database state has not been verified. Confirm the migration is applied to `workflows`, `workflow_versions`, and `workflow_runs` before release. Keep existing RLS ownership policies; adding columns requires no new role system.
+Render a frame behind its real members:
 
-## Phase 6 — collapse only after execution no longer depends on rendering
+- bounds come from canonical member positions plus measured dimensions and stable padding;
+- a header contains editable title, optional note, member count, context actions, and collapse chevron;
+- the frame body is pointer-transparent so nodes, fields, handles, and edges remain fully interactive;
+- header drag moves all real members from one fixed flow-coordinate baseline, accounts for zoom exactly once, and creates one history entry on drop;
+- Escape cancels a drag and restores the baseline;
+- cache measured dimensions so virtualization or temporary unmounting cannot shrink bounds to zero;
+- overlapping logical selections must not move a node twice.
 
-Before hiding member components, move per-node execution registration from renderer lifecycle into workflow-runtime controllers, exactly one controller per canonical node. Controllers survive collapse and dispose only when a node/workflow is removed.
+Do not persist calculated frame bounds. Recompute them from canonical members.
 
-Then add display-only collapsed cards and projected edges:
+## 5. Decouple collapse from runtime and canonical graph access
 
-- Hidden members and internal edges remain canonical and executable.
-- External projected edges retain every real endpoint, handle and edge id.
-- Aggregate projected edges cannot silently delete several real connections.
-- Compact-card handles are non-connectable initially; expand to wire nodes.
-- Expand/collapse never changes canonical positions or saved workflow data.
-- Search, history/error focus, fit view and minimap use the visual projection correctly.
-- Collapse preference is local view state, scoped by user and workflow, never saved in `node_clusters`.
+This is mandatory before collapsed clusters can hide/unmount real node renderers.
 
-## Test and release gates
+### Canonical graph context
 
-1. **Validator:** shared attachment permutations, recursive attachments, unknown/static/default/dynamic handles, accepted Loop patterns, invalid cycles, boundary root/leaf rules, reason ids.
-2. **Commands:** rename, delete, cut, reconnect, handle removal, replacement and dissolve-and-apply stay saveable; undo/redo restores the complete document.
-3. **Context menu:** selection/node/pane right-click opens the Coreza menu, browser menu is suppressed, selected-node right-click preserves selection, edge positioning remains onscreen, invalid grouping shows a reason, readonly and connection drag cannot mutate.
-4. **Creation/UI:** menu and shortcut create byte-equivalent cluster metadata and one history entry; frame appears immediately; title, note, drag and dissolve survive save/reload.
-5. **Clipboard/import:** full and partial cluster copy, id/title remapping, malformed and dangling metadata recovery.
-6. **Persistence:** legacy rows, normalized dirty hash, transactional save/version conflict, workflow duplication, every run entry point.
-7. **Runtime/collapse:** a real node with no renderer still executes, resolves inputs, emits output and completes callbacks; synthetic ids never enter execution payloads.
-8. Run targeted Jest suites, the full relevant frontend/backend suites, and node-schema validation. Then browser-test create, disable reason, frame drag, undo/redo, save/reload, import/export, run snapshot, collapse, hidden-member execution and error focus.
+Replace `StableNodeContext`’s dependence on `reactFlow.getNodes()` and `getEdges()` with stable imperative reads from the canonical workflow document. Node code must see all real nodes and edges regardless of cluster projection.
 
-## Delivery order
+### Runtime controllers
 
-1. Atomic commands and cluster-aware history.
-2. Validator defects and regression tests.
-3. Context menu, shortcut, create command and expanded frame as one usable milestone.
-4. Clipboard and load/import recovery.
-5. Backtest selector, all run snapshots, backend CRUD validation, database verification.
-6. Runtime controllers, then collapse projection.
+`BaseNode` currently mounts `useNodeAutoExecution`; hiding a member can unregister behavior. Move execution/listener orchestration into workflow-level controllers:
 
-## Done when
+- exactly one controller per canonical real node;
+- controller lifetime follows node/workflow lifetime, not React rendering;
+- expand/collapse does not create, destroy, or duplicate controllers;
+- renderer components consume controller state but do not own execution registration;
+- disposal occurs only when a node or workflow is removed.
 
-Right-clicking a valid selected set shows Coreza's menu and creates a visible, editable cluster; every graph mutation preserves or deliberately dissolves valid metadata; all persistence and run paths retain clusters; invalid metadata is recoverable; and collapsed members execute identically to expanded members. No n8n names, copy, limits, or implementation are used.
+Until this decoupling passes tests, collapse may visually cover/minimize members but must not set React Flow `hidden`, filter canonical nodes, or unmount them.
+
+### Visual projection
+
+After runtime decoupling, derive a separate render graph:
+
+- expanded clusters render all real members and real edges;
+- collapsed clusters omit member visuals and internal edges only from the render projection;
+- canonical nodes/edges remain unchanged;
+- projected boundary edges retain mappings to every real edge ID, endpoint, and handle;
+- deleting an aggregate projection opens a choice or expands the cluster—never silently deletes several real edges;
+- expand/collapse does not alter positions, workflow validity, or execution order.
+
+## 6. Cluster editing and lifecycle actions
+
+- Inline title editing follows node rename behavior: double-click or explicit edit action, Enter saves, Escape cancels, blur saves a valid value.
+- Notes are optional, capped at the existing Coreza limit, and validated before commit.
+- **Dissolve cluster** removes metadata while retaining nodes and edges.
+- **Delete cluster nodes** uses a confirmation dialog and the canonical delete command.
+- Frame/card context menus resolve the cluster first, then expose Expand/Collapse, Rename, Edit note, Dissolve, and Delete nodes according to mode.
+- Cluster selection integrates with Delete, Copy, Cut, Duplicate, fit view, minimap, search, and execution-error focus.
+- Focusing a hidden member from search/history/errors first expands its cluster, then centers and focuses the real node.
+
+## 7. Clipboard, import, recovery, and history
+
+### Clipboard
+
+- Copy metadata only when all members are copied; a partial selection pastes as ordinary nodes.
+- Allocate all new node IDs first, then remap edges and memberships through the same map.
+- Mint new cluster UUIDs and collision-free titles.
+- Commit pasted nodes, edges, and clusters once.
+- Never copy compact-card or frame projection data.
+
+### Load and import
+
+- Parse persisted metadata, hydrate node definitions and dynamic handles, then run semantic validation.
+- Preserve malformed raw entries and semantic failures in a recovery structure instead of ignoring `invalidIndexes`.
+- Show exact diagnostics with repair, dissolve, or remove actions.
+- Do not overwrite invalid raw metadata during an unrelated save without explicit resolution.
+
+### History and dirty state
+
+- Undo/redo snapshots include normalized nodes, edges, and clusters but exclude expand/collapse view state.
+- Dirty hashing serializes only persisted node/edge/cluster fields, excluding selection, dimensions, callbacks, execution output, definitions, and projection state.
+- A cluster drag is one history action, not one action per member or pointer move.
+
+## 8. Complete persistence, run snapshots, and backend parity
+
+### Frontend persistence
+
+- Save the normalized canonical document after validation.
+- Make version creation and workflow update revision-safe so a failed update cannot advance the saved baseline.
+- Audit duplication, restore, export/import, templates, and execution-history restore for cluster metadata.
+
+### Backend
+
+- Add a strict `node_clusters` schema to create/update contracts.
+- On partial update, load the owned workflow and validate the merged `{nodes, edges, node_clusters}` candidate. Omission preserves existing clusters; explicit `[]` clears them.
+- Add repository mappings and response typing without editing generated Supabase frontend types manually.
+- Use server-authoritative node definitions/handle rules; browser validation is user feedback, not the security boundary.
+- Add `node_clusters` to the activation selector in `WorkflowLifecycleService`.
+- Audit manual, backtest, scheduler, streaming, and webhook run creation so every persisted run snapshot receives exact cluster metadata while executors receive canonical nodes and edges only.
+- Mirror backend changes manually into the separate `coreza-io/coreza-backend` repository per the project architecture.
+
+### Connected database
+
+Verify, rather than assume, that `node_clusters` exists on `workflows`, `workflow_versions`, and `workflow_runs` in the connected project. If any are absent, apply an additive migration through the database migration tool. Existing table ownership/RLS remains authoritative; columns alone require no new policies.
+
+## 9. Verification matrix
+
+### Domain and commands
+
+- Attachment ownership/dependency permutations, nested dependencies, static/dynamic/unknown handles, Loop fixtures, overlap, missing members, invalid boundaries.
+- Rename, delete, cut, paste, reconnect, handle removal, replacement, dissolve-and-apply, undo, and redo preserve a valid complete document.
+
+### Context menu and creation
+
+- Selection/node/pane right-click opens the Coreza menu and suppresses the browser menu.
+- Selected-node right-click preserves multi-selection; unselected-node right-click targets that node.
+- Menu stays onscreen near every viewport edge and closes through every specified path.
+- Invalid creation is disabled with the correct reason.
+- Menu and shortcut create identical metadata and one history entry.
+
+### Expand/collapse interaction
+
+- New cluster appears expanded; loaded cluster appears compact.
+- Double-click and toggle button expand; header button collapses.
+- Toggle controls do not drag/select accidentally and work by keyboard.
+- Repeated toggling never changes canonical nodes, edges, positions, dirty state, or saved metadata.
+- Expanded bounds include every member at multiple zoom levels.
+- Compact dragging and expanded header dragging move each member once and undo once.
+- Reduced-motion mode has no spatial animation.
+
+### Runtime parity
+
+- A node inside a collapsed cluster still resolves upstream data, auto-executes, emits output, receives stream events, updates execution status, and disposes once when deleted.
+- Repeated toggles create no duplicate listeners or executions.
+- Manual, backtest, scheduler, stream, webhook, and execution-history flows use only real node/edge IDs.
+- Search and execution errors expand and focus the correct hidden node.
+
+### Persistence and browser acceptance
+
+- Save/reload, version restore, duplication, full/partial clipboard, import/export, malformed metadata recovery, and every run snapshot.
+- Desktop browser test at minimum: create from right-click, edit title/note, collapse, expand, drag in both modes, undo/redo, save/reload, execute while collapsed, dissolve, and delete nodes.
+- Run focused cluster tests, relevant frontend and backend suites, node-schema validation, and a production build before release.
+
+## Delivery sequence
+
+1. Canonical document commands and cluster-aware undo/redo.
+2. Validator and edge-semantics corrections.
+3. Right-click menu, shortcut, create command, and expanded frame.
+4. Node-style compact/expanded view state and non-destructive visual toggle.
+5. Canonical graph context and renderer-independent runtime controllers.
+6. True collapsed render projection and boundary-edge projection.
+7. Clipboard, import recovery, editing, selection, and focus integration.
+8. Backend contracts, all run snapshots, revision-safe persistence, and database verification.
+9. Full browser/runtime release matrix.
+
+## Definition of done
+
+A user can select valid nodes, right-click to create a visible Coreza cluster, edit it, collapse it into a compact card, and reopen it using the same interaction principles as ordinary nodes. Toggling is view-only; nodes continue executing identically while collapsed. Every graph mutation, history action, save, restore, import/export, backend write, and run snapshot preserves or deliberately resolves cluster metadata, with no synthetic cluster object entering the executable graph.

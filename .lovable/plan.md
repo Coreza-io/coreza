@@ -1,4 +1,4 @@
-# Build durable cluster persistence
+# Complete and verify durable clusters
 
 ## Goal
 
@@ -13,18 +13,18 @@ Nodes and connections will remain canonical in the workflow's `nodes` and `edges
 
 Cluster expansion/collapse remains local view state and will not dirty or persist the executable workflow. It will follow Coreza's existing node interaction: compact by default, expand on double-click or a chevron, and close from the expanded header. In the current model, persisted cluster settings are `title` and optional `note`; future settings must be added as explicit typed fields rather than an unrestricted object.
 
-## Confirmed baseline
+## Current implementation review
 
-- The deployed database already has non-null `node_clusters` JSON arrays on `workflows`, `workflow_versions`, and `workflow_runs`, plus `workflows.revision`.
+- The database was previously verified with non-null `node_clusters` JSON arrays on `workflows`, `workflow_versions`, and `workflow_runs`, plus `workflows.revision`; the repository contains the corresponding column migration.
 - The editor currently sends `nodes`, `edges`, and normalized cluster metadata to Supabase and restores valid cluster metadata on load.
 - Version and run snapshots already have initial `node_clusters` plumbing.
 - The primary editor save bypasses backend validation, performs an unconditional last-write-wins update, and does not use `revision`.
 - Creating a version and updating a workflow are separate operations, so they can partially succeed or race.
 - Persistence round-trip, concurrent-save, and browser reload coverage is missing.
-- Cluster expand/collapse is not implemented. The active editor always renders every member plus an expanded frame; there is no cluster expansion state, chevron action, compact cluster node, projected boundary edge, or collapse test.
-- The existing owner UPDATE policy and current browser persistence hook still permit direct workflow-content writes, bypassing backend validation and revision control.
+- Cluster expand/collapse is not implemented in the current source. The active editor always maps `clusters` to an expanded frame and header, and that header ends with Dissolve/Delete controls. There is no chevron import or button, cluster expansion state, compact cluster node, projected boundary edge, or collapse test. This directly explains why no icon appears in the screenshot.
+- The current browser persistence hook still inserts/updates workflows directly through Supabase, including caller-supplied `user_id`; the current owner INSERT/UPDATE policies permit this path, so backend validation and revision control remain bypassable.
 - Manual execution reads whichever workflow revision is current when the execution request reaches the backend; runs do not record a source workflow revision.
-- Node deletion has begun using a document command, but paste, movement, connection changes, and `NodeWrapper` deletion still contain direct React Flow mutations.
+- Node deletion in `WorkflowEditor` has begun using a document command, but paste, movement, connection changes, and `NodeWrapper` deletion still contain direct React Flow mutations. The existing command tests cover only rename and delete.
 - Node, selection, and pane context-menu handlers exist in source; their deployed right-click behavior has not been proven in a browser.
 
 ## 1. Define one persisted workflow document
@@ -138,7 +138,7 @@ For an existing workflow it must:
 6. Update the complete workflow document and increment `revision`.
 7. Commit both operations or neither.
 
-The function must be unavailable to `PUBLIC`, `anon`, and `authenticated`, granted only to `service_role`, and must set a safe `search_path`. Existing table RLS and grants remain unchanged.
+The function must be unavailable to `PUBLIC`, `anon`, and `authenticated`, granted only to `service_role`, and must set a safe `search_path`. Preserve owner read/delete behavior as required, but change direct browser write grants/policies so workflow content cannot bypass this function.
 
 For a new workflow, insert the complete document with revision `0` and return the authoritative row. Keep the existing empty-workflow protection, but evaluate it inside the authoritative save path.
 

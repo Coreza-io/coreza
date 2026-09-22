@@ -119,6 +119,8 @@ function validateTopology(
   const incoming = new Set<string>();
   const outgoing = new Set<string>();
   const internalMain: PersistedEdge[] = [];
+  const incomingMain: PersistedEdge[] = [];
+  const outgoingMain: PersistedEdge[] = [];
   for (const edge of edges) {
     if (typeof edge.source !== "string" || typeof edge.target !== "string") continue;
     const sourceInside = members.has(edge.source);
@@ -131,8 +133,13 @@ function validateTopology(
       adjacency.get(edge.source)?.add(edge.target);
       adjacency.get(edge.target)?.add(edge.source);
       if (kind === "main") internalMain.push(edge);
-    } else if (kind === "main" && targetInside) incoming.add(edge.target);
-    else if (kind === "main" && sourceInside) outgoing.add(edge.source);
+    } else if (kind === "main" && targetInside) {
+      incoming.add(edge.target);
+      incomingMain.push(edge);
+    } else if (kind === "main" && sourceInside) {
+      outgoing.add(edge.source);
+      outgoingMain.push(edge);
+    }
   }
   const first = members.values().next().value as string;
   const visited = new Set([first]);
@@ -147,10 +154,37 @@ function validateTopology(
   if (outgoing.size > 1) invalid("multiple-exit-members");
   const entry = incoming.size === 1 ? [...incoming][0] : undefined;
   const exit = outgoing.size === 1 ? [...outgoing][0] : undefined;
-  const loopBoundary = entry && exit && entry === exit && nodeById.get(entry)?.name === "Loop";
+  const loopBoundary = entry && exit
+    ? isAcceptedLoopBoundary(entry, exit, internalMain, incomingMain, outgoingMain, nodeById)
+    : false;
   if (entry && !loopBoundary && internalMain.some((edge) => edge.target === entry)) invalid("entry-not-root");
   if (exit && !loopBoundary && internalMain.some((edge) => edge.source === exit)) invalid("exit-not-leaf");
   if (entry && exit && !hasDirectedPath(entry, exit, internalMain)) invalid("no-entry-exit-path");
+}
+
+function isAcceptedLoopBoundary(
+  entry: string,
+  exit: string,
+  internalEdges: readonly PersistedEdge[],
+  incomingEdges: readonly PersistedEdge[],
+  outgoingEdges: readonly PersistedEdge[],
+  nodeById: ReadonlyMap<string, PersistedNode>,
+): boolean {
+  if (entry !== exit || nodeById.get(entry)?.name !== "Loop") return false;
+  if (!incomingEdges.every((edge) => edge.targetHandle == null || edge.targetHandle === "in")) return false;
+  if (!outgoingEdges.every((edge) => edge.sourceHandle === "done")) return false;
+
+  const loopBranches = internalEdges.filter(
+    (edge) => edge.source === entry && edge.sourceHandle === "loop",
+  );
+  const returns = internalEdges.filter(
+    (edge) => edge.target === entry && (edge.targetHandle == null || edge.targetHandle === "in"),
+  );
+  return loopBranches.length === 1 && returns.length >= 1 && returns.some(
+    (edge) => typeof loopBranches[0].target === "string" &&
+      typeof edge.source === "string" &&
+      hasDirectedPath(loopBranches[0].target, edge.source, internalEdges),
+  );
 }
 
 function hasDirectedPath(source: string, target: string, edges: readonly PersistedEdge[]): boolean {

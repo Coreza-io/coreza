@@ -268,47 +268,11 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           };
         });
 
-        // Restore edges with edge-removal handlers & Switch validation
-        const validEdges = (data.edges as unknown as Edge[] || []).filter((edge) => {
-          const sourceNode = restoredNodes.find((n) => n.id === edge.source);
-          if (!sourceNode || !edge.sourceHandle) return true;
-
-          const nodeDefinition = sourceNode.data?.definition as any;
-          const nodeType = nodeDefinition?.name;
-          if (nodeType === 'Switch') {
-            const cases =
-              sourceNode.data?.values?.cases ||
-              (sourceNode as any).values?.cases ||
-              [];
-            const validHandles = cases.map(
-              (c: any) =>
-                c.outputName || c.caseName || c.caseValue || `case${cases.indexOf(c) + 1}`,
-            );
-            const enableFallbackToggle =
-              sourceNode.data?.values?.enableFallback ??
-              (sourceNode as any).values?.enableFallback;
-            const fallbackEnabled =
-              typeof enableFallbackToggle === 'boolean'
-                ? enableFallbackToggle
-                : ((sourceNode.data?.definition as any)?.fields?.find(
-                    (f: any) => f.key === 'enableFallback',
-                  )?.default ?? true);
-
-            if (fallbackEnabled) {
-              validHandles.push(sourceNode.data?.values?.defaultCase || 'fallback');
-            }
-
-            if (!validHandles.includes(edge.sourceHandle)) {
-              console.log(
-                `🗑️ Removing invalid edge: ${edge.id} - handle "${edge.sourceHandle}" not found in Switch node`,
-              );
-              return false;
-            }
-          }
-          return true;
-        });
-
-        const restoredEdges = validEdges.map((e) => ({
+        // Persisted endpoints and handles are canonical document data. Never
+        // repair them during hydration: doing so would make a subsequent save
+        // silently destroy a connection. Invalid candidates are rejected by
+        // the authoritative save boundary and remain available for recovery.
+        const restoredEdges = ((data.edges as unknown as Edge[]) || []).map((e) => ({
           ...e,
           type: e.type || 'removable',
           data: {

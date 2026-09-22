@@ -60,6 +60,7 @@ import {
 import {
   Save,
   Pause,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -111,6 +112,15 @@ import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
+import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
+import { projectClusterGraph } from "@/domain/clusters/projection";
+import {
+  isClusterExpanded,
+  reconcileClusterViewState,
+  setClusterExpanded,
+  type ClusterViewState,
+} from "@/domain/clusters/viewState";
+import { CLUSTER_COLLAPSE_ENABLED } from "@/domain/clusters/capabilities";
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -247,6 +257,7 @@ const WorkflowEditorContent = () => {
   );
   const [isActive, setIsActive] = useState(false);
   const [clusters, setClusters] = useState<NodeCluster[]>([]);
+  const [clusterViewState, setClusterViewState] = useState<ClusterViewState>({});
   const [invalidClusterEntries, setInvalidClusterEntries] = useState<Array<{ index: number; value: unknown }>>([]);
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
   const [editingClusterId, setEditingClusterId] = useState<string | null>(null);
@@ -392,6 +403,31 @@ const WorkflowEditorContent = () => {
   const canonicalEdgesRef = useRef(edges);
   canonicalEdgesRef.current = edges;
 
+  useEffect(() => {
+    setClusterViewState((current) => {
+      const reconciled = reconcileClusterViewState(current, clusters);
+      const currentIds = Object.keys(current);
+      const reconciledIds = Object.keys(reconciled);
+      return currentIds.length === reconciledIds.length
+        && reconciledIds.every((clusterId) => current[clusterId] === reconciled[clusterId])
+        ? current
+        : reconciled;
+    });
+  }, [clusters]);
+
+  useEffect(() => setClusterViewState({}), [workflowId]);
+
+  const setExpanded = useCallback((clusterId: string, expanded: boolean) => {
+    setClusterViewState((current) => setClusterExpanded(current, clusterId, expanded));
+  }, []);
+
+  const clusterProjection = useMemo(
+    () => projectClusterGraph(nodes, edges, clusters, clusterViewState, (clusterId) => setExpanded(clusterId, true)),
+    [clusterViewState, clusters, edges, nodes, setExpanded],
+  );
+  const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
+  const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
+
   const cloneNodes = useCallback((sourceNodes: Node[]) => {
     return sourceNodes.map((node) => ({
       ...node,
@@ -471,9 +507,10 @@ const WorkflowEditorContent = () => {
     }
     saveHistorySnapshot();
     setClusters((current) => [...current, { ...candidate, memberNodeIds: result.resolvedMemberNodeIds ?? selectedIds }]);
+    setExpanded(candidate.id, true);
     setEditingClusterId(candidate.id);
     setCanvasMenu(null);
-  }, [clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, saveHistorySnapshot, toast]);
+  }, [clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, saveHistorySnapshot, setExpanded, toast]);
 
   const startClusterDrag = useCallback((event: React.PointerEvent, cluster: NodeCluster) => {
     if (dragSource.nodeId || event.button !== 0) return;
@@ -668,7 +705,12 @@ const WorkflowEditorContent = () => {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const removedNodeIds = changes
+      const canonicalNodeIds = new Set(nodes.map(({ id }) => id));
+      const canonicalChanges = changes.filter((change) => {
+        if (change.type === "add") return false;
+        return canonicalNodeIds.has(change.id);
+      });
+      const removedNodeIds = canonicalChanges
         .filter((change) => change.type === "remove")
         .map((change) => change.id);
 
@@ -695,11 +737,11 @@ const WorkflowEditorContent = () => {
 
       if (removedNodeIds.length > 0) {
         deleteNodeIds(removedNodeIds);
-        const nonRemovalChanges = changes.filter(({ type }) => type !== "remove");
+        const nonRemovalChanges = canonicalChanges.filter(({ type }) => type !== "remove");
         if (nonRemovalChanges.length > 0) applyNodeChanges(nonRemovalChanges);
         return;
       }
-      applyNodeChanges(changes);
+      if (canonicalChanges.length > 0) applyNodeChanges(canonicalChanges);
     },
     [applyNodeChanges, cleanupNewsSubscription, deleteNodeIds, executionStore, nodes],
   );
@@ -894,6 +936,7 @@ const WorkflowEditorContent = () => {
 
     return {
       ...wrappedBaseNodeTypes,
+      compactCluster: CompactClusterNode,
       Loop: (props: any) => (
         <LoopNode
           {...props}
@@ -1055,6 +1098,12 @@ const WorkflowEditorContent = () => {
     async (event: React.MouseEvent, node: Node) => {
       event.preventDefault();
 
+      const clusterId = clusterProjection.displayNodeToCluster.get(node.id);
+      if (clusterId) {
+        setExpanded(clusterId, true);
+        return;
+      }
+
       if (!workflowExecutor) {
         toast({
           title: "Error",
@@ -1071,7 +1120,7 @@ const WorkflowEditorContent = () => {
 
       await workflowExecutor.executeNode(node.id, new Set());
     },
-    [workflowExecutor, ensureBacktestExecutionReady, toast],
+    [clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast],
   );
 
   // Save workflow via persistence hook
@@ -1539,14 +1588,22 @@ const WorkflowEditorContent = () => {
   }, []);
 
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
-    const nodeIds = node.selected ? nodes.filter(({ selected }) => selected).map(({ id }) => id) : [node.id];
+    const clusterId = clusterProjection.displayNodeToCluster.get(node.id);
+    const clusterMembers = clusterId
+      ? clusters.find(({ id }) => id === clusterId)?.memberNodeIds ?? []
+      : undefined;
+    const nodeIds = clusterMembers ?? (node.selected ? nodes.filter(({ selected }) => selected).map(({ id }) => id) : [node.id]);
     if (!node.selected) setNodes((current) => current.map((item) => ({ ...item, selected: item.id === node.id })));
     openCanvasMenu(event, nodeIds, "selection");
-  }, [nodes, openCanvasMenu, setNodes]);
+  }, [clusterProjection.displayNodeToCluster, clusters, nodes, openCanvasMenu, setNodes]);
 
   const onSelectionContextMenu = useCallback((event: React.MouseEvent, selectedNodes: Node[]) => {
-    openCanvasMenu(event, selectedNodes.map(({ id }) => id), "selection");
-  }, [openCanvasMenu]);
+    const canonicalIds = selectedNodes.flatMap(({ id }) => {
+      const clusterId = clusterProjection.displayNodeToCluster.get(id);
+      return clusterId ? clusters.find((cluster) => cluster.id === clusterId)?.memberNodeIds ?? [] : [id];
+    });
+    openCanvasMenu(event, [...new Set(canonicalIds)], "selection");
+  }, [clusterProjection.displayNodeToCluster, clusters, openCanvasMenu]);
 
   const menuValidation = useMemo(() => {
     if (!canvasMenu || canvasMenu.kind !== "selection") return null;
@@ -2036,8 +2093,8 @@ const WorkflowEditorContent = () => {
           <div className="relative flex-1 bg-trading-grid">
             <ConnectionDragContext.Provider value={dragSource}>
               <ReactFlow
-                nodes={nodes}
-                edges={edges}
+                nodes={displayedNodes}
+                edges={displayedEdges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
@@ -2084,6 +2141,7 @@ const WorkflowEditorContent = () => {
             </ConnectionDragContext.Provider>
             <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-label="Workflow clusters">
               {clusters.map((cluster) => {
+                if (CLUSTER_COLLAPSE_ENABLED && !isClusterExpanded(clusterViewState, cluster.id)) return null;
                 const members = nodes.filter((node) => cluster.memberNodeIds.includes(node.id));
                 if (members.length === 0) return null;
                 const padding = 24;
@@ -2095,6 +2153,7 @@ const WorkflowEditorContent = () => {
                 return (
                   <section
                     key={cluster.id}
+                    id={`cluster-frame-${cluster.id}`}
                     className="absolute rounded-xl border-2 border-primary/40 bg-primary/[0.04]"
                     style={{
                       transform: `translate(${minX * viewport.zoom + viewport.x}px, ${minY * viewport.zoom + viewport.y}px)`,
@@ -2128,6 +2187,20 @@ const WorkflowEditorContent = () => {
                           : item))}
                       />
                       <span className="text-xs text-muted-foreground">{members.length} nodes</span>
+                      {CLUSTER_COLLAPSE_ENABLED && <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        title={`Collapse ${cluster.title}`}
+                        aria-label={`Collapse cluster ${cluster.title}`}
+                        aria-expanded={true}
+                        aria-controls={`cluster-frame-${cluster.id}`}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => { event.stopPropagation(); setExpanded(cluster.id, false); }}
+                      >
+                        <ChevronDown aria-hidden="true" />
+                      </Button>}
                       <button className="text-xs text-muted-foreground hover:text-foreground" onPointerDown={(event) => event.stopPropagation()} onClick={() => dissolveClustersForNodes(cluster.memberNodeIds)}>Dissolve</button>
                       <button className="text-xs text-destructive" onPointerDown={(event) => event.stopPropagation()} onClick={() => deleteNodeIds(cluster.memberNodeIds)}>Delete nodes</button>
                     </header>

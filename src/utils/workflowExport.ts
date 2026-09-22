@@ -9,10 +9,10 @@
  */
 
 import { Node, Edge } from '@xyflow/react';
-import { safePinnedOutput } from '@/utils/pinnedOutput';
 import type { NodeCluster } from '@/domain/clusters/types';
 import { normalizeClusters } from '@/domain/clusters/validate';
 import { parseNodeClusters } from '@/domain/clusters/parse';
+import { serializeWorkflowContent } from '@/domain/workflowDocument';
 
 interface ExportedWorkflow {
   meta: {
@@ -40,6 +40,7 @@ interface ExportedWorkflow {
   }>;
   isActive: boolean;
   clusters?: NodeCluster[];
+  content?: ReturnType<typeof serializeWorkflowContent>;
 }
 
 export function exportWorkflow(
@@ -49,40 +50,23 @@ export function exportWorkflow(
   isActive: boolean,
   clusters: readonly NodeCluster[] = [],
 ) {
-  const minimalNodes = nodes.map((node) => {
-    const def = node.data?.definition as any;
-    const pinnedOutput = safePinnedOutput(node.data?.pinnedOutput);
-    return {
-      id: node.id,
-      type: def?.name || node.type || 'unknown',
-      category: def?.category,
-      subCategory: def?.subCategory,
-      position: node.position,
-      values: (node.data as any)?.values || (node.data as any)?.fieldState,
-      displayName: (node.data as any)?.label || def?.displayName,
-      ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
-    };
-  });
-
-  const minimalEdges = edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-  }));
+  const content = serializeWorkflowContent(name, null, nodes, edges, clusters);
 
   const exported: ExportedWorkflow = {
     meta: {
       exportedAt: new Date().toISOString(),
-      version: '1.1',
+      version: '2.0',
       source: 'coreza',
     },
     name,
-    nodes: minimalNodes,
-    edges: minimalEdges,
+    nodes: content.nodes.map((node) => ({
+      ...node,
+      type: typeof node.name === 'string' ? node.name : 'unknown',
+    })) as ExportedWorkflow['nodes'],
+    edges: content.edges as ExportedWorkflow['edges'],
     isActive,
-    clusters: normalizeClusters(clusters),
+    clusters: content.clusters,
+    content,
   };
 
   const json = JSON.stringify(exported, null, 2);
@@ -123,23 +107,39 @@ export async function importWorkflow(file: File): Promise<{
   if (!parsed.meta || parsed.meta.source !== 'coreza') {
     throw new Error('Not a valid Coreza workflow file');
   }
-  if (!Array.isArray(parsed.nodes)) {
+  const portableContent = typeof parsed.content === 'object' && parsed.content !== null ? parsed.content : undefined;
+  const importedNodes = portableContent?.nodes ?? parsed.nodes;
+  const importedEdges = portableContent?.edges ?? parsed.edges;
+  const importedClusters = portableContent?.clusters ?? parsed.clusters;
+  if (!Array.isArray(importedNodes)) {
     throw new Error('Workflow file is missing nodes');
   }
-  if (!Array.isArray(parsed.edges)) {
+  if (!Array.isArray(importedEdges)) {
     throw new Error('Workflow file is missing edges');
   }
   if (typeof parsed.name !== 'string' || !parsed.name.trim()) {
     throw new Error('Workflow file is missing a name');
   }
-  const parsedClusters = parseNodeClusters(parsed.clusters);
+  const normalizedNodes = importedNodes.map((value: unknown) => {
+    if (typeof value !== 'object' || value === null) throw new Error('Workflow file contains an invalid node');
+    const node = value as Record<string, unknown>;
+    if (typeof node.id !== 'string' || typeof node.position !== 'object' || node.position === null) {
+      throw new Error('Workflow file contains an invalid node');
+    }
+    const position = node.position as Record<string, unknown>;
+    if (typeof position.x !== 'number' || typeof position.y !== 'number') throw new Error('Workflow file contains an invalid node position');
+    const type = typeof node.type === 'string' ? node.type : node.name;
+    if (typeof type !== 'string') throw new Error('Workflow file contains an invalid node type');
+    return { ...node, id: node.id, type, position: { x: position.x, y: position.y } };
+  }) as ExportedWorkflow['nodes'];
+  const parsedClusters = parseNodeClusters(importedClusters);
   const clusterDiagnostics = parsedClusters.invalidIndexes.map((index) =>
     `Cluster metadata entry ${index + 1} is invalid and was not loaded.`);
 
   return {
     name: parsed.name,
-    nodes: parsed.nodes,
-    edges: parsed.edges,
+    nodes: normalizedNodes,
+    edges: importedEdges,
     isActive: parsed.isActive ?? false,
     clusters: normalizeClusters(parsedClusters.clusters),
     clusterDiagnostics,

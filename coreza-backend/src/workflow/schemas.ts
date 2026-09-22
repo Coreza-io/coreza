@@ -17,6 +17,7 @@ export const createWorkflowSchema = z.object({
 });
 
 export const updateWorkflowSchema = z.object({
+  expected_revision: z.number().int().nonnegative(),
   name: z.string().min(1).max(200).optional(),
   nodes: z.array(z.any()).optional(),
   edges: z.array(z.any()).optional(),
@@ -31,6 +32,7 @@ export const scheduleWorkflowSchema = z.object({
 
 export const executeWorkflowSchema = z.object({
   input_data: z.record(z.unknown()).optional().default({}),
+  expected_revision: z.number().int().nonnegative(),
 });
 
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;

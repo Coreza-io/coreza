@@ -18,6 +18,8 @@ export interface Database {
           name: string;
           nodes: any;
           edges: any;
+          node_clusters: any;
+          revision: number;
           is_active: boolean;
           schedule_cron: string | null;
           project_id: string | null;
@@ -31,6 +33,8 @@ export interface Database {
           name: string;
           nodes: any;
           edges: any;
+          node_clusters?: any;
+          revision?: number;
           is_active?: boolean;
           schedule_cron?: string | null;
           project_id?: string | null;
@@ -44,6 +48,8 @@ export interface Database {
           name?: string;
           nodes?: any;
           edges?: any;
+          node_clusters?: any;
+          revision?: number;
           is_active?: boolean;
           schedule_cron?: string | null;
           project_id?: string | null;
@@ -66,6 +72,8 @@ export interface Database {
           schedule_key: string | null;
           nodes: any | null;
           edges: any | null;
+          node_clusters: any;
+          source_workflow_revision: number | null;
           node_count: number | null;
           edge_count: number | null;
         };
@@ -82,6 +90,8 @@ export interface Database {
           schedule_key?: string | null;
           nodes?: any | null;
           edges?: any | null;
+          node_clusters?: any;
+          source_workflow_revision?: number | null;
           node_count?: number | null;
           edge_count?: number | null;
         };
@@ -98,6 +108,8 @@ export interface Database {
           schedule_key?: string | null;
           nodes?: any | null;
           edges?: any | null;
+          node_clusters?: any;
+          source_workflow_revision?: number | null;
           node_count?: number | null;
           edge_count?: number | null;
         };

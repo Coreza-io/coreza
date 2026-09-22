@@ -14,13 +14,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
-import { getVisibleValues } from '@/utils/fieldVisibility';
 import { nodeManifest } from '@/nodes/manifest';
 import { reconcileNodeValues } from '@/utils/reconcileNodeValues';
-import { safePinnedOutput } from '@/utils/pinnedOutput';
 import type { NodeCluster } from '@/domain/clusters/types';
 import { normalizeClusters, validateClusters } from '@/domain/clusters/validate';
 import { parseNodeClusters } from '@/domain/clusters/parse';
+import { apiClient } from '@/lib/apiClient';
+import { hashEditableWorkflowContent, savedWorkflowFromRow, serializeWorkflowContent } from '@/domain/workflowDocument';
 
 export interface WorkflowPersistenceOptions {
   projectId: string | null;
@@ -37,6 +37,7 @@ export interface LoadedWorkflow {
   edges: Edge[];
   clusters: NodeCluster[];
   invalidClusterEntries: Array<{ index: number; value: unknown }>;
+  revision: number;
 }
 
 /**
@@ -50,49 +51,23 @@ export interface NodeReductionCheck {
 
 export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions) => {
   const { toast } = useToast();
-  const { user: authUser } = useAuth();
-  const { createVersionBeforeSave, shouldBlockEmptySave } = useWorkflowVersioning();
+  const { user: authUser, session } = useAuth();
+  const { shouldBlockEmptySave } = useWorkflowVersioning();
 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const lastSavedHashRef = useRef<string>('');
+  const revisionRef = useRef<number | null>(null);
+  const saveInFlightRef = useRef(false);
 
   // ──────────────────────────────────────────────
   // Unsaved-change tracking via simple JSON hash
   // ──────────────────────────────────────────────
   const computeHash = useCallback(
     (nodes: Node[], edges: Edge[], name: string, clusters: readonly NodeCluster[] = []) => {
-      const persistedNodes = nodes.map((node) => {
-        const definition = node.data.definition as Record<string, unknown> | undefined;
-        const pinnedOutput = safePinnedOutput(node.data.pinnedOutput);
-        return {
-          id: node.id,
-          name: definition?.name,
-          node_type: definition?.node_type,
-          category: definition?.category,
-          subCategory: definition?.subCategory,
-          provider: definition?.provider,
-          position: node.position,
-          sourcePosition: node.sourcePosition,
-          targetPosition: node.targetPosition,
-          values: getVisibleValues(definition, (node.data.values as Record<string, unknown>) ?? {}),
-          executionMode: definition?.executionMode,
-          streamingConfig: definition?.streamingConfig,
-          ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
-        };
-      });
-      const nodeIds = new Set(persistedNodes.map(({ id }) => id));
-      const persistedEdges = edges.filter(({ source, target }) => nodeIds.has(source) && nodeIds.has(target)).map((edge) => ({
-        id: edge.id,
-        type: edge.type,
-        source: edge.source,
-        target: edge.target,
-        ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
-        ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
-      }));
-      return JSON.stringify({ name, nodes: persistedNodes, edges: persistedEdges, clusters: normalizeClusters(clusters) });
+      return hashEditableWorkflowContent(serializeWorkflowContent(name, projectId, nodes, edges, clusters));
     },
-    [],
+    [projectId],
   );
 
   const markSaved = useCallback(
@@ -107,61 +82,6 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       lastSavedHashRef.current !== '' &&
       computeHash(nodes, edges, name, clusters) !== lastSavedHashRef.current,
     [computeHash],
-  );
-
-  // ──────────────────────────────────────────────
-  // Serialise nodes for DB (strips definitions, filters hidden fields)
-  // ──────────────────────────────────────────────
-  const serializeNodes = useCallback((nodes: Node[]) => {
-    return nodes.map((n) => {
-      const pinnedOutput = safePinnedOutput(n.data.pinnedOutput);
-      return {
-        id: n.id,
-        name: (n.data.definition as any)?.name,
-        node_type: (n.data.definition as any)?.node_type,
-        category: (n.data.definition as any)?.category,
-        subCategory: (n.data.definition as any)?.subCategory,
-        provider: (n.data.definition as any)?.provider,
-        position: n.position,
-        sourcePosition: n.sourcePosition,
-        targetPosition: n.targetPosition,
-        values: getVisibleValues(
-          n.data.definition as any,
-          (n.data.values as Record<string, any>) || {},
-        ),
-        executionMode: (n.data.definition as any)?.executionMode,
-        streamingConfig: (n.data.definition as any)?.streamingConfig,
-        ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
-      };
-    });
-  }, []);
-
-  const serializeEdges = useCallback(
-    (edges: Edge[], existingNodeIds: Set<string>) => {
-      return edges
-        .filter(
-          (edge) =>
-            existingNodeIds.has(edge.source) && existingNodeIds.has(edge.target),
-        )
-        .map((edge) => {
-          const clean: any = {
-            id: edge.id,
-            type: edge.type,
-            source: edge.source,
-            target: edge.target,
-          };
-          if (edge.sourceHandle) clean.sourceHandle = edge.sourceHandle;
-          if (edge.targetHandle) clean.targetHandle = edge.targetHandle;
-          if (edge.style?.strokeLinecap || edge.style?.strokeLinejoin) {
-            clean.style = {
-              strokeLinecap: edge.style?.strokeLinecap || 'round',
-              strokeLinejoin: edge.style?.strokeLinejoin || 'round',
-            };
-          }
-          return clean;
-        });
-    },
-    [],
   );
 
   // ──────────────────────────────────────────────
@@ -201,7 +121,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       nodes: Node[],
       edges: Edge[],
       opts: { isNew?: boolean; clusters?: readonly NodeCluster[] } = {},
-    ): Promise<{ success: boolean; newId?: string }> => {
+    ): Promise<{ success: boolean; newId?: string; revision?: number }> => {
       if (!authUser) {
         toast({
           title: 'Error',
@@ -211,6 +131,9 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
         return { success: false };
       }
 
+      if (saveInFlightRef.current) return { success: false };
+
+      saveInFlightRef.current = true;
       setSaving(true);
 
       try {
@@ -238,53 +161,39 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
             return { success: false };
           }
 
-          // Create version snapshot before overwriting
-          const versionCreated = await createVersionBeforeSave(workflowId);
-          if (versionCreated) {
-            console.log('✅ Created version backup before save');
-          }
         }
 
-        const minimalNodes = serializeNodes(nodes);
-        const existingNodeIds = new Set(minimalNodes.map((n) => n.id));
-        const cleanEdges = serializeEdges(edges, existingNodeIds);
-
+        const snapshot = serializeWorkflowContent(workflowName, projectId, nodes, edges, clusters);
         const payload = {
-          user_id: authUser.id,
-          name: workflowName,
-          nodes: JSON.parse(JSON.stringify(minimalNodes)) as any,
-          edges: JSON.parse(JSON.stringify(cleanEdges)) as any,
-          node_clusters: JSON.parse(JSON.stringify(clusters)) as any,
-          updated_at: new Date().toISOString(),
-          ...(projectId && { project_id: projectId }),
+          name: snapshot.name,
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+          node_clusters: snapshot.clusters,
+          project_id: snapshot.projectId,
+          ...(workflowId && !opts.isNew ? { expected_revision: revisionRef.current } : {}),
         };
 
         if (workflowId && !opts.isNew) {
-          // Update existing
-          const { error } = await supabase
-            .from('workflows')
-            .update(payload)
-            .eq('id', workflowId);
-
-          if (error) throw error;
-
-          markSaved(nodes, edges, workflowName, clusters);
+          const response = await apiClient.put(`/workflows/${workflowId}`, payload, session?.access_token);
+          if (!response.ok) {
+            if (response.status === 409) throw new Error('This workflow changed in another session. Reload it or keep this draft and retry.');
+            throw new Error((await response.json() as { message?: string }).message || 'Save failed');
+          }
+          const { workflow: row } = await response.json();
+          const workflow = savedWorkflowFromRow(row);
+          revisionRef.current = workflow.revision;
+          lastSavedHashRef.current = hashEditableWorkflowContent(workflow.content);
           toast({ title: 'Success', description: 'Workflow updated!' });
-          return { success: true };
+          return { success: true, newId: workflow.workflowId, revision: workflow.revision };
         } else {
-          // Insert new (including pre-generated id when provided)
-          const insertPayload = workflowId ? { ...payload, id: workflowId } : payload;
-          const { data, error } = await supabase
-            .from('workflows')
-            .insert([insertPayload])
-            .select()
-            .single();
-
-          if (error) throw error;
-
-          markSaved(nodes, edges, workflowName, clusters);
+          const response = await apiClient.post('/workflows', payload, session?.access_token);
+          if (!response.ok) throw new Error((await response.json() as { message?: string }).message || 'Save failed');
+          const { workflow: row } = await response.json();
+          const workflow = savedWorkflowFromRow(row);
+          revisionRef.current = workflow.revision;
+          lastSavedHashRef.current = hashEditableWorkflowContent(workflow.content);
           toast({ title: 'Success', description: 'Workflow saved!' });
-          return { success: true, newId: data.id };
+          return { success: true, newId: workflow.workflowId, revision: workflow.revision };
         }
       } catch (error: any) {
         const msg = error.message || 'Unknown error occurred';
@@ -295,6 +204,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
         });
         return { success: false };
       } finally {
+        saveInFlightRef.current = false;
         setSaving(false);
       }
     },
@@ -302,11 +212,8 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       authUser,
       projectId,
       toast,
-      serializeNodes,
-      serializeEdges,
-      markSaved,
       shouldBlockEmptySave,
-      createVersionBeforeSave,
+      session?.access_token,
     ],
   );
 
@@ -322,14 +229,8 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
 
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('workflows')
-          .select('*')
-          .eq('id', workflowId)
-          .eq('user_id', authUser.id)
-          .single();
-
-        if (error || !data) {
+        const response = await apiClient.get(`/workflows/${workflowId}`, session?.access_token);
+        if (!response.ok) {
           toast({
             title: 'Error',
             description: 'Workflow not found or access denied',
@@ -337,6 +238,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           });
           return null;
         }
+        const { workflow: data } = await response.json() as { workflow: Record<string, unknown> };
 
         // Restore nodes with definitions
         const restoredNodes = (data.nodes as unknown as Node[] || []).map((node) => {
@@ -424,14 +326,16 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           else semanticInvalidEntries.push({ index, value: cluster });
         });
         const result: LoadedWorkflow = {
-          name: data.name || 'Untitled Workflow',
+          name: typeof data.name === 'string' ? data.name : 'Untitled Workflow',
           isActive: !!data.is_active,
           nodes: restoredNodes,
           edges: restoredEdges,
           clusters: validClusters,
           invalidClusterEntries: [...parsedClusters.invalidEntries, ...semanticInvalidEntries],
+          revision: typeof data.revision === 'number' ? data.revision : 0,
         };
 
+        revisionRef.current = result.revision;
         markSaved(restoredNodes, restoredEdges, result.name, result.clusters);
         return result;
       } catch (error: any) {
@@ -446,7 +350,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
         setLoading(false);
       }
     },
-    [authUser, toast, markSaved],
+    [authUser, session?.access_token, toast, markSaved],
   );
 
   // ──────────────────────────────────────────────
@@ -496,7 +400,5 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
     hasUnsavedChanges,
     markSaved,
     checkNodeReduction,
-    serializeNodes,
-    serializeEdges,
   };
 };

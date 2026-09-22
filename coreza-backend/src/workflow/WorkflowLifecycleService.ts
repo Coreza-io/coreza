@@ -34,7 +34,7 @@ export class WorkflowLifecycleService {
     const workflow = (await this.workflowRepo.getOwnedWorkflow(
       input.userId,
       input.workflowId,
-      "id,user_id,nodes,edges,node_clusters,is_active,schedule_cron",
+      "id,user_id,nodes,edges,node_clusters,revision,is_active,schedule_cron",
     )) as any;
 
     const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
@@ -126,6 +126,7 @@ export class WorkflowLifecycleService {
           workflow.nodes,
           workflow.edges,
           workflow.node_clusters,
+          workflow.revision,
         );
 
         const runId = (run as any).id;

@@ -60,17 +60,26 @@ export class WorkflowRepository {
   }
 
   async update(userId: string, workflowId: string, input: UpdateWorkflowInput) {
-    const { data, error } = await (supabase.from("workflows") as any)
-      .update({
-        ...input,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", workflowId)
-      .eq("user_id", userId)
-      .select()
-      .single();
+    const { expected_revision, ...candidate } = input;
+    const { data, error } = await (supabase.rpc as unknown as (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string; code?: string } | null}>)
+      ("save_workflow_document", {
+        p_workflow_id: workflowId,
+        p_user_id: userId,
+        p_expected_revision: expected_revision,
+        p_name: candidate.name,
+        p_nodes: candidate.nodes,
+        p_edges: candidate.edges,
+        p_node_clusters: candidate.node_clusters,
+        p_project_id: candidate.project_id,
+      });
 
     if (error) {
+      if (error.message.includes("workflow-revision-conflict")) {
+        throw createError("workflow-revision-conflict", 409);
+      }
       throw createError("Failed to update workflow", 500);
     }
 

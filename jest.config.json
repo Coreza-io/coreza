@@ -8,6 +8,9 @@
   "transform": {
     "^.+\\.ts$": "ts-jest"
   },
+  "moduleNameMapper": {
+    "^@/(.*)$": "<rootDir>/src/$1"
+  },
   "collectCoverageFrom": [
     "coreza-backend-node/src/**/*.ts",
     "!coreza-backend-node/src/**/*.d.ts"

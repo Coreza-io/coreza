@@ -11,12 +11,19 @@ export class WorkflowExecutionService {
   async executeManual(
     userId: string,
     workflowId: string,
-    inputData: Record<string, unknown> = {},
+    inputData: Record<string, unknown>,
+    expectedRevision: number,
   ) {
     const workflow = (await this.workflowRepo.getOwnedWorkflow(
       userId,
       workflowId,
     )) as any;
+    if (workflow.revision !== expectedRevision) {
+      throw Object.assign(new Error("workflow-revision-conflict"), {
+        statusCode: 409,
+        isOperational: true,
+      });
+    }
 
     const run = await this.runRepo.createRun(
       workflowId,
@@ -24,6 +31,7 @@ export class WorkflowExecutionService {
       workflow.nodes,
       workflow.edges,
       workflow.node_clusters,
+      workflow.revision,
     );
 
     const runId = (run as any).id;

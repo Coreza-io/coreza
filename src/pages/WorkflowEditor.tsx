@@ -991,7 +991,10 @@ const WorkflowEditorContent = () => {
 
     if (!hasPersistedRef.current) {
       hasPersistedRef.current = true;
-      const workflowPath = `/dashboard/workflow/${workflowId}`;
+      const savedWorkflowId = saveResult.newId;
+      if (!savedWorkflowId) return false;
+      setWorkflowId(savedWorkflowId);
+      const workflowPath = `/dashboard/workflow/${savedWorkflowId}`;
       const newUrl = projectId ? `${workflowPath}?project=${projectId}` : workflowPath;
       navigate(newUrl, { replace: true });
     }
@@ -1119,9 +1122,10 @@ const WorkflowEditorContent = () => {
       clusters,
     });
 
-    if (result.success && isFirstSave && workflowId) {
+    if (result.success && isFirstSave && result.newId) {
       hasPersistedRef.current = true;
-      const workflowPath = `/dashboard/workflow/${workflowId}`;
+      setWorkflowId(result.newId);
+      const workflowPath = `/dashboard/workflow/${result.newId}`;
       const newUrl = projectId
         ? `${workflowPath}?project=${projectId}`
         : workflowPath;

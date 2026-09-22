@@ -22,6 +22,8 @@ type WorkflowWebhookRow = {
   is_active?: boolean | null;
   nodes?: any[] | null;
   edges?: any[] | null;
+  node_clusters?: unknown;
+  revision?: number;
 };
 
 const logger = createLogger("WebhookService");
@@ -394,6 +396,8 @@ export class WebhookService {
             initiated_by: userId,
             nodes: workflow.nodes,
             edges: workflow.edges,
+            node_clusters: workflow.node_clusters ?? [],
+            source_workflow_revision: workflow.revision,
             node_count: Array.isArray(workflow.nodes)
               ? workflow.nodes.length
               : 0,

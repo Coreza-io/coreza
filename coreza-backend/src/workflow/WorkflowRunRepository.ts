@@ -9,6 +9,7 @@ export class WorkflowRunRepository {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
     nodeClusters: unknown = [],
+    sourceWorkflowRevision?: number,
   ) {
     const { data, error } = await supabase
       .from("workflow_runs")
@@ -19,6 +20,7 @@ export class WorkflowRunRepository {
         nodes,
         edges,
         node_clusters: nodeClusters,
+        source_workflow_revision: sourceWorkflowRevision,
         node_count: Array.isArray(nodes) ? nodes.length : 0,
         edge_count: Array.isArray(edges) ? edges.length : 0,
       } as any)

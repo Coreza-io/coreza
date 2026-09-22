@@ -67,6 +67,8 @@ export function createScheduledWorkflowWorker({
             schedule_key: job.id,
             nodes: (workflow as any).nodes,
             edges: (workflow as any).edges,
+            node_clusters: (workflow as any).node_clusters,
+            source_workflow_revision: (workflow as any).revision,
             node_count: Array.isArray((workflow as any).nodes)
               ? (workflow as any).nodes.length
               : 0,

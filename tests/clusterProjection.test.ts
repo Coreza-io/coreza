@@ -87,5 +87,29 @@ describe("cluster display projection", () => {
     const projection = projectClusterGraph([...nodes, collidingNode], edges, [cluster], {}, jest.fn());
     expect(new Set(projection.nodes.map(({ id }) => id)).size).toBe(projection.nodes.length);
     expect(projection.displayNodeToCluster.has(`${collidingNode.id}:1`)).toBe(true);
+    expect(projection.edges[0]).toMatchObject({
+      source: `${collidingNode.id}:1`,
+      target: "outside",
+    });
+    const displayNodeIds = new Set(projection.nodes.map(({ id }) => id));
+    expect(displayNodeIds.has(projection.edges[0].source)).toBe(true);
+    expect(displayNodeIds.has(projection.edges[0].target)).toBe(true);
+  });
+
+  it("uses final collision-safe IDs at both ends of a compact-to-compact edge", () => {
+    const second: NodeCluster = { id: "second", title: "Orders", memberNodeIds: ["outside"] };
+    const collidingNodes: Node[] = [
+      { id: `${CLUSTER_DISPLAY_ID_PREFIX}${cluster.id}`, position: { x: 900, y: 120 }, data: {} },
+      { id: `${CLUSTER_DISPLAY_ID_PREFIX}${second.id}`, position: { x: 1100, y: 120 }, data: {} },
+    ];
+
+    const projection = projectClusterGraph([...nodes, ...collidingNodes], edges, [cluster, second], {}, jest.fn());
+
+    expect(projection.edges[0]).toMatchObject({
+      source: `${CLUSTER_DISPLAY_ID_PREFIX}${cluster.id}:1`,
+      target: `${CLUSTER_DISPLAY_ID_PREFIX}${second.id}:1`,
+    });
+    expect(projection.displayNodeToCluster.get(projection.edges[0].source)).toBe(cluster.id);
+    expect(projection.displayNodeToCluster.get(projection.edges[0].target)).toBe(second.id);
   });
 });

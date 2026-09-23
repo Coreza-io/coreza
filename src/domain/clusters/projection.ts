@@ -53,10 +53,29 @@ export function projectClusterGraph(
   const collapsedOwnerByNode = new Map<string, NodeCluster>();
   const displayNodeToCluster = new Map<string, string>();
   const displayEdgeToCanonicalEdge = new Map<string, string>();
+  const displayIdByCluster = new Map<string, string>();
 
   for (const cluster of clusters) {
     if (isClusterExpanded(viewState, cluster.id)) continue;
     for (const memberId of cluster.memberNodeIds) collapsedOwnerByNode.set(memberId, cluster);
+  }
+
+  // Allocate every synthetic ID before rewriting edges. An allocation may need
+  // a suffix when a canonical node uses the reserved prefix, so deriving edge
+  // endpoints from the unsuffixed ID would leave those edges dangling.
+  const reservedIds = new Set(canonicalNodes.map(({ id }) => id));
+  for (const cluster of clusters) {
+    if (isClusterExpanded(viewState, cluster.id)) continue;
+    const baseId = getClusterDisplayNodeId(cluster.id);
+    let id = baseId;
+    let collisionIndex = 1;
+    while (reservedIds.has(id)) {
+      id = `${baseId}:${collisionIndex}`;
+      collisionIndex += 1;
+    }
+    reservedIds.add(id);
+    displayIdByCluster.set(cluster.id, id);
+    displayNodeToCluster.set(id, cluster.id);
   }
 
   const projectedEdges: Edge[] = [];
@@ -67,8 +86,12 @@ export function projectClusterGraph(
     const targetCluster = collapsedOwnerByNode.get(edge.target);
     if (sourceCluster && sourceCluster.id === targetCluster?.id) continue;
 
-    const projectedSource = sourceCluster ? getClusterDisplayNodeId(sourceCluster.id) : edge.source;
-    const projectedTarget = targetCluster ? getClusterDisplayNodeId(targetCluster.id) : edge.target;
+    const projectedSource = sourceCluster
+      ? displayIdByCluster.get(sourceCluster.id) ?? edge.source
+      : edge.source;
+    const projectedTarget = targetCluster
+      ? displayIdByCluster.get(targetCluster.id) ?? edge.target
+      : edge.target;
     const projectedSourceHandle = sourceCluster ? `out:${edge.id}` : edge.sourceHandle;
     const projectedTargetHandle = targetCluster ? `in:${edge.id}` : edge.targetHandle;
     if (sourceCluster) outgoingHandles.set(sourceCluster.id, [...(outgoingHandles.get(sourceCluster.id) ?? []), projectedSourceHandle]);
@@ -98,14 +121,8 @@ export function projectClusterGraph(
       return member ? [member] : [];
     });
     if (members.length === 0) continue;
-    const baseId = getClusterDisplayNodeId(cluster.id);
-    let id = baseId;
-    let collisionIndex = 1;
-    while (nodeById.has(id) || displayNodeToCluster.has(id)) {
-      id = `${baseId}:${collisionIndex}`;
-      collisionIndex += 1;
-    }
-    displayNodeToCluster.set(id, cluster.id);
+    const id = displayIdByCluster.get(cluster.id);
+    if (!id) continue;
     const compactNode: CompactClusterFlowNode = {
       id,
       type: "compactCluster",

@@ -1,10 +1,16 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { ChevronRight, CircleAlert, LoaderCircle, Network } from "lucide-react";
+import { useEffect } from "react";
+import { Handle, Position, type NodeProps, useUpdateNodeInternals } from "@xyflow/react";
+import { ChevronDown, CircleAlert, LoaderCircle, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CompactClusterFlowNode } from "@/domain/clusters/projection";
 
-export function CompactClusterNode({ data: cluster }: NodeProps<CompactClusterFlowNode>): JSX.Element {
+export function CompactClusterNode({ id, data: cluster }: NodeProps<CompactClusterFlowNode>): JSX.Element {
+  const updateNodeInternals = useUpdateNodeInternals();
   const expand = (): void => cluster.onExpand(cluster.clusterId);
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [cluster.incomingHandleIds, cluster.outgoingHandleIds, id, updateNodeInternals]);
 
   return (
     <article
@@ -36,7 +42,7 @@ export function CompactClusterNode({ data: cluster }: NodeProps<CompactClusterFl
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => { event.stopPropagation(); expand(); }}
         >
-          <ChevronRight aria-hidden="true" />
+          <ChevronDown aria-hidden="true" />
         </Button>
       </div>
       <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">

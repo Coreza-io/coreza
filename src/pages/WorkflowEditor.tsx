@@ -60,7 +60,7 @@ import {
 import {
   Save,
   Pause,
-  ChevronDown,
+  ChevronUp,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -2199,7 +2199,7 @@ const WorkflowEditorContent = () => {
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => { event.stopPropagation(); setExpanded(cluster.id, false); }}
                       >
-                        <ChevronDown aria-hidden="true" />
+                        <ChevronUp aria-hidden="true" />
                       </Button>}
                       <button className="text-xs text-muted-foreground hover:text-foreground" onPointerDown={(event) => event.stopPropagation()} onClick={() => dissolveClustersForNodes(cluster.memberNodeIds)}>Dissolve</button>
                       <button className="text-xs text-destructive" onPointerDown={(event) => event.stopPropagation()} onClick={() => deleteNodeIds(cluster.memberNodeIds)}>Delete nodes</button>

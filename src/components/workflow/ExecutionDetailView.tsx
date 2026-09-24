@@ -298,6 +298,7 @@ export function ExecutionDetailView({
                 }))}
               >
                 <ReactFlow
+                  colorMode={resolvedTheme}
                   nodes={executionNodes}
                   edges={executionEdges}
                   nodeTypes={executionNodeTypes}
@@ -310,7 +311,6 @@ export function ExecutionDetailView({
                   fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.4 }}
                   className={cn(
                     "execution-canvas",
-                    resolvedTheme === "dark" && "dark",
                     loading && "opacity-50 pointer-events-none",
                   )}
                   style={{ backgroundColor: "hsl(var(--trading-grid))" }}

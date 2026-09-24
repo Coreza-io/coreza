@@ -23,11 +23,11 @@
         const root = document.documentElement;
         const storedTheme = localStorage.getItem(storageKey);
         const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        const theme = storedTheme === "light" || storedTheme === "dark"
-          ? storedTheme
-          : prefersDark
-            ? "dark"
-            : "light";
+        const theme = storedTheme === "system"
+          ? (prefersDark ? "dark" : "light")
+          : storedTheme === "light" || storedTheme === "dark"
+            ? storedTheme
+            : "dark";
 
         root.classList.remove("light", "dark");
         root.classList.add(theme);

@@ -27,6 +27,11 @@ export interface ClusterProjection {
   displayEdgeToCanonicalEdge: ReadonlyMap<string, string>;
 }
 
+export interface ClusterProjectionOptions {
+  draggable?: boolean;
+  selectedClusterIds?: ReadonlySet<string>;
+}
+
 export const getClusterDisplayNodeId = (clusterId: string): string =>
   `${CLUSTER_DISPLAY_ID_PREFIX}${clusterId}`;
 
@@ -48,6 +53,7 @@ export function projectClusterGraph(
   clusters: readonly NodeCluster[],
   viewState: ClusterViewState,
   onExpand: (clusterId: string) => void,
+  options: ClusterProjectionOptions = {},
 ): ClusterProjection {
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
   const collapsedOwnerByNode = new Map<string, NodeCluster>();
@@ -127,9 +133,10 @@ export function projectClusterGraph(
       id,
       type: "compactCluster",
       position: getCompactClusterPosition(members),
-      draggable: false,
+      draggable: options.draggable ?? false,
       deletable: false,
       selectable: true,
+      selected: options.selectedClusterIds?.has(cluster.id) ?? false,
       width: COMPACT_CLUSTER_WIDTH,
       height: COMPACT_CLUSTER_HEIGHT,
       data: {

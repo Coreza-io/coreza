@@ -34,7 +34,6 @@ import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import NodeRouter from "@/components/nodes/NodeRouter";
 import { nodeManifest } from "@/nodes/manifest";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
-import { cn } from "@/lib/utils";
 
 interface WorkflowCanvasProps {
   nodes: Node[];
@@ -285,10 +284,8 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
             fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.4 }}
             minZoom={0.1}
             maxZoom={4}
-            className={cn(
-              "workflow-canvas",
-              resolvedTheme === "dark" && "dark",
-            )}
+            colorMode={resolvedTheme}
+            className="workflow-canvas"
             style={{ backgroundColor: "hsl(var(--trading-grid))" }}
             nodesDraggable={!disabled}
             nodesConnectable={!disabled}

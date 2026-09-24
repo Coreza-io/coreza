@@ -20,15 +20,25 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: Theme
+  resolvedTheme: Exclude<Theme, "system">
   setTheme: (theme: Theme) => void
 }
 
 const initialState: ThemeProviderState = {
   theme: "dark",
+  resolvedTheme: "dark",
   setTheme: () => null,
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
+
+const isTheme = (value: string | null): value is Theme =>
+  value === "dark" || value === "light" || value === "system"
+
+const resolveTheme = (theme: Theme): Exclude<Theme, "system"> =>
+  theme === "system"
+    ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : theme
 
 export function ThemeProvider({
   children,
@@ -36,30 +46,34 @@ export function ThemeProvider({
   storageKey = "coreza-ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-  )
+  const [theme, setTheme] = useState<Theme>(() => {
+    const storedTheme = localStorage.getItem(storageKey)
+    return isTheme(storedTheme) ? storedTheme : defaultTheme
+  })
+  const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">(() => resolveTheme(theme))
 
   useEffect(() => {
     const root = window.document.documentElement
 
-    root.classList.remove("light", "dark")
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light"
-
-      root.classList.add(systemTheme)
-      return
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+    const applyTheme = () => {
+      const nextTheme = theme === "system"
+        ? (mediaQuery.matches ? "dark" : "light")
+        : theme
+      root.classList.remove("light", "dark")
+      root.classList.add(nextTheme)
+      setResolvedTheme(nextTheme)
     }
 
-    root.classList.add(theme)
+    applyTheme()
+    if (theme !== "system") return
+    mediaQuery.addEventListener("change", applyTheme)
+    return () => mediaQuery.removeEventListener("change", applyTheme)
   }, [theme])
 
   const value = {
     theme,
+    resolvedTheme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme)
       setTheme(theme)

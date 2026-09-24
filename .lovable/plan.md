@@ -4,7 +4,9 @@
 
 The attached recommendation has the right central architecture: **Execute cluster must be a backend-scoped manual run over canonical member nodes**, not a loop around the editor’s existing node buttons and not a second scheduler. The server must derive membership from the saved workflow revision, stop routing at cluster boundaries, and preserve ordinary node/branch/loop semantics inside the scope.
 
-Several source-state claims in the attachment do not match this checkout (`5c0e0aebcd2df2cfb22b9d4af5ccfc3b4522ddd6`):
+The latest implementation review is valid for its pinned main revision (`3faac7ac6ca2f525e14969d5ceff1e9ddc2e3ad2`): it correctly concludes that PR #760 is backend foundation work, not an end-to-end feature, and that adding only a play icon would expose correctness defects. Those newer backend files are not present in this checkout (`5c0e0aebcd2df2cfb22b9d4af5ccfc3b4522ddd6`), so the implementation must first align to the intended branch and preserve the already-added planner/scope/cache/migration work rather than recreating it blindly.
+
+Current-checkout facts verified independently:
 
 - `CLUSTER_COLLAPSE_ENABLED` is still `false`.
 - Compact nodes are still `draggable: false`; the referenced position/selection helper files are absent.
@@ -13,7 +15,9 @@ Several source-state claims in the attachment do not match this checkout (`5c0e0
 
 Treat the attachment’s drag/theme work as belonging to its pinned newer revision, not as completed in this workspace. Preserve or merge those changes when the implementation branch is aligned, but do not rebuild them as part of cluster execution.
 
-The backend does provide useful foundations: authenticated workflow routes, revision-checked manual execution, canonical run snapshots, `WorkflowPlan`/`WorkflowRun`, `executeFromEntries`, `AbortSignal`, and an existing `cancelWorkflowRun(runId)` queue method. However, the cancel method is not in the queue interface or authenticated HTTP API, and its current scan only finds jobs whose own `runId` matches; it does not guarantee cancellation of distributed loop descendants.
+The current backend does provide useful foundations: authenticated workflow routes, revision-checked manual execution, canonical run snapshots, `WorkflowPlan`/`WorkflowRun`, `executeFromEntries`, `AbortSignal`, and an existing `cancelWorkflowRun(runId)` queue method. However, this checkout has no cluster execution request schema/service path, the cancel method is not in the queue interface or authenticated HTTP API, and its current scan only finds jobs whose own `runId` matches; it does not guarantee cancellation of distributed loop descendants.
+
+The implementation order is mandatory: establish the actual PR #760 source/build baseline, repair the blocking runtime contracts, then expose the shared frontend control. The control may be developed behind a disabled capability gate, but unrestricted execution must not ship before pins, branch joins, loops, reference context, cancellation, and truthful completion pass their gates.
 
 ## Product contract
 
@@ -32,16 +36,18 @@ Add one shared **Execute cluster** action to the bottom of the compact card and 
 
 ## Phase 0 — Align source, schema, and test baselines
 
-1. Confirm the target branch/SHA that contains the user’s working drag/theme implementation and merge this execution work there. Do not enable collapse in this older checkout merely to expose the button.
-2. Verify the deployed database before coding. The connected schema currently does not expose `workflow_runs.source_workflow_revision`, although repository code writes it and a local migration exists.
-3. Add failing deterministic fixtures for:
+1. Confirm the target branch/SHA that contains PR #760 and the user’s working drag/theme implementation. Diff its cluster planner, scoped worker, cache key, cancellation route, migrations, and tests against this checkout; retain those changes as the starting point. Do not enable collapse in this older checkout merely to expose the button.
+2. Repair and verify the exact target revision’s build gate: correct the reported Docker build-context path and invalid `readonly Array<T>` annotation if they still exist, then run backend typecheck/build and focused tests. Treat the uploaded CI report as evidence about its pinned revision, not proof of the current checkout.
+3. Verify the deployed database before coding. The connected schema currently does not expose `workflow_runs.source_workflow_revision`, although repository code writes it and a local migration exists. Verify the PR #760 scope migration was actually applied rather than inferring deployment from source files.
+4. Record frontend/backend version identifiers in diagnostics so the compact screenshot, API contract, and database migration can be tied to one release.
+5. Add failing deterministic fixtures for:
    - a three-member action chain;
    - external predecessor and successor;
    - If/Switch with a join;
    - sequential and distributed Loop;
    - pinned member and attachment dependency;
    - missing boundary data, failure, cancellation, and revision conflict.
-4. Record current whole-workflow execution behavior so scoped changes cannot regress scheduled, live, or backtest execution.
+6. Record current whole-workflow execution behavior so scoped changes cannot regress scheduled, live, or backtest execution.
 
 Exit: one known source revision, deployed schema facts, and reproducible failing scoped-run tests.
 
@@ -93,10 +99,12 @@ Planner rules:
 4. Derive internal roots only after supplied boundary activations are accounted for. Action-only clusters must not depend on trigger-root discovery.
 5. Keep outgoing boundary edges as result descriptors only; exclude external targets from scheduling.
 6. Keep attachment nodes in the scoped plan for owner resolution, but exclude them from root scheduling.
-7. Detect accepted Loop topology explicitly and reject all other cycles.
-8. Resolve node definitions/defaults server-side so execution does not depend on a component having mounted.
-9. Create a stable plan hash from workflow revision/content, cluster membership, relevant graph/configuration, execution mode, and planner version.
-10. Cap snapshot size/depth and reject dangerous keys before queueing.
+7. Read pins through the canonical top-level `pinnedOutput` representation used by workflow serialization. Use one shared accessor/normalizer; do not add `values.pinned` or a second persisted format. Preserve result envelopes and falsy values.
+8. Detect accepted Loop topology explicitly and reject all other cycles. A valid standalone `Loop → Body → Loop` scope must receive an explicit initial activation or fail preflight; it must never compile to an empty queue and report success.
+9. Resolve normalized node definitions/defaults server-side and reject members requiring unsupported streaming, trigger, scheduled, or backtest contexts. Delegate credential authorization to the existing secure credential path and return member-specific preflight diagnostics.
+10. Include approved external reference definitions—canonical IDs and display names—separately from executable membership, so `$("Display name")` resolution works without making the external node schedulable.
+11. Create a stable plan hash from workflow revision/content, cluster membership, relevant graph/configuration, execution mode, and planner version.
+12. Cap snapshot size/depth and reject dangerous keys before queueing.
 
 Exit: pure planner tests prove deterministic plans for chain, branch, loop, boundary, attachment, pin, and malformed-scope fixtures.
 
@@ -129,12 +137,14 @@ Do not create a cluster-only scheduler. Extend `WorkflowPlan`/`WorkflowRun`/runt
 2. Add a context-seeding method that makes external snapshots available to parameter resolution without adding them to `executionOrder`.
 3. Enforce `allowedExecutableNodeIds` in all three places: enqueue, execute, and route. Treat an attempted out-of-scope route as a runtime invariant failure, except declared boundary outputs which are captured and stopped.
 4. Add explicit pinned-node short-circuiting before executor lookup/invocation.
-5. Correct conditional join readiness: mutually exclusive branch contributions are ANY-of the selected branch group, while independent incoming dependencies remain ALL-of. Cover nested branches and loop iteration identity.
+5. Correct conditional join readiness with activation-aware branch tokens—not a simple group-by-origin If ID. Untaken branch handles are excluded, but every required fan-out path inside each selected branch plus every independent incoming dependency remains required. Cover nested conditions, multiple selected Switch outputs, unequal path lengths, and loop-iteration identity.
 6. Record untaken conditional paths as `branch_skipped`; propagate upstream failures/cancellation as `dependency_blocked`/`cancelled` rather than silently succeeding.
 7. Pass immutable scope metadata through `NodeExecutionContext` and every continuation.
-8. For distributed Loop jobs, propagate parent run ID, cluster ID, allowed IDs, scope/plan hash, revision, and cancellation lineage to child, aggregator, and done-continuation jobs. Filter extracted subgraphs and done edges to the allowed scope/boundary contract.
-9. Keep the parent run non-terminal until all descendants settle and boundary outputs are finalized.
-10. Use a fresh execution-scoped store and abort signal for each run.
+8. Record boundary output only when its exact source handle fires; preserve edge/handle and activation identity. Never synthesize outputs for untaken If/Switch exits from the source node’s generic result.
+9. For distributed Loop jobs, propagate parent run ID, cluster ID, allowed IDs, scope/plan hash, revision, pins, reference context, boundary descriptors, fail-fast policy, and cancellation lineage to child, aggregator, and done-continuation jobs. Filter extracted subgraphs and done edges to the allowed scope/boundary contract, and check `result.success` in every worker branch.
+10. Add a durable descendant-completion barrier. Keep the root run non-terminal until required children, aggregation, continuation, and boundary-output finalization settle. If this cannot ship in the first release, reject parallel Loop clusters at preflight instead of reporting premature success.
+11. Finalization must account for every executable/attachment member outcome; an empty queue or unresolved required member is not successful completion.
+12. Use a fresh execution-scoped store and abort signal for each run.
 
 `EnginePool` currently caches only by `workflowId:executionMode`; this can reuse stale graph/configuration even for ordinary revisions. Key it by tenant/workflow, source revision or content hash, execution mode, and scope/plan hash. Safest first release: bypass the cache for cluster runs, then add the complete key with isolation tests.
 
@@ -150,15 +160,15 @@ Server sequence:
 2. Load the owned workflow with `req.user?.id`.
 3. compare `expected_revision` with the saved revision;
 4. compile and validate the cluster plan;
-5. create or return the idempotent run;
+5. create or return the idempotent run after comparing a normalized request fingerprint;
 6. enqueue the prepared scoped job;
 7. if enqueue fails, atomically mark that run failed and release its execution lock.
 
-Add `POST /workflows/:workflowId/runs/:runId/cancel`. Verify ownership and that the run belongs to the workflow before calling a queue-interface `cancelWorkflowRun(userId, workflowId, runId)`. Extend the existing implementation to cancel queued/active root jobs plus all loop descendants by parent/root run identity. Cancellation must be idempotent and terminal-state guarded so a late worker success cannot overwrite `cancelled`.
+Add `POST /workflows/:workflowId/runs/:runId/cancel`. Verify ownership and that the run belongs to the workflow before calling a queue-interface `cancelWorkflowRun(userId, workflowId, runId)`. Persist root-run cancellation intent first; workers check it before start, before descendant creation, and before success. Cancel queued/active roots plus descendants by root identity. Return `cancelling` until active workers acknowledge termination; do not claim `cancelled` merely because a one-time queue scan found a job or swallowed an adapter failure. Cancellation is idempotent and terminal-state guarded so late success cannot overwrite it.
 
 Extend `WorkflowJobData` with a discriminated scope, prepared entry activations, plan hash, source revision, root run ID, and failure policy. Do not pass client-authored member arrays. Preserve scope on retries and continuations.
 
-Use one synchronous editor execution lock shared by Execute All, Execute cluster, single-node execution, and Stop. A rapid double activation reuses the same idempotency key/run rather than duplicating side effects.
+Use one synchronous editor execution lock shared by Execute All, Execute cluster, single-node execution, and Stop. A rapid double activation reuses the same idempotency key/run rather than duplicating side effects. Persist a normalized request fingerprint with the key; reuse returns the existing run only for the same scope, revision, inputs, and references, while mismatched reuse returns conflict. A legitimate retry may retrieve its matching run even if the workflow revision advanced after the original enqueue.
 
 ## Phase 6 — Persist truthful run scope and progress
 
@@ -172,7 +182,7 @@ Apply one migration to `workflow_runs` for the deployed schema, using additive n
 
 Use a validation trigger—not a time-dependent check—to enforce workflow-vs-cluster field consistency. Preserve existing table grants/RLS, but verify browser clients cannot directly forge run status: authenticated users need read access, while run creation/status mutation should remain backend-authoritative. Refresh generated database types from the deployed schema rather than hand-editing generated files.
 
-Persist canonical workflow nodes, edges, clusters, source revision, and scope snapshot with every run. Never persist a compact display node or proxy handle as executable content.
+Persist the complete canonical workflow nodes, edges, clusters, source revision, and a separate scope snapshot with every run. Do not store only scoped nodes beside all workflow clusters, which creates dangling historical membership. Never persist a compact display node or proxy handle as executable content.
 
 Add a runtime event sink that writes per-activation node progress to `node_executions` with run/node identity, status, input/output/error, timestamps, loop activation metadata, and monotonic ordering. Batch or throttle writes where needed, but do not derive live cluster status from inconsistent node `data` flags. Historical cluster runs must remain identifiable after rename, move, collapse, or dissolve.
 
@@ -194,7 +204,7 @@ Coordinator rules:
 
 1. Resolve only canonical cluster IDs from current document state; never use a display ID as execution scope.
 2. Disable execution in history/read-only mode and while cluster metadata is invalid.
-3. Block structural/configuration edits during the initial active run; allow pan, zoom, expand/collapse, and movement because positions are non-executable.
+3. Block structural/configuration edits during the initial active run; allow pan, zoom, expand/collapse, and movement because positions are non-executable. Document standalone-root `input_data` semantics and collect only validated boundary/reference inputs; never infer missing server context from stale member UI output.
 4. Ignore stale messages from old run IDs or workflow sessions.
 5. Detach observation on navigation without cancelling backend work; reattach to an active run on reload/return.
 6. Stop only the active run. Do not deactivate schedules, streaming runners, backtests, or unrelated workflow jobs.
@@ -216,7 +226,7 @@ Interaction and layout requirements:
 - Use the existing design-system `Button` with play/stop/spinner icons and semantic cluster tokens.
 - Accessible name: `Execute cluster <title>`; expose textual status in a restrained live region.
 - Add `nodrag nopan`; stop pointer-down, click, double-click, Enter, and Space from triggering selection drag or expand.
-- Guard card-level keyboard expansion so it runs only when the card itself is the target.
+- Guard card-level keyboard expansion with `event.target === event.currentTarget`, so Enter/Space on Execute cannot also expand the card.
 - Mouse, touch, Enter, and Space submit exactly one run.
 - Update compact height and handle positions together so footer and proxy handles never overlap.
 - Give the expanded footer `pointer-events-auto`, reserve frame bottom space, and verify low/high zoom geometry.

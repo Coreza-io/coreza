@@ -3,13 +3,13 @@ import { createError } from "../middleware/errorHandler";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_NOTE_LENGTH = 200;
 
-interface PersistedHandle {
+export interface PersistedHandle {
   id?: unknown;
   type?: unknown;
   connectionKind?: unknown;
 }
 
-interface PersistedNode {
+export interface PersistedNode {
   id?: unknown;
   name?: unknown;
   node_type?: unknown;
@@ -17,7 +17,7 @@ interface PersistedNode {
   values?: unknown;
 }
 
-interface PersistedEdge {
+export interface PersistedEdge {
   id?: unknown;
   source?: unknown;
   target?: unknown;
@@ -57,7 +57,7 @@ function handleKind(node: PersistedNode, handleId: unknown, type: "source" | "ta
   return node.node_type === "sub" ? undefined : "main";
 }
 
-function edgeKind(edge: PersistedEdge, source: PersistedNode, target: PersistedNode): "main" | "attachment" | undefined {
+export function getPersistedEdgeKind(edge: PersistedEdge, source: PersistedNode, target: PersistedNode): "main" | "attachment" | undefined {
   if ((!Array.isArray(source.handles) || source.handles.length === 0) && source.node_type === "sub") {
     return "attachment";
   }
@@ -126,7 +126,7 @@ function validateTopology(
     const sourceInside = members.has(edge.source);
     const targetInside = members.has(edge.target);
     if (!sourceInside && !targetInside) continue;
-    const kind = edgeKind(edge, nodeById.get(edge.source)!, nodeById.get(edge.target)!);
+    const kind = getPersistedEdgeKind(edge, nodeById.get(edge.source)!, nodeById.get(edge.target)!);
     if (!kind) invalid("unknown-semantics");
     if (kind === "attachment" && sourceInside !== targetInside) invalid("attachment-boundary");
     if (sourceInside && targetInside) {

@@ -214,6 +214,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           trigger: "loop_parallel",
           executionMode: options.executionMode ?? "manual",
           parentRunId,
+          rootRunId: options.rootRunId ?? parentRunId,
+          scope: options.scope,
+          sourceRevision: options.sourceRevision,
+          planHash: options.planHash,
+          allowedExecutableNodeIds: options.allowedExecutableNodeIds,
           loopId,
           itemIndex: i,
           totalItems: items.length,
@@ -249,6 +254,11 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       data: {
         isLoopAggregator: true,
         parentRunId,
+        rootRunId: options.rootRunId ?? parentRunId,
+        scope: options.scope,
+        sourceRevision: options.sourceRevision,
+        planHash: options.planHash,
+        allowedExecutableNodeIds: options.allowedExecutableNodeIds,
         loopId,
         workflowId,
         userId,
@@ -417,11 +427,20 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     await this.unscheduleWorkflow(schedulerId);
 
     // 2️⃣ Cancel queued & active execution jobs
-    const jobs = await workflowQueue.getJobs(["waiting", "delayed", "active"]);
+    const jobs = await workflowQueue.getJobs([
+      "waiting",
+      "waiting-children",
+      "delayed",
+      "active",
+      "prioritized",
+    ]);
 
     let cancelledCount = 0;
 
-    for (const job of jobs) {
+    const orderedJobs = [...jobs].sort((left, right) =>
+      Number(Boolean(left.data?.isLoopAggregator)) -
+      Number(Boolean(right.data?.isLoopAggregator)));
+    for (const job of orderedJobs) {
       // Fix: Use OR (||) not AND (&&) - we want jobs matching userId OR workflowId
       if (job.data?.userId !== userId || job.data?.workflowId !== workflowId)
         continue;
@@ -487,15 +506,28 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
    * Cancel a specific workflow run by runId.
    * Uses BullMQ native job cancellation for immediate AbortSignal triggering.
    */
-  async cancelWorkflowRun(runId: string): Promise<boolean> {
+  async cancelWorkflowRun(userId: string, workflowId: string, runId: string): Promise<boolean> {
     console.log(`🛑 Cancelling workflow run ${runId}`);
 
-    const jobs = await workflowQueue.getJobs(["waiting", "delayed", "active"]);
+    const jobs = await workflowQueue.getJobs([
+      "waiting",
+      "waiting-children",
+      "delayed",
+      "active",
+      "prioritized",
+    ]);
 
-    for (const job of jobs) {
-      if (job.data?.runId === runId) {
+    let found = false;
+    const orderedJobs = [...jobs].sort((left, right) =>
+      Number(Boolean(left.data?.isLoopAggregator)) -
+      Number(Boolean(right.data?.isLoopAggregator)));
+    for (const job of orderedJobs) {
+      if (job.data?.userId === userId && job.data?.workflowId === workflowId &&
+          (job.data?.runId === runId || job.data?.rootRunId === runId || job.data?.parentRunId === runId)) {
+        found = true;
         try {
-          if (job.processedOn && !job.finishedOn) {
+          const state = await job.getState();
+          if (state === "active") {
             // Active job - use BullMQ native cancellation
             await workflowWorker.cancelJob(job.id!);
             console.log(
@@ -517,16 +549,14 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
             .eq("id", runId)
             .in("status", ["running", "queued"]);
 
-          return true;
         } catch (err) {
           console.error(`Failed cancelling run ${runId}:`, err);
-          return false;
         }
       }
     }
 
-    console.log(`⚠️ Run ${runId} not found in queue`);
-    return false;
+    if (!found) console.log(`⚠️ Run ${runId} not found in queue`);
+    return found;
   }
 
   async getQueueStats() {

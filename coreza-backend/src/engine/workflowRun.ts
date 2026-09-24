@@ -26,11 +26,35 @@ interface WorkflowRunOptions {
   abortSignal?: AbortSignal;
   flushPolicy?: FlushPolicy;
   executionMode: ExecutionMode;
+  allowedExecutableNodeIds?: readonly string[];
+  executionScope?: import("./types").NodeExecutionContext["executionScope"];
+  boundaryOutputEdges?: readonly import("../nodes/types").WorkflowEdge[];
 }
 
 interface ExecutionContextExtras {
   multiBarContext?: MultiBarExecutionContext;
   runId?: string;
+}
+
+export interface WorkflowEntryActivation {
+  nodeId: string;
+  inputs: readonly Array<{
+    edgeId: string;
+    value: unknown;
+    sourceNodeId?: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+    provenance?: string;
+  }>;
+}
+
+function mergeActivationInputs(inputs: WorkflowEntryActivation["inputs"]): unknown {
+  if (inputs.length === 0) return undefined;
+  if (inputs.length === 1) return inputs[0].value;
+  return {
+    data: inputs.map(({ value }) => value),
+    inputsByEdge: Object.fromEntries(inputs.map(({ edgeId, value }) => [edgeId, value])),
+  };
 }
 
 export class WorkflowRun {
@@ -97,6 +121,8 @@ export class WorkflowRun {
       nodeExecutorMap: this.plan.nodeExecutorMap,
       dataContext: this.dataContext,
       indicatorStateManager: this.indicatorStateManager,
+      allowedExecutableNodeIds: this.options.allowedExecutableNodeIds,
+      executionScope: this.options.executionScope,
     };
 
     return this.plan.isBacktest
@@ -144,6 +170,22 @@ export class WorkflowRun {
     });
   }
 
+  async executeFromActivations(activations: readonly WorkflowEntryActivation[]): Promise<WorkflowExecutionResult> {
+    return this.runExecution(() => {
+      for (const activation of activations) {
+        this.ensureNodeExists(activation.nodeId);
+        const input = mergeActivationInputs(activation.inputs);
+        this.runtime.primeEntry(activation.nodeId, input);
+        this.runtime.enqueue({ nodeId: activation.nodeId, input });
+      }
+    });
+  }
+
+  /** Seeds read-only external expression context without claiming node execution. */
+  seedContext(results: NodeResults): void {
+    for (const [nodeId, result] of Object.entries(results)) this.store.setNodeResult(nodeId, result);
+  }
+
   resetForNextBar(full = false): void {
     this.runtime.resetForNextBar(full);
   }
@@ -154,6 +196,7 @@ export class WorkflowRun {
    */
   pinResults(results: NodeResults): void {
     this.store.pinResults(results);
+    this.runtime.setPinnedNodeIds(Object.keys(results));
   }
 
   /**
@@ -289,6 +332,7 @@ export class WorkflowRun {
         nodeResults,
         executionOrder,
         timing,
+        boundaryOutputs: this.buildBoundaryOutputs(nodeResults),
       };
     }
 
@@ -297,7 +341,18 @@ export class WorkflowRun {
       nodeResults,
       executionOrder,
       timing,
+      boundaryOutputs: this.buildBoundaryOutputs(nodeResults),
     };
+  }
+
+  private buildBoundaryOutputs(nodeResults: NodeResults): WorkflowExecutionResult["boundaryOutputs"] {
+    if (!this.options.boundaryOutputEdges?.length) return undefined;
+    return Object.fromEntries(this.options.boundaryOutputEdges.map((edge) => [edge.id, {
+      sourceNodeId: edge.source,
+      ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+      targetNodeId: edge.target,
+      value: nodeResults[edge.source],
+    }]));
   }
 
   private buildFailureResult(error: unknown): WorkflowExecutionResult {
@@ -311,6 +366,7 @@ export class WorkflowRun {
       nodeResults,
       executionOrder,
       timing,
+      boundaryOutputs: this.buildBoundaryOutputs(nodeResults),
     };
   }
 

@@ -1,6 +1,13 @@
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
+import { ClusterWorkflowSnapshot, compileClusterExecutionPlan } from "./clusterExecution";
 import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
+import { ExecuteWorkflowInput } from "./schemas";
+import { createError } from "../middleware/errorHandler";
+
+function requestError(code: string, statusCode: number) {
+  return Object.assign(createError(code, statusCode), { code });
+}
 
 export class WorkflowExecutionService {
   constructor(
@@ -11,46 +18,104 @@ export class WorkflowExecutionService {
   async executeManual(
     userId: string,
     workflowId: string,
-    inputData: Record<string, unknown>,
-    expectedRevision: number,
+    request: ExecuteWorkflowInput,
   ) {
-    const workflow = (await this.workflowRepo.getOwnedWorkflow(
+    const workflow = await this.workflowRepo.getOwnedWorkflow(
       userId,
       workflowId,
-    )) as any;
-    if (workflow.revision !== expectedRevision) {
-      throw Object.assign(new Error("workflow-revision-conflict"), {
-        statusCode: 409,
-        isOperational: true,
-      });
+    ) as unknown as ClusterWorkflowSnapshot;
+    if (workflow.revision !== request.expected_revision) {
+      throw requestError("revision_conflict", 409);
+    }
+    if (request.scope.kind === "cluster" && !request.idempotency_key) {
+      throw requestError("idempotency_key_required", 400);
+    }
+    if (request.idempotency_key) {
+      const existing = await this.runRepo.findIdempotentRun(
+        workflowId,
+        userId,
+        request.idempotency_key,
+      );
+      if (existing) return {
+        run_id: existing.id,
+        status: existing.status,
+        message: "Existing workflow execution returned",
+      };
     }
 
-    const run = await this.runRepo.createRun(
-      workflowId,
-      userId,
-      workflow.nodes,
-      workflow.edges,
-      workflow.node_clusters,
-      workflow.revision,
-    );
+    const plan = request.scope.kind === "cluster"
+      ? compileClusterExecutionPlan({
+          workflow,
+          clusterId: request.scope.clusterId,
+          boundaryInputs: Object.fromEntries(
+            Object.entries(request.boundary_inputs ?? {}).map(
+              ([edgeId, value]) => [edgeId, { value, provenance: "explicit" as const }],
+            ),
+          ),
+          referenceSnapshots: request.reference_snapshots,
+        })
+      : undefined;
+    if (!plan && (request.boundary_inputs || request.reference_snapshots)) {
+      throw requestError("scope_inputs_require_cluster", 400);
+    }
 
-    const runId = (run as any).id;
-
-    await jobQueue.addWorkflowExecution({
-      runId,
-      workflowId,
-      userId,
-      nodes: workflow.nodes,
-      edges: workflow.edges,
-      trigger: "manual",
-      executionMode: "manual",
-      initialInput: inputData,
+    const nodes = plan
+      ? workflow.nodes.filter((node) => plan.memberNodeIds.includes(node.id))
+      : workflow.nodes;
+    const edges = plan ? [...plan.internalMainEdges, ...plan.internalAttachmentEdges] : workflow.edges;
+    const run = await this.runRepo.createRun(workflowId, userId, nodes, edges, workflow.node_clusters, workflow.revision, {
+      scopeKind: request.scope.kind,
+      scopeClusterId: plan?.clusterId,
+      scopeSnapshot: plan ? {
+        title: plan.titleSnapshot,
+        memberNodeIds: plan.memberNodeIds,
+        planHash: plan.planHash,
+        boundaryInputs: plan.entryActivations.flatMap(({ inputs }) =>
+          inputs.map(({ edgeId, provenance }) => ({ edgeId, provenance }))),
+        boundaryOutputs: plan.boundaryOutputEdges,
+      } : {},
+      idempotencyKey: request.idempotency_key,
     });
-
-    return {
-      run_id: runId,
-      status: "queued",
-      message: "Workflow execution queued",
+    const runRecord = run as unknown as {
+      id: string;
+      status?: string;
+      idempotent_existing?: boolean;
     };
+    const runId = runRecord.id;
+    if (runRecord.idempotent_existing) {
+      return {
+        run_id: runId,
+        status: runRecord.status ?? "queued",
+        message: "Existing workflow execution returned",
+      };
+    }
+
+    try {
+      await jobQueue.addWorkflowExecution({
+        runId, rootRunId: runId, workflowId, userId, nodes, edges,
+        trigger: "manual", executionMode: "manual", initialInput: request.input_data,
+        scope: request.scope, sourceRevision: workflow.revision, planHash: plan?.planHash,
+        failurePolicy: plan?.failurePolicy ?? "best-effort", entryActivations: plan?.entryActivations,
+        referenceContext: plan?.referenceContext, pinnedResults: plan?.pinnedResults,
+        boundaryOutputEdges: plan?.boundaryOutputEdges, allowedExecutableNodeIds: plan?.executableNodeIds,
+      });
+    } catch (error) {
+      await this.runRepo.markRunFailed(
+        runId,
+        error instanceof Error ? error.message : "Failed to enqueue workflow run",
+      );
+      throw error;
+    }
+    return { run_id: runId, status: "queued", message: "Workflow execution queued" };
+  }
+
+  async cancelManualRun(userId: string, workflowId: string, runId: string) {
+    const run = await this.runRepo.getOwnedRun(userId, workflowId, runId);
+    if (["success", "failed", "cancelled"].includes(run.status)) {
+      return { run_id: runId, status: run.status, cancelled: run.status === "cancelled" };
+    }
+    await jobQueue.cancelWorkflowRun(userId, workflowId, runId);
+    await this.runRepo.markRunCancelled(runId);
+    return { run_id: runId, status: "cancelled", cancelled: true };
   }
 }

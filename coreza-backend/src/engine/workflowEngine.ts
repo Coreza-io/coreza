@@ -3,7 +3,7 @@ import { DataContext } from "./DataContext";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { ExecutionMode, WorkflowExecutionResult } from "./types";
 import { WorkflowPlan } from "./workflowPlan";
-import { WorkflowRun } from "./workflowRun";
+import { WorkflowRun, WorkflowEntryActivation } from "./workflowRun";
 
 export class WorkflowEngine {
   private readonly plan: WorkflowPlan;
@@ -130,6 +130,10 @@ export class WorkflowEngine {
     return this.run.executeFromEntries(input, entryNodeIds);
   }
 
+  async executeFromActivations(activations: readonly WorkflowEntryActivation[]): Promise<WorkflowExecutionResult> {
+    return this.run.executeFromActivations(activations);
+  }
+
   destroy(): void {
     this.run.destroy();
   }
@@ -141,6 +145,12 @@ export type ExecutionOptions = {
   initialInput?: unknown;
   startNodeId?: string;
   abortSignal?: AbortSignal;
+  entryActivations?: readonly WorkflowEntryActivation[];
+  referenceContext?: Record<string, unknown>;
+  pinnedResults?: Record<string, unknown>;
+  allowedExecutableNodeIds?: readonly string[];
+  executionScope?: import("./types").NodeExecutionContext["executionScope"];
+  boundaryOutputEdges?: readonly WorkflowEdge[];
 };
 
 export async function executeWorkflow(
@@ -163,8 +173,14 @@ export async function executeWorkflow(
     mode: opts?.mode,
     abortSignal: opts?.abortSignal,
     executionMode: opts?.executionMode ?? plan.executionMode,
+    allowedExecutableNodeIds: opts?.allowedExecutableNodeIds,
+    executionScope: opts?.executionScope,
+    boundaryOutputEdges: opts?.boundaryOutputEdges,
   });
   try {
+    if (opts?.referenceContext) run.seedContext(opts.referenceContext as NonNullable<WorkflowExecutionResult["nodeResults"]>);
+    if (opts?.pinnedResults) run.pinResults(opts.pinnedResults as NonNullable<WorkflowExecutionResult["nodeResults"]>);
+    if (opts?.entryActivations) return await run.executeFromActivations(opts.entryActivations);
     return await run.execute(opts?.initialInput, opts?.startNodeId);
   } finally {
     run.destroy();

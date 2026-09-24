@@ -57,6 +57,9 @@ export class WorkflowPlan {
     abortSignal?: AbortSignal;
     flushPolicy?: FlushPolicy;
     executionMode: ExecutionMode;
+    allowedExecutableNodeIds?: readonly string[];
+    executionScope?: import("./types").NodeExecutionContext["executionScope"];
+    boundaryOutputEdges?: readonly WorkflowEdge[];
   }): WorkflowRun {
     return new WorkflowRun(this, opts);
   }

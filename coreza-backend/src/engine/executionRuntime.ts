@@ -30,6 +30,8 @@ export type RuntimeOptions = {
   nodeExecutorMap?: ReadonlyMap<string, INodeExecutor>;
   dataContext: DataContext;
   indicatorStateManager: IndicatorStateManager;
+  allowedExecutableNodeIds?: readonly string[];
+  executionScope?: NodeExecutionContext["executionScope"];
 };
 
 type ExecutionContextExtras = Partial<
@@ -48,6 +50,8 @@ export abstract class BaseExecutionRuntime {
   protected readonly executionOrder: string[] = [];
   protected execCtx: NodeExecutionContext | null = null;
   protected executionContextExtras: ExecutionContextExtras = {};
+  protected readonly pinnedNodeIds = new Set<string>();
+  private readonly allowedExecutableNodeIds?: ReadonlySet<string>;
 
   constructor(
     protected readonly graph: GraphRuntime,
@@ -55,6 +59,9 @@ export abstract class BaseExecutionRuntime {
     protected readonly resolver: ParameterResolver,
     protected readonly options: RuntimeOptions,
   ) {
+    this.allowedExecutableNodeIds = options.allowedExecutableNodeIds
+      ? new Set(options.allowedExecutableNodeIds)
+      : undefined;
     if (options.nodeExecutorMap) {
       for (const [id, exec] of options.nodeExecutorMap) {
         this.nodeExecutorMap.set(id, exec);
@@ -73,8 +80,15 @@ export abstract class BaseExecutionRuntime {
   }
 
   enqueue(item: QueueItem): boolean {
+    this.assertNodeAllowed(item.nodeId, "enqueue");
     this.queue.enqueue(item);
     return true;
+  }
+
+  protected assertNodeAllowed(nodeId: string, phase: "enqueue" | "execute" | "route"): void {
+    if (this.allowedExecutableNodeIds && !this.allowedExecutableNodeIds.has(nodeId)) {
+      throw new Error(`Scoped execution invariant failed during ${phase}: ${nodeId}`);
+    }
   }
 
   dequeue(): QueueItem | undefined {
@@ -87,6 +101,10 @@ export abstract class BaseExecutionRuntime {
 
   getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> {
     return this.nodeExecutorMap;
+  }
+
+  setPinnedNodeIds(nodeIds: readonly string[]): void {
+    nodeIds.forEach((nodeId) => this.pinnedNodeIds.add(nodeId));
   }
 
   hasFailures(): boolean {
@@ -151,6 +169,7 @@ export abstract class BaseExecutionRuntime {
         abortSignal: this.options.abortSignal,
         checkCancellation: () => this.options.abortSignal?.aborted ?? false,
         executionMode: this.options.executionMode,
+        executionScope: this.options.executionScope,
         isWarmingUp: false,
         getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
         setState: (key: string, value: any) =>
@@ -239,12 +258,20 @@ export abstract class BaseExecutionRuntime {
   }
 
   executeOnce(item: QueueItem): void | Promise<void> {
+    this.assertNodeAllowed(item.nodeId, "execute");
     const node = this.graph.nodeById.get(item.nodeId);
     if (!node) return;
 
     try {
       if (this.options.abortSignal?.aborted)
         throw new Error("Workflow cancelled by user");
+
+      if (this.pinnedNodeIds.has(node.id)) {
+        const pinned = this.store.getNodeResult(node.id);
+        if (!pinned) throw new Error(`Pinned result missing for node: ${node.id}`);
+        this.routeNodeResult(node, pinned, performance.now(), item.meta);
+        return;
+      }
 
       const category = resolveCategory(node);
       const executor =
@@ -332,6 +359,7 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 
   override enqueue(item: QueueItem): boolean {
+    this.assertNodeAllowed(item.nodeId, "enqueue");
     const key = this.keyFor(item);
     if (this.enqueuedKeys.has(key)) return false;
     this.enqueuedKeys.add(key);
@@ -353,7 +381,9 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 
   routeEdge(edge: WorkflowEdge, payload: any, meta?: IterMeta): void {
-    if (this.graph.isSubNode(edge.source)) return;
+    if (this.graph.isSubNode(edge.source) || this.graph.isSubNode(edge.target)) return;
+    this.assertNodeAllowed(edge.source, "route");
+    this.assertNodeAllowed(edge.target, "route");
     this.edgePayload.set(edge.id, payload);
 
     const targetNode = this.graph.nodeById.get(edge.target);
@@ -370,9 +400,27 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
     const required = this.graph
       .getIncomingEdges(nodeId)
       .filter((e) => !this.graph.isSubNode(e.source));
-    return (
-      required.length > 0 && required.every((e) => this.edgePayload.has(e.id))
-    );
+    if (required.length === 0) return false;
+
+    const branchOrigins = this.graph.branchOrigins.get(nodeId);
+    if (!branchOrigins?.size) return required.every((edge) => this.edgePayload.has(edge.id));
+
+    const branchGroups = new Map<string, WorkflowEdge[]>();
+    const independent: WorkflowEdge[] = [];
+    for (const edge of required) {
+      const origin = branchOrigins.get(edge.id);
+      if (!origin) {
+        independent.push(edge);
+        continue;
+      }
+      const group = branchGroups.get(origin.ifNodeId) ?? [];
+      group.push(edge);
+      branchGroups.set(origin.ifNodeId, group);
+    }
+
+    return independent.every((edge) => this.edgePayload.has(edge.id)) &&
+      [...branchGroups.values()].every((group) =>
+        group.some((edge) => this.edgePayload.has(edge.id)));
   }
 
   override executeOnce(item: QueueItem): void | Promise<void> {
@@ -437,7 +485,9 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   }
 
   routeEdge(edge: WorkflowEdge, payload: any, meta?: IterMeta): void {
-    if (this.graph.isSubNode(edge.source)) return;
+    if (this.graph.isSubNode(edge.source) || this.graph.isSubNode(edge.target)) return;
+    this.assertNodeAllowed(edge.source, "route");
+    this.assertNodeAllowed(edge.target, "route");
     this.satisfiedCounts.set(
       edge.target,
       (this.satisfiedCounts.get(edge.target) ?? 0) + 1,

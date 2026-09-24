@@ -30,6 +30,14 @@ export interface NodeExecutionContext {
   abortSignal?: AbortSignal;
   checkCancellation: () => boolean;
   executionMode: ExecutionMode;
+  executionScope?: Readonly<{
+    kind: "workflow" | "cluster";
+    clusterId?: string;
+    planHash?: string;
+    sourceRevision?: number;
+    rootRunId?: string;
+    allowedExecutableNodeIds?: readonly string[];
+  }>;
   isWarmingUp: boolean;
   multiBarContext?: MultiBarExecutionContext;
   getState: (key: string) => any;

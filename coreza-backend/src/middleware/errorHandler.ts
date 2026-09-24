@@ -14,6 +14,8 @@ export interface AppError extends Error {
   statusCode?: number;
   status?: string;
   isOperational?: boolean;
+  code?: string;
+  details?: Record<string, unknown>;
 }
 
 export const errorHandler = (
@@ -39,6 +41,8 @@ export const errorHandler = (
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message,
+    ...(err.isOperational && err.code ? { code: err.code } : {}),
+    ...(err.isOperational && err.details ? { details: err.details } : {}),
     ...(isDevelopment && { stack: err.stack })
   });
 };

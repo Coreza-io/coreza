@@ -1,8 +1,10 @@
-# Implement reliable cluster-scoped execution
+# Complete Execute Cluster and add the missing play control
 
 ## Review conclusion
 
-The attached recommendation has the right central architecture: **Execute cluster must be a backend-scoped manual run over canonical member nodes**, not a loop around the editor’s existing node buttons and not a second scheduler. The server must derive membership from the saved workflow revision, stop routing at cluster boundaries, and preserve ordinary node/branch/loop semantics inside the scope.
+The reported UI defect is confirmed: **the Execute/play control was never implemented in either cluster view**. In the current source, `CompactClusterNode` renders only the title, note, member count, status, and expand control; its projected data exposes only `onExpand`; the expanded frame has header actions but no footer; and `WorkflowEditor` has no cluster-run coordinator. The screenshot therefore shows the implemented renderer accurately—the control is absent, not hidden by CSS, hover state, cache, or theme.
+
+The attached recommendation has the right completion architecture: **Execute cluster must be a backend-scoped manual run over canonical member nodes**, not a loop around the editor’s existing node buttons and not a second scheduler. The server must derive membership from the saved workflow revision, stop routing at cluster boundaries, and preserve ordinary node/branch/loop semantics inside the scope.
 
 The latest implementation review is valid for its pinned main revision (`3faac7ac6ca2f525e14969d5ceff1e9ddc2e3ad2`): it correctly concludes that PR #760 is backend foundation work, not an end-to-end feature, and that adding only a play icon would expose correctness defects. Those newer backend files are not present in this checkout (`5c0e0aebcd2df2cfb22b9d4af5ccfc3b4522ddd6`), so the implementation must first align to the intended branch and preserve the already-added planner/scope/cache/migration work rather than recreating it blindly.
 
@@ -21,7 +23,7 @@ The implementation order is mandatory: establish the actual PR #760 source/build
 
 ## Product contract
 
-Add one shared **Execute cluster** action to the bottom of the compact card and expanded frame.
+Add one shared **Execute cluster** action with a play icon to the bottom of the compact card and expanded frame. This visible control and its complete save/run/status/stop behavior are the primary deliverable; do not declare the feature complete when only backend scope support exists.
 
 - The cluster remains collapsed or expanded while running.
 - Execute only the saved canonical members of the selected cluster.
@@ -219,11 +221,21 @@ Create one `ClusterExecutionControl` driven by coordinator state and render it:
 - in a reserved footer in the compact card;
 - at the bottom of the expanded frame, outside member hit areas.
 
-States: `Execute cluster`, `Preparing…`, `Queued`, `Running`, `Stop`, `Completed / Run again`, `Failed at <node> / Run again`, and `Blocked` with a specific inspectable reason.
+Wire the UI contracts end to end:
+
+1. Extend projected cluster data with canonical `clusterId`, the shared run state, and stable `onExecute`/`onCancel` callbacks. Keep these callbacks out of persisted cluster metadata and never pass the synthetic display ID to the API.
+2. Pass coordinator state/actions into `projectClusterGraph` from `WorkflowEditor`, using stable callbacks so status updates do not recreate unrelated canvas behavior.
+3. Replace the compact card’s member-derived `running/error` calculation with the active scoped run state for that canonical cluster. Member output remains available for node rendering, but it is not the authority for the footer lifecycle.
+4. Increase the compact projection height and card layout together to reserve a real footer row. Recalculate boundary-handle vertical positions against the new body/height and call `useUpdateNodeInternals` when handle sets or dimensions change.
+5. Add an expanded-frame footer inside the frame’s calculated bounds, increase bottom padding/height for it, and keep the footer independently interactive through the overlay’s pointer-event rules.
+6. Keep compact and expanded controls mounted from one state model. A view toggle during Preparing/Queued/Running/Cancelling must show the same run and must not resubmit it.
+
+States: `Execute cluster`, `Preparing…`, `Queued`, `Running`, `Stop`, `Cancelling…`, `Completed / Run again`, `Failed at <node> / Run again`, and `Blocked` with a specific inspectable reason.
 
 Interaction and layout requirements:
 
 - Use the existing design-system `Button` with play/stop/spinner icons and semantic cluster tokens.
+- Keep **Execute cluster** visible in idle state; do not hide it until hover. Disable it only for a specific reason such as unsaved-save failure, invalid cluster metadata, unsupported member, read-only history, or another active editor run.
 - Accessible name: `Execute cluster <title>`; expose textual status in a restrained live region.
 - Add `nodrag nopan`; stop pointer-down, click, double-click, Enter, and Space from triggering selection drag or expand.
 - Guard card-level keyboard expansion with `event.target === event.currentTarget`, so Enter/Space on Execute cannot also expand the card.
@@ -271,6 +283,7 @@ Backend changes must also be copied to the separate `coreza-io/coreza-backend` r
 
 ### Frontend/browser
 
+- The play icon and **Execute cluster** label are visibly present at the bottom of both compact and expanded clusters; they are not clipped, hover-only, or covered by the canvas overlay.
 - The user’s three-member cluster executes identically collapsed and expanded.
 - Immediate edit → run uses the newest saved values.
 - Execute via click, touch, Enter, and Space does not drag, expand, or double-submit.

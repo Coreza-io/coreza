@@ -109,13 +109,22 @@ router.get("/:workflowId/runs", async (req, res, next) => {
 router.post("/:workflowId/execute", async (req, res, next) => {
   try {
     const userId = requireUserId(req);
-    const { input_data, expected_revision } = executeWorkflowSchema.parse(req.body);
+    const body = executeWorkflowSchema.parse(req.body);
     const result = await executionService.executeManual(
       userId,
       req.params.workflowId,
-      input_data,
-      expected_revision,
+      body,
     );
+    res.json(result);
+  } catch (error) {
+    next(normalizeValidationError(error));
+  }
+});
+
+router.post("/:workflowId/runs/:runId/cancel", async (req, res, next) => {
+  try {
+    const userId = requireUserId(req);
+    const result = await executionService.cancelManualRun(userId, req.params.workflowId, req.params.runId);
     res.json(result);
   } catch (error) {
     next(normalizeValidationError(error));

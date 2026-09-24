@@ -9,9 +9,11 @@
  */
 
 import { ExecutionMode } from "../../engine/types";
+import type { EntryActivation, ExecutionScope } from "../../workflow/clusterExecution";
 
 export interface WorkflowJobData {
   runId: string;
+  rootRunId?: string;
   workflowId: string;
   userId: string;
   nodes: any[];
@@ -27,6 +29,15 @@ export interface WorkflowJobData {
     | "loop_continuation";
   initialInput?: any;
   executionMode?: ExecutionMode;
+  scope?: ExecutionScope;
+  sourceRevision?: number;
+  planHash?: string;
+  failurePolicy?: "best-effort" | "fail-fast";
+  entryActivations?: EntryActivation[];
+  referenceContext?: Readonly<Record<string, unknown>>;
+  pinnedResults?: Readonly<Record<string, unknown>>;
+  boundaryOutputEdges?: Array<{ id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }>;
+  allowedExecutableNodeIds?: string[];
   /** If true, skip all database logging for this run (high-frequency optimization) */
   useRedisStorage?: boolean;
 
@@ -68,6 +79,11 @@ export interface ParallelLoopOptions {
   parentStoreData?: Record<string, any>;
   /** Execution mode to propagate into loop child/continuation jobs */
   executionMode?: ExecutionMode;
+  scope?: ExecutionScope;
+  rootRunId?: string;
+  sourceRevision?: number;
+  planHash?: string;
+  allowedExecutableNodeIds?: string[];
 }
 
 export interface IWorkflowJobQueue {
@@ -100,6 +116,7 @@ export interface IWorkflowJobQueue {
   stopWorkflowRunner(workflowId: string): Promise<void>;
   /** Cancel all queued/running jobs for a workflow and return count of cancelled jobs */
   cancelWorkflowJobs(userId: string, workflowId: string): Promise<number>;
+  cancelWorkflowRun(userId: string, workflowId: string, runId: string): Promise<boolean>;
   getQueueStats(): Promise<any>;
   cleanup(): Promise<void>;
 }

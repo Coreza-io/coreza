@@ -178,6 +178,15 @@ export function createWorkflowWorker({
               startNodeId, // Pass entry point to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
               executionMode: (job.data as any).executionMode,
+              allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
+              executionScope: job.data.scope?.kind === "cluster" ? {
+                kind: "cluster",
+                clusterId: job.data.scope.clusterId,
+                planHash: job.data.planHash,
+                sourceRevision: job.data.sourceRevision,
+                rootRunId: job.data.rootRunId ?? job.data.parentRunId,
+                allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
+              } : undefined,
             },
           );
 
@@ -228,7 +237,6 @@ export function createWorkflowWorker({
           return { ...errorOutput, itemIndex };
         }
       }
-
       // Handle aggregator (parent job that waits for all children)
       if (isLoopAggregator) {
         console.log(
@@ -315,6 +323,11 @@ export function createWorkflowWorker({
                   // Start execution from the done edge target node
                   startNodeId: edge.target,
                   parentRunId,
+                  rootRunId: job.data.rootRunId ?? parentRunId,
+                  scope: job.data.scope,
+                  sourceRevision: job.data.sourceRevision,
+                  planHash: job.data.planHash,
+                  allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
                   loopId,
                 } as WorkflowJobData & { startNodeId: string },
                 {
@@ -365,7 +378,8 @@ export function createWorkflowWorker({
                   result: finalResult,
                   completed_at: new Date().toISOString(),
                 })
-                .eq("id", parentRunId);
+                .eq("id", parentRunId)
+                .in("status", ["running", "queued"]);
               console.log(
                 `✅ Parent run ${parentRunId} completed in Supabase with loop result`,
               );
@@ -445,6 +459,15 @@ export function createWorkflowWorker({
               startNodeId, // Pass start node to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
               executionMode: (job.data as any).executionMode,
+              allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
+              executionScope: job.data.scope?.kind === "cluster" ? {
+                kind: "cluster",
+                clusterId: job.data.scope.clusterId,
+                planHash: job.data.planHash,
+                sourceRevision: job.data.sourceRevision,
+                rootRunId: job.data.rootRunId ?? job.data.parentRunId,
+                allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
+              } : undefined,
             },
           );
 
@@ -511,25 +534,34 @@ export function createWorkflowWorker({
           };
         }
 
-        const run = EnginePool.getInstance().getOrCreate(
-          workflowId,
-          runId,
-          userId,
-          nodes,
-          edges,
-          {
-            mode: "best-effort",
-            abortSignal: signal,
-            executionMode: (job.data as any).executionMode,
-          },
-        );
-
-        let result: Awaited<ReturnType<typeof run.execute>>;
-        try {
-          result = await run.execute(renamed);
-        } finally {
-          run.destroy();
-        }
+        // Scoped plans deliberately bypass EnginePool: its legacy cache key does
+        // not include revision or scope and could otherwise reuse another graph.
+        const result = job.data.scope?.kind === "cluster"
+          ? await executeWorkflow(runId, workflowId, userId, nodes, edges, {
+              mode: "fail-fast",
+              abortSignal: signal,
+              executionMode: "manual",
+              entryActivations: job.data.entryActivations,
+              referenceContext: job.data.referenceContext as Record<string, unknown> | undefined,
+              pinnedResults: job.data.pinnedResults as Record<string, unknown> | undefined,
+              allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
+              executionScope: {
+                kind: "cluster",
+                clusterId: job.data.scope.clusterId,
+                planHash: job.data.planHash,
+                sourceRevision: job.data.sourceRevision,
+                rootRunId: job.data.rootRunId,
+                allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
+              },
+              boundaryOutputEdges: job.data.boundaryOutputEdges,
+            })
+          : await (async () => {
+              const run = EnginePool.getInstance().getOrCreate(
+                workflowId, runId, userId, nodes, edges,
+                { mode: "best-effort", abortSignal: signal, executionMode: job.data.executionMode },
+              );
+              try { return await run.execute(renamed); } finally { run.destroy(); }
+            })();
 
         executionResult = result;
 
@@ -594,7 +626,8 @@ export function createWorkflowWorker({
               error_message: errorMessage,
               completed_at: new Date().toISOString(),
             })
-            .eq("id", runId);
+            .eq("id", runId)
+            .in("status", ["running", "queued"]);
         }
 
         // For cancellations, don't throw (job completed successfully by stopping)

@@ -10,6 +10,12 @@ export class WorkflowRunRepository {
     edges: WorkflowEdge[],
     nodeClusters: unknown = [],
     sourceWorkflowRevision?: number,
+    scope: {
+      scopeKind: "workflow" | "cluster";
+      scopeClusterId?: string;
+      scopeSnapshot: Record<string, unknown>;
+      idempotencyKey?: string;
+    } = { scopeKind: "workflow", scopeSnapshot: {} },
   ) {
     const { data, error } = await supabase
       .from("workflow_runs")
@@ -21,17 +27,50 @@ export class WorkflowRunRepository {
         edges,
         node_clusters: nodeClusters,
         source_workflow_revision: sourceWorkflowRevision,
+        scope_kind: scope.scopeKind,
+        scope_cluster_id: scope.scopeClusterId,
+        scope_snapshot: scope.scopeSnapshot,
+        idempotency_key: scope.idempotencyKey,
         node_count: Array.isArray(nodes) ? nodes.length : 0,
         edge_count: Array.isArray(edges) ? edges.length : 0,
       } as any)
       .select()
       .single();
 
+    if (error?.code === "23505" && scope.idempotencyKey) {
+      const existing = await this.findIdempotentRun(
+        workflowId,
+        userId,
+        scope.idempotencyKey,
+      );
+      if (existing) return { ...existing, idempotent_existing: true };
+    }
     if (error) {
       throw createError("Failed to create workflow run", 500);
     }
 
     return data;
+  }
+
+  async findIdempotentRun(workflowId: string, userId: string, idempotencyKey: string) {
+    const { data, error } = await supabase.from("workflow_runs").select("id,status")
+      .eq("workflow_id", workflowId).eq("initiated_by", userId).eq("idempotency_key", idempotencyKey).maybeSingle();
+    if (error) throw createError("Failed to inspect workflow run", 500);
+    return data as { id: string; status: string } | null;
+  }
+
+  async getOwnedRun(userId: string, workflowId: string, runId: string) {
+    const { data, error } = await supabase.from("workflow_runs").select("id,status")
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).single();
+    if (error || !data) throw createError("Workflow run not found", 404);
+    return data as { id: string; status: string };
+  }
+
+  async markRunCancelled(runId: string): Promise<void> {
+    const { error } = await (supabase.from("workflow_runs") as any).update({
+      status: "cancelled", completed_at: new Date().toISOString(), error_message: "Run cancelled by user",
+    }).eq("id", runId).in("status", ["queued", "running"]);
+    if (error) throw createError("Failed to cancel workflow run", 500);
   }
 
   async markRunFailed(runId: string, errorMessage: string): Promise<void> {

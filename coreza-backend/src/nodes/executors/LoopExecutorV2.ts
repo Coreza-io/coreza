@@ -59,6 +59,14 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       getAllNodeResults?: () => Record<string, any>;
       /** Abort signal for cancellation detection - triggered immediately by BullMQ's cancelJob() */
       abortSignal?: AbortSignal;
+      executionScope?: {
+        kind: "workflow" | "cluster";
+        clusterId?: string;
+        planHash?: string;
+        sourceRevision?: number;
+        rootRunId?: string;
+        allowedExecutableNodeIds?: readonly string[];
+      };
     },
   ): Promise<NodeExecutionOutput> {
     // Items come either from params or upstream input
@@ -144,6 +152,15 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
           parentNodes: context.nodes,
           parentEdges: context.edges,
           parentStoreData, // Share parent workflow context with children
+          scope: context.executionScope?.clusterId
+            ? { kind: "cluster", clusterId: context.executionScope.clusterId }
+            : { kind: "workflow" },
+          rootRunId: context.executionScope?.rootRunId ?? context.runId,
+          sourceRevision: context.executionScope?.sourceRevision,
+          planHash: context.executionScope?.planHash,
+          allowedExecutableNodeIds: context.executionScope?.allowedExecutableNodeIds
+            ? [...context.executionScope.allowedExecutableNodeIds]
+            : undefined,
         },
       );
 

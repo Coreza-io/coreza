@@ -33,7 +33,14 @@ export const scheduleWorkflowSchema = z.object({
 export const executeWorkflowSchema = z.object({
   input_data: z.record(z.unknown()).optional().default({}),
   expected_revision: z.number().int().nonnegative(),
-});
+  scope: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("workflow") }),
+    z.object({ kind: z.literal("cluster"), clusterId: z.string().uuid() }),
+  ]).optional().default({ kind: "workflow" }),
+  idempotency_key: z.string().uuid().optional(),
+  boundary_inputs: z.record(z.unknown()).optional(),
+  reference_snapshots: z.record(z.unknown()).optional(),
+}).strict();
 
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
 export type UpdateWorkflowInput = z.infer<typeof updateWorkflowSchema>;

@@ -18,6 +18,12 @@ export interface WorkflowExecutionResult {
   executionOrder: string[];
   error?: ExecutionError;
   timing?: Record<string, { avgMs: number; totalMs: number; count: number }>;
+  boundaryOutputs?: Record<string, {
+    sourceNodeId: string;
+    sourceHandle?: string;
+    targetNodeId: string;
+    value: NodeResult | undefined;
+  }>;
 }
 
 export type FlushPolicy = "always" | "on-success" | "never";

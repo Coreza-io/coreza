@@ -2,6 +2,7 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { ExecutionMode } from "./types";
 import { WorkflowPlan } from "./workflowPlan";
 import { WorkflowRun } from "./workflowRun";
+import { createHash } from "crypto";
 
 type CachedPlan = {
   plan: WorkflowPlan;
@@ -38,7 +39,10 @@ export class EnginePool {
     },
   ): WorkflowRun {
     const mode = opts?.executionMode ?? "manual";
-    const cacheKey = `${workflowId}:${mode}`;
+    const contentHash = createHash("sha256")
+      .update(JSON.stringify({ nodes, edges }))
+      .digest("base64url");
+    const cacheKey = `${userId}:${workflowId}:${mode}:${contentHash}`;
     let cached = this.cache.get(cacheKey);
 
     if (!cached) {
@@ -61,7 +65,7 @@ export class EnginePool {
 
   evict(workflowId: string): void {
     for (const key of this.cache.keys()) {
-      if (key.startsWith(`${workflowId}:`)) {
+      if (key.split(":")[1] === workflowId) {
         this.cache.delete(key);
       }
     }

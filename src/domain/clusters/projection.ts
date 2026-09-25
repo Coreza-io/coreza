@@ -2,20 +2,23 @@ import type { Edge, Node, XYPosition } from "@xyflow/react";
 import type { NodeCluster } from "./types";
 import type { ClusterViewState } from "./viewState";
 import { isClusterExpanded } from "./viewState";
+import type { ClusterRunState } from "@/hooks/useClusterExecution";
 
 export const CLUSTER_DISPLAY_ID_PREFIX = "__coreza_cluster_display__:";
 export const COMPACT_CLUSTER_WIDTH = 280;
-export const COMPACT_CLUSTER_HEIGHT = 132;
+export const COMPACT_CLUSTER_HEIGHT = 180;
 
 export interface CompactClusterNodeData extends Record<string, unknown> {
   clusterId: string;
   title: string;
   note?: string;
   memberCount: number;
-  status: "idle" | "running" | "error";
+  runState: ClusterRunState;
   incomingHandleIds: string[];
   outgoingHandleIds: string[];
   onExpand: (clusterId: string) => void;
+  onExecute: (clusterId: string) => void;
+  onCancel: (clusterId: string) => void;
 }
 
 export type CompactClusterFlowNode = Node<CompactClusterNodeData, "compactCluster">;
@@ -30,6 +33,9 @@ export interface ClusterProjection {
 export interface ClusterProjectionOptions {
   draggable?: boolean;
   selectedClusterIds?: ReadonlySet<string>;
+  getRunState?: (clusterId: string) => ClusterRunState;
+  onExecute?: (clusterId: string) => void;
+  onCancel?: (clusterId: string) => void;
 }
 
 export const getClusterDisplayNodeId = (clusterId: string): string =>
@@ -39,12 +45,6 @@ export const getCompactClusterPosition = (members: readonly Node[]): XYPosition 
   const minX = Math.min(...members.map(({ position }) => position.x));
   const minY = Math.min(...members.map(({ position }) => position.y));
   return { x: minX - 24, y: minY - 66 };
-};
-
-const getRuntimeStatus = (members: readonly Node[]): CompactClusterNodeData["status"] => {
-  if (members.some(({ data }) => data?.error || data?.status === "error")) return "error";
-  if (members.some(({ data }) => data?.isExecuting || data?.status === "running")) return "running";
-  return "idle";
 };
 
 export function projectClusterGraph(
@@ -144,10 +144,12 @@ export function projectClusterGraph(
         title: cluster.title,
         note: cluster.note,
         memberCount: members.length,
-        status: getRuntimeStatus(members),
+        runState: options.getRunState?.(cluster.id) ?? { phase: "idle" },
         incomingHandleIds: incomingHandles.get(cluster.id) ?? [],
         outgoingHandleIds: outgoingHandles.get(cluster.id) ?? [],
         onExpand,
+        onExecute: options.onExecute ?? (() => undefined),
+        onCancel: options.onCancel ?? (() => undefined),
       } satisfies CompactClusterNodeData,
     };
     visibleNodes.push(compactNode);

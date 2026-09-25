@@ -110,6 +110,8 @@ import { deleteNodesFromDocument, type WorkflowDocument } from "@/domain/cluster
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
+import { ClusterExecutionControl } from "@/components/workflow/ClusterExecutionControl";
+import { useClusterExecution } from "@/hooks/useClusterExecution";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
@@ -450,16 +452,6 @@ const WorkflowEditorContent = () => {
     setClusterViewState((current) => setClusterExpanded(current, clusterId, expanded));
   }, []);
 
-  const clusterProjection = useMemo(
-    () => projectClusterGraph(nodes, edges, clusters, clusterViewState, (clusterId) => setExpanded(clusterId, true), {
-      draggable: CLUSTER_COLLAPSE_ENABLED && !dragSource.nodeId,
-      selectedClusterIds,
-    }),
-    [clusterViewState, clusters, dragSource.nodeId, edges, nodes, selectedClusterIds, setExpanded],
-  );
-  const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
-  const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
-
   const cloneNodes = useCallback((sourceNodes: Node[]) => {
     return sourceNodes.map((node) => ({
       ...node,
@@ -563,6 +555,45 @@ const WorkflowEditorContent = () => {
       historyRef.current.future = [];
     }
   }, [setNodes]);
+
+  const prepareClusterExecution = useCallback(async () => {
+    finishClusterMove(false);
+    if (!workflowId || !authUser || loading || invalidClusterEntries.length > 0) return null;
+    const isFirstSave = !hasPersistedRef.current;
+    const result = await saveWorkflow(workflowId, workflowName, nodes, edges, { isNew: isFirstSave, clusters });
+    if (!result.success || result.revision === undefined) return null;
+    const savedWorkflowId = result.newId ?? workflowId;
+    if (isFirstSave) {
+      hasPersistedRef.current = true;
+      setWorkflowId(savedWorkflowId);
+      const workflowPath = `/dashboard/workflow/${savedWorkflowId}`;
+      navigate(projectId ? `${workflowPath}?project=${projectId}` : workflowPath, { replace: true });
+    }
+    return { workflowId: savedWorkflowId, revision: result.revision };
+  }, [authUser, clusters, edges, finishClusterMove, invalidClusterEntries.length, loading, navigate, nodes, projectId, saveWorkflow, workflowId, workflowName]);
+
+  const clusterExecution = useClusterExecution({
+    token: session?.access_token,
+    workflowSessionId,
+    prepare: prepareClusterExecution,
+    disabledReason: invalidClusterEntries.length > 0 ? "Cluster metadata must be repaired before execution."
+      : !authUser ? "Sign in to execute this cluster."
+      : isAutoExecuting || executingNode ? "Another editor execution is active."
+      : loading ? "Wait for the workflow to finish loading." : undefined,
+  });
+
+  const clusterProjection = useMemo(
+    () => projectClusterGraph(nodes, edges, clusters, clusterViewState, (clusterId) => setExpanded(clusterId, true), {
+      draggable: CLUSTER_COLLAPSE_ENABLED && !dragSource.nodeId,
+      selectedClusterIds,
+      getRunState: clusterExecution.getState,
+      onExecute: clusterExecution.executeCluster,
+      onCancel: clusterExecution.cancelRun,
+    }),
+    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, nodes, selectedClusterIds, setExpanded],
+  );
+  const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
+  const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
 
   const startClusterDrag = useCallback((event: React.PointerEvent<HTMLElement>, cluster: NodeCluster) => {
     if (dragSource.nodeId || event.button !== 0) return;
@@ -1184,6 +1215,10 @@ const WorkflowEditorContent = () => {
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
+    if (clusterExecution.isExecutionActive) {
+      toast({ title: "Execution already active", description: "Stop the cluster run before executing the whole workflow." });
+      return;
+    }
     if (!workflowExecutor) {
       toast({
         title: "Error",
@@ -1201,7 +1236,7 @@ const WorkflowEditorContent = () => {
     setIsAutoExecuting(true);
     await workflowExecutor.executeAllNodes();
     setIsAutoExecuting(false);
-  }, [workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady]);
+  }, [clusterExecution.isExecutionActive, workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady]);
 
   const handleStopExecution = useCallback(() => {
     workflowExecutor?.stop();
@@ -1227,6 +1262,10 @@ const WorkflowEditorContent = () => {
         });
         return;
       }
+      if (clusterExecution.isExecutionActive) {
+        toast({ title: "Execution already active", description: "Stop the cluster run before executing a node." });
+        return;
+      }
 
       if ((node.data?.definition as any)?.name === "BacktestInit") {
         const canExecute = await ensureBacktestExecutionReady();
@@ -1235,7 +1274,7 @@ const WorkflowEditorContent = () => {
 
       await workflowExecutor.executeNode(node.id, new Set());
     },
-    [clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast],
+    [clusterExecution.isExecutionActive, clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast],
   );
 
   // Save workflow via persistence hook
@@ -2288,10 +2327,11 @@ const WorkflowEditorContent = () => {
                 if (members.length === 0) return null;
                 const padding = 24;
                 const header = 42;
+                const footer = 52;
                 const minX = Math.min(...members.map(({ position }) => position.x)) - padding;
                 const minY = Math.min(...members.map(({ position }) => position.y)) - padding - header;
                 const maxX = Math.max(...members.map((node) => node.position.x + (node.measured?.width ?? node.width ?? 280))) + padding;
-                const maxY = Math.max(...members.map((node) => node.position.y + (node.measured?.height ?? node.height ?? 180))) + padding;
+                const maxY = Math.max(...members.map((node) => node.position.y + (node.measured?.height ?? node.height ?? 180))) + padding + footer;
                 return (
                   <section
                     key={cluster.id}
@@ -2357,6 +2397,14 @@ const WorkflowEditorContent = () => {
                       <button className="text-xs text-muted-foreground hover:text-foreground" onPointerDown={(event) => event.stopPropagation()} onClick={() => dissolveClustersForNodes(cluster.memberNodeIds)}>Dissolve</button>
                       <button className="text-xs text-destructive" onPointerDown={(event) => event.stopPropagation()} onClick={() => deleteNodeIds(cluster.memberNodeIds)}>Delete nodes</button>
                     </header>
+                    <footer className="cluster-frame__footer nodrag nopan pointer-events-auto absolute inset-x-0 bottom-0 flex h-[52px] items-center rounded-b-lg border-t border-[hsl(var(--cluster-border))] px-3">
+                      <ClusterExecutionControl
+                        title={cluster.title}
+                        state={clusterExecution.getState(cluster.id)}
+                        onExecute={() => clusterExecution.executeCluster(cluster.id)}
+                        onCancel={() => clusterExecution.cancelRun(cluster.id)}
+                      />
+                    </footer>
                   </section>
                 );
               })}
@@ -2364,7 +2412,7 @@ const WorkflowEditorContent = () => {
             <div className="pointer-events-auto absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
               <ExecuteAllControl
                 isExecuting={isAutoExecuting}
-                disabled={loading || nodes.length === 0}
+                disabled={loading || nodes.length === 0 || clusterExecution.isExecutionActive}
                 onExecute={executeAllNodes}
                 onStop={handleStopExecution}
               />

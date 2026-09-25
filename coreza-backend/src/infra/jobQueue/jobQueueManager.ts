@@ -539,16 +539,6 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
             console.log(`🗑️ Removed waiting/delayed run ${runId}`);
           }
 
-          // Update run status in database
-          await (supabase.from("workflow_runs") as any)
-            .update({
-              status: "cancelled",
-              completed_at: new Date().toISOString(),
-              error_message: "Run cancelled by user",
-            })
-            .eq("id", runId)
-            .in("status", ["running", "queued"]);
-
         } catch (err) {
           console.error(`Failed cancelling run ${runId}:`, err);
         }

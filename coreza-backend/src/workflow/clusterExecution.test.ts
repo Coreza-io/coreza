@@ -71,4 +71,43 @@ describe("compileClusterExecutionPlan", () => {
       boundaryInputs: { input: { value: 1 }, chain: { value: 2 } },
     })).toThrow(expect.objectContaining<Partial<ClusterPreflightError>>({ code: "missing_boundary_input" }));
   });
+
+  it.each([
+    [false],
+    [0],
+    [""],
+    [[]],
+    [{ data: null }],
+  ])("preserves canonical pinned output %#", (pinnedOutput) => {
+    const pinnedWorkflow = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.id === "a" ? { ...node, pinnedOutput } : node),
+    };
+    const plan = compileClusterExecutionPlan({
+      workflow: pinnedWorkflow,
+      clusterId,
+      boundaryInputs: { input: { value: true } },
+    });
+    expect(plan.pinnedResults.a).toEqual({ success: true, status: "pinned", data: pinnedOutput });
+  });
+
+  it("includes boundary values, references, and pins in the plan hash", () => {
+    const pinnedWorkflow = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.id === "a" ? { ...node, pinnedOutput: 0 } : node),
+    };
+    const first = compileClusterExecutionPlan({
+      workflow: pinnedWorkflow,
+      clusterId,
+      boundaryInputs: { input: { value: 1 } },
+      referenceSnapshots: { outside: { value: 1 } },
+    });
+    const second = compileClusterExecutionPlan({
+      workflow: pinnedWorkflow,
+      clusterId,
+      boundaryInputs: { input: { value: 2 } },
+      referenceSnapshots: { outside: { value: 1 } },
+    });
+    expect(first.planHash).not.toBe(second.planHash);
+  });
 });

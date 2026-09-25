@@ -817,52 +817,76 @@ export type Database = {
       }
       workflow_runs: {
         Row: {
+          cancel_acknowledged_at: string | null
+          cancel_requested_at: string | null
           completed_at: string | null
           edge_count: number | null
           edges: Json | null
           error_message: string | null
           execution_id: string | null
           id: string
+          idempotency_key: string | null
           initiated_by: string | null
           node_clusters: Json
           node_count: number | null
           nodes: Json | null
+          request_fingerprint: string | null
           result: Json | null
           schedule_key: string | null
+          scope_cluster_id: string | null
+          scope_kind: string
+          scope_snapshot: Json
+          source_workflow_revision: number | null
           started_at: string
           status: string
           workflow_id: string
         }
         Insert: {
+          cancel_acknowledged_at?: string | null
+          cancel_requested_at?: string | null
           completed_at?: string | null
           edge_count?: number | null
           edges?: Json | null
           error_message?: string | null
           execution_id?: string | null
           id?: string
+          idempotency_key?: string | null
           initiated_by?: string | null
           node_clusters?: Json
           node_count?: number | null
           nodes?: Json | null
+          request_fingerprint?: string | null
           result?: Json | null
           schedule_key?: string | null
+          scope_cluster_id?: string | null
+          scope_kind?: string
+          scope_snapshot?: Json
+          source_workflow_revision?: number | null
           started_at?: string
           status: string
           workflow_id: string
         }
         Update: {
+          cancel_acknowledged_at?: string | null
+          cancel_requested_at?: string | null
           completed_at?: string | null
           edge_count?: number | null
           edges?: Json | null
           error_message?: string | null
           execution_id?: string | null
           id?: string
+          idempotency_key?: string | null
           initiated_by?: string | null
           node_clusters?: Json
           node_count?: number | null
           nodes?: Json | null
+          request_fingerprint?: string | null
           result?: Json | null
           schedule_key?: string | null
+          scope_cluster_id?: string | null
+          scope_kind?: string
+          scope_snapshot?: Json
+          source_workflow_revision?: number | null
           started_at?: string
           status?: string
           workflow_id?: string

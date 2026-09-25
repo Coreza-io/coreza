@@ -4,6 +4,9 @@
 - [x] Verify focused tests and compile checks
 
 ## Cluster completion
+- [ ] Deploy and verify cluster-run database contract
+- [ ] Complete cluster run-button execution, cancellation, and recovery
+- [ ] Validate cluster-run tests, browser behavior, and release build
 - [ ] Canonical document and command paths
 - [ ] Validation, menu, frame, and editing parity
 - [ ] Persistence, recovery, history, and snapshots

@@ -7,6 +7,9 @@
 - [x] Deploy and verify cluster-run database contract
 - [ ] Complete cluster run-button execution, cancellation, and recovery
 - [ ] Validate cluster-run tests, browser behavior, and release build
+- [ ] Send boundary/reference snapshots with stable retry identity
+- [ ] Preserve exact entry packets and routed boundary outputs
+- [ ] Reconcile durable cancellation and active-run recovery
 - [ ] Canonical document and command paths
 - [ ] Validation, menu, frame, and editing parity
 - [ ] Persistence, recovery, history, and snapshots

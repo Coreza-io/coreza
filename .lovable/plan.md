@@ -14,6 +14,15 @@ Already implemented:
 - backend-derived cluster membership and scoped execution guards;
 - queued/running status polling and run-specific cancellation endpoint.
 
+Database audit confirmed:
+
+- `workflows.node_clusters`, `workflows.revision`, `workflow_versions.node_clusters`, and `workflow_runs.node_clusters` are deployed;
+- the cluster-scope migration exists in source, but its `workflow_runs` revision, scope, and idempotency columns are not deployed;
+- the deployed `workflow_runs` status rule does not allow `cancelling`;
+- request fingerprints and durable cancellation-intent fields do not exist;
+- generated frontend and backend database types are behind the intended cluster-run schema;
+- `workflow_runs` has ownership policies and RLS enabled, but no explicit live grants to `authenticated` or `service_role` were found.
+
 The following cluster-run correctness gaps are confirmed and remain in scope.
 
 ## Implementation
@@ -25,7 +34,22 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Run the frontend and backend typechecks, focused tests, and backend production image build before enabling the feature for release.
 - Keep compact collapse disabled until whole-workflow execution no longer depends on mounted node components; enabling collapse must not be used as a way to expose or test the run button.
 
-### 2. Use canonical pinned outputs
+### 2. Finish and deploy the cluster-run database migration
+
+- Replace the unapplied source-only migration with one additive, rerunnable migration that brings the live `workflow_runs` table to the cluster-run contract.
+- Add and validate `source_workflow_revision`, `scope_kind`, `scope_cluster_id`, `scope_snapshot`, and `idempotency_key`; preserve existing whole-workflow rows with safe defaults.
+- Add `request_fingerprint` and require it for cluster-scoped runs so an idempotency key can be reused only for the identical saved revision, cluster, plan, boundary inputs, references, and pins.
+- Add durable cancellation fields such as `cancel_requested_at` and `cancel_acknowledged_at`; use them as the source of truth for `cancelling`, descendant suppression, and terminal cancellation.
+- Extend the run-status validation to support `cancelling` without weakening validation for existing statuses. Use a validation trigger rather than introducing new time-dependent checks.
+- Keep per-member terminal outcomes in `node_executions.status`, including `pinned`, `branch_skipped`, `dependency_blocked`, and `attachment_only`; persist one row per scoped member so run history can explain completion without a second outcomes table.
+- Preserve the unique idempotency index, and include the stored fingerprint in duplicate-request comparison. Add only indexes needed by active-run recovery and cancellation polling, including workflow/user/scope/status recency where query plans show they are needed.
+- Restore explicit table privileges: authenticated users may read runs allowed by ownership RLS, while all run creation and mutation remains service-role-only; grant the service role the required access explicitly.
+- Retain ownership RLS for run reads and ensure cluster metadata cannot grant access to another user’s workflow or run.
+- Regenerate the frontend Supabase types after the migration and update the backend database types from the same deployed schema; remove casts that hide missing cluster-run columns.
+- Update the canonical setup schema so a fresh installation receives the same columns, defaults, validation trigger, indexes, grants, and RLS contract as the migrated project.
+- Apply the migration to the connected Supabase project, then query the live catalog to prove every required column, status rule, index, trigger, grant, and policy exists before enabling the button.
+
+### 3. Use canonical pinned outputs
 
 - Replace the planner’s unsupported `values.pinned` / `values.pinnedValue` lookup with a shared canonical pinned-output reader matching frontend persistence: top-level `pinnedOutput`, with the supported hydrated fallback where required.
 - Distinguish “no pin” from valid falsy pins. Preserve `false`, `0`, empty string, empty array, and an output envelope whose `data` is `null`.
@@ -33,7 +57,7 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Include pin presence and value in the deterministic plan hash and persisted scope snapshot.
 - Add planner/runtime tests proving a pinned action node never performs its real action and each falsy value reaches downstream nodes unchanged.
 
-### 3. Make cluster entry activation correct
+### 4. Make cluster entry activation correct
 
 - Build entry activations from exact boundary-edge packets rather than priming every incoming edge with one merged value.
 - For a cluster with no incoming boundary edge, activate every valid internal root explicitly.
@@ -42,7 +66,7 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Reject unsupported cycles and unsupported parallel/distributed Loop clusters during preflight until descendant completion is implemented.
 - Add tests for a standalone linear cluster, multiple roots, boundary-fed entries, sequential Loop topology, and rejected parallel Loop topology.
 
-### 4. Correct branch and join readiness
+### 5. Correct branch and join readiness
 
 - Replace the current `group.some(...)` shortcut with activation-aware dependency tracking.
 - Record the selected If/Switch handle and the concrete paths required for that activation.
@@ -51,7 +75,7 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Mark untaken branches as `branch_skipped` and downstream nodes that cannot become ready as `dependency_blocked`, instead of silently treating them as successful.
 - Add tests for true/false branches, two required paths on one selected branch, nested conditionals, joins after loops, and untaken branches.
 
-### 5. Supply boundary inputs and external references
+### 6. Supply boundary inputs and external references
 
 - During save-before-run preparation, inspect the saved cluster’s incoming boundary edges and collect one value per canonical edge ID from current pinned/editor execution data.
 - Submit those values as `boundary_inputs` with provenance; never key them by display-node IDs or labels.
@@ -61,7 +85,7 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Show a specific blocked reason in the button when a required boundary value or external reference is unavailable.
 - Add tests for incoming boundaries, multiple inputs, external references, missing values, invalid references, and attempts to execute referenced external nodes.
 
-### 6. Emit only boundary outputs that actually routed
+### 7. Emit only boundary outputs that actually routed
 
 - Stop deriving every boundary output from the final source-node result.
 - Capture a boundary output only when the exact canonical source handle routes during that activation.
@@ -69,7 +93,7 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Do not emit values for untaken If/Switch handles or inactive Loop exits.
 - Add tests proving an If result emits only the selected `true` or `false` boundary edge and loop outputs retain iteration identity.
 
-### 7. Make Stop durable and truthful
+### 8. Make Stop durable and truthful
 
 - Persist cancellation intent for the root cluster run before scanning or cancelling queue jobs.
 - Have root workers, loop children, aggregators, and continuations check that durable intent before starting, before enqueueing descendants, and before writing success.
@@ -79,16 +103,16 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - If the cancellation request fails, retain the active run ID and editor lock, show the error, and continue status reconciliation; never clear local tracking while backend work may continue.
 - Add tests for queued cancellation, active cancellation, loop descendants, late continuation prevention, repeated Stop clicks, and cancellation request failure.
 
-### 8. Make run identity and history reliable
+### 9. Make run identity and history reliable
 
 - Compute a normalized request fingerprint from workflow ID, saved revision, canonical cluster ID, plan hash, boundary inputs, reference snapshots, and pinned outputs.
 - Store the fingerprint with the idempotency key. Reuse an existing run only when both match; reject reuse of one key with different inputs.
 - Resolve an existing idempotent request before returning a revision conflict when it represents the same already-created run.
 - Persist a coherent run snapshot: the complete saved workflow snapshot plus cluster scope metadata, or a self-contained scoped snapshot whose cluster metadata cannot reference omitted nodes. Do not store scoped nodes beside all workflow clusters.
 - Persist member outcomes (`succeeded`, `failed`, `cancelled`, `pinned`, `branch_skipped`, `dependency_blocked`, `attachment_only`) so the button’s terminal state reflects actual cluster completion.
-- Verify the deployed schema exposes the required revision, scope, idempotency/fingerprint, cancellation, and outcome fields before release.
+- Treat the deployed database verification in section 2 as a release prerequisite; application fallbacks must not hide a missing migration.
 
-### 9. Harden the button coordinator
+### 10. Harden the button coordinator
 
 - Extend the coordinator request to send collected `boundary_inputs` and `reference_snapshots`.
 - Retain one idempotency key for the whole submission attempt rather than generating a new key for every retry.
@@ -99,7 +123,7 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 - Preserve the active run and lock on transient polling failures.
 - Represent cancellation as its own terminal state rather than displaying it as a generic failure.
 
-### 10. Preserve the shared compact/expanded button
+### 11. Preserve the shared compact/expanded button
 
 - Keep **Execute cluster** permanently visible in idle state in both the compact card footer and expanded frame footer.
 - Both views must read the same canonical cluster run state and invoke the same execute/cancel actions.
@@ -111,6 +135,8 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 
 ### Automated
 
+- Migration tests cover upgrade from the current live schema and a clean installation, including existing workflow-run rows.
+- Live-schema assertions verify cluster scope, revision, fingerprint, cancellation, status, indexes, grants, RLS, and generated-type parity.
 - Canonical pinned values, including falsy values, bypass their executors.
 - Every accepted cluster plan has at least one valid activation.
 - Sequential Loop entry works; unsupported distributed Loop scope is blocked.
@@ -133,8 +159,9 @@ The following cluster-run correctness gaps are confirmed and remain in scope.
 7. Expanding, compacting, navigating away/back, or reloading preserves the active run and status.
 8. Fixing a blocked condition re-enables execution without recreating the cluster.
 9. Cluster failure never starts whole-workflow execution.
-10. Frontend/backend checks and the backend production image build pass.
+10. Reload recovery reads the same active cluster run from persisted history after a new browser session.
+11. Frontend/backend checks, live database assertions, and the backend production image build pass.
 
 ## Completion criteria
 
-The cluster run button is complete only when it visibly works in both cluster views, executes the saved canonical cluster with correct pins, boundaries, references, branches, and supported loops, reports durable outcomes, cancels the entire scoped run safely, survives reload/view changes, and passes the focused automated, browser, and release checks.
+The cluster run button is complete only when the connected database matches the cluster-run schema, the control visibly works in both cluster views, executes the saved canonical cluster with correct pins, boundaries, references, branches, and supported loops, reports durable outcomes, cancels the entire scoped run safely, survives reload/view changes, and passes the focused automated, browser, migration, and release checks.

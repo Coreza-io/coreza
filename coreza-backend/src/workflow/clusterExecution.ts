@@ -161,6 +161,12 @@ function hasUnsupportedCycle(
 }
 
 function pinnedValue(node: WorkflowNode): { pinned: boolean; value?: unknown } {
+  if (Object.prototype.hasOwnProperty.call(node, "pinnedOutput")) {
+    return { pinned: true, value: node.pinnedOutput };
+  }
+  if (node.data && Object.prototype.hasOwnProperty.call(node.data, "pinnedOutput")) {
+    return { pinned: true, value: node.data.pinnedOutput };
+  }
   const values = node.values ?? node.data?.values;
   if (!values || values.pinned !== true || !("pinnedValue" in values)) return { pinned: false };
   return { pinned: true, value: values.pinnedValue };
@@ -256,6 +262,9 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
     internalAttachmentEdges,
     boundaryInputEdges,
     boundaryOutputEdges,
+    boundaryInputs: input.boundaryInputs ?? {},
+    referenceSnapshots: input.referenceSnapshots ?? {},
+    pinnedResults,
     executionMode: "manual",
   });
   return deepFreeze({

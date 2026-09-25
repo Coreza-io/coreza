@@ -4,9 +4,19 @@ import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
 import { ExecuteWorkflowInput } from "./schemas";
 import { createError } from "../middleware/errorHandler";
+import { createHash } from "crypto";
 
 function requestError(code: string, statusCode: number) {
   return Object.assign(createError(code, statusCode), { code });
+}
+
+function requestFingerprint(value: unknown): string {
+  const normalize = (item: unknown): unknown => Array.isArray(item)
+    ? item.map(normalize)
+    : item !== null && typeof item === "object"
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, normalize(child)]))
+      : item;
+  return createHash("sha256").update(JSON.stringify(normalize(value))).digest("hex");
 }
 
 export class WorkflowExecutionService {
@@ -30,19 +40,6 @@ export class WorkflowExecutionService {
     if (request.scope.kind === "cluster" && !request.idempotency_key) {
       throw requestError("idempotency_key_required", 400);
     }
-    if (request.idempotency_key) {
-      const existing = await this.runRepo.findIdempotentRun(
-        workflowId,
-        userId,
-        request.idempotency_key,
-      );
-      if (existing) return {
-        run_id: existing.id,
-        status: existing.status,
-        message: "Existing workflow execution returned",
-      };
-    }
-
     const plan = request.scope.kind === "cluster"
       ? compileClusterExecutionPlan({
           workflow,
@@ -57,6 +54,22 @@ export class WorkflowExecutionService {
       : undefined;
     if (!plan && (request.boundary_inputs || request.reference_snapshots)) {
       throw requestError("scope_inputs_require_cluster", 400);
+    }
+    const fingerprint = requestFingerprint({
+      workflowId,
+      sourceRevision: workflow.revision,
+      scope: request.scope,
+      planHash: plan?.planHash,
+      boundaryInputs: request.boundary_inputs ?? {},
+      referenceSnapshots: request.reference_snapshots ?? {},
+      pinnedResults: plan?.pinnedResults ?? {},
+    });
+    if (request.idempotency_key) {
+      const existing = await this.runRepo.findIdempotentRun(workflowId, userId, request.idempotency_key);
+      if (existing) {
+        if (existing.request_fingerprint !== fingerprint) throw requestError("idempotency_key_conflict", 409);
+        return { run_id: existing.id, status: existing.status, message: "Existing workflow execution returned" };
+      }
     }
 
     const nodes = plan
@@ -75,6 +88,7 @@ export class WorkflowExecutionService {
         boundaryOutputs: plan.boundaryOutputEdges,
       } : {},
       idempotencyKey: request.idempotency_key,
+      requestFingerprint: fingerprint,
     });
     const runRecord = run as unknown as {
       id: string;
@@ -114,6 +128,7 @@ export class WorkflowExecutionService {
     if (["success", "failed", "cancelled"].includes(run.status)) {
       return { run_id: runId, status: run.status, cancelled: run.status === "cancelled" };
     }
+    await this.runRepo.requestCancellation(runId);
     await jobQueue.cancelWorkflowRun(userId, workflowId, runId);
     await this.runRepo.markRunCancelled(runId);
     return { run_id: runId, status: "cancelled", cancelled: true };

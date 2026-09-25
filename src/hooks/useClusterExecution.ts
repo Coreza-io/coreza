@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/apiClient";
 
-export type ClusterRunPhase = "idle" | "preparing" | "queued" | "running" | "cancelling" | "completed" | "failed" | "blocked";
+export type ClusterRunPhase = "idle" | "preparing" | "queued" | "running" | "cancelling" | "completed" | "cancelled" | "failed" | "blocked";
 export interface ClusterRunState { phase: ClusterRunPhase; runId?: string; reason?: string }
 
 interface Options {
@@ -38,11 +38,11 @@ export function useClusterExecution({ token, workflowSessionId, prepare, disable
         const status = payload.run?.status?.toLowerCase();
         if (!status) return;
         if (status === "failed" || status === "cancelled") {
-          update(current.clusterId, { phase: "failed", runId: current.runId, reason: payload.run?.error_message ?? (status === "cancelled" ? "Run cancelled" : "Cluster run failed") });
+          update(current.clusterId, { phase: status, runId: current.runId, reason: payload.run?.error_message ?? (status === "cancelled" ? "Run cancelled" : "Cluster run failed") });
         } else if (["success", "succeeded", "completed"].includes(status)) {
           update(current.clusterId, { phase: "completed", runId: current.runId });
         } else {
-          update(current.clusterId, { phase: status === "queued" ? "queued" : "running", runId: current.runId });
+          update(current.clusterId, { phase: status === "queued" ? "queued" : status === "cancelling" ? "cancelling" : "running", runId: current.runId });
         }
         if (terminalStatuses.has(status)) activeRef.current = null;
       } catch {
@@ -85,8 +85,7 @@ export function useClusterExecution({ token, workflowSessionId, prepare, disable
       const response = await apiClient.post(`/workflows/${active.workflowId}/runs/${active.runId}/cancel`, {}, token);
       if (!response.ok) throw new Error("Unable to stop cluster run");
     } catch (error) {
-      update(clusterId, { phase: "failed", runId: active.runId, reason: error instanceof Error ? error.message : "Unable to stop cluster run" });
-      activeRef.current = null;
+      update(clusterId, { phase: "cancelling", runId: active.runId, reason: error instanceof Error ? error.message : "Unable to stop cluster run; checking current status" });
     }
   }, [token, update]);
 

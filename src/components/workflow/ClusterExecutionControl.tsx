@@ -12,6 +12,7 @@ export function ClusterExecutionControl({ title, state, onExecute, onCancel, cla
   const blocked = state.phase === "blocked";
   const label = state.phase === "preparing" ? "Preparing…" : state.phase === "cancelling" ? "Cancelling…"
     : active ? "Stop" : state.phase === "completed" ? "Completed / Run again"
+    : state.phase === "cancelled" ? "Cancelled / Run again"
     : state.phase === "failed" ? "Failed / Run again" : blocked ? "Blocked" : "Execute cluster";
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "Enter" || event.key === " ") event.stopPropagation();

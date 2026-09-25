@@ -66,7 +66,10 @@ export interface WorkflowNode {
   data?: {
     definition?: any;
     values?: { [key: string]: any };
+    pinnedOutput?: unknown;
+    output?: unknown;
   };
+  pinnedOutput?: unknown;
 }
 
 export interface WorkflowEdge {

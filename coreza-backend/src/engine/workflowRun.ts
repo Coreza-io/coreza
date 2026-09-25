@@ -38,7 +38,7 @@ interface ExecutionContextExtras {
 
 export interface WorkflowEntryActivation {
   nodeId: string;
-  inputs: readonly Array<{
+  inputs: ReadonlyArray<{
     edgeId: string;
     value: unknown;
     sourceNodeId?: string;

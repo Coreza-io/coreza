@@ -15,6 +15,7 @@ export class WorkflowRunRepository {
       scopeClusterId?: string;
       scopeSnapshot: Record<string, unknown>;
       idempotencyKey?: string;
+      requestFingerprint?: string;
     } = { scopeKind: "workflow", scopeSnapshot: {} },
   ) {
     const { data, error } = await supabase
@@ -31,6 +32,7 @@ export class WorkflowRunRepository {
         scope_cluster_id: scope.scopeClusterId,
         scope_snapshot: scope.scopeSnapshot,
         idempotency_key: scope.idempotencyKey,
+        request_fingerprint: scope.requestFingerprint,
         node_count: Array.isArray(nodes) ? nodes.length : 0,
         edge_count: Array.isArray(edges) ? edges.length : 0,
       } as any)
@@ -53,10 +55,10 @@ export class WorkflowRunRepository {
   }
 
   async findIdempotentRun(workflowId: string, userId: string, idempotencyKey: string) {
-    const { data, error } = await supabase.from("workflow_runs").select("id,status")
+    const { data, error } = await supabase.from("workflow_runs").select("id,status,request_fingerprint")
       .eq("workflow_id", workflowId).eq("initiated_by", userId).eq("idempotency_key", idempotencyKey).maybeSingle();
     if (error) throw createError("Failed to inspect workflow run", 500);
-    return data as { id: string; status: string } | null;
+    return data as { id: string; status: string; request_fingerprint: string | null } | null;
   }
 
   async getOwnedRun(userId: string, workflowId: string, runId: string) {
@@ -66,10 +68,18 @@ export class WorkflowRunRepository {
     return data as { id: string; status: string };
   }
 
-  async markRunCancelled(runId: string): Promise<void> {
+  async requestCancellation(runId: string): Promise<void> {
     const { error } = await (supabase.from("workflow_runs") as any).update({
-      status: "cancelled", completed_at: new Date().toISOString(), error_message: "Run cancelled by user",
-    }).eq("id", runId).in("status", ["queued", "running"]);
+      status: "cancelling", cancel_requested_at: new Date().toISOString(), error_message: null,
+    }).eq("id", runId).in("status", ["pending", "queued", "running"]);
+    if (error) throw createError("Failed to request workflow cancellation", 500);
+  }
+
+  async markRunCancelled(runId: string): Promise<void> {
+    const now = new Date().toISOString();
+    const { error } = await (supabase.from("workflow_runs") as any).update({
+      status: "cancelled", cancel_acknowledged_at: now, completed_at: now, error_message: "Run cancelled by user",
+    }).eq("id", runId).eq("status", "cancelling");
     if (error) throw createError("Failed to cancel workflow run", 500);
   }
 

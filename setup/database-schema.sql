@@ -79,6 +79,14 @@ CREATE TABLE IF NOT EXISTS public.workflow_runs (
   edge_count integer,
   schedule_key text,
   execution_id uuid DEFAULT NULL,
+  source_workflow_revision bigint,
+  scope_kind text NOT NULL DEFAULT 'workflow',
+  scope_cluster_id uuid,
+  scope_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
+  idempotency_key uuid,
+  request_fingerprint text,
+  cancel_requested_at timestamptz,
+  cancel_acknowledged_at timestamptz,
   CONSTRAINT idx_workflow_runs_schedule_key_unique UNIQUE NULLS NOT DISTINCT (workflow_id, schedule_key)
 );
 
@@ -284,6 +292,8 @@ CREATE TABLE IF NOT EXISTS public.position_snapshots (
 
 
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON public.workflow_runs(workflow_id);
+CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_manual_idempotency ON public.workflow_runs(workflow_id, initiated_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS workflow_runs_active_cluster_lookup ON public.workflow_runs(workflow_id, initiated_by, scope_cluster_id, started_at DESC) WHERE scope_kind = 'cluster' AND status IN ('pending', 'queued', 'running', 'cancelling');
 CREATE INDEX IF NOT EXISTS idx_live_fills_user_symbol ON public.live_fills(user_id, broker, symbol, fill_id);
 CREATE INDEX IF NOT EXISTS idx_live_trades_workflow ON public.live_trades(workflow_id, execution_id);
 CREATE INDEX IF NOT EXISTS idx_live_trades_user ON public.live_trades(user_id, workflow_id);
@@ -354,6 +364,9 @@ CREATE POLICY "Users can view runs of their own workflows" ON public.workflow_ru
   FOR SELECT USING (
     auth.uid() IN (SELECT w.user_id FROM public.workflows w WHERE w.id = workflow_runs.workflow_id)
   );
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.workflow_runs FROM anon, authenticated;
+GRANT SELECT ON TABLE public.workflow_runs TO authenticated;
+GRANT ALL ON TABLE public.workflow_runs TO service_role;
 DROP POLICY IF EXISTS "Users can create runs for their own workflows" ON public.workflow_runs;
 CREATE POLICY "Users can create runs for their own workflows" ON public.workflow_runs
   FOR INSERT WITH CHECK (

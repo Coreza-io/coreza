@@ -43,7 +43,7 @@ jobs:
       uses: docker/build-push-action@v4
       with:
         context: .
-        file: ./coreza-backend-node/Dockerfile
+        file: ./coreza-backend/Dockerfile
         target: production
         platforms: linux/amd64,linux/arm64
         push: true

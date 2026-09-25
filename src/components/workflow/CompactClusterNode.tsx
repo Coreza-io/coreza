@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { Handle, Position, type NodeProps, useUpdateNodeInternals } from "@xyflow/react";
-import { ChevronDown, CircleAlert, LoaderCircle, Network } from "lucide-react";
+import { ChevronDown, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CompactClusterFlowNode } from "@/domain/clusters/projection";
+import { ClusterExecutionControl } from "./ClusterExecutionControl";
 
 export function CompactClusterNode({ id, data: cluster, selected, dragging }: NodeProps<CompactClusterFlowNode>): JSX.Element {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -16,10 +17,10 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
   return (
     <article
       id={`cluster-card-${cluster.clusterId}`}
-      className={`cluster-card h-[132px] w-[280px] cursor-grab rounded-xl border-2 p-4 text-[hsl(var(--cluster-title))] shadow-[var(--cluster-shadow)] outline-none motion-safe:transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-[hsl(var(--cluster-selection-ring))] ${selected ? "cluster-card--selected" : ""} ${dragging ? "cursor-grabbing" : ""}`}
+      className={`cluster-card h-[180px] w-[280px] cursor-grab rounded-xl border-2 p-4 text-[hsl(var(--cluster-title))] shadow-[var(--cluster-shadow)] outline-none motion-safe:transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-[hsl(var(--cluster-selection-ring))] ${selected ? "cluster-card--selected" : ""} ${dragging ? "cursor-grabbing" : ""}`}
       tabIndex={0}
       aria-label={`Cluster ${cluster.title}, ${cluster.memberCount} ${cluster.memberCount === 1 ? "node" : "nodes"}`}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); expand(); } }}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } }}
       onDoubleClick={(event) => { event.stopPropagation(); expand(); }}
     >
       {cluster.incomingHandleIds.map((id, index, handles) => (
@@ -51,9 +52,11 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
       </div>
       <div className="mt-3 flex items-center justify-between text-xs text-[hsl(var(--cluster-muted))]">
         <span>{cluster.memberCount} {cluster.memberCount === 1 ? "node" : "nodes"}</span>
-        {cluster.status === "running" && <span className="flex items-center gap-1"><LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Running</span>}
-        {cluster.status === "error" && <span className="flex items-center gap-1 text-destructive"><CircleAlert className="h-3.5 w-3.5" />Error</span>}
       </div>
+      <footer className="mt-3 border-t border-[hsl(var(--cluster-border))] pt-2">
+        <ClusterExecutionControl title={cluster.title} state={cluster.runState}
+          onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
+      </footer>
     </article>
   );
 }

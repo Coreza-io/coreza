@@ -320,6 +320,11 @@
     border-color: hsl(var(--cluster-border));
     background: hsl(var(--cluster-accent) / 0.035);
   }
+
+  .cluster-frame__footer {
+    border-color: hsl(var(--cluster-border));
+    background: linear-gradient(145deg, hsl(var(--cluster-surface-start)), hsl(var(--cluster-surface-end)));
+  }
 }
 
 @layer base {

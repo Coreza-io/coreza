@@ -52,6 +52,25 @@ describe("cluster display projection", () => {
     expect(projection.displayEdgeToCanonicalEdge.get("boundary")).toBe("boundary");
   });
 
+  it("projects canonical execution state and callbacks without persisting them", () => {
+    const onExecute = jest.fn();
+    const onCancel = jest.fn();
+    const projection = projectClusterGraph(nodes, edges, [cluster], {}, jest.fn(), {
+      getRunState: () => ({ phase: "running", runId: "run-id" }),
+      onExecute,
+      onCancel,
+    });
+    const compact = projection.nodes.find(({ type }) => type === "compactCluster");
+
+    expect(compact?.data).toMatchObject({
+      clusterId: cluster.id,
+      runState: { phase: "running", runId: "run-id" },
+      onExecute,
+      onCancel,
+    });
+    expect(cluster).toEqual({ id: "cluster-id", title: "Signals", note: "A note", memberNodeIds: ["a", "b"] });
+  });
+
   it("returns canonical graph objects when expanded without changing positions", () => {
     const projection = projectClusterGraph(nodes, edges, [cluster], { [cluster.id]: true }, jest.fn());
     expect(projection.nodes).toEqual(nodes);

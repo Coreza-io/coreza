@@ -110,4 +110,18 @@ describe("compileClusterExecutionPlan", () => {
     });
     expect(first.planHash).not.toBe(second.planHash);
   });
+
+  it("rejects parallel loops until descendant completion is supported", () => {
+    const parallelWorkflow = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.id === "a"
+        ? { ...node, name: "Loop", values: { parallel: true } }
+        : node),
+    };
+    expect(() => compileClusterExecutionPlan({
+      workflow: parallelWorkflow,
+      clusterId,
+      boundaryInputs: { input: { value: [1, 2] } },
+    })).toThrow(expect.objectContaining<Partial<ClusterPreflightError>>({ code: "unsupported_execution_context" }));
+  });
 });

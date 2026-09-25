@@ -1,158 +1,140 @@
-# Add the cluster run button
+# Finish the cluster run button
 
 ## Goal
 
-Add a visible, working **Execute cluster** control to both the compact cluster card and the expanded cluster frame. Both controls must operate the same canonical cluster run and show the same status.
+Complete the partially implemented **Execute cluster** button so it runs only the selected cluster, reports truthful status, stops safely, and works in compact and expanded views.
 
-## Confirmed current state
+## Confirmed baseline
 
-- `CompactClusterNode` has title, note, member count, status, and expand controls, but no run control.
-- Projected cluster data exposes expansion data/actions, but no cluster execution action or scoped run state.
-- The expanded cluster frame has no execution footer.
-- The backend already accepts cluster-scoped manual execution requests and returns a run ID.
-- The compact card is currently `280 × 132`, so it has no reserved footer space for a run control.
+Already implemented:
+
+- shared compact/expanded cluster execution control;
+- canonical cluster ID wiring;
+- save-before-run request with saved revision;
+- backend-derived cluster membership and scoped execution guards;
+- queued/running status polling and run-specific cancellation endpoint.
+
+The following cluster-run correctness gaps are confirmed and remain in scope.
 
 ## Implementation
 
-### 1. Define the cluster run UI state
+### 1. Clear the cluster-run release gate
 
-Create a small cluster-run view model keyed by the canonical cluster ID:
+- Correct the Docker workflow path from the nonexistent `coreza-backend-node/Dockerfile` to the actual backend build context and Dockerfile.
+- Replace the invalid `readonly Array<...>` declaration in `WorkflowEntryActivation` with valid readonly-array syntax.
+- Run the frontend and backend typechecks, focused tests, and backend production image build before enabling the feature for release.
+- Keep compact collapse disabled until whole-workflow execution no longer depends on mounted node components; enabling collapse must not be used as a way to expose or test the run button.
 
-- `idle`
-- `preparing`
-- `queued`
-- `running`
-- `cancelling`
-- `succeeded`
-- `failed`
-- `cancelled`
-- `blocked`
+### 2. Use canonical pinned outputs
 
-Store the active `runId`, status, and user-facing failure reason with that state. Do not use the synthetic compact display-node ID as the cluster identity.
+- Replace the planner’s unsupported `values.pinned` / `values.pinnedValue` lookup with a shared canonical pinned-output reader matching frontend persistence: top-level `pinnedOutput`, with the supported hydrated fallback where required.
+- Distinguish “no pin” from valid falsy pins. Preserve `false`, `0`, empty string, empty array, and an output envelope whose `data` is `null`.
+- Normalize each pin once into the existing node-result envelope and seed it through `pinResults`, so the runtime routes the pinned result without invoking the real node executor.
+- Include pin presence and value in the deterministic plan hash and persisted scope snapshot.
+- Add planner/runtime tests proving a pinned action node never performs its real action and each falsy value reaches downstream nodes unchanged.
 
-### 2. Add one cluster execution coordinator
+### 3. Make cluster entry activation correct
 
-Add an editor-level `executeCluster(clusterId)` action that:
+- Build entry activations from exact boundary-edge packets rather than priming every incoming edge with one merged value.
+- For a cluster with no incoming boundary edge, activate every valid internal root explicitly.
+- Handle the supported `Loop → Body → Loop` topology explicitly: the Loop must receive a starting activation even though its return edge makes it appear to have an internal predecessor.
+- Reject a plan with no valid entry activation instead of allowing an empty queue to report success.
+- Reject unsupported cycles and unsupported parallel/distributed Loop clusters during preflight until descendant completion is implemented.
+- Add tests for a standalone linear cluster, multiple roots, boundary-fed entries, sequential Loop topology, and rejected parallel Loop topology.
 
-1. Rejects duplicate clicks while the cluster is preparing, queued, running, or cancelling.
-2. Completes any pending editor field commit.
-3. Saves the current workflow through the existing revision-aware persistence path.
-4. Uses the saved workflow revision in the request.
-5. Creates one idempotency key for the attempt and reuses it if the request is retried.
-6. Sends the existing cluster scope request:
+### 4. Correct branch and join readiness
 
-```text
-scope: { kind: "cluster", clusterId }
-expected_revision: <saved revision>
-idempotency_key: <attempt key>
-```
+- Replace the current `group.some(...)` shortcut with activation-aware dependency tracking.
+- Record the selected If/Switch handle and the concrete paths required for that activation.
+- Require all independent inputs and all required paths within the selected branch before a join runs.
+- Keep activation identity separate across loop iterations so payloads from different iterations cannot satisfy one another.
+- Mark untaken branches as `branch_skipped` and downstream nodes that cannot become ready as `dependency_blocked`, instead of silently treating them as successful.
+- Add tests for true/false branches, two required paths on one selected branch, nested conditionals, joins after loops, and untaken branches.
 
-7. Stores the returned run ID against the canonical cluster ID.
-8. Observes that run through the existing execution-history/status mechanism.
-9. Maps server status and preflight errors into the cluster-run view model.
-10. Never falls back to executing the whole workflow when cluster execution fails.
+### 5. Supply boundary inputs and external references
 
-Add `cancelClusterRun(clusterId)` that uses the active run ID and existing cancellation endpoint. Keep the control in `cancelling` until the server reports a terminal state.
+- During save-before-run preparation, inspect the saved cluster’s incoming boundary edges and collect one value per canonical edge ID from current pinned/editor execution data.
+- Submit those values as `boundary_inputs` with provenance; never key them by display-node IDs or labels.
+- Discover expression references from cluster members that point to nodes outside the cluster, resolve only approved snapshots, and submit them as `reference_snapshots`.
+- Keep external reference definitions available for name/ID resolution without adding those nodes to executable membership or execution order.
+- Enforce existing snapshot size/depth/dangerous-key limits on the server and reject missing, stale, or ambiguous references before queueing.
+- Show a specific blocked reason in the button when a required boundary value or external reference is unavailable.
+- Add tests for incoming boundaries, multiple inputs, external references, missing values, invalid references, and attempts to execute referenced external nodes.
 
-### 3. Extend projected cluster data
+### 6. Emit only boundary outputs that actually routed
 
-Extend the compact cluster data contract with:
+- Stop deriving every boundary output from the final source-node result.
+- Capture a boundary output only when the exact canonical source handle routes during that activation.
+- Preserve edge ID, source handle, value, and activation/iteration identity in the result.
+- Do not emit values for untaken If/Switch handles or inactive Loop exits.
+- Add tests proving an If result emits only the selected `true` or `false` boundary edge and loop outputs retain iteration identity.
 
-- canonical `clusterId`;
-- cluster run state;
-- stable `onExecute(clusterId)` callback;
-- stable `onCancel(clusterId, runId)` callback.
+### 7. Make Stop durable and truthful
 
-Pass these values from the editor into cluster projection. These callbacks and transient run fields must never be persisted in `node_clusters`.
+- Persist cancellation intent for the root cluster run before scanning or cancelling queue jobs.
+- Have root workers, loop children, aggregators, and continuations check that durable intent before starting, before enqueueing descendants, and before writing success.
+- Cancel all queued/running descendants by `rootRunId`; do not treat a best-effort queue scan as proof that execution stopped.
+- Keep the run in `cancelling` until workers acknowledge cancellation and no descendant remains eligible to start.
+- Make cancellation idempotent and terminal-state guarded.
+- If the cancellation request fails, retain the active run ID and editor lock, show the error, and continue status reconciliation; never clear local tracking while backend work may continue.
+- Add tests for queued cancellation, active cancellation, loop descendants, late continuation prevention, repeated Stop clicks, and cancellation request failure.
 
-Use the scoped run as the authority for the compact cluster status. Do not infer cluster execution state solely from mounted member-node components.
+### 8. Make run identity and history reliable
 
-### 4. Build a shared `ClusterExecutionControl`
+- Compute a normalized request fingerprint from workflow ID, saved revision, canonical cluster ID, plan hash, boundary inputs, reference snapshots, and pinned outputs.
+- Store the fingerprint with the idempotency key. Reuse an existing run only when both match; reject reuse of one key with different inputs.
+- Resolve an existing idempotent request before returning a revision conflict when it represents the same already-created run.
+- Persist a coherent run snapshot: the complete saved workflow snapshot plus cluster scope metadata, or a self-contained scoped snapshot whose cluster metadata cannot reference omitted nodes. Do not store scoped nodes beside all workflow clusters.
+- Persist member outcomes (`succeeded`, `failed`, `cancelled`, `pinned`, `branch_skipped`, `dependency_blocked`, `attachment_only`) so the button’s terminal state reflects actual cluster completion.
+- Verify the deployed schema exposes the required revision, scope, idempotency/fingerprint, cancellation, and outcome fields before release.
 
-Create one reusable control for compact and expanded views.
+### 9. Harden the button coordinator
 
-Display behavior:
+- Extend the coordinator request to send collected `boundary_inputs` and `reference_snapshots`.
+- Retain one idempotency key for the whole submission attempt rather than generating a new key for every retry.
+- After every awaited save/request/cancel/status call, confirm the workflow session, cluster ID, and run ID are still current before updating UI state.
+- Reattach to a queued/running/cancelling cluster run from persisted run history after reload or navigation.
+- Derive `blocked` from current conditions instead of storing it permanently; correcting the cause must re-enable the button.
+- Use one editor execution lock covering cluster runs, whole-workflow runs, direct node execution, and structural edits that would invalidate the saved revision.
+- Preserve the active run and lock on transient polling failures.
+- Represent cancellation as its own terminal state rather than displaying it as a generic failure.
 
-- **Idle:** play icon + `Execute cluster`
-- **Preparing:** spinner + `Preparing…`
-- **Queued:** spinner + `Queued`
-- **Running:** stop icon + `Stop`
-- **Cancelling:** spinner + `Cancelling…`
-- **Succeeded:** check status + `Run again`
-- **Failed:** error status + `Run again`
-- **Cancelled:** `Run again`
-- **Blocked:** disabled control with a specific reason available in a tooltip or adjacent status
+### 10. Preserve the shared compact/expanded button
 
-Interaction rules:
-
-- Use the existing design-system `Button`.
-- Keep the idle play control visible; do not make it hover-only.
-- Apply `nodrag nopan` so clicking does not drag or pan the canvas.
-- Stop pointer and click propagation so the control does not expand, collapse, select, or move the cluster.
-- Give the control an accessible name containing the cluster title.
-- Prevent the cluster card’s Enter/Space expand handler from firing when the event originated inside the control.
-- Respect the editor’s existing run lock so cluster execution cannot overlap an incompatible run.
-
-### 5. Add the control to the compact cluster card
-
-Update `CompactClusterNode` to render the shared control in a dedicated bottom footer.
-
-- Increase the card height while retaining its width and existing visual style.
-- Keep title/note and member count above the footer.
-- Recalculate incoming/outgoing handle positions for the new height.
-- Include dimensions and handle IDs in the `useUpdateNodeInternals` refresh conditions.
-- Ensure long titles, notes, and status text do not overlap or clip the footer.
-- Preserve double-click and chevron expansion behavior outside the control.
-
-### 6. Add the same control to the expanded cluster frame
-
-Render `ClusterExecutionControl` in a bottom footer inside the expanded frame.
-
-- Increase the frame’s bottom space so member nodes cannot overlap the footer.
-- Keep the footer outside member-node hit areas.
-- Ensure the frame overlay allows pointer interaction on the control.
-- Use the same canonical cluster state and callbacks as the compact card.
-- Switching between compact and expanded views during a run must show the same run ID and current status without resubmission.
-
-### 7. Handle errors clearly
-
-Map cluster-run failures to concise messages:
-
-- revision conflict;
-- cluster no longer exists;
-- missing boundary input;
-- invalid cluster configuration;
-- unsupported cluster contents;
-- queue or network failure;
-- cancellation failure.
-
-A failed preparation or request must return the control to a retryable state. It must not leave the editor permanently locked.
+- Keep **Execute cluster** permanently visible in idle state in both the compact card footer and expanded frame footer.
+- Both views must read the same canonical cluster run state and invoke the same execute/cancel actions.
+- Keep `nodrag nopan`, pointer propagation guards, and the keyboard target guard so the button never drags, selects, expands, or collapses the cluster.
+- Keep card/frame dimensions, footer space, and boundary handles synchronized; refresh node internals when dimensions or handle sets change.
+- Switching views during Preparing, Queued, Running, or Cancelling must preserve the same run ID without resubmission.
 
 ## Verification
 
-### Automated tests
+### Automated
 
-- Projection carries canonical cluster ID, run state, and callbacks without persisting them.
-- Execute calls the cluster endpoint once with the saved revision, canonical cluster ID, and idempotency key.
-- Repeated clicks while busy do not submit duplicate runs.
-- Compact and expanded controls display identical state for one run ID.
-- Stop calls cancellation for the active cluster run.
-- Failure and cancellation release the editor run lock.
-- Cluster execution failure never invokes whole-workflow execution.
-- Card keyboard expansion ignores events originating from the execution control.
+- Canonical pinned values, including falsy values, bypass their executors.
+- Every accepted cluster plan has at least one valid activation.
+- Sequential Loop entry works; unsupported distributed Loop scope is blocked.
+- Selected branches wait for every required path; untaken paths never satisfy joins.
+- Incoming boundary values and external references reach only intended members.
+- Only the exact routed source handle produces a boundary output.
+- Idempotent retries reuse the same matching run and reject mismatched fingerprints.
+- Cancellation blocks descendants and remains `cancelling` until acknowledged.
+- Reload reattaches to the active run; stale async responses cannot overwrite a newer session.
+- Scoped history contains no dangling cluster membership and records every member outcome.
 
 ### Browser acceptance
 
-1. A compact cluster visibly shows the play icon and **Execute cluster** at the bottom without hover.
-2. Clicking it does not drag, select, expand, or collapse the cluster.
-3. The control progresses through Preparing, Queued, Running, and a terminal state.
-4. During a run, expanding or compacting the cluster preserves the same status and run ID.
-5. The expanded frame shows the same control in its footer.
-6. Clicking Stop cancels only that run and reaches `cancelled`.
-7. Reloading while the run is active restores its status from persisted run data.
-8. Failure shows a useful reason and permits retry.
-9. Long cluster titles and multiple boundary handles remain aligned at desktop and narrow viewport sizes.
+1. Compact and expanded clusters show the same visible **Execute cluster** button.
+2. Clicking the button saves once and submits exactly one scoped run.
+3. A cluster with an incoming connection executes using the captured boundary value.
+4. Pinned nodes do not perform their live action.
+5. Branch and sequential-loop clusters finish with accurate member states.
+6. Stop remains `Cancelling…` until the run and descendants are stopped.
+7. Expanding, compacting, navigating away/back, or reloading preserves the active run and status.
+8. Fixing a blocked condition re-enables execution without recreating the cluster.
+9. Cluster failure never starts whole-workflow execution.
+10. Frontend/backend checks and the backend production image build pass.
 
 ## Completion criteria
 
-The work is complete when the run control is visibly present and functional in both cluster views, submits exactly one cluster-scoped run from the saved workflow revision, tracks and cancels that run, survives view changes and reloads, and passes the focused automated and browser checks above.
+The cluster run button is complete only when it visibly works in both cluster views, executes the saved canonical cluster with correct pins, boundaries, references, branches, and supported loops, reports durable outcomes, cancels the entire scoped run safely, survives reload/view changes, and passes the focused automated, browser, and release checks.

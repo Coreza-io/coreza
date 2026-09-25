@@ -218,6 +218,14 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
   const attachmentNodeIds = cluster.memberNodeIds.filter((id) => nodeById.get(id)?.node_type === "sub").sort();
   const executableNodeIds = cluster.memberNodeIds.filter((id) => nodeById.get(id)?.node_type !== "sub").sort();
   if (executableNodeIds.length === 0) throw new ClusterPreflightError("empty_executable_scope", { clusterId });
+  const unsupportedNodeIds = executableNodeIds.filter((id) => {
+    const node = nodeById.get(id);
+    const values = node?.values ?? node?.data?.values;
+    return node?.name === "Loop" && values?.parallel === true;
+  });
+  if (unsupportedNodeIds.length > 0) {
+    throw new ClusterPreflightError("unsupported_execution_context", { clusterId, nodeIds: unsupportedNodeIds });
+  }
   if (hasUnsupportedCycle(executableNodeIds, internalMainEdges, nodeById)) {
     throw new ClusterPreflightError("unsupported_cycle", { clusterId, nodeIds: executableNodeIds });
   }
@@ -245,6 +253,9 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
   const incomingInternal = new Set(internalMainEdges.map(({ target }) => target));
   for (const nodeId of executableNodeIds) {
     if (!incomingInternal.has(nodeId) && !activationByNode.has(nodeId)) activationByNode.set(nodeId, { nodeId, inputs: [] });
+  }
+  if (activationByNode.size === 0) {
+    throw new ClusterPreflightError("unsupported_cycle", { clusterId, nodeIds: executableNodeIds });
   }
 
   const pinnedResults: Record<string, unknown> = {};

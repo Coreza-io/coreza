@@ -17,9 +17,11 @@ export function useClusterExecution({ token, workflowSessionId, prepare, disable
   const [states, setStates] = useState<Record<string, ClusterRunState>>({});
   const activeRef = useRef<{ clusterId: string; workflowId: string; runId: string; sessionId: string } | null>(null);
   const submittingRef = useRef(false);
+  const sessionRef = useRef(workflowSessionId);
   const update = useCallback((clusterId: string, state: ClusterRunState) => setStates((current) => ({ ...current, [clusterId]: state })), []);
 
   useEffect(() => {
+    sessionRef.current = workflowSessionId;
     activeRef.current = null;
     submittingRef.current = false;
     setStates({});
@@ -54,12 +56,14 @@ export function useClusterExecution({ token, workflowSessionId, prepare, disable
 
   const executeCluster = useCallback(async (clusterId: string) => {
     if (submittingRef.current || activeRef.current) return;
-    if (disabledReason) return update(clusterId, { phase: "blocked", reason: disabledReason });
+    if (disabledReason) return;
+    const requestSessionId = workflowSessionId;
     submittingRef.current = true;
     update(clusterId, { phase: "preparing" });
     try {
       const saved = await prepare();
-      if (!saved) return update(clusterId, { phase: "blocked", reason: "Save the workflow before executing this cluster." });
+      if (sessionRef.current !== requestSessionId) return;
+      if (!saved) return update(clusterId, { phase: "failed", reason: "Save the workflow before executing this cluster." });
       const response = await apiClient.post(`/workflows/${saved.workflowId}/execute`, {
         expected_revision: saved.revision,
         scope: { kind: "cluster", clusterId },
@@ -67,11 +71,14 @@ export function useClusterExecution({ token, workflowSessionId, prepare, disable
         input_data: {},
       }, token);
       const payload = await response.json() as { run_id?: string; status?: string; message?: string; code?: string };
+      if (sessionRef.current !== requestSessionId) return;
       if (!response.ok || !payload.run_id) throw new Error(payload.message ?? payload.code ?? "Cluster execution could not be started");
-      activeRef.current = { clusterId, workflowId: saved.workflowId, runId: payload.run_id, sessionId: workflowSessionId };
+      activeRef.current = { clusterId, workflowId: saved.workflowId, runId: payload.run_id, sessionId: requestSessionId };
       update(clusterId, { phase: payload.status === "running" ? "running" : "queued", runId: payload.run_id });
     } catch (error) {
-      update(clusterId, { phase: "blocked", reason: error instanceof Error ? error.message : "Cluster execution could not be started" });
+      if (sessionRef.current === requestSessionId) {
+        update(clusterId, { phase: "failed", reason: error instanceof Error ? error.message : "Cluster execution could not be started" });
+      }
     } finally {
       submittingRef.current = false;
     }
@@ -83,15 +90,18 @@ export function useClusterExecution({ token, workflowSessionId, prepare, disable
     update(clusterId, { phase: "cancelling", runId: active.runId });
     try {
       const response = await apiClient.post(`/workflows/${active.workflowId}/runs/${active.runId}/cancel`, {}, token);
+      if (activeRef.current?.runId !== active.runId || sessionRef.current !== active.sessionId) return;
       if (!response.ok) throw new Error("Unable to stop cluster run");
     } catch (error) {
-      update(clusterId, { phase: "cancelling", runId: active.runId, reason: error instanceof Error ? error.message : "Unable to stop cluster run; checking current status" });
+      if (activeRef.current?.runId === active.runId && sessionRef.current === active.sessionId) {
+        update(clusterId, { phase: "cancelling", runId: active.runId, reason: error instanceof Error ? error.message : "Unable to stop cluster run; checking current status" });
+      }
     }
   }, [token, update]);
 
   const getState = useCallback((clusterId: string): ClusterRunState => {
-    if (states[clusterId]) return states[clusterId];
     if (disabledReason) return { phase: "blocked", reason: disabledReason };
+    if (states[clusterId]) return states[clusterId];
     if (activeRef.current) return { phase: "blocked", reason: "Another editor execution is active." };
     return { phase: "idle" };
   }, [disabledReason, states]);

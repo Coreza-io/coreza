@@ -298,6 +298,20 @@
 }
 
 @layer components {
+  /* Collapsed members remain mounted to preserve their runtime state. Disable
+     descendant transitions so inherited visibility cannot animate to hidden. */
+  .workflow-canvas .react-flow__node.cluster-runtime-host,
+  .workflow-canvas .react-flow__node.cluster-runtime-host *,
+  .workflow-canvas .react-flow__node.cluster-runtime-host::before,
+  .workflow-canvas .react-flow__node.cluster-runtime-host::after,
+  .workflow-canvas .react-flow__node.cluster-runtime-host *::before,
+  .workflow-canvas .react-flow__node.cluster-runtime-host *::after {
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+
   .cluster-card,
   .cluster-frame__header {
     border-color: hsl(var(--cluster-border));

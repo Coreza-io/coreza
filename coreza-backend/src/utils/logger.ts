@@ -29,7 +29,19 @@ const logger = pino({
     error: pino.stdSerializers.err
   },
   redact: {
-    paths: ['password', 'token', 'authorization', 'apiKey', 'secretKey', 'credentials.apiKey', 'credentials.secretKey'],
+    paths: [
+      'password',
+      'token',
+      'authorization',
+      'apiKey',
+      'secretKey',
+      'credentials.apiKey',
+      'credentials.secretKey',
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'request.headers.authorization',
+      'request.headers.cookie'
+    ],
     remove: true
   },
   formatters: {

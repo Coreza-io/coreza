@@ -1,6 +1,43 @@
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
+import { createLogger } from "../utils/logger";
 import { CreateWorkflowInput, UpdateWorkflowInput } from "./schemas";
+
+const logger = createLogger("WorkflowRepository");
+
+interface WorkflowRpcError {
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}
+
+function mapWorkflowSaveError(error: WorkflowRpcError) {
+  logger.error(
+    {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      rpcMessage: error.message,
+    },
+    "save_workflow_document failed",
+  );
+
+  if (error.message.includes("workflow-revision-conflict") || error.code === "40001") {
+    return createError("workflow-revision-conflict", 409);
+  }
+  if (error.message.includes("workflow-not-found")) {
+    return createError("Workflow not found", 404);
+  }
+  if (error.message.includes("empty-workflow")) {
+    return createError("A saved workflow cannot be empty", 400);
+  }
+
+  const mapped = createError("Failed to update workflow", 500);
+  mapped.code = "WORKFLOW_SAVE_FAILED";
+  mapped.details = { databaseCode: error.code ?? "unknown" };
+  return mapped;
+}
 
 export class WorkflowRepository {
   async getOwnedWorkflow(userId: string, workflowId: string, select = "*") {
@@ -64,7 +101,7 @@ export class WorkflowRepository {
     const { data, error } = await (supabase.rpc as unknown as (
       name: string,
       args: Record<string, unknown>,
-    ) => Promise<{ data: unknown; error: { message: string; code?: string } | null}>)
+    ) => Promise<{ data: unknown; error: WorkflowRpcError | null}>)
       ("save_workflow_document", {
         p_workflow_id: workflowId,
         p_user_id: userId,
@@ -77,10 +114,7 @@ export class WorkflowRepository {
       });
 
     if (error) {
-      if (error.message.includes("workflow-revision-conflict")) {
-        throw createError("workflow-revision-conflict", 409);
-      }
-      throw createError("Failed to update workflow", 500);
+      throw mapWorkflowSaveError(error);
     }
 
     if (!data) {

@@ -1052,6 +1052,40 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      save_workflow_document: {
+        Args: {
+          p_edges?: Json
+          p_expected_revision: number
+          p_name?: string
+          p_node_clusters?: Json
+          p_nodes?: Json
+          p_project_id?: string
+          p_user_id: string
+          p_workflow_id: string
+        }
+        Returns: {
+          active_execution_id: string | null
+          created_at: string | null
+          edges: Json
+          id: string
+          is_active: boolean | null
+          name: string
+          node_clusters: Json
+          nodes: Json
+          persistent_state: Json | null
+          project_id: string | null
+          revision: number
+          schedule_cron: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "workflows"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       subscription_status: "active" | "cancelled" | "expired" | "trial"

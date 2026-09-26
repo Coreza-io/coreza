@@ -5,9 +5,12 @@ export const resolveCanonicalSelection = (
   nodes: readonly Node[],
   clusters: readonly NodeCluster[],
   selectedClusterIds: ReadonlySet<string>,
+  hiddenRuntimeHostIds: ReadonlySet<string> = new Set(),
 ): string[] => {
   const canonicalNodeIds = new Set(nodes.map(({ id }) => id));
-  const selectedNodeIds = nodes.filter(({ selected }) => selected).map(({ id }) => id);
+  const selectedNodeIds = nodes
+    .filter(({ id, selected }) => selected && !hiddenRuntimeHostIds.has(id))
+    .map(({ id }) => id);
   const selectedClusterMemberIds = clusters
     .filter(({ id }) => selectedClusterIds.has(id))
     .flatMap(({ memberNodeIds }) => memberNodeIds);

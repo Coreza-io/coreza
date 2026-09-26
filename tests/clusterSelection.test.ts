@@ -28,4 +28,21 @@ describe("cluster canonical selection", () => {
 
     expect(resolveCanonicalSelection(nodes, clusters, new Set())).toEqual(["b"]);
   });
+
+  it("ignores stale canonical selection on hidden runtime hosts", () => {
+    const nodes: Node[] = [
+      { id: "a", position: { x: 0, y: 0 }, selected: true, data: {} },
+      { id: "b", position: { x: 10, y: 0 }, selected: true, data: {} },
+      { id: "outside", position: { x: 20, y: 0 }, selected: true, data: {} },
+    ];
+    const clusters: NodeCluster[] = [
+      { id: "cluster", title: "Signals", memberNodeIds: ["a", "b"] },
+    ];
+    const hiddenRuntimeHostIds = new Set(["a", "b"]);
+
+    expect(resolveCanonicalSelection(nodes, clusters, new Set(), hiddenRuntimeHostIds))
+      .toEqual(["outside"]);
+    expect(resolveCanonicalSelection(nodes, clusters, new Set(["cluster"]), hiddenRuntimeHostIds))
+      .toEqual(["outside", "a", "b"]);
+  });
 });

@@ -1,8 +1,11 @@
 import type { Edge, Node } from "@xyflow/react";
-import { CLUSTER_DISPLAY_ID_PREFIX, projectClusterGraph } from "@/domain/clusters/projection";
+import { CLUSTER_DISPLAY_ID_PREFIX, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
 import { isClusterExpanded, reconcileClusterViewState, setClusterExpanded } from "@/domain/clusters/viewState";
 import type { NodeCluster } from "@/domain/clusters/types";
-import { CLUSTER_COLLAPSE_ENABLED } from "@/domain/clusters/capabilities";
+import {
+  CLUSTER_COLLAPSE_ENABLED,
+  COLLAPSED_CLUSTER_MEMBERS_STAY_MOUNTED,
+} from "@/domain/clusters/capabilities";
 
 const nodes: Node[] = [
   { id: "a", position: { x: 100, y: 120 }, data: {} },
@@ -16,8 +19,9 @@ const edges: Edge[] = [
 const cluster: NodeCluster = { id: "cluster-id", title: "Signals", note: "A note", memberNodeIds: ["a", "b"] };
 
 describe("cluster view state", () => {
-  it("keeps collapse unavailable until renderer-independent execution is verified", () => {
-    expect(CLUSTER_COLLAPSE_ENABLED).toBe(false);
+  it("enables collapse only with mounted runtime preservation", () => {
+    expect(COLLAPSED_CLUSTER_MEMBERS_STAY_MOUNTED).toBe(true);
+    expect(CLUSTER_COLLAPSE_ENABLED).toBe(COLLAPSED_CLUSTER_MEMBERS_STAY_MOUNTED);
   });
 
   it("defaults missing clusters to compact and removes stale entries", () => {
@@ -29,11 +33,32 @@ describe("cluster view state", () => {
 });
 
 describe("cluster display projection", () => {
-  it("replaces collapsed members with one fixed card and projects boundary handles", () => {
+  it("preserves collapsed runtime hosts beside one compact card and projects boundary handles", () => {
     const projection = projectClusterGraph(nodes, edges, [cluster], {}, jest.fn());
     const displayId = `${CLUSTER_DISPLAY_ID_PREFIX}${cluster.id}`;
 
-    expect(projection.nodes.map(({ id }) => id)).toEqual(["outside", displayId]);
+    expect(projection.nodes.map(({ id }) => id)).toEqual(["a", "b", "outside", displayId]);
+    expect(getVisibleClusterNodes(projection).map(({ id }) => id)).toEqual(["outside", displayId]);
+    expect(getVisibleClusterNodes(projection).filter(({ type }) => type === "compactCluster")).toHaveLength(1);
+    expect(projection.hiddenRuntimeHostIds).toEqual(new Set(["a", "b"]));
+    for (const member of projection.nodes.filter(({ id }) => projection.hiddenRuntimeHostIds.has(id))) {
+      expect(member).toMatchObject({
+        draggable: false,
+        selectable: false,
+        connectable: false,
+        deletable: false,
+        focusable: false,
+        selected: false,
+        style: {
+          visibility: "hidden",
+          pointerEvents: "none",
+          transition: "none",
+          animation: "none",
+        },
+        domAttributes: { "aria-hidden": true },
+      });
+      expect(member.data).toBe(nodes.find(({ id }) => id === member.id)?.data);
+    }
     expect(projection.edges).toHaveLength(1);
     expect(projection.edges[0]).toMatchObject({
       id: "boundary",
@@ -75,6 +100,7 @@ describe("cluster display projection", () => {
     const projection = projectClusterGraph(nodes, edges, [cluster], { [cluster.id]: true }, jest.fn());
     expect(projection.nodes).toEqual(nodes);
     expect(projection.edges).toEqual(edges);
+    expect(projection.hiddenRuntimeHostIds.size).toBe(0);
   });
 
   it("projects both endpoints for edges between collapsed clusters", () => {
@@ -95,6 +121,23 @@ describe("cluster display projection", () => {
     projectClusterGraph(nodes, edges, [cluster], { [cluster.id]: true }, jest.fn());
     expect(nodes).toEqual(originalNodes);
     expect(edges).toEqual(originalEdges);
+  });
+
+  it("keeps component-owned runtime data registered across repeated toggles", () => {
+    const listener = jest.fn();
+    const runtimeNodes: Node[] = nodes.map((node) => node.id === "a"
+      ? { ...node, data: { ...node.data, listener } }
+      : node);
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const collapsed = projectClusterGraph(runtimeNodes, edges, [cluster], {}, jest.fn());
+      const runtimeHost = collapsed.nodes.find(({ id }) => id === "a");
+      expect(runtimeHost?.data.listener).toBe(listener);
+      expect(collapsed.hiddenRuntimeHostIds.has("a")).toBe(true);
+
+      const expanded = projectClusterGraph(runtimeNodes, edges, [cluster], { [cluster.id]: true }, jest.fn());
+      expect(expanded.nodes.find(({ id }) => id === "a")).toBe(runtimeNodes[0]);
+    }
   });
 
   it("allocates a display ID that cannot collide with a canonical node", () => {

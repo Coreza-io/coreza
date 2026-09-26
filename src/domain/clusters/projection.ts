@@ -28,6 +28,7 @@ export interface ClusterProjection {
   edges: Edge[];
   displayNodeToCluster: ReadonlyMap<string, string>;
   displayEdgeToCanonicalEdge: ReadonlyMap<string, string>;
+  hiddenRuntimeHostIds: ReadonlySet<string>;
 }
 
 export interface ClusterProjectionOptions {
@@ -37,6 +38,9 @@ export interface ClusterProjectionOptions {
   onExecute?: (clusterId: string) => void;
   onCancel?: (clusterId: string) => void;
 }
+
+export const getVisibleClusterNodes = (projection: ClusterProjection): Node[] =>
+  projection.nodes.filter(({ id }) => !projection.hiddenRuntimeHostIds.has(id));
 
 export const getClusterDisplayNodeId = (clusterId: string): string =>
   `${CLUSTER_DISPLAY_ID_PREFIX}${clusterId}`;
@@ -119,7 +123,27 @@ export function projectClusterGraph(
     displayEdgeToCanonicalEdge.set(edge.id, edge.id);
   }
 
-  const visibleNodes = canonicalNodes.filter(({ id }) => !collapsedOwnerByNode.has(id));
+  // React Flow's `hidden` property removes a node component from the render
+  // tree. Keep collapsed members in the projection instead, while disabling
+  // every display-layer interaction so component-owned runtimes stay alive.
+  const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? {
+    ...node,
+    className: [node.className, "cluster-runtime-host"].filter(Boolean).join(" "),
+    style: {
+      ...node.style,
+      visibility: "hidden",
+      pointerEvents: "none",
+      transition: "none",
+      animation: "none",
+    },
+    domAttributes: { ...node.domAttributes, "aria-hidden": true },
+    draggable: false,
+    selectable: false,
+    connectable: false,
+    deletable: false,
+    focusable: false,
+    selected: false,
+  } : node);
   for (const cluster of clusters) {
     if (isClusterExpanded(viewState, cluster.id)) continue;
     const members = cluster.memberNodeIds.flatMap((id) => {
@@ -152,8 +176,14 @@ export function projectClusterGraph(
         onCancel: options.onCancel ?? (() => undefined),
       } satisfies CompactClusterNodeData,
     };
-    visibleNodes.push(compactNode);
+    displayNodes.push(compactNode);
   }
 
-  return { nodes: visibleNodes, edges: projectedEdges, displayNodeToCluster, displayEdgeToCanonicalEdge };
+  return {
+    nodes: displayNodes,
+    edges: projectedEdges,
+    displayNodeToCluster,
+    displayEdgeToCanonicalEdge,
+    hiddenRuntimeHostIds: new Set(collapsedOwnerByNode.keys()),
+  };
 }

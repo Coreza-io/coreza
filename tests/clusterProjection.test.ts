@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import { CLUSTER_DISPLAY_ID_PREFIX, projectClusterGraph } from "@/domain/clusters/projection";
+import { CLUSTER_DISPLAY_ID_PREFIX, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
 import { isClusterExpanded, reconcileClusterViewState, setClusterExpanded } from "@/domain/clusters/viewState";
 import type { NodeCluster } from "@/domain/clusters/types";
 import {
@@ -38,6 +38,8 @@ describe("cluster display projection", () => {
     const displayId = `${CLUSTER_DISPLAY_ID_PREFIX}${cluster.id}`;
 
     expect(projection.nodes.map(({ id }) => id)).toEqual(["a", "b", "outside", displayId]);
+    expect(getVisibleClusterNodes(projection).map(({ id }) => id)).toEqual(["outside", displayId]);
+    expect(getVisibleClusterNodes(projection).filter(({ type }) => type === "compactCluster")).toHaveLength(1);
     expect(projection.hiddenRuntimeHostIds).toEqual(new Set(["a", "b"]));
     for (const member of projection.nodes.filter(({ id }) => projection.hiddenRuntimeHostIds.has(id))) {
       expect(member).toMatchObject({
@@ -47,7 +49,13 @@ describe("cluster display projection", () => {
         deletable: false,
         focusable: false,
         selected: false,
-        style: { visibility: "hidden", pointerEvents: "none" },
+        style: {
+          visibility: "hidden",
+          pointerEvents: "none",
+          transition: "none",
+          animation: "none",
+        },
+        domAttributes: { "aria-hidden": true },
       });
       expect(member.data).toBe(nodes.find(({ id }) => id === member.id)?.data);
     }

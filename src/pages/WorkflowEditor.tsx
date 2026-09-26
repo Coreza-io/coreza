@@ -115,7 +115,7 @@ import { useClusterExecution } from "@/hooks/useClusterExecution";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
-import { projectClusterGraph } from "@/domain/clusters/projection";
+import { getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
 import {
   isClusterExpanded,
   reconcileClusterViewState,
@@ -602,6 +602,16 @@ const WorkflowEditorContent = () => {
   );
   const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
+  const fitViewNodes = useMemo(
+    () => CLUSTER_COLLAPSE_ENABLED ? getVisibleClusterNodes(clusterProjection) : nodes,
+    [clusterProjection, nodes],
+  );
+  const fitViewOptions = useMemo(() => ({
+    nodes: fitViewNodes,
+    padding: 0.2,
+    maxZoom: 1,
+    minZoom: 0.4,
+  }), [fitViewNodes]);
 
   const startClusterDrag = useCallback((event: React.PointerEvent<HTMLElement>, cluster: NodeCluster) => {
     if (dragSource.nodeId || event.button !== 0) return;
@@ -2312,7 +2322,7 @@ const WorkflowEditorContent = () => {
                 connectionLineComponent={EdgeManager.PlugConnectionLine}
                 connectionLineType={ConnectionLineType.Bezier}
                 fitView
-                fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.4 }}
+                fitViewOptions={fitViewOptions}
                 minZoom={0.1}
                 maxZoom={4}
                 colorMode={resolvedTheme}
@@ -2337,7 +2347,10 @@ const WorkflowEditorContent = () => {
                   nodeClassName={(node) => clusterProjection.hiddenRuntimeHostIds.has(node.id) ? "hidden" : ""}
                   maskColor="hsl(var(--background) / 0.6)"
                 />
-                <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
+                <Controls
+                  className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted"
+                  onFitView={() => { void rf.fitView(fitViewOptions); }}
+                />
               </ReactFlow>
             </ConnectionDragContext.Provider>
             <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-label="Workflow clusters">

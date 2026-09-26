@@ -39,6 +39,9 @@ export interface ClusterProjectionOptions {
   onCancel?: (clusterId: string) => void;
 }
 
+export const getVisibleClusterNodes = (projection: ClusterProjection): Node[] =>
+  projection.nodes.filter(({ id }) => !projection.hiddenRuntimeHostIds.has(id));
+
 export const getClusterDisplayNodeId = (clusterId: string): string =>
   `${CLUSTER_DISPLAY_ID_PREFIX}${clusterId}`;
 
@@ -126,7 +129,14 @@ export function projectClusterGraph(
   const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? {
     ...node,
     className: [node.className, "cluster-runtime-host"].filter(Boolean).join(" "),
-    style: { ...node.style, visibility: "hidden", pointerEvents: "none" },
+    style: {
+      ...node.style,
+      visibility: "hidden",
+      pointerEvents: "none",
+      transition: "none",
+      animation: "none",
+    },
+    domAttributes: { ...node.domAttributes, "aria-hidden": true },
     draggable: false,
     selectable: false,
     connectable: false,

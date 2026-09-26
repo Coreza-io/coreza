@@ -312,7 +312,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       <Card
         data-node-surface={isDarkMode ? "dark" : "light"}
         className={`
-          relative transition-all duration-300 ease-in-out 
+          relative transition-[background-color,border-color,box-shadow] duration-300 ease-in-out
           ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}
           ${isExpanded ? "" : "cursor-pointer group"}
           ${nodeShapeClass}

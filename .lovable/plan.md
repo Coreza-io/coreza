@@ -1,110 +1,175 @@
-# Show cluster execution results in member-node output panels
+# Show correct cluster-run results in member output panels
 
-## Confirmed cause
+## Confirmed findings
 
-- Cluster execution itself succeeds and persists its per-node outputs in `workflow_runs.result.nodeResults`, keyed by canonical node ID. The reported run contains results for `BacktestInit` and `OnBar`, plus `executionOrder` and boundary outputs.
-- The same run has no rows in `node_executions`, so the existing `/runs/:runId/executions` endpoint cannot supply these results for this execution path.
-- `useClusterExecution` already polls `/workflows/:workflowId/runs/:runId/status`. The backend status response includes the complete run row, including `run.result`, but the hook types and reads only `status` and `error_message`.
-- Member output panels read from the live `ExecutionStore`. Cluster polling never copies `run.result.nodeResults` into that store or triggers its update notification, so panels retain their initial `pending` value.
-- Collapsed members remain mounted as hidden runtime hosts, so compact/expanded rendering is not the cause; both views can receive the same store update.
+- The reported cluster run succeeded and persisted `BacktestInit` and `OnBar` outputs in `workflow_runs.result.nodeResults`; it created no `node_executions` rows.
+- `useClusterExecution` polls the existing run-status endpoint but reads only `status` and `error_message`, then releases the active run. It never hydrates the live execution store.
+- Member output panels subscribe to that live store, so they remain `pending` even when the cluster control shows Completed.
+- `ExecutionContext.setNodeData` already protects registered pins, but `useNodeOutput` uses a truthiness test and therefore misses valid raw outputs such as `0`, `false`, `""`, and `null`.
+- Collapsed member nodes remain mounted as hidden runtime hosts. The missing output is therefore a result-hydration problem, not a compact/expanded rendering problem.
+- Queued `BacktestInit` currently starts `session.runAll()` without awaiting it. The outer workflow can be marked successful before the batch backtest finishes, and its persisted `OnBar` value is not guaranteed to be the final processed-bar output.
+- Failed/cancelled workflow persistence currently updates rows only while status is `running` or `queued`; cancellation can race with partial-result persistence.
+
+## Output semantics
+
+For one accepted cluster run, display:
+
+- **Ordinary executed node:** its persisted output.
+- **Backtest Init:** its initialization output, including backtest/execution IDs and fetched-bar summary.
+- **Repeated backtest node:** one latest executed-bar snapshot, clearly represented as the latest snapshot; do not load thousands of per-bar outputs into the panel.
+- **Failed node:** its actual error plus supported partial data.
+- **Skipped node:** an explicit skipped state and reason.
+- **Unexecuted cluster member:** an explicit “Not executed in this run” state.
+- **Pinned member:** its existing pinned output, unchanged.
+
+Full performance metrics, trades, and equity history remain on the dedicated backtest results experience. The node panel shows the node’s latest execution snapshot.
 
 ## Implementation
 
-### 1. Define one reusable persisted-result normalizer
+### 1. Create one persisted-node-result contract
 
-- Extract the existing run-result interpretation used by execution history into a shared utility.
-- Accept the persisted workflow result shape: `success`, `nodeResults`, `executionOrder`, timing, error information, and optional cluster boundary outputs.
-- Normalize each node result into the same output shape used by direct node execution and `OutputPanel`:
-  - preserve an existing `StandardNodeOutput` unchanged;
-  - convert successful `{ success, data }` results into a visible success output;
-  - convert failed results into a visible error output without losing the node error message;
-  - retain legitimate falsy outputs such as `0`, `false`, `""`, `null`, and empty arrays;
-  - treat a missing node result as “not executed,” not as an empty successful output.
-- Reuse this utility in execution history so live cluster panels and historical panels cannot drift in formatting.
+- Extract the result interpretation currently embedded in `useExecutionHistory` into a shared `normalizePersistedNodeResult` utility.
+- Distinguish an absent result key from an explicit `null` result.
+- Preserve an already normalized `StandardNodeOutput` without adding another `data` wrapper.
+- Normalize legacy `{ success, data, error, status, meta }` envelopes, raw objects, arrays, primitive values, and structured errors.
+- Preserve metadata and the `skipped` state; extend the shared frontend output-status type and output badge only as needed to represent persisted skipped results consistently.
+- Handle malformed entries independently so one invalid node result cannot discard valid sibling outputs.
+- Make execution history use the same utility. When `executionOrder` is absent or incomplete, append valid `nodeResults` keys in stable object-key order rather than hiding them.
 
-### 2. Hydrate the live execution store from the status response
+### 2. Capture the exact submitted cluster scope
 
-- Extend the typed cluster status response to include `run.id`, `run.scope_kind`, `run.scope_cluster_id`, `run.source_workflow_revision`, and `run.result`.
-- When polling reaches a terminal state, read `run.result.nodeResults` directly from the existing status response; do not fetch `/runs/:runId/executions`, because this engine currently persists results in the run JSON rather than that table.
-- Batch-write normalized outputs with `executionStore.setNodeData(nodeId, { output })` and call the shared store notification once after the batch.
-- Apply available terminal results for `success`, `failed`, and `cancelled` runs so partially executed nodes show their real output or error instead of remaining pending.
-- Mark only the cluster control as completed/failed after result hydration has been attempted, ensuring the visible run state and node panels transition together.
+- When `prepareClusterExecution` saves the workflow, return the saved revision together with a snapshot of the requested cluster’s canonical `memberNodeIds`.
+- Store an immutable active-run descriptor after the server accepts execution:
 
-### 3. Restrict updates to the exact cluster run
+```text
+workflowId
+workflowSessionId
+runId
+clusterId
+sourceRevision
+memberNodeIds
+executionGeneration
+```
 
-- Pass a canonical member-ID resolver from `WorkflowEditor` into `useClusterExecution`; derive it from saved cluster metadata, never from projected compact-node IDs.
-- Before writing any output, verify:
-  - the response run ID matches the active run;
-  - the workflow editor session has not changed;
-  - `scope_kind` is `cluster`;
-  - `scope_cluster_id` matches the cluster being polled;
-  - each result key belongs to that cluster’s canonical `memberNodeIds`.
-- Ignore unrelated, malformed, synthetic display, and out-of-scope node IDs so one cluster run cannot overwrite another node’s panel.
-- Preserve pinned outputs through the existing `ExecutionContext.setNodeData` behavior; a cluster result must not replace a user-pinned value.
+- Capture membership from the submitted saved revision, not from cluster state at result-arrival time.
+- Update only captured member IDs that still exist in the current editor.
+- Increment a shared execution generation whenever a cluster or individual-node run is accepted. An older cluster response must not overwrite a newer individual-node or cluster result.
+- Continue using canonical member IDs only; never hydrate the synthetic compact-cluster display node.
 
-### 4. Handle lifecycle and race conditions
+### 3. Reset panels only after execution is accepted
 
-- Before submitting a new run, clear stale unpinned runtime outputs for that cluster’s members and notify once, so old results are not displayed as the new run’s output.
-- Do not clear pinned outputs.
-- Use a per-run hydration guard so repeated terminal polls cannot apply the same result multiple times.
-- Keep `activeRef` valid until terminal hydration finishes; only then release it for another run.
-- Discard late status/results when the workflow session changes, the editor navigates to another workflow, or a newer run supersedes the request.
-- If a terminal response has no valid `nodeResults`, keep the run’s completed/failed status but surface a non-destructive cluster-level reason such as “Run completed without node output,” rather than fabricating node output.
-- A transient polling or malformed-result error must not erase existing panel data or incorrectly change a successful backend run into a failed execution.
+- Add a scoped runtime-output reset for the captured members after the execute request returns a valid `run_id`.
+- Preserve registered pins and clear no unrelated node, loop, stream, or global execution state.
+- Replace each unpinned member output with an explicit pending state owned by the accepted run, preventing `useNodeOutput` from falling back to stale `data.output`.
+- Do not clear previous results during save/preparation. A failed save or rejected execute request must leave useful existing outputs intact.
+- If the accepted run later returns no result for a member, replace its pending state with “Not executed in this run”; do not revive the prior output.
 
-### 5. Keep compact and expanded behavior identical
+### 4. Hydrate terminal results through the existing status endpoint
 
-- Write results only by canonical member node ID in the shared live store.
-- Do not write output onto the synthetic compact cluster node.
-- Confirm that results received while collapsed appear immediately after expansion, and results received while expanded remain available after collapse/re-expand.
-- Keep cluster view state presentation-only; expanding or collapsing must neither clear nor duplicate output hydration.
+- Define a typed status response containing the required run identity, scope, source revision, status, error, and terminal `result`.
+- On terminal success, failure, or cancellation:
+  1. validate the response against the active-run descriptor;
+  2. normalize every available captured-member result;
+  3. assign explicit not-executed output to captured members with no result;
+  4. batch `executionStore.setNodeData(nodeId, { output })` calls;
+  5. call `useExecutionStoreNotify()` once;
+  6. update the cluster control state and any non-fatal output warning;
+  7. release the active-run descriptor.
+- Keep execution outcome and output availability separate. A successful backend run remains Completed if its result is missing or malformed; show a retryable output warning rather than changing it to Failed.
+- Use `workflow_runs.result.nodeResults` as the source. Do not call `/runs/:runId/executions` for this path unless the backend begins writing those rows.
 
-### 6. Backend contract and payload safeguards
+### 5. Fix output presence and stale fallback
 
-- Keep the current `workflow_runs.result` persistence as the authoritative result source for scoped workflow runs; no database migration or new table is required.
-- Add an explicit response type/schema for the status payload so `run.result` is intentional rather than an accidental consequence of selecting `*`.
-- Prefer a narrowly selected status response containing only fields needed by polling plus the terminal result. If payload size is a concern, return `result` only for terminal states or add a dedicated authenticated run-result endpoint backed by `workflow_runs.result`; do not switch to `node_executions` until the engine actually writes those records.
-- Preserve the existing workflow ownership check and RLS protections. Never include credentials, decrypted secrets, or saved node configuration in the output hydration payload.
+- Replace truthiness checks in `useNodeOutput` with explicit property-presence checks so `0`, `false`, `""`, and `null` render correctly.
+- Make the accepted-run pending/not-executed markers authoritative over stale `data.output`.
+- Preserve pinned-output precedence in both store writes and panel display.
+- Ensure output changes received while collapsed appear on expansion, and remain unchanged across collapse/re-expand cycles.
+
+### 6. Make polling race-safe
+
+- Allow only one status request in flight per active run, using sequential polling or an in-flight guard.
+- Recheck run ID, session ID, cluster ID, revision, and execution generation after every awaited request and before every store/state mutation.
+- Abort pending requests during effect cleanup where supported.
+- Hydrate each terminal run once, and mark hydration complete only after valid store writes and notification finish.
+- Never let an older response clear or mutate a newer active run.
+- Provide a retry action that re-reads the same terminal run result if result retrieval or parsing fails; retrying output hydration must not execute the cluster again.
+
+### 7. Correct queued backtest completion ownership
+
+- Treat batch `BacktestInit` started by a queued workflow/cluster run as owned by that outer run.
+- Do not blindly add `await session.runAll()` while leaving the outer engine free to execute the same strategy nodes again.
+- Define one orchestration path that:
+  - prevents duplicate outer execution of strategy members already driven per bar by the backtest session;
+  - awaits batch completion, finalization, and required persistence;
+  - propagates background session failure or cancellation to the owning workflow run;
+  - collects the final latest-per-node snapshots before session cleanup;
+  - merges those snapshots into the owning run’s `nodeResults` and deterministic execution order;
+  - preserves manual/individual stepping behavior, which must not await a full batch.
+- Ensure compiled and dynamic-engine backtests expose equivalent latest-node snapshots.
+- Mark the workflow run terminal only after the owned batch session has completed and its final snapshots are persisted.
+
+### 8. Preserve partial results during cancellation
+
+- Separate result persistence from terminal status transitions so available partial `nodeResults` can be saved even if the row has already moved to `cancelling` or `cancelled`.
+- Never change a cancelled run back to success while persisting its partial result.
+- Persist the cancellation outcome and any completed node snapshots atomically or with guarded updates that preserve the terminal status.
+- Hydrate those partial results in the editor and mark remaining members not executed/cancelled as appropriate.
+
+### 9. Keep the API and database change minimal
+
+- Keep the existing authenticated status endpoint and `workflow_runs.result`; no new table is required.
+- Replace accidental `select("*")` coupling with an explicit repository/query response contract only after checking all current status-endpoint consumers.
+- Preserve workflow ownership checks and existing RLS protections.
+- Retain established output-redaction rules. Selecting fewer run columns does not prove arbitrary node output is secret-free, so do not make that claim.
+- Add a dedicated authenticated result endpoint only if terminal result size measurably makes one-second status polling too expensive; otherwise avoid extra API surface.
 
 ## Automated tests
 
-### Frontend unit tests
+### Result normalization and panel behavior
 
-- A successful terminal status with two member results writes both normalized outputs and sends one store notification.
-- Failed and cancelled runs hydrate any partial node results before exposing the terminal cluster state.
-- Results for nodes outside `memberNodeIds`, synthetic compact IDs, the wrong cluster, wrong run, or stale workflow session are ignored.
-- Pinned outputs remain unchanged while unpinned outputs update.
-- Falsy and empty result values render correctly rather than falling back to pending.
-- Repeated terminal polls hydrate once; a newer run cannot be overwritten by an older response.
-- A terminal run without `nodeResults` keeps node panels unchanged and exposes the cluster-level no-output reason.
+- Standard, legacy, raw, explicit-null, falsy, array, skipped, failed, and malformed sibling results normalize correctly without an extra `data` layer.
+- Missing `executionOrder` no longer hides valid results in history or live hydration.
+- An accepted rerun cannot fall back to stale `data.output`.
+- A rejected save/execute request preserves previous results.
+- Pinned outputs remain unchanged; unpinned outputs refresh.
+- Unexecuted members receive the explicit not-executed state.
 
-### Shared normalization tests
+### Scope and race safety
 
-- Standard outputs, legacy `{ success, data, error }` outputs, raw values, explicit null, and node errors normalize consistently.
-- Live cluster hydration and execution-history rendering use the same normalization contract.
+- Only member IDs captured at submission are hydrated.
+- Membership changes during execution do not expand the hydration scope.
+- Wrong run, cluster, revision, session, synthetic ID, or stale generation results are ignored.
+- A late cluster response cannot overwrite a newer individual-node result.
+- Repeated terminal polls hydrate once, and a malformed sibling does not block valid members.
+- Output-hydration retry updates the same run without starting another execution.
 
-### Backend contract tests
+### Backend lifecycle and cancellation
 
-- An owned cluster run status response exposes the expected scope identifiers and persisted terminal result.
-- A user cannot read another user’s run result.
-- Successful, failed, and cancelled runs retain partial or complete `nodeResults` when available.
-- The status/result response does not expose workflow credential fields or decrypted credential data.
+- The status response exposes the explicit owned-run result contract and rejects cross-user access.
+- Batch cluster backtests do not mark the owning workflow run successful before session completion/finalization.
+- A background backtest failure produces a failed owning run rather than misleading success.
+- Final `OnBar` output corresponds to the expected last processed bar.
+- Compiled and dynamic-engine backtests produce equivalent panel snapshots.
+- Strategy members are not executed both by the outer workflow and by the per-bar session.
+- Cancellation after one node completes preserves its output, retains cancelled status, and does not resurrect execution.
 
-### Browser acceptance
+## End-to-end acceptance
 
-1. Expand a cluster containing at least two nodes and open their output panels.
-2. Run the cluster and confirm panels move from pending to each node’s actual output when the control reaches Completed.
-3. Collapse during a run, wait for completion, expand, and confirm the same outputs are present.
-4. Run while expanded, collapse and re-expand, and confirm outputs persist.
-5. Force a downstream failure and confirm completed upstream nodes retain outputs while the failed node shows its error.
-6. Pin one member’s output, rerun the cluster, and confirm the pin remains while other member outputs refresh.
-7. Start a run, navigate to another workflow before completion, and confirm the late response changes no panel in the new workflow.
-8. Open the execution-history view and confirm it displays the same values as the live panels.
+1. Run an expanded ordinary cluster and confirm each executed member panel changes from pending to its persisted output before the control settles on Completed.
+2. Run the same cluster while collapsed, expand it after completion, and confirm identical outputs.
+3. Collapse and re-expand after hydration and confirm outputs remain stable.
+4. Run the shown BacktestInit/OnBar cluster and confirm Completed appears only after the backtest session finishes; BacktestInit shows initialization data and OnBar shows the expected final bar snapshot.
+5. Force a downstream failure and confirm upstream outputs and the failed-node error are both visible.
+6. Cancel after partial progress and confirm available outputs remain while the run stays Cancelled.
+7. Pin one member, rerun, and confirm its pin survives while unpinned members refresh.
+8. Start a run, change membership or navigate away, and confirm late results do not alter the new editor state.
+9. Confirm execution history displays the same normalized values as the live panels.
 
 ## Completion criteria
 
-- A completed cluster run updates every executed member node’s live output panel without a page reload.
-- Partial results remain visible after failed or cancelled runs.
-- Compact and expanded cluster views show identical persisted results.
-- Pinned outputs, unrelated nodes, newer runs, and other workflow sessions cannot be overwritten.
-- The implementation uses `workflow_runs.result.nodeResults`, matching the data currently persisted by the worker, with no unnecessary database migration.
+- Every accepted cluster run gives each captured member a deterministic pending, result, error, skipped, cancelled, or not-executed panel state without reload.
+- Ordinary cluster results and final batch-backtest snapshots are both represented accurately.
+- The owning workflow cannot report success before its queued backtest finishes.
+- Compact/expanded transitions, pins, rejected submissions, membership edits, stale responses, and newer executions cannot corrupt panel output.
+- Partial cancellation results persist without changing the cancelled status.
+- The implementation uses the existing persisted run result and requires no unnecessary database table or migration.

@@ -62,8 +62,8 @@ export class ParameterResolver {
     if (!this.nodeHasTemplates(node.id, nodeParams)) {
       const out: Record<string, any> = {};
       for (const [key, value] of Object.entries(nodeParams)) {
-        if (key !== "credential_id") out[key] = value;
-        //out[key] = value;
+        // if (key !== "credential_id") out[key] = value;
+        out[key] = value;
       }
       return out;
     }
@@ -71,7 +71,7 @@ export class ParameterResolver {
     const allNodeData = getAllResults();
     const resolvedParams: Record<string, any> = {};
     for (const [key, value] of Object.entries(nodeParams)) {
-      if (key === "credential_id") continue;
+      //if (key === "credential_id") continue;
       resolvedParams[key] = this.resolveDeep(
         value,
         input,

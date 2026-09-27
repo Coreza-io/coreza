@@ -452,9 +452,10 @@ export function compileNodeParams(
   nodes: WorkflowNode[],
 ): CompiledNodeParams {
   const nodeParams = (node as any).values || {};
-  const entries = Object.entries(nodeParams).filter(
-    ([k]) => k !== "credential_id",
-  );
+  // const entries = Object.entries(nodeParams).filter(
+  //   ([k]) => k !== "credential_id",
+  // );
+  const entries = Object.entries(nodeParams);
 
   if (entries.length === 0) {
     return { hasTemplates: false, staticParams: {} };

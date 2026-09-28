@@ -5,6 +5,7 @@ import { WorkflowRunRepository } from "./WorkflowRunRepository";
 import { ExecuteWorkflowInput } from "./schemas";
 import { createError } from "../middleware/errorHandler";
 import { createHash } from "crypto";
+import type { IWorkflowJobQueue } from "../infra/jobQueue/queueInterface";
 
 function requestError(code: string, statusCode: number) {
   return Object.assign(createError(code, statusCode), { code });
@@ -19,10 +20,17 @@ function requestFingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(normalize(value))).digest("hex");
 }
 
+function scopeMemberNodeIds(scopeSnapshot: { memberNodeIds?: unknown } | null): string[] {
+  return Array.isArray(scopeSnapshot?.memberNodeIds)
+    ? scopeSnapshot.memberNodeIds.filter((id): id is string => typeof id === "string")
+    : [];
+}
+
 export class WorkflowExecutionService {
   constructor(
     private workflowRepo: WorkflowRepository,
     private runRepo: WorkflowRunRepository,
+    private executionQueue: IWorkflowJobQueue = jobQueue,
   ) {}
 
   async executeManual(
@@ -105,7 +113,7 @@ export class WorkflowExecutionService {
     }
 
     try {
-      await jobQueue.addWorkflowExecution({
+      await this.executionQueue.addWorkflowExecution({
         runId, rootRunId: runId, workflowId, userId, nodes, edges,
         trigger: "manual", executionMode: "manual", initialInput: request.input_data,
         scope: request.scope, sourceRevision: workflow.revision, planHash: plan?.planHash,
@@ -129,8 +137,21 @@ export class WorkflowExecutionService {
       return { run_id: runId, status: run.status, cancelled: run.status === "cancelled" };
     }
     await this.runRepo.requestCancellation(runId);
-    await jobQueue.cancelWorkflowRun(userId, workflowId, runId);
-    await this.runRepo.markRunCancelled(runId);
-    return { run_id: runId, status: "cancelled", cancelled: true };
+    const cancellation = await this.executionQueue.cancelWorkflowRun(userId, workflowId, runId);
+    if (cancellation.removedQueued && !cancellation.signalledActive) {
+      await this.runRepo.finalizeQueuedCancellation(runId, scopeMemberNodeIds(run.scope_snapshot));
+      return { run_id: runId, status: "cancelled", cancelled: true };
+    }
+
+    const durable = await this.runRepo.getOwnedRun(userId, workflowId, runId);
+    if (!cancellation.found && durable.status === "cancelling") {
+      await this.runRepo.finalizeQueuedCancellation(runId, scopeMemberNodeIds(run.scope_snapshot));
+      return { run_id: runId, status: "cancelled", cancelled: true };
+    }
+    return {
+      run_id: runId,
+      status: durable.status,
+      cancelled: durable.status === "cancelled",
+    };
   }
 }

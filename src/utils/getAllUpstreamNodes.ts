@@ -18,15 +18,15 @@ type UpstreamIndex = {
 };
 
 // Module-level cache for upstream index to avoid rebuilding on every render
-let cachedEdges: Edge[] | null = null;
-let cachedNodes: Node[] | null = null;
+let cachedEdges: readonly Edge[] | null = null;
+let cachedNodes: readonly Node[] | null = null;
 let cachedIndex: UpstreamIndex | null = null;
 
 /**
  * Build indexes once to avoid O(E) scans + O(N) lookups on every recursion.
  * Cost: O(N + E)
  */
-function buildUpstreamIndex(edges: Edge[], nodes: Node[]): UpstreamIndex {
+function buildUpstreamIndex(edges: readonly Edge[], nodes: readonly Node[]): UpstreamIndex {
   const nodeById = new Map<Id, Node>();
   for (let i = 0; i < nodes.length; i += 1) {
     const n = nodes[i];
@@ -53,7 +53,7 @@ function buildUpstreamIndex(edges: Edge[], nodes: Node[]): UpstreamIndex {
  * Get or build cached upstream index.
  * Only rebuilds if edges/nodes array reference changes.
  */
-function getOrBuildIndex(edges: Edge[], nodes: Node[]): UpstreamIndex {
+function getOrBuildIndex(edges: readonly Edge[], nodes: readonly Node[]): UpstreamIndex {
   // Only rebuild if arrays changed (reference equality)
   if (edges === cachedEdges && nodes === cachedNodes && cachedIndex) {
     return cachedIndex;
@@ -76,8 +76,8 @@ function getOrBuildIndex(edges: Edge[], nodes: Node[]): UpstreamIndex {
  */
 export function getAllUpstreamNodes(
   currentNodeId: string,
-  edges: Edge[],
-  nodes: Node[],
+  edges: readonly Edge[],
+  nodes: readonly Node[],
 ): Node[] {
   try {
     if (!currentNodeId || !Array.isArray(edges) || !Array.isArray(nodes)) {

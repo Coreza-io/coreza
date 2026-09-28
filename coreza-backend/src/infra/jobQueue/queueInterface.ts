@@ -116,7 +116,13 @@ export interface IWorkflowJobQueue {
   stopWorkflowRunner(workflowId: string): Promise<void>;
   /** Cancel all queued/running jobs for a workflow and return count of cancelled jobs */
   cancelWorkflowJobs(userId: string, workflowId: string): Promise<number>;
-  cancelWorkflowRun(userId: string, workflowId: string, runId: string): Promise<boolean>;
+  cancelWorkflowRun(userId: string, workflowId: string, runId: string): Promise<WorkflowRunCancellation>;
   getQueueStats(): Promise<any>;
   cleanup(): Promise<void>;
+}
+
+export interface WorkflowRunCancellation {
+  found: boolean;
+  removedQueued: boolean;
+  signalledActive: boolean;
 }

@@ -11,10 +11,12 @@
 import { RedisKeys } from "../infra/redisKeys";
 import { RedisOps } from "../infra/redisOps";
 import logger from "../utils/logger";
-import { WorkflowExecutionResult } from "../engine/types";
+import {
+  normalizeRedisRunResultUpdate,
+  type RedisRunResultUpdate,
+} from "./workflowRunResultContract";
 
 const RUN_TTL_SECONDS = 86400; // 24 hours - cleanup old runs if sync fails
-
 /**
  * Create a workflow run in Redis (instead of direct Supabase insert)
  */
@@ -86,7 +88,7 @@ export async function updateRunStatusInRedis(
   userId: string,
   runId: string,
   status: "running" | "success" | "failed" | "cancelled",
-  executionResult?: any,
+  executionResult?: RedisRunResultUpdate,
 ): Promise<void> {
 
   const updates: Record<string, string> = {
@@ -98,12 +100,9 @@ export async function updateRunStatusInRedis(
   }
 
   if (executionResult !== undefined) {
-    const resultToStore = executionResult;
-    updates.result = JSON.stringify(resultToStore);
-  }
-
-  if (executionResult?.errorMessage) {
-    updates.error_message = executionResult.errorMessage;
+    const normalized = normalizeRedisRunResultUpdate(executionResult);
+    if (normalized.result !== undefined) updates.result = JSON.stringify(normalized.result);
+    if (normalized.errorMessage) updates.error_message = normalized.errorMessage;
   }
 
   await RedisOps.hset(RedisKeys.userRun(userId, runId), updates);

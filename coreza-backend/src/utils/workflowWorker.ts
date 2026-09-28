@@ -23,6 +23,7 @@ import type {
   WorkflowJobResult,
   LoopItemResult,
 } from "../types/workflowJobResult";
+import { createNodeOutcomes, type WorkflowExecutionResult } from "../engine/types";
 
 interface WorkflowWorkerDependencies {
   redis: Redis;
@@ -514,7 +515,8 @@ export function createWorkflowWorker({
           await supabase
             .from("workflow_runs")
             .update({ status: "running" })
-            .eq("id", runId);
+            .eq("id", runId)
+            .eq("status", "queued");
         }
 
         // Execute workflow using the unified engine
@@ -580,14 +582,29 @@ export function createWorkflowWorker({
             .from("workflow_runs")
             .update({ result })
             .eq("id", runId);
-          await supabase
+          const { data: completedRun, error: completionError } = await supabase
             .from("workflow_runs")
             .update({
               status: "success",
               completed_at: new Date().toISOString(),
             })
             .eq("id", runId)
-            .in("status", ["running", "queued"]);
+            .in("status", ["running", "queued"])
+            .select("id")
+            .maybeSingle();
+          if (completionError) throw completionError;
+          if (!completedRun) {
+            await supabase
+              .from("workflow_runs")
+              .update({
+                status: "cancelled",
+                error_message: "Run cancelled by user",
+                cancel_acknowledged_at: new Date().toISOString(),
+                completed_at: new Date().toISOString(),
+              })
+              .eq("id", runId)
+              .eq("status", "cancelling");
+          }
         }
 
         console.log(`✅ Workflow run ${runId} completed successfully`);
@@ -609,6 +626,23 @@ export function createWorkflowWorker({
           errorMessage.toLowerCase().includes("deactivated");
 
         const status = isCancellation ? "cancelled" : "failed";
+        if (executionResult === undefined) {
+          const missingOutcome = isCancellation ? "cancelled" as const : "not-executed" as const;
+          const finalFailureResult: WorkflowExecutionResult = {
+            success: false,
+            resultFinalized: true,
+            nodeResults: {},
+            executionOrder: [],
+            nodeOutcomes: createNodeOutcomes(nodes.map(({ id }) => id), {}, missingOutcome),
+            error: {
+              code: isCancellation ? "CANCELLED" : "EXECUTION_ERROR",
+              message: errorMessage,
+              phase: "execute",
+              retryable: !isCancellation,
+            },
+          };
+          executionResult = finalFailureResult;
+        }
 
         console.log(
           `${isCancellation ? "🛑" : "❌"} Workflow run ${runId} ${status}:`,
@@ -622,12 +656,10 @@ export function createWorkflowWorker({
             result: executionResult,
           });
         } else {
-          if (executionResult !== undefined) {
-            await supabase
-              .from("workflow_runs")
-              .update({ result: executionResult })
-              .eq("id", runId);
-          }
+          await supabase
+            .from("workflow_runs")
+            .update({ result: executionResult })
+            .eq("id", runId);
           await supabase
             .from("workflow_runs")
             .update({

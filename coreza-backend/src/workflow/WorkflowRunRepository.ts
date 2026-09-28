@@ -114,7 +114,7 @@ export class WorkflowRunRepository {
   async getRunStatus(workflowId: string, runId: string) {
     const { data, error } = await supabase
       .from("workflow_runs")
-      .select("*")
+      .select("id,workflow_id,status,error_message,result,source_workflow_revision,scope_kind,scope_cluster_id,scope_snapshot,started_at,completed_at")
       .eq("id", runId)
       .eq("workflow_id", workflowId)
       .single();

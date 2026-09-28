@@ -73,6 +73,7 @@ interface BacktestInitContext {
   nodes?: WorkflowNode[];
   edges?: WorkflowEdge[];
   resolveNodeParameters?: (node: WorkflowNode, input: NodeInput) => NodeInput;
+  abortSignal?: AbortSignal;
 }
 
 function extractStrategySubgraph(
@@ -259,6 +260,8 @@ export class BacktestExecutor implements INodeExecutor {
     input: NodeInput,
     context?: BacktestInitContext,
   ): Promise<NodeResult> {
+    let failedOwnedNodeResults: Record<string, NodeResult> | undefined;
+    let failedOwnedExecutionOrder: string[] | undefined;
     try {
       const params = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
@@ -617,20 +620,28 @@ export class BacktestExecutor implements INodeExecutor {
 
       await session.initialize();
 
+      let ownedNodeResults: Record<string, NodeResult> | undefined;
       if (
         !isManual &&
         barEvents.length > 0 &&
         strategyNodes.length > 0 &&
         entryNodeIds.length > 0
       ) {
-        session
-          .runAll()
-          .catch((err) =>
-            console.error("[BacktestSession] runAll failed:", err),
-          )
-          .finally(() =>
-            BacktestSessionManager.getInstance().deleteSession(backtestId),
-          );
+        const cancelOwnedSession = () => session.cancel();
+        context?.abortSignal?.addEventListener("abort", cancelOwnedSession, { once: true });
+        try {
+          await session.runAll();
+          if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
+          ownedNodeResults = session.getLatestNodeSnapshots();
+        } catch (error) {
+          const snapshots = session.getLatestNodeSnapshots();
+          failedOwnedNodeResults = snapshots;
+          failedOwnedExecutionOrder = strategyNodes.map(({ id }) => id).filter((id) => id in snapshots);
+          throw error;
+        } finally {
+          context?.abortSignal?.removeEventListener("abort", cancelOwnedSession);
+          BacktestSessionManager.getInstance().deleteSession(backtestId);
+        }
       }
 
       // if (
@@ -642,7 +653,7 @@ export class BacktestExecutor implements INodeExecutor {
       //   BacktestSessionManager.getInstance().deleteSession(backtestId);
       // }
 
-      return toNodeResult(
+      const initResult = toNodeResult(
         createSuccessOutput({
           backtest_id: backtestId,
           execution_id: executionId,
@@ -702,12 +713,28 @@ export class BacktestExecutor implements INodeExecutor {
               ? { rolling_window_size: rollingWindowSize }
               : {}),
           },
-          status: !isManual && barEvents.length > 0 ? "running" : "ready",
+          status: ownedNodeResults ? "completed" : "ready",
         }),
       );
+      if (ownedNodeResults) {
+        initResult.control = {
+          suppressRouting: true,
+          ownedNodeResults,
+          ownedExecutionOrder: strategyNodes.map(({ id }) => id).filter((id) => id in ownedNodeResults),
+        };
+      }
+      return initResult;
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
-      return toNodeResult(createErrorOutput(error));
+      const errorResult = toNodeResult(createErrorOutput(error));
+      if (failedOwnedNodeResults) {
+        errorResult.control = {
+          suppressRouting: true,
+          ownedNodeResults: failedOwnedNodeResults,
+          ownedExecutionOrder: failedOwnedExecutionOrder,
+        };
+      }
+      return errorResult;
     }
   }
 

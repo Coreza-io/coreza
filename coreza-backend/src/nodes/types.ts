@@ -96,6 +96,12 @@ export interface Item {
  * Optional flags that a node can return to influence engine behaviour.
  */
 export interface ControlFlags {
+  /** Do not route this result to outgoing edges; descendants were executed by an owned batch. */
+  suppressRouting?: boolean;
+  /** Latest per-node snapshots produced by an owned batch execution. */
+  ownedNodeResults?: Record<string, NodeResult>;
+  /** Deterministic order for owned batch snapshots. */
+  ownedExecutionOrder?: string[];
   /** Re‑queue the current node for another pass (used by Loop). */
   requeueSelf?: boolean;
   /** Epoch milliseconds until the node should be executed again. */

@@ -18,7 +18,10 @@ export type NodeExecutionStatus =
   | 'error'
   | 'waiting'
   | 'streaming'
-  | 'listening';
+  | 'listening'
+  | 'skipped'
+  | 'cancelled'
+  | 'not-executed';
 
 /**
  * Metadata attached to every node output
@@ -30,6 +33,7 @@ export interface NodeOutputMeta {
   nodeName?: string;
   category?: string;
   cached?: boolean;
+  runId?: string;
 }
 
 /**
@@ -79,7 +83,7 @@ export function isStandardNodeOutput(obj: any): obj is StandardNodeOutput {
     typeof obj === 'object' &&
     typeof obj.success === 'boolean' &&
     typeof obj.status === 'string' &&
-    ['pending', 'running', 'success', 'error', 'waiting', 'streaming', 'listening'].includes(obj.status)
+    ['pending', 'running', 'success', 'error', 'waiting', 'streaming', 'listening', 'skipped', 'cancelled', 'not-executed'].includes(obj.status)
   );
 }
 

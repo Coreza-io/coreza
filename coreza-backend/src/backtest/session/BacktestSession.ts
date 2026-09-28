@@ -1,6 +1,6 @@
 import { getRedisCache } from "../../config/redis";
 import { BacktestExecutor } from "../BacktestExecutor";
-import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
+import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { IndicatorStateManager } from "../../engine/indicatorStateManager";
 import { DataContextManager } from "../../engine/DataContext";
 import { WorkflowPlan } from "../../engine/workflowPlan";
@@ -896,6 +896,7 @@ export class BacktestSession {
                 "[BacktestSession] Compiled plan error on bar:",
                 error,
               );
+              throw error;
             }
             t0 = performance.now();
             this.currentIndex += 1;
@@ -942,6 +943,7 @@ export class BacktestSession {
               await this.executeTimestampAsync(currentEvent);
             } catch (error) {
               console.error("[BacktestSession] Error processing bar:", error);
+              throw error;
             }
 
             t0 = performance.now();
@@ -981,6 +983,18 @@ export class BacktestSession {
       const elapsed = performance.now() - this.perf.totalStart;
       this.logRunAllBenchmark(elapsed);
     }
+  }
+
+  getLatestNodeSnapshots(): Record<string, NodeResult> {
+    const results = this.compiledPlan
+      ? this.compiledPlan.ctx.getAllNodeResults()
+      : this.run.getLatestNodeResults();
+    const strategyNodeIds = new Set(this.nodes.map(({ id }) => id));
+    const snapshots: Record<string, NodeResult> = {};
+    for (const [nodeId, result] of Object.entries(results)) {
+      if (strategyNodeIds.has(nodeId)) snapshots[nodeId] = result;
+    }
+    return snapshots;
   }
 
   async reset(): Promise<void> {
@@ -1058,6 +1072,10 @@ export class BacktestSession {
     this.abortController.abort();
     BacktestExecutor.cleanupBacktestResources(this.backtestId);
     this.run.destroy();
+  }
+
+  cancel(): void {
+    this.abortController.abort();
   }
 
   private async reportProgress(): Promise<void> {

@@ -151,19 +151,19 @@ export function useNodeOutput({
 
     // Read from execution store when version changes (WebSocket updates)
     const storeData = executionStore.getNodeData(nodeId);
-    if (storeData?.output) {
+    if (storeData && Object.prototype.hasOwnProperty.call(storeData, "output")) {
       setLastOutput(storeData.output);
       return;
     }
 
     // Fallback to data.output for non-streaming updates
     if (isNews) {
-      if (data.output) {
+      if (Object.prototype.hasOwnProperty.call(data, "output")) {
         setLastOutput(data.output);
       } else if (lastOutput?.status !== "waiting") {
         setLastOutput(createWaitingNewsOutput({ nodeId }));
       }
-    } else if (data.output) {
+    } else if (Object.prototype.hasOwnProperty.call(data, "output")) {
       setLastOutput(data.output);
     }
   }, [

@@ -574,12 +574,16 @@ export function createWorkflowWorker({
         if (useRedisStorage) {
           await updateRunStatusInRedis(userId, runId, "success", { result });
         } else {
-          // Guard: only update to success if status is still running/queued (not cancelled)
+          // Persist snapshots independently so a concurrent cancellation does not discard
+          // outputs that completed before the cancellation was acknowledged.
+          await supabase
+            .from("workflow_runs")
+            .update({ result })
+            .eq("id", runId);
           await supabase
             .from("workflow_runs")
             .update({
               status: "success",
-              result: result,
               completed_at: new Date().toISOString(),
             })
             .eq("id", runId)
@@ -618,16 +622,21 @@ export function createWorkflowWorker({
             result: executionResult,
           });
         } else {
+          if (executionResult !== undefined) {
+            await supabase
+              .from("workflow_runs")
+              .update({ result: executionResult })
+              .eq("id", runId);
+          }
           await supabase
             .from("workflow_runs")
             .update({
               status,
-              result: executionResult ?? null,
               error_message: errorMessage,
               completed_at: new Date().toISOString(),
             })
             .eq("id", runId)
-            .in("status", ["running", "queued"]);
+            .in("status", isCancellation ? ["running", "queued", "cancelling"] : ["running", "queued"]);
         }
 
         // For cancellations, don't throw (job completed successfully by stopping)

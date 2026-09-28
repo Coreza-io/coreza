@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizePersistedNodeResult } from "@/utils/persistedNodeResult";
 
 const PAGE_SIZE = 20;
 const MAX_CACHED_EXECUTIONS = PAGE_SIZE * 2;
@@ -77,14 +78,6 @@ export interface ExecutionRun {
   node_count: number | null;
   edge_count: number | null;
 }
-
-type NormalizedNodeResult = {
-  success: boolean;
-  status: "success" | "failed" | "skipped";
-  data?: unknown;
-  error?: string;
-  [key: string]: unknown;
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -181,46 +174,6 @@ function removeExecutionById(
   executionId: string,
 ): ExecutionRun[] {
   return current.filter((item) => item.id !== executionId);
-}
-
-function normalizeNodeResult(
-  nodeResult: ExecutionNodeResult,
-): NormalizedNodeResult {
-  if (!isRecord(nodeResult)) {
-    return {
-      success: true,
-      status: "success",
-      data: nodeResult,
-    };
-  }
-
-  const explicitStatus =
-    nodeResult.status === "success" ||
-    nodeResult.status === "failed" ||
-    nodeResult.status === "skipped"
-      ? nodeResult.status
-      : nodeResult.status === "error"
-        ? "failed"
-        : undefined;
-
-  const explicitSuccess =
-    typeof nodeResult.success === "boolean" ? nodeResult.success : undefined;
-
-  const error =
-    typeof nodeResult.error === "string" ? nodeResult.error : undefined;
-
-  const success =
-    explicitSuccess ??
-    (explicitStatus
-      ? explicitStatus === "success" || explicitStatus === "skipped"
-      : !error);
-
-  return {
-    ...nodeResult,
-    success,
-    status: explicitStatus ?? (success ? "success" : "failed"),
-    error,
-  };
 }
 
 function getItemCount(data: unknown): number {
@@ -542,12 +495,14 @@ export function useExecutionHistory(
         ? (payload.nodeResults as Record<string, ExecutionNodeResult>)
         : {};
 
-      if (
-        executionOrder.length === 0 ||
-        Object.keys(nodeResults).length === 0
-      ) {
+      if (Object.keys(nodeResults).length === 0) {
         return [];
       }
+
+      const orderedNodeIds = [...new Set([
+        ...executionOrder,
+        ...Object.keys(nodeResults),
+      ])];
 
       const timing = isRecord(payload.timing)
         ? (payload.timing as Record<
@@ -558,13 +513,10 @@ export function useExecutionHistory(
 
       const nodeExecutions: NodeExecutionLog[] = [];
 
-      for (const nodeId of executionOrder) {
+      for (const nodeId of orderedNodeIds) {
+        if (!Object.prototype.hasOwnProperty.call(nodeResults, nodeId)) continue;
         const rawOutput = nodeResults[nodeId];
-        if (rawOutput === undefined) {
-          continue;
-        }
-
-        const output = normalizeNodeResult(rawOutput);
+        const output = normalizePersistedNodeResult(rawOutput);
 
         nodeExecutions.push({
           nodeId,
@@ -575,7 +527,7 @@ export function useExecutionHistory(
             typeof timing[nodeId]?.totalMs === "number"
               ? Number(timing[nodeId].totalMs.toFixed(2))
               : undefined,
-          status: output.status,
+          status: output.status === "error" ? "failed" : output.status === "skipped" ? "skipped" : "success",
           input: null,
           output,
           itemCount: getItemCount(output.data),

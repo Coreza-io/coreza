@@ -10,6 +10,7 @@
 
 import { Node, Edge } from "@xyflow/react";
 import ExecutionContext from "./executionContext";
+import { acceptEditorExecution } from "./executionGeneration";
 
 export interface ExecutorContext {
   nodes: Node[];
@@ -731,6 +732,7 @@ export class WorkflowExecutor {
     executedSet: Set<string>,
     explicitlyTriggered = false,
   ): Promise<any> {
+    if (executedSet.size === 0) acceptEditorExecution();
     const node = this.context.nodes.find((n) => n.id === nodeId);
     if (!node) {
       console.error(`❌ [WORKFLOW EXECUTOR] Node ${nodeId} not found`);
@@ -814,6 +816,8 @@ export class WorkflowExecutor {
       console.log("⚠️ [WORKFLOW EXECUTOR] Execution already in progress");
       return;
     }
+
+    acceptEditorExecution();
 
     this.isAutoExecuting = true;
     this.preCalculateConditionalBranches(); // Refresh conditional map

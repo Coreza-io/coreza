@@ -55,7 +55,8 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
       </div>
       <footer className="mt-3 border-t border-[hsl(var(--cluster-border))] pt-2">
         <ClusterExecutionControl title={cluster.title} state={cluster.runState}
-          onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
+          onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)}
+          onRetryOutput={() => cluster.onRetryOutput(cluster.clusterId)} />
       </footer>
     </article>
   );

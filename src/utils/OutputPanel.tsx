@@ -58,6 +58,9 @@ const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, s
     waiting: { icon: <Clock className="w-3 h-3" />, className: "bg-orange-500/20 text-orange-500" },
     streaming: { icon: <Radio className="w-3 h-3" />, className: "bg-purple-500/20 text-purple-500" },
     listening: { icon: <Radio className="w-3 h-3" />, className: "bg-cyan-500/20 text-cyan-500" },
+    skipped: { icon: <Clock className="w-3 h-3" />, className: "bg-slate-500/20 text-slate-500" },
+    cancelled: { icon: <XCircle className="w-3 h-3" />, className: "bg-orange-500/20 text-orange-500" },
+    "not-executed": { icon: <Clock className="w-3 h-3" />, className: "bg-slate-500/20 text-slate-500" },
   };
 
   const config = statusConfig[status] || statusConfig[success ? 'success' : 'error'];
@@ -72,7 +75,7 @@ const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, s
 
 const createRenderData = () => {
   const renderData = (data: any, parentKey = ""): React.ReactNode => {
-    if (!data || (typeof data === "object" && Object.keys(data).length === 0)) {
+    if (data === undefined || (typeof data === "object" && data !== null && Object.keys(data).length === 0)) {
       return (
         <div className="text-sm text-muted-foreground italic text-center py-6">
           No output yet.

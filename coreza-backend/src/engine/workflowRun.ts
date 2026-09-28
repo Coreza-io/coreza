@@ -211,6 +211,10 @@ export class WorkflowRun {
     }
   }
 
+  getLatestNodeResults(): NodeResults {
+    return { ...(this.store.getAllResults() ?? {}) };
+  }
+
   getNodeState(nodeId: string, key: string): unknown {
     return this.store.getNodeState(nodeId, key);
   }

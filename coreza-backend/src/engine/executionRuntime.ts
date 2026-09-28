@@ -193,6 +193,15 @@ export abstract class BaseExecutionRuntime {
   protected normalizeResult(raw: any, category: string): NodeResult {
     if (raw && typeof raw === "object" && "success" in raw) {
       if (!raw.success) {
+        if (raw.control?.ownedNodeResults) {
+          const order = raw.control.ownedExecutionOrder ?? Object.keys(raw.control.ownedNodeResults);
+          for (const nodeId of order) {
+            const result = raw.control.ownedNodeResults[nodeId];
+            if (result === undefined) continue;
+            this.store.setNodeResult(nodeId, result);
+            if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
+          }
+        }
         throw new Error(raw.error || `Node execution failed: ${category}`);
       }
       return raw;
@@ -327,6 +336,17 @@ export abstract class BaseExecutionRuntime {
 
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
+
+    if (result.control?.ownedNodeResults) {
+      const order = result.control.ownedExecutionOrder ?? Object.keys(result.control.ownedNodeResults);
+      for (const nodeId of order) {
+        const ownedResult = result.control.ownedNodeResults[nodeId];
+        if (ownedResult === undefined || nodeId === node.id) continue;
+        this.store.setNodeResult(nodeId, ownedResult);
+        if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
+      }
+    }
+    if (result.control?.suppressRouting) return;
 
     if (node.name === "Loop") {
       this.routeLoop(node.id, result, meta);
@@ -466,6 +486,8 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
 
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
+
+    if (result.control?.suppressRouting) return;
 
     if (node.name === "Loop") {
       this.routeLoop(node.id, result, meta);

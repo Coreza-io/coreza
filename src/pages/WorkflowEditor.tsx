@@ -564,9 +564,12 @@ const WorkflowEditorContent = () => {
     }
   }, [setNodes]);
 
-  const prepareClusterExecution = useCallback(async () => {
+  const prepareClusterExecution = useCallback(async (clusterId: string) => {
     finishClusterMove(false);
     if (!workflowId || !authUser || loading || invalidClusterEntries.length > 0) return null;
+    const submittedCluster = clusters.find((cluster) => cluster.id === clusterId);
+    if (!submittedCluster) return null;
+    const memberNodeIds = [...submittedCluster.memberNodeIds];
     const isFirstSave = !hasPersistedRef.current;
     const result = await saveWorkflow(workflowId, workflowName, nodes, edges, { isNew: isFirstSave, clusters });
     if (!result.success || result.revision === undefined) return null;
@@ -577,13 +580,15 @@ const WorkflowEditorContent = () => {
       const workflowPath = `/dashboard/workflow/${savedWorkflowId}`;
       navigate(projectId ? `${workflowPath}?project=${projectId}` : workflowPath, { replace: true });
     }
-    return { workflowId: savedWorkflowId, revision: result.revision };
+    return { workflowId: savedWorkflowId, revision: result.revision, memberNodeIds };
   }, [authUser, clusters, edges, finishClusterMove, invalidClusterEntries.length, loading, navigate, nodes, projectId, saveWorkflow, workflowId, workflowName]);
 
+  const currentNodeIds = useMemo(() => new Set(nodes.map(({ id }) => id)), [nodes]);
   const clusterExecution = useClusterExecution({
     token: session?.access_token,
     workflowSessionId,
     prepare: prepareClusterExecution,
+    currentNodeIds,
     disabledReason: invalidClusterEntries.length > 0 ? "Cluster metadata must be repaired before execution."
       : !authUser ? "Sign in to execute this cluster."
       : isAutoExecuting || executingNode ? "Another editor execution is active."
@@ -597,8 +602,9 @@ const WorkflowEditorContent = () => {
       getRunState: clusterExecution.getState,
       onExecute: clusterExecution.executeCluster,
       onCancel: clusterExecution.cancelRun,
+      onRetryOutput: clusterExecution.retryOutputHydration,
     }),
-    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, nodes, selectedClusterIds, setExpanded],
+    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterExecution.retryOutputHydration, clusterViewState, clusters, dragSource.nodeId, edges, nodes, selectedClusterIds, setExpanded],
   );
   const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
@@ -2436,6 +2442,7 @@ const WorkflowEditorContent = () => {
                         state={clusterExecution.getState(cluster.id)}
                         onExecute={() => clusterExecution.executeCluster(cluster.id)}
                         onCancel={() => clusterExecution.cancelRun(cluster.id)}
+                        onRetryOutput={() => clusterExecution.retryOutputHydration(cluster.id)}
                       />
                     </footer>
                   </section>

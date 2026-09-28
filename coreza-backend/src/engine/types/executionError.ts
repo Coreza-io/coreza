@@ -14,8 +14,11 @@ export interface ExecutionError {
 
 export interface WorkflowExecutionResult {
   success: boolean;
+  /** True once this envelope contains the worker's final available snapshots. */
+  resultFinalized: boolean;
   nodeResults: Record<string, NodeResult>;
   executionOrder: string[];
+  nodeOutcomes: Record<string, NodeExecutionOutcome>;
   error?: ExecutionError;
   timing?: Record<string, { avgMs: number; totalMs: number; count: number }>;
   boundaryOutputs?: Record<string, {
@@ -24,6 +27,23 @@ export interface WorkflowExecutionResult {
     targetNodeId: string;
     value: NodeResult | undefined;
   }>;
+}
+
+export type NodeExecutionOutcome =
+  | "executed"
+  | "skipped"
+  | "cancelled"
+  | "not-executed";
+
+export function createNodeOutcomes(
+  nodeIds: readonly string[],
+  nodeResults: Readonly<Record<string, unknown>>,
+  missingOutcome: Exclude<NodeExecutionOutcome, "executed">,
+): Record<string, NodeExecutionOutcome> {
+  return Object.fromEntries(nodeIds.map((nodeId) => [
+    nodeId,
+    Object.prototype.hasOwnProperty.call(nodeResults, nodeId) ? "executed" : missingOutcome,
+  ]));
 }
 
 export type FlushPolicy = "always" | "on-success" | "never";

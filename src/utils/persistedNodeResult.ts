@@ -60,3 +60,11 @@ export function createNotExecutedOutput(runId: string, cancelled = false): Persi
     meta: { timestamp: new Date().toISOString(), runId },
   };
 }
+
+export function createSkippedOutput(runId: string): PersistedNodeResult {
+  return {
+    success: true,
+    status: "skipped",
+    meta: { timestamp: new Date().toISOString(), runId },
+  };
+}

@@ -12,9 +12,10 @@ import React, { useEffect, useMemo } from "react";
 import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
-import { useReactFlow } from "@xyflow/react";
-import { summarizePreview } from "@/utils/preview";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
+import { useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
+import { useOptionalCanonicalGraphSnapshot } from "@/contexts/StableNodeContext";
+import { resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
 
 type NodeExecutionLog = {
   nodeId: string;
@@ -22,6 +23,9 @@ type NodeExecutionLog = {
   output?: any;
   input?: any;
 };
+
+const owns = (value: unknown, key: PropertyKey): value is Record<PropertyKey, unknown> =>
+  typeof value === "object" && value !== null && Object.prototype.hasOwnProperty.call(value, key);
 
 type InputPanelProps = {
   nodeId?: string;
@@ -58,17 +62,16 @@ const InputPanel: React.FC<InputPanelProps> = ({
   executionInput,
   allNodeExecutions,
 }) => {
-  // Always call hooks unconditionally (React rules), but use conditionally
-  const reactFlowContext = useReactFlow();
+  // History is intentionally isolated from the live canonical document.
+  const canonicalGraph = useOptionalCanonicalGraphSnapshot();
+  const executionStoreVersion = useExecutionStoreVersion();
   const { timezone: userTimezone } = useUserPreferences();
 
-  // Get fresh node/edge data on every render (only in editor mode)
-  const nodes = readOnly
-    ? initialNodes
-    : reactFlowContext.getNodes() || initialNodes;
-  const edges = readOnly
-    ? initialEdges
-    : reactFlowContext.getEdges() || initialEdges;
+  if (!readOnly && !canonicalGraph) {
+    throw new Error("Live InputPanel must be used within StableNodeProvider");
+  }
+  const nodes = readOnly ? initialNodes : canonicalGraph?.nodes ?? initialNodes;
+  const edges = readOnly ? initialEdges : canonicalGraph?.edges ?? initialEdges;
 
   // Upstream nodes with fresh data
   const previousNodes = useMemo(() => {
@@ -85,20 +88,20 @@ const InputPanel: React.FC<InputPanelProps> = ({
     return incomingDone?.source;
   }, [nodeId, edges]);
 
-  // Set default selected previous node (prefer 'done' source)
+  const resolvedPrevNodeId = useMemo(
+    () => resolvePreviousNodeId(selectedPrevNodeId, previousNodes, preferredPrevId),
+    [preferredPrevId, previousNodes, selectedPrevNodeId],
+  );
+
+  // Repair stale projected/deleted selections as soon as canonical topology changes.
   useEffect(() => {
-    if (typeof setSelectedPrevNodeId !== "function" || selectedPrevNodeId)
-      return;
-    if (preferredPrevId) {
-      setSelectedPrevNodeId(preferredPrevId);
-      return;
-    }
-    if (previousNodes.length > 0) {
-      setSelectedPrevNodeId(previousNodes[0].id);
+    if (readOnly || typeof setSelectedPrevNodeId !== "function") return;
+    if (resolvedPrevNodeId !== selectedPrevNodeId) {
+      setSelectedPrevNodeId(resolvedPrevNodeId ?? "");
     }
   }, [
-    preferredPrevId,
-    previousNodes,
+    readOnly,
+    resolvedPrevNodeId,
     selectedPrevNodeId,
     setSelectedPrevNodeId,
   ]);
@@ -116,32 +119,32 @@ const InputPanel: React.FC<InputPanelProps> = ({
 
   // Get outputData - use executionInput directly in readOnly mode
   const outputData = useMemo(() => {
+    void executionStoreVersion;
     // In readOnly mode with allNodeExecutions, use selected node's output
     if (readOnly && allNodeExecutions && selectedPrevNodeId) {
       const selectedExec = allNodeExecutions.find(
         (e) => e.nodeId === selectedPrevNodeId,
       );
-      return selectedExec?.output ?? {};
+      return owns(selectedExec, "output") ? selectedExec.output : {};
     }
     // Fallback to executionInput if no selection
     if (readOnly && executionInput !== undefined) {
       return executionInput;
     }
-    if (!selectedPrevNodeId) return {};
-    const prevNode = nodes.find((n) => n.id === selectedPrevNodeId);
-    const result =
-      executionStore?.getNodeData(selectedPrevNodeId)?.output ??
-      prevNode?.data?.output ??
-      prevNode?.data?.input ??
-      {};
-    return result;
+    return resolveLiveInputData(
+      resolvedPrevNodeId,
+      nodes,
+      (sourceNodeId) => executionStore?.getNodeData(sourceNodeId),
+    );
   }, [
-    selectedPrevNodeId,
+    resolvedPrevNodeId,
     nodes,
     executionStore,
+    executionStoreVersion,
     readOnly,
     executionInput,
     allNodeExecutions,
+    selectedPrevNodeId,
   ]);
 
   if (!isExpanded) return null;
@@ -210,7 +213,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
                 </label>
                 <select
                   className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  value={selectedPrevNodeId || ""}
+                  value={resolvedPrevNodeId || ""}
                   onChange={(e) => setSelectedPrevNodeId(e.target.value)}
                 >
                   <option value="">Select node...</option>
@@ -226,7 +229,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
               <DraggableFieldsPanel
                 data={outputData}
                 onDragStart={handleDragStart ?? (() => {})}
-                sourceNodeId={selectedPrevNodeId}
+                sourceNodeId={resolvedPrevNodeId}
               />
             </div>
           </>

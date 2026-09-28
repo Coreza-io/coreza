@@ -1,5 +1,6 @@
 import {
   createNotExecutedOutput,
+  createSkippedOutput,
   normalizePersistedNodeResult,
 } from "@/utils/persistedNodeResult";
 
@@ -36,6 +37,14 @@ describe("normalizePersistedNodeResult", () => {
       success: false,
       status: "not-executed",
       error: "Not executed in this run",
+      meta: { runId: "run-1" },
+    });
+  });
+
+  it("creates an explicit skipped marker", () => {
+    expect(createSkippedOutput("run-1")).toMatchObject({
+      success: true,
+      status: "skipped",
       meta: { runId: "run-1" },
     });
   });

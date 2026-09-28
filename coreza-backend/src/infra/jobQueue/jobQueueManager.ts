@@ -16,6 +16,7 @@ import {
   IWorkflowJobQueue,
   WorkflowJobData,
   ParallelLoopOptions,
+  WorkflowRunCancellation,
 } from "./queueInterface";
 import { createWorkflowWorker } from "../../utils/workflowWorker";
 import { createScheduledWorkflowWorker } from "../../utils/scheduledWorkflowWorker";
@@ -506,7 +507,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
    * Cancel a specific workflow run by runId.
    * Uses BullMQ native job cancellation for immediate AbortSignal triggering.
    */
-  async cancelWorkflowRun(userId: string, workflowId: string, runId: string): Promise<boolean> {
+  async cancelWorkflowRun(userId: string, workflowId: string, runId: string): Promise<WorkflowRunCancellation> {
     console.log(`🛑 Cancelling workflow run ${runId}`);
 
     const jobs = await workflowQueue.getJobs([
@@ -518,6 +519,9 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     ]);
 
     let found = false;
+    let removedQueued = false;
+    let signalledActive = false;
+    let cancellationError: unknown;
     const orderedJobs = [...jobs].sort((left, right) =>
       Number(Boolean(left.data?.isLoopAggregator)) -
       Number(Boolean(right.data?.isLoopAggregator)));
@@ -530,23 +534,27 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           if (state === "active") {
             // Active job - use BullMQ native cancellation
             await workflowWorker.cancelJob(job.id!);
+            signalledActive = true;
             console.log(
               `🛑 Cancelled active run ${runId} via BullMQ AbortSignal`,
             );
           } else {
             // Waiting/delayed - remove from queue
             await job.remove();
+            removedQueued = true;
             console.log(`🗑️ Removed waiting/delayed run ${runId}`);
           }
 
         } catch (err) {
+          cancellationError ??= err;
           console.error(`Failed cancelling run ${runId}:`, err);
         }
       }
     }
 
     if (!found) console.log(`⚠️ Run ${runId} not found in queue`);
-    return found;
+    if (cancellationError && !removedQueued && !signalledActive) throw cancellationError;
+    return { found, removedQueued, signalledActive };
   }
 
   async getQueueStats() {

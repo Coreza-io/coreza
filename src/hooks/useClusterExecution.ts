@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/apiClient";
 import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { acceptEditorExecution, getEditorExecutionGeneration } from "@/utils/executionGeneration";
-import { createNotExecutedOutput, createRunPendingOutput, normalizePersistedNodeResult } from "@/utils/persistedNodeResult";
+import { createRunPendingOutput } from "@/utils/persistedNodeResult";
+import { resolveClusterRunResult } from "@/utils/clusterRunResult";
 
 export type ClusterRunPhase = "idle" | "preparing" | "queued" | "running" | "cancelling" | "completed" | "cancelled" | "failed" | "blocked";
 export interface ClusterRunState {
@@ -51,8 +52,7 @@ interface RunStatusResponse {
 }
 
 const terminalStatuses = new Set(["success", "succeeded", "completed", "failed", "cancelled"]);
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-
+const RESULT_FINALIZATION_RETRIES = 5;
 function descriptorMatches(left: ActiveRunDescriptor | null, right: ActiveRunDescriptor): boolean {
   return Boolean(left && left.runId === right.runId && left.workflowSessionId === right.workflowSessionId &&
     left.clusterId === right.clusterId && left.sourceRevision === right.sourceRevision &&
@@ -71,8 +71,11 @@ function validateResponse(payload: RunStatusResponse, descriptor: ActiveRunDescr
 export function useClusterExecution({ token, workflowSessionId, prepare, currentNodeIds, disabledReason }: Options) {
   const [states, setStates] = useState<Record<string, ClusterRunState>>({});
   const activeRef = useRef<ActiveRunDescriptor | null>(null);
-  const terminalRef = useRef<ActiveRunDescriptor | null>(null);
-  const submittingRef = useRef(false);
+  const terminalRef = useRef(new Map<string, ActiveRunDescriptor>());
+  const submissionRef = useRef<symbol | null>(null);
+  const pollControllerRef = useRef<AbortController | null>(null);
+  const pollDelayRef = useRef<number | null>(null);
+  const retryRef = useRef<{ descriptor: ActiveRunDescriptor; controller: AbortController } | null>(null);
   const sessionRef = useRef(workflowSessionId);
   const executionStore = useExecutionStore();
   const notifyStoreUpdate = useExecutionStoreNotify();
@@ -81,15 +84,41 @@ export function useClusterExecution({ token, workflowSessionId, prepare, current
 
   useEffect(() => {
     sessionRef.current = workflowSessionId;
+    pollControllerRef.current?.abort();
+    if (pollDelayRef.current !== null) window.clearTimeout(pollDelayRef.current);
+    retryRef.current?.controller.abort();
+    pollControllerRef.current = null;
+    pollDelayRef.current = null;
+    retryRef.current = null;
     activeRef.current = null;
-    terminalRef.current = null;
-    submittingRef.current = false;
+    terminalRef.current.clear();
+    submissionRef.current = null;
     setStates({});
+    return () => {
+      pollControllerRef.current?.abort();
+      retryRef.current?.controller.abort();
+      if (pollDelayRef.current !== null) window.clearTimeout(pollDelayRef.current);
+    };
   }, [workflowSessionId]);
 
   const isCurrent = useCallback((descriptor: ActiveRunDescriptor) =>
     descriptorMatches(activeRef.current, descriptor) && sessionRef.current === descriptor.workflowSessionId &&
     getEditorExecutionGeneration() === descriptor.executionGeneration, []);
+
+  const releaseDescriptor = useCallback((descriptor: ActiveRunDescriptor) => {
+    if (!descriptorMatches(activeRef.current, descriptor)) return;
+    activeRef.current = null;
+    pollControllerRef.current?.abort();
+    pollControllerRef.current = null;
+    if (pollDelayRef.current !== null) {
+      window.clearTimeout(pollDelayRef.current);
+      pollDelayRef.current = null;
+    }
+    setStates((current) => ({
+      ...current,
+      [descriptor.clusterId]: { phase: "idle" },
+    }));
+  }, []);
 
   const readRun = useCallback(async (descriptor: ActiveRunDescriptor, signal?: AbortSignal): Promise<RunStatusResponse> => {
     const response = await apiClient.request(`/workflows/${descriptor.workflowId}/runs/${descriptor.runId}/status`, {
@@ -101,42 +130,61 @@ export function useClusterExecution({ token, workflowSessionId, prepare, current
     return response.json() as Promise<RunStatusResponse>;
   }, [token]);
 
-  const hydrateTerminal = useCallback((descriptor: ActiveRunDescriptor, payload: RunStatusResponse): string | undefined => {
-    if (!isCurrent(descriptor) || !validateResponse(payload, descriptor)) {
+  const descriptorSessionIsCurrent = useCallback((descriptor: ActiveRunDescriptor) =>
+    sessionRef.current === descriptor.workflowSessionId &&
+    getEditorExecutionGeneration() === descriptor.executionGeneration, []);
+
+  const hydrateTerminal = useCallback((descriptor: ActiveRunDescriptor, payload: RunStatusResponse): { finalized: boolean; warning?: string } => {
+    if (!descriptorSessionIsCurrent(descriptor) || !validateResponse(payload, descriptor)) {
       throw new Error("The run response no longer matches this editor execution");
     }
-    const result = payload.run?.result;
-    const nodeResults = isRecord(result) && isRecord(result.nodeResults) ? result.nodeResults : null;
-    for (const nodeId of descriptor.memberNodeIds) {
+    const resolution = resolveClusterRunResult(payload.run?.result, descriptor.memberNodeIds, descriptor.runId);
+    if (!resolution.finalized) return resolution;
+    let didHydrate = false;
+    for (const [nodeId, output] of resolution.outputs) {
       if (!currentNodeIds.has(nodeId)) continue;
-      const hasResult = nodeResults !== null && Object.prototype.hasOwnProperty.call(nodeResults, nodeId);
-      executionStore.setNodeData(nodeId, {
-        output: hasResult
-          ? normalizePersistedNodeResult(nodeResults[nodeId])
-          : createNotExecutedOutput(descriptor.runId, payload.run?.status === "cancelled"),
-      });
+      executionStore.setNodeData(nodeId, { output });
+      didHydrate = true;
     }
-    notifyStoreUpdate();
-    return nodeResults ? undefined : "The run completed, but its node output is unavailable.";
-  }, [currentNodeIds, executionStore, isCurrent, notifyStoreUpdate]);
+    if (didHydrate) notifyStoreUpdate();
+    return resolution;
+  }, [currentNodeIds, descriptorSessionIsCurrent, executionStore, notifyStoreUpdate]);
 
-  useEffect(() => {
-    const descriptor = activeRef.current;
-    if (!descriptor || !["queued", "running", "cancelling"].includes(states[descriptor.clusterId]?.phase)) return;
+  const startPolling = useCallback((descriptor: ActiveRunDescriptor) => {
+    pollControllerRef.current?.abort();
+    if (pollDelayRef.current !== null) window.clearTimeout(pollDelayRef.current);
     const controller = new AbortController();
-    let stopped = false;
+    pollControllerRef.current = controller;
+    const waitForNextPoll = () => new Promise<void>((resolve) => {
+      pollDelayRef.current = window.setTimeout(() => {
+        pollDelayRef.current = null;
+        resolve();
+      }, 1_000);
+    });
     const poll = async () => {
-      while (!stopped && isCurrent(descriptor)) {
+      let finalizationRetries = 0;
+      while (!controller.signal.aborted && isCurrent(descriptor)) {
         try {
           const payload = await readRun(descriptor, controller.signal);
-          if (!isCurrent(descriptor)) return;
+          if (!isCurrent(descriptor)) {
+            releaseDescriptor(descriptor);
+            return;
+          }
           if (!validateResponse(payload, descriptor)) throw new Error("The run response no longer matches this editor execution");
           const status = payload.run?.status?.toLowerCase();
           if (!status) throw new Error("Run status response was incomplete");
           if (terminalStatuses.has(status)) {
             let outputWarning: string | undefined;
             try {
-              outputWarning = hydrateTerminal(descriptor, payload);
+              const hydration = hydrateTerminal(descriptor, payload);
+              if (!hydration.finalized && finalizationRetries < RESULT_FINALIZATION_RETRIES) {
+                finalizationRetries += 1;
+                await waitForNextPoll();
+                continue;
+              }
+              outputWarning = hydration.finalized
+                ? hydration.warning
+                : "The run finished before its output was finalized. Retry output to check again.";
             } catch (error) {
               outputWarning = error instanceof Error ? error.message : "Unable to load cluster output";
             }
@@ -149,30 +197,40 @@ export function useClusterExecution({ token, workflowSessionId, prepare, current
               outputWarning,
               canRetryOutput: Boolean(outputWarning),
             });
-            terminalRef.current = descriptor;
+            terminalRef.current.set(descriptor.clusterId, descriptor);
             activeRef.current = null;
+            pollControllerRef.current = null;
             return;
           }
           update(descriptor.clusterId, { phase: status === "queued" ? "queued" : status === "cancelling" ? "cancelling" : "running", runId: descriptor.runId });
         } catch (error) {
-          if (controller.signal.aborted || !isCurrent(descriptor)) return;
-          update(descriptor.clusterId, {
-            ...states[descriptor.clusterId],
-            runId: descriptor.runId,
-            outputWarning: error instanceof Error ? error.message : "Unable to load cluster output",
-          });
+          if (controller.signal.aborted) return;
+          if (!isCurrent(descriptor)) {
+            releaseDescriptor(descriptor);
+            return;
+          }
+          setStates((current) => ({
+            ...current,
+            [descriptor.clusterId]: {
+              ...current[descriptor.clusterId],
+              runId: descriptor.runId,
+              phase: current[descriptor.clusterId]?.phase ?? "running",
+              outputWarning: error instanceof Error ? error.message : "Unable to load cluster output",
+            },
+          }));
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+        await waitForNextPoll();
       }
+      if (!controller.signal.aborted) releaseDescriptor(descriptor);
     };
     void poll();
-    return () => { stopped = true; controller.abort(); };
-  }, [hydrateTerminal, isCurrent, readRun, states, update]);
+  }, [hydrateTerminal, isCurrent, readRun, releaseDescriptor, update]);
 
   const executeCluster = useCallback(async (clusterId: string) => {
-    if (submittingRef.current || activeRef.current || disabledReason) return;
+    if (submissionRef.current || activeRef.current || disabledReason) return;
     const requestSessionId = workflowSessionId;
-    submittingRef.current = true;
+    const submissionToken = Symbol(clusterId);
+    submissionRef.current = submissionToken;
     update(clusterId, { phase: "preparing" });
     try {
       const saved = await prepare(clusterId);
@@ -197,35 +255,40 @@ export function useClusterExecution({ token, workflowSessionId, prepare, current
         executionGeneration: acceptEditorExecution(),
       });
       activeRef.current = descriptor;
-      terminalRef.current = null;
+      terminalRef.current.delete(clusterId);
       for (const nodeId of descriptor.memberNodeIds) {
         if (currentNodeIds.has(nodeId)) executionStore.setNodeData(nodeId, { output: createRunPendingOutput(descriptor.runId) });
       }
       notifyStoreUpdate();
       update(clusterId, { phase: payload.status === "running" ? "running" : "queued", runId: descriptor.runId });
+      startPolling(descriptor);
     } catch (error) {
       if (sessionRef.current === requestSessionId) update(clusterId, { phase: "failed", reason: error instanceof Error ? error.message : "Cluster execution could not be started" });
     } finally {
-      submittingRef.current = false;
+      if (submissionRef.current === submissionToken) submissionRef.current = null;
     }
-  }, [currentNodeIds, disabledReason, executionStore, notifyStoreUpdate, prepare, token, update, workflowSessionId]);
+  }, [currentNodeIds, disabledReason, executionStore, notifyStoreUpdate, prepare, startPolling, token, update, workflowSessionId]);
 
   const retryOutputHydration = useCallback(async (clusterId: string) => {
-    const descriptor = terminalRef.current;
-    if (!descriptor || descriptor.clusterId !== clusterId || getEditorExecutionGeneration() !== descriptor.executionGeneration) return;
-    activeRef.current = descriptor;
+    const descriptor = terminalRef.current.get(clusterId);
+    if (!descriptor || descriptor.clusterId !== clusterId || !descriptorSessionIsCurrent(descriptor) || retryRef.current) return;
+    const controller = new AbortController();
+    retryRef.current = { descriptor, controller };
     try {
-      const payload = await readRun(descriptor);
-      const warning = hydrateTerminal(descriptor, payload);
-      const current = states[clusterId];
-      update(clusterId, { ...current, outputWarning: warning, canRetryOutput: Boolean(warning) });
+      const payload = await readRun(descriptor, controller.signal);
+      if (retryRef.current?.controller !== controller || !descriptorSessionIsCurrent(descriptor)) return;
+      const hydration = hydrateTerminal(descriptor, payload);
+      const warning = hydration.finalized
+        ? hydration.warning
+        : "The run output is not finalized yet. Retry output to check again.";
+      setStates((current) => ({ ...current, [clusterId]: { ...current[clusterId], outputWarning: warning, canRetryOutput: Boolean(warning) } }));
     } catch (error) {
-      const current = states[clusterId];
-      update(clusterId, { ...current, outputWarning: error instanceof Error ? error.message : "Unable to load cluster output", canRetryOutput: true });
+      if (controller.signal.aborted || retryRef.current?.controller !== controller || !descriptorSessionIsCurrent(descriptor)) return;
+      setStates((current) => ({ ...current, [clusterId]: { ...current[clusterId], outputWarning: error instanceof Error ? error.message : "Unable to load cluster output", canRetryOutput: true } }));
     } finally {
-      if (descriptorMatches(activeRef.current, descriptor)) activeRef.current = null;
+      if (retryRef.current?.controller === controller) retryRef.current = null;
     }
-  }, [hydrateTerminal, readRun, states, update]);
+  }, [descriptorSessionIsCurrent, hydrateTerminal, readRun]);
 
   const cancelRun = useCallback(async (clusterId: string) => {
     const active = activeRef.current;

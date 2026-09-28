@@ -630,6 +630,7 @@ export class BacktestExecutor implements INodeExecutor {
         const cancelOwnedSession = () => session.cancel();
         context?.abortSignal?.addEventListener("abort", cancelOwnedSession, { once: true });
         try {
+          if (context?.abortSignal?.aborted) cancelOwnedSession();
           await session.runAll();
           if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
           ownedNodeResults = session.getLatestNodeSnapshots();

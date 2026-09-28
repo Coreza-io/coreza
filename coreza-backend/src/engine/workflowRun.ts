@@ -13,6 +13,8 @@ import {
   FlushPolicy,
   MultiBarExecutionContext,
   WorkflowExecutionResult,
+  NodeExecutionOutcome,
+  createNodeOutcomes,
   toExecutionError,
 } from "./types";
 
@@ -326,6 +328,8 @@ export class WorkflowRun {
     if (this.runtime.hasFailures()) {
       return {
         success: false,
+        resultFinalized: true,
+        nodeOutcomes: this.buildNodeOutcomes(nodeResults, "not-executed"),
         error: {
           code: "NODE_FAILED",
           message:
@@ -342,6 +346,8 @@ export class WorkflowRun {
 
     return {
       success: true,
+      resultFinalized: true,
+      nodeOutcomes: this.buildNodeOutcomes(nodeResults, "skipped"),
       nodeResults,
       executionOrder,
       timing,
@@ -366,12 +372,25 @@ export class WorkflowRun {
 
     return {
       success: false,
+      resultFinalized: true,
+      nodeOutcomes: this.buildNodeOutcomes(
+        nodeResults,
+        this.options.abortSignal?.aborted ? "cancelled" : "not-executed",
+      ),
       error: toExecutionError(error, "execute"),
       nodeResults,
       executionOrder,
       timing,
       boundaryOutputs: this.buildBoundaryOutputs(nodeResults),
     };
+  }
+
+  private buildNodeOutcomes(
+    nodeResults: NodeResults,
+    missingOutcome: Exclude<NodeExecutionOutcome, "executed">,
+  ): Record<string, NodeExecutionOutcome> {
+    const scopedNodeIds = this.plan.nodes.map(({ id }) => id);
+    return createNodeOutcomes(scopedNodeIds, nodeResults, missingOutcome);
   }
 
   private async flushIfNeeded(): Promise<void> {

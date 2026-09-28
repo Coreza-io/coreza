@@ -62,10 +62,10 @@ export class WorkflowRunRepository {
   }
 
   async getOwnedRun(userId: string, workflowId: string, runId: string) {
-    const { data, error } = await supabase.from("workflow_runs").select("id,status")
+    const { data, error } = await supabase.from("workflow_runs").select("id,status,scope_snapshot")
       .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).single();
     if (error || !data) throw createError("Workflow run not found", 404);
-    return data as { id: string; status: string };
+    return data as { id: string; status: string; scope_snapshot: { memberNodeIds?: unknown } | null };
   }
 
   async requestCancellation(runId: string): Promise<void> {
@@ -81,6 +81,26 @@ export class WorkflowRunRepository {
       status: "cancelled", cancel_acknowledged_at: now, completed_at: now, error_message: "Run cancelled by user",
     }).eq("id", runId).eq("status", "cancelling");
     if (error) throw createError("Failed to cancel workflow run", 500);
+  }
+
+  async finalizeQueuedCancellation(runId: string, memberNodeIds: readonly string[]): Promise<void> {
+    const now = new Date().toISOString();
+    const nodeOutcomes = Object.fromEntries(memberNodeIds.map((nodeId) => [nodeId, "cancelled"]));
+    const { error } = await (supabase.from("workflow_runs") as any).update({
+      status: "cancelled",
+      cancel_acknowledged_at: now,
+      completed_at: now,
+      error_message: "Run cancelled by user",
+      result: {
+        success: false,
+        resultFinalized: true,
+        nodeResults: {},
+        executionOrder: [],
+        nodeOutcomes,
+        error: { code: "CANCELLED", message: "Run cancelled by user", phase: "queue", retryable: false },
+      },
+    }).eq("id", runId).eq("status", "cancelling");
+    if (error) throw createError("Failed to finalize workflow cancellation", 500);
   }
 
   async markRunFailed(runId: string, errorMessage: string): Promise<void> {

@@ -1,175 +1,261 @@
-# Show correct cluster-run results in member output panels
+# Fix collapsed-cluster inputs and harden cluster result delivery
 
-## Confirmed findings
+## Goal
 
-- The reported cluster run succeeded and persisted `BacktestInit` and `OnBar` outputs in `workflow_runs.result.nodeResults`; it created no `node_executions` rows.
-- `useClusterExecution` polls the existing run-status endpoint but reads only `status` and `error_message`, then releases the active run. It never hydrates the live execution store.
-- Member output panels subscribe to that live store, so they remain `pending` even when the cluster control shows Completed.
-- `ExecutionContext.setNodeData` already protects registered pins, but `useNodeOutput` uses a truthiness test and therefore misses valid raw outputs such as `0`, `false`, `""`, and `null`.
-- Collapsed member nodes remain mounted as hidden runtime hosts. The missing output is therefore a result-hydration problem, not a compact/expanded rendering problem.
-- Queued `BacktestInit` currently starts `session.runAll()` without awaiting it. The outer workflow can be marked successful before the batch backtest finishes, and its persisted `OnBar` value is not guaranteed to be the final processed-bar output.
-- Failed/cancelled workflow persistence currently updates rows only while status is `running` or `queued`; cancellation can race with partial-result persistence.
+Make cluster collapse a presentation-only change. A downstream node must expose the same real upstream nodes, selected source, data, and dragged field references whether the cluster is expanded or collapsed. Cluster polling, retries, cancellation, and terminal output hydration must also remain correct across reruns, supersession, navigation, and partial execution.
 
-## Output semantics
+## Confirmed current state
 
-For one accepted cluster run, display:
+At the reviewed commit `5e16e6a90bf0add47f4dff348201c450b591aabb`:
 
-- **Ordinary executed node:** its persisted output.
-- **Backtest Init:** its initialization output, including backtest/execution IDs and fetched-bar summary.
-- **Repeated backtest node:** one latest executed-bar snapshot, clearly represented as the latest snapshot; do not load thousands of per-bar outputs into the panel.
-- **Failed node:** its actual error plus supported partial data.
-- **Skipped node:** an explicit skipped state and reason.
-- **Unexecuted cluster member:** an explicit “Not executed in this run” state.
-- **Pinned member:** its existing pinned output, unchanged.
+- Terminal cluster results are already read from `workflow_runs.result.nodeResults`, normalized, written to the live execution store, and published to member output panels.
+- Submitted runs already capture workflow, session, run, cluster, revision, member IDs, and execution generation; pins and falsy values are protected in the main output path.
+- Batch BacktestInit already awaits `session.runAll()`, collects latest member snapshots, suppresses duplicate outer routing, and carries snapshots through its failure result.
+- The status repository already selects explicit run identity, scope, revision, snapshot, status, error, and result fields. Existing `workflow_runs` scope columns, constraints, grants, and indexes are sufficient for the base feature.
+- `InputPanel` still reads React Flow’s projected display nodes and edges. Collapsing removes internal cluster edges and rewrites boundary endpoints to a synthetic compact-node ID, so ancestry, selection, data lookup, and dragged reference provenance become incorrect.
+- The existing canonical graph context is imperative and ref-backed; it cannot reactively notify InputPanel when topology changes.
+- Cluster polling restarts whenever UI state changes, stale execution generations can leave controls locked, retry hydration can write into a replaced workflow session, and missing result payloads are conflated with legitimately unexecuted members.
+- Existing tests cover projection/runtime-host behavior and result normalization, but not the real InputPanel, polling lifecycle, terminal hydration, or owned backtest execution.
 
-Full performance metrics, trades, and equity history remain on the dedicated backtest results experience. The node panel shows the node’s latest execution snapshot.
+## Implementation plan
 
-## Implementation
+### 1. Establish one reactive canonical graph source
 
-### 1. Create one persisted-node-result contract
+**Primary files:** `src/contexts/StableNodeContext.tsx`, `src/pages/WorkflowEditor.tsx`
 
-- Extract the result interpretation currently embedded in `useExecutionHistory` into a shared `normalizePersistedNodeResult` utility.
-- Distinguish an absent result key from an explicit `null` result.
-- Preserve an already normalized `StandardNodeOutput` without adding another `data` wrapper.
-- Normalize legacy `{ success, data, error, status, meta }` envelopes, raw objects, arrays, primitive values, and structured errors.
-- Preserve metadata and the `skipped` state; extend the shared frontend output-status type and output badge only as needed to represent persisted skipped results consistently.
-- Handle malformed entries independently so one invalid node result cannot discard valid sibling outputs.
-- Make execution history use the same utility. When `executionOrder` is absent or incomplete, append valid `nodeResults` keys in stable object-key order rather than hiding them.
+- Extend the existing stable-node provider instead of adding a second competing graph owner.
+- Keep the current imperative `getNodes`, `getEdges`, and `getNodeById` API for execution callbacks.
+- Add a subscription-based canonical snapshot API, implemented with a stable external-store pattern such as `useSyncExternalStore`:
+  - snapshot contains canonical `nodes` and `edges`, never compact display nodes or projected edges;
+  - snapshot identity changes only when the canonical document changes;
+  - subscribers are notified after a committed canonical update, not unconditionally during render;
+  - workflow replacement, node/edge add, delete, reconnect, and semantic node metadata changes publish a new snapshot;
+  - collapse/expand and compact-cluster movement do not alter the canonical snapshot;
+  - historical/read-only canvases remain isolated from the live editor snapshot.
+- Replace the current render-time ref mutation with a commit-safe synchronization path. Avoid a provider update loop and avoid publishing an intermediate workflow where nodes and edges belong to different revisions.
+- Expose a `useCanonicalGraphSnapshot` hook with a clear failure mode outside the provider.
+- Preserve array/object identity between unchanged snapshots so consumers and ancestry indexes can memoize reliably.
+- Separate topology identity from position-only changes where practical: ancestry should rebuild for endpoint/handle/node-membership changes, not every drag frame. If a separate topology revision is introduced, include node metadata changes needed for labels/data lookup without invalidating the edge index unnecessarily.
 
-### 2. Capture the exact submitted cluster scope
+### 2. Make InputPanel use canonical semantics
 
-- When `prepareClusterExecution` saves the workflow, return the saved revision together with a snapshot of the requested cluster’s canonical `memberNodeIds`.
-- Store an immutable active-run descriptor after the server accepts execution:
+**Primary files:** `src/utils/InputPanel.tsx`, optionally a small pure helper under `src/utils/`
 
-```text
-workflowId
-workflowSessionId
-runId
-clusterId
-sourceRevision
-memberNodeIds
-executionGeneration
-```
+- In live editor mode, obtain nodes and edges from the canonical snapshot, not `useReactFlow().getNodes()` or `getEdges()`.
+- In historical/read-only mode, continue using the supplied saved nodes, saved edges, execution inputs, and execution records; do not attach historical panels to the live editor document.
+- If unconditional hook rules make the dual mode awkward, split live and historical data adapters around one presentational panel.
+- Use canonical nodes and edges for all semantic decisions:
+  - all-upstream traversal;
+  - direct Loop `done`-edge preference;
+  - selected source validation;
+  - source-node metadata and output fallback lookup;
+  - field-reference provenance.
+- Retain all upstream ancestors in deterministic traversal order. Do not reduce the list to direct predecessors.
+- Include only truly reachable ancestors. Do not expose unrelated members merely because they share a cluster.
+- Do not attempt to repair only projected boundary endpoints: collapsed projection omits internal edges, so that cannot reconstruct complete ancestry.
+- Do not mask the defect by renaming the synthetic option. Synthetic display nodes must never enter semantic input selection.
 
-- Capture membership from the submitted saved revision, not from cluster state at result-arrival time.
-- Update only captured member IDs that still exist in the current editor.
-- Increment a shared execution generation whenever a cluster or individual-node run is accepted. An older cluster response must not overwrite a newer individual-node or cluster result.
-- Continue using canonical member IDs only; never hydrate the synthetic compact-cluster display node.
+### 3. Repair stale source selection deterministically
 
-### 3. Reset panels only after execution is accepted
+**Primary file:** `src/utils/InputPanel.tsx`
 
-- Add a scoped runtime-output reset for the captured members after the execute request returns a valid `run_id`.
-- Preserve registered pins and clear no unrelated node, loop, stream, or global execution state.
-- Replace each unpinned member output with an explicit pending state owned by the accepted run, preventing `useNodeOutput` from falling back to stale `data.output`.
-- Do not clear previous results during save/preparation. A failed save or rejected execute request must leave useful existing outputs intact.
-- If the accepted run later returns no result for a member, replace its pending state with “Not executed in this run”; do not revive the prior output.
+- Extract a pure selection resolver and apply this priority whenever the target node or canonical upstream set changes:
+  1. preserve `selectedPrevNodeId` if it remains a canonical upstream ID;
+  2. otherwise choose an eligible direct incoming Loop `done` source;
+  3. otherwise choose the first node in the existing deterministic upstream traversal order;
+  4. otherwise clear the selection.
+- Call `setSelectedPrevNodeId` only when the resolved value differs, preventing effect loops.
+- Repair selection after disconnect, edge replacement, node deletion, workflow replacement, or a previously stored synthetic ID.
+- Do not reject IDs by prefix alone. Projection supports collisions with the reserved prefix; validity must come from canonical membership and the display-node mapping/type, not string heuristics.
+- Repeated collapse/expand, cluster rename, or compact-card movement must preserve a still-valid canonical selection.
 
-### 4. Hydrate terminal results through the existing status endpoint
+### 4. Make selected input data reactive and presence-safe
 
-- Define a typed status response containing the required run identity, scope, source revision, status, error, and terminal `result`.
-- On terminal success, failure, or cancellation:
-  1. validate the response against the active-run descriptor;
-  2. normalize every available captured-member result;
-  3. assign explicit not-executed output to captured members with no result;
-  4. batch `executionStore.setNodeData(nodeId, { output })` calls;
-  5. call `useExecutionStoreNotify()` once;
-  6. update the cluster control state and any non-fatal output warning;
-  7. release the active-run descriptor.
-- Keep execution outcome and output availability separate. A successful backend run remains Completed if its result is missing or malformed; show a retryable output warning rather than changing it to Failed.
-- Use `workflow_runs.result.nodeResults` as the source. Do not call `/runs/:runId/executions` for this path unless the backend begins writing those rows.
+**Primary files:** `src/utils/InputPanel.tsx`, `src/contexts/ExecutionStoreContext.tsx` only if a narrower subscription is needed
 
-### 5. Fix output presence and stale fallback
+- Subscribe InputPanel to execution-store changes with the existing version hook, or add a node-scoped subscription if broad updates are measurably expensive.
+- Recompute the displayed input after cluster terminal hydration without requiring the user to close, move, collapse, or reopen a node.
+- Resolve live data by property presence, not `??` or truthiness:
+  1. if the execution-store record owns `output`, use it exactly;
+  2. else if the canonical node data owns `output`, use it exactly;
+  3. else use canonical node `input` only where that fallback remains part of the existing contract;
+  4. otherwise show the empty state.
+- Preserve explicit `null`, `0`, `false`, `""`, arrays, and empty objects. An explicit current output must never fall through to stale node data.
+- Keep pinned output authoritative through the existing store behavior.
+- Apply equivalent property-presence handling to read-only execution values where needed, without coupling history to the live store.
 
-- Replace truthiness checks in `useNodeOutput` with explicit property-presence checks so `0`, `false`, `""`, and `null` render correctly.
-- Make the accepted-run pending/not-executed markers authoritative over stale `data.output`.
-- Preserve pinned-output precedence in both store writes and panel display.
-- Ensure output changes received while collapsed appear on expansion, and remain unchanged across collapse/re-expand cycles.
+### 5. Guarantee canonical dragged references
 
-### 6. Make polling race-safe
+**Primary files:** `src/utils/InputPanel.tsx`, `src/utils/DraggableFieldsPanel.tsx`, relevant reference tests
 
-- Allow only one status request in flight per active run, using sequential polling or an in-flight guard.
-- Recheck run ID, session ID, cluster ID, revision, and execution generation after every awaited request and before every store/state mutation.
-- Abort pending requests during effect cleanup where supported.
-- Hydrate each terminal run once, and mark hydration complete only after valid store writes and notification finish.
-- Never let an older response clear or mutate a newer active run.
-- Provide a retry action that re-reads the same terminal run result if result retrieval or parsing fails; retrying output hydration must not execute the cluster again.
+- Keep the existing structured drag payload and path-segment handling.
+- Ensure `sourceNodeId` always comes from the repaired canonical selection.
+- Assert that expanded and collapsed panels produce the same expression for the same field, including nested objects and arrays.
+- Never serialize a compact cluster display ID into a new field reference.
+- Preserve existing saved expressions unchanged during collapse/expand; this work changes selection/provenance, not stored expressions.
 
-### 7. Correct queued backtest completion ownership
+### 6. Refactor cluster execution into descriptor-owned operations
 
-- Treat batch `BacktestInit` started by a queued workflow/cluster run as owned by that outer run.
-- Do not blindly add `await session.runAll()` while leaving the outer engine free to execute the same strategy nodes again.
-- Define one orchestration path that:
-  - prevents duplicate outer execution of strategy members already driven per bar by the backtest session;
-  - awaits batch completion, finalization, and required persistence;
-  - propagates background session failure or cancellation to the owning workflow run;
-  - collects the final latest-per-node snapshots before session cleanup;
-  - merges those snapshots into the owning run’s `nodeResults` and deterministic execution order;
-  - preserves manual/individual stepping behavior, which must not await a full batch.
-- Ensure compiled and dynamic-engine backtests expose equivalent latest-node snapshots.
-- Mark the workflow run terminal only after the owned batch session has completed and its final snapshots are persisted.
+**Primary file:** `src/hooks/useClusterExecution.ts`, with pure lifecycle helpers extracted where useful
 
-### 8. Preserve partial results during cancellation
+- Replace the `states`-dependent polling effect with a poller owned by one immutable accepted-run descriptor.
+- Track active polling through a descriptor/session token or reducer event model, not by closing over the full UI state map.
+- Permit exactly one status request in flight for an owned run.
+- Start the next cancellable delay only after the previous nonterminal request settles; UI phase/warning updates must not restart polling or bypass the configured interval.
+- Store and clear both request abort controllers and delay timers on terminal completion, unmount, workflow replacement, supersession, and retry completion.
+- After every await, verify workflow session, run, cluster, revision, submitted membership, and execution generation before mutating the store, warnings, controls, refs, or submission locks.
+- Define one descriptor-scoped cleanup operation that:
+  - clears only the matching active descriptor;
+  - releases queued/running/cancelling controls when ownership is superseded;
+  - cannot clear a newer run accepted for the same cluster;
+  - leaves a deterministic final UI state such as idle/blocked rather than a permanently active phase.
+- Add a submission ownership token so an older `prepare`/execute request’s `catch` or `finally` cannot clear the lock or state of a newer session.
+- Keep pending-output reset after server acceptance only. Save failures and rejected execute requests must retain the previous useful output.
+- Continue hydrating only the immutable member IDs captured from the saved submitted revision and still present in the current editor.
 
-- Separate result persistence from terminal status transitions so available partial `nodeResults` can be saved even if the row has already moved to `cancelling` or `cancelled`.
-- Never change a cancelled run back to success while persisting its partial result.
-- Persist the cancellation outcome and any completed node snapshots atomically or with guarded updates that preserve the terminal status.
-- Hydrate those partial results in the editor and mark remaining members not executed/cancelled as appropriate.
+### 7. Make retry hydration session-safe
 
-### 9. Keep the API and database change minimal
+**Primary file:** `src/hooks/useClusterExecution.ts`
 
-- Keep the existing authenticated status endpoint and `workflow_runs.result`; no new table is required.
-- Replace accidental `select("*")` coupling with an explicit repository/query response contract only after checking all current status-endpoint consumers.
-- Preserve workflow ownership checks and existing RLS protections.
-- Retain established output-redaction rules. Selecting fewer run columns does not prove arbitrary node output is secret-free, so do not make that claim.
-- Add a dedicated authenticated result endpoint only if terminal result size measurably makes one-second status polling too expensive; otherwise avoid extra API surface.
+- Keep “Retry output” as a GET/read of the same terminal run. It must never submit another execution.
+- Give retry its own immutable descriptor/session token and AbortController; do not temporarily reuse `activeRef` in a way that blocks or aliases a new execution.
+- Validate ownership after the request and before hydration, warning updates, retry-state updates, and cleanup.
+- Abort retry on workflow replacement/unmount and ignore every late success or failure from the old session.
+- Prevent duplicate retry clicks from creating competing hydrations; either reuse one in-flight promise or reject the duplicate without changing the run state.
+- Preserve the terminal execution outcome while updating only output-availability state.
 
-## Automated tests
+### 8. Define an explicit terminal-result completeness contract
 
-### Result normalization and panel behavior
+**Primary files:** `coreza-backend/src/engine/types/executionError.ts`, `coreza-backend/src/engine/workflowRun.ts`, `coreza-backend/src/utils/workflowWorker.ts`, `coreza-backend/src/workflow/WorkflowRunRepository.ts`, `coreza-backend/src/workflow/WorkflowQueryService.ts`, `src/hooks/useClusterExecution.ts`, `src/utils/persistedNodeResult.ts`
 
-- Standard, legacy, raw, explicit-null, falsy, array, skipped, failed, and malformed sibling results normalize correctly without an extra `data` layer.
-- Missing `executionOrder` no longer hides valid results in history or live hydration.
-- An accepted rerun cannot fall back to stale `data.output`.
-- A rejected save/execute request preserves previous results.
-- Pinned outputs remain unchanged; unpinned outputs refresh.
-- Unexecuted members receive the explicit not-executed state.
+- Treat run outcome and result availability as separate concepts.
+- Extend the persisted result envelope or typed status response with an explicit finalization/completeness contract. At minimum it must identify:
+  - whether result production is finalized;
+  - canonical executed/skipped/cancelled node IDs, or an equivalent per-member outcome map;
+  - available `nodeResults` and deterministic `executionOrder`;
+  - partial-result state for failure/cancellation.
+- Prefer extending the existing `workflow_runs.result` JSON contract and status response; do not create a new table. Add a database column/migration only if atomic durable finalization cannot be represented safely in the existing result JSON.
+- Define behavior precisely:
+  - missing or malformed entire result envelope: preserve pending/current-run authority, show “output unavailable,” and allow retry;
+  - finalized result with explicit skipped/unexecuted/cancelled member outcome: render that exact marker;
+  - partial finalized failure/cancellation: show available member snapshots and explicit outcomes for the rest;
+  - non-final terminal observation caused by a persistence race: keep polling with a bounded timeout/backoff before showing retryable unavailability;
+  - empty but finalized execution: valid only when the explicit outcome metadata accounts for the submitted scope.
+- Never infer completeness from object truthiness, terminal status alone, or the assumption that every cluster member must execute; conditional branches may legitimately omit execution.
+- Keep malformed sibling entries isolated so valid member results still hydrate.
+- Preserve shared normalization and history parity.
 
-### Scope and race safety
+### 9. Close cancellation/result finalization races
 
-- Only member IDs captured at submission are hydrated.
-- Membership changes during execution do not expand the hydration scope.
-- Wrong run, cluster, revision, session, synthetic ID, or stale generation results are ignored.
-- A late cluster response cannot overwrite a newer individual-node result.
-- Repeated terminal polls hydrate once, and a malformed sibling does not block valid members.
-- Output-hydration retry updates the same run without starting another execution.
+**Primary files:** `coreza-backend/src/workflow/WorkflowExecutionService.ts`, `coreza-backend/src/workflow/WorkflowRunRepository.ts`, `coreza-backend/src/infra/jobQueue/jobQueueManager.ts`, `coreza-backend/src/utils/workflowWorker.ts`, `coreza-backend/src/utils/redisRunStorage.ts`
 
-### Backend lifecycle and cancellation
+- Preserve the current independent snapshot write, but make terminal finalization ownership explicit across database and Redis paths.
+- Change run cancellation to distinguish queued jobs removed before start from active jobs receiving an abort signal:
+  - queued/removed runs can persist a finalized empty cancelled result and then become cancelled;
+  - active runs remain cancelling until the owning worker captures available snapshots and finalizes the cancelled result/status;
+  - already-terminal and worker-completed races return the actual durable state without overwriting it.
+- Prevent a cancellation endpoint from marking an active run terminal before the worker’s final snapshot write is complete.
+- Persist result/finalization before, or atomically with, the guarded terminal status transition. A cancelled run must never return to success.
+- Make Redis and Supabase paths expose equivalent result/finalization semantics; ensure Redis-to-database synchronization retains all new envelope fields.
+- Preserve ownership checks, service-role writes, authenticated read-only access, existing scope validation, and output-redaction rules.
+- Verify all status endpoint consumers before changing its response type. Keep the current endpoint unless payload-size measurement proves a dedicated result endpoint is needed.
+- No new table is expected. If a schema change becomes necessary, add a migration with explicit grants and update generated types/schema mirrors in the same change.
 
-- The status response exposes the explicit owned-run result contract and rejects cross-user access.
-- Batch cluster backtests do not mark the owning workflow run successful before session completion/finalization.
-- A background backtest failure produces a failed owning run rather than misleading success.
-- Final `OnBar` output corresponds to the expected last processed bar.
-- Compiled and dynamic-engine backtests produce equivalent panel snapshots.
-- Strategy members are not executed both by the outer workflow and by the per-bar session.
-- Cancellation after one node completes preserves its output, retains cancelled status, and does not resurrect execution.
+### 10. Validate owned BacktestInit execution end to end
 
-## End-to-end acceptance
+**Primary files:** `coreza-backend/src/backtest/BacktestExecutor.ts`, `coreza-backend/src/backtest/session/BacktestSession.ts`, `coreza-backend/src/engine/executionRuntime.ts`, `coreza-backend/src/engine/workflowRun.ts`, `coreza-backend/src/utils/workflowWorker.ts`
 
-1. Run an expanded ordinary cluster and confirm each executed member panel changes from pending to its persisted output before the control settles on Completed.
-2. Run the same cluster while collapsed, expand it after completion, and confirm identical outputs.
-3. Collapse and re-expand after hydration and confirm outputs remain stable.
-4. Run the shown BacktestInit/OnBar cluster and confirm Completed appears only after the backtest session finishes; BacktestInit shows initialization data and OnBar shows the expected final bar snapshot.
-5. Force a downstream failure and confirm upstream outputs and the failed-node error are both visible.
-6. Cancel after partial progress and confirm available outputs remain while the run stays Cancelled.
-7. Pin one member, rerun, and confirm its pin survives while unpinned members refresh.
-8. Start a run, change membership or navigate away, and confirm late results do not alter the new editor state.
-9. Confirm execution history displays the same normalized values as the live panels.
+Keep the implemented awaited-batch design, then prove these contracts rather than rewriting it without evidence:
+
+- Compiled and dynamic paths both await the owned batch, finalize it, and expose equivalent latest-per-node snapshots.
+- BacktestInit and OnBar snapshots merge into the outer run exactly once and in deterministic order.
+- `suppressRouting` prevents the outer workflow runtime from executing strategy members a second time.
+- A per-bar failure returns a failed owning run while retaining completed snapshots.
+- Cancellation works before worker start, before/while session initialization, and mid-batch.
+- If the parent signal is already aborted when the session listener is attached, cancel immediately; do not rely solely on a future abort event.
+- Manual stepping retains its existing non-owned lifetime and does not await a full batch.
+- Cluster boundary isolation prevents an external downstream node from executing during the scoped run.
+- Session cleanup and listener removal occur once on success, failure, and cancellation.
+
+### 11. Add focused automated coverage
+
+**Frontend unit/component tests**
+
+- Canonical graph subscription publishes topology/workflow replacement and remains stable for unchanged snapshots.
+- Expanded and collapsed `BacktestInit → OnBar → Consolidator` produce `OnBar, BacktestInit` in the same deterministic order.
+- Endpoint repair without internal edges is explicitly proven insufficient.
+- Multiple boundary edges preserve distinct real sources and deduplicate ancestors.
+- An unrelated member in the same cluster is excluded.
+- Two connected collapsed clusters expose all and only actual canonical ancestors.
+- Twenty collapse/expand cycles preserve a valid selected ID, data, and expression provenance.
+- Disconnect/delete repairs selection by the defined priority or clears it.
+- Loop `done` preference uses canonical handle semantics.
+- Cluster hydration updates an already-open downstream InputPanel while collapsed.
+- `0`, `false`, empty string, `null`, arrays, and empty objects render exactly; no stale fallback occurs.
+- Pins remain authoritative.
+- Drag payloads never contain synthetic display IDs.
+- Historical panels use their saved graph/results and ignore live collapse state.
+
+**Cluster hook tests with fake timers and deferred promises**
+
+- Repeated running responses cannot exceed one request per configured delay and never overlap.
+- Terminal hydration occurs once and notifies the store once per accepted payload batch.
+- Accepted scope is immutable across membership changes.
+- Wrong workflow, session, run, cluster, revision, membership, synthetic ID, or generation is ignored.
+- Supersession releases the old controls without clearing the newer run.
+- Workflow switch/unmount aborts poll and retry; late responses produce no state/store writes.
+- Old submission `finally` cannot unlock or overwrite a newer submission.
+- Retry reads the same run once and never calls execute.
+- Missing, malformed, incomplete, partial, empty-finalized, skipped, cancelled, and complete terminal payloads produce distinct expected UI/store states.
+- Rejected save/execute preserves prior outputs; accepted run creates pending markers only for submitted unpinned members.
+
+**Backend integration tests**
+
+- Authenticated owner can read the explicit run contract; cross-user access is rejected.
+- Database and Redis status paths return equivalent metadata/result-finalization semantics.
+- BacktestInit + OnBar cluster success persists both final snapshots and does not become successful early.
+- Compiled and dynamic paths produce equivalent latest snapshots.
+- Failure preserves completed snapshots and a failed status.
+- Cancellation before start, during initialization, and mid-batch preserves correct partial output and remains cancelled.
+- Already-aborted signals cancel the owned session immediately.
+- Manual stepping is unchanged.
+- External Consolidator is not executed by the scoped cluster run.
+
+**Browser acceptance using the real editor/InputPanel**
+
+1. Build `BacktestInit → OnBar → Time Bar Consolidator`, group the first two nodes, and open the Consolidator Input Data panel.
+2. Verify expanded options are exactly the real OnBar and BacktestInit IDs in deterministic order.
+3. Collapse the cluster and verify the same options, selected source, values, and field references without reopening the panel.
+4. Rename and move the compact cluster; verify semantic input state is unchanged.
+5. Repeat collapse/expand 20 times; verify no synthetic ID appears and no selection/data drift occurs.
+6. Disconnect/delete the selected source and verify deterministic repair.
+7. Run while collapsed; verify pending then terminal member outputs appear without manual refresh, and expanding shows identical output.
+8. Verify failure, cancellation, retry-output, pinning, workflow navigation during an in-flight request, and a newer individual-node execution cannot be overwritten by the old cluster run.
+
+### 12. Verification and release gates
+
+- Run focused frontend unit/component tests, then the full frontend test suite and lint/type checks used by the repository.
+- Run focused backend Jest integration tests, then backend build, lint, and module-boundary validation.
+- Run the real Playwright regression, not only the static collapse fixture.
+- Inspect request timing to confirm one non-overlapping status request per interval.
+- Verify database migrations/schema mirrors and grants only if Step 9 requires a schema change.
+- Re-run the Docker build-and-scan job. The reviewed CI failure was an out-of-memory exit during the frontend Docker build, not a proven feature TypeScript error; adjust CI/build memory or chunking only after reproducing and measuring it, then obtain a passing check.
+
+## Delivery order
+
+1. Reactive canonical graph API and InputPanel ancestry/selection/data/reference correctness.
+2. Descriptor-owned polling, retry, submission, supersession, and cleanup.
+3. Explicit result completeness plus cancellation finalization parity across database and Redis.
+4. Owned backtest integration coverage and real browser acceptance.
+5. Full checks and CI rerun.
 
 ## Completion criteria
 
-- Every accepted cluster run gives each captured member a deterministic pending, result, error, skipped, cancelled, or not-executed panel state without reload.
-- Ordinary cluster results and final batch-backtest snapshots are both represented accurately.
-- The owning workflow cannot report success before its queued backtest finishes.
-- Compact/expanded transitions, pins, rejected submissions, membership edits, stale responses, and newer executions cannot corrupt panel output.
-- Partial cancellation results persist without changing the cancelled status.
-- The implementation uses the existing persisted run result and requires no unnecessary database table or migration.
+- Collapse/expand changes presentation only; upstream options, selection, displayed data, and expressions remain identical and canonical.
+- No compact display ID can enter InputPanel selection, output lookup, or a serialized field reference.
+- Every accepted member has a deterministic pending, success, error, skipped, cancelled, not-executed, or retryable-unavailable state without reload.
+- Polling has one owned request at a time, respects its delay, and cannot leave controls locked or mutate a replaced workflow.
+- Retry never re-executes; pins and newer executions cannot be overwritten.
+- The owning run cannot report finalized success/cancellation before owned batch work and available snapshots are durably finalized.
+- Expanded/collapsed, conditional, failure, cancellation, history, compiled/dynamic backtest, and workflow-switch cases pass automated tests.
+- Frontend/backend checks, the real browser regression, and CI build-and-scan pass.

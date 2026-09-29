@@ -1601,7 +1601,7 @@ const WorkflowEditorContent = () => {
       }));
 
       saveHistorySnapshot();
-      setNodes(stampNodesWithWorkflowSession(nodesWithDefinitions));
+      setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(nodesWithDefinitions)));
       setEdges(edgesWithHandlers);
       if (restoredClusters) {
         const validClusters: NodeCluster[] = [];
@@ -1665,7 +1665,7 @@ const WorkflowEditorContent = () => {
           });
           template = getTemplate("custom");
         }
-        setNodes(stampNodesWithWorkflowSession(template.nodes));
+        setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(template.nodes)));
         setEdges(template.edges);
         setIsActive(false);
         setLoading(false);
@@ -1677,7 +1677,7 @@ const WorkflowEditorContent = () => {
         if (loaded) {
           setWorkflowName(loaded.name);
           setIsActive(loaded.isActive);
-          setNodes(stampNodesWithWorkflowSession(loaded.nodes));
+          setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(loaded.nodes)));
           setEdges(loaded.edges);
           setClusters(loaded.clusters);
           setInvalidClusterEntries(loaded.invalidClusterEntries);

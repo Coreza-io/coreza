@@ -13,7 +13,7 @@ import BaseNode from "./BaseNode";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layout/BasicNodeLayout";
 import RepeaterNodeLayout from "./layout/RepeaterNodeLayout";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeId } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
@@ -35,8 +35,7 @@ const TOOL_INELIGIBLE_CATEGORIES = new Set([
 
 const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) => {
   const nodeId = useNodeId();
-  const { getNodes, getEdges } = useStableNodes();
-  const { setNodes } = useReactFlow();
+  const { getNodes, getEdges, updateNodeData } = useStableNodes();
   const executionStore = useExecutionStore();
 
   const definition = data.definition;
@@ -50,21 +49,13 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
 
   const handleToggleTool = useCallback(() => {
     if (!nodeId) return;
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                values: { ...((n.data as any).values || {}), __isTool: !isTool },
-                fieldState: { ...((n.data as any).fieldState || {}), __isTool: !isTool },
-              },
-            }
-          : n,
-      ),
-    );
-  }, [nodeId, isTool, setNodes]);
+    const canonical = getNodes().find((node) => node.id === nodeId);
+    if (!canonical) return;
+    updateNodeData(nodeId, {
+      values: { ...((canonical.data as any).values || {}), __isTool: !isTool },
+      fieldState: { ...((canonical.data as any).fieldState || {}), __isTool: !isTool },
+    });
+  }, [getNodes, isTool, nodeId, updateNodeData]);
 
   const fallbackEnabled = useMemo(() => {
     if (definition.name !== "Switch") return false;

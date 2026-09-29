@@ -10,6 +10,7 @@ import {
   releaseEditorExecutionLock,
   type NodeExecutionOutcome,
 } from "@/services/editorNodeExecution";
+import { getControlResultHandle } from "@/utils/controlResult";
 
 export type ClusterRunPhase = "idle" | "running" | "completed" | "cancelled" | "failed" | "blocked";
 export interface ClusterRunState {
@@ -32,17 +33,6 @@ interface Options {
 export interface ClusterExecutionPlan {
   memberNodeIds: readonly string[];
   executableNodeIds: readonly string[];
-}
-
-function branchHandle(output: unknown): string {
-  if (typeof output === "boolean") return String(output);
-  if (output && typeof output === "object") {
-    const value = output as Record<string, unknown>;
-    if (value.result !== undefined) return branchHandle(value.result);
-    if (value.true === true) return "true";
-    if (value.false === true) return "false";
-  }
-  return String(output ?? "");
 }
 
 function reachableNodes(starts: readonly string[], edges: readonly Edge[], allowed: ReadonlySet<string>): Set<string> {
@@ -206,7 +196,8 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
         const definition = nodeById.get(nodeId)?.data?.definition as { name?: unknown } | undefined;
         const outgoing = snapshot.edges.filter((edge) => edge.source === nodeId && allowedNodeIds.has(edge.target));
         if (definition?.name === "If" || definition?.name === "Switch") {
-          const selectedHandle = branchHandle(outcome.output);
+          const selectedHandle = getControlResultHandle(outcome.output);
+          if (!selectedHandle) throw new Error(`Node ${nodeId} returned an unsupported control result.`);
           const selectedStarts = outgoing.filter((edge) => edge.sourceHandle === selectedHandle).map((edge) => edge.target);
           const otherStarts = outgoing.filter((edge) => edge.sourceHandle !== selectedHandle).map((edge) => edge.target);
           const selectedReach = reachableNodes(selectedStarts, snapshot.edges, allowedNodeIds);

@@ -19,7 +19,7 @@ import { useNodeId, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
-import { useCanonicalGraphSnapshot } from "@/contexts/StableNodeContext";
+import { useCanonicalGraphSnapshot, useStableNodes } from "@/contexts/StableNodeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
@@ -146,6 +146,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   children,
 }) => {
   const nodeId = useNodeId();
+  const { updateNodeData } = useStableNodes();
   const canonicalGraph = useCanonicalGraphSnapshot();
   const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
@@ -353,20 +354,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
           ...LISTENER_CLEAR_STATE,
         });
         notifyStoreUpdate(); // Trigger re-render to hide streaming footer
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    output: stoppedOutput,
-                    ...LISTENER_CLEAR_STATE,
-                  },
-                }
-              : n,
-          ),
-        );
+        updateNodeData(nodeId, { output: stoppedOutput, ...LISTENER_CLEAR_STATE });
         console.log(`✅ [BaseNode] Test listener stopped successfully`);
       }
     } catch (error) {
@@ -381,7 +369,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     fieldStateHook.fieldState.credential_id,
     outputHook,
     executionStore,
-    setNodes,
+    updateNodeData,
     notifyStoreUpdate,
   ]);
 

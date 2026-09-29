@@ -44,7 +44,7 @@ live:
 - Any node or cluster launched from the editor must remain `manual`, even though the queued cluster has a durable `runId`.
 - Only the explicit backtest Run All path may invoke historical batch replay.
 - Remove behavior inference from identifiers: `runId`, `executionId`, and `workflowSessionId` identify state; they do not select execution behavior.
-- Keep the browser unable to promote a cluster request to `backtest`; the server derives and enforces manual mode for cluster scope.
+- Keep the browser unable to promote a cluster request to `backtest`; the server derives and enforces `manual` mode for cluster scope.
 
 ### 2. Propagate and enforce existing manual mode without weakening cluster boundaries
 
@@ -64,8 +64,6 @@ cluster Run button
 - Keep `executionMode` typed through the queue contract, workflow options, runtime options, and node context.
 - Preserve it in loop child/continuation jobs and recovery paths.
 - Reject or normalize any cluster job that arrives with a non-manual mode rather than allowing a cluster to become batch execution.
-
-Update the queue contract, execution options, workflow-run options, runtime options, and node execution context with a typed field. Preserve it in loop child/continuation jobs and recovery paths so work cannot silently switch to batch mode.
 
 Keep these existing protections unchanged:
 
@@ -98,7 +96,7 @@ For `executionMode: "backtest"`:
 - preserve the current awaited `session.runAll()` path;
 - preserve cancellation wiring, latest-node snapshots, partial snapshots on failure, finalization, `ownedNodeResults`, and duplicate-routing suppression.
 
-Replace `const isManual = !context?.runId` with an explicit intent check. Keep `runId` available strictly for run identity, result ownership, cancellation, and context isolation.
+Replace `const isManual = !context?.runId` with `context.executionMode === "manual"`. Keep `runId` available strictly for run identity, result ownership, cancellation, and context isolation.
 
 ### 4. Make cluster `OnBar` perform exactly one editor step
 
@@ -159,7 +157,7 @@ No new button or mode selector is required: the cluster Run button always means 
 
 No database schema migration is required. Continue using the existing `workflow_runs` record, cluster scope columns, saved node/edge snapshots, cancellation timestamps, and JSON result envelope.
 
-- Keep the public execute request compatible; derive `editor-sequence` server-side for `scope.kind === "cluster"`.
+- Keep the public execute request compatible; derive and enforce `executionMode: "manual"` server-side for `scope.kind === "cluster"`.
 - No new request field, database column, or persisted intent is required.
 - Recovery must preserve the existing `executionMode`; a validated cluster scope always defaults to `manual`.
 - Older non-cluster jobs retain their current behavior.

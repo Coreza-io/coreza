@@ -9,7 +9,7 @@
  */
 
 // Re-export unified order types (shared with PortfolioManager)
-export {
+export type {
   Order,
   OrderSide,
   OrderType,
@@ -19,6 +19,9 @@ export {
   OrderEvent,
   OrderFee,
   OrderTicket,
+} from "../../types/order";
+
+export {
   normalizeOrderType,
   isTicketPending,
 } from "../../types/order";

@@ -3,6 +3,7 @@ import type { NodeCluster } from "./types";
 import type { ClusterViewState } from "./viewState";
 import { isClusterExpanded } from "./viewState";
 import type { ClusterRunState } from "@/hooks/useClusterExecution";
+import { CLUSTER_RUNTIME_HOST_CLASS } from "./canonicalNode";
 
 export const CLUSTER_DISPLAY_ID_PREFIX = "__coreza_cluster_display__:";
 export const COMPACT_CLUSTER_WIDTH = 280;
@@ -128,7 +129,7 @@ export function projectClusterGraph(
   // every display-layer interaction so component-owned runtimes stay alive.
   const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? {
     ...node,
-    className: [node.className, "cluster-runtime-host"].filter(Boolean).join(" "),
+    className: [node.className, CLUSTER_RUNTIME_HOST_CLASS].filter(Boolean).join(" "),
     style: {
       ...node.style,
       visibility: "hidden",

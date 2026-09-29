@@ -9,12 +9,13 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeId } from "@xyflow/react";
 import {
   reconcileNodeValues,
   getSchemaSignature,
 } from "@/utils/reconcileNodeValues";
 import { isEditorExecutionLocked } from "@/services/editorNodeExecution";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 
 interface UseNodeFieldStateProps {
   definition: any;
@@ -45,7 +46,7 @@ export function useNodeFieldState({
   readOnly = false,
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
   const nodeId = useNodeId();
-  const { setNodes } = useReactFlow();
+  const { updateNodeData } = useStableNodes();
 
   // Track the schema signature so we re-reconcile when fields change
   const lastSignatureRef = useRef<string>("");
@@ -91,20 +92,7 @@ export function useNodeFieldState({
         "🔄 useNodeFieldState: backfilling missing fields for",
         definition?.name,
       );
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  values: { ...merged },
-                  fieldState: { ...merged },
-                },
-              }
-            : n,
-        ),
-      );
+      updateNodeData(nodeId, { values: { ...merged }, fieldState: { ...merged } });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getSchemaSignature(definition), nodeId, readOnly]);
@@ -118,24 +106,13 @@ export function useNodeFieldState({
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
 
     syncTimeoutRef.current = setTimeout(() => {
-      setNodes((nds) =>
-        nds.map((n) => {
-          if (n.id !== nodeId) return n;
-          const currentValues = (n.data as any)?.values || {};
-          if (JSON.stringify(currentValues) === JSON.stringify(fieldState))
-            return n;
-          return {
-            ...n,
-            data: { ...n.data, values: { ...fieldState } },
-          };
-        }),
-      );
+      updateNodeData(nodeId, { values: { ...fieldState } });
     }, 50);
 
     return () => {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
-  }, [fieldState, nodeId, setNodes, readOnly]);
+  }, [fieldState, nodeId, updateNodeData, readOnly]);
 
   // ── Single field change ──────────────────────────────────────────────
   const handleChange = useCallback(
@@ -160,25 +137,12 @@ export function useNodeFieldState({
           }
         }
 
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    values: nextFieldState,
-                    fieldState: nextFieldState,
-                  },
-                }
-              : n,
-          ),
-        );
+        if (nodeId) updateNodeData(nodeId, { values: nextFieldState, fieldState: nextFieldState });
 
         return nextFieldState;
       });
     },
-    [nodeId, setNodes, definition?.fields, readOnly, data?.workflowSessionId],
+    [nodeId, updateNodeData, definition?.fields, readOnly, data?.workflowSessionId],
   );
 
   // ── Batch field update ───────────────────────────────────────────────
@@ -188,24 +152,11 @@ export function useNodeFieldState({
 
       setFieldState((prevState) => {
         const nextFieldState = { ...prevState, ...updates };
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    values: nextFieldState,
-                    fieldState: nextFieldState,
-                  },
-                }
-              : n,
-          ),
-        );
+        if (nodeId) updateNodeData(nodeId, { values: nextFieldState, fieldState: nextFieldState });
         return nextFieldState;
       });
     },
-    [nodeId, setNodes, readOnly, data?.workflowSessionId],
+    [nodeId, updateNodeData, readOnly, data?.workflowSessionId],
   );
 
   return { fieldState, handleChange, handleFieldStateBatch };

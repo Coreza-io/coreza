@@ -43,4 +43,12 @@ describe("editor node execution service", () => {
   it("rejects a missing action while capturing, before execution can begin", () => {
     expect(() => captureEditorNodeActions(sessionId, ["missing"])).toThrow("not available");
   });
+
+  it("rejects execution outside the allowed member scope", async () => {
+    registerEditorNodeAction(sessionId, "node", async () => ({ nodeId: "node", status: "success" }));
+    await expect(executeEditorNode(sessionId, "node", { allowedNodeIds: new Set(["other"]) })).resolves.toMatchObject({
+      status: "failed",
+      error: { message: expect.stringContaining("outside the allowed execution scope") },
+    });
+  });
 });

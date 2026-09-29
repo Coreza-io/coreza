@@ -95,7 +95,7 @@ import {
   ExecutionStoreProvider,
   useExecutionStore,
 } from "@/contexts/ExecutionStoreContext";
-import { StableNodeProvider, useCanonicalGraphSync } from "@/contexts/StableNodeContext";
+import { StableNodeProvider, useCanonicalGraphSync, useStableNodes } from "@/contexts/StableNodeContext";
 import { appendNewsItem, createWaitingNewsOutput } from "@/utils/newsStream";
 import {
   isNewsStreamNode,
@@ -125,6 +125,7 @@ import {
 } from "@/domain/clusters/viewState";
 import { CLUSTER_COLLAPSE_ENABLED } from "@/domain/clusters/capabilities";
 import { resolveCanonicalSelection } from "@/domain/clusters/selection";
+import { filterCanonicalNodeChanges, repairProjectedClusterNodes } from "@/domain/clusters/canonicalNode";
 import {
   applyPositionTargets,
   capturePositions,
@@ -246,6 +247,7 @@ const WorkflowEditorContent = () => {
   const { user: authUser, session, loading: authLoading } = useAuth();
   const { toggleActivation } = useWorkflowActivation();
   const executionStore = useExecutionStore();
+  const stableNodes = useStableNodes();
   const wsRef = useRef<WebSocket | null>(null);
   const messageHandlerRef = useRef<
     (rawPayload: any, timestamp?: string) => void
@@ -429,6 +431,12 @@ const WorkflowEditorContent = () => {
   const canonicalEdgesRef = useRef(edges);
   canonicalEdgesRef.current = edges;
 
+  useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
+    setNodes((current) => current.map((node) => node.id === nodeId
+      ? { ...node, data: { ...node.data, ...patch } }
+      : node));
+  }), [setNodes, stableNodes]);
+
   useEffect(() => {
     setClusterViewState((current) => {
       const reconciled = reconcileClusterViewState(current, clusters);
@@ -498,7 +506,7 @@ const WorkflowEditorContent = () => {
   }, [cloneEdges, cloneNodes, clusters, edges, nodes]);
 
   const restoreDocument = useCallback((document: WorkflowDocument) => {
-    setNodes(stampNodesWithWorkflowSession(cloneNodes(document.nodes)));
+    setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes))));
     setEdges(cloneEdges(document.edges));
     setClusters(document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })));
   }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession]);
@@ -859,10 +867,7 @@ const WorkflowEditorContent = () => {
           setNodes((current) => applyPositionTargets(current, targets));
         }
       }
-      const canonicalChanges = changes.filter((change) => {
-        if (change.type === "add") return false;
-        return canonicalNodeIds.has(change.id);
-      });
+      const canonicalChanges = filterCanonicalNodeChanges(changes, canonicalNodeIds);
       const removedNodeIds = canonicalChanges
         .filter((change) => change.type === "remove")
         .map((change) => change.id);
@@ -1593,7 +1598,7 @@ const WorkflowEditorContent = () => {
       }));
 
       saveHistorySnapshot();
-      setNodes(stampNodesWithWorkflowSession(nodesWithDefinitions));
+      setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(nodesWithDefinitions)));
       setEdges(edgesWithHandlers);
       if (restoredClusters) {
         const validClusters: NodeCluster[] = [];
@@ -1657,7 +1662,7 @@ const WorkflowEditorContent = () => {
           });
           template = getTemplate("custom");
         }
-        setNodes(stampNodesWithWorkflowSession(template.nodes));
+        setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(template.nodes)));
         setEdges(template.edges);
         setIsActive(false);
         setLoading(false);
@@ -1669,7 +1674,7 @@ const WorkflowEditorContent = () => {
         if (loaded) {
           setWorkflowName(loaded.name);
           setIsActive(loaded.isActive);
-          setNodes(stampNodesWithWorkflowSession(loaded.nodes));
+          setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(loaded.nodes)));
           setEdges(loaded.edges);
           setClusters(loaded.clusters);
           setInvalidClusterEntries(loaded.invalidClusterEntries);

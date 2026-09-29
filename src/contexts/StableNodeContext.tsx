@@ -20,6 +20,8 @@ interface StableNodeContextValue {
   setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[]) => void;
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => CanonicalGraphSnapshot;
+  updateNodeData: (id: string, patch: Record<string, unknown>) => void;
+  registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => void) => () => void;
 }
 
 const StableNodeContext = createContext<StableNodeContextValue | null>(null);
@@ -37,6 +39,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
   const reactFlow = useReactFlow();
   const canonicalStoreRef = useRef<ReturnType<typeof createCanonicalGraphStore>>();
   const canonicalPublishedRef = useRef(false);
+  const nodeDataUpdaterRef = useRef<((id: string, patch: Record<string, unknown>) => void) | null>(null);
   if (!canonicalStoreRef.current) canonicalStoreRef.current = createCanonicalGraphStore();
   const canonicalStore = canonicalStoreRef.current;
   
@@ -57,6 +60,15 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
     },
     subscribe: canonicalStore.subscribe,
     getSnapshot: canonicalStore.getSnapshot,
+    updateNodeData: (id: string, patch: Record<string, unknown>) => {
+      nodeDataUpdaterRef.current?.(id, patch);
+    },
+    registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => void) => {
+      nodeDataUpdaterRef.current = updater;
+      return () => {
+        if (nodeDataUpdaterRef.current === updater) nodeDataUpdaterRef.current = null;
+      };
+    },
   }), [canonicalStore, reactFlow]);
   
   return (

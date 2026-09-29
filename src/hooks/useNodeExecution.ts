@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeId } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
@@ -84,8 +84,7 @@ export function useNodeExecution({
   workflowId,
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
-  const { setNodes } = useReactFlow();
-  const { getNodes, getEdges } = useStableNodes();
+  const { getNodes, getEdges, updateNodeData } = useStableNodes();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
 
@@ -409,13 +408,7 @@ export function useNodeExecution({
             input: inputOverride ?? currentSelectedInput,
             output: overrideOutput,
           });
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, output: overrideOutput } }
-                : n,
-            ),
-          );
+          updateNodeData(nodeId, { output: overrideOutput });
         }
         setIsSending(false);
         return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
@@ -611,13 +604,7 @@ export function useNodeExecution({
             });
             setLastOutput(finalOut);
             data.output = finalOut;
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === nodeId
-                  ? { ...n, data: { ...n.data, output: finalOut } }
-                  : n,
-              ),
-            );
+            updateNodeData(nodeId, { output: finalOut });
             return { nodeId: outcomeNodeId, status: "success", output: finalOut };
           }
 
@@ -644,13 +631,7 @@ export function useNodeExecution({
           };
           setLastOutput(uiOut);
           data.output = uiOut;
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, output: uiOut } }
-                : n,
-            ),
-          );
+          updateNodeData(nodeId, { output: uiOut });
 
           executionStore.setNodeData(nodeId!, {
             input: effectiveInput,
@@ -769,7 +750,12 @@ export function useNodeExecution({
           const listeningDeps = {
             nodeId: nodeId!,
             executionStore,
-            setNodes,
+            setNodes: (updater) => {
+              const current = getNodes();
+              const updated = updater([...current]);
+              const next = updated.find((candidate) => candidate.id === nodeId);
+              if (next) updateNodeData(nodeId!, { ...next.data });
+            },
             setLastOutput,
             apiClient,
             accessToken: session?.access_token,
@@ -846,13 +832,7 @@ export function useNodeExecution({
           input: effectiveInput,
           output: finalOutput,
         });
-        setNodes((nds) =>
-          nds.map((n) =>
-            n.id === nodeId
-              ? { ...n, data: { ...n.data, output: finalOutput } }
-              : n,
-          ),
-        );
+        updateNodeData(nodeId!, { output: finalOutput });
         return { nodeId: outcomeNodeId, status: "success", output: finalOutput };
       } catch (err: any) {
         if (err?.name === "AbortError" || !executionIsCurrent()) {
@@ -905,13 +885,7 @@ export function useNodeExecution({
 
         if (nodeId) {
           executionStore.setNodeData(nodeId, { output: errOutput });
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === nodeId
-                ? { ...n, data: { ...n.data, output: errOutput } }
-                : n,
-            ),
-          );
+          updateNodeData(nodeId, { output: errOutput });
         }
         const message = typeof errOutput.error === "string" ? errOutput.error : "Action failed";
         return {
@@ -936,7 +910,7 @@ export function useNodeExecution({
       overrideOutput,
       data,
       executionStore,
-      setNodes,
+      updateNodeData,
       session?.access_token,
       getEdges,
     ],

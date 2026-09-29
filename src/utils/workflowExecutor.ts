@@ -12,6 +12,7 @@ import { Node, Edge } from "@xyflow/react";
 import ExecutionContext from "./executionContext";
 import { acceptEditorExecution } from "./executionGeneration";
 import { executeEditorNode } from "@/services/editorNodeExecution";
+import { getControlResultHandle } from "./controlResult";
 
 export interface ExecutorContext {
   nodes: Node[];
@@ -172,38 +173,7 @@ export class WorkflowExecutor {
   }
 
   private getBranchHandleKey(result: unknown): string {
-    const branchValue =
-      result && typeof result === "object" && "data" in result
-        ? result.data
-        : result;
-
-    if (typeof branchValue === "boolean") {
-      return branchValue.toString();
-    }
-
-    if (typeof branchValue === "string") {
-      return branchValue;
-    }
-
-    if (
-      branchValue &&
-      typeof branchValue === "object" &&
-      ("true" in branchValue || "false" in branchValue)
-    ) {
-      const branchRecord = branchValue as Record<string, unknown>;
-      return branchRecord.true === true
-        ? "true"
-        : branchRecord.false === true
-          ? "false"
-          : "";
-    }
-
-    const fallbackValue =
-      result && typeof result === "object" && "output" in result
-        ? result.output
-        : result;
-
-    return String(fallbackValue ?? result);
+    return getControlResultHandle(result);
   }
 
   constructor(private context: ExecutorContext) {
@@ -350,21 +320,7 @@ export class WorkflowExecutor {
     completedNodes: Set<string>,
   ): Promise<void> {
     // Normalize result to handle key
-    let handleKey: string;
-
-    if (typeof result === "boolean") {
-      handleKey = result.toString(); // "true" or "false"
-    } else if (
-      result &&
-      typeof result === "object" &&
-      ("true" in result || "false" in result)
-    ) {
-      // Handle current If node format: { true: boolean, false: boolean }
-      handleKey =
-        result.true === true ? "true" : result.false === true ? "false" : "";
-    } else {
-      handleKey = String(result);
-    }
+    const handleKey = getControlResultHandle(result);
 
     // Look up the branch map
     const branchMap = this.conditionalMap.get(nodeId) || {};

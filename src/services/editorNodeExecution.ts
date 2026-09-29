@@ -71,6 +71,9 @@ export async function executeEditorNode(
   request?: NodeExecutionRequest,
 ): Promise<NodeExecutionOutcome> {
   if (request?.signal?.aborted) return { nodeId, status: "cancelled", reason: "Execution was cancelled." };
+  if (request?.allowedNodeIds && !request.allowedNodeIds.has(nodeId)) {
+    return { nodeId, status: "failed", error: { message: `Node ${nodeId} is outside the allowed execution scope.` } };
+  }
   const lock = executionLocks.get(sessionId);
   if (lock && request?.lockToken !== lock) {
     return { nodeId, status: "failed", reason: "Another editor execution is active.", error: { message: "Another editor execution is active." } };
@@ -117,6 +120,9 @@ export function captureEditorNodeActions(
     actions: captured,
     execute: async (nodeId: string, request?: NodeExecutionRequest): Promise<NodeExecutionOutcome> => {
       if (request?.signal?.aborted) return { nodeId, status: "cancelled", reason: "Execution was cancelled." };
+      if (request?.allowedNodeIds && !request.allowedNodeIds.has(nodeId)) {
+        return { nodeId, status: "failed", error: { message: `Node ${nodeId} is outside the allowed execution scope.` } };
+      }
       const action = captured.get(nodeId);
       if (!action) return { nodeId, status: "failed", error: { message: `Node ${nodeId} is outside the captured execution plan.` } };
       return action(request);

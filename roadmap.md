@@ -5,17 +5,19 @@
 
 ## Cluster completion
 - [x] Deploy and verify cluster-run database contract
-- [ ] Complete cluster run-button execution, cancellation, and recovery
-- [ ] Validate cluster-run tests, browser behavior, and release build
-- [ ] Send boundary/reference snapshots with stable retry identity
-- [ ] Preserve exact entry packets and routed boundary outputs
-- [ ] Reconcile durable cancellation and active-run recovery
-- [ ] Canonical document and command paths
+- [x] Replace the folder button's queued run with serial normal editor node actions
+- [x] Add editor-local cancellation and stale-session protection
+- [x] Protect canonical nodes from collapsed display replacements and repair leaked flags
+- [x] Validate cluster browser behavior and release build
+- [ ] Complete editor-owned node execution independent of mounted node callbacks
+- [ ] Enforce cluster scope through every nested control/listener dispatch
+- [ ] Validate boundary/reference snapshots and immediate expression edits
+- [x] Canonical document and command paths
 - [ ] Validation, menu, frame, and editing parity
 - [ ] Persistence, recovery, history, and snapshots
 - [ ] Runtime-independent execution controllers
-- [ ] Compact expand/collapse projection
-- [ ] Browser and regression acceptance
+- [x] Compact expand/collapse projection
+- [x] Browser and focused regression acceptance
 
 ## External blockers
 - [ ] Set a shorter authentication email-code expiry in Supabase settings

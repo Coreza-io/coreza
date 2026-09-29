@@ -1,279 +1,224 @@
-# Complete PR #766 and fix standalone Consolidator execution context
+# Make cluster execution match sequential manual node execution
 
-## Objective
+## Goal
 
-After running a collapsed `BacktestInit → OnBar` cluster, a downstream Time Bar Consolidator must:
+The cluster Run button must behave like the user manually pressing Execute on each eligible node inside the cluster, in dependency order, once per click.
 
-- show and submit the same canonical upstream source and exact value the Input Data panel displays;
-- execute a valid saved candle through its own authenticated editor-state lifecycle;
-- never depend on, revive, or mutate the completed cluster run’s in-memory context;
-- truthfully return a held working candle (`emitted: false`) until a later bucket input completes the prior candle;
-- preserve cluster execution scope, result ownership, cancellation, pins, falsy values, and history behavior.
+For a cluster containing `BacktestInit → OnBar`:
 
-Full historical replay is not part of a single-node Execute. It remains a per-bar strategy run or a separately designed replay operation.
+1. `BacktestInit` initializes a backtest session once and returns its normal `ready` output.
+2. `OnBar` advances that session by exactly one manual bar/symbol step and returns that candle.
+3. No historical replay and no `BacktestSession.runAll()` occurs.
+4. Nodes outside the cluster never execute.
+5. Both node outputs appear in their normal output panels.
 
-## Verified baseline and scope
+The asynchronous cluster run record and queue may remain for ownership, cancellation, status, and result delivery. Being queued or having a `runId` must not change manual node semantics.
 
-The attached review targets PR #766 at commit `660794e4662e9c0f78b4d628bd1ec2114fa46946`, but the current checkout still contains the older implementation:
+## Confirmed cause
 
-- `StableNodeContext` is imperative/ref-backed, `useCanonicalGraphSync` writes during render, and `InputPanel` still reads React Flow’s projected graph.
-- `BaseNode` recalculates ancestry from imperative getters using displayed edge count and submits `selectedPrevNode.data.output ?? {}` instead of the store-backed value shown by InputPanel.
-- `useNodeExecution` independently reads React Flow nodes/edges, uses truthy fallbacks, and sends `workflowSessionId` without an explicit execution-context mode or operation identity.
-- `useClusterExecution` still has state-dependent polling, captured `currentNodeIds`, non-cancellable delay, and retry/submission ownership gaps.
-- `WorkflowExecutionResult` has no `resultFinalized` or per-node outcome contract in this checkout.
-- `POST /storage/consolidator` selects `runId ?? workflowSessionId ?? backtestId`, only calls `getExistingContext`, and returns 404 when the chosen process-local context does not exist.
-- The Consolidator route test pre-creates its editor context, so it does not cover the first independent node Execute that fails for the user.
-- `DataContextManager` stores contexts in a process-local map; its periodic cleanup only warns when the map is large and implements no expiration.
-- No new database table is required for the primary fix. Existing workflow ownership can be checked through the backend repository; durable/shared editor state can use the established Redis cache with scoped keys and expiry.
+The current cluster path is already compiled and queued with `executionMode: "manual"`, a cluster scope, entry activations, and `allowedExecutableNodeIds`. However, `BacktestInit` currently decides whether it is manual using `!context.runId`. Every queued cluster has a durable `runId`, so it is incorrectly treated as batch execution and calls `session.runAll()`.
 
-Therefore implementation must include the still-missing PR #766 prerequisites plus the new Consolidator lifecycle fix. Already-correct consolidation math and scoped workflow execution must be preserved.
+This is an identity-versus-behavior bug: `runId` identifies and tracks an execution; it must not select backtest behavior.
 
-## Implementation plan
+There is a second parity requirement. The standalone editor executes `BacktestInit` through `/backtest/init`, then executes `OnBar` through `/backtest/onbar`, where `session.nextBar(true)` advances one manual step. The scoped workflow engine currently routes the initialization result into the regular `OnBar` executor, whose existing path formats an already-supplied bar rather than advancing the session. Removing `runAll()` alone would therefore not produce full editor parity.
 
-### 1. Lock the failing request and behavioral contract with tests
+## End-to-end implementation
 
-**Areas:** browser/component request capture, `coreza-backend/tests/consolidatorRoute.test.ts`
+### 1. Define an explicit execution-intent contract
 
-- Reproduce the exact flow: run a cluster containing BacktestInit and OnBar, leave it collapsed, select the downstream Consolidator, and click its own Execute button.
-- Assert the outgoing request contains:
-  - explicit mode `editor`;
-  - authenticated workflow ID and editor session ID;
-  - downstream Consolidator node ID;
-  - workflow/configuration revision or deterministic configuration fingerprint;
-  - unique operation ID;
-  - resolved candle, symbol, source/target timeframe, timezone, and anchor.
-- Add a failing backend test where no context is pre-seeded. A valid first editor operation must succeed and return a working candle.
-- Retain a separate strict active-run test: a missing/completed `runId` must fail and must not implicitly create an editor context.
-- Log only structured identity/mode/lookup/error-code fields; never log credentials or complete candle histories.
-
-### 2. Finish the canonical graph foundation from PR #766
-
-**Areas:** `src/contexts/StableNodeContext.tsx`, `src/pages/WorkflowEditor.tsx`, a focused canonical graph store/helper
-
-- Replace render-time canonical ref mutation with a stable external-store snapshot and `useSyncExternalStore` subscription.
-- Publish canonical nodes and edges in a layout/commit effect as one consistent document snapshot.
-- Keep imperative `getNodes`, `getEdges`, and `getNodeById` access for callback-heavy paths, backed by the same canonical snapshot.
-- Notify subscribers for node/edge add, remove, reconnect, workflow replacement, and semantic node-data changes; avoid ancestry rebuilds for display-only collapse and drag position changes.
-- Keep historical execution views isolated on their supplied saved graph rather than the live editor graph.
-- Add snapshot identity and notification-count tests.
-
-### 3. Finish canonical InputPanel selection and live data resolution
-
-**Areas:** `src/utils/InputPanel.tsx`, new pure input-selection helpers, execution-store subscriptions
-
-- In live mode, traverse only canonical nodes/edges; in read-only mode, retain the saved historical graph and execution records.
-- Resolve selection deterministically:
-  1. retain the selected real node while it remains upstream;
-  2. otherwise prefer a direct incoming Loop `done` source;
-  3. otherwise choose the first deterministic upstream ancestor;
-  4. otherwise clear selection.
-- Never identify synthetic nodes by prefix alone; validate against canonical membership/projection metadata.
-- Resolve displayed live data by own-property presence:
-  1. execution-store `output`;
-  2. canonical node `data.output`;
-  3. intended canonical `data.input` fallback;
-  4. empty state.
-- Preserve explicit `null`, `0`, `false`, empty string, arrays, objects, and pinned output.
-- Subscribe to execution-store updates so hydrated cluster results update an open collapsed panel immediately.
-- Pass only the resolved canonical source ID into draggable field references; collapse/expand must not rewrite existing expressions.
-
-### 4. Make BaseNode and node Execute consume the same semantic input
-
-**Areas:** `src/components/nodes/BaseNode.tsx`, `src/hooks/useNodeExecution.ts`, shared input helpers
-
-- Remove displayed-edge-count ancestry invalidation. Subscribe BaseNode to the canonical topology snapshot/revision so same-count reconnections, deletes, and workflow replacement recompute ancestors.
-- Reuse the same source-selection resolver and live-data resolver used by InputPanel.
-- Make the Execute handler receive the resolved canonical source ID/data or derive them from the shared canonical/store adapter; do not independently reconstruct a different selection.
-- Replace semantic `useReactFlow().getNodes/getEdges` reads in payload building, expression identity lookup, support-node attachment, Loop edges, and BacktestInit graph serialization with canonical getters/snapshots. Keep React Flow only for visual mutations such as updating rendered node output.
-- Preserve values by property presence. Remove fallbacks that replace valid `null`, `0`, `false`, empty string, arrays, or empty objects with field state or stale node data.
-- Define root-node fallback explicitly instead of using `!effectiveInput` or `Object.keys` as a universal missing-input test.
-- Ensure full-graph payloads contain canonical nodes/edges, never compact cluster nodes or projected boundary edges.
-
-### 5. Introduce an explicit Consolidator execution-context request
-
-**Areas:** frontend request types/building, `coreza-backend/src/routes/storage.ts`, route validation schema
-
-Use a discriminated contract rather than silent ID precedence:
+Add a server-owned execution intent distinct from the existing execution mode and IDs:
 
 ```text
-editor:
-  contextMode, workflowId, workflowSessionId, nodeId,
-  configFingerprint/revision, operationId, resolved input
+executionMode:
+  manual | live | backtest
 
-active-run:
-  contextMode, workflowId, runId, nodeId, resolved input
+executionIntent:
+  editor-sequence | workflow-batch
 ```
 
-- Reject missing mode, conflicting identity fields, malformed UUID/session/operation values, missing node identity, or incomplete configuration with stable error codes.
-- For `active-run`, verify the run belongs to the authenticated user/workflow and remains active before accessing its context. Missing/completed run context stays an error.
-- For `editor`, verify workflow ownership from the authenticated token and saved workflow record; never trust `userId` from the request.
-- Never copy a completed cluster run ID into a downstream editor request.
-- Include node ID and configuration fingerprint in the editor-state identity; two Consolidator nodes with identical settings must not share state.
+- `executionMode` continues to select the runtime family and node policies.
+- `executionIntent` states whether backtest controls should perform one editor-style action or complete the historical run.
+- A cluster request is assigned `editor-sequence` by `WorkflowExecutionService`; the browser does not get to override this trusted decision.
+- Existing whole-workflow/backtest launch paths are assigned `workflow-batch` explicitly where they are expected to process all bars.
+- Direct `/backtest/init` and `/backtest/onbar` routes keep editor behavior explicitly rather than relying on whether an ID is absent.
+- Include the intent in deterministic plan/fingerprint material where relevant so an idempotency key cannot identify two requests with different behavior.
 
-### 6. Build an owned editor Consolidator state service
+### 2. Propagate intent without weakening cluster boundaries
 
-**Primary addition:** a backend editor-context service/adapter, with route integration
+Carry the intent through every layer that can create or continue work:
 
-- Keep runtime/backtest `DataContext` ownership unchanged. Add a dedicated editor state lifecycle rather than weakening `getExistingContext` for active runs.
-- Scope editor state by authenticated user, workflow, editor session, node, and configuration fingerprint.
-- Prefer the existing Redis cache for deployment-safe continuity across API processes:
-  - namespaced key through `RedisKeys`/existing execution-key conventions;
-  - serialized validated Consolidator state only, not a complete `DataContext`;
-  - explicit sliding or fixed TTL;
-  - atomic compare/update or lock to prevent concurrent lost updates;
-  - explicit reset/delete operation;
-  - no persistence in Supabase and no new table.
-- If Redis is unavailable under existing cache policy, return a structured state-unavailable error; do not silently create divergent per-process state.
-- Validate bar and configuration before allocating persistent state.
-- Store state only after a successful consolidation step.
-- Bind each stored state to its owner, workflow, session, node, and config fingerprint; reject any mismatch.
-- Make expiration behavior explicit: a request claiming to continue an expired series returns `EDITOR_CONTEXT_EXPIRED`; only an explicit fresh/reset request starts over.
-- Add bounded TTL cleanup through Redis expiry; do not rely on `DataContextManager.cleanupStaleContexts`.
+```text
+cluster Run button
+  → POST /workflows/:id/execute with cluster scope
+  → saved-revision cluster plan
+  → workflow run record and queue job
+  → worker
+  → executeWorkflow / WorkflowRun
+  → runtime NodeExecutionContext
+  → BacktestInit and OnBar
+```
 
-### 7. Define idempotency, reset, and source-series semantics
+Update the queue contract, execution options, workflow-run options, runtime options, and node execution context with a typed field. Preserve it in loop child/continuation jobs and recovery paths so work cannot silently switch to batch mode.
 
-**Areas:** editor context service, route contract, frontend node state/control
+Keep these existing protections unchanged:
 
-- Treat every editor Execute as an operation with a stable client-generated `operationId` retained across transport retries.
-- Atomically record the last/recent operation result with the state so retrying the same operation returns the same response without adding the bar twice.
-- Apply the existing out-of-order/duplicate timestamp rules from `TimeBarConsolidator`; do not silently double volume.
-- Establish deterministic series identity:
-  - first valid operation starts a fresh series;
-  - chronological new input advances it;
-  - symbol/timeframe/timezone/anchor change creates a new fingerprint and requires a fresh/reset series;
-  - a newly accepted upstream cluster run must not append automatically to the prior run’s partial bucket.
-- Carry source provenance (for example accepted upstream run ID/output generation) in editor state so a changed source run can be detected without using that run’s execution context.
-- Add an explicit Reset action only for the Consolidator’s editor state, with confirmation/disabled/loading feedback and a backend ownership check. Do not reset runtime/backtest state.
-- Clarify the result: one 1h input normally returns `emitted: false`, `bar: null`, and `workingBar`; a fifth boundary input emits the completed 4h bucket. Never synthesize missing historical bars or flush an incomplete final bucket.
+- saved workflow revision and ownership validation;
+- deterministic cluster membership and internal edges;
+- boundary input/reference snapshots;
+- credential recovery and validation from the owned saved node configuration;
+- `allowedExecutableNodeIds` checks during enqueue, execution, and routing;
+- fail-fast behavior, idempotency, cancellation, and finalized run results.
 
-### 8. Reuse one consolidation algorithm and one output contract
+Do not use `scope.kind === "cluster"`, `runId`, trigger name, or node name as a hidden substitute for execution intent after the service has assigned it.
 
-**Areas:** `coreza-backend/src/engine/consolidation/consolidatorShared.ts`, `ConsolidatorExecutor.ts`, `storage.ts`, frontend error parsing
+### 3. Correct `BacktestInit` behavior
 
-- Continue using `runConsolidatorStep` for editor route and runtime executor; do not duplicate OHLCV aggregation.
-- Preserve exact timeframe-ratio validation, timezone/DST/anchor behavior, input-driven bucket completion, and `emitted/bar/workingBar` payload.
-- Keep runtime state keys stable unless parity tests prove a required change. Namespace editor state outside the internal algorithm key so runtime warmup/backtest behavior is untouched.
-- Return `StandardNodeOutput` consistently for success and failure, with stable codes such as:
-  - `EDITOR_CONTEXT_EXPIRED`;
-  - `EXECUTION_CONTEXT_COMPLETED`;
-  - `EXECUTION_CONTEXT_UNAVAILABLE`;
-  - `INVALID_BAR`;
-  - `INVALID_CONSOLIDATOR_CONFIG`;
-  - `INVALID_CONSOLIDATOR_STATE`;
-  - `DUPLICATE_OPERATION_CONFLICT`.
-- Preserve machine-readable code through `useNodeExecution` instead of reducing the response to a JSON-string error.
-- Render `emitted: false` as a successful “Building the current 4h candle” state, not an error.
+Refactor `BacktestExecutor.executeBacktestInit` so initialization and historical replay are separate decisions.
 
-### 9. Finish descriptor-owned cluster polling and delivery
+For `editor-sequence`:
 
-**Area:** `src/hooks/useClusterExecution.ts`
+- validate ownership and required configuration;
+- recover and validate the selected credential before creating side effects;
+- fetch/prepare the configured historical data and warm-up state exactly as standalone manual initialization does;
+- create and initialize one `BacktestSession` and simulated broker;
+- return the normal BacktestInit output with `mode: "manual"` and `status: "ready"`;
+- do not call `session.runAll()`;
+- do not attach `ownedNodeResults` or `suppressRouting`, because the outer scoped runtime must route the initialization output to the next cluster member;
+- retain the initialized session after successful completion so an included or later manually executed `OnBar` can advance it.
 
-- Replace the `states`-dependent effect with a poll loop owned by one immutable accepted descriptor.
-- Permit one request in flight and one cancellable delay; abort/settle both on terminal state, workflow switch, unmount, supersession, or generation change.
-- Keep submitted member IDs immutable for response validation, but read current document membership from a current ref/canonical snapshot at hydration time.
-- Skip deleted nodes and guard against ID reuse by also checking current workflow session/generation and, where available, submitted node identity/fingerprint.
-- After every await, revalidate workflow/session/run/cluster/revision/member scope/generation before any store or UI write.
-- Use descriptor-scoped cleanup so an old poll, retry, cancel, or submission `finally` cannot clear or overwrite a newer run.
-- Give output retry its own AbortController/token; it reads the same run and never submits another execution.
-- Preserve pending reset only after server acceptance, pin protection, fixed cadence, and current result normalization.
+For `workflow-batch`:
 
-### 10. Finish the run-result completeness and cancellation contract
+- preserve the current awaited `session.runAll()` path;
+- preserve cancellation wiring, latest-node snapshots, partial snapshots on failure, finalization, `ownedNodeResults`, and duplicate-routing suppression.
 
-**Areas:** `WorkflowExecutionResult`, workflow runtime/worker, run repository/query service, Redis run storage, `persistedNodeResult`, cluster hydration/history
+Replace `const isManual = !context?.runId` with an explicit intent check. Keep `runId` available strictly for run identity, result ownership, cancellation, and context isolation.
 
-- Add versioned result metadata inside the existing `workflow_runs.result` JSON:
-  - `resultFinalized`;
-  - per-member `nodeOutcomes` (`executed`, `failed`, `skipped`, `cancelled`, `not-executed`);
-  - `nodeResults`, `executionOrder`, timing/boundary outputs, and partial-result indication.
-- Do not add a new table or column unless implementation proves the JSON envelope cannot be finalized safely.
-- Distinguish:
-  - terminal run with finalized complete/partial result;
-  - terminal status observed before result finalization;
-  - malformed/missing envelope;
-  - explicitly skipped/cancelled/not-executed member.
-- Hydrate all valid member entries even if a sibling is malformed; preserve explicit falsy output and pins.
-- Keep a bounded poll/backoff for terminal-but-not-finalized results, then expose retryable output-unavailable state without inventing not-executed markers.
-- Preserve active cancellation ownership: queued work removed before start may finalize empty cancellation; active work remains cancelling until its worker persists available snapshots and final outcome. Prevent cancellation acknowledgements from overwriting worker-finalized results.
-- Keep database and Redis result envelopes equivalent and preserve all fields during synchronization.
-- Existing `workflow_runs` scope columns and validation trigger remain sufficient; no database migration is planned for this feature.
+### 4. Make cluster `OnBar` perform exactly one editor step
 
-### 11. Preserve owned backtest and cluster boundaries
+Extract a shared authenticated/session-owned manual-step operation used by both the `/backtest/onbar` route and the engine’s `OnBar` handling.
 
-**Areas:** Backtest executor/session, execution runtime, workflow worker
+When `OnBar` runs under `editor-sequence`:
 
-- Verify compiled and dynamic backtest paths execute Consolidator per ordered bar using the run-owned context.
-- Keep `BacktestInit` owned batch awaiting, latest snapshot collection, and duplicate-routing suppression.
-- Preserve partial snapshots on failure and cancellation.
-- Handle an already-aborted parent signal before attaching listeners.
-- Ensure cluster scope containing only BacktestInit and OnBar never executes the downstream Consolidator.
-- Keep manual stepping behavior unchanged and clean listeners/sessions once on all exits.
+- resolve `backtest_id` from the immediately upstream BacktestInit result using the normal parameter resolver;
+- look up the initialized session and verify it belongs to the authenticated user and workflow before advancing it;
+- call `session.nextBar(true)` exactly once;
+- return the same standardized output shape as standalone OnBar, including `BarSeries`, `barIndex`, symbol progress, `isLast`, and total bars;
+- route that one output to the next internal cluster node once;
+- if the session is already finished, return the same terminal result as standalone OnBar without restarting or replaying it.
 
-### 12. Automated test matrix
+When OnBar receives an actual bar inside `workflow-batch`, preserve the current hot-path transformation and do not call the manual-step operation. This prevents recursion when `runAll()` drives the strategy graph per candle.
 
-**Frontend helper/component tests**
+Do not duplicate session stepping logic between the route and executor. The shared operation must enforce ownership, missing-session handling, concurrent-step conflict, and output normalization consistently.
 
-- Canonical snapshots, commit-phase publication, notification counts, and history isolation.
-- Expanded/collapsed upstream order and real IDs for `BacktestInit → OnBar → Consolidator`.
-- Selection repair, Loop `done`, same-count reconnect, deletion, two collapsed clusters, unrelated-member exclusion, and 20 toggles.
-- Store-only hydrated output is exactly what Execute submits.
-- `null`, `0`, `false`, empty string, arrays, objects, pins, and drag-reference IDs remain intact.
-- Canonical full-graph/support-node payload serialization contains no synthetic IDs.
+### 5. Preserve general cluster execution semantics
 
-**Cluster hook tests with fake timers/deferred promises**
+- Start from the compiled cluster entry activations and execute eligible members through internal main edges in deterministic dependency order.
+- Execute each ordinary eligible node at most once for this one-shot cluster invocation, subject to established branch behavior; skipped branches remain explicitly skipped.
+- Attachment/tool nodes remain attached capabilities and are not independently invoked.
+- Pinned nodes remain non-executing and provide their pinned outputs unchanged, including falsy values.
+- Nodes outside the cluster may provide explicit boundary/reference snapshots but must never be executed or mutated.
+- Keep existing Loop/control-node semantics unchanged in this focused fix; do not make backtest `runAll()` the mechanism for traversing a cluster.
+- A cluster containing only BacktestInit initializes and stops.
+- A cluster containing `BacktestInit → OnBar` initializes and advances one step.
+- A cluster containing `BacktestInit → OnBar → Indicator/Compute/...` advances one step and runs each reachable downstream member against that one OnBar output.
+- A cluster containing OnBar with a valid boundary `backtest_id` advances the existing session once; a missing, expired, foreign, or completed-invalid session returns a structured error.
 
-- One non-overlapping request per interval; cancelled delay settles.
-- Terminal hydration once; malformed/partial/finalized outcomes.
-- Delete or replace member during run does not receive stale output.
-- Workflow switch, retry switch, generation supersession, and late submission/poll/retry responses are ignored and release only their own controls.
-- Retry performs only status GET; failed prepare/execute keeps prior useful output.
+### 6. Session lifecycle, failure, and cancellation
 
-**Consolidator route/service tests**
+- A successful editor-sequence initialization keeps the session available, matching standalone editor behavior.
+- Re-running a cluster containing BacktestInit creates a fresh initialization and replaces the prior session through the existing workflow/node session scope behavior; it then advances only the new session if OnBar is included.
+- Cancellation before or during initialization stops the cluster run and cleans partially created resources.
+- Cancellation during a manual OnBar step is checked before and after the step; never start another step.
+- A downstream node failure preserves already-produced BacktestInit/OnBar snapshots in the finalized run result and does not trigger historical replay.
+- Do not auto-finalize the whole backtest after one editor-sequence step. Explicit Run All/finalize controls retain ownership of that behavior.
+- Prevent concurrent cluster/manual OnBar actions from advancing the same session twice; return the existing step-in-progress conflict deterministically.
 
-- Fresh editor Execute succeeds without pre-created `DataContext`.
-- Completed cluster then downstream Execute uses a fresh editor state namespace.
-- Missing/completed active-run context remains a structured error with no implicit creation.
-- Cross-user/workflow/session/node access is rejected; two tabs and two identical Consolidator nodes remain isolated.
-- First four hourly bars hold; fifth emits; one saved bar never invents history.
-- Same operation retry is idempotent; a distinct duplicate/out-of-order bar follows defined validation.
-- Config/source-generation change requires reset/fresh series; Reset is scoped and authorized.
-- TTL expiry, Redis unavailable, API restart, and multi-instance concurrency have deterministic behavior.
-- Success/error responses conform to `StandardNodeOutput` and preserve stable codes.
+### 7. Result delivery and UI behavior
 
-**Owned runtime/integration tests**
+Keep the current queued run lifecycle in the cluster control:
 
-- Compiled/dynamic full strategy parity, final snapshots, no duplicate routing, failure partial output, cancellation before/during initialization and mid-run, already-aborted signal, manual stepping, and cluster boundary isolation.
-- Database/Redis status paths return equivalent finalized-result metadata; owner access succeeds and cross-user access fails.
+- save the workflow first and submit the saved revision;
+- show preparing, queued, running, cancelling, completed, failed, and cancelled states;
+- poll the owned run and validate workflow, cluster, revision, members, session generation, and run identity;
+- hydrate each submitted member’s finalized result into the execution store;
+- display BacktestInit’s `ready` result and OnBar’s single candle in their respective output panels;
+- mark genuinely skipped/not-executed members without inventing output;
+- preserve pins and exact falsy values;
+- allow output retry to re-read results only, never execute the cluster again.
 
-**Real browser acceptance**
+No new button or mode selector is required: the cluster Run button always means editor-style one-shot execution. Full historical replay remains an explicit backtest Run All action.
 
-1. Build and save `BacktestInit → OnBar → Time Bar Consolidator`; cluster only the first two nodes.
-2. Run and collapse the cluster; keep the Consolidator Input Data panel open.
-3. Confirm real canonical options/data remain stable through collapse, rename, movement, and repeated toggles.
-4. Select the saved OnBar candle and Execute the Consolidator.
-5. Confirm the first valid candle succeeds as a held `workingBar`, with no missing-context error and no completed-run resurrection.
-6. Retry the same operation/network response and confirm no double count; send chronological bars until the boundary and confirm the expected completed bucket.
-7. Reset/change configuration/new upstream run and confirm clean isolation.
-8. Verify delete-during-cluster-run, workflow navigation, pinning, cancellation/failure, and retry-output cannot write stale results.
+### 8. Database and API compatibility
 
-### 13. Delivery and verification gates
+No database schema migration is required. Continue using the existing `workflow_runs` record, cluster scope columns, saved node/edge snapshots, cancellation timestamps, and JSON result envelope.
 
-1. Add failing reproductions for fresh editor context and panel-versus-submitted-input mismatch.
-2. Land canonical graph/InputPanel/BaseNode/useNodeExecution parity.
-3. Land explicit editor context contract, Redis-backed lifecycle, idempotency, reset, and structured outputs.
-4. Land current-membership cluster hydration and descriptor-owned polling/retry.
-5. Land result finalization/cancellation parity and owned-runtime integration coverage.
-6. Run focused frontend/backend tests, full repository lint/type/build/module-boundary checks, and the real Playwright scenario.
-7. Reproduce and resolve the reported Docker `npm run build` heap OOM separately; it is a CI resource failure, not proof of feature type correctness. Re-run build-and-scan to green.
+- Keep the public execute request compatible; derive `editor-sequence` server-side for `scope.kind === "cluster"`.
+- Persist the resolved intent in the run scope snapshot/result metadata if needed for audit and recovery without adding a column.
+- Recovery must reconstruct the same intent from trusted persisted scope data; it must never default a cluster run to `workflow-batch`.
+- Older queued cluster jobs without the new field must use a safe compatibility rule based on their validated cluster scope: `editor-sequence`.
+- Older non-cluster jobs retain their current behavior.
+
+## Test plan
+
+### Backtest executor and session tests
+
+- BacktestInit with a cluster run ID and `editor-sequence` initializes once, reports `ready`, and never calls `runAll()`.
+- The same node with `workflow-batch` still awaits `runAll()`, collects owned snapshots, suppresses duplicate routing, and cleans its owned session.
+- A run ID alone has no effect on execution behavior.
+- Direct editor initialization remains initialization-only.
+- Missing credentials fail before backtest/session side effects; a valid saved credential works in cluster and standalone paths.
+
+### Scoped engine integration tests
+
+- `BacktestInit → OnBar` executes both nodes once and `nextBar(true)` exactly once.
+- The OnBar result is the first expected candle/symbol step, not the final historical candle.
+- `BacktestInit → OnBar → Compute` runs Compute once with that exact OnBar output.
+- BacktestInit-only cluster performs zero bar steps.
+- OnBar-only cluster advances an existing owned session once.
+- A second cluster click with BacktestInit creates a fresh session and again returns only its first step.
+- A downstream node outside the cluster never executes.
+- Batch workflow execution still processes every historical bar and does not double-route owned results.
+- Cluster and manual endpoint outputs match structurally for BacktestInit and OnBar.
+
+### Security, lifecycle, and result tests
+
+- Cross-user/workflow session access is rejected.
+- Revision mismatch, changed membership, missing boundary values, malformed credentials, and invalid scope fail before execution.
+- Cancellation before initialization, during data loading, and during a step produces finalized partial outcomes without starting further nodes.
+- Concurrent steps return a conflict and do not move the cursor twice.
+- Queue retry/idempotency does not initialize or step twice.
+- Recovery preserves editor-sequence intent.
+- Database and Redis result paths preserve BacktestInit and OnBar outputs, execution order, node outcomes, and terminal status.
+
+### Frontend and browser acceptance
+
+1. Save a workflow containing BacktestInit, OnBar, and at least one downstream node.
+2. Cluster BacktestInit and OnBar, then click the cluster Run button.
+3. Confirm BacktestInit shows `ready` and OnBar shows exactly the first candle/symbol step.
+4. Confirm the run completes quickly and does not progress through the historical range.
+5. Confirm no node outside the cluster runs.
+6. Expand/collapse the cluster and verify both outputs remain visible and selectable.
+7. Run a downstream node manually using the hydrated OnBar output.
+8. Run the cluster again and verify a fresh initialization plus one step, with no stale output or duplicate advance.
+9. Separately use the explicit full backtest Run action and confirm it still processes all bars.
+10. Verify cancel, retry-output, workflow navigation, and reload do not apply stale results.
+
+## Delivery order
+
+1. Add failing tests proving a cluster run ID incorrectly triggers `runAll()` and proving cluster OnBar does not currently perform one manual step.
+2. Add and propagate the typed execution-intent contract, including queue recovery/continuations and compatibility defaults.
+3. Separate BacktestInit initialization from batch replay.
+4. Extract the shared one-step OnBar operation and use it from both standalone and cluster execution.
+5. Verify scoped routing, output finalization/hydration, cancellation, idempotency, and credentials.
+6. Run focused frontend/backend tests, full repository checks, and the browser acceptance flow.
 
 ## Acceptance criteria
 
-- A fresh standalone Consolidator Execute succeeds without any pre-seeded process-local run context.
-- A completed cluster’s ID is never reused as mutable editor state.
-- The panel source/value and submitted source/value are identical in expanded and collapsed modes.
-- No synthetic cluster ID enters selection, payload graphs, references, or result delivery.
-- Editor state is authenticated, workflow/session/node/config scoped, expiring, resettable, idempotent, and safe across API instances.
-- One 1h candle truthfully yields a working 4h candle; history is never fabricated.
-- Active-run missing contexts remain strict errors, and cluster boundaries remain unchanged.
-- Polling/retry cannot overlap, leak, lock controls, or write into deleted/replaced nodes or sessions.
-- Finalized results distinguish executed, failed, skipped, cancelled, not-executed, incomplete, and unavailable states while preserving pins and falsy output.
-- All focused, integration, browser, full-build, and CI gates pass.
+- Cluster Run means “execute this cluster once like sequential manual Execute clicks.”
+- A queued run ID never implies full historical replay.
+- BacktestInit executes once and remains `ready`; it does not call `runAll()` in a cluster.
+- An included OnBar advances exactly one candle/symbol step.
+- Reachable downstream cluster members execute once from that single output; outside nodes never execute.
+- Explicit full-workflow/backtest execution still supports `runAll()` unchanged.
+- Outputs, credentials, pins, cancellation, idempotency, security boundaries, and saved-revision guarantees remain intact.
+- No database migration is introduced.

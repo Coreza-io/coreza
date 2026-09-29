@@ -24,39 +24,46 @@ There is a second parity requirement. The standalone editor executes `BacktestIn
 
 ## End-to-end implementation
 
-### 1. Define an explicit execution-intent contract
+### 1. Make the existing execution mode authoritative
 
-Add a server-owned execution intent distinct from the existing execution mode and IDs:
+Use the existing `executionMode` contract; do not add another execution-intent field.
 
 ```text
-executionMode:
-  manual | live | backtest
+manual:
+  individual editor Execute
+  cluster Execute
 
-executionIntent:
-  editor-sequence | workflow-batch
+backtest:
+  explicit Run All / full historical replay
+
+live:
+  active live workflow execution
 ```
 
-- `executionMode` continues to select the runtime family and node policies.
-- `executionIntent` states whether backtest controls should perform one editor-style action or complete the historical run.
-- A cluster request is assigned `editor-sequence` by `WorkflowExecutionService`; the browser does not get to override this trusted decision.
-- Existing whole-workflow/backtest launch paths are assigned `workflow-batch` explicitly where they are expected to process all bars.
-- Direct `/backtest/init` and `/backtest/onbar` routes keep editor behavior explicitly rather than relying on whether an ID is absent.
-- Include the intent in deterministic plan/fingerprint material where relevant so an idempotency key cannot identify two requests with different behavior.
+- The cluster planner and queue submission already set `executionMode: "manual"`; preserve that value end to end.
+- Any node or cluster launched from the editor must remain `manual`, even though the queued cluster has a durable `runId`.
+- Only the explicit backtest Run All path may invoke historical batch replay.
+- Remove behavior inference from identifiers: `runId`, `executionId`, and `workflowSessionId` identify state; they do not select execution behavior.
+- Keep the browser unable to promote a cluster request to `backtest`; the server derives and enforces manual mode for cluster scope.
 
-### 2. Propagate intent without weakening cluster boundaries
+### 2. Propagate and enforce existing manual mode without weakening cluster boundaries
 
-Carry the intent through every layer that can create or continue work:
+Verify the existing mode survives every layer:
 
 ```text
 cluster Run button
   → POST /workflows/:id/execute with cluster scope
-  → saved-revision cluster plan
-  → workflow run record and queue job
-  → worker
+  → saved-revision cluster plan (`manual`)
+  → workflow run record and queue job (`manual`)
+  → worker (`manual`)
   → executeWorkflow / WorkflowRun
-  → runtime NodeExecutionContext
+  → runtime NodeExecutionContext (`manual`)
   → BacktestInit and OnBar
 ```
+
+- Keep `executionMode` typed through the queue contract, workflow options, runtime options, and node context.
+- Preserve it in loop child/continuation jobs and recovery paths.
+- Reject or normalize any cluster job that arrives with a non-manual mode rather than allowing a cluster to become batch execution.
 
 Update the queue contract, execution options, workflow-run options, runtime options, and node execution context with a typed field. Preserve it in loop child/continuation jobs and recovery paths so work cannot silently switch to batch mode.
 
@@ -69,13 +76,13 @@ Keep these existing protections unchanged:
 - `allowedExecutableNodeIds` checks during enqueue, execution, and routing;
 - fail-fast behavior, idempotency, cancellation, and finalized run results.
 
-Do not use `scope.kind === "cluster"`, `runId`, trigger name, or node name as a hidden substitute for execution intent after the service has assigned it.
+Do not use `runId`, `executionId`, `workflowSessionId`, trigger name, or node name as a hidden substitute for the existing execution mode.
 
 ### 3. Correct `BacktestInit` behavior
 
 Refactor `BacktestExecutor.executeBacktestInit` so initialization and historical replay are separate decisions.
 
-For `editor-sequence`:
+For `executionMode: "manual"`:
 
 - validate ownership and required configuration;
 - recover and validate the selected credential before creating side effects;
@@ -86,7 +93,7 @@ For `editor-sequence`:
 - do not attach `ownedNodeResults` or `suppressRouting`, because the outer scoped runtime must route the initialization output to the next cluster member;
 - retain the initialized session after successful completion so an included or later manually executed `OnBar` can advance it.
 
-For `workflow-batch`:
+For `executionMode: "backtest"`:
 
 - preserve the current awaited `session.runAll()` path;
 - preserve cancellation wiring, latest-node snapshots, partial snapshots on failure, finalization, `ownedNodeResults`, and duplicate-routing suppression.
@@ -97,7 +104,7 @@ Replace `const isManual = !context?.runId` with an explicit intent check. Keep `
 
 Extract a shared authenticated/session-owned manual-step operation used by both the `/backtest/onbar` route and the engine’s `OnBar` handling.
 
-When `OnBar` runs under `editor-sequence`:
+When `OnBar` runs under `executionMode: "manual"`:
 
 - resolve `backtest_id` from the immediately upstream BacktestInit result using the normal parameter resolver;
 - look up the initialized session and verify it belongs to the authenticated user and workflow before advancing it;
@@ -106,7 +113,7 @@ When `OnBar` runs under `editor-sequence`:
 - route that one output to the next internal cluster node once;
 - if the session is already finished, return the same terminal result as standalone OnBar without restarting or replaying it.
 
-When OnBar receives an actual bar inside `workflow-batch`, preserve the current hot-path transformation and do not call the manual-step operation. This prevents recursion when `runAll()` drives the strategy graph per candle.
+When OnBar receives an actual bar inside `executionMode: "backtest"`, preserve the current hot-path transformation and do not call the manual-step operation. This prevents recursion when `runAll()` drives the strategy graph per candle.
 
 Do not duplicate session stepping logic between the route and executor. The shared operation must enforce ownership, missing-session handling, concurrent-step conflict, and output normalization consistently.
 
@@ -125,12 +132,12 @@ Do not duplicate session stepping logic between the route and executor. The shar
 
 ### 6. Session lifecycle, failure, and cancellation
 
-- A successful editor-sequence initialization keeps the session available, matching standalone editor behavior.
+- A successful manual initialization keeps the session available, matching standalone editor behavior.
 - Re-running a cluster containing BacktestInit creates a fresh initialization and replaces the prior session through the existing workflow/node session scope behavior; it then advances only the new session if OnBar is included.
 - Cancellation before or during initialization stops the cluster run and cleans partially created resources.
 - Cancellation during a manual OnBar step is checked before and after the step; never start another step.
 - A downstream node failure preserves already-produced BacktestInit/OnBar snapshots in the finalized run result and does not trigger historical replay.
-- Do not auto-finalize the whole backtest after one editor-sequence step. Explicit Run All/finalize controls retain ownership of that behavior.
+- Do not auto-finalize the whole backtest after one manual step. The explicit `/backtest/run` Run All/finalize controls retain ownership of that behavior.
 - Prevent concurrent cluster/manual OnBar actions from advancing the same session twice; return the existing step-in-progress conflict deterministically.
 
 ### 7. Result delivery and UI behavior
@@ -153,17 +160,16 @@ No new button or mode selector is required: the cluster Run button always means 
 No database schema migration is required. Continue using the existing `workflow_runs` record, cluster scope columns, saved node/edge snapshots, cancellation timestamps, and JSON result envelope.
 
 - Keep the public execute request compatible; derive `editor-sequence` server-side for `scope.kind === "cluster"`.
-- Persist the resolved intent in the run scope snapshot/result metadata if needed for audit and recovery without adding a column.
-- Recovery must reconstruct the same intent from trusted persisted scope data; it must never default a cluster run to `workflow-batch`.
-- Older queued cluster jobs without the new field must use a safe compatibility rule based on their validated cluster scope: `editor-sequence`.
+- No new request field, database column, or persisted intent is required.
+- Recovery must preserve the existing `executionMode`; a validated cluster scope always defaults to `manual`.
 - Older non-cluster jobs retain their current behavior.
 
 ## Test plan
 
 ### Backtest executor and session tests
 
-- BacktestInit with a cluster run ID and `editor-sequence` initializes once, reports `ready`, and never calls `runAll()`.
-- The same node with `workflow-batch` still awaits `runAll()`, collects owned snapshots, suppresses duplicate routing, and cleans its owned session.
+- BacktestInit with a cluster run ID and `executionMode: "manual"` initializes once, reports `ready`, and never calls `runAll()`.
+- The same node with `executionMode: "backtest"` still awaits `runAll()`, collects owned snapshots, suppresses duplicate routing, and cleans its owned session.
 - A run ID alone has no effect on execution behavior.
 - Direct editor initialization remains initialization-only.
 - Missing credentials fail before backtest/session side effects; a valid saved credential works in cluster and standalone paths.
@@ -187,7 +193,7 @@ No database schema migration is required. Continue using the existing `workflow_
 - Cancellation before initialization, during data loading, and during a step produces finalized partial outcomes without starting further nodes.
 - Concurrent steps return a conflict and do not move the cursor twice.
 - Queue retry/idempotency does not initialize or step twice.
-- Recovery preserves editor-sequence intent.
+- Recovery preserves `manual` mode for cluster runs.
 - Database and Redis result paths preserve BacktestInit and OnBar outputs, execution order, node outcomes, and terminal status.
 
 ### Frontend and browser acceptance
@@ -206,7 +212,7 @@ No database schema migration is required. Continue using the existing `workflow_
 ## Delivery order
 
 1. Add failing tests proving a cluster run ID incorrectly triggers `runAll()` and proving cluster OnBar does not currently perform one manual step.
-2. Add and propagate the typed execution-intent contract, including queue recovery/continuations and compatibility defaults.
+2. Enforce the existing `executionMode: "manual"` across cluster queueing, recovery, continuations, runtime, and node execution.
 3. Separate BacktestInit initialization from batch replay.
 4. Extract the shared one-step OnBar operation and use it from both standalone and cluster execution.
 5. Verify scoped routing, output finalization/hydration, cancellation, idempotency, and credentials.

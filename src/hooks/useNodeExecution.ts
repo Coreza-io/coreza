@@ -30,6 +30,14 @@ import {
   shouldIncludeFieldInPayload,
 } from "@/utils/fieldVisibility";
 import { buildConsolidatorConfigFingerprint } from "../../coreza-backend/src/engine/consolidation/consolidatorShared";
+import {
+  registerEditorNodeAction,
+  executeEditorNode,
+  getEditorConsolidatorSeries,
+  setEditorConsolidatorSeries,
+  type NodeExecutionOutcome,
+} from "@/services/editorNodeExecution";
+import { getEditorExecutionGeneration } from "@/utils/executionGeneration";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -48,7 +56,6 @@ interface UseNodeExecutionProps {
   definition: any;
   fieldState: Record<string, any>;
   data: any;
-  previousNodes: Node[];
   selectedInputNodeId?: string;
   selectedInputData: any;
   setLastOutput: (output: any) => void;
@@ -59,7 +66,7 @@ interface UseNodeExecutionProps {
 interface UseNodeExecutionReturn {
   error: string;
   isSending: boolean;
-  handleSubmit: (e?: React.FormEvent, inputOverride?: any) => Promise<void>;
+  handleSubmit: (e?: React.FormEvent, inputOverride?: any) => Promise<NodeExecutionOutcome>;
 }
 
 /**
@@ -70,7 +77,6 @@ export function useNodeExecution({
   definition,
   fieldState,
   data,
-  previousNodes,
   selectedInputNodeId,
   selectedInputData,
   setLastOutput,
@@ -88,7 +94,6 @@ export function useNodeExecution({
 
   // AbortController ref for polling cleanup on unmount
   const pollingAbortRef = useRef<AbortController | null>(null);
-  const consolidatorSeriesRef = useRef<string | null>(null);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -166,7 +171,7 @@ export function useNodeExecution({
       // Create a map of all upstream node data by display name
       const allNodeData: Record<string, any> = {};
 
-      previousNodes.forEach((prevNode) => {
+      nodes.forEach((prevNode) => {
         const displayName = prevNode.id;
         // Prefer execution store
         let nodeData = executionStore.getNodeData(prevNode.id).output;
@@ -366,7 +371,6 @@ export function useNodeExecution({
     },
     [
       definition,
-      previousNodes,
       executionStore,
       resolveDeep,
       getNodes,
@@ -376,9 +380,19 @@ export function useNodeExecution({
   );
 
   // Main execution handler
-  const handleSubmit = useCallback(
-    async (e?: React.FormEvent, inputOverride?: any) => {
+  const executeAction = useCallback(
+    async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number): Promise<NodeExecutionOutcome> => {
       if (e) e.preventDefault();
+      const outcomeNodeId = nodeId ?? "unknown";
+      const executionIsCurrent = () => !signal?.aborted &&
+        (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration);
+      if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+      const storedSelectedInput = selectedInputNodeId
+        ? executionStore.getNodeData(selectedInputNodeId).output
+        : undefined;
+      const currentSelectedInput = selectedInputNodeId && storedSelectedInput !== undefined
+        ? storedSelectedInput
+        : selectedInputData;
 
       // Pinned / manually edited output wins: skip the request entirely and
       // report the pinned value as this node's output.
@@ -392,7 +406,7 @@ export function useNodeExecution({
         data.output = overrideOutput;
         if (nodeId) {
           executionStore.setNodeData(nodeId, {
-            input: inputOverride ?? selectedInputData,
+            input: inputOverride ?? currentSelectedInput,
             output: overrideOutput,
           });
           setNodes((nds) =>
@@ -404,7 +418,7 @@ export function useNodeExecution({
           );
         }
         setIsSending(false);
-        return;
+        return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
       }
 
       // Log the start of execution
@@ -433,7 +447,11 @@ export function useNodeExecution({
 
         if (f.required && isMissingValue) {
           setError(`${f.label || f.key} is required`);
-          return;
+          return {
+            nodeId: outcomeNodeId,
+            status: "failed",
+            error: { message: `${f.label || f.key} is required` },
+          };
         }
       }
 
@@ -445,7 +463,7 @@ export function useNodeExecution({
           throw new Error("No authenticated user found");
         }
 
-        let effectiveInput = selectedInputData;
+        let effectiveInput = inputOverride ?? currentSelectedInput;
         if (!selectedInputNodeId) {
           // A true root node has no canonical upstream source.
           effectiveInput = { ...fieldState };
@@ -482,7 +500,7 @@ export function useNodeExecution({
             sourceRunId ?? "",
           ].join("|");
           payload.seriesAction =
-            consolidatorSeriesRef.current === consolidatorSeriesSignature
+            getEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId) === consolidatorSeriesSignature
               ? "continue"
               : "start";
           payload.sourceProvenance = {
@@ -600,7 +618,7 @@ export function useNodeExecution({
                   : n,
               ),
             );
-            return;
+            return { nodeId: outcomeNodeId, status: "success", output: finalOut };
           }
 
           // Items mode → append emitted items and finalize to full aggregate on last batch
@@ -640,7 +658,7 @@ export function useNodeExecution({
             _edgeBuf: {},
           });
 
-          return;
+          return { nodeId: outcomeNodeId, status: "success", output: uiOut };
         }
 
         // Regular backend processing for non-Loop nodes
@@ -724,12 +742,16 @@ export function useNodeExecution({
           const res = await apiClient.request(fullUrl, {
             ...fetchOptions,
             token: session?.access_token,
+            signal,
           });
           const responseData = await res.json();
+          if (!executionIsCurrent()) {
+            return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+          }
           if (!res.ok || responseData.status === "error")
             throw new Error(JSON.stringify(responseData) || "Action failed");
           if (consolidatorSeriesSignature) {
-            consolidatorSeriesRef.current = consolidatorSeriesSignature;
+            setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId, consolidatorSeriesSignature);
           }
 
           // Handle listening modes (streaming and webhook)
@@ -767,7 +789,12 @@ export function useNodeExecution({
               listeningDeps,
             );
 
-            outputData = await handler.start(responseData);
+            void handler.start(responseData);
+            return {
+              nodeId: outcomeNodeId,
+              status: "listener-started",
+              output: executionStore.getNodeData(nodeId!).output,
+            };
           } else if (isStreamingTrigger) {
             // Streaming trigger - handle listening state and recovery polling
             console.log(`✅ [Streaming Trigger] Response:`, responseData);
@@ -781,8 +808,12 @@ export function useNodeExecution({
               listeningDeps,
             );
 
-            await handler.start(responseData);
-            return;
+            void handler.start(responseData);
+            return {
+              nodeId: outcomeNodeId,
+              status: "listener-started",
+              output: executionStore.getNodeData(nodeId!).output,
+            };
           } else if (isStreamingSubscribe) {
             const handler = createListeningHandler(
               buildStreamingSubscribeListeningConfig({
@@ -794,7 +825,12 @@ export function useNodeExecution({
               listeningDeps,
             );
 
-            outputData = await handler.start(responseData);
+            void handler.start(responseData);
+            return {
+              nodeId: outcomeNodeId,
+              status: "listener-started",
+              output: executionStore.getNodeData(nodeId!).output,
+            };
           } else {
             outputData = responseData;
           }
@@ -817,7 +853,11 @@ export function useNodeExecution({
               : n,
           ),
         );
+        return { nodeId: outcomeNodeId, status: "success", output: finalOutput };
       } catch (err: any) {
+        if (err?.name === "AbortError" || !executionIsCurrent()) {
+          return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution was cancelled." };
+        }
         let errOutput;
         try {
           const parsed = JSON.parse(err.message);
@@ -834,7 +874,7 @@ export function useNodeExecution({
             definition?.name === "Consolidator" &&
             parsed.code === "EDITOR_CONTEXT_EXPIRED"
           ) {
-            consolidatorSeriesRef.current = null;
+            setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);
           }
 
           errOutput = {
@@ -857,7 +897,7 @@ export function useNodeExecution({
         // A pinned output must never be overwritten by an error
         if (overrideOutput !== null && overrideOutput !== undefined) {
           setIsSending(false);
-          return;
+          return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
         }
 
         setLastOutput(errOutput);
@@ -873,19 +913,18 @@ export function useNodeExecution({
             ),
           );
         }
+        const message = typeof errOutput.error === "string" ? errOutput.error : "Action failed";
+        return {
+          nodeId: outcomeNodeId,
+          status: err?.name === "AbortError" ? "cancelled" : "failed",
+          error: { message, ...(typeof errOutput.code === "string" ? { code: errOutput.code } : {}) },
+        };
       } finally {
         setIsSending(false);
       }
     },
     [
-      definition.name,
-      definition?.fields,
-      definition?.executionMode,
-      definition?.action?.url,
-      definition?.action?.method,
-      definition?.node_type,
-      definition?.streamingConfig?.timeout,
-      definition?.streamingConfig?.sourceId,
+      definition,
       fieldState,
       userId,
       selectedInputData,
@@ -902,6 +941,26 @@ export function useNodeExecution({
       getEdges,
     ],
   );
+
+  useEffect(() => {
+    const sessionId = data?.workflowSessionId;
+    if (!sessionId || !nodeId) return;
+    return registerEditorNodeAction(sessionId, nodeId, ({ input, signal, executionGeneration } = {}) => {
+      if (signal?.aborted) return Promise.resolve({ nodeId, status: "cancelled", reason: "Execution was cancelled." });
+      return executeAction(undefined, input, signal, executionGeneration);
+    });
+  }, [data?.workflowSessionId, executeAction, nodeId]);
+
+  const handleSubmit = useCallback(async (e?: React.FormEvent, inputOverride?: any) => {
+    e?.preventDefault();
+    const sessionId = data?.workflowSessionId;
+    if (!sessionId || !nodeId) {
+      return { nodeId: nodeId ?? "unknown", status: "failed", error: { message: "Node execution is not available." } } as NodeExecutionOutcome;
+    }
+    const outcome = await executeEditorNode(sessionId, nodeId, { input: inputOverride });
+    if (outcome.status === "failed") setError(outcome.error?.message ?? outcome.reason ?? "Node execution failed.");
+    return outcome;
+  }, [data?.workflowSessionId, nodeId]);
 
   return {
     error,

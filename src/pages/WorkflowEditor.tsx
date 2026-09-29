@@ -112,6 +112,7 @@ import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
 import { ClusterExecutionControl } from "@/components/workflow/ClusterExecutionControl";
 import { useClusterExecution } from "@/hooks/useClusterExecution";
+import { clearEditorNodeActions, isEditorExecutionLocked } from "@/services/editorNodeExecution";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
@@ -264,6 +265,8 @@ const WorkflowEditorContent = () => {
     void workflowId;
     return crypto.randomUUID();
   }, [workflowId]);
+
+  useEffect(() => () => clearEditorNodeActions(workflowSessionId), [workflowSessionId]);
 
   // CRITICAL FIX: Sync workflowId with URL parameter changes
   useEffect(() => {
@@ -501,23 +504,23 @@ const WorkflowEditorContent = () => {
   }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession]);
 
   const deleteNodeIds = useCallback((nodeIds: readonly string[]) => {
-    if (nodeIds.length === 0 || dragSource.nodeId) return;
+    if (nodeIds.length === 0 || dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
     saveHistorySnapshot();
     const result = deleteNodesFromDocument({ nodes, edges, clusters }, new Set(nodeIds));
     restoreDocument(result.document);
     if (result.dissolvedClusters.length > 0) {
       toast({ title: "Cluster dissolved", description: result.dissolvedClusters.map(({ title }) => title).join(", ") });
     }
-  }, [clusters, dragSource.nodeId, edges, nodes, restoreDocument, saveHistorySnapshot, toast]);
+  }, [clusters, dragSource.nodeId, edges, nodes, restoreDocument, saveHistorySnapshot, toast, workflowSessionId]);
 
   const dissolveClustersForNodes = useCallback((nodeIds: readonly string[]) => {
     const selected = new Set(nodeIds);
     const matching = clusters.filter((cluster) => cluster.memberNodeIds.some((id) => selected.has(id)));
-    if (matching.length === 0 || dragSource.nodeId) return;
+    if (matching.length === 0 || dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
     saveHistorySnapshot();
     setClusters((current) => current.filter((cluster) => !matching.some(({ id }) => id === cluster.id)));
     setCanvasMenu(null);
-  }, [clusters, dragSource.nodeId, saveHistorySnapshot]);
+  }, [clusters, dragSource.nodeId, saveHistorySnapshot, workflowSessionId]);
 
   const nextClusterTitle = useMemo(() => {
     const usedTitles = new Set(clusters.map(({ title }) => title.toLocaleLowerCase()));
@@ -527,7 +530,7 @@ const WorkflowEditorContent = () => {
   }, [clusters]);
 
   const createClusterFromSelection = useCallback((requestedIds?: readonly string[]) => {
-    if (dragSource.nodeId) return;
+    if (dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
     const selectedIds = requestedIds?.length
       ? [...requestedIds]
       : resolveCanonicalSelection(nodes, clusters, selectedClusterIds, collapsedRuntimeHostIds);
@@ -542,7 +545,7 @@ const WorkflowEditorContent = () => {
     setExpanded(candidate.id, true);
     setEditingClusterId(candidate.id);
     setCanvasMenu(null);
-  }, [clusters, collapsedRuntimeHostIds, dragSource.nodeId, edges, nextClusterTitle, nodes, saveHistorySnapshot, selectedClusterIds, setExpanded, toast]);
+  }, [clusters, collapsedRuntimeHostIds, dragSource.nodeId, edges, nextClusterTitle, nodes, saveHistorySnapshot, selectedClusterIds, setExpanded, toast, workflowSessionId]);
 
   const finishClusterMove = useCallback((cancel = false) => {
     const move = clusterMoveRef.current;
@@ -564,31 +567,11 @@ const WorkflowEditorContent = () => {
     }
   }, [setNodes]);
 
-  const prepareClusterExecution = useCallback(async (clusterId: string) => {
-    finishClusterMove(false);
-    if (!workflowId || !authUser || loading || invalidClusterEntries.length > 0) return null;
-    const submittedCluster = clusters.find((cluster) => cluster.id === clusterId);
-    if (!submittedCluster) return null;
-    const memberNodeIds = [...submittedCluster.memberNodeIds];
-    const isFirstSave = !hasPersistedRef.current;
-    const result = await saveWorkflow(workflowId, workflowName, nodes, edges, { isNew: isFirstSave, clusters });
-    if (!result.success || result.revision === undefined) return null;
-    const savedWorkflowId = result.newId ?? workflowId;
-    if (isFirstSave) {
-      hasPersistedRef.current = true;
-      setWorkflowId(savedWorkflowId);
-      const workflowPath = `/dashboard/workflow/${savedWorkflowId}`;
-      navigate(projectId ? `${workflowPath}?project=${projectId}` : workflowPath, { replace: true });
-    }
-    return { workflowId: savedWorkflowId, revision: result.revision, memberNodeIds };
-  }, [authUser, clusters, edges, finishClusterMove, invalidClusterEntries.length, loading, navigate, nodes, projectId, saveWorkflow, workflowId, workflowName]);
-
-  const currentNodeIds = useMemo(() => new Set(nodes.map(({ id }) => id)), [nodes]);
   const clusterExecution = useClusterExecution({
-    token: session?.access_token,
     workflowSessionId,
-    prepare: prepareClusterExecution,
-    currentNodeIds,
+    nodes,
+    edges,
+    clusters,
     disabledReason: invalidClusterEntries.length > 0 ? "Cluster metadata must be repaired before execution."
       : !authUser ? "Sign in to execute this cluster."
       : isAutoExecuting || executingNode ? "Another editor execution is active."
@@ -602,9 +585,8 @@ const WorkflowEditorContent = () => {
       getRunState: clusterExecution.getState,
       onExecute: clusterExecution.executeCluster,
       onCancel: clusterExecution.cancelRun,
-      onRetryOutput: clusterExecution.retryOutputHydration,
     }),
-    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterExecution.retryOutputHydration, clusterViewState, clusters, dragSource.nodeId, edges, nodes, selectedClusterIds, setExpanded],
+    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, nodes, selectedClusterIds, setExpanded],
   );
   const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
@@ -690,6 +672,7 @@ const WorkflowEditorContent = () => {
   }, [finishClusterMove, rf, setNodes, workflowSessionId]);
 
   const commitEdgeCandidate = useCallback((candidateEdges: Edge[]) => {
+    if (isEditorExecutionLocked(workflowSessionId)) return;
     const currentInvalid = new Set(validateClusters(nodes, edges, clusters).violations.flatMap(
       ({ clusterId }) => clusterId ? [clusterId] : [],
     ));
@@ -721,7 +704,7 @@ const WorkflowEditorContent = () => {
         </ToastAction>
       ),
     });
-  }, [clusters, edges, nodes, saveHistorySnapshot, setEdges, toast]);
+  }, [clusters, edges, nodes, saveHistorySnapshot, setEdges, toast, workflowSessionId]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const structural = changes.some(({ type }) => type === "add" || type === "remove" || type === "replace");
@@ -1239,7 +1222,7 @@ const WorkflowEditorContent = () => {
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
-    if (clusterExecution.isExecutionActive) {
+    if (clusterExecution.isExecutionActive || isEditorExecutionLocked(workflowSessionId)) {
       toast({ title: "Execution already active", description: "Stop the cluster run before executing the whole workflow." });
       return;
     }
@@ -1260,7 +1243,7 @@ const WorkflowEditorContent = () => {
     setIsAutoExecuting(true);
     await workflowExecutor.executeAllNodes();
     setIsAutoExecuting(false);
-  }, [clusterExecution.isExecutionActive, workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady]);
+  }, [clusterExecution.isExecutionActive, workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady, workflowSessionId]);
 
   const handleStopExecution = useCallback(() => {
     workflowExecutor?.stop();
@@ -1286,7 +1269,7 @@ const WorkflowEditorContent = () => {
         });
         return;
       }
-      if (clusterExecution.isExecutionActive) {
+      if (clusterExecution.isExecutionActive || isEditorExecutionLocked(workflowSessionId)) {
         toast({ title: "Execution already active", description: "Stop the cluster run before executing a node." });
         return;
       }
@@ -1298,7 +1281,7 @@ const WorkflowEditorContent = () => {
 
       await workflowExecutor.executeNode(node.id, new Set());
     },
-    [clusterExecution.isExecutionActive, clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast],
+    [clusterExecution.isExecutionActive, clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast, workflowSessionId],
   );
 
   // Save workflow via persistence hook
@@ -2442,7 +2425,6 @@ const WorkflowEditorContent = () => {
                         state={clusterExecution.getState(cluster.id)}
                         onExecute={() => clusterExecution.executeCluster(cluster.id)}
                         onCancel={() => clusterExecution.cancelRun(cluster.id)}
-                        onRetryOutput={() => clusterExecution.retryOutputHydration(cluster.id)}
                       />
                     </footer>
                   </section>

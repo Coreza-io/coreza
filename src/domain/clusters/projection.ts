@@ -19,7 +19,6 @@ export interface CompactClusterNodeData extends Record<string, unknown> {
   onExpand: (clusterId: string) => void;
   onExecute: (clusterId: string) => void;
   onCancel: (clusterId: string) => void;
-  onRetryOutput: (clusterId: string) => void;
 }
 
 export type CompactClusterFlowNode = Node<CompactClusterNodeData, "compactCluster">;
@@ -38,7 +37,6 @@ export interface ClusterProjectionOptions {
   getRunState?: (clusterId: string) => ClusterRunState;
   onExecute?: (clusterId: string) => void;
   onCancel?: (clusterId: string) => void;
-  onRetryOutput?: (clusterId: string) => void;
 }
 
 export const getVisibleClusterNodes = (projection: ClusterProjection): Node[] =>
@@ -176,7 +174,6 @@ export function projectClusterGraph(
         onExpand,
         onExecute: options.onExecute ?? (() => undefined),
         onCancel: options.onCancel ?? (() => undefined),
-        onRetryOutput: options.onRetryOutput ?? (() => undefined),
       } satisfies CompactClusterNodeData,
     };
     displayNodes.push(compactNode);

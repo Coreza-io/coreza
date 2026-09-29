@@ -1,100 +1,93 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import type { Edge, Node } from "@xyflow/react";
+import {
+  buildClusterExecutionPlan,
+  useClusterExecution,
+  type ClusterRunState,
+} from "@/hooks/useClusterExecution";
+import { registerEditorNodeAction } from "@/services/editorNodeExecution";
 
-const mockExecutionStore = { setNodeData: jest.fn() };
-const mockNotifyStoreUpdate = jest.fn();
-jest.mock("@/contexts/ExecutionStoreContext", () => ({
-  useExecutionStore: () => mockExecutionStore,
-  useExecutionStoreNotify: () => mockNotifyStoreUpdate,
-}));
-const mockApiClient = { post: jest.fn(), request: jest.fn() };
-jest.mock("@/lib/apiClient", () => ({ apiClient: mockApiClient }));
+const node = (id: string, values: Record<string, unknown> = {}): Node => ({
+  id,
+  position: { x: 0, y: 0 },
+  data: { definition: { name: id, node_type: "action" }, values, workflowSessionId: "session" },
+});
 
-import { useClusterExecution, type ClusterRunState } from "@/hooks/useClusterExecution";
-
-const currentNodeIds = new Set(["member"]);
-
-function response(body: unknown): Response {
-  return { ok: true, json: async () => body } as Response;
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
-}
-
-describe("useClusterExecution polling ownership", () => {
-  beforeEach(() => {
-    jest.useFakeTimers();
-    Object.defineProperty(globalThis, "window", { value: globalThis, configurable: true });
-    if (!globalThis.crypto?.randomUUID) {
-      Object.defineProperty(globalThis, "crypto", {
-        value: { randomUUID: () => "idempotency" },
-        configurable: true,
-      });
-    }
+describe("manual cluster execution", () => {
+  const clusterId = "00000000-0000-4000-8000-000000000001";
+  it("orders main edges and internal expression references deterministically", () => {
+    const nodes = [node("third", { value: "{{$node['second'].value}}" }), node("first"), node("second")];
+    const edges: Edge[] = [{ id: "one-two", source: "first", target: "second" }];
+    expect(buildClusterExecutionPlan(
+      { id: clusterId, title: "Folder", memberNodeIds: ["third", "first", "second"] },
+      nodes,
+      edges,
+    ).executableNodeIds).toEqual(["first", "second", "third"]);
   });
 
-  afterEach(() => jest.useRealTimers());
+  it("rejects cycles before executing any node", () => {
+    const nodes = [node("one"), node("two")];
+    const edges: Edge[] = [
+      { id: "a", source: "one", target: "two" },
+      { id: "b", source: "two", target: "one" },
+    ];
+    expect(() => buildClusterExecutionPlan(
+      { id: clusterId, title: "Folder", memberNodeIds: ["one", "two"] }, nodes, edges,
+    )).toThrow("cyclic");
+  });
 
-  it("waits for an in-flight response and a full interval before polling again", async () => {
-    const firstStatus = deferred<Response>();
-    mockApiClient.post.mockResolvedValue(response({ run_id: "run", status: "queued" }));
-    const request = mockApiClient.request
-      .mockImplementationOnce(() => firstStatus.promise)
-      .mockResolvedValue(response({
-        run: {
-          id: "run",
-          workflow_id: "workflow",
-          status: "running",
-          source_workflow_revision: 1,
-          scope_cluster_id: "cluster",
-          scope_snapshot: { memberNodeIds: ["member"] },
-        },
-      }));
+  it("orders a supported Loop return boundary without treating it as a generic cycle", () => {
+    const loop = node("loop");
+    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action" } };
+    const nodes = [loop, node("body")];
+    const edges: Edge[] = [
+      { id: "loop-body", source: "loop", target: "body" },
+      { id: "body-loop", source: "body", target: "loop" },
+    ];
+    expect(buildClusterExecutionPlan(
+      { id: clusterId, title: "Loop folder", memberNodeIds: ["loop", "body"] }, nodes, edges,
+    ).executableNodeIds).toEqual(["loop", "body"]);
+  });
 
+  it("runs each normal action once in order and stops after a failure", async () => {
+    const calls: string[] = [];
+    const unregisterOne = registerEditorNodeAction("session", "one", async () => {
+      calls.push("one");
+      return { nodeId: "one", status: "success", output: { fresh: true } };
+    });
+    const unregisterTwo = registerEditorNodeAction("session", "two", async () => {
+      calls.push("two");
+      return { nodeId: "two", status: "failed", error: { message: "stopped here" } };
+    });
+    const unregisterThree = registerEditorNodeAction("session", "three", async () => {
+      calls.push("three");
+      return { nodeId: "three", status: "success" };
+    });
+    const nodes = [node("one"), node("two"), node("three")];
+    const edges: Edge[] = [
+      { id: "a", source: "one", target: "two" },
+      { id: "b", source: "two", target: "three" },
+    ];
     let execute!: (clusterId: string) => Promise<void>;
-    let getState!: (clusterId: string) => ClusterRunState;
+    let state!: (clusterId: string) => ClusterRunState;
     function Harness() {
       const hook = useClusterExecution({
         workflowSessionId: "session",
-        currentNodeIds,
-        prepare: async () => ({ workflowId: "workflow", revision: 1, memberNodeIds: ["member"] }),
+        nodes,
+        edges,
+        clusters: [{ id: clusterId, title: "Folder", memberNodeIds: ["one", "two", "three"] }],
       });
       execute = hook.executeCluster;
-      getState = hook.getState;
+      state = hook.getState;
       return null;
     }
-
     let renderer!: ReactTestRenderer;
     act(() => { renderer = create(React.createElement(Harness)); });
-    await act(async () => { await execute("cluster"); });
-    expect(request).toHaveBeenCalledTimes(1);
-
-    await act(async () => { jest.advanceTimersByTime(5_000); });
-    expect(request).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      firstStatus.resolve(response({
-        run: {
-          id: "run",
-          workflow_id: "workflow",
-          status: "running",
-          source_workflow_revision: 1,
-          scope_cluster_id: "cluster",
-          scope_snapshot: { memberNodeIds: ["member"] },
-        },
-      }));
-      await Promise.resolve();
-    });
-    expect(getState("cluster").phase).toBe("running");
-
-    await act(async () => { jest.advanceTimersByTime(999); });
-    expect(request).toHaveBeenCalledTimes(1);
-    await act(async () => { jest.advanceTimersByTime(1); });
-    expect(request).toHaveBeenCalledTimes(2);
-
+    await act(async () => execute(clusterId));
+    expect(calls).toEqual(["one", "two"]);
+    expect(state(clusterId)).toMatchObject({ phase: "failed", currentNodeId: "two", completed: 1 });
     act(() => renderer.unmount());
+    unregisterOne(); unregisterTwo(); unregisterThree();
   });
 });

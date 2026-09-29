@@ -3,15 +3,14 @@ import { CircleAlert, LoaderCircle, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClusterRunState } from "@/hooks/useClusterExecution";
 
-interface Props { title: string; state: ClusterRunState; onExecute: () => void; onCancel: () => void; onRetryOutput?: () => void; className?: string }
+interface Props { title: string; state: ClusterRunState; onExecute: () => void; onCancel: () => void; className?: string }
 const stopPropagation = (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => event.stopPropagation();
 
-export function ClusterExecutionControl({ title, state, onExecute, onCancel, onRetryOutput, className }: Props) {
-  const active = state.phase === "queued" || state.phase === "running";
-  const pending = state.phase === "preparing" || state.phase === "cancelling";
+export function ClusterExecutionControl({ title, state, onExecute, onCancel, className }: Props) {
+  const active = state.phase === "running";
+  const pending = false;
   const blocked = state.phase === "blocked";
-  const label = state.phase === "preparing" ? "Preparing…" : state.phase === "cancelling" ? "Cancelling…"
-    : active ? "Stop" : state.phase === "completed" ? "Completed / Run again"
+  const label = active ? `${state.currentNodeId ?? "Running"} · ${state.completed ?? 0}/${state.eligible ?? 0} · Stop` : state.phase === "completed" ? "Completed / Run again"
     : state.phase === "cancelled" ? "Cancelled / Run again"
     : state.phase === "failed" ? "Failed / Run again" : blocked ? "Blocked" : "Execute cluster";
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -27,10 +26,6 @@ export function ClusterExecutionControl({ title, state, onExecute, onCancel, onR
         : <Play className="h-4 w-4" aria-hidden="true" />}
       <span className="truncate">{label}</span>
     </Button>
-    {state.canRetryOutput && onRetryOutput ? <Button type="button" size="sm" variant="outline"
-      title={state.outputWarning} onClick={(event) => { event.stopPropagation(); onRetryOutput(); }}>
-      Retry output
-    </Button> : null}
     <span className="sr-only" aria-live="polite">{state.reason ?? label}</span>
   </div>;
 }

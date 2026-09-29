@@ -11,6 +11,7 @@
 import { Node, Edge } from "@xyflow/react";
 import ExecutionContext from "./executionContext";
 import { acceptEditorExecution } from "./executionGeneration";
+import { executeEditorNode } from "@/services/editorNodeExecution";
 
 export interface ExecutorContext {
   nodes: Node[];
@@ -56,6 +57,18 @@ export class WorkflowExecutor {
     Map<string, { ifNodeId: string; handle: string; edgeId: string }>
   >();
   private edgePayload = new Map<string, any>();
+
+  private async invokeNormalNode(nodeId: string): Promise<unknown> {
+    const node = this.context.nodes.find((candidate) => candidate.id === nodeId);
+    const sessionId = node?.data?.workflowSessionId;
+    if (typeof sessionId !== "string") throw new Error(`Node ${nodeId} has no editor session.`);
+    const input = this.nodeStore.getNodeData(nodeId).input;
+    const outcome = await executeEditorNode(sessionId, nodeId, { input });
+    if (outcome.status === "failed" || outcome.status === "cancelled") {
+      throw new Error(outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} did not complete.`);
+    }
+    return outcome.output;
+  }
 
   private getIncomingEdges = (targetId: string) =>
     this.context.edges.filter((e) => e.target === targetId);
@@ -298,13 +311,8 @@ export class WorkflowExecutor {
     console.log(`🎯 Starting conditional chain from: ${startNodeId}`);
 
     return new Promise<void>((resolve) => {
-      const event = new CustomEvent("auto-execute-node", {
-        detail: {
-          nodeId: startNodeId,
-          executedSet: completedNodes,
-          allNodes: this.context.nodes,
-          allEdges: this.context.edges,
-          onSuccess: async (result?: any) => {
+      void this.invokeNormalNode(startNodeId).then(
+          async (result) => {
             console.log(`✅ Node ${startNodeId} succeeded with result`, result);
             completedNodes.add(startNodeId);
             const currentNode = this.context.nodes.find(
@@ -324,13 +332,11 @@ export class WorkflowExecutor {
 
             resolve();
           },
-          onError: (err: any) => {
+          (err: unknown) => {
             console.error(`❌ Node ${startNodeId} failed:`, err);
             resolve();
           },
-        } as NodeExecutionDetail,
-      });
-      window.dispatchEvent(event);
+        );
     });
   }
 
@@ -535,20 +541,7 @@ export class WorkflowExecutor {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Step 1: Trigger subscription
-    const subscribePromise = new Promise((resolve, reject) => {
-      const execEvent = new CustomEvent("auto-execute-node", {
-        detail: {
-          nodeId,
-          executedSet,
-          allNodes: this.context.nodes,
-          allEdges: this.context.edges,
-          explicitlyTriggered,
-          onSuccess: resolve,
-          onError: reject,
-        } as NodeExecutionDetail,
-      });
-      window.dispatchEvent(execEvent);
-    });
+    const subscribePromise = this.invokeNormalNode(nodeId);
 
     try {
       await subscribePromise;
@@ -769,24 +762,7 @@ export class WorkflowExecutor {
 
     // Default (non-Loop) node execution
     const result: any = await Promise.race([
-      new Promise((resolve, reject) => {
-        const execEvent = new CustomEvent("auto-execute-node", {
-          detail: {
-            nodeId,
-            executedSet,
-            allNodes: this.context.nodes,
-            allEdges: this.context.edges,
-            explicitlyTriggered,
-            onSuccess: (res?: any) => {
-              resolve(res);
-            },
-            onError: (err: any) => {
-              reject(err);
-            },
-          } as NodeExecutionDetail,
-        });
-        window.dispatchEvent(execEvent);
-      }),
+      this.invokeNormalNode(nodeId),
       new Promise((_, reject) =>
         setTimeout(
           () =>

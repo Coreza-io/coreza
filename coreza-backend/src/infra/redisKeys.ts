@@ -38,6 +38,15 @@ export const RedisKeys = {
   persistent: (userId: string, workflowId: string, key: string): string =>
     `persistent:userId:${userId}:workflowId:${workflowId}:${key}`,
 
+  editorConsolidator: (
+    userId: string,
+    workflowId: string,
+    sessionId: string,
+    nodeId: string,
+    configFingerprint: string,
+  ): string =>
+    `editor-consolidator:userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}:nodeId:${nodeId}:config:${configFingerprint}`,
+
   // ── User-scoped discovery sets ──
   userActiveFillStreams: (userId: string): string =>
     `fills:userId:${userId}:active_streams`,

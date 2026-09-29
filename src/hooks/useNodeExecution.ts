@@ -13,6 +13,7 @@ import { useNodeId, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
@@ -28,6 +29,7 @@ import {
   isFieldVisible,
   shouldIncludeFieldInPayload,
 } from "@/utils/fieldVisibility";
+import { buildConsolidatorConfigFingerprint } from "../../coreza-backend/src/engine/consolidation/consolidatorShared";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -47,6 +49,7 @@ interface UseNodeExecutionProps {
   fieldState: Record<string, any>;
   data: any;
   previousNodes: Node[];
+  selectedInputNodeId?: string;
   selectedInputData: any;
   setLastOutput: (output: any) => void;
   overrideOutput: any | null;
@@ -68,13 +71,15 @@ export function useNodeExecution({
   fieldState,
   data,
   previousNodes,
+  selectedInputNodeId,
   selectedInputData,
   setLastOutput,
   overrideOutput,
   workflowId,
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
-  const { getNodes, getEdges, setNodes } = useReactFlow();
+  const { setNodes } = useReactFlow();
+  const { getNodes, getEdges } = useStableNodes();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
 
@@ -83,6 +88,7 @@ export function useNodeExecution({
 
   // AbortController ref for polling cleanup on unmount
   const pollingAbortRef = useRef<AbortController | null>(null);
+  const consolidatorSeriesRef = useRef<string | null>(null);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -440,12 +446,13 @@ export function useNodeExecution({
         }
 
         let effectiveInput = selectedInputData;
-        if (!effectiveInput || Object.keys(effectiveInput).length === 0) {
-          // Root node with no prior input: default to fieldState
+        if (!selectedInputNodeId) {
+          // A true root node has no canonical upstream source.
           effectiveInput = { ...fieldState };
         }
 
         const payload = buildPayload(fieldState, effectiveInput);
+        let consolidatorSeriesSignature: string | undefined;
         payload.node_id = nodeId;
         payload.nodeName = definition.name;
         payload.node_type = definition.node_type;
@@ -454,6 +461,35 @@ export function useNodeExecution({
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;
+
+        if (definition?.name === "Consolidator") {
+          payload.contextMode = "editor";
+          payload.nodeId = nodeId;
+          payload.operationId = globalThis.crypto.randomUUID();
+          payload.configFingerprint = buildConsolidatorConfigFingerprint({
+            symbol: String(payload.symbol ?? ""),
+            sourceTimeframe: String(payload.source_timeframe ?? ""),
+            targetTimeframe: String(payload.target_timeframe ?? ""),
+            timezone: String(payload.timezone ?? "UTC"),
+            anchorTime: String(payload.anchor_time ?? ""),
+          });
+          const sourceRunId = selectedInputNodeId
+            ? executionStore.getNodeData(selectedInputNodeId).sourceRunId
+            : undefined;
+          consolidatorSeriesSignature = [
+            payload.configFingerprint,
+            selectedInputNodeId ?? "",
+            sourceRunId ?? "",
+          ].join("|");
+          payload.seriesAction =
+            consolidatorSeriesRef.current === consolidatorSeriesSignature
+              ? "continue"
+              : "start";
+          payload.sourceProvenance = {
+            sourceNodeId: selectedInputNodeId,
+            sourceRunId,
+          };
+        }
 
         let outputData: any;
 
@@ -666,10 +702,21 @@ export function useNodeExecution({
           // Log the payload and request details
           console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
           console.log("🚀 [BACKEND REQUEST] Method:", method);
-          console.log(
-            "🚀 [BACKEND REQUEST] Payload:",
-            JSON.stringify(payload, null, 2),
-          );
+          if (definition?.name === "Consolidator") {
+            console.log("🚀 [CONSOLIDATOR REQUEST]", {
+              contextMode: payload.contextMode,
+              workflowId: payload.workflowId,
+              workflowSessionId: payload.workflowSessionId,
+              nodeId: payload.nodeId,
+              operationId: payload.operationId,
+              seriesAction: payload.seriesAction,
+            });
+          } else {
+            console.log(
+              "🚀 [BACKEND REQUEST] Payload:",
+              JSON.stringify(payload, null, 2),
+            );
+          }
           if (method === "GET" && params) {
             console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
           }
@@ -681,6 +728,9 @@ export function useNodeExecution({
           const responseData = await res.json();
           if (!res.ok || responseData.status === "error")
             throw new Error(JSON.stringify(responseData) || "Action failed");
+          if (consolidatorSeriesSignature) {
+            consolidatorSeriesRef.current = consolidatorSeriesSignature;
+          }
 
           // Handle listening modes (streaming and webhook)
           const isStreamingSubscribe =
@@ -746,7 +796,12 @@ export function useNodeExecution({
 
             outputData = await handler.start(responseData);
           } else {
-            outputData = responseData;
+            outputData =
+              definition?.name === "Consolidator" &&
+              responseData?.success === true &&
+              Object.prototype.hasOwnProperty.call(responseData, "data")
+                ? responseData.data
+                : responseData;
           }
         } else {
           outputData = payload;
@@ -780,9 +835,17 @@ export function useNodeExecution({
             (typeof parsed.details?.message === "string" &&
               parsed.details.message);
 
+          if (
+            definition?.name === "Consolidator" &&
+            parsed.code === "EDITOR_CONTEXT_EXPIRED"
+          ) {
+            consolidatorSeriesRef.current = null;
+          }
+
           errOutput = {
             status: "error",
             success: false,
+            ...(typeof parsed.code === "string" ? { code: parsed.code } : {}),
             error: parsedError || err.message || "Action failed",
             timestamp: new Date().toISOString(),
           };
@@ -831,6 +894,7 @@ export function useNodeExecution({
       fieldState,
       userId,
       selectedInputData,
+      selectedInputNodeId,
       buildPayload,
       nodeId,
       workflowId,

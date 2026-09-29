@@ -143,7 +143,10 @@ export function useClusterExecution({ token, workflowSessionId, prepare, current
     let didHydrate = false;
     for (const [nodeId, output] of resolution.outputs) {
       if (!currentNodeIds.has(nodeId)) continue;
-      executionStore.setNodeData(nodeId, { output });
+      executionStore.setNodeData(nodeId, {
+        output,
+        sourceRunId: descriptor.runId,
+      });
       didHydrate = true;
     }
     if (didHydrate) notifyStoreUpdate();

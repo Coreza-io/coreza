@@ -33,10 +33,31 @@ import {
 } from "../engine/rollingWindowHelpers";
 import { ConsolidationError } from "../engine/consolidation/TimeBarConsolidator";
 import {
+  buildConsolidatorConfigFingerprint,
   buildConsolidatorStateKey,
   ConsolidatorValidationError,
   runConsolidatorStep,
 } from "../engine/consolidation/consolidatorShared";
+import {
+  EditorConsolidatorStateError,
+  EditorConsolidatorStateService,
+} from "../engine/consolidation/EditorConsolidatorStateService";
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+function isSafeId(value: unknown): value is string {
+  return typeof value === "string" && SAFE_ID_PATTERN.test(value);
+}
+
+function isConfigFingerprint(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 500;
+}
 
 const router = Router();
 
@@ -44,16 +65,24 @@ const router = Router();
 router.use(requireAuth);
 
 // POST /storage/consolidator
-router.post("/consolidator", (req: Request, res: Response) => {
+router.post("/consolidator", async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
     return res.status(401).json({ success: false, error: "Unauthorized" });
   }
 
   const {
+    contextMode,
     runId,
     workflowSessionId,
-    backtestId,
+    workflowId,
+    nodeId: requestedNodeId,
+    node_id: legacyNodeId,
+    configFingerprint,
+    operationId,
+    operation = "execute",
+    seriesAction,
+    sourceProvenance,
     symbol,
     source_timeframe: sourceTimeframe,
     target_timeframe: targetTimeframe,
@@ -61,11 +90,44 @@ router.post("/consolidator", (req: Request, res: Response) => {
     anchor_time: requestedAnchorTime,
     candle_data: candleData,
   } = req.body;
-  const executionId = runId ?? workflowSessionId ?? backtestId;
-  if (!executionId) {
+  const nodeId = requestedNodeId ?? legacyNodeId;
+  if (contextMode !== "editor" && contextMode !== "active-run") {
     return res.status(400).json({
       success: false,
-      error: "runId, workflowSessionId, or backtestId is required",
+      code: "INVALID_EXECUTION_CONTEXT",
+      error: "contextMode must be editor or active-run",
+    });
+  }
+  if (!isUuid(workflowId) || !isSafeId(nodeId)) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_EXECUTION_CONTEXT",
+      error: "workflowId must be a UUID and nodeId must be a valid identifier",
+    });
+  }
+  if (
+    contextMode === "editor" &&
+    (runId ||
+      !isUuid(workflowSessionId) ||
+      !isConfigFingerprint(configFingerprint) ||
+      !isUuid(operationId))
+  ) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_EXECUTION_CONTEXT",
+      error:
+        "Editor execution requires valid workflowSessionId, configFingerprint, and operationId values, and cannot include runId",
+    });
+  }
+  if (
+    contextMode === "active-run" &&
+    (!isUuid(runId) || workflowSessionId || operationId || configFingerprint)
+  ) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_EXECUTION_CONTEXT",
+      error:
+        "Active-run execution requires runId and cannot include editor identity fields",
     });
   }
 
@@ -77,13 +139,96 @@ router.post("/consolidator", (req: Request, res: Response) => {
     anchorTime: String(requestedAnchorTime ?? "").trim(),
   };
 
+  if (
+    contextMode === "editor" &&
+    configFingerprint !== buildConsolidatorConfigFingerprint(parameters)
+  ) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_CONSOLIDATOR_CONFIG",
+      error: "configFingerprint does not match the Consolidator configuration",
+    });
+  }
+
+  const validSourceProvenance =
+    sourceProvenance &&
+    isSafeId(sourceProvenance.sourceNodeId) &&
+    (sourceProvenance.sourceRunId === undefined ||
+      isUuid(sourceProvenance.sourceRunId));
+  if (
+    contextMode === "editor" &&
+    operation === "execute" &&
+    ((seriesAction !== "start" && seriesAction !== "continue") ||
+      !validSourceProvenance)
+  ) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_EXECUTION_CONTEXT",
+      error:
+        "Editor execution requires a series action and valid source provenance",
+    });
+  }
+
   try {
     const stateKey = buildConsolidatorStateKey(parameters);
+    if (contextMode === "editor") {
+      const { data: ownedWorkflow, error: ownershipError } = await supabase
+        .from("workflows")
+        .select("id")
+        .eq("id", workflowId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (ownershipError || !ownedWorkflow) {
+        return res.status(404).json({
+          success: false,
+          code: "WORKFLOW_NOT_FOUND",
+          error: "Workflow not found",
+        });
+      }
+      const identity = {
+        userId,
+        workflowId,
+        workflowSessionId,
+        nodeId,
+        configFingerprint,
+      };
+      const service = new EditorConsolidatorStateService(getRedisCache());
+      if (operation === "reset") {
+        await service.reset(identity);
+        return res.json({
+          success: true,
+          data: { reset: true },
+          meta: { key: stateKey },
+        });
+      }
+      if (operation !== "execute") {
+        return res.status(400).json({
+          success: false,
+          code: "INVALID_EXECUTION_CONTEXT",
+          error: "Unsupported editor operation",
+        });
+      }
+      const result = await service.execute({
+        identity,
+        operationId,
+        seriesAction,
+        sourceProvenance,
+        parameters,
+        candleData,
+      });
+      return res.json({ success: true, data: result, meta: { key: stateKey } });
+    }
+
     const dataContext =
-      DataContextManager.getInstance().getExistingContext(executionId);
-    if (!dataContext) {
+      DataContextManager.getInstance().getExistingContext(runId);
+    if (
+      !dataContext ||
+      dataContext.getUserId() !== userId ||
+      dataContext.getWorkflowId() !== workflowId
+    ) {
       return res.status(404).json({
         success: false,
+        code: "EXECUTION_CONTEXT_COMPLETED",
         error: "Execution context not found or already completed",
         meta: { key: stateKey },
       });
@@ -101,14 +246,38 @@ router.post("/consolidator", (req: Request, res: Response) => {
       meta: { key: stateKey },
     });
   } catch (error) {
-    return res.status(400).json({
+    const editorStateUnavailable =
+      contextMode === "editor" &&
+      !(error instanceof ConsolidationError) &&
+      !(error instanceof ConsolidatorValidationError);
+    const status =
+      error instanceof EditorConsolidatorStateError
+        ? error.code === "EDITOR_CONTEXT_EXPIRED"
+          ? 410
+          : error.code === "DUPLICATE_OPERATION_CONFLICT" ||
+              error.code === "EDITOR_CONTEXT_RESET_REQUIRED"
+            ? 409
+            : error.code === "EXECUTION_CONTEXT_UNAVAILABLE"
+              ? 503
+              : 500
+        : editorStateUnavailable
+          ? 503
+          : 400;
+    return res.status(status).json({
       success: false,
       code:
+        error instanceof EditorConsolidatorStateError ||
         error instanceof ConsolidationError ||
         error instanceof ConsolidatorValidationError
           ? error.code
-          : "CONSOLIDATION_ERROR",
-      error: error instanceof Error ? error.message : String(error),
+          : editorStateUnavailable
+            ? "EXECUTION_CONTEXT_UNAVAILABLE"
+            : "CONSOLIDATION_ERROR",
+      error: editorStateUnavailable
+        ? "Editor Consolidator state is temporarily unavailable"
+        : error instanceof Error
+          ? error.message
+          : String(error),
     });
   }
 });
@@ -349,8 +518,12 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       });
     } else if (service === "supabase") {
       const supabaseUrl = String(req.body.supabase_url ?? "").trim();
-      const legacyServiceRoleKey = String(req.body.service_role_key ?? "").trim();
-      const secretKey = String(req.body.secret_key ?? legacyServiceRoleKey).trim();
+      const legacyServiceRoleKey = String(
+        req.body.service_role_key ?? "",
+      ).trim();
+      const secretKey = String(
+        req.body.secret_key ?? legacyServiceRoleKey,
+      ).trim();
 
       if (!supabaseUrl) {
         return res.status(400).json({ error: "supabase_url is required" });
@@ -364,7 +537,9 @@ router.post("/:service/auth", async (req: Request, res: Response) => {
       try {
         parsedUrl = new URL(supabaseUrl);
       } catch {
-        return res.status(400).json({ error: "supabase_url must be a valid URL" });
+        return res
+          .status(400)
+          .json({ error: "supabase_url must be a valid URL" });
       }
 
       if (parsedUrl.protocol !== "https:") {

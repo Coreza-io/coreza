@@ -2,7 +2,9 @@ import type { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar } from "../../utils/barParser";
 import { validateTimeframeRatio } from "../../utils/timeframe";
 import {
+  ConsolidationError,
   TimeBarConsolidator,
+  type ConsolidationResult,
   type ConsolidatorState,
 } from "./TimeBarConsolidator";
 
@@ -24,6 +26,21 @@ export interface ConsolidatorStepResult {
   key: string;
   payload: ConsolidatorPayload;
   state: ConsolidatorState;
+}
+
+export function buildConsolidatorConfigFingerprint(
+  parameters: ConsolidatorParameters,
+): string {
+  return [
+    parameters.symbol,
+    parameters.sourceTimeframe,
+    parameters.targetTimeframe,
+    parameters.timezone || "UTC",
+    parameters.anchorTime,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .map((value) => `${value.length}:${value}`)
+    .join("|");
 }
 
 export class ConsolidatorValidationError extends Error {
@@ -50,10 +67,18 @@ export function buildConsolidatorStateKey(
     );
   }
 
-  const ratio = validateTimeframeRatio(
-    parameters.sourceTimeframe,
-    parameters.targetTimeframe,
-  );
+  let ratio: ReturnType<typeof validateTimeframeRatio>;
+  try {
+    ratio = validateTimeframeRatio(
+      parameters.sourceTimeframe,
+      parameters.targetTimeframe,
+    );
+  } catch (error) {
+    throw new ConsolidatorValidationError(
+      "INVALID_CONSOLIDATOR_CONFIG",
+      error instanceof Error ? error.message : "Invalid Consolidator timeframes",
+    );
+  }
   return [
     symbol,
     ratio.source.normalized,
@@ -82,14 +107,26 @@ export function runConsolidatorStep(
       "Stored consolidator state is invalid",
     );
   }
+  const validatedState = isConsolidatorState(storedState)
+    ? storedState
+    : undefined;
 
-  const consolidator = new TimeBarConsolidator({
-    sourceTimeframe: parameters.sourceTimeframe,
-    targetTimeframe: parameters.targetTimeframe,
-    timezone: parameters.timezone,
-    anchorTime: parameters.anchorTime,
-  });
-  const result = consolidator.update(bar, storedState);
+  let result: ConsolidationResult;
+  try {
+    const consolidator = new TimeBarConsolidator({
+      sourceTimeframe: parameters.sourceTimeframe,
+      targetTimeframe: parameters.targetTimeframe,
+      timezone: parameters.timezone,
+      anchorTime: parameters.anchorTime,
+    });
+    result = consolidator.update(bar, validatedState);
+  } catch (error) {
+    if (error instanceof ConsolidationError) throw error;
+    throw new ConsolidatorValidationError(
+      "INVALID_CONSOLIDATOR_CONFIG",
+      error instanceof Error ? error.message : "Invalid Consolidator configuration",
+    );
+  }
   return {
     key,
     state: result.state,

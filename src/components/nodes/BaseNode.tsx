@@ -15,11 +15,11 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useNodeId, useReactFlow, useStore } from "@xyflow/react";
+import { useNodeId, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
-import { useStableNodes } from "@/contexts/StableNodeContext";
+import { useCanonicalGraphSnapshot } from "@/contexts/StableNodeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
@@ -43,6 +43,10 @@ import {
   type NodeVisualTheme,
 } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
+import {
+  resolveLiveInputData,
+  resolvePreviousNodeId,
+} from "@/utils/inputPanelSelection";
 import {
   LISTENER_CLEAR_STATE,
   buildStopListeningPayload,
@@ -135,9 +139,6 @@ const TAILWIND_NEON_COLORS: Record<string, string> = {
   "text-red-": "#f87171",
 };
 
-// Selector for edge count - only re-renders when number of edges changes
-const edgeCountSelector = (state: any) => state.edges?.length ?? 0;
-
 const BaseNode: React.FC<BaseNodeProps> = ({
   data,
   selected,
@@ -146,55 +147,53 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   children,
 }) => {
   const nodeId = useNodeId();
-  const { getNodes, getEdges } = useStableNodes();
+  const canonicalGraph = useCanonicalGraphSnapshot();
   const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: routeWorkflowId } = useParams();
   const workflowId = propWorkflowId ?? routeWorkflowId;
-  // Subscribe to edge count changes (not position changes)
-  const edgeCount = useStore(edgeCountSelector);
-
-  // Track upstream nodes with stable reference
-  const previousNodesRef = useRef<Node[]>([]);
   const replaySessionRef = useRef(0);
 
   const definition = data.definition;
-  const { visualCategory, nodeTheme, neonColor, nodeSurfaceGradient } = useMemo(() => {
-    const cat = resolveNodeVisualCategory(definition);
-    const theme = NODE_VISUAL_THEMES[cat] ?? DEFAULT_NODE_VISUAL_THEME;
-    return {
-      visualCategory: cat,
-      nodeTheme: theme,
-      neonColor: theme.neon,
-      nodeSurfaceGradient: theme.background,
-    };
-  }, [definition?.name, definition?.category, definition?.def]);
+  const { visualCategory, nodeTheme, neonColor, nodeSurfaceGradient } =
+    useMemo(() => {
+      const cat = resolveNodeVisualCategory(definition);
+      const theme = NODE_VISUAL_THEMES[cat] ?? DEFAULT_NODE_VISUAL_THEME;
+      return {
+        visualCategory: cat,
+        nodeTheme: theme,
+        neonColor: theme.neon,
+        nodeSurfaceGradient: theme.background,
+      };
+    }, [definition?.name, definition?.category, definition?.def]);
 
   // Get display name - use stable access to avoid re-renders on drag
   const displayName = useMemo(() => {
     if (data.displayName && data.displayName.trim()) {
       return data.displayName;
     }
-    const nodes = getNodes();
-    return getDisplayName({ id: nodeId!, data } as Node<any>, nodes);
-  }, [definition?.name, nodeId, data.displayName, getNodes]);
+    return getDisplayName(
+      { id: nodeId!, data } as Node<any>,
+      canonicalGraph.nodes,
+    );
+  }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
 
-  // Get upstream nodes - recalculate when edge count changes
+  // Canonical topology changes include same-count reconnects and workflow replacement.
   const previousNodes = useMemo(() => {
-    if (!nodeId) return previousNodesRef.current;
-    const nodes = getNodes();
-    const edges = getEdges();
-
-    previousNodesRef.current = getAllUpstreamNodes(nodeId, edges, nodes);
-    return previousNodesRef.current;
-  }, [nodeId, getNodes, getEdges, edgeCount, storeVersion]);
+    if (!nodeId) return [];
+    return getAllUpstreamNodes(
+      nodeId,
+      canonicalGraph.edges,
+      canonicalGraph.nodes,
+    );
+  }, [canonicalGraph.edges, canonicalGraph.nodes, nodeId]);
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;
-    return getEdges().filter((edge) => edge.target === nodeId).length;
-  }, [nodeId, getEdges, edgeCount]);
+    return canonicalGraph.edges.filter((edge) => edge.target === nodeId).length;
+  }, [canonicalGraph.edges, nodeId]);
 
   // State for selected previous node and auth modal
   const [showAuth, setShowAuth] = useState(false);
@@ -202,19 +201,42 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const [canStepNext, setCanStepNext] = useState(true);
   const [canStepPrevious, setCanStepPrevious] = useState(true);
 
-  // Initialize selectedPrevNodeId when previousNodes change
+  const preferredPrevNodeId = useMemo(() => {
+    if (!nodeId) return undefined;
+    return canonicalGraph.edges.find(
+      (edge) => edge.target === nodeId && edge.sourceHandle === "done",
+    )?.source;
+  }, [canonicalGraph.edges, nodeId]);
+
+  const resolvedPrevNodeId = useMemo(
+    () =>
+      resolvePreviousNodeId(
+        selectedPrevNodeId,
+        previousNodes,
+        preferredPrevNodeId,
+      ),
+    [preferredPrevNodeId, previousNodes, selectedPrevNodeId],
+  );
+
+  // Repair deleted or projected selections from the canonical topology.
   useEffect(() => {
-    if (previousNodes.length > 0 && !selectedPrevNodeId) {
-      setSelectedPrevNodeId(previousNodes[0].id);
+    const nextId = resolvedPrevNodeId ?? "";
+    if (nextId !== selectedPrevNodeId) {
+      setSelectedPrevNodeId(nextId);
     }
-  }, [previousNodes, selectedPrevNodeId]);
+  }, [resolvedPrevNodeId, selectedPrevNodeId]);
 
-  // Get selected previous node
-  const selectedPrevNode =
-    previousNodes.find((n) => n.id === selectedPrevNodeId) || previousNodes[0];
-
-  // Extract selectedInputData prioritizing execution store data
-  const selectedInputData = selectedPrevNode?.data?.output ?? {};
+  const selectedInputData = useMemo(() => {
+    void storeVersion;
+    return resolveLiveInputData(
+      resolvedPrevNodeId,
+      canonicalGraph.nodes,
+      (sourceNodeId) => executionStore.getNodeData(sourceNodeId),
+    );
+  }, [canonicalGraph.nodes, executionStore, resolvedPrevNodeId, storeVersion]);
+  const selectedPrevNode = previousNodes.find(
+    (node) => node.id === resolvedPrevNodeId,
+  );
 
   // ========== Use Custom Hooks ==========
 
@@ -251,6 +273,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     fieldState: fieldStateHook.fieldState,
     data,
     previousNodes,
+    selectedInputNodeId: resolvedPrevNodeId,
     selectedInputData,
     setLastOutput: outputHook.setLastOutput,
     overrideOutput: outputHook.pinnedOutput,
@@ -261,7 +284,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const referencesHook = useNodeReferences({
     fieldState: fieldStateHook.fieldState,
     previousNodes,
-    selectedPrevNodeId,
+    selectedPrevNodeId: resolvedPrevNodeId ?? "",
     selectedPrevNode,
   });
 
@@ -320,14 +343,11 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         nodeId,
         credentialId: fieldStateHook.fieldState.credential_id,
       });
-      const response = await apiClient.request(
-        stopAction.url,
-        {
-          method: stopAction.method,
-          body: JSON.stringify(stopPayload),
-          token: session?.access_token,
-        },
-      );
+      const response = await apiClient.request(stopAction.url, {
+        method: stopAction.method,
+        body: JSON.stringify(stopPayload),
+        token: session?.access_token,
+      });
 
       if (response.ok) {
         // Update node state to remove listening status

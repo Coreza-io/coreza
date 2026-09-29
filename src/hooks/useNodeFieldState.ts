@@ -14,6 +14,7 @@ import {
   reconcileNodeValues,
   getSchemaSignature,
 } from "@/utils/reconcileNodeValues";
+import { isEditorExecutionLocked } from "@/services/editorNodeExecution";
 
 interface UseNodeFieldStateProps {
   definition: any;
@@ -139,7 +140,7 @@ export function useNodeFieldState({
   // ── Single field change ──────────────────────────────────────────────
   const handleChange = useCallback(
     (key: string, value: any) => {
-      if (readOnly) return;
+      if (readOnly || (typeof data?.workflowSessionId === "string" && isEditorExecutionLocked(data.workflowSessionId))) return;
 
       const normalizedValue =
         typeof value === "string" && value.trim() === "" ? null : value;
@@ -177,13 +178,13 @@ export function useNodeFieldState({
         return nextFieldState;
       });
     },
-    [nodeId, setNodes, definition?.fields, readOnly],
+    [nodeId, setNodes, definition?.fields, readOnly, data?.workflowSessionId],
   );
 
   // ── Batch field update ───────────────────────────────────────────────
   const handleFieldStateBatch = useCallback(
     (updates: Record<string, any>) => {
-      if (readOnly) return;
+      if (readOnly || (typeof data?.workflowSessionId === "string" && isEditorExecutionLocked(data.workflowSessionId))) return;
 
       setFieldState((prevState) => {
         const nextFieldState = { ...prevState, ...updates };
@@ -204,7 +205,7 @@ export function useNodeFieldState({
         return nextFieldState;
       });
     },
-    [nodeId, setNodes, readOnly],
+    [nodeId, setNodes, readOnly, data?.workflowSessionId],
   );
 
   return { fieldState, handleChange, handleFieldStateBatch };

@@ -34,7 +34,6 @@ import { useNodeReferences } from "@/hooks/useNodeReferences";
 import { useNodeCredentials } from "@/hooks/useNodeCredentials";
 import { useNodeOutput } from "@/hooks/useNodeOutput";
 import { useNodeExecution } from "@/hooks/useNodeExecution";
-import { useNodeAutoExecution } from "@/hooks/useNodeAutoExecution";
 import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import {
   NODE_VISUAL_THEMES,
@@ -272,7 +271,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     definition,
     fieldState: fieldStateHook.fieldState,
     data,
-    previousNodes,
     selectedInputNodeId: resolvedPrevNodeId,
     selectedInputData,
     setLastOutput: outputHook.setLastOutput,
@@ -286,14 +284,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     previousNodes,
     selectedPrevNodeId: resolvedPrevNodeId ?? "",
     selectedPrevNode,
-  });
-
-  // Auto-execution (sets up event listeners, no return value)
-  useNodeAutoExecution({
-    nodeId,
-    definition,
-    handleSubmit: executionHook.handleSubmit,
-    executionStore,
   });
 
   // Get auth context for API calls

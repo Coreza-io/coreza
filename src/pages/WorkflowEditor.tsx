@@ -125,7 +125,7 @@ import {
 } from "@/domain/clusters/viewState";
 import { CLUSTER_COLLAPSE_ENABLED } from "@/domain/clusters/capabilities";
 import { resolveCanonicalSelection } from "@/domain/clusters/selection";
-import { repairProjectedClusterNodes } from "@/domain/clusters/canonicalNode";
+import { filterCanonicalNodeChanges, repairProjectedClusterNodes } from "@/domain/clusters/canonicalNode";
 import {
   applyPositionTargets,
   capturePositions,
@@ -867,10 +867,7 @@ const WorkflowEditorContent = () => {
           setNodes((current) => applyPositionTargets(current, targets));
         }
       }
-      const canonicalChanges = changes.filter((change) =>
-        canonicalNodeIds.has(change.id) &&
-        (change.type === "select" || change.type === "position" || change.type === "dimensions" || change.type === "remove"),
-      );
+      const canonicalChanges = filterCanonicalNodeChanges(changes, canonicalNodeIds);
       const removedNodeIds = canonicalChanges
         .filter((change) => change.type === "remove")
         .map((change) => change.id);

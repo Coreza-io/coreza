@@ -1,4 +1,4 @@
-import type { Node } from "@xyflow/react";
+import type { Node, NodeChange } from "@xyflow/react";
 
 export const CLUSTER_RUNTIME_HOST_CLASS = "cluster-runtime-host";
 
@@ -39,3 +39,15 @@ export function repairProjectedClusterNode(node: Node): Node {
 
 export const repairProjectedClusterNodes = (nodes: readonly Node[]): Node[] =>
   nodes.map(repairProjectedClusterNode);
+
+/** Allows only React Flow deltas that cannot replace canonical node objects. */
+export function filterCanonicalNodeChanges(
+  changes: readonly NodeChange[],
+  canonicalNodeIds: ReadonlySet<string>,
+): NodeChange[] {
+  return changes.filter((change) => {
+    if (!canonicalNodeIds.has(change.id)) return false;
+    return change.type === "select" || change.type === "position" ||
+      change.type === "dimensions" || change.type === "remove";
+  });
+}

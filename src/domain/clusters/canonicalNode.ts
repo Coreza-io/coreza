@@ -46,6 +46,7 @@ export function filterCanonicalNodeChanges(
   canonicalNodeIds: ReadonlySet<string>,
 ): NodeChange[] {
   return changes.filter((change) => {
+    if (!("id" in change)) return false;
     if (!canonicalNodeIds.has(change.id)) return false;
     return change.type === "select" || change.type === "position" ||
       change.type === "dimensions" || change.type === "remove";

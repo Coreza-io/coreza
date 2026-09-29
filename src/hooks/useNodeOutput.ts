@@ -9,13 +9,14 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeId } from "@xyflow/react";
 import { createWaitingNewsOutput } from "@/utils/newsStream";
 import { isNewsStreamNode } from "@/utils/brokerRegistry";
 import {
   useExecutionStore,
   useExecutionStoreVersion,
 } from "@/contexts/ExecutionStoreContext";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 
 interface UseNodeOutputProps {
   data: any;
@@ -43,7 +44,7 @@ export function useNodeOutput({
   const nodeId = useNodeId();
   const executionStore = useExecutionStore();
   const version = useExecutionStoreVersion();
-  const { setNodes } = useReactFlow();
+  const { updateNodeData } = useStableNodes();
   const isNews = isNewsStreamNode(definition);
 
   const [lastOutput, setLastOutput] = useState<any>(() => {
@@ -85,22 +86,12 @@ export function useNodeOutput({
 
       executionStore.setPinned(nodeId, value);
 
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  pinnedOutput: value ?? undefined,
-                  ...(value !== null ? { output: value } : {}),
-                },
-              }
-            : n,
-        ),
-      );
+      updateNodeData(nodeId, {
+        pinnedOutput: value ?? undefined,
+        ...(value !== null ? { output: value } : {}),
+      });
     },
-    [data, nodeId, executionStore, setNodes],
+    [data, nodeId, executionStore, updateNodeData],
   );
 
   useEffect(() => {

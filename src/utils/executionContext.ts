@@ -14,6 +14,7 @@ export interface NodeExecutionData {
   // I/O
   input?: any;
   output?: any;
+  sourceRunId?: string;
 
   // Loop config / progress
   isLoopNode?: boolean;

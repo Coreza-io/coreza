@@ -796,12 +796,7 @@ export function useNodeExecution({
 
             outputData = await handler.start(responseData);
           } else {
-            outputData =
-              definition?.name === "Consolidator" &&
-              responseData?.success === true &&
-              Object.prototype.hasOwnProperty.call(responseData, "data")
-                ? responseData.data
-                : responseData;
+            outputData = responseData;
           }
         } else {
           outputData = payload;

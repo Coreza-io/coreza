@@ -16,7 +16,8 @@ Add one icon-only Execute control at the bottom center of every editable node ca
 - Normal nodes render text submit buttons only inside expanded Basic and Repeater forms. `NodeWrapper`, which owns collapsed and expanded shells, has no action slot.
 - `NodeRouter` covers manifest nodes. `LoopNode` is the only separate BaseNode/NodeWrapper renderer and currently omits workflow/read-only propagation.
 - Every mounted `BaseNode` already owns one normal `handleSubmit`, `isSending`, error state, listener state, and stop handlers. The new control must reuse that action instead of registering another action or mounting another form.
-- A missing manifest `action` does not mean non-executable: ChatInput, InMemory, and Loop intentionally execute locally. Visualize is the established visible exception, and `node_type: sub` attachments are not independently scheduled. Eligibility needs an explicit policy based on the established manual-action contract, not category names or `definition.action` alone.
+- A missing manifest `action` does not mean non-executable: ChatInput, InMemory, and Loop intentionally execute locally. Visualize is the established visible exception, and `node_type: sub` attachments are not independently scheduled. There is no current declarative capability flag, so eligibility needs one authoritative policy instead of category, `node_type`, `definition.action`, or mounted callback availability.
+- The collapsed shell already uses bottom center for a read-only item-count badge and bottom right for the tool-mode toggle. The new band must deliberately relocate/partition those elements rather than merely overlaying them.
 - Cluster execution owns a synchronous session lock, but its lock map is not reactive. Individual execution and Run All do not acquire that shared lock themselves, so truthful globally blocked/running controls require one subscribed coordinator.
 - Collapsed cluster members remain mounted as invisible runtime hosts with `aria-hidden`, disabled focus, hidden visibility, and no pointer interaction. Their controls must remain equally hidden and unfocusable.
 
@@ -38,15 +39,15 @@ Prefer behavioral assertions and measured geometry over Tailwind-class snapshots
 
 ### 2. Define independent execution eligibility
 
-Create a small pure capability resolver and use it for node-button visibility and cluster planning.
+Add an explicit declarative manual-execution capability to the normalized node definition/registry, expose it through a small pure resolver, and use that resolver for node-button visibility and cluster planning. Do not derive eligibility from whether a React callback happens to be registered: that would preserve the mount-timing race the wider execution architecture is meant to remove.
 
 - Allow normal backend actions and intentional local actions such as ChatInput, InMemory, and Loop.
 - Allow BacktestInit and OnBar with their existing initialize-once and one-step behavior.
 - Allow trigger/listener nodes where the established action can start listening.
 - Exclude `node_type: sub` attachments from independent execution.
-- Exclude Visualize unless its manual-action contract is deliberately changed later.
+- Mark Visualize unavailable and omit its control, preserving its current intentional exception unless its manual-action contract is deliberately changed later.
 - Return a typed unavailable reason, while the requested UI hides unsupported controls instead of showing decorative disabled buttons.
-- Never infer capability from categories or only from `definition.action`.
+- Never infer capability from category, `node_type`, `definition.action`, or current component mount state.
 
 Audit every manifest definition and Loop against the resolver. Add a manifest-wide test so a new renderer or capability cannot silently miss the shared control.
 
@@ -65,7 +66,7 @@ The component must not fetch, traverse graphs, mutate React Flow, or infer capab
 
 ### 4. Adapt the existing node action once
 
-Have `BaseNode` derive a control model from its existing `handleSubmit`, `isSending`, validation error, listener state/stop handler, workflow session, and read-only state. Expose it through render props; never invoke the execution hook twice.
+Have `BaseNode` derive a control model from its existing `handleSubmit`, `isSending`, validation error, listener state/stop handler, workflow session, and read-only state. Expose it through render props; never invoke the execution hook twice. Preserve the cluster control's existing polite live region in the generic component, but throttle progress announcements so screen readers do not announce every member tick.
 
 - Play calls the same `handleSubmit` command as form submission and retains its typed outcome.
 - Preserve validation, credentials, selected/upstream inputs, expressions, pins including falsy values, references, Consolidator context, outputs, and errors.
@@ -79,14 +80,14 @@ Have `BaseNode` derive a control model from its existing `handleSubmit`, `isSend
 Add `executionControl?: ReactNode` and render it once, outside the conditional expanded form body, in a bottom-centered action band shared by both card states.
 
 - Render only for editable, visible, independently executable nodes.
-- Reserve space so icons, titles, fields, errors, item badges, tool toggle, and the control cannot overlap.
-- Preserve the default 200×150 collapsed card and audit AIAgent's 320×150 card; increase a documented minimum only if measured content cannot fit.
+- Reserve space so icons, titles, fields, errors, and the control cannot overlap. Keep the read-only item-count badge in its current bottom-center position only when the action control is absent; partition or relocate the editor tool toggle so it cannot collide with the new center band.
+- Preserve the default 200×150 collapsed card and explicitly audit AIAgent's 320×150 horizontal card, currently the only custom `collapsedSize`; increase a documented minimum only if measured content cannot fit.
 - Keep clear of bottom handles, especially AIAgent attachment handles, and verify connections remain usable.
 - In expanded cards, add bottom space instead of covering the last field.
 - Update React Flow internals through the existing measurement lifecycle when bounds change.
 - Preserve body drag, selection, rename, delete, tool mode, panels, and explicit collapse controls.
 
-Pass the slot through `NodeRouter`. Wire `LoopNode` identically and propagate workflow identity/read-only state so it follows the same history-view policy.
+Pass the slot through `NodeRouter`. Wire `LoopNode` identically. Separately fix its existing omission of workflow identity and read-only propagation, then prove its current manual one-step action works before and after moving the control; read-only Loop cards must no longer expose the accidentally enabled form action.
 
 ### 6. Remove duplicate visible submit controls safely
 
@@ -173,6 +174,7 @@ Browser acceptance:
 6. Run compact and expanded clusters and verify unchanged order, output, progress, Stop, retry, and card state.
 7. Collapse cluster, update output/error/status, expand and Dissolve; member controls reappear once and work.
 8. Repeat across undo/redo and save/reload; hidden members and read-only views stay non-actionable.
+9. Place an expanded cluster near the viewport bottom and verify its centered cluster control remains visually distinct from and does not overlap the fixed page-level Run All control.
 
 Run focused Vitest suites, TypeScript checks, node-definition validation, preview diagnostics, and Playwright. Record actual commands, outcomes, and screenshots; prior healthy output is not new evidence.
 

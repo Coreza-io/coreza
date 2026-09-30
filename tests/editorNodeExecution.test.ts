@@ -51,4 +51,26 @@ describe("editor node execution service", () => {
       error: { message: expect.stringContaining("outside the allowed execution scope") },
     });
   });
+
+  it("acquires the session lock for individual execution and rejects overlap", async () => {
+    let release!: () => void;
+    registerEditorNodeAction(sessionId, "node", () => new Promise((resolve) => {
+      release = () => resolve({ nodeId: "node", status: "success" });
+    }));
+
+    const running = executeEditorNode(sessionId, "node");
+    expect(acquireEditorExecutionLock(sessionId)).toBeNull();
+    release();
+    await expect(running).resolves.toMatchObject({ status: "success" });
+    expect(acquireEditorExecutionLock(sessionId)).not.toBeNull();
+  });
+
+  it("fences captured actions after their owner lock is released", async () => {
+    registerEditorNodeAction(sessionId, "node", async () => ({ nodeId: "node", status: "success" }));
+    const snapshot = captureEditorNodeActions(sessionId, ["node"]);
+    const lock = acquireEditorExecutionLock(sessionId);
+    if (!lock) throw new Error("Expected lock");
+    releaseEditorExecutionLock(sessionId, lock);
+    await expect(snapshot.execute("node", { lockToken: lock })).resolves.toMatchObject({ status: "failed" });
+  });
 });

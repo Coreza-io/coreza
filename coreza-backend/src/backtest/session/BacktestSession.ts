@@ -148,9 +148,6 @@ export class BacktestSession {
 
     // Pin init results once — they survive across bar resets
     this.run.pinResults(this.backtestInitResult);
-
-    // ── Attempt compiled plan compilation ───────────────────────────
-    this.tryCompilePlan();
   }
 
   /**
@@ -358,10 +355,7 @@ export class BacktestSession {
     this.phase = "ready";
     this.status = "ready";
     this.currentIndex = 0;
-    if (this.warmupMode === "workflow_replay") {
-      this.run.clearNodeTiming();
-      this.tryCompilePlan();
-    }
+    if (this.warmupMode === "workflow_replay") this.run.clearNodeTiming();
   }
 
   private async initializeIndicatorStates(): Promise<void> {
@@ -848,6 +842,10 @@ export class BacktestSession {
       throw new Error("Step already in progress");
     }
 
+    // Manual BacktestInit/OnBar sessions do not need strategy compilation.
+    // Promote the same session lazily only at the explicit historical entry point.
+    this.tryCompilePlan();
+
     this.stepping = true;
     try {
       const signal = this.abortController.signal;
@@ -1060,7 +1058,7 @@ export class BacktestSession {
     }
     this.run.clearNodeTiming();
     this.run.pinResults(this.backtestInitResult);
-    this.tryCompilePlan();
+    this.compiledPlan = null;
 
     this.phase = "initializing";
     await this.initialize();

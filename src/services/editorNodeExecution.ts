@@ -4,6 +4,7 @@ export type NodeExecutionStatus =
   | "cancelled"
   | "pinned"
   | "skipped"
+  | "dependency-blocked"
   | "listener-started";
 
 export interface NodeExecutionError {
@@ -17,6 +18,7 @@ export interface NodeExecutionOutcome {
   output?: unknown;
   error?: NodeExecutionError;
   reason?: string;
+  selectedContinuation?: string;
 }
 
 export interface NodeExecutionRequest {
@@ -74,8 +76,8 @@ export async function executeEditorNode(
   if (request?.allowedNodeIds && !request.allowedNodeIds.has(nodeId)) {
     return { nodeId, status: "failed", error: { message: `Node ${nodeId} is outside the allowed execution scope.` } };
   }
-  const lock = executionLocks.get(sessionId);
-  if (lock && request?.lockToken !== lock) {
+  const existingLock = executionLocks.get(sessionId);
+  if (existingLock && request?.lockToken !== existingLock) {
     return { nodeId, status: "failed", reason: "Another editor execution is active.", error: { message: "Another editor execution is active." } };
   }
   const action = actions.get(sessionId)?.get(nodeId);
@@ -86,7 +88,16 @@ export async function executeEditorNode(
       error: { message: `Node ${nodeId} is not available in the current editor session.` },
     };
   }
-  return action(request);
+  if (existingLock) return action(request);
+  const ownedToken = acquireEditorExecutionLock(sessionId);
+  if (!ownedToken) {
+    return { nodeId, status: "failed", reason: "Another editor execution is active.", error: { message: "Another editor execution is active." } };
+  }
+  try {
+    return await action({ ...request, lockToken: request?.lockToken ?? ownedToken });
+  } finally {
+    releaseEditorExecutionLock(sessionId, ownedToken);
+  }
 }
 
 export function acquireEditorExecutionLock(sessionId: string): symbol | null {
@@ -122,6 +133,10 @@ export function captureEditorNodeActions(
       if (request?.signal?.aborted) return { nodeId, status: "cancelled", reason: "Execution was cancelled." };
       if (request?.allowedNodeIds && !request.allowedNodeIds.has(nodeId)) {
         return { nodeId, status: "failed", error: { message: `Node ${nodeId} is outside the allowed execution scope.` } };
+      }
+      const activeLock = executionLocks.get(sessionId);
+      if (!activeLock || request?.lockToken !== activeLock) {
+        return { nodeId, status: "failed", error: { message: "The captured execution lock is no longer active." } };
       }
       const action = captured.get(nodeId);
       if (!action) return { nodeId, status: "failed", error: { message: `Node ${nodeId} is outside the captured execution plan.` } };

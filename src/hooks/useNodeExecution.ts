@@ -380,9 +380,12 @@ export function useNodeExecution({
 
   // Main execution handler
   const executeAction = useCallback(
-    async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number): Promise<NodeExecutionOutcome> => {
+    async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number, allowedNodeIds?: ReadonlySet<string>): Promise<NodeExecutionOutcome> => {
       if (e) e.preventDefault();
       const outcomeNodeId = nodeId ?? "unknown";
+      if (allowedNodeIds && !allowedNodeIds.has(outcomeNodeId)) {
+        return { nodeId: outcomeNodeId, status: "failed", error: { message: `Node ${outcomeNodeId} is outside the allowed execution scope.` } };
+      }
       const executionIsCurrent = () => !signal?.aborted &&
         (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration);
       if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
@@ -605,7 +608,7 @@ export function useNodeExecution({
             setLastOutput(finalOut);
             data.output = finalOut;
             updateNodeData(nodeId, { output: finalOut });
-            return { nodeId: outcomeNodeId, status: "success", output: finalOut };
+            return { nodeId: outcomeNodeId, status: "success", output: finalOut, selectedContinuation: "done" };
           }
 
           // Items mode → append emitted items and finalize to full aggregate on last batch
@@ -639,7 +642,7 @@ export function useNodeExecution({
             _edgeBuf: {},
           });
 
-          return { nodeId: outcomeNodeId, status: "success", output: uiOut };
+          return { nodeId: outcomeNodeId, status: "success", output: uiOut, selectedContinuation: "loop" };
         }
 
         // Regular backend processing for non-Loop nodes
@@ -919,9 +922,9 @@ export function useNodeExecution({
   useEffect(() => {
     const sessionId = data?.workflowSessionId;
     if (!sessionId || !nodeId) return;
-    return registerEditorNodeAction(sessionId, nodeId, ({ input, signal, executionGeneration } = {}) => {
+    return registerEditorNodeAction(sessionId, nodeId, ({ input, signal, executionGeneration, allowedNodeIds } = {}) => {
       if (signal?.aborted) return Promise.resolve({ nodeId, status: "cancelled", reason: "Execution was cancelled." });
-      return executeAction(undefined, input, signal, executionGeneration);
+      return executeAction(undefined, input, signal, executionGeneration, allowedNodeIds);
     });
   }, [data?.workflowSessionId, executeAction, nodeId]);
 

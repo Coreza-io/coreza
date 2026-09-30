@@ -58,13 +58,14 @@ export class WorkflowExecutor {
     Map<string, { ifNodeId: string; handle: string; edgeId: string }>
   >();
   private edgePayload = new Map<string, any>();
+  private executionLockToken?: symbol;
 
   private async invokeNormalNode(nodeId: string): Promise<unknown> {
     const node = this.context.nodes.find((candidate) => candidate.id === nodeId);
     const sessionId = node?.data?.workflowSessionId;
     if (typeof sessionId !== "string") throw new Error(`Node ${nodeId} has no editor session.`);
     const input = this.nodeStore.getNodeData(nodeId).input;
-    const outcome = await executeEditorNode(sessionId, nodeId, { input });
+    const outcome = await executeEditorNode(sessionId, nodeId, { input, lockToken: this.executionLockToken });
     if (outcome.status === "failed" || outcome.status === "cancelled") {
       throw new Error(outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} did not complete.`);
     }
@@ -736,10 +737,19 @@ export class WorkflowExecutor {
     return result;
   }
 
+  async executeNodeWithLock(nodeId: string, executedSet: Set<string>, lockToken: symbol): Promise<unknown> {
+    this.executionLockToken = lockToken;
+    try {
+      return await this.executeNode(nodeId, executedSet);
+    } finally {
+      this.executionLockToken = undefined;
+    }
+  }
+
   /**
    * Execute all nodes using optimized FIFO queue with cycle detection and retry limits
    */
-  async executeAllNodes(): Promise<void> {
+  async executeAllNodes(lockToken?: symbol): Promise<void> {
     console.log(
       "🚀 [WORKFLOW EXECUTOR] Starting optimized FIFO queue‑based workflow execution",
     );
@@ -752,6 +762,7 @@ export class WorkflowExecutor {
     acceptEditorExecution();
 
     this.isAutoExecuting = true;
+    this.executionLockToken = lockToken;
     this.preCalculateConditionalBranches(); // Refresh conditional map
     this.edgePayload.clear();
 
@@ -1088,6 +1099,7 @@ export class WorkflowExecutor {
         variant: "destructive",
       });
     } finally {
+      this.executionLockToken = undefined;
       this.isAutoExecuting = false;
       this.context.setExecutingNode(null);
       this.context.setEdges((edges) =>

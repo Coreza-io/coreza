@@ -39,15 +39,91 @@ describe("manual cluster execution", () => {
 
   it("orders a supported Loop return boundary without treating it as a generic cycle", () => {
     const loop = node("loop");
-    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action" } };
+    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action", handles: [{ id: "loop", type: "source", connectionKind: "main" }] } };
     const nodes = [loop, node("body")];
     const edges: Edge[] = [
-      { id: "loop-body", source: "loop", target: "body" },
+      { id: "loop-body", source: "loop", sourceHandle: "loop", target: "body" },
       { id: "body-loop", source: "body", target: "loop" },
     ];
     expect(buildClusterExecutionPlan(
       { id: clusterId, title: "Loop folder", memberNodeIds: ["loop", "body"] }, nodes, edges,
     ).executableNodeIds).toEqual(["loop", "body"]);
+  });
+
+  it("preserves ordinary prerequisites entering a Loop and removes only feedback", () => {
+    const loop = node("loop");
+    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action", handles: [{ id: "loop", type: "source", connectionKind: "main" }] } };
+    const nodes = [loop, node("body"), node("upstream")];
+    const edges: Edge[] = [
+      { id: "upstream-loop", source: "upstream", target: "loop" },
+      { id: "loop-body", source: "loop", sourceHandle: "loop", target: "body" },
+      { id: "body-loop", source: "body", target: "loop" },
+    ];
+    expect(buildClusterExecutionPlan(
+      { id: clusterId, title: "Loop folder", memberNodeIds: ["loop", "body", "upstream"] }, nodes, edges,
+    ).executableNodeIds).toEqual(["upstream", "loop", "body"]);
+  });
+
+  it("does not use attachment edges for dependency ordering", () => {
+    const owner = node("owner");
+    owner.data = { ...owner.data, definition: { name: "owner", node_type: "action", handles: [{ id: "tool", type: "target", connectionKind: "attachment" }] } };
+    const attachment = node("attachment");
+    attachment.data = { ...attachment.data, definition: { name: "attachment", node_type: "sub", handles: [{ id: "out", type: "source", connectionKind: "attachment" }] } };
+    expect(buildClusterExecutionPlan(
+      { id: clusterId, title: "Folder", memberNodeIds: ["owner", "attachment"] },
+      [owner, attachment],
+      [{ id: "attachment", source: "attachment", sourceHandle: "out", target: "owner", targetHandle: "tool" }],
+    ).executableNodeIds).toEqual(["owner"]);
+  });
+
+  it.each([
+    ["loop", ["loop", "body"]],
+    ["done", ["loop", "done"]],
+  ])("executes only the %s continuation of a manual Loop step", async (continuation, expectedCalls) => {
+    const calls: string[] = [];
+    registerEditorNodeAction("session", "loop", async () => {
+      calls.push("loop");
+      return { nodeId: "loop", status: "success", selectedContinuation: continuation };
+    });
+    for (const id of ["body", "done"]) {
+      registerEditorNodeAction("session", id, async () => {
+        calls.push(id);
+        return { nodeId: id, status: "success" };
+      });
+    }
+    const loop = node("loop");
+    loop.data = {
+      ...loop.data,
+      definition: {
+        name: "Loop",
+        node_type: "action",
+        handles: [
+          { id: "loop", type: "source", connectionKind: "main" },
+          { id: "done", type: "source", connectionKind: "main" },
+        ],
+      },
+    };
+    const nodes = [loop, node("body"), node("done")];
+    const edges: Edge[] = [
+      { id: "loop-body", source: "loop", sourceHandle: "loop", target: "body" },
+      { id: "body-loop", source: "body", target: "loop" },
+      { id: "loop-done", source: "loop", sourceHandle: "done", target: "done" },
+    ];
+    let execute!: (id: string) => Promise<void>;
+    function Harness() {
+      execute = useClusterExecution({
+        workflowSessionId: "session",
+        nodes,
+        edges,
+        clusters: [{ id: clusterId, title: "Loop folder", memberNodeIds: ["loop", "body", "done"] }],
+      }).executeCluster;
+      return null;
+    }
+    let renderer!: ReactTestRenderer;
+    act(() => { renderer = create(React.createElement(Harness)); });
+    await act(async () => execute(clusterId));
+    expect(calls).toEqual(expectedCalls);
+    act(() => renderer.unmount());
   });
 
   it("runs each normal action once in order and stops after a failure", async () => {

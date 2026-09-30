@@ -112,7 +112,12 @@ import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
 import { ExecuteAllControl } from "@/components/workflow/ExecuteAllControl";
 import { ClusterExecutionControl } from "@/components/workflow/ClusterExecutionControl";
 import { useClusterExecution } from "@/hooks/useClusterExecution";
-import { clearEditorNodeActions, isEditorExecutionLocked } from "@/services/editorNodeExecution";
+import {
+  acquireEditorExecutionLock,
+  clearEditorNodeActions,
+  isEditorExecutionLocked,
+  releaseEditorExecutionLock,
+} from "@/services/editorNodeExecution";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
@@ -1227,28 +1232,27 @@ const WorkflowEditorContent = () => {
 
   // Execute all nodes with the queue-based WorkflowExecutor
   const executeAllNodes = useCallback(async () => {
-    if (clusterExecution.isExecutionActive || isEditorExecutionLocked(workflowSessionId)) {
+    const lockToken = acquireEditorExecutionLock(workflowSessionId);
+    if (!lockToken) {
       toast({ title: "Execution already active", description: "Stop the cluster run before executing the whole workflow." });
       return;
     }
-    if (!workflowExecutor) {
-      toast({
-        title: "Error",
-        description: "No workflow to execute",
-        variant: "destructive",
-      });
-      return;
+    try {
+      if (!workflowExecutor) {
+        toast({ title: "Error", description: "No workflow to execute", variant: "destructive" });
+        return;
+      }
+      if (hasBacktestInitNode(nodes)) {
+        const canExecute = await ensureBacktestExecutionReady();
+        if (!canExecute) return;
+      }
+      setIsAutoExecuting(true);
+      await workflowExecutor.executeAllNodes(lockToken);
+    } finally {
+      setIsAutoExecuting(false);
+      releaseEditorExecutionLock(workflowSessionId, lockToken);
     }
-
-    if (hasBacktestInitNode(nodes)) {
-      const canExecute = await ensureBacktestExecutionReady();
-      if (!canExecute) return;
-    }
-
-    setIsAutoExecuting(true);
-    await workflowExecutor.executeAllNodes();
-    setIsAutoExecuting(false);
-  }, [clusterExecution.isExecutionActive, workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady, workflowSessionId]);
+  }, [workflowExecutor, toast, hasBacktestInitNode, nodes, ensureBacktestExecutionReady, workflowSessionId]);
 
   const handleStopExecution = useCallback(() => {
     workflowExecutor?.stop();
@@ -1274,19 +1278,22 @@ const WorkflowEditorContent = () => {
         });
         return;
       }
-      if (clusterExecution.isExecutionActive || isEditorExecutionLocked(workflowSessionId)) {
+      const lockToken = acquireEditorExecutionLock(workflowSessionId);
+      if (!lockToken) {
         toast({ title: "Execution already active", description: "Stop the cluster run before executing a node." });
         return;
       }
-
-      if ((node.data?.definition as any)?.name === "BacktestInit") {
-        const canExecute = await ensureBacktestExecutionReady();
-        if (!canExecute) return;
+      try {
+        if ((node.data?.definition as any)?.name === "BacktestInit") {
+          const canExecute = await ensureBacktestExecutionReady();
+          if (!canExecute) return;
+        }
+        await workflowExecutor.executeNodeWithLock(node.id, new Set(), lockToken);
+      } finally {
+        releaseEditorExecutionLock(workflowSessionId, lockToken);
       }
-
-      await workflowExecutor.executeNode(node.id, new Set());
     },
-    [clusterExecution.isExecutionActive, clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast, workflowSessionId],
+    [clusterProjection.displayNodeToCluster, workflowExecutor, ensureBacktestExecutionReady, setExpanded, toast, workflowSessionId],
   );
 
   // Save workflow via persistence hook

@@ -3,6 +3,7 @@
   "broker": "dhan",
   "def": "Dhan Stream Listener",
   "node_type": "trigger",
+  "manualExecution": "available",
   "icon": "/assets/icons/dhan.svg",
   "category": "Stream",
   "subCategory": "dhan",

@@ -2,6 +2,7 @@
   "name": "RedisChatMemory",
   "def": "Redis Chat Memory",
   "node_type": "sub",
+  "manualExecution": "attachment",
   "category": "Memory",
   "subCategory": "Redis",
   "icon": "/assets/icons/store.svg",

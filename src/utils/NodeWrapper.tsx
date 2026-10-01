@@ -119,6 +119,7 @@ interface NodeWrapperProps {
   // Tool mode toggle
   isTool?: boolean;
   onToggleTool?: () => void;
+  executionControl?: React.ReactNode;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -163,6 +164,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   // Tool mode
   isTool = false,
   onToggleTool,
+  executionControl,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -473,8 +475,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           <div
             className={`select-none relative group h-full ${
               isWideCollapsedLayout
-                ? "flex flex-row items-center gap-3 px-5"
-                : "flex flex-col items-center justify-center p-4"
+                ? "flex flex-row items-center gap-3 px-5 pb-12"
+                : "flex flex-col items-center justify-center p-4 pb-12"
             }`}
             style={{ zIndex: 2 }}
           >
@@ -630,12 +632,17 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 TOOL
               </div>
             )}
+            {executionControl && (
+              <div className="absolute inset-x-0 bottom-1 z-10 flex h-9 items-center justify-center">
+                {executionControl}
+              </div>
+            )}
           </div>
         )}
 
         {/* Expanded View */}
         {isExpanded && (
-          <CardContent className="space-y-3 p-4 relative" style={{ zIndex: 2 }}>
+          <CardContent className={`space-y-3 p-4 relative ${executionControl ? "pb-14" : ""}`} style={{ zIndex: 2 }}>
             <div className="absolute top-2 right-2 z-10 flex gap-1">
               {/* <Button
                 variant="ghost"
@@ -660,6 +667,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               </Button>
             </div>
             {children}
+            {executionControl && (
+              <div className="absolute inset-x-0 bottom-2 flex h-9 items-center justify-center">
+                {executionControl}
+              </div>
+            )}
           </CardContent>
         )}
       </Card>

@@ -11,7 +11,7 @@ import { registerEditorNodeAction } from "@/services/editorNodeExecution";
 const node = (id: string, values: Record<string, unknown> = {}): Node => ({
   id,
   position: { x: 0, y: 0 },
-  data: { definition: { name: id, node_type: "action" }, values, workflowSessionId: "session" },
+  data: { definition: { name: id, node_type: "action", manualExecution: "available" }, values, workflowSessionId: "session" },
 });
 
 describe("manual cluster execution", () => {
@@ -39,7 +39,7 @@ describe("manual cluster execution", () => {
 
   it("orders a supported Loop return boundary without treating it as a generic cycle", () => {
     const loop = node("loop");
-    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action", handles: [{ id: "loop", type: "source", connectionKind: "main" }] } };
+    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action", manualExecution: "available", handles: [{ id: "loop", type: "source", connectionKind: "main" }] } };
     const nodes = [loop, node("body")];
     const edges: Edge[] = [
       { id: "loop-body", source: "loop", sourceHandle: "loop", target: "body" },
@@ -52,7 +52,7 @@ describe("manual cluster execution", () => {
 
   it("preserves ordinary prerequisites entering a Loop and removes only feedback", () => {
     const loop = node("loop");
-    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action", handles: [{ id: "loop", type: "source", connectionKind: "main" }] } };
+    loop.data = { ...loop.data, definition: { name: "Loop", node_type: "action", manualExecution: "available", handles: [{ id: "loop", type: "source", connectionKind: "main" }] } };
     const nodes = [loop, node("body"), node("upstream")];
     const edges: Edge[] = [
       { id: "upstream-loop", source: "upstream", target: "loop" },
@@ -66,9 +66,9 @@ describe("manual cluster execution", () => {
 
   it("does not use attachment edges for dependency ordering", () => {
     const owner = node("owner");
-    owner.data = { ...owner.data, definition: { name: "owner", node_type: "action", handles: [{ id: "tool", type: "target", connectionKind: "attachment" }] } };
+    owner.data = { ...owner.data, definition: { name: "owner", node_type: "action", manualExecution: "available", handles: [{ id: "tool", type: "target", connectionKind: "attachment" }] } };
     const attachment = node("attachment");
-    attachment.data = { ...attachment.data, definition: { name: "attachment", node_type: "sub", handles: [{ id: "out", type: "source", connectionKind: "attachment" }] } };
+    attachment.data = { ...attachment.data, definition: { name: "attachment", node_type: "sub", manualExecution: "attachment", handles: [{ id: "out", type: "source", connectionKind: "attachment" }] } };
     expect(buildClusterExecutionPlan(
       { id: clusterId, title: "Folder", memberNodeIds: ["owner", "attachment"] },
       [owner, attachment],
@@ -96,7 +96,7 @@ describe("manual cluster execution", () => {
       ...loop.data,
       definition: {
         name: "Loop",
-        node_type: "action",
+        node_type: "action", manualExecution: "available",
         handles: [
           { id: "loop", type: "source", connectionKind: "main" },
           { id: "done", type: "source", connectionKind: "main" },

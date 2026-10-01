@@ -2,6 +2,7 @@
   "name": "Gmail",
   "def": "Send Email",
   "node_type": "main",
+  "manualExecution": "available",
   "category": "Communication",
   "handles": [
     { "type": "target", "position": "left", "id": "input" },

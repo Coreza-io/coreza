@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeCluster } from "@/domain/clusters/types";
 import { getClusterEdgeKind } from "@/domain/clusters/edgeSemantics";
@@ -9,8 +9,12 @@ import {
   captureEditorNodeActions,
   releaseEditorExecutionLock,
   type NodeExecutionOutcome,
+  getEditorExecutionTarget,
+  subscribeEditorExecution,
 } from "@/services/editorNodeExecution";
 import { resolveControlResult } from "@/utils/controlResult";
+import { resolveManualExecution } from "@/nodes/manualExecution";
+import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
 export type ClusterRunPhase = "idle" | "running" | "completed" | "cancelled" | "failed" | "blocked";
 export interface ClusterRunState {
@@ -97,8 +101,8 @@ export function buildClusterExecutionPlan(
   }
   const memberSet = new Set(members);
   const executable = members.filter((id) => {
-    const definition = nodeById.get(id)?.data?.definition as { node_type?: unknown } | undefined;
-    return definition?.node_type !== "sub";
+    const definition = nodeById.get(id)?.data?.definition as NodeConfig | undefined;
+    return definition ? resolveManualExecution(definition).available : false;
   });
   const executableSet = new Set(executable);
   const dependencies = new Map(executable.map((id) => [id, new Set<string>()]));
@@ -153,6 +157,10 @@ export function buildClusterExecutionPlan(
 }
 
 export function useClusterExecution({ workflowSessionId, nodes, edges, clusters, disabledReason }: Options) {
+  const activeTarget = useSyncExternalStore(
+    (listener) => subscribeEditorExecution(workflowSessionId, listener),
+    () => getEditorExecutionTarget(workflowSessionId),
+  );
   const [states, setStates] = useState<Record<string, ClusterRunState>>({});
   const activeRef = useRef<{ clusterId: string; controller: AbortController } | null>(null);
   const sessionRef = useRef(workflowSessionId);
@@ -174,7 +182,7 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
   const executeCluster = useCallback(async (clusterId: string) => {
     // Acquire before any asynchronous work. This makes rapid repeated clicks a no-op.
     if (activeRef.current || disabledReason) return;
-    const lockToken = acquireEditorExecutionLock(workflowSessionId);
+    const lockToken = acquireEditorExecutionLock(workflowSessionId, { kind: "cluster", id: clusterId });
     if (!lockToken) return;
     const controller = new AbortController();
     activeRef.current = { clusterId, controller };
@@ -271,9 +279,9 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
   const getState = useCallback((clusterId: string): ClusterRunState => {
     if (disabledReason) return { phase: "blocked", reason: disabledReason };
     if (states[clusterId]) return states[clusterId];
-    if (activeRef.current) return { phase: "blocked", reason: "Another editor execution is active." };
+    if (activeTarget && activeTarget !== `cluster:${clusterId}`) return { phase: "blocked", reason: "Another editor execution is active." };
     return { phase: "idle" };
-  }, [disabledReason, states]);
+  }, [activeTarget, disabledReason, states]);
 
   const isExecutionActive = useMemo(() => Object.values(states).some(({ phase }) => phase === "running"), [states]);
   return { executeCluster, cancelRun, getState, isExecutionActive };

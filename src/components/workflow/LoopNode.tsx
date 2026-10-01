@@ -55,7 +55,7 @@ export function LoopNode({ id, data, selected }: NodeProps) {
   }, [definition.icon, definition.name]);
 
   return (
-    <BaseNode data={data} selected={selected ?? false}>
+    <BaseNode data={data} selected={selected ?? false} readOnly={(data as any).readOnly} workflowId={(data as any).workflowId}>
       {(renderProps) => {
         // Read nodes/edges imperatively for NodeWrapper - avoids re-render on drag
         const nodes = getNodes();
@@ -103,6 +103,8 @@ export function LoopNode({ id, data, selected }: NodeProps) {
             finishEditing={renderProps.finishEditing}
             setEditingName={renderProps.setEditingName}
             isExecuting={(data as any).isExecuting}
+            readOnly={(data as any).readOnly}
+            executionControl={renderProps.executionControl}
           >
             <BasicNodeLayout {...renderProps} />
           </NodeWrapper>

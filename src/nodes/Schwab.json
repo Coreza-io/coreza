@@ -3,6 +3,7 @@
   "broker": "schwab",
   "def": "Schwab",
   "node_type": "schwab",
+  "manualExecution": "available",
   "description": "Access Schwab account info, positions, orders, quotes, and price history",
   "icon": "/assets/icons/schwab.svg",
   "color": "text-blue-500",

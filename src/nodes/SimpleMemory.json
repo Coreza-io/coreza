@@ -2,6 +2,7 @@
   "name": "SimpleMemory",
   "def": "Simple Memory",
   "node_type": "sub",
+  "manualExecution": "attachment",
   "category": "Memory",
   "icon": "/assets/icons/store.svg",
   "description": "Single-worker, non-persistent. History is lost on restart.",

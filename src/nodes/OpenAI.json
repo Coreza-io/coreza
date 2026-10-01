@@ -2,6 +2,7 @@
   "name": "OpenAI",
   "def": "LLM",
   "node_type": "main",
+  "manualExecution": "available",
   "category": "LLM",
   "icon": "/assets/icons/openai.svg",
   "size": { "width": 340, "height": 420 },

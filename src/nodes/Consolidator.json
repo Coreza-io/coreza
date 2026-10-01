@@ -2,6 +2,7 @@
   "name": "Consolidator",
   "def": "Time Bar Consolidator",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "Consolidator",

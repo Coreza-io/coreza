@@ -3,6 +3,7 @@
   "def": "FMP Screener",
   "description": "Screen stocks using Financial Modeling Prep (FMP)",
   "node_type": "main",
+  "manualExecution": "available",
   "category": "Screener",
   "subCategory": "FMP",
   "auth": "GenericAuthModal",

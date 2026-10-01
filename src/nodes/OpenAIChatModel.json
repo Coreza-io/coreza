@@ -2,6 +2,7 @@
   "name": "OpenAIChatModel",
   "def": "OpenAI Chat Model",
   "node_type": "sub",
+  "manualExecution": "attachment",
   "category": "ChatModel",
   "provider": "openai",
   "icon": "/assets/icons/openai.svg",

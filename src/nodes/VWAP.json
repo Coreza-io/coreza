@@ -2,6 +2,7 @@
   "name": "VWAP",
   "def": "Volume-Weighted Average Price",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/vwap.svg",
   "category": "Indicators",
   "description": "VWAP indicator to identify average price levels weighted by volume over a time frame",

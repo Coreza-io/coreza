@@ -3,6 +3,7 @@
   "broker": "binance",
   "def": "Binance Stream Listener",
   "node_type": "trigger",
+  "manualExecution": "available",
   "icon": "/assets/icons/binance.svg",
   "category": "Stream",
   "subCategory": "binance",

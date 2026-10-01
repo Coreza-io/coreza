@@ -3,6 +3,7 @@
   "broker": "alpaca",
   "def": "Alpaca Stream Listener",
   "node_type": "trigger",
+  "manualExecution": "available",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Stream",
   "subCategory": "alpaca",

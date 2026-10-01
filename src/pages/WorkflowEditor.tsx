@@ -2431,7 +2431,7 @@ const WorkflowEditorContent = () => {
                       <button className="text-xs text-muted-foreground hover:text-foreground" onPointerDown={(event) => event.stopPropagation()} onClick={() => dissolveClustersForNodes(cluster.memberNodeIds)}>Dissolve</button>
                       <button className="text-xs text-destructive" onPointerDown={(event) => event.stopPropagation()} onClick={() => deleteNodeIds(cluster.memberNodeIds)}>Delete nodes</button>
                     </header>
-                    <footer className="cluster-frame__footer nodrag nopan pointer-events-auto absolute inset-x-0 bottom-0 flex h-[52px] items-center rounded-b-lg border-t border-[hsl(var(--cluster-border))] px-3">
+                    <footer className="cluster-frame__footer nodrag nopan pointer-events-auto absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center rounded-b-lg border-t border-[hsl(var(--cluster-border))] px-3">
                       <ClusterExecutionControl
                         title={cluster.title}
                         state={clusterExecution.getState(cluster.id)}

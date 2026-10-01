@@ -53,7 +53,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
       <div className="mt-3 flex items-center justify-between text-xs text-[hsl(var(--cluster-muted))]">
         <span>{cluster.memberCount} {cluster.memberCount === 1 ? "node" : "nodes"}</span>
       </div>
-      <footer className="mt-3 border-t border-[hsl(var(--cluster-border))] pt-2">
+      <footer className="absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center border-t border-[hsl(var(--cluster-border))]">
         <ClusterExecutionControl title={cluster.title} state={cluster.runState}
           onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
       </footer>

@@ -3,6 +3,7 @@
   "broker": "alpaca",
   "def": "Alpaca",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Broker",
   "description": "Execute trades and get market data from Alpaca Markets",

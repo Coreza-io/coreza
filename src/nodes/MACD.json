@@ -2,6 +2,7 @@
   "name": "MACD",
   "def": "Moving Average Convergence Divergence",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/macd.svg",
   "category": "Indicators",
   "subcategory": "Trend Indicators",

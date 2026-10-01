@@ -1,6 +1,7 @@
 {
   "name": "GmailTrigger",
   "node_type": "trigger",
+  "manualExecution": "available",
   "category": "Trigger",
   "subCategory": "gmail",
   "provider": "gmail",

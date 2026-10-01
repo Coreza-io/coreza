@@ -2,6 +2,7 @@
   "name": "Telegram",
   "def": "Send Telegram Message",
   "node_type": "main",
+  "manualExecution": "available",
   "category": "Communication",
   "handles": [
     { "type": "target", "position": "left", "id": "input" },

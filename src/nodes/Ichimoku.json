@@ -2,6 +2,7 @@
   "name": "Ichimoku Cloud",
   "def": "Ichimoku Cloud",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/ichimoku.svg",
   "category": "Indicators",
   "description": "Ichimoku Cloud - comprehensive trend system showing support/resistance, momentum, and trend direction using five calculated lines.",

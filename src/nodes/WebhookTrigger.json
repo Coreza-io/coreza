@@ -1,6 +1,7 @@
 {
   "name": "WebhookTrigger",
   "node_type": "trigger",
+  "manualExecution": "available",
   "category": "webhook",
   "provider": "generic",
   "icon": "/assets/icons/webhook.svg",

@@ -2,6 +2,7 @@
   "name": "BacktestInit",
   "def": "Backtest Init",
   "node_type": "backtest",
+  "manualExecution": "available",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
   "description": "Initialize a backtest session with capital and simulation settings",

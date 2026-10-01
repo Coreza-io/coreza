@@ -2,6 +2,7 @@
   "name": "Risk Engine",
   "def": "Comprehensive Risk Management",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/risk-engine.svg",
   "category": "Risk Management",
   "description": "Manages trade risk, position sizing, exposure, and daily loss limits before trade execution",

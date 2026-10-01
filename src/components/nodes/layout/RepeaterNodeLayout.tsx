@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, X, Plus } from "lucide-react";
+import { X, Plus } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
@@ -351,7 +351,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   definition,
   fieldState,
   error,
-  isSending,
   loadingSelect,
   selectOptions,
   showAuth,
@@ -1436,22 +1435,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               }
               disabled={readOnly}
             />
-          </div>
-        )}
-
-        {/* Submit Button */}
-        {!readOnly && definition?.name !== "Visualize" && (
-          <div className="pt-2">
-            <Button type="submit" variant="nodeExecute" disabled={isSending}>
-              {isSending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Executing...
-                </>
-              ) : (
-                "Execute"
-              )}
-            </Button>
           </div>
         )}
 

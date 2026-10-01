@@ -2,6 +2,7 @@
   "name": "RollingWindow",
   "def": "Rolling Window Buffer",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "RollingWindow",

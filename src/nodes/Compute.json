@@ -3,6 +3,7 @@
   "label": "Compute",
   "def": "Compute values with type-specific operations",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/compute.svg",
   "category": "Logic",
   "description": "Data computations for strings, numbers, dates, arrays, objects. Root (Nth Root) accepts a positive integer degree; negative values support odd degrees, while even roots of negative values return an error. Includes statistical and advanced date operations. Regex patterns run as native JavaScript RegExp and should be author-trusted.",

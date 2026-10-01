@@ -2,6 +2,7 @@
   "name": "InitializeIndicators",
   "def": "Initialize Indicators",
   "node_type": "main",
+  "manualExecution": "available",
   "icon": "/assets/icons/indicators.svg",
   "category": "Indicators",
   "description": "Warm up all indicators in the workflow with historical data before the loop begins.",

@@ -4,8 +4,6 @@
  */
 
 import React, { memo } from "react";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,7 +20,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,
   fieldState,
   error,
-  isSending,
   loadingSelect,
   selectOptions,
   showAuth,
@@ -204,22 +201,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           </div>
         )}
 
-        {!readOnly && (
-          <Button
-            type="submit"
-            variant="nodeExecute"
-            disabled={isSending}
-          >
-            {isSending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Executing...
-              </>
-            ) : (
-              "Execute"
-            )}
-          </Button>
-        )}
       </form>
 
       <LayoutAuthModal

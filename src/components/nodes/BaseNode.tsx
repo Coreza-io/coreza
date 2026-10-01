@@ -14,6 +14,7 @@ import React, {
   useMemo,
   useCallback,
   useRef,
+  useSyncExternalStore,
 } from "react";
 import { useNodeId, useReactFlow } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
@@ -52,6 +53,9 @@ import {
   resolveListeningFlagKey,
   resolveStopAction,
 } from "@/components/nodes/listeningStop";
+import { ExecutionIconButton } from "@/components/workflow/ExecutionIconButton";
+import { resolveManualExecution } from "@/nodes/manualExecution";
+import { getEditorExecutionTarget, subscribeEditorExecution } from "@/services/editorNodeExecution";
 
 interface BaseNodeProps {
   data: any;
@@ -119,6 +123,7 @@ export interface BaseNodeRenderProps {
   nodeSurfaceGradient: string;
   visualCategory: NodeVisualCategory;
   nodeTheme: NodeVisualTheme;
+  executionControl?: React.ReactNode;
 }
 
 const TAILWIND_NEON_COLORS: Record<string, string> = {
@@ -154,6 +159,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: routeWorkflowId } = useParams();
   const workflowId = propWorkflowId ?? routeWorkflowId;
+  const activeExecutionTarget = useSyncExternalStore(
+    (listener) => workflowId ? subscribeEditorExecution(workflowId, listener) : () => undefined,
+    () => workflowId ? getEditorExecutionTarget(workflowId) : "",
+  );
   const replaySessionRef = useRef(0);
 
   const definition = data.definition;
@@ -601,6 +610,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     nodeSurfaceGradient,
     visualCategory,
     nodeTheme,
+    executionControl: !readOnly && resolveManualExecution(definition).available ? (
+      <ExecutionIconButton
+        targetKind="node"
+        targetName={displayName}
+        phase={executionHook.isSending || isTriggerListening ? "running" : activeExecutionTarget ? "blocked" : executionHook.error ? "failed" : "idle"}
+        disabledReason={activeExecutionTarget && activeExecutionTarget !== `node:${nodeId}` ? "Another editor execution is active." : undefined}
+        statusDescription={executionHook.error || undefined}
+        onExecute={() => { void executionHook.handleSubmit(); }}
+        onStop={isTriggerListening ? handleStopListening : undefined}
+      />
+    ) : undefined,
   };
 
   return <>{children(renderProps)}</>;

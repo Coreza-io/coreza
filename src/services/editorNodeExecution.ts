@@ -40,6 +40,8 @@ export interface EditorNodeActionSnapshot {
 
 const actions = new Map<string, Map<string, EditorNodeAction>>();
 const executionLocks = new Map<string, symbol>();
+const executionTargets = new Map<string, { kind: "node" | "cluster" | "workflow"; id: string }>();
+const executionListeners = new Map<string, Set<() => void>>();
 const consolidatorSeries = new Map<string, string>();
 const runtimeKey = (sessionId: string, nodeId: string) => `${sessionId}\u0000${nodeId}`;
 
@@ -89,7 +91,7 @@ export async function executeEditorNode(
     };
   }
   if (existingLock) return action(request);
-  const ownedToken = acquireEditorExecutionLock(sessionId);
+  const ownedToken = acquireEditorExecutionLock(sessionId, { kind: "node", id: nodeId });
   if (!ownedToken) {
     return { nodeId, status: "failed", reason: "Another editor execution is active.", error: { message: "Another editor execution is active." } };
   }
@@ -100,15 +102,39 @@ export async function executeEditorNode(
   }
 }
 
-export function acquireEditorExecutionLock(sessionId: string): symbol | null {
+export function acquireEditorExecutionLock(
+  sessionId: string,
+  target: { kind: "node" | "cluster" | "workflow"; id: string } = { kind: "workflow", id: sessionId },
+): symbol | null {
   if (executionLocks.has(sessionId)) return null;
   const token = Symbol(sessionId);
   executionLocks.set(sessionId, token);
+  executionTargets.set(sessionId, target);
+  executionListeners.get(sessionId)?.forEach((listener) => listener());
   return token;
 }
 
 export function releaseEditorExecutionLock(sessionId: string, token: symbol): void {
-  if (executionLocks.get(sessionId) === token) executionLocks.delete(sessionId);
+  if (executionLocks.get(sessionId) === token) {
+    executionLocks.delete(sessionId);
+    executionTargets.delete(sessionId);
+    executionListeners.get(sessionId)?.forEach((listener) => listener());
+  }
+}
+
+export function subscribeEditorExecution(sessionId: string, listener: () => void): () => void {
+  const listeners = executionListeners.get(sessionId) ?? new Set<() => void>();
+  listeners.add(listener);
+  executionListeners.set(sessionId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) executionListeners.delete(sessionId);
+  };
+}
+
+export function getEditorExecutionTarget(sessionId: string): string {
+  const target = executionTargets.get(sessionId);
+  return target ? `${target.kind}:${target.id}` : "";
 }
 
 export function isEditorExecutionLocked(sessionId: string): boolean {
@@ -149,6 +175,8 @@ export function captureEditorNodeActions(
 export function clearEditorNodeActions(sessionId: string): void {
   actions.delete(sessionId);
   executionLocks.delete(sessionId);
+  executionTargets.delete(sessionId);
+  executionListeners.get(sessionId)?.forEach((listener) => listener());
   const prefix = `${sessionId}\u0000`;
   for (const key of consolidatorSeries.keys()) {
     if (key.startsWith(prefix)) consolidatorSeries.delete(key);

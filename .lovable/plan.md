@@ -1,197 +1,203 @@
-# Generic bottom-center Execute controls for nodes and clusters
+# Node execution controls: hover Play when collapsed, full Execute when expanded
 
 ## Goal
 
-Add one icon-only Execute control at the bottom center of every editable node card that supports the existing manual action, and use the same visual control for compact and expanded clusters.
+Give every manually executable editor node two presentations backed by one execution command:
 
-- The control stays visible in collapsed and expanded cards without hover or selection.
-- Node Execute runs only that node through its existing normal editor action.
-- Cluster Execute keeps its existing editor-local sequence of normal member actions.
-- Explicit Run All remains the only batch/full-workflow command.
-- Execution never expands a collapsed card. No new backend route, database change, workflow field, or cluster execution mode is required.
+| Node state | Control |
+| --- | --- |
+| Collapsed, idle pointer | Bottom-center Play control hidden |
+| Collapsed, hovered or keyboard-focused | Bottom-center Play control visible |
+| Expanded | Full-width Execute control at the end of the form |
+| Read-only or independently non-executable | No control |
 
-## Validated current state
+The collapsed control must not require selection. Running a node must not expand or collapse it. Cluster controls and cluster execution behavior remain unchanged.
 
-- `ClusterExecutionControl` is a cluster-specific text button. Compact clusters place it in a left-aligned footer; expanded cluster frames use a 52px footer without horizontal centering.
-- Normal nodes render text submit buttons only inside expanded Basic and Repeater forms. `NodeWrapper`, which owns collapsed and expanded shells, has no action slot.
-- `NodeRouter` covers manifest nodes. `LoopNode` is the only separate BaseNode/NodeWrapper renderer and currently omits workflow/read-only propagation.
-- Every mounted `BaseNode` already owns one normal `handleSubmit`, `isSending`, error state, listener state, and stop handlers. The new control must reuse that action instead of registering another action or mounting another form.
-- A missing manifest `action` does not mean non-executable: ChatInput, InMemory, and Loop intentionally execute locally. Visualize is the established visible exception, and `node_type: sub` attachments are not independently scheduled. There is no current declarative capability flag, so eligibility needs one authoritative policy instead of category, `node_type`, `definition.action`, or mounted callback availability.
-- The collapsed shell already uses bottom center for a read-only item-count badge and bottom right for the tool-mode toggle. The new band must deliberately relocate/partition those elements rather than merely overlaying them.
-- Cluster execution owns a synchronous session lock, but its lock map is not reactive. Individual execution and Run All do not acquire that shared lock themselves, so truthful globally blocked/running controls require one subscribed coordinator.
-- Collapsed cluster members remain mounted as invisible runtime hosts with `aria-hidden`, disabled focus, hidden visibility, and no pointer interaction. Their controls must remain equally hidden and unfocusable.
+## Verified checkout state
+
+- This checkout is older than the implementation assumed by the attachment: there is no `ExecutionIconButton`, no `resolveManualExecution`, no execution slot in `NodeWrapper`, and no node-control forwarding through `NodeRouter` or `LoopNode`.
+- Basic and Repeater layouts still contain their original text submit buttons. Repeater intentionally omits Execute for Visualize.
+- `BaseNode` already creates the single normal execution hook and exposes `handleSubmit`, `isSending`, error, listener state, and listener stop behavior. Both presentations must reuse these values; a second execution hook or API path is unnecessary.
+- `NodeWrapper` owns the collapsed/expanded state, so it is the correct owner of collapsed-only hover/focus visibility. Its card already has nested unnamed `group` classes, making a named hover group necessary.
+- Individual execution now acquires the session lock in `executeEditorNode`; Run All and direct editor node execution also pass through shared lock ownership. The lock map is not reactive, so another active target is enforced at command time but is not yet reflected immediately in every visible control.
+- `LoopNode` currently omits explicit workflow ID and read-only propagation. That can expose its form action in history/read-only rendering and must be corrected while wiring the controls.
+- The default collapsed card is 200×150. AIAgent is the only current custom collapsed size at 320×150 and has bottom attachment handles. The bottom action must not overlap those handles or the existing bottom-right tool toggle.
+- No backend, database, saved workflow, cluster algorithm, or execution-output change is needed.
 
 ## Implementation plan
 
-### 1. Add behavior-first regression tests
+### 1. Add focused behavior tests first
 
-Before moving UI, cover:
+Create failing component/integration tests for:
 
-- Play, Stop, spinner, failed, and blocked presentations without visible execution text;
-- pointer, double-click, Enter, and Space activating once without expanding, dragging, panning, double-submitting, or triggering canvas shortcuts;
-- node and cluster adapters invoking their existing commands exactly once;
-- collapsed and expanded node execution producing identical validation, request, pin, listener, output, and error behavior;
-- compact and expanded cluster controls preserving coordinator progress, cancellation, retry, and reason state;
-- read-only views, projected hidden members, attachment-only nodes, and Visualize exposing no actionable or focusable control;
-- lock conflicts among individual Execute, cluster Execute, and Run All, even when rendered disabled state is stale.
+- collapsed control absent from view before hover, visible on card hover, and independent of selection;
+- keyboard Tab focusing the collapsed control reveals it and Enter/Space activate exactly once;
+- expanded view showing one full-width Execute control and no bottom icon duplicate;
+- collapse/expand switching presentation without changing fields, output, listener state, or execution state;
+- read-only and unsupported nodes rendering neither presentation;
+- Basic, Repeater, and Loop nodes sharing the same command and state;
+- clicks/double-clicks not expanding, dragging, panning, renaming, deleting, connecting, or executing twice;
+- overlapping node, cluster, and Run All commands being rejected by the existing session lock.
 
-Prefer behavioral assertions and measured geometry over Tailwind-class snapshots.
+Use request counts and output assertions for execution parity; visual assertions alone are insufficient.
 
-### 2. Define independent execution eligibility
+### 2. Define the existing manual-execution availability policy
 
-Add an explicit declarative manual-execution capability to the normalized node definition/registry, expose it through a small pure resolver, and use that resolver for node-button visibility and cluster planning. Do not derive eligibility from whether a React callback happens to be registered: that would preserve the mount-timing race the wider execution architecture is meant to remove.
+Add a pure `resolveManualExecution(definition)` helper that preserves the established editor contract:
 
-- Allow normal backend actions and intentional local actions such as ChatInput, InMemory, and Loop.
-- Allow BacktestInit and OnBar with their existing initialize-once and one-step behavior.
-- Allow trigger/listener nodes where the established action can start listening.
-- Exclude `node_type: sub` attachments from independent execution.
-- Mark Visualize unavailable and omit its control, preserving its current intentional exception unless its manual-action contract is deliberately changed later.
-- Return a typed unavailable reason, while the requested UI hides unsupported controls instead of showing decorative disabled buttons.
-- Never infer capability from category, `node_type`, `definition.action`, or current component mount state.
+- ordinary main, trigger/listener, backtest, and intentional local-action nodes are available;
+- Loop is available and keeps its current one-manual-step behavior;
+- `node_type: sub` attachments are not independently executable;
+- Visualize remains unavailable, matching its current missing expanded Execute action;
+- an unknown or malformed definition is unavailable with a typed reason.
 
-Audit every manifest definition and Loop against the resolver. Add a manifest-wide test so a new renderer or capability cannot silently miss the shared control.
+Use this resolver in both presentations and test it against the full manifest. Do not infer availability only from `definition.action`: ChatInput, InMemory, and Loop intentionally execute without a backend action. Do not add a persisted workflow property merely for presentation gating.
 
-### 3. Build one presentational icon control
+### 3. Create one shared execution-control component
 
-Create `ExecutionIconButton` using the existing Button and Tooltip components. Its model contains target kind/name, phase, disabled reason, optional status description, Execute callback, and an optional real Stop callback.
+Add a reusable node execution control with `presentation: "icon" | "labelled"` and one activation path.
 
-- Use Play for idle/completed/cancelled, and Play with error styling for failed.
-- Show Stop only when cancellation/listener-stop is real; otherwise show a disabled spinner while running/stopping.
-- Keep blocked controls focusable with `aria-disabled` when their reason must be explained, with an authoritative activation guard.
-- Keep a fixed 36×36 footprint and 16px glyph across all states.
-- Provide dynamic `aria-label`, `aria-busy`, decorative icons, focusable Tooltip content, and restrained status announcements.
-- Use `type="button"`, `nodrag`, `nopan`, and pointer/click/double-click/key propagation isolation while preserving native focus and one native activation.
+Shared inputs:
 
-The component must not fetch, traverse graphs, mutate React Flow, or infer capabilities.
+- target name;
+- state: idle, running, listening, failed, or blocked;
+- status/blocked reason;
+- Execute callback;
+- optional real listener Stop callback.
 
-### 4. Adapt the existing node action once
+Icon presentation:
 
-Have `BaseNode` derive a control model from its existing `handleSubmit`, `isSending`, validation error, listener state/stop handler, workflow session, and read-only state. Expose it through render props; never invoke the execution hook twice. Preserve the cluster control's existing polite live region in the generic component, but throttle progress announcements so screen readers do not announce every member tick.
+- preserve the existing small Play/Spinner/Stop visual language and fixed footprint;
+- use a Tooltip and an action-specific accessible label;
+- keep failed/retry and blocked reasons in the Tooltip/status surface.
 
-- Play calls the same `handleSubmit` command as form submission and retains its typed outcome.
-- Preserve validation, credentials, selected/upstream inputs, expressions, pins including falsy values, references, Consolidator context, outputs, and errors.
-- A collapsed failure stays collapsed and reports through the established status/toast/error surface; do not silently open settings or outputs.
-- Successful collapsed execution publishes output and keeps the card collapsed.
-- Listener nodes map the existing start result and real stop handler without duplicate subscriptions.
-- Do not advertise Stop for ordinary requests until the underlying action accepts and honors coordinator cancellation.
+Labelled presentation:
 
-### 5. Add one action slot to `NodeWrapper`
+- reuse the existing full-width `nodeExecute` Button variant;
+- show Execute, Executing…, or Stop as appropriate;
+- do not apply icon-only width/height classes.
 
-Add `executionControl?: ReactNode` and render it once, outside the conditional expanded form body, in a bottom-centered action band shared by both card states.
+Both presentations must use the same guarded activation function, `type="button"`, `nodrag`, `nopan`, fixed busy behavior, and pointer/click/double-click/key propagation isolation. Preserve native focus and one Enter/Space activation. Keep ordinary in-flight actions spinner-only; only show Stop where the existing listener stop handler is real.
 
-- Render only for editable, visible, independently executable nodes.
-- Reserve space so icons, titles, fields, errors, and the control cannot overlap. Keep the read-only item-count badge in its current bottom-center position only when the action control is absent; partition or relocate the editor tool toggle so it cannot collide with the new center band.
-- Preserve the default 200×150 collapsed card and explicitly audit AIAgent's 320×150 horizontal card, currently the only custom `collapsedSize`; increase a documented minimum only if measured content cannot fit.
-- Keep clear of bottom handles, especially AIAgent attachment handles, and verify connections remain usable.
-- In expanded cards, add bottom space instead of covering the last field.
-- Update React Flow internals through the existing measurement lifecycle when bounds change.
-- Preserve body drag, selection, rename, delete, tool mode, panels, and explicit collapse controls.
+### 4. Build both presentations once in `BaseNode`
 
-Pass the slot through `NodeRouter`. Wire `LoopNode` identically. Separately fix its existing omission of workflow identity and read-only propagation, then prove its current manual one-step action works before and after moving the control; read-only Loop cards must no longer expose the accidentally enabled form action.
+Derive one shared control model from the existing execution hook and listener state, then expose:
 
-### 6. Remove duplicate visible submit controls safely
+```ts
+collapsedExecutionControl?: React.ReactNode
+expandedExecutionControl?: React.ReactNode
+```
 
-- Remove visible Execute buttons from Basic and Repeater layouts after the wrapper control works.
-- Keep `<form onSubmit={handleSubmit}>` so Enter in fields still reaches the same command.
-- Keep the outer icon `type="button"` so it cannot submit a form as a side effect.
-- Retain inline form errors and authentication dialogs.
-- Replace the Repeater layout's Visualize special case with the shared capability policy.
-- Audit native required constraints because collapsed execution cannot depend on expanded controls; application validation remains authoritative.
+- Apply read-only and `resolveManualExecution` gates once.
+- Both callbacks call the same `executionHook.handleSubmit`; do not instantiate another execution hook or register another editor action.
+- Preserve required-field validation, credentials, selected input, references, expressions, pins including falsy values, Consolidator state, output publication, and errors.
+- Map a live listener to the existing `handleStopListening`; do not invent ordinary request cancellation.
+- Correct the render-prop type so the async execution outcome is not erased as `void`.
+- A collapsed validation/request failure remains collapsed and updates the established error/output status; no automatic settings or output opening.
 
-Exactly one visible execution control may exist per eligible node in either state.
+### 5. Make `NodeWrapper` own collapsed hover/focus behavior
 
-### 7. Reuse the shared control for clusters
+Add only `collapsedExecutionControl` to `NodeWrapper` and render it inside the collapsed branch at bottom center.
 
-Keep `ClusterExecutionControl` as a thin adapter from `ClusterRunState` to the generic component.
+- Use a named card group such as `group/node`; do not let nested label/edit groups trigger visibility accidentally.
+- Default to `opacity-0 pointer-events-none`.
+- Reveal with `group-hover/node` and `group-focus-within/node`, enabling pointer interaction at the revealed band.
+- Keep the button in keyboard tab order so Tab can focus and reveal it even before pointer hover.
+- Use a short opacity transition and disable unnecessary motion under reduced-motion preferences.
+- Keep the action band inside the card hover boundary so moving from card body to the button cannot hide it.
+- Do not condition visibility on `selected`.
+- Do not change card geometry when visibility changes.
 
-- Map idle/completed/cancelled/failed/blocked/running accurately.
-- Preserve `executeCluster(clusterId)` and `cancelRun(clusterId)`; do not create another execution path.
-- Move current progress/member/reason text into Tooltip and accessible status. Remove visible Execute, progress, and Run again text.
-- Keep real Stop behavior during a cancellable cluster run and block duplicate runs.
+Layout safeguards:
 
-Compact cluster:
+- reserve bottom space in the collapsed content without increasing size unless measurements prove necessary;
+- preserve the read-only bottom-center item badge because no action exists in read-only mode;
+- keep the editor tool toggle at bottom right with a non-overlapping hit area;
+- verify default 200×150 and AIAgent 320×150 horizontal layouts;
+- keep all bottom handles connectable and outside the Play hit target;
+- hidden projected cluster members remain `aria-hidden`, unfocusable, invisible, and pointer-disabled.
 
-- retain 280×180 size, title, note, member count, handles, and expand control;
-- use a fixed full-width bottom band and center the 36×36 control;
-- constrain content above it so long text cannot overlap.
+Do not render an icon action band in the expanded branch.
 
-Expanded cluster:
+### 6. Restore the expanded full-width control in form flow
 
-- center the control in the existing 52px full-frame footer;
-- keep member bounds above it and center relative to the whole frame;
-- preserve the overlay pointer model so only existing header actions and the footer control intercept interaction.
+Pass `expandedExecutionControl` to Basic and Repeater layouts through their existing render props and mount it once at the end of each form.
 
-### 8. Make execution state truthful and reactive
+- Place it after fields, dependency controls, validation/error content, and repeater-specific controls.
+- Keep it in normal document flow so long forms grow naturally and nothing overlays the final field.
+- Keep each existing `<form onSubmit={handleSubmit}>` for keyboard form submission.
+- The labelled control itself remains `type="button"` and invokes the shared command directly, preventing click-plus-submit duplication.
+- Remove the old independent submit Button implementation and stale Button/Loader imports only after the shared labelled control is in place.
+- Preserve authentication dialogs, errors, input/output panels, and the Visualize exclusion through the common resolver.
 
-Extend the existing editor execution service into a subscribed session-scoped coordinator, not a parallel UI lock. Expose active target kind/id, phase, cancellation capability, and blocked reason through `useSyncExternalStore` with narrow selectors.
+Exactly one applicable control may be mounted for the current collapsed/expanded state.
 
-- Individual Execute, cluster Execute, and Run All acquire the same lock synchronously before awaits and release in `finally`.
-- Cluster member calls inherit the owner token and do not reacquire.
-- The active target displays running/listening/Stop as supported; other controls show blocked while occupied.
-- Command guards remain authoritative even if rendering is stale.
-- Suppress rapid double activation, including pinned or synchronous local actions, without delaying normal single clicks.
-- Reset/navigation clears state and generation-fences stale completion, listener, error, and output writes.
-- Preserve completed output on Stop/failure; Stop prevents later cluster members or Run All steps.
+### 7. Wire all renderer paths and fix Loop context
 
-This closes an existing correctness gap needed by shared controls without changing execution semantics.
+- `NodeRouter` forwards only `collapsedExecutionControl` to `NodeWrapper`; its existing layout render receives `expandedExecutionControl` through render props.
+- `LoopNode` does the same and explicitly forwards workflow identity and read-only state into `BaseNode` and `NodeWrapper`.
+- Search all BaseNode, NodeWrapper, and layout consumers to remove stale names and ensure no renderer is missed.
+- Verify nodes inside expanded clusters still resolve their canonical node IDs and execute individually; grouping must not change the action.
+- Leave `ClusterExecutionControl`, compact cluster layout, expanded cluster footer, and cluster coordinator unchanged.
 
-### 9. Preserve canonical/projection boundaries
+### 8. Publish shared lock state reactively
 
-- Keep execution state in the editor/runtime service; never persist callbacks, button state, DOM attributes, or placement in workflow nodes.
-- Resolve and publish by canonical node ID only.
-- Never mutate compact-cluster projection nodes or hidden runtime-host copies.
-- Keep hidden member hosts `aria-hidden`, unfocusable, pointer-disabled, and invisible.
-- Expand, collapse, Dissolve, undo/redo, save/reload, and output updates must not duplicate controls, expose hidden controls, or copy display-only fields into canonical/history state.
+Keep the existing session lock as the concurrency authority, but add a minimal subscribed snapshot keyed by the actual `workflowSessionId` used by `executeEditorNode`.
 
-### 10. Verification
+- Notify subscribers on lock acquire/release/reset.
+- Expose active target/phase and blocked reason through `useSyncExternalStore` or an equivalent stable subscription.
+- Use the same execution-session key for the control subscription and command; do not substitute the persisted workflow ID unless they are proven identical.
+- While another node, cluster, or Run All owns the session, both presentations show blocked state and explain why.
+- Command-time lock checks remain authoritative if rendered state is stale.
+- Expanding/collapsing during execution switches presentation without releasing the lock, resetting state, registering a duplicate action, or triggering execution.
 
-Component tests:
+The visual activation guard is only duplicate-click protection; it must not replace lock ownership.
 
-1. Icon/state mapping, Tooltip, accessible label, `aria-busy`, focus retention, and fixed dimensions.
-2. Mouse, double-click, Enter, and Space invoke once; blocked/busy states never invoke.
-3. Supported Stop invokes cancellation; unsupported running state is spinner-only.
-4. No visible execution text remains in shared node/cluster controls.
+### 9. Accessibility and interaction details
 
-Integration tests:
+- Icon control has an explicit accessible name containing the node name; decorative icons are hidden from assistive technology.
+- Tooltip opens on hover and keyboard focus.
+- Labelled control retains visible Execute/Executing/Stop text.
+- Busy controls expose `aria-busy`; blocked controls expose their reason without accepting activation.
+- Focus remains stable while Play changes to Spinner/Stop.
+- Hover-only opacity must not remove the control from keyboard navigation.
+- Hidden cluster runtime hosts and read-only views expose no actionable control.
+- Double-clicking the card body still expands; double-clicking the control neither expands nor sends a second request.
 
-1. Every eligible manifest renderer plus Loop receives exactly one control; exclusions receive none.
-2. Form submit and collapsed/expanded icon paths reach the same node command and outcome.
-3. Required fields and credentials fail visibly while collapsed without expanding.
-4. Pins preserve `false`, `0`, empty string, arrays, and objects exactly.
-5. Individual Execute does not traverse neighbors; cluster Execute keeps member scope/order; Run All remains the only batch command.
-6. BacktestInit executes once, OnBar advances once, and no node/cluster icon starts historical replay.
-7. Listener start/stop never duplicates subscriptions.
-8. Individual/cluster/Run All conflicts update controls and prevent duplicate work.
-9. Reset/navigation/collapse cannot publish stale outcomes.
+### 10. Verification matrix
 
-Browser acceptance:
+Browser acceptance should cover:
 
-1. Compare a Store node and compact cluster first; measure bottom-center alignment within a small tolerance.
-2. Check collapsed/expanded normal nodes, Loop, listener, BacktestInit, OnBar, AIAgent with bottom handles, Visualize, an attachment, and read-only history.
-3. Exercise long titles/notes, expanded forms, light/dark themes, and normal/extreme canvas zoom for clipping; do not promise constant screen-size controls under zoom.
-4. Confirm clicks never drag, pan, select, expand, rename, double-submit, or start a connection; bottom handles remain connectable.
-5. Run collapsed, expand, and inspect the same result without another request; verify equivalent expanded execution.
-6. Run compact and expanded clusters and verify unchanged order, output, progress, Stop, retry, and card state.
-7. Collapse cluster, update output/error/status, expand and Dissolve; member controls reappear once and work.
-8. Repeat across undo/redo and save/reload; hidden members and read-only views stay non-actionable.
-9. Place an expanded cluster near the viewport bottom and verify its centered cluster control remains visually distinct from and does not overlap the fixed page-level Run All control.
+1. Collapsed idle, hover, pointer transfer to Play, keyboard focus, running, failed, and listener Stop states.
+2. Selected and unselected nodes, proving selection is irrelevant.
+3. Expanded form with exactly one full-width control, then collapse back to hover-only Play.
+4. Basic, Repeater, Loop, trigger/listener, BacktestInit, OnBar, AIAgent, Visualize, sub attachment, and read-only history nodes.
+5. Equivalent inputs, request count, exact falsy pinned outputs, errors, and output-panel updates from collapsed and expanded presentations.
+6. BacktestInit initializes once and OnBar advances one manual step; neither presentation invokes Run All.
+7. Expand/collapse while pending and while listening, with no duplicate request/subscription or state reset.
+8. Node versus cluster versus Run All lock conflicts and release after success/failure.
+9. Body drag, canvas pan, rename, delete, tool toggle, output/input panels, and bottom-handle connections.
+10. Default and AIAgent collapsed geometry, long labels/forms, normal canvas zoom, light/dark themes, and reduced motion.
 
-Run focused Vitest suites, TypeScript checks, node-definition validation, preview diagnostics, and Playwright. Record actual commands, outcomes, and screenshots; prior healthy output is not new evidence.
+Run the focused Jest/Vitest-style frontend suites already used by the repository, the relevant Playwright spec through `npm run test:browser -- <path>`, TypeScript checks, lint for changed files, and `npm run build` (which runs node-definition validation). Record exact commands, request counts, screenshots, and outcomes; distinguish unrelated pre-existing failures.
 
 ## Delivery order
 
-1. Add capability and shared-control tests.
-2. Build the generic control and cluster adapter.
-3. Center compact and expanded cluster controls.
-4. Add the BaseNode model and NodeWrapper slot; wire NodeRouter and Loop.
-5. Remove duplicate form buttons and verify collapsed/expanded parity.
-6. Add reactive coordination and unify individual/cluster/Run All lock ownership.
-7. Complete manifest-wide, interaction, geometry, projection, and browser acceptance.
+1. Add capability, component-state, interaction, and parity tests.
+2. Add the availability resolver and shared icon/labelled control.
+3. Derive the two slots in BaseNode.
+4. Wire collapsed hover/focus behavior through NodeWrapper and NodeRouter.
+5. Restore the shared labelled control in Basic and Repeater forms.
+6. Wire Loop and correct its read-only/workflow context.
+7. Add reactive lock state using the real editor session key.
+8. Complete browser, geometry, accessibility, execution-parity, and build verification.
 
 ## Acceptance criteria
 
-- Every editable independently executable node runs once while collapsed or expanded through one bottom-centered icon control.
-- Compact and expanded clusters use the same visual control with unchanged local member execution and cancellation.
-- No visible execution labels remain beside controls.
-- Unsupported, hidden, and read-only nodes are not actionable or focusable.
-- Execution, locking, output fidelity, accessibility, connections, card state, projection restoration, and Run All separation pass the tests above.
+- Collapsed executable nodes show bottom-center Play only on hover or keyboard focus, regardless of selection.
+- Expanded executable nodes show one full-width Execute control at the end of the form and no icon duplicate.
+- Both presentations invoke the same normal node command and share busy, error, listener, lock, and output state.
+- Running a control never changes collapse state or triggers adjacent canvas/card actions.
+- Unsupported, projected-hidden, and read-only nodes expose no execution control.
+- Cluster controls and execution remain unchanged; only explicit Run All performs batch execution.
+- All interaction, accessibility, geometry, lock, and execution-parity checks pass.

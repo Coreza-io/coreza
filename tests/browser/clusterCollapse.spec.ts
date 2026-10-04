@@ -62,3 +62,23 @@ test("collapsed members are hidden in the first painted frame without a visibili
     });
   }
 });
+
+test("compact cluster execution is revealed only by cluster hover or keyboard focus", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/cluster-collapse.html");
+  await page.locator("#collapse-cluster").click();
+
+  const cluster = page.locator(".cluster-card");
+  const action = cluster.locator("[data-cluster-execution-control]");
+  const execute = cluster.getByRole("button", { name: "Execute cluster Strategy" });
+  await expect(cluster).toBeVisible();
+  await expect(action).toHaveCSS("opacity", "0");
+
+  await cluster.hover();
+  await expect(action).toHaveCSS("opacity", "1");
+  await page.mouse.move(0, 0);
+  await expect(action).toHaveCSS("opacity", "0");
+
+  await execute.focus();
+  await expect(execute).toBeFocused();
+  await expect(action).toHaveCSS("opacity", "1");
+});

@@ -2,7 +2,6 @@
   "name": "AIAgent",
   "def": "AI Agent",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "AIAgent",
   "icon": "/assets/icons/aiagent.svg",
   "size": { "width": 380, "height": 420 },

@@ -3,7 +3,6 @@
   "broker": "schwab",
   "def": "Schwab Stream Subscribe",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/schwab.svg",
   "category": "Stream",
   "subCategory": "schwab",

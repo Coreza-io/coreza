@@ -3,7 +3,6 @@
   "label": "Store",
   "def": "Store Variables",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "Store",

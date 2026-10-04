@@ -2,7 +2,6 @@
   "name": "PostgresChatMemory",
   "def": "Postgres Chat Memory",
   "node_type": "sub",
-  "manualExecution": "attachment",
   "category": "Memory",
   "icon": "/assets/icons/store.svg",
   "description": "Stores chat history in the auto-provisioned `public.coreza_chat_history` Supabase table. Run `setup/setup.js` (or `setup/database-schema.sql`) if the table is missing. Use a Supabase Secret Key (`sb_secret_…`) — legacy `service_role` JWTs are also accepted.",

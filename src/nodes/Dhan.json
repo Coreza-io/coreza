@@ -3,7 +3,6 @@
   "broker": "dhan",
   "def": "Dhan",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/dhan.svg",
   "category": "Broker",
   "description": "Execute trades and get market data from Dhan Api",

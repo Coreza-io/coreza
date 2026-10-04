@@ -3,7 +3,6 @@
   "label": "Switch",
   "def": "Route execution based on input value to multiple paths",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/switch.svg",
   "category": "Logic",
   "description": "Multi-path conditional routing for complex workflow logic",

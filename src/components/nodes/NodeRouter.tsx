@@ -403,7 +403,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           isExecuting={data.isExecuting}
           isTool={isTool}
           onToggleTool={canToggleTool ? handleToggleTool : undefined}
-          executionControl={renderProps.executionControl}
+          collapsedExecutionControl={renderProps.collapsedExecutionControl}
         >
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />

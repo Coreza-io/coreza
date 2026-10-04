@@ -2,7 +2,6 @@
   "name": "Visualize",
   "def": "Visualize Candles & Signals",
   "node_type": "main",
-  "manualExecution": "unsupported",
   "category": "Visualization",
   "icon": "/assets/icons/visualize.svg",
   "size": {

@@ -9,10 +9,13 @@ describe("manual execution capability", () => {
     .filter((file) => file.endsWith(".json"))
     .map((file) => JSON.parse(fs.readFileSync(path.join(process.cwd(), "src/nodes", file), "utf8")) as NodeConfig);
 
-  it("requires every manifest definition to make an explicit decision", () => {
+  it("resolves every manifest definition", () => {
     expect(definitions).not.toHaveLength(0);
     for (const definition of definitions) {
-      expect(["available", "attachment", "unsupported"]).toContain(definition.manualExecution);
+      const expected = definition.node_type === "sub" || definition.name === "Visualize"
+        ? false
+        : true;
+      expect(resolveManualExecution(definition).available).toBe(expected);
     }
   });
 
@@ -26,5 +29,10 @@ describe("manual execution capability", () => {
       expect(resolveManualExecution(definitions.find((definition) => definition.name === name)!))
         .toEqual({ available: true });
     }
+  });
+
+  it("rejects unknown and malformed definitions with a typed reason", () => {
+    expect(resolveManualExecution(undefined)).toEqual({ available: false, reason: "unknown" });
+    expect(resolveManualExecution({ name: "FutureNode", node_type: "future" })).toEqual({ available: false, reason: "unknown" });
   });
 });

@@ -2,7 +2,6 @@
   "name": "EMA",
   "def": "Exponential Moving Average",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/ema.svg",
   "category": "Indicators",
   "description": "Exponential Moving Average - trend-following indicator giving more weight to recent prices. Faster than SMA at detecting trend changes.",

@@ -3,7 +3,6 @@
   "broker": "schwab",
   "def": "Schwab Screener",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/schwab.svg",
   "category": "Screener",
   "subCategory": "Schwab",

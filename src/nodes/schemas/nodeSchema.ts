@@ -185,7 +185,6 @@ export const NodeConfigSchema = z
   .object({
     name: z.string().min(1),
     node_type: z.enum(["main", "sub", "trigger", "backtest"]),
-    manualExecution: z.enum(["available", "attachment", "unsupported"]),
     handles: z.array(HandleSchema).min(1),
     fields: z.array(FieldSchema),
 

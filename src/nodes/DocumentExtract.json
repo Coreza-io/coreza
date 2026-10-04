@@ -2,7 +2,6 @@
   "name": "DocumentExtract",
   "def": "Extract Document",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "FileText",
   "category": "Document",
   "description": "Download a document URL and extract its content (PDF, HTML, DOCX, XLS/XLSX, CSV, text) as JSON",

@@ -2,7 +2,6 @@
   "name": "GeminiChatModel",
   "def": "Google Gemini Chat Model",
   "node_type": "sub",
-  "manualExecution": "attachment",
   "category": "ChatModel",
   "provider": "gemini",
   "icon": "/assets/icons/gemini.svg",

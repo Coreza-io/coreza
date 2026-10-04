@@ -18,7 +18,7 @@ export type ExecutionPhase =
   | "failed"
   | "blocked";
 
-interface ExecutionIconButtonProps {
+export interface ExecutionControlProps {
   targetKind: "node" | "cluster";
   targetName: string;
   phase: ExecutionPhase;
@@ -27,12 +27,13 @@ interface ExecutionIconButtonProps {
   onExecute: () => void;
   onStop?: () => void;
   className?: string;
+  presentation?: "icon" | "labelled";
 }
 
 const isolatePointer = (event: PointerEvent<HTMLElement>): void => event.stopPropagation();
 const isolateMouse = (event: MouseEvent<HTMLElement>): void => event.stopPropagation();
 
-export function ExecutionIconButton({
+export function ExecutionControl({
   targetKind,
   targetName,
   phase,
@@ -41,7 +42,8 @@ export function ExecutionIconButton({
   onExecute,
   onStop,
   className,
-}: ExecutionIconButtonProps): JSX.Element {
+  presentation = "icon",
+}: ExecutionControlProps): JSX.Element {
   const lastActivation = useRef(Number.NEGATIVE_INFINITY);
   const busy = phase === "running" || phase === "stopping";
   const canStop = phase === "running" && Boolean(onStop);
@@ -49,6 +51,7 @@ export function ExecutionIconButton({
   const verb = canStop ? "Stop" : "Execute";
   const label = `${verb} ${targetKind} ${targetName}`;
   const description = disabledReason ?? statusDescription ?? label;
+  const buttonText = canStop ? "Stop" : busy ? "Executing…" : "Execute";
   const activate = (): void => {
     if (blocked) return;
     const now = performance.now();
@@ -67,10 +70,11 @@ export function ExecutionIconButton({
         <TooltipTrigger asChild>
           <Button
             type="button"
-            size="icon"
-            variant="secondary"
+            size={presentation === "icon" ? "icon" : undefined}
+            variant={presentation === "icon" ? "secondary" : "nodeExecute"}
             className={cn(
-              "nodrag nopan h-9 w-9 shrink-0",
+              "nodrag nopan",
+              presentation === "icon" ? "h-9 w-9 shrink-0" : "w-full",
               phase === "failed" && "text-destructive",
               className,
             )}
@@ -82,7 +86,12 @@ export function ExecutionIconButton({
             onDoubleClick={isolateMouse}
             onKeyDown={onKeyDown}
           >
-            {canStop ? (
+            {presentation === "labelled" ? (
+              <>
+                {busy && !canStop && <LoaderCircle className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                {buttonText}
+              </>
+            ) : canStop ? (
               <Square className="h-4 w-4" aria-hidden="true" />
             ) : busy ? (
               <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
@@ -96,4 +105,10 @@ export function ExecutionIconButton({
       <span className="sr-only" aria-live="polite">{statusDescription}</span>
     </TooltipProvider>
   );
+}
+
+export function ExecutionIconButton(
+  props: Omit<ExecutionControlProps, "presentation">,
+): JSX.Element {
+  return <ExecutionControl {...props} presentation="icon" />;
 }

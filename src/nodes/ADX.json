@@ -2,7 +2,6 @@
   "name": "ADX",
   "def": "Average Directional Index",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/adx.svg",
   "category": "Indicators",
   "description": "ADX (Average Directional Index) - measures trend strength. Values above 25 indicate strong trend, below 20 indicate weak/ranging market.",

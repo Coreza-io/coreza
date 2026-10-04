@@ -2,7 +2,6 @@
   "name": "YahooFinance",
   "def": "YahooFinance Data",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "Data",
   "icon": "/assets/icons/YahooFinance.svg",
   "size": {

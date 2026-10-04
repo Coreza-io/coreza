@@ -2,7 +2,6 @@
   "name": "Market",
   "def": "Market",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "Building2",
   "category": "Data",
   "description": "Get real-time market status, hours, and trading sessions for global markets",

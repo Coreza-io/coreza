@@ -37,6 +37,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   fetchCredentials,
   fetchDependentOptions,
   referenceStyle,
+  expandedExecutionControl,
 }) => {
   const { user } = useAuth();
   const isDarkMode = useResolvedTheme() === "dark";
@@ -200,6 +201,8 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             />
           </div>
         )}
+
+        {expandedExecutionControl}
 
       </form>
 

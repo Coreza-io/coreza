@@ -2,7 +2,6 @@
   "name": "VolumeOscillator",
   "def": "Volume Oscillator",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/volume-oscillator.svg",
   "category": "Indicators",
   "description": "Volume Oscillator - shows difference between two volume moving averages to identify volume trends and divergences.",

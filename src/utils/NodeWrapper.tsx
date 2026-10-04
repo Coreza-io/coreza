@@ -119,7 +119,7 @@ interface NodeWrapperProps {
   // Tool mode toggle
   isTool?: boolean;
   onToggleTool?: () => void;
-  executionControl?: React.ReactNode;
+  collapsedExecutionControl?: React.ReactNode;
 }
 
 const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -164,7 +164,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   // Tool mode
   isTool = false,
   onToggleTool,
-  executionControl,
+  collapsedExecutionControl,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -316,7 +316,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         className={`
           relative transition-[background-color,border-color,box-shadow] duration-300 ease-in-out
           ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}
-          ${isExpanded ? "" : "cursor-pointer group"}
+          ${isExpanded ? "" : "cursor-pointer group/node"}
           ${nodeShapeClass}
           ${isFlashing ? "animate-stream-data-flash" : ""}
           ${
@@ -632,9 +632,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 TOOL
               </div>
             )}
-            {executionControl && (
-              <div className="absolute inset-x-0 bottom-1 z-10 flex h-9 items-center justify-center">
-                {executionControl}
+            {collapsedExecutionControl && (
+              <div
+                data-collapsed-execution-control
+                className="absolute inset-x-8 bottom-3 z-10 flex h-9 items-center justify-center opacity-0 pointer-events-none transition-opacity duration-150 motion-reduce:transition-none group-hover/node:opacity-100 group-hover/node:pointer-events-auto group-focus-within/node:opacity-100 group-focus-within/node:pointer-events-auto"
+              >
+                {collapsedExecutionControl}
               </div>
             )}
           </div>
@@ -642,7 +645,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Expanded View */}
         {isExpanded && (
-          <CardContent className={`space-y-3 p-4 relative ${executionControl ? "pb-14" : ""}`} style={{ zIndex: 2 }}>
+          <CardContent className="space-y-3 p-4 relative" style={{ zIndex: 2 }}>
             <div className="absolute top-2 right-2 z-10 flex gap-1">
               {/* <Button
                 variant="ghost"
@@ -667,11 +670,6 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               </Button>
             </div>
             {children}
-            {executionControl && (
-              <div className="absolute inset-x-0 bottom-2 flex h-9 items-center justify-center">
-                {executionControl}
-              </div>
-            )}
           </CardContent>
         )}
       </Card>

@@ -3,7 +3,6 @@
   "label": "If",
   "def": "Evaluate one or more conditions and branch on true/false",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/if.svg",
   "category": "Logic",
   "description": "Conditional logic for trading decisions",

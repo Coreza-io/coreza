@@ -2,7 +2,6 @@
   "name": "Loop",
   "def": "Loop Over Items",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/loop.svg",
   "category": "Logic",
   "description": "Iterate over array items, executing downstream nodes once per item. Supports distributed parallel execution via BullMQ.",

@@ -3,7 +3,6 @@
   "broker": "binance",
   "def": "Binance Stream Subscribe",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/binance.svg",
   "category": "Stream",
   "subCategory": "binance",

@@ -3,7 +3,6 @@
   "label": "Redis Store",
   "def": "Store and retrieve data from Redis",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/redis.svg",
   "category": "Data",
   "subCategory": "Redis",

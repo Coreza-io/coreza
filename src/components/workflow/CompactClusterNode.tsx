@@ -17,7 +17,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
   return (
     <article
       id={`cluster-card-${cluster.clusterId}`}
-      className={`cluster-card h-[180px] w-[280px] cursor-grab rounded-xl border-2 p-4 text-[hsl(var(--cluster-title))] shadow-[var(--cluster-shadow)] outline-none motion-safe:transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-[hsl(var(--cluster-selection-ring))] ${selected ? "cluster-card--selected" : ""} ${dragging ? "cursor-grabbing" : ""}`}
+      className={`cluster-card group/cluster h-[180px] w-[280px] cursor-grab rounded-xl border-2 p-4 text-[hsl(var(--cluster-title))] shadow-[var(--cluster-shadow)] outline-none motion-safe:transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-[hsl(var(--cluster-selection-ring))] ${selected ? "cluster-card--selected" : ""} ${dragging ? "cursor-grabbing" : ""}`}
       tabIndex={0}
       aria-label={`Cluster ${cluster.title}, ${cluster.memberCount} ${cluster.memberCount === 1 ? "node" : "nodes"}`}
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } }}
@@ -54,8 +54,13 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
         <span>{cluster.memberCount} {cluster.memberCount === 1 ? "node" : "nodes"}</span>
       </div>
       <footer className="absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center border-t border-[hsl(var(--cluster-border))]">
-        <ClusterExecutionControl title={cluster.title} state={cluster.runState}
-          onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
+        <div
+          data-cluster-execution-control
+          className="pointer-events-none opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover/cluster:pointer-events-auto group-hover/cluster:opacity-100 group-focus-within/cluster:pointer-events-auto group-focus-within/cluster:opacity-100"
+        >
+          <ClusterExecutionControl title={cluster.title} state={cluster.runState}
+            onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
+        </div>
       </footer>
     </article>
   );

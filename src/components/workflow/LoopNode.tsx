@@ -22,7 +22,12 @@ export interface LoopNodeData extends Record<string, any> {
   onAddNode: (parentId: string) => void;
 }
 
-export function LoopNode({ id, data, selected }: NodeProps) {
+type LoopNodeProps = NodeProps & {
+  workflowId?: string;
+  readOnly?: boolean;
+};
+
+export function LoopNode({ id, data, selected, workflowId, readOnly }: LoopNodeProps) {
   const { getNodes, getEdges } = useStableNodes();
   const definition = (data as any).definition || (data as any).config || {};
   const executionStore = useExecutionStore();
@@ -55,7 +60,12 @@ export function LoopNode({ id, data, selected }: NodeProps) {
   }, [definition.icon, definition.name]);
 
   return (
-    <BaseNode data={data} selected={selected ?? false} readOnly={(data as any).readOnly} workflowId={(data as any).workflowId}>
+    <BaseNode
+      data={data}
+      selected={selected ?? false}
+      readOnly={readOnly ?? (data as any).readOnly}
+      workflowId={workflowId}
+    >
       {(renderProps) => {
         // Read nodes/edges imperatively for NodeWrapper - avoids re-render on drag
         const nodes = getNodes();
@@ -103,8 +113,8 @@ export function LoopNode({ id, data, selected }: NodeProps) {
             finishEditing={renderProps.finishEditing}
             setEditingName={renderProps.setEditingName}
             isExecuting={(data as any).isExecuting}
-            readOnly={(data as any).readOnly}
-            executionControl={renderProps.executionControl}
+            readOnly={readOnly ?? (data as any).readOnly}
+            collapsedExecutionControl={renderProps.collapsedExecutionControl}
           >
             <BasicNodeLayout {...renderProps} />
           </NodeWrapper>

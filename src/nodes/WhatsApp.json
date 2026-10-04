@@ -2,7 +2,6 @@
   "name": "WhatsApp",
   "def": "Send WhatsApp Message",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "Communication",
   "handles": [
     { "type": "target", "position": "left", "id": "input" },

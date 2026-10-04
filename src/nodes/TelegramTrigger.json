@@ -1,7 +1,6 @@
 {
   "name": "TelegramTrigger",
   "node_type": "trigger",
-  "manualExecution": "available",
   "category": "Trigger",
   "subCategory": "telegram",
   "provider": "telegram",

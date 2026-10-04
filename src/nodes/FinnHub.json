@@ -2,7 +2,6 @@
   "name": "FinnHub",
   "def": "Fetch Market Data",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "Broker",
   "auth": "GenericAuthModal",
   "authFields": [

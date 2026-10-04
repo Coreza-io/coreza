@@ -3,7 +3,6 @@
   "def": "FMP News",
   "description": "Fetch news and articles from Financial Modeling Prep (FMP)",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "Data",
   "subCategory": "FMP",
   "auth": "GenericAuthModal",

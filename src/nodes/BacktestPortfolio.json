@@ -2,7 +2,6 @@
   "name": "BacktestPortfolio",
   "def": "Backtest Portfolio",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
   "description": "Query and update portfolio state -- positions, cash, equity, orders, trades",

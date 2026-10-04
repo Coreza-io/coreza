@@ -3,7 +3,6 @@
   "def": "Fundamental Data",
   "description": "Fetch comprehensive fundamental data from Financial Modeling Prep (FMP)",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "Data",
   "auth": "GenericAuthModal",
   "authFields": [

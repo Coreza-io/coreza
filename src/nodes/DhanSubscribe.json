@@ -3,7 +3,6 @@
   "broker": "dhan",
   "def": "Dhan Stream Subscribe",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/dhan.svg",
   "category": "Stream",
   "subCategory": "dhan",

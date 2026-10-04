@@ -2,7 +2,6 @@
   "name": "GoogleWebSearch",
   "def": "Google Web Search",
   "node_type": "sub",
-  "manualExecution": "attachment",
   "category": "Tool",
   "auth": "GenericAuthModal",
   "authFields": [

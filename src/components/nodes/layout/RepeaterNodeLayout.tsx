@@ -357,6 +357,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   handleChange,
   handleFieldStateBatch,
   handleSubmit,
+  expandedExecutionControl,
   handleDrop,
   getFieldPreview,
   setShowAuth,
@@ -1444,6 +1445,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             {error}
           </div>
         )}
+        {expandedExecutionControl}
       </form>
 
       {/* Auth Modal */}

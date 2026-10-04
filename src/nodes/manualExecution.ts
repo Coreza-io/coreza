@@ -1,18 +1,26 @@
-import type { NodeConfig } from "./schemas/nodeSchema";
-
 export type ManualExecutionUnavailableReason =
   | "attachment"
-  | "unsupported";
+  | "unsupported"
+  | "unknown";
 
 export type ManualExecutionCapability =
   | { available: true }
   | { available: false; reason: ManualExecutionUnavailableReason };
 
-/** Resolve the declarative contract only; mounted UI and backend actions are irrelevant. */
+/** Preserve the editor's existing node-type contract without persisting UI capability state. */
 export function resolveManualExecution(
-  definition: Pick<NodeConfig, "manualExecution">,
+  definition: unknown,
 ): ManualExecutionCapability {
-  return definition.manualExecution === "available"
+  if (!definition || typeof definition !== "object") {
+    return { available: false, reason: "unknown" };
+  }
+  const { name, node_type: nodeType } = definition as Record<string, unknown>;
+  if (typeof name !== "string" || name.length === 0) {
+    return { available: false, reason: "unknown" };
+  }
+  if (nodeType === "sub") return { available: false, reason: "attachment" };
+  if (name === "Visualize") return { available: false, reason: "unsupported" };
+  return nodeType === "main" || nodeType === "action" || nodeType === "trigger" || nodeType === "backtest"
     ? { available: true }
-    : { available: false, reason: definition.manualExecution };
+    : { available: false, reason: "unknown" };
 }

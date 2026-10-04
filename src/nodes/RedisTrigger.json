@@ -3,7 +3,6 @@
   "label": "Redis Trigger",
   "def": "Trigger workflow on Redis Pub/Sub messages",
   "node_type": "trigger",
-  "manualExecution": "available",
   "icon": "/assets/icons/redis.svg",
   "category": "Data",
   "subCategory": "Redis",

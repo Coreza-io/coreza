@@ -2,7 +2,6 @@
   "name": "Support & Resistance",
   "def": "Support and Resistance Levels",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/support-resistance.svg",
   "category": "Indicators",
   "description": "Calculate support and resistance levels using multiple methods",

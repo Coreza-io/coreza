@@ -53,7 +53,7 @@ import {
   resolveListeningFlagKey,
   resolveStopAction,
 } from "@/components/nodes/listeningStop";
-import { ExecutionIconButton } from "@/components/workflow/ExecutionIconButton";
+import { ExecutionControl } from "@/components/workflow/ExecutionIconButton";
 import { resolveManualExecution } from "@/nodes/manualExecution";
 import { getEditorExecutionTarget, subscribeEditorExecution } from "@/services/editorNodeExecution";
 
@@ -93,7 +93,9 @@ export interface BaseNodeRenderProps {
   // Event handlers
   handleChange: (key: string, value: any) => void;
   handleFieldStateBatch: (updates: Record<string, any>) => void;
-  handleSubmit: (e?: React.FormEvent) => void;
+  handleSubmit: (
+    e?: React.FormEvent,
+  ) => ReturnType<ReturnType<typeof useNodeExecution>["handleSubmit"]>;
   handleDrop: (
     fieldKey: string,
     setter: React.Dispatch<React.SetStateAction<string>>,
@@ -123,7 +125,8 @@ export interface BaseNodeRenderProps {
   nodeSurfaceGradient: string;
   visualCategory: NodeVisualCategory;
   nodeTheme: NodeVisualTheme;
-  executionControl?: React.ReactNode;
+  collapsedExecutionControl?: React.ReactNode;
+  expandedExecutionControl?: React.ReactNode;
 }
 
 const TAILWIND_NEON_COLORS: Record<string, string> = {
@@ -159,9 +162,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: routeWorkflowId } = useParams();
   const workflowId = propWorkflowId ?? routeWorkflowId;
+  const workflowSessionId = typeof data?.workflowSessionId === "string" ? data.workflowSessionId : "";
   const activeExecutionTarget = useSyncExternalStore(
-    (listener) => workflowId ? subscribeEditorExecution(workflowId, listener) : () => undefined,
-    () => workflowId ? getEditorExecutionTarget(workflowId) : "",
+    (listener) => workflowSessionId ? subscribeEditorExecution(workflowSessionId, listener) : () => undefined,
+    () => workflowSessionId ? getEditorExecutionTarget(workflowSessionId) : "",
   );
   const replaySessionRef = useRef(0);
 
@@ -557,6 +561,30 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     await handleStepStream("prev");
   }, [handleStepStream]);
 
+  const blockedReason = activeExecutionTarget && activeExecutionTarget !== `node:${nodeId}`
+    ? "Another editor execution is active."
+    : undefined;
+  const executionPhase = executionHook.isSending || isTriggerListening
+    ? "running"
+    : blockedReason
+      ? "blocked"
+      : executionHook.error
+        ? "failed"
+        : "idle";
+  const canExecuteManually = !readOnly && resolveManualExecution(definition).available;
+  const createExecutionControl = (presentation: "icon" | "labelled") => canExecuteManually ? (
+    <ExecutionControl
+      targetKind="node"
+      targetName={displayName}
+      phase={executionPhase}
+      disabledReason={blockedReason}
+      statusDescription={executionHook.error || undefined}
+      onExecute={() => { void executionHook.handleSubmit(); }}
+      onStop={isTriggerListening ? handleStopListening : undefined}
+      presentation={presentation}
+    />
+  ) : undefined;
+
   const renderProps: BaseNodeRenderProps = {
     definition,
     displayName,
@@ -610,17 +638,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     nodeSurfaceGradient,
     visualCategory,
     nodeTheme,
-    executionControl: !readOnly && resolveManualExecution(definition).available ? (
-      <ExecutionIconButton
-        targetKind="node"
-        targetName={displayName}
-        phase={executionHook.isSending || isTriggerListening ? "running" : activeExecutionTarget ? "blocked" : executionHook.error ? "failed" : "idle"}
-        disabledReason={activeExecutionTarget && activeExecutionTarget !== `node:${nodeId}` ? "Another editor execution is active." : undefined}
-        statusDescription={executionHook.error || undefined}
-        onExecute={() => { void executionHook.handleSubmit(); }}
-        onStop={isTriggerListening ? handleStopListening : undefined}
-      />
-    ) : undefined,
+    collapsedExecutionControl: createExecutionControl("icon"),
+    expandedExecutionControl: createExecutionControl("labelled"),
   };
 
   return <>{children(renderProps)}</>;

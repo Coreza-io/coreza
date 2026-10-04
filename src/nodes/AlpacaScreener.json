@@ -3,7 +3,6 @@
   "broker": "alpaca",
   "def": "Alpaca Screener",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Screener",
   "subCategory": "Alpaca",

@@ -3,7 +3,6 @@
   "broker": "alpaca",
   "def": "Alpaca Stream Subscribe",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/alpaca.svg",
   "category": "Stream",
   "subCategory": "alpaca",

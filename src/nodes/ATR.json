@@ -2,7 +2,6 @@
   "name": "ATR",
   "def": "Average True Range",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/indicators.svg",
   "category": "Indicators",
   "description": "Average True Range measures volatility. Check data.IsReady before using data.Current; zero is a valid ready ATR value. SampleCount reports accepted bars, Previous is the prior accepted ATR, and TrueRange is the latest accepted bar's range. Legacy currentValue and previousValue fields remain available for compatibility.",

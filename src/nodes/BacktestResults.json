@@ -2,7 +2,6 @@
   "name": "BacktestResults",
   "def": "Backtest Results",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
   "description": "Calculate final metrics and persist backtest results to database",

@@ -2,7 +2,6 @@
   "name": "HttpRequest",
   "def": "HTTP Request",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "Globe",
   "category": "Data",
   "description": "Make HTTP requests to external APIs and services",

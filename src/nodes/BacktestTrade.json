@@ -2,7 +2,6 @@
   "name": "BacktestTrade",
   "def": "Backtest Trade",
   "node_type": "main",
-  "manualExecution": "available",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
   "description": "Execute a simulated trade in the backtest session",

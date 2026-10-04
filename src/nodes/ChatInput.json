@@ -2,7 +2,6 @@
   "name": "ChatInput",
   "def": "Chat Input Node",
   "node_type": "main",
-  "manualExecution": "available",
   "category": "Input",
   "handles": [{ "type": "source", "position": "right", "id": "output" }],
   "icon": "/assets/icons/chat.svg",

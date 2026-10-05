@@ -253,11 +253,11 @@ export function projectClusterGraph(
   // This compatibility field now includes both collapsed canonical runtime
   // hosts and temporarily occluded display nodes (including synthetic cards).
   const hiddenRuntimeHostIds = new Set(collapsedOwnerByNode.keys());
-  const focusedCluster = options.focusedClusterId
+  const expandedCluster = options.focusedClusterId
     ? clusters.find(({ id }) => id === options.focusedClusterId)
     : undefined;
-  const focusedMemberIds = new Set(focusedCluster?.memberNodeIds.filter((id) => nodeById.has(id)) ?? []);
-  const frameRect = getExpandedClusterFrameRect(focusedCluster, canonicalNodes);
+  const focusedMemberIds = new Set(expandedCluster?.memberNodeIds.filter((id) => nodeById.has(id)) ?? []);
+  const frameRect = getExpandedClusterFrameRect(expandedCluster, canonicalNodes);
   if (frameRect) {
     for (const node of displayNodes) {
       if (hiddenRuntimeHostIds.has(node.id) || focusedMemberIds.has(node.id)) continue;

@@ -21,17 +21,21 @@ const clusters: NodeCluster[] = ["Alpha", "Beta", "Gamma", "Delta"].map((title) 
   title: `${title} strategy`,
   memberNodeIds: [`${title.toLowerCase()}-loop`, `${title.toLowerCase()}-branch`],
 }));
-const canonicalNodes: Node[] = [
-  { id: "store", type: "member", position: { x: 20, y: 220 }, data: { label: "Outside Store" } },
-  ...clusters.flatMap((cluster, index): Node[] => [
-    { id: cluster.memberNodeIds[0], type: "member", position: { x: 300 + index * 65, y: 80 + index * 50 }, data: { label: `${cluster.title} Loop` } },
-    { id: cluster.memberNodeIds[1], type: "member", position: { x: 570 + index * 65, y: 80 + index * 50 }, data: { label: `${cluster.title} Branch` } },
-  ]),
+const initialCanonicalNodes: Node[] = [
+  { id: "store", type: "member", position: { x: -100, y: 200 }, data: { label: "Outside Store" } },
+  { id: "outside-overlap", type: "member", position: { x: 850, y: 220 }, data: { label: "Overlapping ordinary node" } },
+  ...clusters.flatMap((cluster, index): Node[] => {
+    const x = [300, 800, 1150, 1500][index];
+    return [
+      { id: cluster.memberNodeIds[0], type: "member", position: { x, y: 200 }, data: { label: `${cluster.title} Loop` } },
+      { id: cluster.memberNodeIds[1], type: "member", position: { x: x + 270, y: 200 }, data: { label: `${cluster.title} Branch` } },
+    ];
+  }),
 ];
 const canonicalEdges: Edge[] = clusters.flatMap((cluster) => [
   { id: `feed-${cluster.id}`, source: "store", target: cluster.memberNodeIds[0] },
   { id: `internal-${cluster.id}`, source: cluster.memberNodeIds[0], target: cluster.memberNodeIds[1] },
-]);
+]).concat({ id: "visible-crossing", source: "store", target: "gamma-loop" });
 
 function MemberNode({ id, data }: NodeProps<Node>): JSX.Element {
   useEffect(() => {
@@ -44,6 +48,7 @@ const nodeTypes = { member: MemberNode, compactCluster: CompactClusterNode };
 
 function Fixture(): JSX.Element {
   const [focusedClusterId, setFocusedClusterId] = useState<string | null>(null);
+  const [canonicalNodes, setCanonicalNodes] = useState(initialCanonicalNodes);
   const [executions, setExecutions] = useState<Record<string, number>>({});
   const execute = useCallback((clusterId: string): void => setExecutions((current) => ({
     ...current,
@@ -61,13 +66,14 @@ function Fixture(): JSX.Element {
       onExecute: execute,
       onCancel: () => undefined,
     },
-  ), [execute, focusedClusterId]);
+  ), [canonicalNodes, execute, focusedClusterId]);
   const focusedCluster = clusters.find(({ id }) => id === focusedClusterId);
 
   return <main className="h-screen bg-background text-foreground">
     <nav className="flex h-12 items-center gap-2 px-3">
       {clusters.map((cluster) => <button key={cluster.id} type="button" onClick={() => setFocusedClusterId(cluster.id)}>Focus {cluster.id}</button>)}
       <button type="button" onClick={() => setFocusedClusterId(null)}>Close focus</button>
+      <button type="button" onClick={() => setCanonicalNodes((current) => current.map((node) => node.id === "outside-overlap" ? { ...node, position: { x: 1000, y: 500 } } : node))}>Move outsider away</button>
       {clusters.map((cluster) => <output key={cluster.id} data-executions={cluster.id}>{executions[cluster.id] ?? 0}</output>)}
     </nav>
     <div className="relative h-[calc(100vh-3rem)]">

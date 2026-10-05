@@ -8,6 +8,18 @@ import { CLUSTER_RUNTIME_HOST_CLASS } from "./canonicalNode";
 export const CLUSTER_DISPLAY_ID_PREFIX = "__coreza_cluster_display__:";
 export const COMPACT_CLUSTER_WIDTH = 280;
 export const COMPACT_CLUSTER_HEIGHT = 180;
+export const CLUSTER_FRAME_PADDING = 24;
+export const CLUSTER_FRAME_HEADER_HEIGHT = 42;
+export const CLUSTER_FRAME_FOOTER_HEIGHT = 52;
+const DEFAULT_NODE_WIDTH = 280;
+const DEFAULT_NODE_HEIGHT = 180;
+
+export interface FlowRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface CompactClusterNodeData extends Record<string, unknown> {
   clusterId: string;
@@ -67,6 +79,43 @@ export const getCompactClusterPosition = (members: readonly Node[]): XYPosition 
   return { x: minX - 24, y: minY - 66 };
 };
 
+export const getProjectedNodeRect = (node: Node): FlowRect => ({
+  x: node.position.x,
+  y: node.position.y,
+  width: node.type === "compactCluster"
+    ? COMPACT_CLUSTER_WIDTH
+    : node.measured?.width ?? node.width ?? DEFAULT_NODE_WIDTH,
+  height: node.type === "compactCluster"
+    ? COMPACT_CLUSTER_HEIGHT
+    : node.measured?.height ?? node.height ?? DEFAULT_NODE_HEIGHT,
+});
+
+export const getExpandedClusterFrameRect = (
+  cluster: NodeCluster | undefined,
+  canonicalNodes: readonly Node[],
+): FlowRect | null => {
+  if (!cluster) return null;
+  const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
+  const members = [...new Set(cluster.memberNodeIds)].flatMap((id) => {
+    const member = nodeById.get(id);
+    return member ? [member] : [];
+  });
+  if (members.length === 0) return null;
+  const rects = members.map(getProjectedNodeRect);
+  const minX = Math.min(...rects.map(({ x }) => x)) - CLUSTER_FRAME_PADDING;
+  const minY = Math.min(...rects.map(({ y }) => y)) - CLUSTER_FRAME_PADDING - CLUSTER_FRAME_HEADER_HEIGHT;
+  const maxX = Math.max(...rects.map(({ x, width }) => x + width)) + CLUSTER_FRAME_PADDING;
+  const maxY = Math.max(...rects.map(({ y, height }) => y + height)) + CLUSTER_FRAME_PADDING + CLUSTER_FRAME_FOOTER_HEIGHT;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
+export const hasPositiveAreaIntersection = (a: FlowRect, b: FlowRect): boolean =>
+  a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0
+  && a.x < b.x + b.width
+  && a.x + a.width > b.x
+  && a.y < b.y + b.height
+  && a.y + a.height > b.y;
+
 export function projectClusterGraph(
   canonicalNodes: readonly Node[],
   canonicalEdges: readonly Edge[],
@@ -101,9 +150,11 @@ export function projectClusterGraph(
   const displayNodeToCluster = new Map<string, string>();
   const displayEdgeToCanonicalEdge = new Map<string, string>();
   const displayIdByCluster = new Map<string, string>();
+  const isExpanded = (clusterId: string): boolean =>
+    clusterId === options.focusedClusterId || isClusterExpanded(viewState, clusterId);
 
   for (const cluster of clusters) {
-    if (isClusterExpanded(viewState, cluster.id)) continue;
+    if (isExpanded(cluster.id)) continue;
     for (const memberId of cluster.memberNodeIds) collapsedOwnerByNode.set(memberId, cluster);
   }
 
@@ -112,7 +163,7 @@ export function projectClusterGraph(
   // endpoints from the unsuffixed ID would leave those edges dangling.
   const reservedIds = new Set(canonicalNodes.map(({ id }) => id));
   for (const cluster of clusters) {
-    if (isClusterExpanded(viewState, cluster.id)) continue;
+    if (isExpanded(cluster.id)) continue;
     const baseId = getClusterDisplayNodeId(cluster.id);
     let id = baseId;
     let collisionIndex = 1;
@@ -165,7 +216,7 @@ export function projectClusterGraph(
   // every display-layer interaction so component-owned runtimes stay alive.
   const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? asRuntimeHost(node) : node);
   for (const cluster of clusters) {
-    if (isClusterExpanded(viewState, cluster.id)) continue;
+    if (isExpanded(cluster.id)) continue;
     const members = cluster.memberNodeIds.flatMap((id) => {
       const member = nodeById.get(id);
       return member ? [member] : [];
@@ -199,13 +250,29 @@ export function projectClusterGraph(
     displayNodes.push(compactNode);
   }
 
+  // This compatibility field now includes both collapsed canonical runtime
+  // hosts and temporarily occluded display nodes (including synthetic cards).
   const hiddenRuntimeHostIds = new Set(collapsedOwnerByNode.keys());
+  const focusedCluster = options.focusedClusterId
+    ? clusters.find(({ id }) => id === options.focusedClusterId)
+    : undefined;
+  const focusedMemberIds = new Set(focusedCluster?.memberNodeIds.filter((id) => nodeById.has(id)) ?? []);
+  const frameRect = getExpandedClusterFrameRect(focusedCluster, canonicalNodes);
+  if (frameRect) {
+    for (const node of displayNodes) {
+      if (hiddenRuntimeHostIds.has(node.id) || focusedMemberIds.has(node.id)) continue;
+      if (hasPositiveAreaIntersection(frameRect, getProjectedNodeRect(node))) hiddenRuntimeHostIds.add(node.id);
+    }
+  }
+  const occludedDisplayNodes = displayNodes.map((node) =>
+    hiddenRuntimeHostIds.has(node.id) && !collapsedOwnerByNode.has(node.id) ? asRuntimeHost(node) : node);
   return {
-    nodes: displayNodes,
-    edges: projectedEdges,
+    nodes: occludedDisplayNodes,
+    edges: projectedEdges.filter((edge) =>
+      !hiddenRuntimeHostIds.has(edge.source) && !hiddenRuntimeHostIds.has(edge.target)),
     displayNodeToCluster,
     displayEdgeToCanonicalEdge,
     hiddenRuntimeHostIds,
-    visibleNodeIds: new Set(displayNodes.filter(({ id }) => !hiddenRuntimeHostIds.has(id)).map(({ id }) => id)),
+    visibleNodeIds: new Set(occludedDisplayNodes.filter(({ id }) => !hiddenRuntimeHostIds.has(id)).map(({ id }) => id)),
   };
 }

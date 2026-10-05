@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import { CLUSTER_DISPLAY_ID_PREFIX, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
+import { CLUSTER_DISPLAY_ID_PREFIX, getExpandedClusterFrameRect, getVisibleClusterNodes, hasPositiveAreaIntersection, projectClusterGraph } from "@/domain/clusters/projection";
 import { closeFocusedCluster, hasValidClusterMembers, isClusterExpanded, openFocusedCluster, reconcileClusterViewState, reconcileFocusedCluster, setClusterExpanded } from "@/domain/clusters/viewState";
 import type { NodeCluster } from "@/domain/clusters/types";
 import {
@@ -45,6 +45,27 @@ describe("cluster view state", () => {
 });
 
 describe("cluster display projection", () => {
+  it("uses strict positive-area rectangle intersection", () => {
+    const base = { x: 0, y: 0, width: 100, height: 100 };
+    expect(hasPositiveAreaIntersection(base, { x: 99, y: 20, width: 20, height: 20 })).toBe(true);
+    expect(hasPositiveAreaIntersection(base, { x: 20, y: 20, width: 20, height: 20 })).toBe(true);
+    expect(hasPositiveAreaIntersection(base, { ...base })).toBe(true);
+    expect(hasPositiveAreaIntersection(base, { x: 100, y: 20, width: 20, height: 20 })).toBe(false);
+    expect(hasPositiveAreaIntersection(base, { x: 100, y: 100, width: 20, height: 20 })).toBe(false);
+    expect(hasPositiveAreaIntersection(base, { x: 101, y: 20, width: 20, height: 20 })).toBe(false);
+    expect(hasPositiveAreaIntersection(base, { x: 20, y: 20, width: 0, height: 20 })).toBe(false);
+  });
+
+  it("deduplicates valid members when calculating the expanded frame", () => {
+    expect(getExpandedClusterFrameRect({ ...cluster, memberNodeIds: ["a", "a", "missing"] }, nodes)).toEqual({
+      x: 76,
+      y: 54,
+      width: 328,
+      height: 322,
+    });
+    expect(getExpandedClusterFrameRect({ ...cluster, memberNodeIds: ["missing"] }, nodes)).toBeNull();
+  });
+
   it("preserves collapsed runtime hosts beside one compact card and projects boundary handles", () => {
     const projection = projectClusterGraph(nodes, edges, [cluster], {}, jest.fn());
     const displayId = `${CLUSTER_DISPLAY_ID_PREFIX}${cluster.id}`;
@@ -115,8 +136,12 @@ describe("cluster display projection", () => {
     expect(projection.hiddenRuntimeHostIds.size).toBe(0);
   });
 
-  it("isolates a focused cluster by membership while preserving hidden runtime hosts", () => {
+  it("hides only projected objects overlapping the expanded frame", () => {
+    const distantNode: Node = { id: "distant", position: { x: 1100, y: 120 }, data: {} };
     const projection = projectClusterGraph(nodes, edges, [cluster], {}, jest.fn(), {
+      focusedClusterId: cluster.id,
+    });
+    const withDistant = projectClusterGraph([...nodes, distantNode], edges, [cluster], {}, jest.fn(), {
       focusedClusterId: cluster.id,
     });
 
@@ -127,6 +152,31 @@ describe("cluster display projection", () => {
     expect(projection.edges).toEqual([edges[0]]);
     expect(projection.nodes.find(({ id }) => id === "outside")?.data).toBe(nodes[2].data);
     expect(nodes[2].position).toEqual({ x: 700, y: 120 });
+    expect(withDistant.visibleNodeIds).toEqual(new Set(["a", "b", "distant"]));
+  });
+
+  it("occludes overlapping sibling cards and filters only edges with hidden endpoints", () => {
+    const distantNode: Node = { id: "far", position: { x: 1200, y: 120 }, data: {} };
+    const overlappingSibling: NodeCluster = { id: "overlap", title: "Overlap", memberNodeIds: ["outside"] };
+    const distantSibling: NodeCluster = { id: "far-cluster", title: "Far", memberNodeIds: ["far"] };
+    const crossingEdge: Edge = { id: "crossing", source: "a", target: "far" };
+    const projection = projectClusterGraph(
+      [...nodes, distantNode],
+      [...edges, crossingEdge],
+      [cluster, overlappingSibling, distantSibling],
+      { [cluster.id]: true },
+      jest.fn(),
+      { focusedClusterId: cluster.id },
+    );
+    const overlappingDisplayId = `${CLUSTER_DISPLAY_ID_PREFIX}${overlappingSibling.id}`;
+    const distantDisplayId = `${CLUSTER_DISPLAY_ID_PREFIX}${distantSibling.id}`;
+
+    expect(projection.hiddenRuntimeHostIds).toEqual(new Set(["outside", "far", overlappingDisplayId]));
+    expect(projection.visibleNodeIds).toEqual(new Set(["a", "b", distantDisplayId]));
+    expect(projection.edges.map(({ id }) => id)).toEqual(["internal", "crossing"]);
+    expect(projection.edges.find(({ id }) => id === "crossing")?.target).toBe(distantDisplayId);
+    expect(projection.displayNodeToCluster.get(distantDisplayId)).toBe(distantSibling.id);
+    expect(projection.displayEdgeToCanonicalEdge.get("crossing")).toBe("crossing");
   });
 
   it("derives focus from IDs rather than geometry without mutating canonical inputs", () => {
@@ -142,6 +192,19 @@ describe("cluster display projection", () => {
     expect(reopened.nodes.find(({ id }) => id === "b")).toBe(overlappingNodes[1]);
     expect(closed.nodes.find(({ id }) => id === "outside")).toBe(overlappingNodes[2]);
     expect(edges).toEqual(originalEdges);
+  });
+
+  it("recomputes temporary occlusion from fresh positions and clears it on close", () => {
+    const focused = projectClusterGraph(nodes, edges, [cluster], { [cluster.id]: true }, jest.fn(), { focusedClusterId: cluster.id });
+    const movedNodes = nodes.map((node) => node.id === "outside" ? { ...node, position: { x: 900, y: 120 } } : node);
+    const moved = projectClusterGraph(movedNodes, edges, [cluster], { [cluster.id]: true }, jest.fn(), { focusedClusterId: cluster.id });
+    const closed = projectClusterGraph(nodes, edges, [cluster], {}, jest.fn());
+
+    expect(focused.hiddenRuntimeHostIds.has("outside")).toBe(true);
+    expect(moved.hiddenRuntimeHostIds.has("outside")).toBe(false);
+    expect(moved.edges).toEqual(edges);
+    expect(closed.visibleNodeIds.has("outside")).toBe(true);
+    expect(nodes[2].style).toBeUndefined();
   });
 
   it("projects both endpoints for edges between collapsed clusters", () => {

@@ -121,7 +121,7 @@ import {
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
-import { getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
+import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
 import {
   closeFocusedCluster,
   focusedClusterToViewState,
@@ -487,14 +487,9 @@ const WorkflowEditorContent = () => {
       focusFitRef.current = null;
       setCanvasMenu(null);
       setEditingClusterId(null);
-      setSelectedClusterIds(new Set());
-      const visibleIds = new Set(availableClusters.find(({ id }) => id === next)?.memberNodeIds ?? []);
-      setNodes((items) => items.map((node) => node.selected && !visibleIds.has(node.id)
-        ? { ...node, selected: false }
-        : node));
       return next;
     });
-  }, [clusters, rf, setNodes, workflowSessionId]);
+  }, [clusters, rf, workflowSessionId]);
 
   const closeCluster = useCallback(() => {
     if (clusterMoveRef.current || isEditorExecutionLocked(workflowSessionId)) return;
@@ -510,10 +505,8 @@ const WorkflowEditorContent = () => {
   const clusterViewState = useMemo(() => focusedClusterToViewState(focusedClusterId), [focusedClusterId]);
 
   const collapsedRuntimeHostIds = useMemo(() => new Set(
-    focusedClusterId
-      ? nodes.filter((node) => !clusters.find(({ id }) => id === focusedClusterId)?.memberNodeIds.includes(node.id)).map(({ id }) => id)
-      : clusters.flatMap((cluster) => cluster.memberNodeIds),
-  ), [clusters, focusedClusterId, nodes]);
+    clusters.filter(({ id }) => id !== focusedClusterId).flatMap((cluster) => cluster.memberNodeIds),
+  ), [clusters, focusedClusterId]);
 
   const cloneNodes = useCallback((sourceNodes: Node[]) => {
     return sourceNodes.map((node) => ({
@@ -659,10 +652,33 @@ const WorkflowEditorContent = () => {
   }), [fitViewNodes]);
 
   useEffect(() => {
-    if (!focusedClusterId || focusFitRef.current === focusedClusterId || fitViewNodes.length === 0) return;
+    const hiddenIds = clusterProjection.hiddenRuntimeHostIds;
+    setNodes((current) => {
+      let changed = false;
+      const next = current.map((node) => {
+        if (!node.selected || !hiddenIds.has(node.id)) return node;
+        changed = true;
+        return { ...node, selected: false };
+      });
+      return changed ? next : current;
+    });
+    const visibleClusterIds = new Set([...clusterProjection.displayNodeToCluster.entries()]
+      .filter(([displayId]) => !hiddenIds.has(displayId))
+      .map(([, clusterId]) => clusterId));
+    setSelectedClusterIds((current) => {
+      const next = new Set([...current].filter((clusterId) => visibleClusterIds.has(clusterId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds, setNodes]);
+
+  useEffect(() => {
+    if (!focusedClusterId || focusFitRef.current === focusedClusterId) return;
+    const memberIds = new Set(clusters.find(({ id }) => id === focusedClusterId)?.memberNodeIds ?? []);
+    const focusedMembers = nodes.filter(({ id }) => memberIds.has(id));
+    if (focusedMembers.length === 0) return;
     focusFitRef.current = focusedClusterId;
-    requestAnimationFrame(() => { void rf.fitView({ ...fitViewOptions, padding: 0.3 }); });
-  }, [fitViewNodes, fitViewOptions, focusedClusterId, rf]);
+    requestAnimationFrame(() => { void rf.fitView({ nodes: focusedMembers, padding: 0.3, maxZoom: 1, minZoom: 0.4 }); });
+  }, [clusters, focusedClusterId, nodes, rf]);
 
   const startClusterDrag = useCallback((event: React.PointerEvent<HTMLElement>, cluster: NodeCluster) => {
     if (dragSource.nodeId || event.button !== 0) return;
@@ -670,7 +686,7 @@ const WorkflowEditorContent = () => {
     event.stopPropagation();
     const clusterWasSelected = selectedClusterIds.has(cluster.id);
     const selectedIds = clusterWasSelected
-      ? resolveCanonicalSelection(nodesRef.current, clusters, selectedClusterIds, collapsedRuntimeHostIds)
+      ? resolveCanonicalSelection(nodesRef.current, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds)
       : cluster.memberNodeIds;
     const focusedIds = focusedClusterId === cluster.id ? new Set(cluster.memberNodeIds) : null;
     const movableIds = focusedIds ? selectedIds.filter((id) => focusedIds.has(id)) : selectedIds;
@@ -693,7 +709,7 @@ const WorkflowEditorContent = () => {
       initialDisplayPosition: { x: 0, y: 0 },
       initialFlowPointer: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
     };
-  }, [collapsedRuntimeHostIds, clusters, dragSource.nodeId, focusedClusterId, rf, selectedClusterIds, setNodes, workflowSessionId]);
+  }, [clusterProjection.hiddenRuntimeHostIds, clusters, dragSource.nodeId, focusedClusterId, rf, selectedClusterIds, setNodes, workflowSessionId]);
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -874,7 +890,7 @@ const WorkflowEditorContent = () => {
     const cluster = clusters.find((candidate) => candidate.id === clusterId);
     if (!cluster || dragSource.nodeId) return;
     const selectedIds = selectedClusterIds.has(cluster.id)
-      ? resolveCanonicalSelection(nodesRef.current, clusters, selectedClusterIds, collapsedRuntimeHostIds)
+      ? resolveCanonicalSelection(nodesRef.current, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds)
       : cluster.memberNodeIds;
     const initialMemberPositions = capturePositions(nodesRef.current, selectedIds);
     clusterMoveRef.current = {
@@ -887,7 +903,7 @@ const WorkflowEditorContent = () => {
       currentMemberPositions: initialMemberPositions,
       initialDisplayPosition: { ...node.position },
     };
-  }, [clusterProjection.displayNodeToCluster, collapsedRuntimeHostIds, clusters, dragSource.nodeId, selectedClusterIds, workflowSessionId]);
+  }, [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds, clusters, dragSource.nodeId, selectedClusterIds, workflowSessionId]);
 
   const onCompactDragStop = useCallback(() => finishClusterMove(false), [finishClusterMove]);
 
@@ -925,7 +941,9 @@ const WorkflowEditorContent = () => {
         }
       }
       const canonicalChanges = filterCanonicalNodeChanges(changes, canonicalNodeIds)
-        .filter((change) => !focusedClusterId || ("id" in change && clusterProjection.visibleNodeIds.has(change.id)));
+        .filter((change) => !("id" in change)
+          || clusterProjection.visibleNodeIds.has(change.id)
+          || change.type === "dimensions");
       const removedNodeIds = canonicalChanges
         .filter((change) => change.type === "remove")
         .map((change) => change.id);
@@ -959,7 +977,7 @@ const WorkflowEditorContent = () => {
       }
       if (canonicalChanges.length > 0) applyNodeChanges(canonicalChanges);
     },
-    [applyNodeChanges, cleanupNewsSubscription, clusterProjection.displayNodeToCluster, clusterProjection.visibleNodeIds, clusters, deleteNodeIds, executionStore, focusedClusterId, nodes, setNodes, workflowSessionId],
+    [applyNodeChanges, cleanupNewsSubscription, clusterProjection.displayNodeToCluster, clusterProjection.visibleNodeIds, clusters, deleteNodeIds, executionStore, nodes, setNodes, workflowSessionId],
   );
 
   const handleNodeOutputMessage = useCallback(
@@ -1821,7 +1839,7 @@ const WorkflowEditorContent = () => {
     const clusterMembers = clusterId
       ? clusters.find(({ id }) => id === clusterId)?.memberNodeIds ?? []
       : undefined;
-    const selectedCanonicalIds = resolveCanonicalSelection(nodes, clusters, selectedClusterIds, collapsedRuntimeHostIds);
+    const selectedCanonicalIds = resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds);
     const nodeIds = node.selected
       ? [...new Set(selectedCanonicalIds)]
       : (clusterMembers ?? [node.id]);
@@ -1831,7 +1849,7 @@ const WorkflowEditorContent = () => {
       setSelectedClusterIds(clusterId ? new Set([clusterId]) : new Set());
     }
     openCanvasMenu(event, nodeIds, "selection");
-  }, [clusterProjection.displayNodeToCluster, collapsedRuntimeHostIds, clusters, nodes, openCanvasMenu, selectedClusterIds, setNodes]);
+  }, [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds, clusters, nodes, openCanvasMenu, selectedClusterIds, setNodes]);
 
   const onSelectionContextMenu = useCallback((event: React.MouseEvent, selectedNodes: Node[]) => {
     const canonicalIds = selectedNodes.flatMap(({ id }) => {
@@ -1907,7 +1925,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "g") {
-        const selectedIds = resolveCanonicalSelection(nodes, clusters, selectedClusterIds, collapsedRuntimeHostIds);
+        const selectedIds = resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds);
         if (event.shiftKey) dissolveClustersForNodes(selectedIds);
         else createClusterFromSelection(selectedIds);
         event.preventDefault();
@@ -1915,7 +1933,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "c") {
-        const selectedIds = new Set(resolveCanonicalSelection(nodes, clusters, selectedClusterIds, collapsedRuntimeHostIds));
+        const selectedIds = new Set(resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds));
         const selectedNodes = nodes.filter((node) => selectedIds.has(node.id));
         if (selectedNodes.length === 0) {
           return;
@@ -1949,7 +1967,7 @@ const WorkflowEditorContent = () => {
 
       // Cut (Ctrl+X) - Copy to clipboard then delete
       if (isModKey && event.key.toLowerCase() === "x") {
-        const selectedIds = new Set(resolveCanonicalSelection(nodes, clusters, selectedClusterIds, collapsedRuntimeHostIds));
+        const selectedIds = new Set(resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds));
         const selectedNodes = nodes.filter((node) => selectedIds.has(node.id));
         if (selectedNodes.length === 0) {
           return;
@@ -2137,7 +2155,7 @@ const WorkflowEditorContent = () => {
           nodes,
           clusters,
           selectedClusterIds,
-          collapsedRuntimeHostIds,
+          clusterProjection.hiddenRuntimeHostIds,
         );
 
         if (selectedNodeIds.length === 0) {
@@ -2162,7 +2180,7 @@ const WorkflowEditorContent = () => {
     removeEdge,
     cloneEdges,
     cloneNodes,
-    collapsedRuntimeHostIds,
+    clusterProjection.hiddenRuntimeHostIds,
     clusters,
     selectedClusterIds,
     stampNodesWithWorkflowSession,
@@ -2412,24 +2430,18 @@ const WorkflowEditorContent = () => {
             </ConnectionDragContext.Provider>
             <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-label="Workflow clusters">
               {clusters.filter((cluster) => !CLUSTER_COLLAPSE_ENABLED || cluster.id === focusedClusterId).map((cluster) => {
-                const members = nodes.filter((node) => cluster.memberNodeIds.includes(node.id));
-                if (members.length === 0) return null;
-                const padding = 24;
-                const header = 42;
-                const footer = 52;
-                const minX = Math.min(...members.map(({ position }) => position.x)) - padding;
-                const minY = Math.min(...members.map(({ position }) => position.y)) - padding - header;
-                const maxX = Math.max(...members.map((node) => node.position.x + (node.measured?.width ?? node.width ?? 280))) + padding;
-                const maxY = Math.max(...members.map((node) => node.position.y + (node.measured?.height ?? node.height ?? 180))) + padding + footer;
+                const frameRect = getExpandedClusterFrameRect(cluster, nodes);
+                if (!frameRect) return null;
+                const memberCount = new Set(cluster.memberNodeIds.filter((id) => nodes.some((node) => node.id === id))).size;
                 return (
                   <section
                     key={cluster.id}
                     id={`cluster-frame-${cluster.id}`}
                     className="cluster-frame absolute rounded-xl border-2"
                     style={{
-                      transform: `translate(${minX * viewport.zoom + viewport.x}px, ${minY * viewport.zoom + viewport.y}px)`,
-                      width: (maxX - minX) * viewport.zoom,
-                      height: (maxY - minY) * viewport.zoom,
+                      transform: `translate(${frameRect.x * viewport.zoom + viewport.x}px, ${frameRect.y * viewport.zoom + viewport.y}px)`,
+                      width: frameRect.width * viewport.zoom,
+                      height: frameRect.height * viewport.zoom,
                     }}
                   >
                     <header
@@ -2468,7 +2480,7 @@ const WorkflowEditorContent = () => {
                           ? { ...item, note: event.target.value || undefined }
                           : item))}
                       />
-                      <span className="text-xs text-muted-foreground">{members.length} nodes</span>
+                      <span className="text-xs text-muted-foreground">{memberCount} nodes</span>
                       {CLUSTER_COLLAPSE_ENABLED && <Button
                         type="button"
                         variant="ghost"

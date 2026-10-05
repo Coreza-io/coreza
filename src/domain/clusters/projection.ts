@@ -30,15 +30,30 @@ export interface ClusterProjection {
   displayNodeToCluster: ReadonlyMap<string, string>;
   displayEdgeToCanonicalEdge: ReadonlyMap<string, string>;
   hiddenRuntimeHostIds: ReadonlySet<string>;
+  visibleNodeIds: ReadonlySet<string>;
 }
 
 export interface ClusterProjectionOptions {
+  focusedClusterId?: string | null;
   draggable?: boolean;
   selectedClusterIds?: ReadonlySet<string>;
   getRunState?: (clusterId: string) => ClusterRunState;
   onExecute?: (clusterId: string) => void;
   onCancel?: (clusterId: string) => void;
 }
+
+const asRuntimeHost = (node: Node): Node => ({
+  ...node,
+  className: [node.className, CLUSTER_RUNTIME_HOST_CLASS].filter(Boolean).join(" "),
+  style: { ...node.style, visibility: "hidden", pointerEvents: "none", transition: "none", animation: "none" },
+  domAttributes: { ...node.domAttributes, "aria-hidden": true },
+  draggable: false,
+  selectable: false,
+  connectable: false,
+  deletable: false,
+  focusable: false,
+  selected: false,
+});
 
 export const getVisibleClusterNodes = (projection: ClusterProjection): Node[] =>
   projection.nodes.filter(({ id }) => !projection.hiddenRuntimeHostIds.has(id));
@@ -61,6 +76,27 @@ export function projectClusterGraph(
   options: ClusterProjectionOptions = {},
 ): ClusterProjection {
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
+  const focusedCluster = options.focusedClusterId
+    ? clusters.find(({ id }) => id === options.focusedClusterId)
+    : undefined;
+  const focusedMemberIds = focusedCluster
+    ? new Set(focusedCluster.memberNodeIds.filter((id) => nodeById.has(id)))
+    : undefined;
+  if (focusedMemberIds?.size) {
+    const hiddenRuntimeHostIds = new Set(canonicalNodes
+      .filter(({ id }) => !focusedMemberIds.has(id))
+      .map(({ id }) => id));
+    const projectedEdges = canonicalEdges.filter((edge) =>
+      focusedMemberIds.has(edge.source) && focusedMemberIds.has(edge.target));
+    return {
+      nodes: canonicalNodes.map((node) => hiddenRuntimeHostIds.has(node.id) ? asRuntimeHost(node) : node),
+      edges: projectedEdges,
+      displayNodeToCluster: new Map(),
+      displayEdgeToCanonicalEdge: new Map(projectedEdges.map(({ id }) => [id, id])),
+      hiddenRuntimeHostIds,
+      visibleNodeIds: focusedMemberIds,
+    };
+  }
   const collapsedOwnerByNode = new Map<string, NodeCluster>();
   const displayNodeToCluster = new Map<string, string>();
   const displayEdgeToCanonicalEdge = new Map<string, string>();
@@ -127,24 +163,7 @@ export function projectClusterGraph(
   // React Flow's `hidden` property removes a node component from the render
   // tree. Keep collapsed members in the projection instead, while disabling
   // every display-layer interaction so component-owned runtimes stay alive.
-  const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? {
-    ...node,
-    className: [node.className, CLUSTER_RUNTIME_HOST_CLASS].filter(Boolean).join(" "),
-    style: {
-      ...node.style,
-      visibility: "hidden",
-      pointerEvents: "none",
-      transition: "none",
-      animation: "none",
-    },
-    domAttributes: { ...node.domAttributes, "aria-hidden": true },
-    draggable: false,
-    selectable: false,
-    connectable: false,
-    deletable: false,
-    focusable: false,
-    selected: false,
-  } : node);
+  const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? asRuntimeHost(node) : node);
   for (const cluster of clusters) {
     if (isClusterExpanded(viewState, cluster.id)) continue;
     const members = cluster.memberNodeIds.flatMap((id) => {
@@ -180,11 +199,13 @@ export function projectClusterGraph(
     displayNodes.push(compactNode);
   }
 
+  const hiddenRuntimeHostIds = new Set(collapsedOwnerByNode.keys());
   return {
     nodes: displayNodes,
     edges: projectedEdges,
     displayNodeToCluster,
     displayEdgeToCanonicalEdge,
-    hiddenRuntimeHostIds: new Set(collapsedOwnerByNode.keys()),
+    hiddenRuntimeHostIds,
+    visibleNodeIds: new Set(displayNodes.filter(({ id }) => !hiddenRuntimeHostIds.has(id)).map(({ id }) => id)),
   };
 }

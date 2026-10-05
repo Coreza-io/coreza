@@ -51,7 +51,7 @@ export function ExecutionControl({
   const verb = canStop ? "Stop" : "Execute";
   const label = `${verb} ${targetKind} ${targetName}`;
   const description = disabledReason ?? statusDescription ?? label;
-  const buttonText = canStop ? "Stop" : busy ? "Executing…" : "Execute";
+  const buttonText = canStop ? "Stop" : phase === "stopping" ? "Stopping…" : busy ? "Executing…" : "Execute";
   const activate = (): void => {
     if (blocked) return;
     const now = performance.now();

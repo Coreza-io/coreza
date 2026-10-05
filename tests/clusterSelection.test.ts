@@ -45,4 +45,23 @@ describe("cluster canonical selection", () => {
     expect(resolveCanonicalSelection(nodes, clusters, new Set(["cluster"]), hiddenRuntimeHostIds))
       .toEqual(["outside", "a", "b"]);
   });
+
+  it("expands only selected compact cards that remain actionable", () => {
+    const nodes: Node[] = [
+      { id: "a", position: { x: 0, y: 0 }, data: {} },
+      { id: "b", position: { x: 10, y: 0 }, data: {} },
+    ];
+    const clusters: NodeCluster[] = [
+      { id: "visible", title: "Visible", memberNodeIds: ["a"] },
+      { id: "occluded", title: "Occluded", memberNodeIds: ["b"] },
+    ];
+
+    expect(resolveCanonicalSelection(
+      nodes,
+      clusters,
+      new Set(["visible", "occluded"]),
+      new Set(["a", "b"]),
+      new Set(["visible"]),
+    )).toEqual(["a"]);
+  });
 });

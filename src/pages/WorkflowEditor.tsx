@@ -504,10 +504,6 @@ const WorkflowEditorContent = () => {
 
   const clusterViewState = useMemo(() => focusedClusterToViewState(focusedClusterId), [focusedClusterId]);
 
-  const collapsedRuntimeHostIds = useMemo(() => new Set(
-    clusters.filter(({ id }) => id !== focusedClusterId).flatMap((cluster) => cluster.memberNodeIds),
-  ), [clusters, focusedClusterId]);
-
   const cloneNodes = useCallback((sourceNodes: Node[]) => {
     return sourceNodes.map((node) => ({
       ...node,
@@ -576,26 +572,6 @@ const WorkflowEditorContent = () => {
     return `Cluster ${index}`;
   }, [clusters]);
 
-  const createClusterFromSelection = useCallback((requestedIds?: readonly string[]) => {
-    if (dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
-    const selectedIds = requestedIds?.length
-      ? [...requestedIds]
-      : resolveCanonicalSelection(nodes, clusters, selectedClusterIds, collapsedRuntimeHostIds);
-    const candidate: NodeCluster = { id: crypto.randomUUID(), title: nextClusterTitle, memberNodeIds: selectedIds };
-    const result = validateClusterSelection(selectedIds, nodes, edges, clusters, candidate);
-    if (!result.valid) {
-      toast({ title: "Cannot create cluster", description: result.violations[0]?.message });
-      return;
-    }
-    saveHistorySnapshot();
-    const nextCluster = { ...candidate, memberNodeIds: result.resolvedMemberNodeIds ?? selectedIds };
-    const nextClusters = [...clusters, nextCluster];
-    setClusters(nextClusters);
-    openCluster(candidate.id, nextClusters);
-    setEditingClusterId(candidate.id);
-    setCanvasMenu(null);
-  }, [clusters, collapsedRuntimeHostIds, dragSource.nodeId, edges, nextClusterTitle, nodes, openCluster, saveHistorySnapshot, selectedClusterIds, toast, workflowSessionId]);
-
   const finishClusterMove = useCallback((cancel = false) => {
     const move = clusterMoveRef.current;
     if (!move) return;
@@ -638,6 +614,44 @@ const WorkflowEditorContent = () => {
     }),
     [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, focusedClusterId, nodes, openCluster, selectedClusterIds],
   );
+  const actionableClusterIds = useMemo(() => new Set(
+    [...clusterProjection.displayNodeToCluster.entries()]
+      .filter(([displayId]) => !clusterProjection.hiddenRuntimeHostIds.has(displayId))
+      .map(([, clusterId]) => clusterId),
+  ), [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds]);
+  const resolveVisibleCanonicalSelection = useCallback((sourceNodes: readonly Node[] = nodes): string[] =>
+    resolveCanonicalSelection(
+      sourceNodes,
+      clusters,
+      selectedClusterIds,
+      clusterProjection.hiddenRuntimeHostIds,
+      actionableClusterIds,
+    ), [actionableClusterIds, clusterProjection.hiddenRuntimeHostIds, clusters, nodes, selectedClusterIds]);
+
+  const createClusterFromSelection = useCallback((requestedIds?: readonly string[]) => {
+    if (dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
+    const actionableNodeIds = new Set([
+      ...clusterProjection.visibleNodeIds,
+      ...clusters.filter(({ id }) => selectedClusterIds.has(id) && actionableClusterIds.has(id))
+        .flatMap(({ memberNodeIds }) => memberNodeIds),
+    ]);
+    const selectedIds = requestedIds?.length
+      ? [...new Set(requestedIds)].filter((id) => actionableNodeIds.has(id))
+      : resolveVisibleCanonicalSelection();
+    const candidate: NodeCluster = { id: crypto.randomUUID(), title: nextClusterTitle, memberNodeIds: selectedIds };
+    const result = validateClusterSelection(selectedIds, nodes, edges, clusters, candidate);
+    if (!result.valid) {
+      toast({ title: "Cannot create cluster", description: result.violations[0]?.message });
+      return;
+    }
+    saveHistorySnapshot();
+    const nextCluster = { ...candidate, memberNodeIds: result.resolvedMemberNodeIds ?? selectedIds };
+    const nextClusters = [...clusters, nextCluster];
+    setClusters(nextClusters);
+    openCluster(candidate.id, nextClusters);
+    setEditingClusterId(candidate.id);
+    setCanvasMenu(null);
+  }, [actionableClusterIds, clusterProjection.visibleNodeIds, clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, openCluster, resolveVisibleCanonicalSelection, saveHistorySnapshot, selectedClusterIds, toast, workflowSessionId]);
   const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
   const fitViewNodes = useMemo(
@@ -662,14 +676,11 @@ const WorkflowEditorContent = () => {
       });
       return changed ? next : current;
     });
-    const visibleClusterIds = new Set([...clusterProjection.displayNodeToCluster.entries()]
-      .filter(([displayId]) => !hiddenIds.has(displayId))
-      .map(([, clusterId]) => clusterId));
     setSelectedClusterIds((current) => {
-      const next = new Set([...current].filter((clusterId) => visibleClusterIds.has(clusterId)));
+      const next = new Set([...current].filter((clusterId) => actionableClusterIds.has(clusterId)));
       return next.size === current.size ? current : next;
     });
-  }, [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds, setNodes]);
+  }, [actionableClusterIds, clusterProjection.hiddenRuntimeHostIds, setNodes]);
 
   useEffect(() => {
     if (!focusedClusterId || focusFitRef.current === focusedClusterId) return;
@@ -686,7 +697,7 @@ const WorkflowEditorContent = () => {
     event.stopPropagation();
     const clusterWasSelected = selectedClusterIds.has(cluster.id);
     const selectedIds = clusterWasSelected
-      ? resolveCanonicalSelection(nodesRef.current, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds)
+      ? resolveVisibleCanonicalSelection(nodesRef.current)
       : cluster.memberNodeIds;
     const focusedIds = focusedClusterId === cluster.id ? new Set(cluster.memberNodeIds) : null;
     const movableIds = focusedIds ? selectedIds.filter((id) => focusedIds.has(id)) : selectedIds;
@@ -709,7 +720,7 @@ const WorkflowEditorContent = () => {
       initialDisplayPosition: { x: 0, y: 0 },
       initialFlowPointer: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
     };
-  }, [clusterProjection.hiddenRuntimeHostIds, clusters, dragSource.nodeId, focusedClusterId, rf, selectedClusterIds, setNodes, workflowSessionId]);
+  }, [dragSource.nodeId, focusedClusterId, resolveVisibleCanonicalSelection, rf, selectedClusterIds, setNodes, workflowSessionId]);
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -890,7 +901,7 @@ const WorkflowEditorContent = () => {
     const cluster = clusters.find((candidate) => candidate.id === clusterId);
     if (!cluster || dragSource.nodeId) return;
     const selectedIds = selectedClusterIds.has(cluster.id)
-      ? resolveCanonicalSelection(nodesRef.current, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds)
+      ? resolveVisibleCanonicalSelection(nodesRef.current)
       : cluster.memberNodeIds;
     const initialMemberPositions = capturePositions(nodesRef.current, selectedIds);
     clusterMoveRef.current = {
@@ -903,7 +914,7 @@ const WorkflowEditorContent = () => {
       currentMemberPositions: initialMemberPositions,
       initialDisplayPosition: { ...node.position },
     };
-  }, [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds, clusters, dragSource.nodeId, selectedClusterIds, workflowSessionId]);
+  }, [clusterProjection.displayNodeToCluster, clusters, dragSource.nodeId, resolveVisibleCanonicalSelection, selectedClusterIds, workflowSessionId]);
 
   const onCompactDragStop = useCallback(() => finishClusterMove(false), [finishClusterMove]);
 
@@ -1839,7 +1850,7 @@ const WorkflowEditorContent = () => {
     const clusterMembers = clusterId
       ? clusters.find(({ id }) => id === clusterId)?.memberNodeIds ?? []
       : undefined;
-    const selectedCanonicalIds = resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds);
+    const selectedCanonicalIds = resolveVisibleCanonicalSelection();
     const nodeIds = node.selected
       ? [...new Set(selectedCanonicalIds)]
       : (clusterMembers ?? [node.id]);
@@ -1849,7 +1860,7 @@ const WorkflowEditorContent = () => {
       setSelectedClusterIds(clusterId ? new Set([clusterId]) : new Set());
     }
     openCanvasMenu(event, nodeIds, "selection");
-  }, [clusterProjection.displayNodeToCluster, clusterProjection.hiddenRuntimeHostIds, clusters, nodes, openCanvasMenu, selectedClusterIds, setNodes]);
+  }, [clusterProjection.displayNodeToCluster, clusters, openCanvasMenu, resolveVisibleCanonicalSelection, setNodes]);
 
   const onSelectionContextMenu = useCallback((event: React.MouseEvent, selectedNodes: Node[]) => {
     const canonicalIds = selectedNodes.flatMap(({ id }) => {
@@ -1925,7 +1936,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "g") {
-        const selectedIds = resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds);
+        const selectedIds = resolveVisibleCanonicalSelection();
         if (event.shiftKey) dissolveClustersForNodes(selectedIds);
         else createClusterFromSelection(selectedIds);
         event.preventDefault();
@@ -1933,7 +1944,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "c") {
-        const selectedIds = new Set(resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds));
+        const selectedIds = new Set(resolveVisibleCanonicalSelection());
         const selectedNodes = nodes.filter((node) => selectedIds.has(node.id));
         if (selectedNodes.length === 0) {
           return;
@@ -1967,7 +1978,7 @@ const WorkflowEditorContent = () => {
 
       // Cut (Ctrl+X) - Copy to clipboard then delete
       if (isModKey && event.key.toLowerCase() === "x") {
-        const selectedIds = new Set(resolveCanonicalSelection(nodes, clusters, selectedClusterIds, clusterProjection.hiddenRuntimeHostIds));
+        const selectedIds = new Set(resolveVisibleCanonicalSelection());
         const selectedNodes = nodes.filter((node) => selectedIds.has(node.id));
         if (selectedNodes.length === 0) {
           return;
@@ -2151,12 +2162,7 @@ const WorkflowEditorContent = () => {
         //console.log("Delete key pressed - removing selected nodes");
 
         // Get IDs of nodes being deleted
-        const selectedNodeIds = resolveCanonicalSelection(
-          nodes,
-          clusters,
-          selectedClusterIds,
-          clusterProjection.hiddenRuntimeHostIds,
-        );
+        const selectedNodeIds = resolveVisibleCanonicalSelection();
 
         if (selectedNodeIds.length === 0) {
           return;
@@ -2180,7 +2186,6 @@ const WorkflowEditorContent = () => {
     removeEdge,
     cloneEdges,
     cloneNodes,
-    clusterProjection.hiddenRuntimeHostIds,
     clusters,
     selectedClusterIds,
     stampNodesWithWorkflowSession,
@@ -2189,7 +2194,7 @@ const WorkflowEditorContent = () => {
     deleteNodeIds,
     dissolveClustersForNodes,
     restoreDocument,
-    focusedClusterId,
+    resolveVisibleCanonicalSelection,
   ]);
 
   // Add visibility change handler to prevent state loss on tab switching

@@ -88,7 +88,7 @@ export function renameNodeInDocument(
       if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferences(data.fieldState, oldId, newId);
       return { ...node, data };
     }
-    const data = { ...node.data, displayName: newId };
+    const data: Record<string, unknown> = { ...node.data, displayName: newId };
     if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferences(data.values, oldId, newId);
     if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferences(data.fieldState, oldId, newId);
     return { ...node, id: newId, data };

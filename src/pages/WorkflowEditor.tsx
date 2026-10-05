@@ -245,7 +245,7 @@ interface ClusterMoveSession {
 }
 
 type HistoryEntry =
-  | { type: "document"; document: WorkflowDocument }
+  | { type: "document"; document: WorkflowDocument; identityRename?: { from: string; to: string } }
   | { type: "positions"; nodeIds: string[]; before: PositionMap; after: PositionMap };
 
 const WorkflowEditorContent = () => {
@@ -598,6 +598,7 @@ const WorkflowEditorContent = () => {
 
     historyRef.current.past.push({
       type: "document",
+      identityRename: { from: resolved.name, to: nodeId },
       document: {
         nodes: cloneNodes(currentNodes),
         edges: cloneEdges(currentEdges),
@@ -1982,6 +1983,7 @@ const WorkflowEditorContent = () => {
       const isModKey = event.metaKey || event.ctrlKey;
 
       if (isModKey && event.key.toLowerCase() === "z") {
+        if (isEditorExecutionLocked(workflowSessionId) || clusterMoveRef.current) return;
         const direction = event.shiftKey ? "redo" : "undo";
         const source = direction === "undo" ? historyRef.current.past : historyRef.current.future;
         const destination = direction === "undo" ? historyRef.current.future : historyRef.current.past;
@@ -1993,7 +1995,23 @@ const WorkflowEditorContent = () => {
           destination.push(entry);
           setNodes((current) => applyPositionTargets(current, direction === "undo" ? entry.before : entry.after));
         } else {
-          destination.push({ type: "document", document: { nodes: cloneNodes(nodes), edges: cloneEdges(edges), clusters: clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })) } });
+          destination.push({
+            type: "document",
+            identityRename: entry.identityRename ? { from: entry.identityRename.to, to: entry.identityRename.from } : undefined,
+            document: { nodes: cloneNodes(nodes), edges: cloneEdges(edges), clusters: clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })) },
+          });
+          if (entry.identityRename) {
+            const { from, to } = entry.identityRename;
+            if (!executionStore.canRenameNode(from, to) || !canRenameEditorNodeAction(workflowSessionId, from, to)) {
+              source.push(entry);
+              destination.pop();
+              toast({ title: "Cannot restore node rename", description: "Runtime state already exists for the node identity being restored.", variant: "destructive" });
+              return;
+            }
+            executionStore.renameNode(from, to);
+            retireEditorNodeAction(workflowSessionId, from);
+            notifyExecutionStoreUpdate();
+          }
           restoreDocument(entry.document);
         }
         event.preventDefault();
@@ -2261,6 +2279,9 @@ const WorkflowEditorContent = () => {
     dissolveClustersForNodes,
     restoreDocument,
     resolveVisibleCanonicalSelection,
+    executionStore,
+    notifyExecutionStoreUpdate,
+    workflowSessionId,
   ]);
 
   // Add visibility change handler to prevent state loss on tab switching

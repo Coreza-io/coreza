@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeCluster } from "./types";
 import { normalizeClusters, validateClusters } from "./validate";
+import { remapNodeReferences } from "@/utils/remapNodeReferences";
 
 export interface WorkflowDocument {
   nodes: Node[];
@@ -11,6 +12,12 @@ export interface WorkflowDocument {
 export interface DocumentMutationResult {
   document: WorkflowDocument;
   dissolvedClusters: NodeCluster[];
+}
+
+export interface RenameDocumentResult extends DocumentMutationResult {
+  oldId: string;
+  newId: string;
+  changed: boolean;
 }
 
 const cloneDocument = (document: WorkflowDocument): WorkflowDocument => ({
@@ -65,18 +72,49 @@ export function renameNodeInDocument(
   current: WorkflowDocument,
   oldId: string,
   newId: string,
-): DocumentMutationResult {
-  if (current.nodes.some((node) => node.id === newId)) throw new Error(`Node ${newId} already exists.`);
-  return mutateDocument(current, (candidate) => {
-    candidate.nodes = candidate.nodes.map((node) => node.id === oldId ? { ...node, id: newId } : node);
-    candidate.edges = candidate.edges.map((edge) => ({
+): RenameDocumentResult {
+  const source = current.nodes.find((node) => node.id === oldId);
+  if (!source) throw new Error(`Node ${oldId} does not exist.`);
+  if (oldId === newId && source.data?.displayName === newId) {
+    return { document: current, dissolvedClusters: [], oldId, newId, changed: false };
+  }
+  if (oldId !== newId && current.nodes.some((node) => node.id === newId)) throw new Error(`Node ${newId} already exists.`);
+
+  const candidate = cloneDocument(current);
+  candidate.nodes = candidate.nodes.map((node) => {
+    if (node.id !== oldId) {
+      const data = { ...node.data };
+      if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferences(data.values, oldId, newId);
+      if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferences(data.fieldState, oldId, newId);
+      return { ...node, data };
+    }
+    const data: Record<string, unknown> = { ...node.data, displayName: newId };
+    if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferences(data.values, oldId, newId);
+    if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferences(data.fieldState, oldId, newId);
+    return { ...node, id: newId, data };
+  });
+  candidate.edges = candidate.edges.map((edge) => ({
       ...edge,
       source: edge.source === oldId ? newId : edge.source,
       target: edge.target === oldId ? newId : edge.target,
-    }));
-    candidate.clusters = candidate.clusters.map((cluster) => ({
+  }));
+  candidate.clusters = candidate.clusters.map((cluster) => ({
       ...cluster,
       memberNodeIds: cluster.memberNodeIds.map((id) => id === oldId ? newId : id),
-    }));
+  }));
+
+  const before = validateClusters(current.nodes, current.edges, current.clusters).violations;
+  const after = validateClusters(candidate.nodes, candidate.edges, candidate.clusters).violations;
+  const normalizeId = (id: string) => id === newId ? oldId : id;
+  const fingerprint = (item: (typeof before)[number], normalize = false) => JSON.stringify({
+    code: item.code,
+    clusterId: item.clusterId,
+    nodeIds: [...item.nodeIds].map((id) => normalize ? normalizeId(id) : id).sort(),
+    edgeIds: [...item.edgeIds].sort(),
   });
+  const prior = new Set(before.map((item) => fingerprint(item)));
+  const introduced = after.filter((item) => !prior.has(fingerprint(item, true)));
+  if (introduced.length > 0) throw new Error(introduced[0].message);
+
+  return { document: candidate, dissolvedClusters: [], oldId, newId, changed: true };
 }

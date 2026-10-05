@@ -92,6 +92,24 @@ export class ExecutionContext {
     this.store.set(id, { ...prev, output: value });
   }
 
+  canRenameNode(oldId: string, newId: string): boolean {
+    if (oldId === newId) return true;
+    return !this.store.has(newId) && !this.pinnedOutputs.has(newId);
+  }
+
+  renameNode(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    if (!this.canRenameNode(oldId, newId)) throw new Error(`Runtime data already exists for node ${newId}.`);
+    const hasData = this.store.has(oldId);
+    const data = this.store.get(oldId);
+    const hasPinned = this.pinnedOutputs.has(oldId);
+    const pinned = this.pinnedOutputs.get(oldId);
+    if (hasData && data) this.store.set(newId, data);
+    if (hasPinned) this.pinnedOutputs.set(newId, pinned);
+    if (hasData) this.store.delete(oldId);
+    if (hasPinned) this.pinnedOutputs.delete(oldId);
+  }
+
   /** Clear runtime-only loop fields. */
   resetLoopState(id: string, extra?: Partial<NodeExecutionData>) {
     this.setNodeData(id, {

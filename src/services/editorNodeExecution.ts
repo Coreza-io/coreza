@@ -68,6 +68,15 @@ export function registerEditorNodeAction(
   return () => undefined;
 }
 
+export function canRenameEditorNodeAction(sessionId: string, oldId: string, newId: string): boolean {
+  if (oldId === newId) return true;
+  return !actions.get(sessionId)?.has(newId);
+}
+
+export function retireEditorNodeAction(sessionId: string, nodeId: string): void {
+  actions.get(sessionId)?.delete(nodeId);
+}
+
 /** Editor-owned imperative API used by buttons and coordinated execution alike. */
 export async function executeEditorNode(
   sessionId: string,

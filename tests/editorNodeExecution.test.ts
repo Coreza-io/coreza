@@ -1,10 +1,12 @@
 import {
   acquireEditorExecutionLock,
+  canRenameEditorNodeAction,
   captureEditorNodeActions,
   clearEditorNodeActions,
   executeEditorNode,
   registerEditorNodeAction,
   releaseEditorExecutionLock,
+  retireEditorNodeAction,
 } from "@/services/editorNodeExecution";
 
 describe("editor node execution service", () => {
@@ -72,5 +74,14 @@ describe("editor node execution service", () => {
     if (!lock) throw new Error("Expected lock");
     releaseEditorExecutionLock(sessionId, lock);
     await expect(snapshot.execute("node", { lockToken: lock })).resolves.toMatchObject({ status: "failed" });
+  });
+
+  it("retires only the old identity during a node rename", async () => {
+    registerEditorNodeAction(sessionId, "OnBar", async () => ({ nodeId: "OnBar", status: "success" }));
+    expect(canRenameEditorNodeAction(sessionId, "OnBar", "Test")).toBe(true);
+    registerEditorNodeAction(sessionId, "Test", async () => ({ nodeId: "Test", status: "success" }));
+    retireEditorNodeAction(sessionId, "OnBar");
+    await expect(executeEditorNode(sessionId, "OnBar")).resolves.toMatchObject({ status: "failed" });
+    await expect(executeEditorNode(sessionId, "Test")).resolves.toMatchObject({ status: "success" });
   });
 });

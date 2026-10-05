@@ -1512,6 +1512,7 @@ const WorkflowEditorContent = () => {
   // Function to create a new node
   const createNode = useCallback(
     (nodeType: string, position: { x: number; y: number }) => {
+      if (focusedClusterId) return;
       const nodeDefinition = nodeManifest[nodeType];
 
       const existingIds = new Set(nodes.map((node) => node.id));
@@ -1585,6 +1586,7 @@ const WorkflowEditorContent = () => {
       setNodes,
       setEdges,
       nodes,
+      focusedClusterId,
       workflowSessionId,
       removeEdge,
     ],
@@ -2005,7 +2007,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "v") {
-        if (!clipboardRef.current) {
+        if (focusedClusterId || !clipboardRef.current) {
           return;
         }
 
@@ -2187,6 +2189,7 @@ const WorkflowEditorContent = () => {
     deleteNodeIds,
     dissolveClustersForNodes,
     restoreDocument,
+    focusedClusterId,
   ]);
 
   // Add visibility change handler to prevent state loss on tab switching

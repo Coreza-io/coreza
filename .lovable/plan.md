@@ -20,7 +20,7 @@ The source confirms an architectural bypass:
 - `commitEdgeCandidate` validates edge-only edits against current nodes/clusters and owns the reported connection/dissolve toast. Rename must not call or re-enter it.
 - The execution store, pinned-output map, editor action registry, expression selectors, and local upstream selections are keyed by node ID and require an explicit rename policy.
 
-The screenshot proves visible disappearance and the wrong toast. First reproduce while recording canonical node count, projected nodes, edges, membership, history, and serialized save data; do not infer that persisted data is already damaged or reconstruct a missing node from the screenshot.
+The new before/after screenshots confirm the direct user-visible failure: `OnBar` exists between `BacktestInit` and `Consolidator` before rename; after renaming it to `Test`, the node is absent, the surrounding path is broken, and a success toast is still shown. This proves deletion/disappearance after an apparently successful rename, but not yet whether the canonical document, projection only, or subsequent persistence lost the node. First reproduce while recording canonical node count, projected nodes, edges, membership, history, and serialized save data; do not reconstruct a missing node from screenshots or persist an already-damaged document as part of the fix.
 
 ## Rename contract
 
@@ -36,7 +36,10 @@ The screenshot proves visible disappearance and the wrong toast. First reproduce
 
 ### 1. Reproduce and instrument the exact failure
 
-Create a focused browser fixture or test workflow with an expanded cluster containing a Store node with internal and boundary edges.
+Create two focused browser reproductions:
+
+- the exact new chain `BacktestInit → OnBar → Consolidator → If`, renaming `OnBar` to `Test` and asserting it is never removed;
+- an expanded cluster containing a Store node with internal and boundary edges, covering membership and the previously reported connection-validation toast.
 
 Capture before and after one inline rename:
 
@@ -47,7 +50,7 @@ Capture before and after one inline rename:
 - execution-store entry and pinned output for the source ID;
 - toast title/body.
 
-Confirm whether React Flow emits remove/replace deltas, whether the canonical node is actually deleted or only projected away, and whether a subsequent save contains damage. Use these observations to guard the regression test, not to alter the transactional design below.
+Confirm whether React Flow emits remove/replace deltas, whether the canonical node is actually deleted or only projected away, which adjacent edges survive, and whether a subsequent save contains damage. Also assert that no success toast is emitted unless the renamed node is present in the committed canonical snapshot. Use these observations to guard the regression test, not to alter the transactional design below.
 
 ### 2. Add a narrow editor-owned rename command channel
 
@@ -232,16 +235,17 @@ No backend route, database migration, workflow schema, cluster metadata format, 
 
 Using the actual node renderer and inline input:
 
-1. Expand a cluster containing a configured Store node with incoming/internal/outgoing edges, a retained output, a pin, and a supported downstream reference.
-2. Rename it and assert one visible member remains at the same position with the new title.
-3. Assert canonical node count, edge count/IDs/handles, membership count, cluster focus, configuration, output/pin, and downstream reference are preserved/remapped.
-4. Assert neither the connection-invalid toast nor dissolve action appears.
-5. Collapse/reopen repeatedly; the node remains in the same cluster and visibility follows only overlap rules.
-6. Execute the renamed node and Cluster Execute; both resolve the new action/data and produce normal output.
-7. Undo/redo and verify document plus runtime output identity move together.
-8. Save, reload, and export; no orphaned endpoints/membership or old supported references remain.
-9. Try duplicate, invalid, missing/stale, active execution, and active listener cases; all leave graph/history/runtime unchanged.
-10. Verify an unclustered rename has identical semantics.
+1. Reproduce the screenshot chain and rename `OnBar` to `Test`; assert the same node remains between `BacktestInit` and `Consolidator`, both adjacent edges remain connected, and success is shown only after canonical commit.
+2. Expand a cluster containing a configured Store node with incoming/internal/outgoing edges, a retained output, a pin, and a supported downstream reference.
+3. Rename it and assert one visible member remains at the same position with the new title.
+4. Assert canonical node count, edge count/IDs/handles, membership count, cluster focus, configuration, output/pin, and downstream reference are preserved/remapped.
+5. Assert neither the connection-invalid toast nor dissolve action appears.
+6. Collapse/reopen repeatedly; the node remains in the same cluster and visibility follows only overlap rules.
+7. Execute the renamed node and Cluster Execute; both resolve the new action/data and produce normal output.
+8. Undo/redo and verify document plus runtime output identity move together.
+9. Save, reload, and export; no orphaned endpoints/membership or old supported references remain.
+10. Try duplicate, invalid, missing/stale, active execution, and active listener cases; all leave graph/history/runtime unchanged.
+11. Verify an unclustered rename has identical semantics.
 
 Run focused Jest suites for document commands, reference remapping, canonical node filtering, canonical graph context, execution store, editor actions, and rename-hook behavior; run the targeted Playwright reproduction; then run changed-file lint, the configured TypeScript check, and frontend build. Record unrelated baseline failures separately.
 

@@ -99,7 +99,7 @@ interface NodeWrapperProps {
   editingName?: string;
   editInputRef?: React.RefObject<HTMLInputElement>;
   startEditing?: () => void;
-  finishEditing?: (save?: boolean) => void;
+  finishEditing?: (save?: boolean) => Promise<void>;
   setEditingName?: (name: string) => void;
   // Electric border props
   electricBorder?: boolean;
@@ -563,22 +563,24 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                       !relatedTarget ||
                       !relatedTarget.closest(".node-edit-controls")
                     ) {
-                      finishEditing?.(true);
+                      void finishEditing?.(true);
                     }
                   }}
                   onKeyDown={(e) => {
                     e.stopPropagation(); // Prevent parent handlers
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      finishEditing?.(true);
+                      void finishEditing?.(true);
                     } else if (e.key === "Escape") {
                       e.preventDefault();
-                      finishEditing?.(false);
+                      void finishEditing?.(false);
                     }
                   }}
                   className="h-6 text-xs text-center px-1 nodrag bg-background border border-primary/50 focus:border-primary"
                   autoFocus
                   onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <div

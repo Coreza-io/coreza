@@ -9,12 +9,14 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeId } from "@xyflow/react";
 import { useToast } from "@/hooks/use-toast";
+import { useStableNodes } from "@/contexts/StableNodeContext";
 
 interface UseNodeRenamingProps {
   displayName: string;
   selected: boolean;
+  readOnly?: boolean;
 }
 
 interface UseNodeRenamingReturn {
@@ -22,7 +24,7 @@ interface UseNodeRenamingReturn {
   editingName: string;
   editInputRef: React.RefObject<HTMLInputElement>;
   startEditing: () => void;
-  finishEditing: (save?: boolean) => void;
+  finishEditing: (save?: boolean) => Promise<void>;
   setEditingName: (name: string) => void;
 }
 
@@ -33,117 +35,55 @@ interface UseNodeRenamingReturn {
 export function useNodeRenaming({
   displayName,
   selected,
+  readOnly,
 }: UseNodeRenamingProps): UseNodeRenamingReturn {
   const nodeId = useNodeId();
-  const { getNodes, setNodes, setEdges } = useReactFlow();
+  const { renameNode } = useStableNodes();
   const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingName, setEditingName] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+  const sourceNodeIdRef = useRef<string | null>(null);
+  const commitInProgressRef = useRef(false);
 
   // Start editing mode
   const startEditing = useCallback(() => {
-    if (isEditing) return; // Prevent double activation
+    if (isEditing || readOnly || !nodeId) return;
+    sourceNodeIdRef.current = nodeId;
     setEditingName(displayName);
     setIsEditing(true);
-  }, [displayName, isEditing]);
+  }, [displayName, isEditing, nodeId, readOnly]);
 
   // Finish editing (save or cancel)
   const finishEditing = useCallback(
-    (save: boolean = true) => {
-      if (save && editingName.trim() && editingName.trim() !== displayName) {
-        const trimmedName = editingName.trim();
-
-        // Validation: Check for invalid characters and length
-        if (trimmedName.length > 50) {
-          toast({
-            title: "Name too long",
-            description: "Node name must be 50 characters or less",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        if (!/^[a-zA-Z0-9_\-\s]+$/.test(trimmedName)) {
-          toast({
-            title: "Invalid characters",
-            description:
-              "Node name can only contain letters, numbers, spaces, hyphens, and underscores",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // Read nodes imperatively at rename time - avoids subscription re-renders
-        const nodes = getNodes();
-        
-        // Check for name uniqueness across all nodes (both IDs and displayNames)
-        const existingNames = nodes
-          .filter((n) => n.id !== nodeId)
-          .map((n) => n.data?.displayName || n.id)
-          .filter((name): name is string => typeof name === "string")
-          .map((name) => name.toLowerCase());
-
-        let finalName = trimmedName;
-        if (existingNames.includes(finalName.toLowerCase())) {
-          let counter = 1;
-          while (
-            existingNames.includes(`${finalName}${counter}`.toLowerCase())
-          ) {
-            counter++;
-          }
-          finalName = `${finalName}${counter}`;
-        }
-
-        const oldNodeId = nodeId!;
-        const newNodeId = finalName;
-
-        // Update node with new ID and display name
-        setNodes((prevNodes) => {
-          return prevNodes.map((node) => {
-            if (node.id === oldNodeId) {
-              return {
-                ...node,
-                id: newNodeId,
-                data: {
-                  ...node.data,
-                  displayName: finalName,
-                },
-              };
-            }
-            return node;
-          });
-        });
-
-        // Update all edges that reference the old node ID
-        setEdges((prevEdges) => {
-          return prevEdges.map((edge) => {
-            const updatedEdge = { ...edge };
-            if (edge.source === oldNodeId) {
-              updatedEdge.source = newNodeId;
-            }
-            if (edge.target === oldNodeId) {
-              updatedEdge.target = newNodeId;
-            }
-            // Update edge ID if it contains the old node ID
-            if (edge.id.includes(oldNodeId)) {
-              updatedEdge.id = edge.id.replace(oldNodeId, newNodeId);
-            }
-            return updatedEdge;
-          });
-        });
-
-        toast({
-          title: "Node renamed",
-          description: `Node renamed to "${finalName}"`,
-        });
+    async (save: boolean = true) => {
+      if (commitInProgressRef.current) return;
+      if (!save) {
+        setIsEditing(false);
+        setEditingName("");
+        sourceNodeIdRef.current = null;
+        return;
       }
-
-      setIsEditing(false);
-      setEditingName("");
+      const sourceNodeId = sourceNodeIdRef.current ?? nodeId;
+      if (!sourceNodeId) return;
+      commitInProgressRef.current = true;
+      try {
+        const result = await renameNode({ nodeId: sourceNodeId, requestedName: editingName });
+        if (!result.ok) {
+          toast({ title: "Cannot rename node", description: result.message, variant: "destructive" });
+          requestAnimationFrame(() => editInputRef.current?.focus());
+          return;
+        }
+        setIsEditing(false);
+        setEditingName("");
+        sourceNodeIdRef.current = null;
+        if (result.changed) toast({ title: "Node renamed", description: `Node renamed to "${result.newId}"` });
+      } finally {
+        commitInProgressRef.current = false;
+      }
     },
-    [editingName, displayName, nodeId, getNodes, setNodes, setEdges, toast]
+    [editingName, nodeId, renameNode, toast]
   );
 
   // F2 key handler - scoped to only this node when selected
@@ -167,11 +107,11 @@ export function useNodeRenaming({
         if (e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
-          finishEditing(true);
+          void finishEditing(true);
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          finishEditing(false);
+          void finishEditing(false);
         }
       }
     };

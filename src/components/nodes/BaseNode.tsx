@@ -264,6 +264,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const renamingHook = useNodeRenaming({
     displayName,
     selected,
+    readOnly,
   });
 
   // Credentials and options

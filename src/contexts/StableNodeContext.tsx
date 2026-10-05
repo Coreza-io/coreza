@@ -13,6 +13,17 @@ import { useReactFlow } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 import { createCanonicalGraphStore, type CanonicalGraphSnapshot } from './canonicalGraphStore';
 
+export interface RenameNodeRequest {
+  nodeId: string;
+  requestedName: string;
+}
+
+export type RenameNodeResult =
+  | { ok: true; oldId: string; newId: string; changed: boolean }
+  | { ok: false; code: string; message: string };
+
+type NodeRenamer = (request: RenameNodeRequest) => Promise<RenameNodeResult> | RenameNodeResult;
+
 interface StableNodeContextValue {
   getNodes: () => Node[];
   getEdges: () => Edge[];
@@ -22,6 +33,8 @@ interface StableNodeContextValue {
   getSnapshot: () => CanonicalGraphSnapshot;
   updateNodeData: (id: string, patch: Record<string, unknown>) => void;
   registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => void) => () => void;
+  renameNode: (request: RenameNodeRequest) => Promise<RenameNodeResult>;
+  registerNodeRenamer: (renamer: NodeRenamer) => () => void;
 }
 
 const StableNodeContext = createContext<StableNodeContextValue | null>(null);
@@ -40,6 +53,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
   const canonicalStoreRef = useRef<ReturnType<typeof createCanonicalGraphStore>>();
   const canonicalPublishedRef = useRef(false);
   const nodeDataUpdaterRef = useRef<((id: string, patch: Record<string, unknown>) => void) | null>(null);
+  const nodeRenamerRef = useRef<NodeRenamer | null>(null);
   if (!canonicalStoreRef.current) canonicalStoreRef.current = createCanonicalGraphStore();
   const canonicalStore = canonicalStoreRef.current;
   
@@ -67,6 +81,17 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
       nodeDataUpdaterRef.current = updater;
       return () => {
         if (nodeDataUpdaterRef.current === updater) nodeDataUpdaterRef.current = null;
+      };
+    },
+    renameNode: async (request: RenameNodeRequest) => {
+      const renamer = nodeRenamerRef.current;
+      if (!renamer) return { ok: false, code: "unavailable", message: "Node rename is unavailable in this view." };
+      return renamer(request);
+    },
+    registerNodeRenamer: (renamer: NodeRenamer) => {
+      nodeRenamerRef.current = renamer;
+      return () => {
+        if (nodeRenamerRef.current === renamer) nodeRenamerRef.current = null;
       };
     },
   }), [canonicalStore, reactFlow]);

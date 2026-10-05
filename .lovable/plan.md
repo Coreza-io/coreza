@@ -1,221 +1,270 @@
-# Cluster expansion isolation and labelled Execute control
+# Hide only workflow objects overlapping an expanded cluster
 
 ## Goal
 
-Opening a cluster must enter a focused editor view containing only that cluster’s canonical members, internal edges, and expanded frame. Unrelated nodes and sibling cluster cards temporarily disappear and cannot be selected or changed. Closing the cluster restores the complete overview without changing positions, membership, runtime state, or saved workflow data.
+Expanding a cluster must keep the surrounding workflow visible. Temporarily hide only unrelated ordinary nodes or collapsed sibling cluster cards whose rendered rectangles overlap the expanded frame. Restore them as soon as the overlap ends or the cluster closes.
 
-The expanded frame gets a centred, full-width-style **Execute** control. The compact cluster keeps its bottom-centre icon control, revealed on hover or keyboard focus. Both presentations call the existing cluster coordinator; only explicit Run All remains batch execution.
+Keep the already-approved execution UI and behavior unchanged:
 
-## Verified current state
+- compact cluster: hover/focus Play control;
+- expanded cluster: labelled Execute/Stop control;
+- both call the same existing cluster coordinator;
+- only explicit Run All performs batch execution.
 
-- `projectClusterGraph` currently expands a cluster by leaving the full canonical graph visible. It does not isolate the expanded cluster, so unrelated nodes and sibling compact cards can show through its frame.
-- `WorkflowEditor` renders a frame for every cluster marked expanded. `ClusterViewState` is a map of independent booleans, so multiple clusters can currently be expanded simultaneously.
-- Expanded frames are display overlays computed from canonical member positions and measured/fallback dimensions. Overlap with a sibling card does not prove incorrect membership.
-- Collapsed members stay mounted as invisible runtime hosts. Their canonical IDs, data objects, listeners, and editor actions survive collapse. Focus mode must reuse this pattern rather than React Flow’s `hidden` flag or graph filtering that unmounts nodes.
-- The projection already supplies `hiddenRuntimeHostIds`, and Fit View plus MiniMap partly consume it. It does not expose one explicit visible-ID authority for all focus interactions.
-- `ClusterExecutionControl` always renders `ExecutionIconButton`. The checked-out `ExecutionIconButton` is icon-only; the uploaded document’s claimed labelled shared presentation is not yet present here.
-- `CompactClusterNode` currently renders its icon at all times, not only on hover/focus. Its footer is already bottom-centred.
-- The expanded footer is already centred, but still receives the icon-only cluster control.
-- Cluster execution already receives canonical nodes/edges/clusters, acquires the shared editor lock, and executes an editor-local sequence of normal node actions. No execution, API, worker, database, or persistence change is required.
+This plan supersedes the earlier full-canvas isolation plan.
 
-## Behaviour contract
+## Validated diagnosis and branch gate
 
-| State | Visible graph | Cluster control |
-| --- | --- | --- |
-| Overview | Ordinary ungrouped nodes and compact cards for collapsed clusters | Icon Play on compact-card hover/focus |
-| Cluster focused | Focused cluster’s canonical members, internal edges, and one expanded frame | Always-visible labelled Execute |
-| Focused cluster running | Same focused graph and live results | Labelled Stop/progress state |
-| Focus closed | Exact overview restored | Compact hover/focus Play |
-| Cluster dissolved/deleted | Focus clears; remaining canonical graph is shown | Ordinary node/cluster controls |
+The requested correction is frontend display projection, not cluster membership, backend execution, persistence, or workflow layout.
 
-- Exactly one cluster can be focused.
-- Visibility is determined only by valid `memberNodeIds`, never geometry.
-- External nodes may still supply existing captured outputs/references, but focusing or executing the cluster must not run or mutate them.
-- Focus is editor-local presentation state: it is excluded from save/export, execution payloads, and document undo snapshots.
-- Opening, closing, or switching focus during an active editor execution is blocked by the existing execution lock to avoid changing the visible target midway through a run.
+The uploaded document describes a newer main branch that already has single-cluster focus, all-background filtering, and a labelled expanded control. This checkout is behind that baseline:
+
+- its projection does **not** yet contain a `focusedMemberIds` isolation early return;
+- it still supports multiple independently expanded cluster booleans rather than one focused cluster;
+- compact hover/focus Play is present;
+- the shared execution component supports labelled presentation, but `ClusterExecutionControl` and the expanded frame do not yet select it.
+
+Therefore implementation must start on, or first integrate through the normal repository process, the branch containing the current focus and execution-control work. Do not reproduce the obsolete all-background isolation in this older checkout merely to remove it afterward. Once on the intended baseline, make only the overlap correction below. If implementation must target this checkout directly, first land the separately approved single-focus and labelled-control prerequisite unchanged, then apply this plan; those prerequisite changes are not to be redesigned here.
+
+## Visibility contract
+
+| Display object while a cluster is expanded | Result |
+| --- | --- |
+| Expanded cluster member | Always visible, including inside its frame |
+| Ordinary outside node with no frame overlap | Visible and fully interactive |
+| Ordinary outside node with partial or full frame overlap | Temporarily invisible and non-interactive |
+| Collapsed sibling card with no frame overlap | Visible with normal expand/execute controls |
+| Collapsed sibling card with partial or full frame overlap | Temporarily invisible and non-interactive |
+| Canonical member of a collapsed sibling | Remains hidden by normal collapse projection |
+| Projected edge with two visible endpoints | Visible |
+| Projected edge with either temporarily hidden endpoint | Hidden |
+
+Use any **positive-area** rectangle intersection. Exact edge or corner touching is not overlap. Hide the entire object; do not clip, mask, relocate, resize, or auto-layout it. An edge merely crossing the frame remains visible when both projected endpoints remain visible.
 
 ## Implementation plan
 
-### 1. Add an explicit focus model
+### 1. Lock the baseline behavior with focused tests
 
-Replace “any number of expanded booleans” as the editor’s active navigation model with one explicit focused cluster ID.
+Before changing projection, add tests that distinguish the desired behavior from both the old “show everything” state and the rejected “hide all background” state:
 
-- Add pure helpers in `src/domain/clusters/viewState.ts` for opening, closing, validating, and reconciling `focusedClusterId: string | null` against current clusters.
-- Keep compatibility conversion helpers only where an existing projection/test still needs the old expanded map during migration; remove duplicate sources of truth when all callers are moved.
-- Route compact-card button activation, compact-card double-click, newly created cluster opening, and any programmatic open through `openCluster(clusterId)`.
-- `openCluster` must verify the cluster exists, reject the transition while an editor execution or cluster drag is active, capture the overview viewport only on entry from overview, clear menus/editors belonging to hidden objects, clear hidden selections, and focus the requested cluster.
-- Opening a second cluster replaces focus without overwriting the originally captured overview viewport.
-- Route the expanded header Collapse action through `closeCluster()`, which clears focus and restores the captured overview viewport.
-- Clear stale focus when the workflow session changes, import/restore replaces the document, undo/redo removes or dissolves the cluster, deletion/dissolve removes it, or reconciliation finds no valid members.
-- Do not put focus or saved viewport state in workflow documents, cluster metadata, node data, history entries, or persistence calls.
+- expanded members remain visible;
+- non-overlapping ordinary nodes and sibling compact cards remain visible;
+- partially and fully overlapping outsiders become hidden;
+- exact edge/corner touching and a positive gap remain visible;
+- edges remain only when both projected endpoints are visible;
+- compact cluster mapping, collision-safe display IDs, projected handle IDs, and canonical-edge mapping remain intact;
+- moving either the frame or an outside object recomputes visibility from fresh canonical/projection data;
+- close/dissolve removes temporary occlusion without retained flags.
 
-### 2. Make focused projection membership-authoritative
+Replace any newer-main tests asserting “all non-members are hidden” rather than adding contradictory expectations. Preserve existing collapsed-runtime-host and first-painted-frame regression tests.
 
-Extend `projectClusterGraph` options with `focusedClusterId` and derive all presentation sets in one place.
+### 2. Centralize flow-coordinate rectangle geometry
 
-Overview mode remains unchanged:
+Add small pure geometry helpers beside cluster projection so the frame overlay and occlusion pass use one source of truth.
 
-- collapsed member components remain invisible runtime hosts;
-- one synthetic compact card represents each collapsed cluster;
-- boundary edges are projected to synthetic handles.
+Define a flow-coordinate rectangle type and helpers for:
 
-Focused mode:
+- `getExpandedClusterFrameRect(cluster, canonicalNodes)`;
+- `getProjectedNodeRect(node)`;
+- `hasPositiveAreaIntersection(a, b)`.
 
-- validate the focused cluster against canonical clusters and canonical node IDs;
-- define `visibleCanonicalNodeIds` from that cluster’s valid, deduplicated member IDs only;
-- emit focused members as ordinary canonical node render objects with stable IDs/data/component keys;
-- decorate every other canonical node as an invisible, non-interactive runtime host using one shared helper;
-- do not emit any compact synthetic cluster card, including the focused cluster’s card and sibling cards;
-- emit only canonical edges whose source and target are both focused members;
-- suppress boundary, sibling, and unrelated edges without deleting or mutating them;
-- return authoritative `visibleNodeIds` and `hiddenRuntimeHostIds` from the same derivation for Fit View, MiniMap, selection, keyboard actions, and tests.
+Frame calculation must:
 
-The hidden-host decoration must preserve current safeguards: `visibility:hidden`, no pointer events/transitions/animations, `aria-hidden`, and disabled drag/select/connect/delete/focus. Keep the canonical `data` object and all runtime ownership intact. Never use React Flow’s `hidden` property, remove canonical nodes, write projected nodes into editor history, or persist synthetic IDs.
+- use only valid canonical members of the expanded cluster;
+- deduplicate member IDs and ignore stale/missing IDs;
+- use canonical flow positions plus measured width/height when available;
+- retain existing node dimension fallbacks where measurements are unavailable;
+- retain frame constants: 24 px body padding, 42 px header allowance, and 52 px footer allowance;
+- return no rectangle for a missing/empty cluster;
+- remain independent of viewport pan/zoom.
 
-### 3. Integrate focused visibility into editor interactions
+Projected-object calculation must:
 
-Use the focused projection consistently throughout `WorkflowEditor`.
+- use each visible canonical node’s flow position and measured/current/fallback dimensions;
+- use the projected compact card’s position and fixed `COMPACT_CLUSTER_WIDTH`/`COMPACT_CLUSTER_HEIGHT`;
+- use absolute flow coordinates if parent-relative nodes are introduced; the current checkout has no parent-relative node usage, so do not add speculative hierarchy code unless the implementation branch contains it.
 
-- Pass `focusedClusterId` into the projection and feed React Flow the projected nodes/edges.
-- Render exactly one expanded frame for the focused cluster rather than mapping every independently expanded cluster.
-- Compute frame bounds from valid canonical members using current measured dimensions and existing fallbacks, including header/footer/padding.
-- Use projection `visibleNodeIds` for Fit View, MiniMap inclusion, rectangle selection, context menus, copy/delete/group shortcuts, and canonical selection resolution.
-- Clear selection on nodes and compact clusters that become hidden. Keep selected focused members only when explicitly intended.
-- Ensure `onNodesChange` continues accepting mutations only for canonical visible members or the currently valid display card; hidden hosts cannot be moved, selected, connected, removed, or dimension-replaced through projection events.
-- Close canvas context menus and node-owned popovers/panels when their owner becomes hidden. Confirm portalled UI cannot remain interactive after focus changes.
-- Prevent hidden/sibling targets from connection gestures, keyboard Delete, drag groups, context menus, and cluster-header moves.
-- In focused mode, dragging the expanded header moves only the focused cluster’s current members; stale prior selection must not add outside nodes.
-- Preserve pan/zoom and member editing inside the frame. The frame body remains pointer-transparent while header/footer stay interactive.
-- If cluster collapse support is disabled, force focus to `null` and retain the legacy full graph; do not apply partial isolation to an unprojected graph.
+Intersection must use strict comparisons on both axes:
 
-### 4. Manage viewport entry and restoration deterministically
+```ts
+a.x < b.x + b.width &&
+a.x + a.width > b.x &&
+a.y < b.y + b.height &&
+a.y + a.height > b.y
+```
 
-- Capture the exact React Flow overview viewport before the first focus transition.
-- After the focused members have valid measurements, fit once to the projection’s visible members with padding for the frame header and footer.
-- Do not refit on execution status, output updates, hover, or every node measurement change.
-- When switching directly from cluster A to B, fit B but keep the original overview viewport snapshot.
-- On close, restore the captured overview viewport once and clear the snapshot.
-- If the viewport restore is impossible after a workflow/session replacement, use the normal overview Fit View fallback rather than applying stale coordinates.
-- MiniMap must omit hidden runtime hosts and absent compact cards, while preserving its normal overview behavior after close.
+Unit-test partial overlap, containment, identical rectangles, edge touch, corner touch, a positive gap, and zero-sized rectangles.
 
-### 5. Add one icon/labelled cluster control contract
+### 3. Preserve normal cluster projection, then apply occlusion
 
-Extend the current shared execution button rather than creating a second execution implementation.
+In `projectClusterGraph`, remove the newer branch’s focus-only early return that hides every non-member. Always build the established normal projection first:
 
-- Add `presentation?: "icon" | "labelled"` to `ExecutionIconButton` (or rename it to `ExecutionControl` only if all callers/tests move atomically); default to `icon` for compatibility.
-- Share one activation guard, phase mapping, blocked reason, status description, Execute callback, and real Stop callback across both presentations.
-- Icon presentation keeps `size="icon"`, secondary styling, fixed dimensions, Tooltip, Play/Spinner/Stop icons, accessible name, pointer isolation, and duplicate-activation guard.
-- Labelled presentation uses the existing `nodeExecute` variant, normal button height, full-width content, and visible **Execute**, **Executing…**, **Stopping…**, or **Stop** text as applicable.
-- Do not apply icon-only dimensions to the labelled control.
-- Idle, completed, cancelled, and failed states permit retry. Running permits Stop only through the existing cluster cancel callback. Blocked/stopping states reject activation and expose their reason.
-- Keep `type="button"`, `nodrag`, `nopan`, keyboard support, `aria-busy`, accessible status text, reduced-motion behavior, and the 250 ms duplicate guard.
-- Preserve the existing reactive session lock as the concurrency authority; the visual guard is not a replacement.
+1. expanded cluster members render as canonical nodes;
+2. collapsed sibling members become invisible mounted runtime hosts;
+3. collapsed siblings receive collision-safe synthetic cards;
+4. boundary edges are rewritten to synthetic card handles;
+5. display-node/cluster and display-edge/canonical mappings are retained.
 
-Update `ClusterExecutionControl` with a presentation prop and forward all existing state/callback data unchanged. It must continue calling only `executeCluster(cluster.id)` and `cancelRun(cluster.id)`.
+After normal projection is complete, apply one overlap pass for the currently expanded/focused cluster:
 
-### 6. Apply the two cluster presentations
+- compute the frame rectangle once from canonical members;
+- build an exemption set containing all valid members of the expanded cluster;
+- begin with the IDs already hidden by collapsed-cluster projection;
+- inspect only currently visible projected canonical nodes and synthetic compact cards;
+- never treat the expanded cluster’s members as occlusion candidates, even though they lie inside the frame;
+- when a candidate positively intersects the frame, decorate only its projected copy with the established hidden-host visibility and interaction flags;
+- combine normal collapsed-member IDs and newly occluded projected IDs into one display-hidden set;
+- derive visible projected IDs/nodes from that combined set;
+- filter the already-projected edge list when either projected endpoint is in the combined hidden set.
 
-Compact cluster:
+Do not rerun edge rewriting after occlusion. This preserves synthetic endpoint IDs, boundary handles, callbacks, and `displayEdgeToCanonicalEdge`.
 
-- pass `presentation="icon"` explicitly;
-- add a named hover group to avoid nested group collisions;
-- hide the idle icon with opacity and disabled pointer events until card hover or focus-within, regardless of selection;
-- keep the control keyboard-focusable so Tab reveals it;
-- keep the action band within the card hover boundary so pointer travel to the button does not hide it;
-- retain the bottom-centre position without covering handles or changing card geometry;
-- keep running/stopping/failed/blocked status visible even when the pointer leaves, so cancellation and failure feedback remain discoverable;
-- clicking/double-clicking the control must not expand, drag, pan, or select the card.
+### 4. Make hidden decoration explicit and safe
 
-Expanded frame:
+Extract or reuse one render-only helper for projected hidden objects:
 
-- pass `presentation="labelled"`;
-- place it in a centred bounded-width wrapper in the existing 52 px footer so `w-full` does not stretch across a very wide cluster;
-- retain bottom-centre positioning at all zoom levels and ensure it does not overlap the fixed Run All control near the viewport bottom;
-- use the same cluster state object and callbacks as the compact control, so switching presentation never starts, cancels, or duplicates a run.
+- retain ID, type, data object, position, dimensions, and React key identity;
+- append the established runtime-host class without discarding existing classes;
+- set `visibility: hidden`, `pointerEvents: none`, no transition, and no animation;
+- set `aria-hidden`;
+- disable drag, select, connect, delete, and focus;
+- clear projected selection only on the hidden copy.
 
-### 7. Preserve execution, runtime, and persistence boundaries
+Canonical ordinary nodes must remain mounted so listeners, output stores, editor actions, Loop/Consolidator state, and component-owned runtime state survive. Synthetic cards own no runtime, but use the same decoration for a uniform projection contract and stable display IDs.
 
-- `useClusterExecution` continues planning from the complete canonical nodes, edges, and clusters, not projected/visible collections.
-- A focused cluster still executes each eligible member once in dependency/control order through registered normal editor actions.
-- BacktestInit initializes once, OnBar advances one manual step, and only Run All performs historical batch replay.
-- Hidden external nodes never execute merely because their output/reference feeds a focused member.
-- Individual member execution uses canonical IDs and updates the same output/error stores.
-- Focus transitions do not unregister editor actions, remount runtime owners, reset listener/Loop/Consolidator state, clear outputs, or alter pins.
-- Save/export/reload while focused serializes the same canonical workflow as overview, apart from genuine user edits. Projection flags, focus state, viewport snapshot, display IDs, and filtered display edges must never leak into persisted state.
-- No backend route, API payload, migration, database table, queue, worker, or output contract changes are part of this work.
+Rename `hiddenRuntimeHostIds` to a semantically accurate `hiddenDisplayNodeIds` if the newer integration can migrate all consumers atomically. Otherwise preserve the existing field for compatibility and document that it now includes both canonical runtime hosts and occluded synthetic display IDs. Do not let the name cause consumers to assume every ID is canonical.
 
-### 8. Add regression coverage before acceptance
+Every projection run starts from canonical nodes and freshly generated synthetic cards. Never feed decorated projection copies back into projection, canonical state, undo history, save/export, or execution.
 
-#### Unit tests
+### 5. Render the expanded frame from the same rectangle
 
-- Focus helpers allow one focused cluster, switch deterministically, and clear stale IDs.
-- Overview projection remains byte-for-byte compatible with existing compact projection behavior.
-- Focus projection exposes only valid members as visible; all other canonical nodes remain hidden runtime hosts.
-- No synthetic cluster cards appear in focus mode.
-- Only internal member-to-member edges render; canonical edge inputs remain unchanged.
-- Geometry never changes membership-derived visibility.
-- Repeated open/switch/close cycles preserve canonical node/edge objects, positions, runtime data, and collision-safe IDs.
-- Focused selection excludes hidden nodes and stale selected sibling clusters.
-- Shared control maps every phase correctly in icon and labelled presentations and invokes one handler per activation.
+In `WorkflowEditor`, replace duplicated min/max frame arithmetic with `getExpandedClusterFrameRect`.
 
-#### Runtime/component tests
+- transform the shared flow rectangle to screen coordinates only when styling the overlay (`x/y/width/height` through the current viewport);
+- do not compute occlusion from screen coordinates;
+- preserve the existing header/footer/body pointer behavior and member-only cluster drag;
+- render no frame when the focused cluster has no valid members;
+- ensure member movement, measured dimension changes, membership changes, open/close, and sibling-card movement trigger projection/frame recalculation from the same inputs;
+- pan/zoom must move/scale the overlay without changing which flow rectangles overlap.
 
-- Runtime owners mount once across overview, focus A, focus B, and close; listeners/actions publish once and never unregister prematurely.
-- Cluster execution receives the full canonical graph while the canvas receives the focused projection.
-- Saving/exporting from focus contains no focus/projection decorations.
-- Dissolve/delete/undo/redo/import/session change clears or reconciles focus correctly.
+Using one rectangle for both the overlay and occlusion prevents mismatch, shrink loops, and flicker. Never derive frame bounds from the already filtered display graph.
 
-#### Browser acceptance fixture
+### 6. Replace focus-wide assumptions with actual visibility checks
 
-Create a realistic fixture matching the reported arrangement: one outside Store feeding four disjoint clusters, with member coordinates intentionally overlapping sibling card/frame space and including Loop and branch nodes.
+On the newer implementation branch, audit every `focusedClusterId`/focus-mode guard in `WorkflowEditor`. Focus identifies which frame is expanded; it must no longer mean all outside objects are inaccessible.
+
+Use the projection’s combined hidden set/visible set for display interactions:
+
+- node position/select/remove changes;
+- rectangle and click selection;
+- context-menu targeting;
+- keyboard Delete, Copy, Group, and Dissolve targets;
+- connection start/end and edge removal;
+- compact-card drag and expand actions;
+- paste/drop targets where existing focus-wide gating exists;
+- MiniMap rendering and explicit Fit View.
+
+Rules:
+
+- visible outside nodes and sibling compact cards retain their normal interactions;
+- hidden projected IDs cannot be selected, moved, connected, opened, executed, copied, grouped, dissolved, or deleted through display events;
+- selected objects that become occluded are excluded from subsequent target resolution, without clearing every still-visible outside selection;
+- dimension changes for mounted hidden canonical nodes remain accepted when needed for future geometry; do not discard useful measurements merely because interaction is disabled;
+- canonical/display-ID translation remains at interaction boundaries;
+- independent read-only, connection-drag, and execution-lock checks remain authoritative;
+- expanded-header dragging remains restricted to that cluster’s canonical member IDs.
+
+Search all focus-only guards before completion and classify each as navigation-only (retain) or visibility-related (replace with actual hidden/visible checks).
+
+### 7. Keep viewport, MiniMap, and Fit View behavior narrow
+
+- MiniMap omits normal collapsed runtime hosts and newly occluded canonical/card IDs, but includes every non-overlapping outside object.
+- Explicit Fit View uses the corrected visible projected set.
+- If opening a cluster currently performs a one-time fit to its members, preserve that policy by passing member nodes specifically to that one action; do not change it to fit the entire surrounding workflow.
+- Preserve existing overview viewport capture/restore and single-focus lifecycle from the newer baseline.
+- Do not introduce a new automatic camera mode, repeated refitting, object relocation, or layout animation.
+
+### 8. Leave execution controls and runtime semantics unchanged
+
+No changes are required to the working control presentation or execution path on the intended baseline.
+
+- expanded labelled Execute/Stop remains centred and unchanged;
+- compact hover/focus Play remains unchanged;
+- both retain the same callbacks, status, lock, cancellation, pointer isolation, keyboard behavior, and duplicate-activation guard;
+- `useClusterExecution` continues receiving complete canonical nodes, edges, and clusters—not projected/visible collections;
+- external nodes may provide existing outputs/references but are never executed because of cluster execution;
+- BacktestInit initializes once, OnBar advances one manual step, and only Run All performs historical replay.
+
+Add regression assertions that visibility changes do not alter execution request counts, member order/outcomes, output publication, active cancellation, or button presentation. Do not modify execution controls merely to satisfy this visibility fix.
+
+### 9. Persistence and architecture safeguards
+
+- Projection nodes remain render-only copies; all mutations begin from canonical editor state.
+- No occlusion, focus, synthetic ID, hidden class/style, filtered edge, or screen-space rectangle enters workflow save, export, history, execution payloads, or cluster metadata.
+- Undo/redo affects only real document edits, then recomputes occlusion.
+- Save/reload/export while objects are occluded produces the same canonical document as when they are visible, apart from genuine edits.
+- No backend API, worker, queue, database migration, schema, output contract, cluster membership change, or automatic layout change is needed.
+
+## Targeted test matrix
+
+Create a browser fixture matching the reported shape:
+
+- one expanded cluster;
+- an external upstream Store outside the frame;
+- two collapsed sibling cards outside the frame;
+- one collapsed sibling card partially or fully overlapping the frame;
+- one ordinary outside node overlapping the frame;
+- internal and external projected edges;
+- member coordinates that make geometric overlap unambiguous.
 
 Verify:
 
-1. Overview shows the outside node and four compact cluster cards.
-2. Opening cluster A shows only A’s members, internal edges, and frame in the first stable painted state.
-3. Sibling cards, outside nodes, boundary edges, descendants, handles, menus, and pseudo-elements are visually absent and non-interactive.
-4. Fit View and MiniMap use only focused visible objects.
-5. Hidden objects cannot be rectangle-selected, dragged, connected, context-clicked, copied, grouped, or deleted by keyboard.
-6. Opening B replaces A without losing the original overview viewport; closing restores all cards/nodes/edges and viewport.
-7. Repeated open/close has no visibility transition glitch, duplicate mount, lost output, or permanent hidden node.
-8. Expanded labelled Execute and compact hover/focus Play invoke the same cluster once and produce identical member outcomes.
-9. Running presentation supports existing cancellation and remains visible; blocked/failure reasons remain accessible.
-10. Member Execute, output panels, external captured inputs, pins including falsy values, listeners, Loop, and Consolidator retain existing behavior.
-11. Dissolve, delete, undo, redo, save, reload, export, and history restoration leave canonical membership and visibility correct.
-12. Keyboard navigation, light/dark themes, reduced motion, pan/zoom, long titles, very wide clusters, and frame-near-viewport-bottom layout remain usable.
+1. Expanded members, the frame, and all non-overlapping surrounding workflow objects remain visible.
+2. Partial and full overlap hide the entire unrelated node/card in the first stable painted state.
+3. Exact edge/corner touch and a small positive gap stay visible.
+4. A member remains visible even though its rectangle intersects the frame by design.
+5. A non-overlapping sibling card can still be selected, dragged, expanded, and executed.
+6. Moving the expanded frame away restores previously hidden objects immediately from fresh projection.
+7. Moving an outsider into and out of overlap toggles only its projected visibility and interactions.
+8. Closing or dissolving the expanded cluster clears occlusion and restores ordinary collapse behavior.
+9. Edges with visible endpoints remain, edges to occluded endpoints disappear, and an edge crossing the frame with visible endpoints remains.
+10. Pan/zoom does not change overlap classification; measured dimension changes keep overlay and occlusion aligned.
+11. Hidden canonical nodes stay mounted with one runtime/action registration and retain output/listener/Loop/Consolidator state.
+12. Selection, drag, keyboard, context menu, copy/group/delete, connections, MiniMap, and Fit View obey actual visibility.
+13. Save, export, reload, undo, and redo contain no temporary projection data.
+14. Expanded Execute and compact Play remain visually and behaviorally unchanged and invoke the existing coordinator once.
+15. Light/dark themes and reduced motion show no hide/show transition glitch or stale interactive surface.
 
-Run focused Jest suites, the targeted Playwright fixture/spec, changed-file lint, TypeScript checks, and `npm run build`. Record exact commands, request counts, screenshots, runtime mount counts, and failures; separate unrelated baseline failures.
+Run focused geometry/projection/selection/runtime Jest tests, the targeted Playwright fixture, changed-file lint, TypeScript checks, and `npm run build`. Record exact commands, screenshots, mount/request counts, and outcomes; separate unrelated baseline failures.
 
-## File-level work
+## File-level scope
 
-| Area | Planned change |
+| Area | Change |
 | --- | --- |
-| `src/domain/clusters/viewState.ts` | Single focused-cluster state and reconciliation helpers |
-| `src/domain/clusters/projection.ts` | Membership-based focused projection and authoritative visibility sets |
-| `src/pages/WorkflowEditor.tsx` | Open/close focus operations, one frame, selection/interaction filtering, viewport fit/restore |
-| `src/components/workflow/ExecutionIconButton.tsx` | Shared icon and labelled presentations |
-| `src/components/workflow/ClusterExecutionControl.tsx` | Thin presentation-aware cluster adapter |
-| `src/components/workflow/CompactClusterNode.tsx` | Hover/focus compact icon behavior and active-state visibility |
-| `src/index.css` | Only narrowly needed hidden-host/frame interaction rules |
-| Cluster unit/runtime tests | Focus, projection, identity, execution, persistence regressions |
-| Browser fixture/spec | Four-cluster isolation and labelled-control end-to-end acceptance |
+| `src/domain/clusters/projection.ts` | Shared frame/node rectangles, strict overlap helper, normal projection plus occlusion pass, combined hidden/visible set, endpoint filtering |
+| `src/pages/WorkflowEditor.tsx` | Shared frame rectangle and actual-visibility interaction consumers |
+| Projection/selection/runtime tests | Selective overlap, identity, restoration, interaction, and persistence regressions |
+| Browser fixture/spec | Screenshot-shaped overlap reproduction and dynamic movement checks |
+
+Keep `viewState`, execution controls/coordinator, backend, schema, persistence formats, and canonical cluster commands unchanged unless the selected implementation branch lacks the already-approved prerequisites; in that case integrate those prerequisites separately before this correction.
 
 ## Implementation order
 
-1. Add focus-state and focused-projection tests.
-2. Implement single focus and membership-authoritative projection.
-3. Wire one frame, interaction filtering, MiniMap, Fit View, and viewport restoration.
-4. Add the shared labelled presentation and cluster adapter prop.
-5. Apply compact hover/focus and expanded labelled presentations.
-6. Add runtime, execution, persistence, and browser regression coverage.
-7. Run all focused checks, build validation, and visual acceptance in both themes.
+1. Confirm the target branch contains single-cluster focus and the approved compact/expanded controls.
+2. Add strict rectangle and selective-overlap regression tests.
+3. Centralize frame/projected-node geometry.
+4. Restore normal projection and add the final occlusion/edge-filter pass.
+5. Switch editor rendering and interactions from focus-wide assumptions to actual hidden/visible sets.
+6. Add dynamic movement, runtime identity, persistence, and browser coverage.
+7. Run focused tests, lint/type checks, build, and visual acceptance.
 
 ## Acceptance criteria
 
-- Opening a cluster displays only its canonical members, internal edges, and one expanded frame.
-- Unrelated nodes and sibling cluster cards are invisible and cannot receive any editor interaction while focused.
-- Closing restores the exact overview graph and viewport without changing canonical positions, membership, outputs, or runtimes.
-- Compact clusters use hover/focus icon execution; expanded clusters use a centred labelled Execute/Stop control.
-- Both presentations call the same cluster coordinator exactly once and never call Run All.
-- Focus and projection data never enter persistence, history, exports, or execution payloads.
-- All projection, runtime, interaction, accessibility, execution, persistence, and browser checks pass.
+- Opening a cluster keeps every non-overlapping surrounding workflow object visible and usable.
+- Only unrelated ordinary nodes and collapsed sibling cards with positive-area frame overlap are temporarily hidden and non-interactive.
+- Expanded members are never hidden by their own frame.
+- Hidden objects reappear when overlap ends or the frame closes, with state and identity intact.
+- Edge visibility follows projected endpoint visibility without changing canonical edges.
+- The actual overlay rectangle and occlusion calculation remain aligned through movement, measurement, pan, and zoom.
+- No temporary visibility data leaks into canonical state, history, persistence, or execution.
+- Existing expanded Execute, compact Play, and cluster execution behavior remain unchanged.

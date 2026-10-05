@@ -8,6 +8,9 @@ import { ClusterExecutionControl } from "./ClusterExecutionControl";
 export function CompactClusterNode({ id, data: cluster, selected, dragging }: NodeProps<CompactClusterFlowNode>): JSX.Element {
   const updateNodeInternals = useUpdateNodeInternals();
   const expand = (): void => cluster.onExpand(cluster.clusterId);
+  const persistentExecutionStatus = cluster.runState.phase !== "idle"
+    && cluster.runState.phase !== "completed"
+    && cluster.runState.phase !== "cancelled";
 
   const handleSignature = `${cluster.incomingHandleIds.join("\u0000")}|${cluster.outgoingHandleIds.join("\u0000")}`;
   useEffect(() => {
@@ -56,9 +59,9 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
       <footer className="absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center border-t border-[hsl(var(--cluster-border))]">
         <div
           data-cluster-execution-control
-          className="pointer-events-none opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover/cluster:pointer-events-auto group-hover/cluster:opacity-100 group-focus-within/cluster:pointer-events-auto group-focus-within/cluster:opacity-100"
+          className={`transition-opacity duration-150 motion-reduce:transition-none ${persistentExecutionStatus ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0 group-hover/cluster:pointer-events-auto group-hover/cluster:opacity-100 group-focus-within/cluster:pointer-events-auto group-focus-within/cluster:opacity-100"}`}
         >
-          <ClusterExecutionControl title={cluster.title} state={cluster.runState}
+          <ClusterExecutionControl presentation="icon" title={cluster.title} state={cluster.runState}
             onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
         </div>
       </footer>

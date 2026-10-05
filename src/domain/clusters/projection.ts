@@ -256,11 +256,11 @@ export function projectClusterGraph(
   const expandedCluster = options.focusedClusterId
     ? clusters.find(({ id }) => id === options.focusedClusterId)
     : undefined;
-  const focusedMemberIds = new Set(expandedCluster?.memberNodeIds.filter((id) => nodeById.has(id)) ?? []);
+  const expandedMemberNodeIds = new Set(expandedCluster?.memberNodeIds.filter((id) => nodeById.has(id)) ?? []);
   const frameRect = getExpandedClusterFrameRect(expandedCluster, canonicalNodes);
   if (frameRect) {
     for (const node of displayNodes) {
-      if (hiddenRuntimeHostIds.has(node.id) || focusedMemberIds.has(node.id)) continue;
+      if (hiddenRuntimeHostIds.has(node.id) || expandedMemberNodeIds.has(node.id)) continue;
       if (hasPositiveAreaIntersection(frameRect, getProjectedNodeRect(node))) hiddenRuntimeHostIds.add(node.id);
     }
   }

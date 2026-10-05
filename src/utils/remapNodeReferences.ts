@@ -1,14 +1,12 @@
-const NODE_SELECTOR = /(\$\(\s*)(['"])([^'"]+)(\2)(\s*\)\s*\.json)|(\$node\[\s*)(['"])([^'"]+)(\7)(\s*\]\s*\.json)/g;
+const CALL_SELECTOR = /(\$\(\s*)(['"])([^'"]+)(\2)(\s*\)\s*\.json)/g;
+const BRACKET_SELECTOR = /(\$node\[\s*)(['"])([^'"]+)(\2)(\s*\]\s*\.json)/g;
 
 function remapString(value: string, oldId: string, newId: string): string {
-  return value.replace(
-    NODE_SELECTOR,
-    (match, callStart, callQuote, callName, callEndQuote, callEnd, bracketStart, bracketQuote, bracketName, bracketEndQuote, bracketEnd) => {
-      if (callName === oldId) return `${callStart}${callQuote}${newId}${callEndQuote}${callEnd}`;
-      if (bracketName === oldId) return `${bracketStart}${bracketQuote}${newId}${bracketEndQuote}${bracketEnd}`;
-      return match;
-    },
-  );
+  return value
+    .replace(CALL_SELECTOR, (match, start, quote, name, endQuote, end) =>
+      name === oldId ? `${start}${quote}${newId}${endQuote}${end}` : match)
+    .replace(BRACKET_SELECTOR, (match, start, quote, name, endQuote, end) =>
+      name === oldId ? `${start}${quote}${newId}${endQuote}${end}` : match);
 }
 
 /** Remaps only supported node selectors inside persisted editable values. */

@@ -57,7 +57,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
   if (!canonicalStoreRef.current) canonicalStoreRef.current = createCanonicalGraphStore();
   const canonicalStore = canonicalStoreRef.current;
   
-  const value = useMemo(() => ({
+  const value = useMemo<StableNodeContextValue>(() => ({
     getNodes: () => [...(canonicalPublishedRef.current
       ? canonicalStore.getSnapshot().nodes
       : reactFlow.getNodes())],
@@ -85,7 +85,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
     },
     renameNode: async (request: RenameNodeRequest) => {
       const renamer = nodeRenamerRef.current;
-      if (!renamer) return { ok: false, code: "unavailable", message: "Node rename is unavailable in this view." };
+      if (!renamer) return { ok: false as const, code: "unavailable", message: "Node rename is unavailable in this view." };
       return renamer(request);
     },
     registerNodeRenamer: (renamer: NodeRenamer) => {

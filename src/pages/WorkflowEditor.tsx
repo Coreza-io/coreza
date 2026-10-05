@@ -576,7 +576,7 @@ const WorkflowEditorContent = () => {
     }
 
     const resolved = resolveNodeRename(requestedName, nodeId, currentNodes);
-    if (!resolved.ok) return resolved;
+    if (resolved.ok === false) return resolved;
     if (!resolved.changed) return { ok: true, oldId: nodeId, newId: resolved.name, changed: false };
     if (!executionStore.canRenameNode(nodeId, resolved.name)) {
       return { ok: false, code: "runtime-collision", message: "Runtime data already exists for the requested node name." };

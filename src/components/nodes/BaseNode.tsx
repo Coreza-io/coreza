@@ -88,7 +88,7 @@ export interface BaseNodeRenderProps {
   editingName: string;
   editInputRef: React.RefObject<HTMLInputElement>;
   startEditing: () => void;
-  finishEditing: (save?: boolean) => void;
+  finishEditing: (save?: boolean) => Promise<void>;
   setEditingName: (name: string) => void;
   // Event handlers
   handleChange: (key: string, value: any) => void;

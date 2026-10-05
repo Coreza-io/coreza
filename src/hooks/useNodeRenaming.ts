@@ -70,7 +70,7 @@ export function useNodeRenaming({
       commitInProgressRef.current = true;
       try {
         const result = await renameNode({ nodeId: sourceNodeId, requestedName: editingName });
-        if (!result.ok) {
+        if (result.ok === false) {
           toast({ title: "Cannot rename node", description: result.message, variant: "destructive" });
           requestAnimationFrame(() => editInputRef.current?.focus());
           return;

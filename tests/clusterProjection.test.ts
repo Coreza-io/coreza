@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import { CLUSTER_DISPLAY_ID_PREFIX, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
-import { isClusterExpanded, reconcileClusterViewState, setClusterExpanded } from "@/domain/clusters/viewState";
+import { closeFocusedCluster, hasValidClusterMembers, isClusterExpanded, openFocusedCluster, reconcileClusterViewState, reconcileFocusedCluster, setClusterExpanded } from "@/domain/clusters/viewState";
 import type { NodeCluster } from "@/domain/clusters/types";
 import {
   CLUSTER_COLLAPSE_ENABLED,
@@ -29,6 +29,18 @@ describe("cluster view state", () => {
     const expanded = setClusterExpanded({}, cluster.id, true);
     expect(isClusterExpanded(expanded, cluster.id)).toBe(true);
     expect(reconcileClusterViewState({ ...expanded, stale: true }, [cluster])).toEqual({ [cluster.id]: true });
+  });
+
+  it("opens, switches, closes, and reconciles one focused cluster", () => {
+    const second: NodeCluster = { id: "second", title: "Orders", memberNodeIds: ["outside"] };
+    expect(openFocusedCluster(null, cluster.id, [cluster, second])).toBe(cluster.id);
+    expect(openFocusedCluster(cluster.id, second.id, [cluster, second])).toBe(second.id);
+    expect(openFocusedCluster(cluster.id, "missing", [cluster, second])).toBe(cluster.id);
+    expect(reconcileFocusedCluster(cluster.id, [second])).toBeNull();
+    expect(reconcileFocusedCluster(cluster.id, [cluster], new Set(["outside"]))).toBeNull();
+    expect(hasValidClusterMembers(cluster, new Set(["a"]))).toBe(true);
+    expect(hasValidClusterMembers({ ...cluster, memberNodeIds: [] })).toBe(false);
+    expect(closeFocusedCluster()).toBeNull();
   });
 });
 
@@ -101,6 +113,35 @@ describe("cluster display projection", () => {
     expect(projection.nodes).toEqual(nodes);
     expect(projection.edges).toEqual(edges);
     expect(projection.hiddenRuntimeHostIds.size).toBe(0);
+  });
+
+  it("isolates a focused cluster by membership while preserving hidden runtime hosts", () => {
+    const projection = projectClusterGraph(nodes, edges, [cluster], {}, jest.fn(), {
+      focusedClusterId: cluster.id,
+    });
+
+    expect(projection.visibleNodeIds).toEqual(new Set(["a", "b"]));
+    expect(projection.hiddenRuntimeHostIds).toEqual(new Set(["outside"]));
+    expect(getVisibleClusterNodes(projection).map(({ id }) => id)).toEqual(["a", "b"]);
+    expect(projection.nodes.some(({ type }) => type === "compactCluster")).toBe(false);
+    expect(projection.edges).toEqual([edges[0]]);
+    expect(projection.nodes.find(({ id }) => id === "outside")?.data).toBe(nodes[2].data);
+    expect(nodes[2].position).toEqual({ x: 700, y: 120 });
+  });
+
+  it("derives focus from IDs rather than geometry without mutating canonical inputs", () => {
+    const overlappingNodes = nodes.map((node) => ({ ...node, position: { x: 100, y: 100 } }));
+    const originalEdges = structuredClone(edges);
+    const first = projectClusterGraph(overlappingNodes, edges, [cluster], {}, jest.fn(), { focusedClusterId: cluster.id });
+    const closed = projectClusterGraph(overlappingNodes, edges, [cluster], {}, jest.fn());
+    const reopened = projectClusterGraph(overlappingNodes, edges, [cluster], {}, jest.fn(), { focusedClusterId: cluster.id });
+
+    expect(first.visibleNodeIds).toEqual(new Set(["a", "b"]));
+    expect(reopened.visibleNodeIds).toEqual(first.visibleNodeIds);
+    expect(first.nodes.find(({ id }) => id === "a")).toBe(overlappingNodes[0]);
+    expect(reopened.nodes.find(({ id }) => id === "b")).toBe(overlappingNodes[1]);
+    expect(closed.nodes.find(({ id }) => id === "outside")).toBe(overlappingNodes[2]);
+    expect(edges).toEqual(originalEdges);
   });
 
   it("projects both endpoints for edges between collapsed clusters", () => {

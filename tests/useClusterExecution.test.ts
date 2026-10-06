@@ -26,6 +26,16 @@ describe("manual cluster execution", () => {
     ).executableNodeIds).toEqual(["first", "second", "third"]);
   });
 
+  it("includes an unwired eligible member once in deterministic membership order", () => {
+    const nodes = [node("first"), node("unwired"), node("second")];
+    const plan = buildClusterExecutionPlan(
+      { id: clusterId, title: "Folder", memberNodeIds: ["first", "unwired", "second"] },
+      nodes,
+      [{ id: "first-second", source: "first", target: "second" }],
+    );
+    expect(plan.executableNodeIds).toEqual(["first", "unwired", "second"]);
+  });
+
   it("rejects cycles before executing any node", () => {
     const nodes = [node("one"), node("two")];
     const edges: Edge[] = [

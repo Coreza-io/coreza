@@ -107,7 +107,12 @@ import { cn } from "@/lib/utils";
 import type { NodeCluster } from "@/domain/clusters/types";
 import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
-import { deleteNodesFromDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
+import { deleteNodesFromDocument, insertNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
+import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
+import {
+  ON_BAR_NODE_TYPE,
+  createPaletteNodeBatch,
+} from "@/domain/clusters/paletteNodeBatch";
 import { resolveNodeRename, RESERVED_CLUSTER_NODE_PREFIX } from "@/domain/clusters/nodeRename";
 import { apiClient } from "@/lib/apiClient";
 import { useWorkflowActivation } from "@/hooks/useWorkflowActivation";
@@ -145,10 +150,6 @@ import {
 
 const API_BASE_URL =
   import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-
-const BACKTEST_INIT_NODE_TYPE = "BacktestInit";
-const ON_BAR_NODE_TYPE = "OnBar";
-const ON_BAR_COMPANION_OFFSET_X = 450;
 
 const resolveWebSocketUrl = (): string | null => {
   const explicit = import.meta.env.VITE_WS_URL as string | undefined;
@@ -277,6 +278,7 @@ const WorkflowEditorContent = () => {
     void workflowId;
     return crypto.randomUUID();
   }, [workflowId]);
+  const insertionIntentRef = useRef<InsertionIntent | null>(null);
 
   useEffect(() => () => clearEditorNodeActions(workflowSessionId), [workflowSessionId]);
 
@@ -293,6 +295,8 @@ const WorkflowEditorContent = () => {
   const [isActive, setIsActive] = useState(false);
   const [clusters, setClusters] = useState<NodeCluster[]>([]);
   const [focusedClusterId, setFocusedClusterId] = useState<string | null>(null);
+  const focusedClusterIdRef = useRef(focusedClusterId);
+  focusedClusterIdRef.current = focusedClusterId;
   const [selectedClusterIds, setSelectedClusterIds] = useState<Set<string>>(() => new Set());
   const [invalidClusterEntries, setInvalidClusterEntries] = useState<Array<{ index: number; value: unknown }>>([]);
   const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null);
@@ -300,6 +304,8 @@ const WorkflowEditorContent = () => {
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const contextMenuFocusRef = useRef<HTMLElement | null>(null);
   const clusterMoveRef = useRef<ClusterMoveSession | null>(null);
+  const activeNodeDragRef = useRef<string | null>(null);
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const overviewViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const focusFitRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -471,6 +477,7 @@ const WorkflowEditorContent = () => {
     focusFitRef.current = null;
     setSelectedClusterIds(new Set());
     clusterMoveRef.current = null;
+    insertionIntentRef.current = null;
   }, [workflowId]);
 
   useEffect(() => {
@@ -548,9 +555,15 @@ const WorkflowEditorContent = () => {
   }, [cloneEdges, cloneNodes, clusters, edges, nodes]);
 
   const restoreDocument = useCallback((document: WorkflowDocument) => {
-    setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes))));
-    setEdges(cloneEdges(document.edges));
-    setClusters(document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })));
+    const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes)));
+    const nextEdges = cloneEdges(document.edges);
+    const nextClusters = document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] }));
+    nodesRef.current = nextNodes;
+    canonicalEdgesRef.current = nextEdges;
+    clustersRef.current = nextClusters;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setClusters(nextClusters);
   }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession]);
 
   useEffect(() => stableNodes.registerNodeRenamer(({ nodeId, requestedName }) => {
@@ -966,7 +979,11 @@ const WorkflowEditorContent = () => {
   const onCompactDragStart = useCallback((_: React.MouseEvent, node: Node) => {
     const clusterId = clusterProjection.displayNodeToCluster.get(node.id);
     const cluster = clusters.find((candidate) => candidate.id === clusterId);
-    if (!cluster || dragSource.nodeId) return;
+    if (!cluster) {
+      if (nodesRef.current.some(({ id }) => id === node.id)) activeNodeDragRef.current = node.id;
+      return;
+    }
+    if (dragSource.nodeId) return;
     const selectedIds = selectedClusterIds.has(cluster.id)
       ? resolveVisibleCanonicalSelection(nodesRef.current)
       : cluster.memberNodeIds;
@@ -983,7 +1000,10 @@ const WorkflowEditorContent = () => {
     };
   }, [clusterProjection.displayNodeToCluster, clusters, dragSource.nodeId, resolveVisibleCanonicalSelection, selectedClusterIds, workflowSessionId]);
 
-  const onCompactDragStop = useCallback(() => finishClusterMove(false), [finishClusterMove]);
+  const onCompactDragStop = useCallback(() => {
+    activeNodeDragRef.current = null;
+    finishClusterMove(false);
+  }, [finishClusterMove]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -1585,88 +1605,130 @@ const WorkflowEditorContent = () => {
       x: event.clientX,
       y: event.clientY,
     };
-  }, []);
+    if ((event.target as HTMLElement).closest("button, input, textarea, [role='menu'], [data-cluster-control]")) return;
+    if (insertionIntentRef.current?.source === "member-selection") return;
+    const position = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const currentNodes = nodesRef.current;
+    const currentClusters = clustersRef.current;
+    const currentFocusedClusterId = focusedClusterIdRef.current;
+    const targetClusterId = resolveInsertionPosition({
+      intent: { position, source: "canvas-pointer", workflowSessionId },
+      fallbackPosition: position,
+      nodes: currentNodes,
+      clusters: currentClusters,
+      expandedClusterId: currentFocusedClusterId,
+      workflowSessionId,
+      zoom: rf.getViewport().zoom,
+    }).targetClusterId;
+    if (insertionIntentRef.current?.source === "canvas-pointer"
+      && insertionIntentRef.current.targetClusterId
+      && targetClusterId === null) return;
+    insertionIntentRef.current = {
+      position,
+      source: "canvas-pointer",
+      targetClusterId,
+      workflowSessionId,
+    };
+  }, [rf, workflowSessionId]);
 
-  // Function to create a new node
   const createNode = useCallback(
-    (nodeType: string, position: { x: number; y: number }) => {
-      if (focusedClusterId) return;
+    (nodeType: string, intent?: InsertionIntent) => {
       const nodeDefinition = nodeManifest[nodeType];
-
-      const existingIds = new Set(nodes.map((node) => node.id));
-      const getCollisionSafeNodeId = (baseId: string): string => {
-        let nodeId = baseId;
-        let suffix = 1;
-
-        while (existingIds.has(nodeId)) {
-          nodeId = `${baseId}${suffix}`;
-          suffix += 1;
-        }
-
-        existingIds.add(nodeId);
-        return nodeId;
-      };
-
-      const nodeId = getCollisionSafeNodeId(nodeType);
-      const newNode: Node = {
-        id: nodeId,
-        type: nodeType,
-        position,
-        data: {
-          label: nodeDefinition?.name || `${nodeType} node`,
-          definition: nodeDefinition,
-          workflowSessionId,
-        },
-      };
-
-      const nodesToAdd = [newNode];
-      const shouldAddOnBar =
-        nodeType === BACKTEST_INIT_NODE_TYPE &&
-        !nodes.some((node) => node.type === ON_BAR_NODE_TYPE) &&
-        Boolean(nodeManifest[ON_BAR_NODE_TYPE]);
-
-      if (shouldAddOnBar) {
-        const onBarNodeId = getCollisionSafeNodeId(ON_BAR_NODE_TYPE);
-        const onBarDefinition = nodeManifest[ON_BAR_NODE_TYPE];
-        const onBarNode: Node = {
-          id: onBarNodeId,
-          type: ON_BAR_NODE_TYPE,
-          position: {
-            x: position.x + ON_BAR_COMPANION_OFFSET_X,
-            y: position.y,
-          },
-          data: {
-            label: onBarDefinition.name || "OnBar node",
-            definition: onBarDefinition,
-            workflowSessionId,
-          },
-        };
-
-        nodesToAdd.push(onBarNode);
-
-        const edgeId = `edge_${Date.now()}`;
-        const newEdge: Edge = {
-          id: edgeId,
-          source: nodeId,
-          target: onBarNodeId,
-          sourceHandle: "output",
-          targetHandle: "input",
-          type: "removable",
-          data: { onRemoveEdge: () => removeEdge(edgeId) },
-        };
-
-        setEdges((eds) => addEdge(newEdge, eds));
+      if (!nodeDefinition) {
+        toast({ title: "Cannot add node", description: "This node type is not available.", variant: "destructive" });
+        return false;
+      }
+      if (loading || persistLoading || invalidClusterEntries.length > 0) {
+        toast({ title: "Cannot add node", description: "Wait for the workflow document to become available.", variant: "destructive" });
+        return false;
+      }
+      if (clusterMoveRef.current || activeNodeDragRef.current || dragSource.nodeId) {
+        toast({ title: "Cannot add node", description: "Finish the current canvas action before adding a node.", variant: "destructive" });
+        return false;
+      }
+      if (isEditorExecutionLocked(workflowSessionId)) {
+        toast({ title: "Cannot add node", description: "Wait for the active execution to finish before adding a node.", variant: "destructive" });
+        return false;
       }
 
-      setNodes((nds) => nds.concat(nodesToAdd));
+      const viewport = rf.getViewport();
+      const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
+      const fallbackPosition = canvasRect
+        ? rf.screenToFlowPosition({ x: canvasRect.left + canvasRect.width / 2, y: canvasRect.top + canvasRect.height / 2 })
+        : { x: -viewport.x / viewport.zoom, y: -viewport.y / viewport.zoom };
+      const currentNodes = nodesRef.current;
+      const currentEdges = canonicalEdgesRef.current;
+      const currentClusters = clustersRef.current;
+      const currentFocusedClusterId = focusedClusterIdRef.current;
+      const selectedMember = currentNodes.find((node) => node.selected
+        && currentClusters.find(({ id }) => id === currentFocusedClusterId)?.memberNodeIds.includes(node.id));
+      const effectiveIntent = intent ?? insertionIntentRef.current ?? (selectedMember ? {
+        source: "member-selection" as const,
+        selectedMemberId: selectedMember.id,
+        targetClusterId: currentFocusedClusterId,
+        workflowSessionId,
+      } : null);
+      const placement = resolveInsertionPosition({
+        intent: effectiveIntent,
+        fallbackPosition,
+        nodes: currentNodes,
+        clusters: currentClusters,
+        expandedClusterId: currentFocusedClusterId,
+        workflowSessionId,
+        zoom: viewport.zoom,
+      });
+      if (intent && placement.reason) {
+        toast({ title: "Cannot add node", description: "The insertion target is no longer available.", variant: "destructive" });
+        return false;
+      }
+      const position = placement.position;
+
+      const batch = createPaletteNodeBatch({
+        nodeType,
+        definition: nodeDefinition,
+        onBarDefinition: nodeManifest[ON_BAR_NODE_TYPE],
+        position,
+        workflowSessionId,
+        existingNodes: currentNodes,
+        existingEdges: currentEdges,
+        onRemoveEdge: removeEdge,
+      });
+
+      const result = insertNodesInDocument(
+        { nodes: currentNodes, edges: currentEdges, clusters: currentClusters },
+        { nodes: batch.nodes, edges: batch.edges, targetClusterId: placement.targetClusterId, expandedClusterId: currentFocusedClusterId },
+      );
+      if (result.ok === false) {
+        toast({ title: "Cannot add node", description: result.message, variant: "destructive" });
+        return false;
+      }
+      historyRef.current.past.push({
+        type: "document",
+        document: {
+          nodes: cloneNodes(currentNodes),
+          edges: cloneEdges(currentEdges),
+          clusters: currentClusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })),
+        },
+      });
+      historyRef.current.future = [];
+      restoreDocument({
+        ...result.document,
+        nodes: result.document.nodes.map((node) => ({ ...node, selected: node.id === batch.primaryNodeId })),
+      });
+      return true;
     },
     [
-      setNodes,
-      setEdges,
-      nodes,
-      focusedClusterId,
       workflowSessionId,
       removeEdge,
+      loading,
+      persistLoading,
+      invalidClusterEntries.length,
+      dragSource.nodeId,
+      rf,
+      restoreDocument,
+      cloneNodes,
+      cloneEdges,
+      toast,
     ],
   );
 
@@ -1677,42 +1739,23 @@ const WorkflowEditorContent = () => {
       const type = event.dataTransfer.getData("application/reactflow");
       // Only create a node when dropping a valid palette item
       if (!type) return;
-      if (!(type in nodeManifest)) return;
 
-      // Get the ReactFlow wrapper element to calculate relative position
-      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
-      const position = {
-        x: event.clientX - reactFlowBounds.left,
-        y: event.clientY - reactFlowBounds.top,
+      const intent: InsertionIntent = {
+        position: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+        source: "drop",
+        workflowSessionId,
       };
-
-      createNode(type, position);
+      if (createNode(type, intent)) insertionIntentRef.current = intent;
     },
-    [createNode],
+    [createNode, rf, workflowSessionId],
   );
 
   // Handle node click from palette
   const handleNodeClick = useCallback(
     (nodeType: string) => {
-      const workflowCanvas = document.querySelector(".workflow-canvas");
-
-      const position = workflowCanvas
-        ? (() => {
-            const rect = workflowCanvas.getBoundingClientRect();
-
-            return rf.screenToFlowPosition({
-              x: rect.left + rect.width / 2,
-              y: rect.top + rect.height / 2,
-            });
-          })()
-        : { x: 250, y: 250 };
-
-      createNode(nodeType, position);
-
-      // Optionally hide palette after adding node
-      setIsPaletteVisible(false);
+      if (createNode(nodeType)) setIsPaletteVisible(false);
     },
-    [createNode, rf],
+    [createNode],
   );
 
   // Restore workflow from a version snapshot
@@ -1881,12 +1924,41 @@ const WorkflowEditorContent = () => {
   }, [isPaletteVisible]);
 
   // Handle ReactFlow clicks specifically
-  const onPaneClick = useCallback(() => {
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    const position = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const targetClusterId = resolveInsertionPosition({
+      intent: { position, source: "canvas-click", workflowSessionId },
+      fallbackPosition: position,
+      nodes: nodesRef.current,
+      clusters: clustersRef.current,
+      expandedClusterId: focusedClusterIdRef.current,
+      workflowSessionId,
+      zoom: rf.getViewport().zoom,
+    }).targetClusterId;
+    insertionIntentRef.current = {
+      position,
+      source: "canvas-click",
+      targetClusterId,
+      workflowSessionId,
+    };
     setCanvasMenu(null);
     if (isPaletteVisible) {
       setIsPaletteVisible(false);
     }
-  }, [isPaletteVisible]);
+  }, [isPaletteVisible, rf, workflowSessionId]);
+
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    const canonicalId = clusterProjection.displayNodeToCluster.has(node.id) ? null : node.id;
+    if (!canonicalId) return;
+    const targetClusterId = clustersRef.current.find(({ id, memberNodeIds }) =>
+      id === focusedClusterIdRef.current && memberNodeIds.includes(canonicalId))?.id ?? null;
+    insertionIntentRef.current = {
+      source: "member-selection",
+      selectedMemberId: canonicalId,
+      targetClusterId,
+      workflowSessionId,
+    };
+  }, [clusterProjection.displayNodeToCluster, workflowSessionId]);
 
   const openCanvasMenu = useCallback((event: {
     clientX: number;
@@ -2463,7 +2535,7 @@ const WorkflowEditorContent = () => {
         // Editor View
         <div className="flex flex-1 overflow-hidden">
           {/* ReactFlow Canvas */}
-          <div className="relative flex-1 bg-trading-grid">
+          <div ref={canvasContainerRef} className="relative flex-1 bg-trading-grid">
             <ConnectionDragContext.Provider value={dragSource}>
               <ReactFlow
                 nodes={displayedNodes}
@@ -2476,6 +2548,7 @@ const WorkflowEditorContent = () => {
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 onMouseMove={onMouseMove}
+                onNodeClick={onNodeClick}
                 onNodeDoubleClick={onNodeDoubleClick}
                 onNodeDragStart={onCompactDragStart}
                 onNodeDragStop={onCompactDragStop}

@@ -10,6 +10,7 @@
 
 import type { Node } from "@xyflow/react";
 import type ExecutionContext from "@/utils/executionContext";
+import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 
 interface PreviewDataResult {
   allNodeData: Record<string, any>;
@@ -17,7 +18,7 @@ interface PreviewDataResult {
 }
 
 export function buildPreviewData(
-  previousNodes: Node[],
+  previousNodes: readonly SemanticNode[],
   executionStore: ExecutionContext,
   getNodes: () => Node[]
 ): PreviewDataResult {

@@ -128,24 +128,6 @@ export function projectClusterGraph(
   const focusedCluster = options.focusedClusterId
     ? clusters.find(({ id }) => id === options.focusedClusterId)
     : undefined;
-  const focusedMemberIds = focusedCluster
-    ? new Set(focusedCluster.memberNodeIds.filter((id) => nodeById.has(id)))
-    : undefined;
-  if (focusedMemberIds?.size) {
-    const hiddenRuntimeHostIds = new Set(canonicalNodes
-      .filter(({ id }) => !focusedMemberIds.has(id))
-      .map(({ id }) => id));
-    const projectedEdges = canonicalEdges.filter((edge) =>
-      focusedMemberIds.has(edge.source) && focusedMemberIds.has(edge.target));
-    return {
-      nodes: canonicalNodes.map((node) => hiddenRuntimeHostIds.has(node.id) ? asRuntimeHost(node) : node),
-      edges: projectedEdges,
-      displayNodeToCluster: new Map(),
-      displayEdgeToCanonicalEdge: new Map(projectedEdges.map(({ id }) => [id, id])),
-      hiddenRuntimeHostIds,
-      visibleNodeIds: focusedMemberIds,
-    };
-  }
   const collapsedOwnerByNode = new Map<string, NodeCluster>();
   const displayNodeToCluster = new Map<string, string>();
   const displayEdgeToCanonicalEdge = new Map<string, string>();

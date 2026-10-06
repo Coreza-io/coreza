@@ -12,6 +12,7 @@ export type SemanticEdgeKind = 'main' | 'attachment';
 
 export interface ClusterValidationOptions {
   minimumMembers?: number;
+  requireConnectedMembers?: boolean;
   getEdgeKind?: (edge: Edge, source: Node | undefined, target: Node | undefined) => SemanticEdgeKind | undefined;
   isTrigger?: (node: Node) => boolean;
 }
@@ -66,7 +67,7 @@ export function validateClusters(
       const node = nodeById.get(nodeId);
       if (node && isTrigger(node)) violations.push(violation('trigger-member', 'Trigger nodes cannot be clustered.', cluster.id, [nodeId]));
     }
-    validateTopology(cluster, members, edges, nodeById, kindOf, violations);
+    validateTopology(cluster, members, edges, nodeById, kindOf, violations, options.requireConnectedMembers ?? false);
   }
   return { valid: violations.length === 0, violations };
 }
@@ -78,6 +79,7 @@ function validateTopology(
   nodeById: ReadonlyMap<string, Node>,
   kindOf: NonNullable<ClusterValidationOptions['getEdgeKind']>,
   violations: ClusterViolation[],
+  requireConnectedMembers: boolean,
 ): void {
   if (members.size === 0 || [...members].some((id) => !nodeById.has(id))) return;
   const adjacency = new Map([...members].map((id) => [id, new Set<string>()]));
@@ -115,7 +117,7 @@ function validateTopology(
       if (!visited.has(next)) { visited.add(next); queue.push(next); }
     }
   }
-  if (visited.size !== members.size) violations.push(violation('disconnected-members', 'Cluster members must be connected.', cluster.id, [...members].filter((id) => !visited.has(id))));
+  if (requireConnectedMembers && visited.size !== members.size) violations.push(violation('disconnected-members', 'Cluster members must be connected.', cluster.id, [...members].filter((id) => !visited.has(id))));
   if (incoming.size > 1) violations.push(violation('multiple-entry-members', 'A cluster can expose only one entry member.', cluster.id, [...incoming]));
   if (outgoing.size > 1) violations.push(violation('multiple-exit-members', 'A cluster can expose only one exit member.', cluster.id, [...outgoing]));
 
@@ -221,8 +223,22 @@ export function validateClusterSelection(
   if (violations.length > 0) {
     return { valid: false, violations, resolvedMemberNodeIds: expandedSelection };
   }
+  const completeValidation = validateClusters(
+    nodes,
+    edges,
+    [...existingClusters, { ...candidate, memberNodeIds: expandedSelection }],
+    options,
+  );
+  const candidateConnectivity = validateClusters(
+    nodes,
+    edges,
+    [{ ...candidate, memberNodeIds: expandedSelection }],
+    { ...options, requireConnectedMembers: true },
+  ).violations.filter(({ code }) => code === 'disconnected-members');
+  const combinedViolations = [...completeValidation.violations, ...candidateConnectivity];
   return {
-    ...validateClusters(nodes, edges, [...existingClusters, { ...candidate, memberNodeIds: expandedSelection }], options),
+    valid: combinedViolations.length === 0,
+    violations: combinedViolations,
     resolvedMemberNodeIds: expandedSelection,
   };
 }

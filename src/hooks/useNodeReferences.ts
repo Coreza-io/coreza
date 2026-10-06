@@ -10,7 +10,7 @@
 
 import { useState, useCallback } from "react";
 import { useReactFlow } from "@xyflow/react";
-import type { Node } from "@xyflow/react";
+import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
@@ -22,9 +22,9 @@ import {
 
 interface UseNodeReferencesProps {
   fieldState: Record<string, any>;
-  previousNodes: Node[];
+  previousNodes: readonly SemanticNode[];
   selectedPrevNodeId: string;
-  selectedPrevNode: Node | undefined;
+  selectedPrevNode: SemanticNode | undefined;
 }
 
 interface UseNodeReferencesReturn {

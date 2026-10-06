@@ -67,6 +67,15 @@ describe('cluster validation', () => {
     expect(validateClusters([node('a')], [], [cluster(['a'])]).valid).toBe(true);
   });
 
+  it('allows persisted unwired members while requiring connected initial selections', () => {
+    const nodes = [node('a'), node('b'), node('unwired')];
+    expect(validateClusters(nodes, [edge('ab', 'a', 'b')], [cluster(['a', 'b', 'unwired'])]).valid).toBe(true);
+    const selection = validateClusterSelection(['a', 'unwired'], nodes, [edge('ab', 'a', 'b')], [], cluster([]));
+    expect(selection.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'disconnected-members' }),
+    ]));
+  });
+
   it('normalizes titles, notes, membership order, and duplicates', () => {
     expect(normalizeClusters([cluster(['b', 'a', 'b'], { title: ' Cluster 1 ', note: ' note ' })])[0]).toMatchObject({
       title: 'Cluster 1', note: 'note', memberNodeIds: ['a', 'b'],

@@ -20,11 +20,61 @@ export interface RenameDocumentResult extends DocumentMutationResult {
   changed: boolean;
 }
 
+export type InsertDocumentResult =
+  | { ok: true; document: WorkflowDocument }
+  | { ok: false; code: "duplicate-node" | "duplicate-edge" | "missing-endpoint" | "stale-cluster" | "invalid-document"; message: string };
+
+export interface InsertDocumentRequest {
+  nodes: readonly Node[];
+  edges?: readonly Edge[];
+  targetClusterId?: string | null;
+  expandedClusterId?: string | null;
+}
+
 const cloneDocument = (document: WorkflowDocument): WorkflowDocument => ({
   nodes: document.nodes.map((node) => ({ ...node, data: { ...node.data } })),
   edges: document.edges.map((edge) => ({ ...edge, data: { ...edge.data } })),
   clusters: document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })),
 });
+
+/** Builds a complete insertion candidate without exposing a partially updated graph. */
+export function insertNodesInDocument(
+  current: WorkflowDocument,
+  request: InsertDocumentRequest,
+): InsertDocumentResult {
+  const nodeIds = new Set(current.nodes.map(({ id }) => id));
+  for (const node of request.nodes) {
+    if (nodeIds.has(node.id)) return { ok: false, code: "duplicate-node", message: `Node ${node.id} already exists.` };
+    nodeIds.add(node.id);
+  }
+  const edgeIds = new Set(current.edges.map(({ id }) => id));
+  for (const edge of request.edges ?? []) {
+    if (edgeIds.has(edge.id)) return { ok: false, code: "duplicate-edge", message: `Connection ${edge.id} already exists.` };
+    edgeIds.add(edge.id);
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      return { ok: false, code: "missing-endpoint", message: "A generated connection references a missing node." };
+    }
+  }
+  if (request.targetClusterId && request.targetClusterId !== request.expandedClusterId) {
+    return { ok: false, code: "stale-cluster", message: "The target cluster is no longer expanded." };
+  }
+  if (request.targetClusterId && !current.clusters.some(({ id }) => id === request.targetClusterId)) {
+    return { ok: false, code: "stale-cluster", message: "The target cluster no longer exists." };
+  }
+
+  const candidate = cloneDocument(current);
+  candidate.nodes.push(...request.nodes.map((node) => ({ ...node, data: { ...node.data } })));
+  candidate.edges.push(...(request.edges ?? []).map((edge) => ({ ...edge, data: { ...edge.data } })));
+  if (request.targetClusterId) {
+    const additions = request.nodes.map(({ id }) => id);
+    candidate.clusters = candidate.clusters.map((cluster) => cluster.id === request.targetClusterId
+      ? { ...cluster, memberNodeIds: [...cluster.memberNodeIds, ...additions.filter((id) => !cluster.memberNodeIds.includes(id))] }
+      : cluster);
+  }
+  const validation = validateClusters(candidate.nodes, candidate.edges, candidate.clusters);
+  if (!validation.valid) return { ok: false, code: "invalid-document", message: validation.violations[0].message };
+  return { ok: true, document: candidate };
+}
 
 /**
  * Applies a graph mutation as a single document transaction. Invalid cluster

@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import { deleteNodesFromDocument, renameNodeInDocument } from "../../src/domain/clusters/documentCommands";
+import { deleteNodesFromDocument, insertNodesInDocument, renameNodeInDocument } from "../../src/domain/clusters/documentCommands";
 import type { WorkflowDocument } from "../../src/domain/clusters/documentCommands";
 
 const node = (id: string): Node => ({
@@ -19,6 +19,37 @@ const document = (): WorkflowDocument => ({
 });
 
 describe("cluster-aware document commands", () => {
+  it("inserts a batch and cluster membership atomically without mutating the source", () => {
+    const original = document();
+    const inserted = node("c");
+    inserted.position = { x: 500, y: 300 };
+    const result = insertNodesInDocument(original, {
+      nodes: [inserted],
+      targetClusterId: original.clusters[0].id,
+      expandedClusterId: original.clusters[0].id,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.nodes.map(({ id }) => id)).toEqual(["a", "b", "c"]);
+    expect(result.document.clusters[0].memberNodeIds).toEqual(["a", "b", "c"]);
+    expect(original.nodes.map(({ id }) => id)).toEqual(["a", "b"]);
+    expect(original.clusters[0].memberNodeIds).toEqual(["a", "b"]);
+  });
+
+  it("rejects stale targets and invalid batches without returning a partial document", () => {
+    const original = document();
+    expect(insertNodesInDocument(original, {
+      nodes: [node("c")],
+      targetClusterId: original.clusters[0].id,
+      expandedClusterId: null,
+    })).toMatchObject({ ok: false, code: "stale-cluster" });
+    expect(insertNodesInDocument(original, {
+      nodes: [node("c")],
+      edges: [{ id: "missing", source: "c", target: "absent" } as Edge],
+    })).toMatchObject({ ok: false, code: "missing-endpoint" });
+    expect(original.nodes).toHaveLength(2);
+  });
+
   it("renames nodes, endpoints, and membership in one result", () => {
     const result = renameNodeInDocument(document(), "a", "renamed").document;
     expect(result.nodes.map(({ id }) => id)).toContain("renamed");

@@ -1,282 +1,201 @@
-# Restore workflow-editor drag performance
+# Fix the remaining workflow-editor drag lag
 
-## Goal
+## Outcome
 
-Make ordinary node dragging, compact-cluster dragging, and expanded-cluster frame dragging responsive without changing canonical workflow state, cluster membership, overlap visibility, inputs/outputs, execution behavior, history, persistence, or runtime ownership.
+Make ordinary node dragging, compact-cluster dragging, expanded-frame dragging, and connection dragging responsive while preserving node placement, custom edge routing, cluster visibility, runtime ownership, inputs/outputs, undo/redo, persistence, and execution behavior.
 
-This is a frontend performance change. It requires no backend, API, database, migration, or persisted-document-format changes.
+This remains frontend-only. No backend, API, database, migration, or saved-workflow schema changes are required.
 
-## Validated diagnosis
+## Verified current state
 
-The uploaded document correctly identifies the highest-confidence hot path:
+The latest uploaded review is directionally correct, but its reviewed commit and this preview checkout differ:
 
-1. Every position update creates a new canonical `nodes` array.
-2. `useCanonicalGraphSync(nodes, edges)` publishes that array in a layout effect.
-3. `canonicalGraphStore.publish` compares only array references and notifies every subscriber.
-4. Every mounted `BaseNode` and live `InputPanel` subscribes to that full snapshot.
-5. Their display-name, upstream-node, incoming-edge, preferred-input, and selected-input calculations therefore rerun for unrelated position changes.
-6. `projectClusterGraph` also runs whenever `nodes` changes and recreates hidden host copies, compact cards, maps, sets, handles, and rewritten boundary edges.
-7. Compact and expanded-frame cluster movement updates many canonical member positions on every pointer event, magnifying both costs.
+- The reviewed commit `7a2e3c…` contains the full-versus-semantic canonical graph split, semantic `BaseNode`/live `InputPanel` subscriptions, store-owned ancestor indexing, session invalidation, tests, and a publication benchmark.
+- The current checkout `3f4e768…` does **not** contain those semantic changes: it still has one full canonical subscription, and every mounted `BaseNode`/live `InputPanel` receives geometry-only publications.
+- The current checkout **does** contain cluster insertion intent and `resolveInsertionPosition`; `onMouseMove` currently invokes it during drags without a drag guard.
+- `EdgeManager` has three whole-node subscriptions: `PlugEdge`, `PlugConnectionLine`, and `InteractiveEdge`. Each relevant rendered edge reacts to unrelated node-array changes; routing also scans the array to find two endpoints.
+- `projectClusterGraph` reruns for node movement and recreates collapsed runtime hosts, compact cards/data, rewritten boundary edges, maps, and sets even when equivalent outputs did not change.
+- The installed React Flow exposes `useStore` and `nodeLookup`. Its own edge wrapper already supplies live handle coordinates, while custom smart routing additionally needs endpoint node bounds/top-left positions and source visual category.
+- Current insertion, projection, and runtime-host tests exist, but no edge-selector render test or browser drag-performance fixture exists.
+- The preview build is healthy before implementation.
 
-These are confirmed code paths, but their percentage of total drag time is not yet measured. The plan must begin with a reproducible baseline rather than claiming a timing or FPS improvement in advance.
+Therefore, implementation must first bring the reviewed semantic optimization onto this branch, then apply the three remaining focused fixes. Do not reimplement an incompatible alternative or omit the prerequisite.
 
-## Corrections to the uploaded plan
+## Architecture and correctness constraints
 
-Two proposed hot-path findings are not present in this checkout and must not become implementation work:
+- Canonical editor nodes/edges remain the only mutable document; projected cluster nodes remain render-only copies.
+- Full canonical reads retain current positions during every drag frame.
+- Geometry-only changes must not notify semantic graph consumers.
+- Hidden collapsed members remain mounted because they own runtimes and editor action registrations.
+- Cluster Execute remains editor-local manual-node execution; only Run All is batch.
+- Existing forward/backward/vertical/self-loop routing, handle offsets, compact synthetic endpoints, themes, controls, labels, markers, and missing-node fallbacks remain unchanged.
+- Expanded-frame overlap visibility must update during movement; distant outside nodes remain visible.
+- Do not debounce ordinary React Flow movement, remove edge effects, add virtualization, or redesign projection architecture without profiling evidence.
 
-- `WorkflowEditor.onMouseMove` currently only stores `{clientX, clientY}`. It does not perform cluster geometry or insertion hit-testing.
-- `src/domain/clusters/insertion.ts` and `resolveInsertionPosition` do not exist.
+## 1. Establish a browser baseline
 
-Therefore, do not add insertion drag guards, requestAnimationFrame scheduling, or insertion geometry infrastructure as part of this performance fix. Keep the current cheap pointer tracking unchanged and measure it only as a control.
+Before changing source, create deterministic unauthenticated React Flow fixtures that mount the real `EdgeManager`, cluster projection, nodes, and panels:
 
-The expanded-frame geometry concern is narrower than stated: the helper is called by projection and by the frame overlay. Share its index/bounds only if profiling shows a meaningful residual cost.
+- no clusters with realistic edge density;
+- collapsed clusters plus an unrelated standalone node;
+- expanded cluster with outside nodes/cards crossing its frame;
+- panel-heavy graph;
+- compact and expanded-frame multi-member movement.
 
-There is also an independent projection correctness mismatch: the current focused-cluster early return hides every outside node, while existing tests expect overlap-only hiding. Do not conceal that behavior change inside a performance cache. First establish the intended projection result with the existing correctness tests; any required correction must remain a small, separately testable projection change.
+Use small/medium/large sizes representative of roughly 20/100/300 nodes. Fix IDs, positions, dimensions, edges, memberships, viewport, zoom, and drag path.
 
-## Non-negotiable invariants
+Record three warmed runs in a production build and use development profiling separately. Capture frame intervals, long tasks, scripting/layout/paint, React commits, edge renders/path calculations, semantic/full publications, projection calls/allocations, insertion-resolution calls, and mount/unmount/action-listener counts. These establish causality; no FPS claim is made before this trace.
 
-- Canonical nodes and edges remain the only mutable editor document. Projected cluster nodes remain render-only copies.
-- Imperative readers (`getNodes`, `getEdges`, `getNodeById`) see current positions during every drag frame.
-- Hidden collapsed members remain mounted because they own runtimes and registered editor actions.
-- Node data, display names, values, outputs, pins, add/remove/rename, same-count replacements, and same-count reconnects propagate immediately.
-- Edge endpoint and handle changes immediately update upstream/input selection.
-- Cluster Execute remains a local sequence of normal node actions. Only explicit Run All remains batch execution.
-- Position updates preserve structural sharing: unchanged canonical node objects are retained.
-- Do not debounce the controlled React Flow position stream globally.
-- Do not use node/edge counts as a semantic-change detector.
-- Do not serialize full node data or output payloads on every drag event.
-- Do not introduce stale geometry through a semantic API typed as a full React Flow `Node`.
+## 2. Port and verify the semantic graph prerequisite
 
-## Phase 0 — Reproduce and instrument before editing
+Apply the already-reviewed semantic graph implementation from `7a2e3c…` rather than redesigning it:
 
-### Fixtures
+- add full and semantic snapshots/listeners to the canonical graph store;
+- preserve current full snapshots for imperative and geometry consumers;
+- publish semantic snapshots only for node/edge identity, type, data, topology, handle, order, or workflow-session changes;
+- preserve detection of top-level in-place data mutations by storing independent signatures/copies;
+- keep semantic records geometry-free;
+- own `nodeById`, incoming-edge indexes, and memoized cycle-safe ancestor results per store/snapshot, not in a module-global cache;
+- pass `workflowSessionId` into canonical synchronization so identical records from another workflow cannot reuse stale semantic state;
+- migrate `BaseNode` and live `InputPanel` to required/optional semantic hooks;
+- keep history/read-only input panels isolated from the live editor;
+- preserve display-name ordering, canonical collapsed-cluster traversal, preferred `done` input, stale selection repair, and falsy/null execution-output precedence.
 
-Create deterministic browser fixtures or a development-only fixture generator for:
+Bring over and run its focused store/input tests and publication benchmark. Acceptance for this prerequisite is zero additional semantic notifications across geometry-only updates while full readers see every position, plus immediate updates for data/output/pin/rename/add/remove/reorder/reconnect/handle/session changes.
 
-- small: approximately 20 nodes, no clusters;
-- medium: approximately 100 nodes with realistic edges and several collapsed clusters;
-- expanded: medium graph with one expanded cluster and nearby outside nodes/cards crossing its frame;
-- large: approximately 300 nodes with realistic edges and collapsed members;
-- panel-heavy: medium graph with multiple input/output panels expanded.
+Do not optimize semantic signature scanning in this task unless the browser trace still identifies it as material after the remaining fixes.
 
-Use fixed IDs, positions, dimensions, edges, cluster memberships, viewport, and zoom so before/after traces are comparable. Do not rely on production user data or authenticated routes.
+## 3. Narrow custom edge subscriptions
 
-### Measurements
+### 3.1 Add typed scalar selectors
 
-For ordinary node, compact-cluster, expanded-frame, and expanded-member drags:
+In `EdgeManager`, replace all three `useNodes()` calls with small `useStore` selectors:
 
-- capture production-build browser traces for frame intervals, scripting, rendering, long tasks, and garbage collection;
-- capture development React Profiler traces for `WorkflowEditor`, `NodeRouter`, `BaseNode`, `InputPanel`, compact cards, and frame overlays;
-- temporarily count full canonical publications, semantic publications, `BaseNode`/`InputPanel` renders, upstream traversals, projection calls, frame-bound calls, and member copies per pointer update;
-- record mounted node/action/listener counts before, during, and after collapse/drag cycles;
-- use the same machine, browser, fixture, viewport, zoom, warmed state, drag path, and three repeated runs.
+- `PlugEdge`: source visual category/theme plus source/target routing geometry;
+- `InteractiveEdge`: source/target routing geometry only;
+- `PlugConnectionLine`: active source visual category/theme only.
 
-Remove temporary counters before delivery, or keep them only behind an existing development-only diagnostic boundary. Record the baseline and let it decide whether optional phases proceed.
+Read endpoints by ID from `state.nodeLookup` in constant time. Return immutable scalar slices, not the node array, lookup map, internal nodes, or mutable user-node references. Compare fields explicitly (or with shallow equality over primitives):
 
-## Phase 1 — Split full geometry publication from semantic publication
+- endpoint existence;
+- user-node top-left `position.x/y`, preserving current route semantics;
+- measured width/height with current declared-size/default fallbacks;
+- source visual category or resolved edge color.
 
-### 1.1 Define explicit snapshot contracts
+React Flow already passes handle coordinates/positions as edge props; keep those authoritative for path endpoints. The selector only supplies the extra node bounds needed for routing around backward connections and source theme.
 
-Extend `canonicalGraphStore` with two channels:
+Keep hooks unconditional for self-loop and missing-node cases. A source/target move, resize, deletion/replacement, or source-definition/theme change must update the slice. Unrelated node movement/selection must leave it referentially/equivalently unchanged.
 
-- **Full canonical snapshot**: current React Flow nodes and edges, including positions, dimensions, selection, and dragging state. Existing imperative readers and geometry/projection consumers use this channel.
-- **Semantic graph snapshot**: immutable semantic node/edge records containing only fields required by live node/input consumers. It must not pretend to be a current full `Node` because its geometry intentionally remains stable during geometry-only changes.
+### 3.2 Keep routing behavior intact
 
-The semantic node contract should include at least node ID, type, order, and data. The semantic edge contract should include ID, source, target, source/target handles, and any edge semantic field actually consumed by input/topology logic. Confirm exact accesses before finalizing types.
+Change `calculateSmartPath` to accept the two endpoint-bound records directly, or pass a two-record adapter if that creates the safer smaller diff. Remove all full-array `.find` calls.
 
-Keep the full `publish` behavior current on every canonical update. Update the semantic snapshot and notify semantic listeners only when the semantic classifier reports a meaningful change.
+Preserve exactly:
 
-### 1.2 Implement safe semantic classification
+- current measured/declared/default dimensions;
+- current top-left and handle-coordinate fallbacks;
+- all forward, backward, vertical, orthogonal, and self-loop paths;
+- plug offsets, markers, labels, controls, hover behavior, colors, and light/dark behavior;
+- compact synthetic cluster endpoints from the rendered React Flow store.
 
-Add one tested comparison/classification utility with these rules:
+`React.memo` may be added only after selector narrowing and only where render-count evidence shows parent-prop churn remains. Memoization is not a substitute for removing the broad subscription.
 
-Geometry-only changes do **not** notify semantic consumers:
+## 4. Skip advisory insertion geometry during active drags
 
-- position and position-absolute values;
-- measured/declared width and height;
-- dragging, selected, z-index, and projection-only interaction/style/ARIA flags.
+Keep updating `mousePosRef` first. Preserve the current control-element and member-selection precedence. Before calling `screenToFlowPosition` or `resolveInsertionPosition`, return when any active canvas operation exists:
 
-Semantic changes **do** notify immediately:
+- ordinary or selected-node drag;
+- compact or expanded-frame cluster move;
+- connection drag.
 
-- node add/remove/reorder, ID, type, or data reference/content changes;
-- display name, definition, values, field state, output, pinned output, workflow-session data, and any other consumed node data;
-- edge add/remove/reorder, ID, source, target, source handle, target handle, type, or consumed edge data;
-- same-length node replacement, rename, and same-length edge reconnect;
-- complete workflow/session replacement, even when IDs and counts coincide.
+Use synchronous refs for drag state so the first event after drag start cannot race React state. Extend the existing lifecycle rather than introducing a second global drag system:
 
-Use immutable reference checks as the fast path, but first audit every node/edge writer. Current execution/output hooks sometimes mutate `data.output` or `data.pinnedOutput` before also calling the immutable updater. Preserve correctness by requiring the immutable update as the publication boundary and adding regression tests. Replace any writer that relies solely on in-place mutation; never deep-stringify output payloads per frame.
+- node drag start/stop, including multi-selection;
+- expanded-frame pointer up, Escape, pointer cancel, and lost capture;
+- connection start/end/cancel;
+- workflow-session change and component unmount.
 
-Store previous semantic records/signatures independently enough that an in-place mutation cannot retroactively corrupt the “before” comparison.
+Clear `activeNodeDragRef`, cluster-move state, and connection-drag ref on every termination path. Keep React state for rendering where already needed.
 
-### 1.3 Preserve existing full access and startup behavior
+This guard affects only advisory pointer tracking. Palette click/drop must continue to call `resolveInsertionPosition` against the latest canonical nodes, clusters, focus, zoom, and workflow session before committing. After stop/cancel, pointer insertion must resume immediately with existing sticky inside-cluster/member-selection/outside precedence. Do not throttle canonical drag positions.
 
-- Keep `getNodes`, `getEdges`, and `getNodeById` on the latest full snapshot.
-- Preserve the React Flow fallback before the first canonical publication.
-- Keep the current full `subscribe/getSnapshot` API for genuine geometry consumers.
-- Add required and optional semantic hooks parallel to the existing required/optional full hooks.
-- Preserve `useSyncExternalStore` snapshot identity: unchanged semantic inputs return the exact prior semantic snapshot reference.
-- Clear/rebuild both channels safely on workflow-session replacement; no cross-workflow record reuse.
+## 5. Conservatively reconcile equivalent projection outputs
 
-### 1.4 Migrate only semantic consumers
+Keep `projectClusterGraph` geometry and visibility calculations correct on every relevant node movement. Add a pure reconciliation layer that compares a freshly calculated projection with the **last committed** projection and canonical inputs, returning prior references only where output is equivalent.
 
-Migrate `BaseNode` and live `InputPanel` to the semantic channel. Read-only/history panels continue using their supplied immutable execution snapshot and must not subscribe to the live editor.
+Store the previous committed `{workflowSessionId, canonicalNodes, canonicalEdges, projection}` in the editor and update it in a layout effect after commit. Do not mutate a cache during render; ignore/clear prior results on session replacement. This avoids stale results under interrupted React renders.
 
-Refactor upstream helpers to consume semantic records or a store-owned semantic topology index rather than full `Node` geometry. Preserve:
+### Reuse rules
 
-- deterministic upstream ordering and cycle safety;
-- canonical traversal through collapsed clusters;
-- preferred direct `done` input;
-- stale selected-input repair;
-- display-name de-duplication by semantic node order;
-- execution-store output precedence, including falsy and null outputs;
-- immediate response to field/reference/output/reconnect changes.
+- **Visible canonical nodes:** keep canonical references unchanged.
+- **Collapsed/occluded runtime hosts:** reuse only when the corresponding canonical node reference is unchanged and all projection decorations/visibility flags are equivalent. Recreate the moved or otherwise changed host. Never write flags into canonical state.
+- **Compact cards:** separate stable data from geometry. Reuse data when cluster ID/title/note/member count, ordered handles, meaningful run-state fields, and callbacks are equivalent. Update only card position, selection, draggable state, or other changed fields. Treat fresh idle run-state objects as equal by fields, not object identity.
+- **Boundary edges:** reuse only when the canonical edge reference and projected source/target/handle/data result are unchanged. Recreate on reconnect, handle/data/style/callback changes, cluster mapping changes, or canonical edge replacement.
+- **Arrays/maps/sets:** reuse prior nodes/edges arrays and mapping/visibility sets when order and contents/references are unchanged. Preserve map/set insertion order and synthetic-ID collision allocation.
 
-Do not broaden this into an execution-store rewrite unless profiling proves that store independently updates during idle dragging.
+Use ID-indexed comparisons and structural sharing; do not deep-serialize node output payloads or scan the entire graph repeatedly for each projected object. Prune by using only the latest committed result; no unbounded per-ID history.
 
-### 1.5 Phase 1 gate
+Genuine changes must still propagate immediately: member/compact movement, dimensions, membership, title/note/count, selection, draggable state, run/cancel state, callbacks, reconnects, handles, focus/collapse state, overlap entry/exit, and session replacement.
 
-For a pure position, dimensions, dragging, or selection change:
+Start with downstream identity reuse. Only split projection into structural/geometry compilers or share frame indexes if re-profiling shows projector computation—not reconciliation—remains material.
 
-- full readers observe the latest state;
-- semantic snapshot identity remains stable;
-- semantic listener count is zero after initial publication;
-- unrelated `BaseNode` and live `InputPanel` topology/input work does not run because of canonical publication;
-- moved-node rendering and final position remain correct.
+## 6. Required tests
 
-Stop and fix stale-data behavior before any projection optimization.
+### Edge selectors and routing
 
-## Phase 2 — Reduce repeated upstream work
+- selector result stays equal and integration render/path counter stays unchanged when an unrelated node moves or changes selection;
+- source/target movement and measured-size changes update routing;
+- source theme changes update edge color;
+- deletion/missing endpoints retain current fallback;
+- forward/backward/vertical routes, self-loops, Loop edges, compact synthetic endpoints, and connection previews match existing path output;
+- controls, labels, markers, hover actions, and light/dark colors remain correct;
+- no whole-node subscription or N-node endpoint lookup remains in the three identified components.
 
-The existing `getAllUpstreamNodes` has a module-level one-entry cache keyed by full node/edge array references. A drag invalidates that cache, and a semantic change still makes every subscriber traverse its ancestry independently.
+Use a React Flow-mounted integration test, not only selector-unit equality.
 
-After Phase 1 is stable:
+### Insertion guard lifecycle
 
-- build the semantic `nodeById` and incoming-edge index once per semantic snapshot;
-- expose a pure cycle-safe ancestor lookup over that index;
-- memoize per-target ancestor ID lists for the lifetime of that semantic snapshot;
-- map IDs to current semantic records without geometry access;
-- keep cache ownership editor/store scoped, not module-global, so simultaneous editors/tests cannot evict each other;
-- discard the index and per-target results on any topology/session change.
+- spy/counter proves zero insertion resolutions during ordinary, multi-selection, compact, expanded-frame, and connection drags;
+- insertion resumes after normal stop, Escape, pointer cancel, lost capture, connection cancel, workflow switch, and unmount/remount;
+- click/drop revalidates exact current placement and preserves inside/member/outside/stale-session behavior;
+- final drag positions remain exact at multiple zoom levels with no snap-back.
 
-Test cycles, diamonds, missing endpoints, deterministic order, collapsed-cluster canonical edges, same-count reconnects, and simultaneous independent stores.
+### Projection identity and correctness
 
-## Phase 3 — Optimize cluster projection only if traces still justify it
+- in a 300-node fixture, unrelated movement retains equivalent hidden-host, compact-card/data, boundary-edge, map, set, and unchanged array-entry identities;
+- moved members/cards update only affected geometry;
+- run state, callbacks, title/note, selection, membership, rename, reconnect, handle, and collision changes invalidate affected results;
+- overlap entry/exit immediately updates hidden nodes/cards and edges;
+- session replacement cannot reuse stale members, callbacks, or run state;
+- prior returned projections and canonical inputs are never mutated;
+- collapsed members remain mounted with one runtime/action registration.
 
-Projection must still respond to position changes because compact-card placement, expanded-frame bounds, and overlap visibility are geometric. Do not simply remove `nodes` from its dependencies.
+Run existing semantic-store, canonical-input, cluster insertion, projection, runtime-host, rename, history, and cluster-execution regressions as well.
 
-Split projection work into two explicit layers:
+## 7. Reprofile and allow at most measured follow-ups
 
-### 3.1 Structural projection plan
+Re-run the identical browser fixtures after each main change. Report three-run median and p95, graph/edge sizes, browser, machine, viewport, zoom, build mode, and limitations.
 
-Cache only topology/view work whose inputs did not change:
+Only if traces still show a clear bottleneck, choose the matching follow-up:
 
-- canonical node IDs and edge semantic topology;
-- cluster IDs, membership, member order, titles/notes;
-- expanded/collapsed/focused state;
-- synthetic display-ID allocation and collision suffixes;
-- collapsed owner lookup;
-- internal-edge suppression, boundary endpoint/handle rewrites, and incoming/outgoing compact-handle lists.
+- projection scripting: share the per-snapshot node index/focused-frame bounds;
+- custom multi-member pointer updates: coalesce only that custom path to one update per animation frame, derive from initial positions, flush before history, and cancel safely;
+- paint/animation: suppress only decorative edge animation during active drag through one canvas-level drag state, restoring on every termination path;
+- semantic publications: identify and fix the writer producing semantic changes; do not remove semantic correctness checks.
 
-Invalidate this plan on add/remove/rename/reconnect, edge-handle changes, membership/view changes, cluster metadata changes that affect a card, or workflow-session replacement. Preserve collision behavior exactly.
+If targets are met, stop. Do not stack speculative optimizations.
 
-### 3.2 Geometry/materialization pass
+## Verification and acceptance
 
-On position/dimension changes, recompute only:
+Run focused Jest suites, the real React Flow browser fixtures, the configured TypeScript check, changed-file lint, node validation, production build, and `git diff --check`. Remove temporary instrumentation before delivery.
 
-- compact-card positions;
-- expanded frame bounds;
-- positive-area overlap visibility;
-- moved canonical/projected node positions;
-- filtered edge visibility for endpoints crossing the overlap boundary.
+Acceptance requires:
 
-Reuse unchanged canonical node objects. Reuse hidden runtime-host copies, compact-card data, rewritten boundary edges, maps, and sets only when all their actual inputs are unchanged. Run state, selection, callbacks, draggable state, note/title, member count, handles, and hide/show transitions must invalidate the corresponding object.
-
-Use bounded editor-session caches keyed by stable IDs. Prune deleted/dissolved entries and clear all caches on workflow replacement. Never cache projected attributes back onto canonical nodes.
-
-### 3.3 Shared geometry
-
-Build one node index per full canonical snapshot and allow frame-bound calculations to consume it. Compute the focused frame once per editor render/projection result and reuse it for the overlay when safe. Replace the overlay’s repeated `nodes.some` member count with indexed membership.
-
-Refresh bounds on member position, dimensions, membership, focus, or session changes. Outside nodes/cards moving across the frame must hide/show on the same drag frame; do not freeze overlap visibility until drop.
-
-### 3.4 Projection gate
-
-Re-run all projection correctness tests before judging performance. Verify focused overlap-only behavior, distant outside visibility, boundary-edge routing, compact ID collisions, selection/actionable sets, and canonical input immutability.
-
-If Phase 1 already meets the measured target, omit Phase 3 rather than shipping speculative cache complexity.
-
-## Phase 4 — Coalesce custom cluster movement only if still measured hot
-
-Ordinary React Flow dragging stays unthrottled. Only the custom multi-member compact/expanded-frame path is eligible.
-
-If traces still show excessive custom `setNodes` work:
-
-- store the latest pointer delta and schedule at most one canonical multi-node position update per animation frame;
-- derive every target from captured initial positions plus latest delta, never cumulative movement;
-- update all moved IDs in one transaction while retaining every unchanged node reference;
-- synchronously flush the final target on pointer-up before recording history;
-- restore initial positions on Escape, pointer cancellation, or lost capture according to current behavior;
-- cancel pending frames on unmount or workflow-session change;
-- ensure compact React Flow position changes and custom member translation do not both apply the same delta;
-- retain exactly one position-history entry per completed cluster move and none for a cancelled/no-op move.
-
-Do not implement this phase without trace evidence after Phases 1–3.
-
-## Tests
-
-### Canonical store and semantic contracts
-
-Add focused Jest tests proving:
-
-- position, dimensions, selection, dragging, and projection-only flags update full reads but do not notify semantic listeners;
-- data/values/output/pin/display-name/type changes notify once;
-- add/remove/reorder/rename and same-count node replacement notify;
-- add/remove/reorder/reconnect/handle/type changes notify;
-- unchanged publications preserve both snapshot identities;
-- workflow replacement cannot reuse old semantic records;
-- required/optional hooks preserve provider and history behavior;
-- audited immutable writers publish output and field changes despite prior local mutation.
-
-### Upstream/input correctness
-
-Extend canonical input tests for cycles, diamonds, missing nodes, same-count reconnects, `done` preference, stale selection repair, renamed nodes, collapsed canonical traversal, falsy/null output precedence, and two independent graph stores.
-
-### Projection and cluster behavior
-
-Run and extend projection/runtime-host tests for ordinary/member/compact/frame movement, overlap entry/exit, distant outside nodes, boundary edges, collapse/reopen/dissolve, synthetic ID collisions, run-state and selection updates, unchanged object reuse, and no canonical mutation.
-
-### Browser correctness and performance
-
-Use deterministic unauthenticated fixtures to:
-
-- drag an ordinary node, expanded member, compact cluster, and expanded frame at multiple zoom levels;
-- assert exact final positions and no cumulative drift;
-- verify overlap hide/show while crossing boundaries;
-- confirm zero runtime/action unmounts and uninterrupted outputs/listeners;
-- verify selection, MiniMap, Fit View, collapse/reopen, dissolve, undo/redo, save-shaped serialization, and session-switch cancellation;
-- collect counters proving zero semantic notifications and zero unrelated input/topology recalculations during geometry-only dragging.
-
-Performance targets are gates, not promises: use the baseline machine to target p95 frame intervals at or below 20 ms on the representative medium production fixture and no repeated drag-attributable tasks above 50 ms. If the machine cannot meet the absolute target, report the measured improvement and remaining bottleneck without claiming 60 FPS.
-
-## Delivery order
-
-1. Record baseline traces and counters on the current checkout.
-2. Implement the full/semantic store split and tests.
-3. Migrate `BaseNode` and live `InputPanel`; remeasure.
-4. Add store-scoped topology indexing; remeasure.
-5. If still needed, split structural and geometric projection; remeasure.
-6. If still needed, coalesce only custom multi-member movement; remeasure.
-7. Run focused Jest suites, targeted Playwright fixtures, configured TypeScript check, lint for changed files, node validation, production build, and `git diff --check`.
-8. Remove temporary instrumentation and publish a before/after report with commit, fixture sizes, browser, machine, build mode, traces, medians/p95, and limitations.
-
-## Acceptance criteria
-
-- Full canonical positions remain current throughout a drag.
-- Pure geometry updates produce zero semantic graph notifications.
-- Unrelated nodes and panels no longer redo canonical topology/input work during dragging.
-- Same-count edits, reconnects, fields, outputs, pins, and renames still update immediately.
-- Ordinary and cluster drags finish at the exact pointer-derived position with one correct history transaction.
-- Overlap-only visibility and boundary edges update during movement.
-- Hidden members remain mounted with runtimes and editor actions intact.
-- Collapse, reopen, dissolve, Execute, rename, undo/redo, save/export-shaped serialization, and workflow switching retain current behavior.
-- Every shipped optimization has a measured before/after benefit; optional cache/scheduling phases are omitted if earlier phases meet the target.
+- current full canonical positions throughout movement;
+- zero geometry-only semantic notifications;
+- no whole-node-array subscriptions or N-node endpoint scans in the three custom edge paths;
+- stable unrelated edge path work and equivalent projection identities;
+- zero insertion hit tests during active canvas operations;
+- exact final positions and one history transaction per completed cluster move;
+- correct overlap visibility, routes, themes, inputs/outputs, runtime/action ownership, insertion, rename, collapse/reopen/dissolve, Execute, undo/redo, save/reload/export-shaped state, and workflow switching;
+- measured before/after improvement, targeting approximately 20 ms p95 frame intervals on the representative medium fixture and no repeated drag-attributable tasks over 50 ms, without claiming guaranteed FPS when hardware prevents the absolute target.

@@ -11,7 +11,7 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
-import { createCanonicalGraphStore, type CanonicalGraphSnapshot } from './canonicalGraphStore';
+import { createCanonicalGraphStore, type CanonicalGraphSnapshot, type SemanticGraphSnapshot } from './canonicalGraphStore';
 
 export interface RenameNodeRequest {
   nodeId: string;
@@ -28,9 +28,11 @@ interface StableNodeContextValue {
   getNodes: () => Node[];
   getEdges: () => Edge[];
   getNodeById: (id: string) => Node | undefined;
-  setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[]) => void;
+  setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[], sessionId?: string) => void;
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => CanonicalGraphSnapshot;
+  subscribeSemantic: (listener: () => void) => () => void;
+  getSemanticSnapshot: () => SemanticGraphSnapshot;
   updateNodeData: (id: string, patch: Record<string, unknown>) => void;
   registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => void) => () => void;
   renameNode: (request: RenameNodeRequest) => Promise<RenameNodeResult>;
@@ -68,12 +70,14 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
       (canonicalPublishedRef.current
         ? canonicalStore.getSnapshot().nodes
         : reactFlow.getNodes()).find(n => n.id === id),
-    setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[]) => {
+    setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[], sessionId?: string) => {
       canonicalPublishedRef.current = true;
-      canonicalStore.publish(nodes, edges);
+      canonicalStore.publish(nodes, edges, sessionId);
     },
     subscribe: canonicalStore.subscribe,
     getSnapshot: canonicalStore.getSnapshot,
+    subscribeSemantic: canonicalStore.subscribeSemantic,
+    getSemanticSnapshot: canonicalStore.getSemanticSnapshot,
     updateNodeData: (id: string, patch: Record<string, unknown>) => {
       nodeDataUpdaterRef.current?.(id, patch);
     },
@@ -111,11 +115,17 @@ export function useStableNodes() {
   return ctx;
 }
 
-export function useCanonicalGraphSync(nodes: readonly Node[], edges: readonly Edge[]): void {
+export function useCanonicalGraphSync(nodes: readonly Node[], edges: readonly Edge[], sessionId?: string): void {
   const context = useStableNodes();
   useLayoutEffect(() => {
-    context.setCanonicalDocument(nodes, edges);
-  }, [context, nodes, edges]);
+    context.setCanonicalDocument(nodes, edges, sessionId);
+  }, [context, edges, nodes, sessionId]);
+}
+
+export function useSemanticGraphSnapshot(): SemanticGraphSnapshot {
+  const context = useContext(StableNodeContext);
+  if (!context) throw new Error('useSemanticGraphSnapshot must be used within StableNodeProvider');
+  return useSyncExternalStore(context.subscribeSemantic, context.getSemanticSnapshot, context.getSemanticSnapshot);
 }
 
 export function useCanonicalGraphSnapshot(): CanonicalGraphSnapshot {
@@ -141,7 +151,27 @@ export function useOptionalCanonicalGraphSnapshot(): CanonicalGraphSnapshot | nu
   return context ? snapshot : null;
 }
 
+export function useOptionalSemanticGraphSnapshot(enabled = true): SemanticGraphSnapshot | null {
+  const context = useContext(StableNodeContext);
+  const subscribe = useCallback(
+    (listener: () => void) => enabled && context ? context.subscribeSemantic(listener) : () => undefined,
+    [context, enabled],
+  );
+  const getSnapshot = useCallback(
+    () => enabled && context ? context.getSemanticSnapshot() : OPTIONAL_EMPTY_SEMANTIC_GRAPH,
+    [context, enabled],
+  );
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return enabled && context ? snapshot : null;
+}
+
 const OPTIONAL_EMPTY_CANONICAL_GRAPH: CanonicalGraphSnapshot = Object.freeze({
   nodes: Object.freeze([]),
   edges: Object.freeze([]),
+});
+
+const OPTIONAL_EMPTY_SEMANTIC_GRAPH: SemanticGraphSnapshot = Object.freeze({
+  nodes: Object.freeze([]),
+  edges: Object.freeze([]),
+  getUpstreamNodes: () => Object.freeze([]),
 });

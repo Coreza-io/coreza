@@ -17,11 +17,6 @@ type UpstreamIndex = {
   incomingByTarget: Map<Id, Id[]>; // targetId -> [sourceId...]
 };
 
-// Module-level cache for upstream index to avoid rebuilding on every render
-let cachedEdges: readonly Edge[] | null = null;
-let cachedNodes: readonly Node[] | null = null;
-let cachedIndex: UpstreamIndex | null = null;
-
 /**
  * Build indexes once to avoid O(E) scans + O(N) lookups on every recursion.
  * Cost: O(N + E)
@@ -50,29 +45,15 @@ function buildUpstreamIndex(edges: readonly Edge[], nodes: readonly Node[]): Ups
 }
 
 /**
- * Get or build cached upstream index.
- * Only rebuilds if edges/nodes array reference changes.
- */
-function getOrBuildIndex(edges: readonly Edge[], nodes: readonly Node[]): UpstreamIndex {
-  // Only rebuild if arrays changed (reference equality)
-  if (edges === cachedEdges && nodes === cachedNodes && cachedIndex) {
-    return cachedIndex;
-  }
-
-  cachedEdges = edges;
-  cachedNodes = nodes;
-  cachedIndex = buildUpstreamIndex(edges, nodes);
-  return cachedIndex;
-}
-
-/**
  * Get all upstream (ancestor) nodes of the given node id.
  *
  * - Uses iterative DFS (no recursion depth risk)
  * - Cycle-safe
  * - O(N + E) traversal after indexing
  * - Deterministic order based on edge iteration order
- * - Caches index for performance when called repeatedly with same arrays
+ * Live editor consumers use the editor-scoped semantic graph index. This
+ * standalone helper intentionally owns no module-global cache so independent
+ * history views and tests cannot evict one another.
  */
 export function getAllUpstreamNodes(
   currentNodeId: string,
@@ -84,7 +65,7 @@ export function getAllUpstreamNodes(
       return [];
     }
 
-    const { nodeById, incomingByTarget } = getOrBuildIndex(edges, nodes);
+    const { nodeById, incomingByTarget } = buildUpstreamIndex(edges, nodes);
 
     const visited = new Set<Id>(); // visited node ids in traversal
     const result = new Map<Id, Node>(); // dedupe + stable insertion order

@@ -1,11 +1,14 @@
-import type { Node } from "@xyflow/react";
+interface InputNode {
+  id: string;
+  data: Record<string, unknown>;
+}
 
 const owns = (value: unknown, key: PropertyKey): value is Record<PropertyKey, unknown> =>
   typeof value === "object" && value !== null && Object.prototype.hasOwnProperty.call(value, key);
 
 export function resolvePreviousNodeId(
   selectedId: string | undefined,
-  previousNodes: readonly Node[],
+  previousNodes: readonly InputNode[],
   preferredDirectId?: string,
 ): string | undefined {
   const upstreamIds = new Set(previousNodes.map(({ id }) => id));
@@ -16,7 +19,7 @@ export function resolvePreviousNodeId(
 
 export function resolveLiveInputData(
   selectedId: string | undefined,
-  nodes: readonly Node[],
+  nodes: readonly InputNode[],
   getExecutionData: (nodeId: string) => unknown,
 ): unknown {
   if (!selectedId) return {};

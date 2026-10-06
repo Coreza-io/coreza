@@ -14,7 +14,7 @@ import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
-import { useOptionalCanonicalGraphSnapshot } from "@/contexts/StableNodeContext";
+import { useOptionalSemanticGraphSnapshot } from "@/contexts/StableNodeContext";
 import { resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
 
 type NodeExecutionLog = {
@@ -63,7 +63,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   allNodeExecutions,
 }) => {
   // History is intentionally isolated from the live canonical document.
-  const canonicalGraph = useOptionalCanonicalGraphSnapshot();
+  const canonicalGraph = useOptionalSemanticGraphSnapshot(!readOnly);
   const executionStoreVersion = useExecutionStoreVersion();
   const { timezone: userTimezone } = useUserPreferences();
 
@@ -75,9 +75,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
 
   // Upstream nodes with fresh data
   const previousNodes = useMemo(() => {
-    if (!nodeId || !nodes || !edges) return [];
-    return getAllUpstreamNodes(nodeId, edges, nodes);
-  }, [nodeId, nodes, edges]);
+    if (!nodeId) return [];
+    return readOnly
+      ? getAllUpstreamNodes(nodeId, initialEdges, initialNodes)
+      : canonicalGraph?.getUpstreamNodes(nodeId) ?? [];
+  }, [canonicalGraph, initialEdges, initialNodes, nodeId, readOnly]);
 
   // Prefer a direct 'done' edge source when connected (Loop aggregated output)
   const preferredPrevId = useMemo(() => {

@@ -421,7 +421,7 @@ const WorkflowEditorContent = () => {
   const [edges, setEdges] = useEdgesState(
     isNewWorkflow ? initialEdges : [],
   );
-  useCanonicalGraphSync(nodes, edges);
+  useCanonicalGraphSync(nodes, edges, workflowSessionId);
   const rf = useReactFlow();
   const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[]; clusters: NodeCluster[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });

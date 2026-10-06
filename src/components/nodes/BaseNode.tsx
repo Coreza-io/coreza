@@ -17,10 +17,8 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { useNodeId, useReactFlow } from "@xyflow/react";
-import type { Node } from "@xyflow/react";
 import { useParams } from "react-router-dom";
-import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
-import { useCanonicalGraphSnapshot, useStableNodes } from "@/contexts/StableNodeContext";
+import { useSemanticGraphSnapshot, useStableNodes } from "@/contexts/StableNodeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
@@ -56,6 +54,7 @@ import {
 import { ExecutionControl } from "@/components/workflow/ExecutionIconButton";
 import { resolveManualExecution } from "@/nodes/manualExecution";
 import { getEditorExecutionTarget, subscribeEditorExecution } from "@/services/editorNodeExecution";
+import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 
 interface BaseNodeProps {
   data: any;
@@ -74,7 +73,7 @@ export interface BaseNodeRenderProps {
   loadingSelect: Record<string, boolean>;
   selectOptions: Record<string, any[]>;
   showAuth: boolean;
-  previousNodes: Node[];
+  previousNodes: readonly SemanticNode[];
   selectedPrevNodeId: string;
   selectedInputData: any;
   incomingEdgeCount: number;
@@ -155,7 +154,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 }) => {
   const nodeId = useNodeId();
   const { updateNodeData } = useStableNodes();
-  const canonicalGraph = useCanonicalGraphSnapshot();
+  const canonicalGraph = useSemanticGraphSnapshot();
   const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
   const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
@@ -188,7 +187,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       return data.displayName;
     }
     return getDisplayName(
-      { id: nodeId!, data } as Node<any>,
+      { id: nodeId!, data },
       canonicalGraph.nodes,
     );
   }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
@@ -196,12 +195,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // Canonical topology changes include same-count reconnects and workflow replacement.
   const previousNodes = useMemo(() => {
     if (!nodeId) return [];
-    return getAllUpstreamNodes(
-      nodeId,
-      canonicalGraph.edges,
-      canonicalGraph.nodes,
-    );
-  }, [canonicalGraph.edges, canonicalGraph.nodes, nodeId]);
+    return canonicalGraph.getUpstreamNodes(nodeId);
+  }, [canonicalGraph, nodeId]);
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;

@@ -1,7 +1,10 @@
-import type { Node } from "@xyflow/react";
+interface DisplayNode {
+  id: string;
+  data: Record<string, unknown> & { definition?: { name?: unknown } };
+}
 
 // Generate de-duplicated labels: "Alpaca", "Alpaca1", "Alpaca2", …
-export const getDisplayName = (node: Node<any>, allNodes: readonly Node<any>[]) => {
+export const getDisplayName = (node: DisplayNode, allNodes: readonly DisplayNode[]) => {
   const baseName = node.data.definition?.name;
   const sameType = allNodes.filter(
     (n) => n && n.data && n.data.definition?.name === baseName

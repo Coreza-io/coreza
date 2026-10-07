@@ -8,18 +8,25 @@ This remains frontend-only. No backend, API, database, migration, or saved-workf
 
 ## Verified current state
 
-The latest uploaded review is directionally correct, but its reviewed commit and this preview checkout differ:
+Implementation audit (checkout `05ad804`, 7 Oct 2026): **not implemented**, except the prerequisite.
 
-- The reviewed commit `7a2e3c…` contains the full-versus-semantic canonical graph split, semantic `BaseNode`/live `InputPanel` subscriptions, store-owned ancestor indexing, session invalidation, tests, and a publication benchmark.
-- The current checkout `3f4e768…` does **not** contain those semantic changes: it still has one full canonical subscription, and every mounted `BaseNode`/live `InputPanel` receives geometry-only publications.
-- The current checkout **does** contain cluster insertion intent and `resolveInsertionPosition`; `onMouseMove` currently invokes it during drags without a drag guard.
-- `EdgeManager` has three whole-node subscriptions: `PlugEdge`, `PlugConnectionLine`, and `InteractiveEdge`. Each relevant rendered edge reacts to unrelated node-array changes; routing also scans the array to find two endpoints.
-- `projectClusterGraph` reruns for node movement and recreates collapsed runtime hosts, compact cards/data, rewritten boundary edges, maps, and sets even when equivalent outputs did not change.
-- The installed React Flow exposes `useStore` and `nodeLookup`. Its own edge wrapper already supplies live handle coordinates, while custom smart routing additionally needs endpoint node bounds/top-left positions and source visual category.
-- Current insertion, projection, and runtime-host tests exist, but no edge-selector render test or browser drag-performance fixture exists.
-- The preview build is healthy before implementation.
+| Plan item | Status | Evidence |
+| --- | --- | --- |
+| Semantic graph prerequisite (step 2) | Done (merged via `7a2e3cb`) | `subscribeSemantic`, `useSemanticGraphSnapshot`, `useOptionalSemanticGraphSnapshot`; `BaseNode` uses the semantic hook |
+| Browser baseline (step 1) | Not done | No drag/performance browser fixture exists |
+| Narrow edge subscriptions (step 3) | Not done | `EdgeManager` still calls `useNodes()` at ~566, ~831, ~930; routing still uses `nodes.find` at ~63, ~275–276; no `useStore` selector |
+| Insertion guard during drags (step 4) | Not done | `onMouseMove` (~1603–1632) still calls `screenToFlowPosition` and `resolveInsertionPosition` on every move with no drag check; the guard exists only in `createNode` (~1645) |
+| Drag lifecycle refs | Partial | `activeNodeDragRef` and `clusterMoveRef` exist; no synchronous connection-drag ref, no `onSelectionDragStart/Stop` handling |
+| Projection identity reuse (step 5) | Not done | `projection.ts` has no reconciliation; no previous-projection ref in the editor |
+| Tests (step 6) | Not done | No edge-selector, insertion-guard, or projection-identity tests |
 
-Therefore, implementation must first bring the reviewed semantic optimization onto this branch, then apply the three remaining focused fixes. Do not reimplement an incompatible alternative or omit the prerequisite.
+Other confirmed facts still hold:
+
+- `EdgeManager`'s three whole-node subscriptions re-render each edge for unrelated node changes.
+- `projectClusterGraph` reruns on node movement and recreates hidden hosts, compact cards, boundary edges, maps, and sets.
+- React Flow exposes `useStore` and `nodeLookup`; its edge wrapper already supplies handle coordinates.
+
+Therefore, implementation proceeds directly with steps 1 and 3–7. Step 2 is retained only as a regression gate.
 
 ## Architecture and correctness constraints
 
@@ -46,9 +53,9 @@ Use small/medium/large sizes representative of roughly 20/100/300 nodes. Fix IDs
 
 Record three warmed runs in a production build and use development profiling separately. Capture frame intervals, long tasks, scripting/layout/paint, React commits, edge renders/path calculations, semantic/full publications, projection calls/allocations, insertion-resolution calls, and mount/unmount/action-listener counts. These establish causality; no FPS claim is made before this trace.
 
-## 2. Port and verify the semantic graph prerequisite
+## 2. Semantic graph prerequisite (already merged — verify only)
 
-Apply the already-reviewed semantic graph implementation from `7a2e3c…` rather than redesigning it:
+This is now in the checkout. Do not reimplement it; run its tests as regression gates. The behavior it must keep:
 
 - add full and semantic snapshots/listeners to the canonical graph store;
 - preserve current full snapshots for imperative and geometry consumers;

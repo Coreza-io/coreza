@@ -109,6 +109,7 @@ import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
 import { deleteNodesFromDocument, insertNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
+import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
 import {
   ON_BAR_NODE_TYPE,
   createPaletteNodeBatch,
@@ -694,17 +695,25 @@ const WorkflowEditorContent = () => {
       : loading ? "Wait for the workflow to finish loading." : undefined,
   });
 
+  // Last committed projection (written after commit, never during render) for identity reuse.
+  const committedProjectionRef = useRef<{ sessionId: string; projection: ClusterProjection } | null>(null);
   const clusterProjection = useMemo(
-    () => projectClusterGraph(nodes, edges, clusters, clusterViewState, openCluster, {
+    () => reconcileClusterProjection(
+      committedProjectionRef.current?.sessionId === workflowSessionId ? committedProjectionRef.current.projection : null,
+      projectClusterGraph(nodes, edges, clusters, clusterViewState, openCluster, {
       focusedClusterId,
       draggable: CLUSTER_COLLAPSE_ENABLED && !dragSource.nodeId,
       selectedClusterIds,
       getRunState: clusterExecution.getState,
       onExecute: clusterExecution.executeCluster,
       onCancel: clusterExecution.cancelRun,
-    }),
-    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, focusedClusterId, nodes, openCluster, selectedClusterIds],
+      }),
+    ),
+    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, focusedClusterId, nodes, openCluster, selectedClusterIds, workflowSessionId],
   );
+  useLayoutEffect(() => {
+    committedProjectionRef.current = { sessionId: workflowSessionId, projection: clusterProjection };
+  }, [clusterProjection, workflowSessionId]);
   const actionableClusterIds = useMemo(() => new Set(
     [...clusterProjection.displayNodeToCluster.entries()]
       .filter(([displayId]) => !clusterProjection.hiddenRuntimeHostIds.has(displayId))

@@ -14,6 +14,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useLayoutEffect,
   type ComponentType,
 } from "react";
 import { createPortal } from "react-dom";
@@ -109,6 +110,7 @@ import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
 import { deleteNodesFromDocument, insertNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
+import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
 import {
   ON_BAR_NODE_TYPE,
   createPaletteNodeBatch,
@@ -130,7 +132,7 @@ import {
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
-import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
+import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph, type ClusterProjection } from "@/domain/clusters/projection";
 import {
   closeFocusedCluster,
   focusedClusterToViewState,
@@ -432,7 +434,11 @@ const WorkflowEditorContent = () => {
     handleId: null,
     handleType: null,
   });
+  // Synchronous drag flags: read by pointer tracking before React state commits.
+  const connectionDragRef = useRef(false);
+  const selectionDragRef = useRef(false);
   const onConnectStart = useCallback((_: any, params: any) => {
+    connectionDragRef.current = true;
     setDragSource({
       nodeId: params.nodeId ?? null,
       handleId: params.handleId ?? null,
@@ -440,6 +446,7 @@ const WorkflowEditorContent = () => {
     });
   }, []);
   const onConnectEnd = useCallback(() => {
+    connectionDragRef.current = false;
     setDragSource({ nodeId: null, handleId: null, handleType: null });
   }, []);
   const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] });
@@ -477,6 +484,9 @@ const WorkflowEditorContent = () => {
     focusFitRef.current = null;
     setSelectedClusterIds(new Set());
     clusterMoveRef.current = null;
+    activeNodeDragRef.current = null;
+    connectionDragRef.current = false;
+    selectionDragRef.current = false;
     insertionIntentRef.current = null;
   }, [workflowId]);
 
@@ -490,6 +500,9 @@ const WorkflowEditorContent = () => {
 
   useEffect(() => () => {
     clusterMoveRef.current = null;
+    activeNodeDragRef.current = null;
+    connectionDragRef.current = false;
+    selectionDragRef.current = false;
   }, []);
 
   const openCluster = useCallback((clusterId: string, availableClusters: readonly NodeCluster[] = clusters) => {
@@ -683,17 +696,25 @@ const WorkflowEditorContent = () => {
       : loading ? "Wait for the workflow to finish loading." : undefined,
   });
 
+  // Last committed projection (written after commit, never during render) for identity reuse.
+  const committedProjectionRef = useRef<{ sessionId: string; projection: ClusterProjection } | null>(null);
   const clusterProjection = useMemo(
-    () => projectClusterGraph(nodes, edges, clusters, clusterViewState, openCluster, {
+    () => reconcileClusterProjection(
+      committedProjectionRef.current?.sessionId === workflowSessionId ? committedProjectionRef.current.projection : null,
+      projectClusterGraph(nodes, edges, clusters, clusterViewState, openCluster, {
       focusedClusterId,
       draggable: CLUSTER_COLLAPSE_ENABLED && !dragSource.nodeId,
       selectedClusterIds,
       getRunState: clusterExecution.getState,
       onExecute: clusterExecution.executeCluster,
       onCancel: clusterExecution.cancelRun,
-    }),
-    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, focusedClusterId, nodes, openCluster, selectedClusterIds],
+      }),
+    ),
+    [clusterExecution.cancelRun, clusterExecution.executeCluster, clusterExecution.getState, clusterViewState, clusters, dragSource.nodeId, edges, focusedClusterId, nodes, openCluster, selectedClusterIds, workflowSessionId],
   );
+  useLayoutEffect(() => {
+    committedProjectionRef.current = { sessionId: workflowSessionId, projection: clusterProjection };
+  }, [clusterProjection, workflowSessionId]);
   const actionableClusterIds = useMemo(() => new Set(
     [...clusterProjection.displayNodeToCluster.entries()]
       .filter(([displayId]) => !clusterProjection.hiddenRuntimeHostIds.has(displayId))
@@ -1004,6 +1025,13 @@ const WorkflowEditorContent = () => {
     activeNodeDragRef.current = null;
     finishClusterMove(false);
   }, [finishClusterMove]);
+
+  const onSelectionDragStart = useCallback(() => {
+    selectionDragRef.current = true;
+  }, []);
+  const onSelectionDragStop = useCallback(() => {
+    selectionDragRef.current = false;
+  }, []);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -1607,6 +1635,13 @@ const WorkflowEditorContent = () => {
     };
     if ((event.target as HTMLElement).closest("button, input, textarea, [role='menu'], [data-cluster-control]")) return;
     if (insertionIntentRef.current?.source === "member-selection") return;
+    // Advisory hit-testing is skipped while any canvas drag is active; click/drop re-resolves.
+    if (
+      clusterMoveRef.current
+      || activeNodeDragRef.current
+      || selectionDragRef.current
+      || connectionDragRef.current
+    ) return;
     const position = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
     const currentNodes = nodesRef.current;
     const currentClusters = clustersRef.current;
@@ -2552,6 +2587,8 @@ const WorkflowEditorContent = () => {
                 onNodeDoubleClick={onNodeDoubleClick}
                 onNodeDragStart={onCompactDragStart}
                 onNodeDragStop={onCompactDragStop}
+                onSelectionDragStart={onSelectionDragStart}
+                onSelectionDragStop={onSelectionDragStop}
                 onPaneClick={onPaneClick}
                 onNodeContextMenu={onNodeContextMenu}
                 onSelectionContextMenu={onSelectionContextMenu}

@@ -15,9 +15,10 @@ import {
   getSmoothStepPath,
   getBezierPath,
   MarkerType,
-  useNodes,
+  useStore,
   Position,
 } from "@xyflow/react";
+import type { ReactFlowState } from "@xyflow/react";
 import { Plus, Trash2 } from "lucide-react";
 import { NODE_VISUAL_THEMES, DEFAULT_NODE_VISUAL_THEME } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
@@ -59,11 +60,60 @@ const buildControls = (data?: any): EdgeControl[] => {
 };
 
 
-const getSourceNodeTheme = (nodeId: string, nodes: ReturnType<typeof useNodes>) => {
-  const sourceNode = nodes.find((node) => node.id === nodeId);
-  const sourceData = sourceNode?.data as { definition?: unknown } | undefined;
-  const sourceVisualCategory = resolveNodeVisualCategory(sourceData?.definition);
-  return NODE_VISUAL_THEMES[sourceVisualCategory] ?? DEFAULT_NODE_VISUAL_THEME;
+/** Narrow subscription: only the source node's visual category. */
+const useSourceNodeTheme = (nodeId: string | undefined) => {
+  const category = useStore(
+    (state: ReactFlowState) => {
+      if (!nodeId) return null;
+      const data = state.nodeLookup.get(nodeId)?.data as { definition?: unknown } | undefined;
+      return resolveNodeVisualCategory(data?.definition);
+    },
+  );
+  if (category === null) return DEFAULT_NODE_VISUAL_THEME;
+  return NODE_VISUAL_THEMES[category] ?? DEFAULT_NODE_VISUAL_THEME;
+};
+
+interface EndpointBounds {
+  id: string;
+  position: { x: number; y: number };
+  measured?: { width?: number; height?: number };
+  width?: number;
+  height?: number;
+}
+
+type EndpointPair = readonly [EndpointBounds | null, EndpointBounds | null];
+
+const toBounds = (state: ReactFlowState, id: string): EndpointBounds | null => {
+  const node = state.nodeLookup.get(id);
+  if (!node) return null;
+  return {
+    id,
+    position: { x: node.position.x, y: node.position.y },
+    measured: { width: node.measured?.width, height: node.measured?.height },
+    width: node.width,
+    height: node.height,
+  };
+};
+
+const sameBounds = (a: EndpointBounds | null, b: EndpointBounds | null): boolean => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id
+    && a.position.x === b.position.x && a.position.y === b.position.y
+    && a.measured?.width === b.measured?.width && a.measured?.height === b.measured?.height
+    && a.width === b.width && a.height === b.height;
+};
+
+/** Narrow subscription: only source/target routing geometry, O(1) lookup. */
+const useEndpointBounds = (source: string, target: string): EndpointBounds[] => {
+  const pair = useStore(
+    (state: ReactFlowState): EndpointPair => [toBounds(state, source), toBounds(state, target)],
+    (a: EndpointPair, b: EndpointPair) => sameBounds(a[0], b[0]) && sameBounds(a[1], b[1]),
+  );
+  return React.useMemo(
+    () => pair.filter((bounds): bounds is EndpointBounds => bounds !== null),
+    [pair],
+  );
 };
 
 const normalizeHex = (hex: string): string | null => {
@@ -563,11 +613,11 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   const [hovered, setHovered] = useState(false);
   const computedControls = controls.length > 0 ? controls : buildControls(data);
   const isSelfLoop = source === target;
-  const nodes = useNodes();
+  const sourceTheme = useSourceNodeTheme(source);
+  const nodes = useEndpointBounds(source, target);
   const isDarkMode = useResolvedTheme() === "dark";
 
   if (isSelfLoop) {
-    const sourceTheme = getSourceNodeTheme(source, nodes);
     return (
       <InteractiveEdge
         id={id}
@@ -594,7 +644,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   delete customStyle.stroke;
   delete customStyle.strokeWidth;
 
-  const sourceTheme = getSourceNodeTheme(source, nodes);
   const categoryCordColor = sourceTheme.edgeColor ?? "#22d3ee";
   const defaultCordColor = isDarkMode ? categoryCordColor : "#9ca3af";
   const cordColor =
@@ -828,11 +877,9 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   fromHandle,
 }) => {
   const style: React.CSSProperties = { ...(connectionLineStyle || {}) };
-  const nodes = useNodes();
   const isDarkMode = useResolvedTheme() === "dark";
   const sourceNodeId = fromHandle?.nodeId;
-  const sourceTheme =
-    sourceNodeId ? getSourceNodeTheme(sourceNodeId, nodes) : DEFAULT_NODE_VISUAL_THEME;
+  const sourceTheme = useSourceNodeTheme(sourceNodeId);
 
   const baseStroke =
     typeof style.stroke === "string"
@@ -927,7 +974,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   controls = [],
   selfLoopConfig,
 }) => {
-  const nodes = useNodes();
+  const nodes = useEndpointBounds(source, target);
   // Detect self-loop (when source connects to target on same node)
   const isSelfLoop = source === target;
 

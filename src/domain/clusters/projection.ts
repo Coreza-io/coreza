@@ -54,6 +54,8 @@ export interface ClusterProjectionOptions {
   onCancel?: (clusterId: string) => void;
 }
 
+const NOOP_CLUSTER_ACTION = (_clusterId: string): void => undefined;
+
 const asRuntimeHost = (node: Node): Node => ({
   ...node,
   className: [node.className, CLUSTER_RUNTIME_HOST_CLASS].filter(Boolean).join(" "),
@@ -225,8 +227,8 @@ export function projectClusterGraph(
         incomingHandleIds: incomingHandles.get(cluster.id) ?? [],
         outgoingHandleIds: outgoingHandles.get(cluster.id) ?? [],
         onExpand,
-        onExecute: options.onExecute ?? (() => undefined),
-        onCancel: options.onCancel ?? (() => undefined),
+        onExecute: options.onExecute ?? NOOP_CLUSTER_ACTION,
+        onCancel: options.onCancel ?? NOOP_CLUSTER_ACTION,
       } satisfies CompactClusterNodeData,
     };
     displayNodes.push(compactNode);

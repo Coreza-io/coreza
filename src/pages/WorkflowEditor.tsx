@@ -108,7 +108,7 @@ import { cn } from "@/lib/utils";
 import type { NodeCluster } from "@/domain/clusters/types";
 import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
-import { deleteNodesFromDocument, insertNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
+import { deleteNodesFromDocument, insertNodesInDocument, pasteNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
 import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
 import {
@@ -685,7 +685,14 @@ const WorkflowEditorContent = () => {
     }
   }, [setNodes]);
 
+  const writeLoopFeedback = useCallback((loopId: string, edgeId: string, value: unknown) => {
+    const data = executionStore.getNodeData(loopId) || {};
+    executionStore.setNodeData(loopId, { ...data, _edgeBuf: { ...(data._edgeBuf || {}), [edgeId]: value } });
+    notifyExecutionStoreUpdate();
+  }, [executionStore, notifyExecutionStoreUpdate]);
+
   const clusterExecution = useClusterExecution({
+    writeLoopFeedback,
     workflowSessionId,
     nodes,
     edges,
@@ -2209,7 +2216,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "v") {
-        if (focusedClusterId || !clipboardRef.current) {
+        if (!clipboardRef.current) {
           return;
         }
 
@@ -2218,7 +2225,7 @@ const WorkflowEditorContent = () => {
           return;
         }
 
-        saveHistorySnapshot();
+        const current = { nodes: nodesRef.current, edges: canonicalEdgesRef.current, clusters: clustersRef.current };
 
         const flowPosition = rf.screenToFlowPosition({
           x: mousePosRef.current.x,
@@ -2233,16 +2240,16 @@ const WorkflowEditorContent = () => {
         );
         const nodeIdMap: Record<string, string> = {};
         const timestamp = Date.now();
-        const existingNodeIds = new Set(nodes.map((node) => node.id));
-        const existingEdgeIds = new Set(edges.map((edge) => edge.id));
+        const existingNodeIds = new Set(current.nodes.map((node) => node.id));
+        const existingEdgeIds = new Set(current.edges.map((edge) => edge.id));
         const existingDisplayNames = new Set(
-          nodes.map((n) => n.data?.displayName || n.id),
+          current.nodes.map((n) => n.data?.displayName || n.id),
         );
 
         const newNodes = copiedNodes.map((node) => {
           const nodeType = node.type || "default";
 
-          const existingOfType = nodes.filter(
+          const existingOfType = current.nodes.filter(
             (n) => n.type === nodeType,
           ).length;
           const alreadyAddedOfType = Object.values(nodeIdMap).filter(
@@ -2329,21 +2336,21 @@ const WorkflowEditorContent = () => {
           })
           .filter((edge): edge is Edge => Boolean(edge));
 
-        setNodes((nds) => {
-          const deselected = nds.map((node) => ({ ...node, selected: false }));
-          return [...deselected, ...newNodes];
+        const result = pasteNodesInDocument(current, {
+          nodes: newNodes, edges: newEdges, idMap: nodeIdMap, copiedClusters,
+          targetClusterId: focusedClusterId, expandedClusterId: focusedClusterId,
         });
-
-        setEdges((eds) => [...eds, ...newEdges]);
-        const existingTitles = new Set(clusters.map(({ title }) => title.toLocaleLowerCase()));
-        const pastedClusters = copiedClusters.map((cluster) => {
-          let title = cluster.title;
-          let suffix = 2;
-          while (existingTitles.has(title.toLocaleLowerCase())) title = `${cluster.title} ${suffix++}`;
-          existingTitles.add(title.toLocaleLowerCase());
-          return { ...cluster, id: crypto.randomUUID(), title, memberNodeIds: cluster.memberNodeIds.map((id) => nodeIdMap[id]) };
-        });
-        setClusters((current) => [...current, ...pastedClusters]);
+        if (result.ok === false) {
+          toast({ title: "Cannot paste selection", description: result.message, variant: "destructive" });
+          return;
+        }
+        historyRef.current.past.push({ type: "document", document: {
+          nodes: cloneNodes(current.nodes), edges: cloneEdges(current.edges),
+          clusters: current.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })),
+        } });
+        historyRef.current.future = [];
+        restoreDocument(result.document);
+        event.preventDefault();
 
         toast({ description: "Selection pasted" });
         return;
@@ -2386,6 +2393,11 @@ const WorkflowEditorContent = () => {
     dissolveClustersForNodes,
     restoreDocument,
     resolveVisibleCanonicalSelection,
+    focusedClusterId,
+    nodesRef,
+    canonicalEdgesRef,
+    clustersRef,
+    rf,
     executionStore,
     notifyExecutionStoreUpdate,
     workflowSessionId,

@@ -219,3 +219,16 @@ describe('cluster validation', () => {
     expect(validateClusters(nodes, arbitraryCycle, [cluster(['loop', 'body'])]).valid).toBe(false);
   });
 });
+
+import fixtures from '../../coreza-backend/src/workflow/clusterValidationFixtures';
+import { validateNodeClusterDocument } from '../../coreza-backend/src/workflow/validateNodeClusters';
+describe('editor/server validation parity', () => {
+  it.each(fixtures)('$name', (fixture) => {
+    const editorNodes: Node[] = fixture.nodes.map(({ id, ...definition }) => ({ id, position: { x: 0, y: 0 }, data: { definition } }));
+    const editor = validateClusters(editorNodes, fixture.edges, fixture.node_clusters).valid;
+    let server = true;
+    try { validateNodeClusterDocument(fixture); } catch { server = false; }
+    expect(editor).toBe(fixture.valid);
+    expect(server).toBe(editor);
+  });
+});

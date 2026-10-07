@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import { deleteNodesFromDocument, insertNodesInDocument, renameNodeInDocument } from "../../src/domain/clusters/documentCommands";
+import { deleteNodesFromDocument, insertNodesInDocument, pasteNodesInDocument, renameNodeInDocument } from "../../src/domain/clusters/documentCommands";
 import type { WorkflowDocument } from "../../src/domain/clusters/documentCommands";
 
 const node = (id: string): Node => ({
@@ -126,5 +126,45 @@ describe("cluster-aware document commands", () => {
     expect(result.document.clusters).toHaveLength(1);
     expect(result.document.clusters[0].memberNodeIds).toEqual(["b", "missing"]);
     expect(result.dissolvedClusters).toEqual([]);
+  });
+});
+
+describe('clipboard document transactions', () => {
+  const batch = () => {
+    const first = node('a2');
+    first.data.values = { internal: "$('b').json", external: "$node['outside'].json" };
+    return { nodes: [first, node('b2')], edges: [{ id: 'a2b2', source: 'a2', target: 'b2' }], idMap: { a: 'a2', b: 'b2' }, copiedClusters: document().clusters };
+  };
+  it('pastes into the open cluster, selects copies, remaps references and preserves originals', () => {
+    const original = document();
+    const before = structuredClone(original);
+    const result = pasteNodesInDocument(original, { ...batch(), targetClusterId: original.clusters[0].id, expandedClusterId: original.clusters[0].id });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.clusters).toHaveLength(1);
+    expect(result.document.clusters[0].memberNodeIds).toEqual(['a', 'b', 'a2', 'b2']);
+    expect(result.document.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(['a2', 'b2']);
+    expect(result.document.nodes[2].data.values).toEqual({ internal: "$('b2').json", external: "$node['outside'].json" });
+    expect(original).toEqual(before);
+  });
+  it('recreates whole clusters only in the overview', () => {
+    const result = pasteNodesInDocument(document(), batch());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.clusters[1]).toMatchObject({ title: 'Cluster 1 2', memberNodeIds: ['a2', 'b2'] });
+    expect(result.document.clusters[1].id).not.toBe(result.document.clusters[0].id);
+  });
+  it('rejects a paste without mutating the document', () => {
+    const original = document();
+    const before = structuredClone(original);
+    expect(pasteNodesInDocument(original, { ...batch(), targetClusterId: original.clusters[0].id })).toMatchObject({ ok: false });
+    expect(original).toEqual(before);
+  });
+  it('remaps selectors simultaneously when new IDs match other copied IDs', () => {
+    const request = batch();
+    request.nodes[0].data.values = { value: "$('a').json + $('b').json" };
+    const result = pasteNodesInDocument({ nodes: [], edges: [], clusters: [] }, { ...request, idMap: { a: 'b', b: 'c' }, copiedClusters: [] });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.document.nodes[0].data.values).toEqual({ value: "$('b').json + $('c').json" });
   });
 });

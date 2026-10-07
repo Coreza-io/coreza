@@ -52,3 +52,17 @@ describe('validateNodeClusterDocument', () => {
     })).toThrow('entry-not-root');
   });
 });
+
+it('accepts disconnected persisted members', () => {
+  expect(validateNodeClusterDocument({ nodes, edges: [], node_clusters: [{ id, title: 'Group', memberNodeIds: ['a', 'b'] }] })).toHaveLength(1);
+});
+
+it('requires connectivity only when explicitly requested', () => {
+  expect(() => validateNodeClusterDocument({ nodes, edges: [], node_clusters: [{ id, title: 'Group', memberNodeIds: ['a', 'b'] }] }, { requireConnectedMembers: true })).toThrow('disconnected-members');
+});
+
+import fixtures from './clusterValidationFixtures';
+it.each(fixtures)('shared topology: $name', (fixture) => {
+  if (fixture.valid) expect(validateNodeClusterDocument(fixture)).toHaveLength(fixture.node_clusters.length);
+  else expect(() => validateNodeClusterDocument(fixture)).toThrow();
+});

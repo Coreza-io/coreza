@@ -68,7 +68,7 @@ export function getPersistedEdgeKind(edge: PersistedEdge, source: PersistedNode,
 }
 
 /** Validates and normalizes the complete candidate passed to the atomic writer. */
-export function validateNodeClusterDocument(document: ClusterDocument): PersistedNodeCluster[] {
+export function validateNodeClusterDocument(document: ClusterDocument, options: { requireConnectedMembers?: boolean } = {}): PersistedNodeCluster[] {
   const nodeById = new Map<string, PersistedNode>();
   for (const node of document.nodes) {
     if (typeof node.id !== "string" || nodeById.has(node.id)) invalid("invalid-node-id");
@@ -104,7 +104,7 @@ export function validateNodeClusterDocument(document: ClusterDocument): Persiste
       members.add(nodeId);
       owners.add(nodeId);
     }
-    validateTopology(members, document.edges, nodeById);
+    validateTopology(members, document.edges, nodeById, options.requireConnectedMembers ?? false);
     return { id: cluster.id, title, ...(note ? { note } : {}), memberNodeIds: [...members].sort() };
   });
   return normalized;
@@ -114,6 +114,7 @@ function validateTopology(
   members: ReadonlySet<string>,
   edges: readonly PersistedEdge[],
   nodeById: ReadonlyMap<string, PersistedNode>,
+  requireConnectedMembers: boolean,
 ): void {
   const adjacency = new Map([...members].map((id) => [id, new Set<string>()]));
   const incoming = new Set<string>();
@@ -149,7 +150,7 @@ function validateTopology(
       if (!visited.has(next)) { visited.add(next); queue.push(next); }
     }
   }
-  if (visited.size !== members.size) invalid("disconnected-members");
+  if (requireConnectedMembers && visited.size !== members.size) invalid("disconnected-members");
   if (incoming.size > 1) invalid("multiple-entry-members");
   if (outgoing.size > 1) invalid("multiple-exit-members");
   const entry = incoming.size === 1 ? [...incoming][0] : undefined;

@@ -14,6 +14,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useLayoutEffect,
   type ComponentType,
 } from "react";
 import { createPortal } from "react-dom";

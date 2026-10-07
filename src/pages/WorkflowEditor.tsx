@@ -131,7 +131,7 @@ import {
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
-import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph } from "@/domain/clusters/projection";
+import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph, type ClusterProjection } from "@/domain/clusters/projection";
 import {
   closeFocusedCluster,
   focusedClusterToViewState,

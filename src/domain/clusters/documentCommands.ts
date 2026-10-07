@@ -76,6 +76,37 @@ export function insertNodesInDocument(
   return { ok: true, document: candidate };
 }
 
+/** Applies a clipboard batch and its metadata as one validated document. */
+export function pasteNodesInDocument(
+  current: WorkflowDocument,
+  request: InsertDocumentRequest & { idMap: Readonly<Record<string, string>>; copiedClusters: readonly NodeCluster[] },
+): InsertDocumentResult {
+  const tokens = Object.keys(request.idMap).map((id) => [id, crypto.randomUUID()] as const);
+  const nodes = request.nodes.map((node) => {
+    const data = { ...node.data };
+    for (const key of ["values", "fieldState"]) {
+      if (!(key in data)) continue;
+      let value = data[key];
+      for (const [id, token] of tokens) value = remapNodeReferences(value, id, token);
+      for (const [id, token] of tokens) value = remapNodeReferences(value, token, request.idMap[id]);
+      data[key] = value;
+    }
+    return { ...node, data };
+  });
+  const titles = new Set(current.clusters.map(({ title }) => title.toLocaleLowerCase()));
+  const clusters = request.targetClusterId ? [] : request.copiedClusters.map((cluster) => {
+    let title = cluster.title;
+    let suffix = 2;
+    while (titles.has(title.toLocaleLowerCase())) title = `${cluster.title} ${suffix++}`;
+    titles.add(title.toLocaleLowerCase());
+    return { ...cluster, id: crypto.randomUUID(), title, memberNodeIds: cluster.memberNodeIds.map((id) => request.idMap[id]) };
+  });
+  const result = insertNodesInDocument({ ...current, clusters: [...current.clusters, ...clusters] }, { ...request, nodes });
+  if (!result.ok) return result;
+  const pastedIds = new Set(nodes.map(({ id }) => id));
+  return { ok: true, document: { ...result.document, nodes: result.document.nodes.map((node) => ({ ...node, selected: pastedIds.has(node.id) })) } };
+}
+
 /**
  * Applies a graph mutation as a single document transaction. Invalid cluster
  * metadata is dissolved rather than allowing ordinary graph edits to strand it.

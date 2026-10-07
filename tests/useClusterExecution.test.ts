@@ -6,7 +6,7 @@ import {
   useClusterExecution,
   type ClusterRunState,
 } from "@/hooks/useClusterExecution";
-import { registerEditorNodeAction } from "@/services/editorNodeExecution";
+import { getEditorExecutionTarget, registerEditorNodeAction } from "@/services/editorNodeExecution";
 
 const node = (id: string, values: Record<string, unknown> = {}): Node => ({
   id,
@@ -87,13 +87,14 @@ describe("manual cluster execution", () => {
   });
 
   it.each([
-    ["loop", ["loop", "body"]],
+    ["loop", ["loop", "body", "loop", "body", "loop", "body", "loop", "done"]],
     ["done", ["loop", "done"]],
   ])("executes only the %s continuation of a manual Loop step", async (continuation, expectedCalls) => {
     const calls: string[] = [];
+    let iterations = 0;
     registerEditorNodeAction("session", "loop", async () => {
       calls.push("loop");
-      return { nodeId: "loop", status: "success", selectedContinuation: continuation };
+      return { nodeId: "loop", status: "success", selectedContinuation: continuation === "loop" && iterations++ < 3 ? "loop" : "done" };
     });
     for (const id of ["body", "done"]) {
       registerEditorNodeAction("session", id, async () => {
@@ -176,4 +177,110 @@ describe("manual cluster execution", () => {
     act(() => renderer.unmount());
     unregisterOne(); unregisterTwo(); unregisterThree();
   });
+});
+
+describe('complete Loop runs', () => {
+  const clusterId = '123e4567-e89b-42d3-a456-426614174000';
+  it.each(['success', 'pinned', 'failure', 'cancel', 'cap', 'session'] as const)('handles %s during iteration', async (mode) => {
+    const loop = node('loop', { inputArray: [1, 2, 3] });
+    loop.data.definition = { name: 'Loop', node_type: 'action', manualExecution: 'available', handles: [{ id: 'loop', type: 'source', connectionKind: 'main' }, { id: 'done', type: 'source', connectionKind: 'main' }] };
+    const branch = node('if');
+    branch.data.definition = { name: 'If', node_type: 'action', manualExecution: 'available', handles: [{ id: 'true', type: 'source', connectionKind: 'main' }, { id: 'false', type: 'source', connectionKind: 'main' }] };
+    const nodes = [node('upstream'), loop, branch, node('left'), node('right'), node('done'), node('after'), node('unwired')];
+    const edges: Edge[] = [
+      { id: 'up-loop', source: 'upstream', target: 'loop' },
+      { id: 'loop-if', source: 'loop', sourceHandle: 'loop', target: 'if' },
+      { id: 'if-left', source: 'if', sourceHandle: 'true', target: 'left' },
+      { id: 'if-right', source: 'if', sourceHandle: 'false', target: 'right' },
+      { id: 'left-loop', source: 'left', target: 'loop' },
+      { id: 'right-loop', source: 'right', target: 'loop' },
+      { id: 'loop-done', source: 'loop', sourceHandle: 'done', target: 'done' },
+      { id: 'done-after', source: 'done', target: 'after' },
+    ];
+    let hook!: ReturnType<typeof useClusterExecution>;
+    let renderer!: ReactTestRenderer;
+    let session = `loop-${mode}`;
+    const originalSession = session;
+    const calls: string[] = [];
+    const feedback: string[] = [];
+    let iteration = 0;
+    for (const n of nodes) registerEditorNodeAction(session, n.id, async () => {
+      calls.push(n.id);
+      if (n.id === 'loop') {
+        if (iteration > 0) expect(feedback).toHaveLength(iteration);
+        iteration++;
+        return { nodeId: n.id, status: 'success', selectedContinuation: iteration <= 3 || mode === 'cap' ? 'loop' : 'done' };
+      }
+      if (n.id === 'if') return { nodeId: n.id, status: 'success', selectedContinuation: iteration === 2 ? 'false' : 'true' };
+      if (n.id === 'right' && mode === 'failure') return { nodeId: n.id, status: 'failed', error: { message: 'body failed' } };
+      if (n.id === 'right' && mode === 'cancel') hook.cancelRun(clusterId);
+      if (n.id === 'right' && mode === 'session') {
+        session = 'replacement';
+        act(() => renderer.update(React.createElement(Harness)));
+      }
+      return { nodeId: n.id, status: mode === 'pinned' ? 'pinned' : 'success', output: `${n.id}-${iteration}` };
+    });
+    function Harness() {
+      hook = useClusterExecution({ workflowSessionId: session, nodes, edges,
+        clusters: [{ id: clusterId, title: 'Loop run', memberNodeIds: nodes.map(n => n.id) }],
+        writeLoopFeedback: (_loop, edge, value) => feedback.push(`${edge}:${value}`),
+      });
+      return null;
+    }
+    act(() => { renderer = create(React.createElement(Harness)); });
+    await act(async () => hook.executeCluster(clusterId));
+    if (mode === 'success' || mode === 'pinned') {
+      expect(calls).toEqual(['upstream', 'unwired', 'loop', 'if', 'left', 'loop', 'if', 'right', 'loop', 'if', 'left', 'loop', 'done', 'after']);
+      expect(feedback).toEqual(['left-loop:left-1', 'right-loop:right-2', 'left-loop:left-3']);
+      expect(hook.getState(clusterId)).toMatchObject({ phase: 'completed', completed: 8, eligible: 8 });
+    } else if (mode === 'session') {
+      expect(hook.getState(clusterId).phase).toBe('idle');
+      expect(calls.filter(id => id === 'loop')).toHaveLength(2);
+    } else {
+      expect(hook.getState(clusterId).phase).toBe(mode === 'cancel' ? 'cancelled' : 'failed');
+      expect(calls).not.toContain('done');
+      expect(calls.filter(id => id === 'loop')).toHaveLength(mode === 'cap' ? 4 : 2);
+      expect(hook.getState(clusterId).outcomes?.done.status).toBe(mode === 'cancel' ? 'cancelled' : 'dependency-blocked');
+    }
+    expect(getEditorExecutionTarget(originalSession)).toBe('');
+    act(() => renderer.unmount());
+  });
+});
+
+it.each([false, true])('executes sequential Loops or rejects overlap before execution (overlap=%s)', async (overlap) => {
+  const nodes = [node('l1', { inputArray: [1, 2] }), node('b1'), node('l2', { inputArray: [1, 2] }), node('b2'), node('end')];
+  for (const n of nodes.filter(n => n.id.startsWith('l'))) n.data.definition = { name: 'Loop', node_type: 'action', manualExecution: 'available', handles: [{ id: 'loop', type: 'source', connectionKind: 'main' }, { id: 'done', type: 'source', connectionKind: 'main' }] };
+  const edges: Edge[] = [
+    { id: 'l1-b1', source: 'l1', sourceHandle: 'loop', target: 'b1' },
+    { id: 'b1-l1', source: 'b1', target: 'l1' },
+    { id: 'l1-l2', source: 'l1', sourceHandle: 'done', target: 'l2' },
+    { id: 'l2-b2', source: 'l2', sourceHandle: 'loop', target: overlap ? 'b1' : 'b2' },
+    { id: 'b2-l2', source: overlap ? 'b1' : 'b2', target: 'l2' },
+    { id: 'l2-end', source: 'l2', sourceHandle: 'done', target: 'end' },
+  ];
+  const session = `sequential-${overlap}`;
+  const calls: string[] = [];
+  const counts: Record<string, number> = {};
+  for (const n of nodes) registerEditorNodeAction(session, n.id, async () => {
+    calls.push(n.id);
+    counts[n.id] = (counts[n.id] ?? 0) + 1;
+    return { nodeId: n.id, status: 'success', selectedContinuation: n.id.startsWith('l') ? counts[n.id] <= 2 ? 'loop' : 'done' : undefined };
+  });
+  let hook!: ReturnType<typeof useClusterExecution>;
+  const id = '123e4567-e89b-42d3-a456-426614174000';
+  function Harness() {
+    hook = useClusterExecution({ workflowSessionId: session, nodes, edges, clusters: [{ id, title: 'Sequential', memberNodeIds: nodes.map(n => n.id) }] });
+    return null;
+  }
+  let renderer!: ReactTestRenderer;
+  act(() => { renderer = create(React.createElement(Harness)); });
+  await act(async () => hook.executeCluster(id));
+  if (overlap) {
+    expect(calls).toEqual([]);
+    expect(hook.getState(id)).toMatchObject({ phase: 'failed' });
+  } else {
+    expect(calls).toEqual(['l1', 'b1', 'l1', 'b1', 'l1', 'l2', 'b2', 'l2', 'b2', 'l2', 'end']);
+    expect(hook.getState(id).phase).toBe('completed');
+  }
+  act(() => renderer.unmount());
 });

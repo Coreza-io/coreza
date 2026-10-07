@@ -12,6 +12,7 @@ import {
   getEditorExecutionTarget,
   subscribeEditorExecution,
 } from "@/services/editorNodeExecution";
+import { buildLoopRegions, findLoopFeedbackEdgeIds, reachableNodes, type LoopRegion } from "@/domain/clusters/loopRegions";
 import { resolveControlResult } from "@/utils/controlResult";
 import { resolveManualExecution } from "@/nodes/manualExecution";
 import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
@@ -32,6 +33,7 @@ interface Options {
   edges: readonly Edge[];
   clusters: readonly NodeCluster[];
   disabledReason?: string;
+  writeLoopFeedback?: (loopId: string, edgeId: string, value: unknown) => void;
 }
 
 export interface ClusterExecutionPlan {
@@ -41,39 +43,6 @@ export interface ClusterExecutionPlan {
 
 function mainEdges(edges: readonly Edge[], nodeById: ReadonlyMap<string, Node>): Edge[] {
   return edges.filter((edge) => getClusterEdgeKind(edge, nodeById.get(edge.source), nodeById.get(edge.target)) === "main");
-}
-
-function reachableNodes(starts: readonly string[], edges: readonly Edge[], allowed: ReadonlySet<string>): Set<string> {
-  const reached = new Set<string>();
-  const pending = [...starts];
-  while (pending.length > 0) {
-    const id = pending.shift();
-    if (!id || reached.has(id) || !allowed.has(id)) continue;
-    reached.add(id);
-    for (const edge of edges) if (edge.source === id) pending.push(edge.target);
-  }
-  return reached;
-}
-
-function findLoopFeedbackEdgeIds(
-  executableNodeIds: readonly string[],
-  edges: readonly Edge[],
-  nodeById: ReadonlyMap<string, Node>,
-  allowed: ReadonlySet<string>,
-): Set<string> {
-  const feedback = new Set<string>();
-  for (const loopId of executableNodeIds) {
-    const definition = nodeById.get(loopId)?.data?.definition as { name?: unknown } | undefined;
-    if (definition?.name !== "Loop") continue;
-    const bodyStarts = edges
-      .filter((edge) => edge.source === loopId && edge.sourceHandle === "loop")
-      .map((edge) => edge.target);
-    const bodyReach = reachableNodes(bodyStarts, edges, allowed);
-    for (const edge of edges) {
-      if (edge.target === loopId && bodyReach.has(edge.source)) feedback.add(edge.id);
-    }
-  }
-  return feedback;
 }
 
 const NODE_REFERENCE = /(?:\$node\s*\[\s*["']([^"']+)["']\s*\]|\$\(\s*["']([^"']+)["']\s*\))/g;
@@ -156,7 +125,7 @@ export function buildClusterExecutionPlan(
   return { memberNodeIds: members, executableNodeIds: ordered };
 }
 
-export function useClusterExecution({ workflowSessionId, nodes, edges, clusters, disabledReason }: Options) {
+export function useClusterExecution({ workflowSessionId, nodes, edges, clusters, disabledReason, writeLoopFeedback }: Options) {
   const activeTarget = useSyncExternalStore(
     (listener) => subscribeEditorExecution(workflowSessionId, listener),
     () => getEditorExecutionTarget(workflowSessionId),
@@ -189,6 +158,7 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
     const generation = getEditorExecutionGeneration();
     const sessionId = workflowSessionId;
     const outcomes: Record<string, NodeExecutionOutcome> = {};
+    let failRun: ((reason: string) => void) | undefined;
     try {
       const snapshot = graphRef.current;
       const cluster = snapshot.clusters.find(({ id }) => id === clusterId);
@@ -201,76 +171,110 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
       const allowedNodeIds = new Set(plan.memberNodeIds);
       const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]));
       const executionEdges = mainEdges(snapshot.edges, nodeById);
-      const feedbackEdgeIds = findLoopFeedbackEdgeIds(plan.executableNodeIds, executionEdges, nodeById, allowedNodeIds);
+      const regions = buildLoopRegions(plan, snapshot.edges, nodeById, allowedNodeIds);
+      const regionById = new Map(regions.map((region) => [region.loopNodeId, region]));
+      const ownedBody = new Set(regions.flatMap((region) => region.bodyNodeIds));
+      const feedbackEdgeIds = new Set(regions.flatMap((region) => region.feedbackEdgeIds));
       const controlReachabilityEdges = executionEdges.filter((edge) => !feedbackEdgeIds.has(edge.id));
       const skipped = new Set<string>();
-      update(clusterId, { phase: "running", completed: 0, eligible: plan.executableNodeIds.length, outcomes });
-      for (const [index, nodeId] of plan.executableNodeIds.entries()) {
-        if (controller.signal.aborted) {
-          for (const pendingId of plan.executableNodeIds.slice(index)) {
-            outcomes[pendingId] = { nodeId: pendingId, status: "cancelled", reason: "Execution was stopped before this node ran." };
-          }
-          update(clusterId, { phase: "cancelled", reason: "Execution stopped.", completed: index, eligible: plan.executableNodeIds.length, outcomes });
-          return;
+      const completed = new Set<string>();
+      const eligible = plan.executableNodeIds.length;
+      const isCurrent = () => sessionRef.current === sessionId && getEditorExecutionGeneration() === generation;
+      const finish = (phase: "cancelled" | "failed", reason: string, nodeId?: string) => {
+        for (const pendingId of plan.executableNodeIds) {
+          if (!outcomes[pendingId]) outcomes[pendingId] = { nodeId: pendingId,
+            status: phase === "cancelled" ? "cancelled" : "dependency-blocked", reason };
         }
-        if (sessionRef.current !== sessionId || getEditorExecutionGeneration() !== generation) return;
-        if (skipped.has(nodeId)) {
-          outcomes[nodeId] = { nodeId, status: "skipped", reason: "The node is not on the selected control path." };
-          continue;
+        update(clusterId, { phase, reason, currentNodeId: nodeId, completed: completed.size, eligible, outcomes: { ...outcomes } });
+      };
+      failRun = (reason) => finish(controller.signal.aborted ? "cancelled" : "failed", reason);
+      const runPlannedNode = async (nodeId: string, skippedSet: Set<string>): Promise<NodeExecutionOutcome | null> => {
+        if (!isCurrent()) return null;
+        if (controller.signal.aborted) { finish("cancelled", "Execution stopped.", nodeId); return null; }
+        if (skippedSet.has(nodeId)) {
+          const outcome: NodeExecutionOutcome = { nodeId, status: "skipped", reason: "The node is not on the selected control path." };
+          outcomes[nodeId] = outcome;
+          completed.add(nodeId);
+          return outcome;
         }
-        update(clusterId, { phase: "running", currentNodeId: nodeId, completed: index, eligible: plan.executableNodeIds.length, outcomes: { ...outcomes } });
+        update(clusterId, { phase: "running", currentNodeId: nodeId, completed: completed.size, eligible, outcomes: { ...outcomes } });
         const outcome = await actionSnapshot.execute(nodeId, {
-          signal: controller.signal,
-          allowedNodeIds,
-          executionGeneration: generation,
-          lockToken,
+          signal: controller.signal, allowedNodeIds, executionGeneration: generation, lockToken,
         });
-        if (sessionRef.current !== sessionId || getEditorExecutionGeneration() !== generation) return;
+        if (!isCurrent()) return null;
         outcomes[nodeId] = outcome;
-        if (outcome.status === "cancelled") {
-          for (const pendingId of plan.executableNodeIds.slice(index + 1)) {
-            outcomes[pendingId] = { nodeId: pendingId, status: "cancelled", reason: "Execution was stopped before this node ran." };
-          }
-          update(clusterId, { phase: "cancelled", reason: outcome.reason ?? outcome.error?.message, currentNodeId: nodeId, completed: index, eligible: plan.executableNodeIds.length, outcomes: { ...outcomes } });
-          return;
+        if (controller.signal.aborted || outcome.status === "cancelled") {
+          finish("cancelled", outcome.reason ?? "Execution stopped.", nodeId); return null;
         }
-        if (outcome.status === "failed") {
-          for (const pendingId of plan.executableNodeIds.slice(index + 1)) {
-            outcomes[pendingId] = { nodeId: pendingId, status: "dependency-blocked", reason: `Execution stopped after ${nodeId} failed.` };
-          }
-          update(clusterId, { phase: "failed", reason: outcome.error?.message ?? `Node ${nodeId} failed.`, currentNodeId: nodeId, completed: index, eligible: plan.executableNodeIds.length, outcomes: { ...outcomes } });
-          return;
+        if (outcome.status === "failed" || outcome.status === "dependency-blocked") {
+          finish("failed", outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} failed.`, nodeId); return null;
         }
+        completed.add(nodeId);
         const definition = nodeById.get(nodeId)?.data?.definition as { name?: unknown } | undefined;
         const outgoing = executionEdges.filter((edge) => edge.source === nodeId && allowedNodeIds.has(edge.target));
-        if (definition?.name === "If" || definition?.name === "Switch" || definition?.name === "Loop") {
-          const decoded = outcome.selectedContinuation
-            ? resolveControlResult(outcome.selectedContinuation, new Set(outgoing.map((edge) => edge.sourceHandle ?? "")))
-            : resolveControlResult(outcome.output, new Set(outgoing.map((edge) => edge.sourceHandle ?? "")));
+        if (definition?.name === "If" || definition?.name === "Switch") {
+          const decoded = resolveControlResult(outcome.selectedContinuation ?? outcome.output, new Set(outgoing.map((edge) => edge.sourceHandle ?? "")));
           if (decoded.kind === "malformed") throw new Error(`Node ${nodeId} returned an unsupported control result.`);
-          const selectedHandle = decoded.handle;
-          const selectedStarts = outgoing.filter((edge) => edge.sourceHandle === selectedHandle).map((edge) => edge.target);
-          const otherStarts = outgoing.filter((edge) => edge.sourceHandle !== selectedHandle).map((edge) => edge.target);
-          const selectedReach = reachableNodes(selectedStarts, controlReachabilityEdges, allowedNodeIds);
-          for (const candidate of reachableNodes(otherStarts, controlReachabilityEdges, allowedNodeIds)) {
-            if (!selectedReach.has(candidate)) skipped.add(candidate);
+          const selectedReach = reachableNodes(outgoing.filter((edge) => edge.sourceHandle === decoded.handle).map((edge) => edge.target), controlReachabilityEdges, allowedNodeIds);
+          for (const candidate of reachableNodes(outgoing.filter((edge) => edge.sourceHandle !== decoded.handle).map((edge) => edge.target), controlReachabilityEdges, allowedNodeIds)) {
+            if (!selectedReach.has(candidate)) skippedSet.add(candidate);
           }
         } else if (outcome.status === "listener-started") {
-          for (const candidate of reachableNodes(outgoing.map((edge) => edge.target), controlReachabilityEdges, allowedNodeIds)) {
-            skipped.add(candidate);
+          for (const candidate of reachableNodes(outgoing.map((edge) => edge.target), controlReachabilityEdges, allowedNodeIds)) skippedSet.add(candidate);
+        }
+        return outcome;
+      };
+      const runLoopRegion = async (region: LoopRegion): Promise<boolean> => {
+        // Literal input gives a tighter bound; expression inputs are resolved by the node action.
+        const values = nodeById.get(region.loopNodeId)?.data.values as Record<string, unknown> | undefined;
+        let items: unknown = values?.inputArray;
+        if (typeof items === "string") { try { items = JSON.parse(items); } catch { /* expression input */ } }
+        const cap = Array.isArray(items) ? items.length + 1 : 10_000;
+        for (let calls = 0; calls < cap; calls++) {
+          const outcome = await runPlannedNode(region.loopNodeId, skipped);
+          if (!outcome) return false;
+          if (outcome.status === "skipped") return true;
+          const decoded = resolveControlResult(outcome.selectedContinuation ?? outcome.output, new Set(["loop", "done"]));
+          if (decoded.kind === "malformed" || !["loop", "done"].includes(decoded.handle)) throw new Error(`Loop ${region.loopNodeId} returned an unsupported control result.`);
+          if (decoded.handle === "done") return true;
+          const iterationSkipped = new Set(skipped);
+          for (const bodyId of region.bodyNodeIds) {
+            const bodyOutcome = await runPlannedNode(bodyId, iterationSkipped);
+            if (!bodyOutcome) return false;
+            if (bodyOutcome.status === "success" || bodyOutcome.status === "pinned") {
+              for (const edge of executionEdges) {
+                if (edge.source === bodyId && region.feedbackEdgeIds.includes(edge.id)) writeLoopFeedback?.(region.loopNodeId, edge.id, bodyOutcome.output);
+              }
+            }
           }
         }
+        throw new Error(`Loop ${region.loopNodeId} exceeded its safety cap of ${cap} calls.`);
+      };
+      update(clusterId, { phase: "running", completed: 0, eligible, outcomes });
+      for (const nodeId of plan.executableNodeIds) {
+        if (ownedBody.has(nodeId)) continue;
+        const region = regionById.get(nodeId);
+        if (region) {
+          if (!await runLoopRegion(region)) return;
+          if (skipped.has(nodeId)) for (const bodyId of region.bodyNodeIds) skipped.add(bodyId);
+          for (const bodyId of region.bodyNodeIds) if (!outcomes[bodyId]) {
+            outcomes[bodyId] = { nodeId: bodyId, status: "skipped", reason: "The Loop body did not run." };
+          }
+        } else if (!await runPlannedNode(nodeId, skipped)) return;
       }
+      if (!isCurrent()) return;
       update(clusterId, { phase: "completed", completed: plan.executableNodeIds.length, eligible: plan.executableNodeIds.length, outcomes: { ...outcomes } });
     } catch (error) {
       if (activeRef.current?.controller === controller && sessionRef.current === sessionId && getEditorExecutionGeneration() === generation) {
-        update(clusterId, { phase: controller.signal.aborted ? "cancelled" : "failed", reason: error instanceof Error ? error.message : "Cluster execution failed.", outcomes });
+        const reason = error instanceof Error ? error.message : "Cluster execution failed.";
+        if (failRun) failRun(reason);
+        else update(clusterId, { phase: controller.signal.aborted ? "cancelled" : "failed", reason, outcomes });
       }
     } finally {
       releaseEditorExecutionLock(sessionId, lockToken);
       if (activeRef.current?.controller === controller) activeRef.current = null;
     }
-  }, [disabledReason, update, workflowSessionId]);
+  }, [disabledReason, update, workflowSessionId, writeLoopFeedback]);
 
   const cancelRun = useCallback((clusterId: string) => {
     if (activeRef.current?.clusterId === clusterId) activeRef.current.controller.abort();

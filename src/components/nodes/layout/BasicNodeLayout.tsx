@@ -19,7 +19,6 @@ type BasicNodeLayoutProps = BaseNodeRenderProps;
 const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   definition,
   fieldState,
-  error,
   loadingSelect,
   selectOptions,
   showAuth,
@@ -176,12 +175,6 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
             ),
           );
         })()}
-
-        {error && (
-          <div className="text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded p-2">
-            {error}
-          </div>
-        )}
 
         {!readOnly && incomingEdgeCount >= 2 && (
           <div className="flex items-center justify-between pt-1">

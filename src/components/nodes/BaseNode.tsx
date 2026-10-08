@@ -574,7 +574,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       targetName={displayName}
       phase={executionPhase}
       disabledReason={blockedReason}
-      statusDescription={executionHook.error || undefined}
+      statusDescription={executionHook.error ? "Execution failed. See Output Data for details." : undefined}
       onExecute={() => { void executionHook.handleSubmit(); }}
       onStop={isTriggerListening ? handleStopListening : undefined}
       presentation={presentation}

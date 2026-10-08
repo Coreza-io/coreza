@@ -16,6 +16,36 @@ const node = (id: string, values: Record<string, unknown> = {}): Node => ({
 
 describe("manual cluster execution", () => {
   const clusterId = "00000000-0000-4000-8000-000000000001";
+  it("clears active visuals on Stop while retaining ownership until settlement", async () => {
+    let settle!: () => void;
+    const unregister = registerEditorNodeAction("visual-stop", "one", async () => {
+      await new Promise<void>((resolve) => { settle = resolve; });
+      return { nodeId: "one", status: "success" };
+    });
+    let hook!: ReturnType<typeof useClusterExecution>;
+    function Harness() {
+      hook = useClusterExecution({ workflowSessionId: "visual-stop", nodes: [node("one"), node("two")],
+        edges: [], clusters: [{ id: clusterId, title: "Folder", memberNodeIds: ["one", "two"] }] });
+      return null;
+    }
+    // Both actions must be captured before the run starts.
+    const unregisterTwo = registerEditorNodeAction("visual-stop", "two", async () => ({ nodeId: "two", status: "success" }));
+    let renderer!: ReactTestRenderer;
+    let run!: Promise<void>;
+    act(() => { renderer = create(React.createElement(Harness)); });
+    act(() => { run = hook.executeCluster(clusterId); });
+    expect(hook.activeMember).toEqual({ sessionId: "visual-stop", clusterId, nodeId: "one" });
+    act(() => hook.cancelRun(clusterId));
+    expect(hook.activeMember).toBeNull();
+    expect(hook.getState(clusterId).phase).toBe("running");
+    expect(getEditorExecutionTarget("visual-stop")).toBe(`cluster:${clusterId}`);
+    await act(async () => { settle(); await run; });
+    expect(hook.activeMember).toBeNull();
+    expect(hook.getState(clusterId).phase).toBe("cancelled");
+    expect(getEditorExecutionTarget("visual-stop")).toBe("");
+    act(() => renderer.unmount());
+    unregister(); unregisterTwo();
+  });
   it("orders main edges and internal expression references deterministically", () => {
     const nodes = [node("third", { value: "{{$node['second'].value}}" }), node("first"), node("second")];
     const edges: Edge[] = [{ id: "one-two", source: "first", target: "second" }];

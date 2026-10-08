@@ -6,3 +6,6 @@
 
 - Persisted clusters may contain disconnected members; only cluster creation requires connectivity. The editor and server validators must agree.
 - Cluster Execute repeats a Loop's body per iteration through normal node actions and writes Loop feedback the same way Run All does.
+
+- Cluster execution visual effects overlay reconciled displayed graph copies only; never persist execution flags or edge styles into canonical state or committed base projections.
+- Required-field and runtime action failures share guarded publication to local output, execution store and canonical node data, followed by one explicit store notification; detailed errors belong in Output Data.

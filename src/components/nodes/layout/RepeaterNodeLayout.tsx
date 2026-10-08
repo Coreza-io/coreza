@@ -850,9 +850,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const { allNodeData, getSourceData } = getPreviewData();
     return {
       allNodeData,
+      nodes: getNodes(),
       sourceData: getSourceData(selectedPrevNodeId),
     };
-  }, [getPreviewData, selectedPrevNodeId, executionStoreVersion]);
+  }, [getPreviewData, getNodes, selectedPrevNodeId, executionStoreVersion]);
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
@@ -1410,6 +1411,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               fieldState={fieldState}
               sourceData={visualizePreviewContext.sourceData}
               allNodeData={visualizePreviewContext.allNodeData}
+              nodes={visualizePreviewContext.nodes}
             />
           </div>
         )}

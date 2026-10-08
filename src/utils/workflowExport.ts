@@ -1,6 +1,6 @@
 import { allocateNodeName } from "@/domain/nodeNaming";
-import { remapNodeReferenceMap } from "@/utils/remapNodeReferences";
-import { withUniqueInstanceAliases } from "@/utils/referenceResolution";
+import { mapNodeReferences, remapNodeReferenceMap } from "@/utils/remapNodeReferences";
+import { resolveNodeIdentity, withUniqueInstanceAliases } from "@/utils/referenceResolution";
 import { nodeManifest } from "@/nodes/manifest";
 import { validateClusters } from "@/domain/clusters/validate";
 /**
@@ -148,10 +148,17 @@ export async function importWorkflow(file: File): Promise<{
     edgeIds.add(edge.id);
   }
   const validationNodes: Node[] = normalizedNodes.map((node) => ({
-    ...node, data: { definition: nodeManifest[node.type as keyof typeof nodeManifest] },
+    ...node, data: { values: node.values, definition: nodeManifest[node.type as keyof typeof nodeManifest] },
   }));
   const validation = validateClusters(validationNodes, importedEdges, parsedClusters.clusters);
   if (!validation.valid) throw new Error(validation.violations[0].message);
+  // Validate references before allocating public names could hide ambiguity.
+  for (const node of normalizedNodes) {
+    mapNodeReferences(node.values, (name) => {
+      resolveNodeIdentity(name, normalizedNodes);
+      return undefined;
+    });
+  }
   const idMap = Object.fromEntries(normalizedNodes.map((node) => [node.id, crypto.randomUUID()]));
   const references = withUniqueInstanceAliases(idMap, normalizedNodes);
   const reservations = new Set<string>();

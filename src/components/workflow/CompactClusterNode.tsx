@@ -25,6 +25,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
     <article
       id={`cluster-card-${cluster.clusterId}`}
       className={`cluster-card relative group/cluster h-[180px] w-[280px] cursor-grab rounded-xl border-2 p-4 text-[hsl(var(--cluster-title))] shadow-[var(--cluster-shadow)] outline-none motion-safe:transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-[hsl(var(--cluster-selection-ring))] ${selected ? "cluster-card--selected" : ""} ${dragging ? "cursor-grabbing" : ""}`}
+      style={cluster.runState.phase === "failed" ? { borderColor: "hsl(var(--destructive))" } : undefined}
       tabIndex={0}
       aria-label={`Cluster ${cluster.title}, ${cluster.memberCount} ${cluster.memberCount === 1 ? "node" : "nodes"}`}
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } }}

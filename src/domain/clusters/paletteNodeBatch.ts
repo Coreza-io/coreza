@@ -1,3 +1,4 @@
+import { allocateNodeName } from "@/domain/nodeNaming";
 import type { Edge, Node, XYPosition } from "@xyflow/react";
 import type { NodeConfig } from "@/nodes/manifest";
 
@@ -29,13 +30,20 @@ export function createPaletteNodeBatch(args: {
   existingEdges: readonly Edge[];
   onRemoveEdge: (edgeId: string) => void;
 }): PaletteNodeBatch {
-  const nodeIds = new Set(args.existingNodes.map(({ id }) => id));
-  const primaryNodeId = allocateId(args.nodeType, nodeIds);
+  const reservations = new Set<string>();
+  const allocate = (base: string) => {
+    const result = allocateNodeName(base, args.existingNodes, undefined, reservations);
+    if (result.ok === false) throw new Error(result.message);
+    reservations.add(result.name);
+    return result.name;
+  };
+  const primaryNodeId = allocate(args.nodeType);
   const nodes: Node[] = [{
     id: primaryNodeId,
     type: args.nodeType,
     position: args.position,
     data: {
+      displayName: primaryNodeId,
       label: args.definition.name || `${args.nodeType} node`,
       definition: args.definition,
       workflowSessionId: args.workflowSessionId,
@@ -48,12 +56,13 @@ export function createPaletteNodeBatch(args: {
     && args.onBarDefinition;
   if (!needsOnBar) return { primaryNodeId, nodes, edges };
 
-  const onBarNodeId = allocateId(ON_BAR_NODE_TYPE, nodeIds);
+  const onBarNodeId = allocate(ON_BAR_NODE_TYPE);
   nodes.push({
     id: onBarNodeId,
     type: ON_BAR_NODE_TYPE,
     position: { x: args.position.x + ON_BAR_COMPANION_OFFSET_X, y: args.position.y },
     data: {
+      displayName: onBarNodeId,
       label: args.onBarDefinition?.name || "OnBar node",
       definition: args.onBarDefinition,
       workflowSessionId: args.workflowSessionId,

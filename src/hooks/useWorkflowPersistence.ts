@@ -241,7 +241,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
         const { workflow: data } = await response.json() as { workflow: Record<string, unknown> };
 
         // Restore nodes with definitions
-        const restoredNodes = (data.nodes as unknown as Node[] || []).map((node) => {
+        const restoredNodes = (data.nodes as unknown as (Node & { displayName?: string })[] || []).map((node) => {
           const nodeName = (node as any).name || node.id;
           const definition =
             node.data?.definition ||
@@ -260,7 +260,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
               definition,
               values: merged,
               fieldState: merged,
-              displayName: node.id,
+              displayName: typeof node.displayName === "string" && node.displayName.trim() ? node.displayName : (typeof node.data?.displayName === "string" && node.data.displayName.trim() ? node.data.displayName : node.id),
               ...(pinnedOutput != null
                 ? { pinnedOutput, output: pinnedOutput }
                 : {}),

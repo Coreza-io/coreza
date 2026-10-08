@@ -188,7 +188,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     }
     return getDisplayName(
       { id: nodeId!, data },
-      canonicalGraph.nodes,
     );
   }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
 

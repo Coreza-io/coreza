@@ -1,3 +1,4 @@
+import { resolveNodeIdentity } from "@/utils/referenceResolution";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -177,7 +178,7 @@ export function useNodeExecution({
         let nodeData = executionStore.getNodeData(prevNode.id).output;
         if (nodeData === undefined) {
           // fallback to static data if not yet executed
-          nodeData = prevNode.data?.output || prevNode.data || {};
+          nodeData = prevNode.data?.output !== undefined ? prevNode.data.output : prevNode.data ?? {};
         }
 
         allNodeData[displayName] = nodeData;
@@ -210,40 +211,24 @@ export function useNodeExecution({
 
       if (definition?.name === "Edit Fields") {
         payload.data = selectedInputData;
-        const nodeIdentityName = (node: Node): string => {
-          const nodeData = node.data as {
-            displayName?: unknown;
-            label?: unknown;
-          };
-          return String(nodeData.displayName ?? nodeData.label ?? node.id);
-        };
+        const nodeIdentities: Array<{ id: string; name: string }> = [];
         const referencedNodes = new Set<string>();
         for (const row of Array.isArray(payload.fields) ? payload.fields : []) {
           if (!isTypedEditFieldRow(row) || row.valueMode !== "expression")
             continue;
           for (const name of compileEditTemplate(String(row.value ?? ""))
-            .nodeReferences)
-            referencedNodes.add(name);
+            .nodeReferences) {
+            const id = resolveNodeIdentity(name, nodes)?.id ?? name;
+            referencedNodes.add(id);
+            nodeIdentities.push({ id, name });
+          }
         }
         const referencedResults = Object.fromEntries(
-          Object.entries(allNodeData).filter(([key]) => {
-            if (referencedNodes.has(key)) return true;
-            const node = nodes.find((candidate) => candidate.id === key);
-            const label = node ? nodeIdentityName(node) : key;
-            return referencedNodes.has(label);
-          }),
+          Object.entries(allNodeData).filter(([key]) => referencedNodes.has(key)),
         );
         payload.expressionContext = {
           nodeResults: referencedResults,
-          nodeIdentities: nodes
-            .filter((node) => {
-              const name = nodeIdentityName(node);
-              return referencedNodes.has(node.id) || referencedNodes.has(name);
-            })
-            .map((node) => ({
-              id: node.id,
-              name: nodeIdentityName(node),
-            })),
+          nodeIdentities,
         };
       }
 

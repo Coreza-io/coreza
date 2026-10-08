@@ -50,6 +50,7 @@ export function serializeWorkflowContent(
     const pinnedOutput = safePinnedOutput(node.data.pinnedOutput);
     return {
       id: node.id,
+      ...(typeof node.data.displayName === "string" && node.data.displayName.trim() ? { displayName: node.data.displayName } : {}),
       name: definition?.name,
       node_type: definition?.node_type,
       category: definition?.category,
@@ -66,6 +67,7 @@ export function serializeWorkflowContent(
     };
   });
   const nodeIds = new Set(serializedNodes.map((node) => node.id));
+  if (nodeIds.size !== serializedNodes.length) throw new Error("duplicate-node-id");
   const invalidEdge = edges.find((edge) => !nodeIds.has(edge.source) || !nodeIds.has(edge.target));
   if (invalidEdge) throw new Error(`invalid-edge-endpoint: ${invalidEdge.id}`);
 

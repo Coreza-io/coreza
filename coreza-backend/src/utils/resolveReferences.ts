@@ -57,7 +57,7 @@ export function resolveReferences(
   expr: string,
   inputData: any,
   allNodeData?: Record<string, any>,
-  nodes?: ReferenceNode[],
+  nodes?: readonly ReferenceNode[],
 ): unknown {
   if (typeof expr !== "string") {
     return expr;
@@ -160,8 +160,8 @@ export function resolveReferences(
     const nodeName = (nodeNameRaw || "").trim();
 
     if (nodeName && allNodeData) {
-      const resolvedKey =
-        resolveNodeKey(nodeName, allNodeData, nodes) || nodeName;
+      const resolvedKey = resolveNodeKey(nodeName, allNodeData, nodes);
+      if (resolvedKey === undefined) return undefined;
 
       if (allNodeData[resolvedKey] === undefined) {
         return undefined;

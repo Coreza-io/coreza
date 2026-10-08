@@ -1,3 +1,4 @@
+import { useStableNodes } from "@/contexts/StableNodeContext";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -9,14 +10,13 @@
  */
 
 import { useState, useCallback } from "react";
-import { useReactFlow } from "@xyflow/react";
 import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { buildPreviewData } from "@/utils/previewDataResolver";
 import {
-  formatPath,
+  buildNodeReference,
   parseJsonReferenceDragPayload,
 } from "@/utils/referencePath";
 
@@ -49,7 +49,7 @@ export function useNodeReferences({
   selectedPrevNodeId,
   selectedPrevNode,
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
-  const { getNodes } = useReactFlow();
+  const { getNodes } = useStableNodes();
   const executionStore = useExecutionStore();
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
@@ -81,11 +81,8 @@ export function useNodeReferences({
         if (!sourceId) return;
         // Read nodes imperatively at drop time - avoids subscription re-renders
         const nodes = getNodes();
-        const sourceNode = nodes.find((n) => n.id === sourceId);
-        const sourceDisplayName =
-          sourceNode?.data?.displayName || sourceNode?.id || sourceId;
-        const suffix = formatPath(data.pathSegments);
-        const insert = `{{ $(${JSON.stringify(sourceDisplayName)}).json${suffix} }}`;
+        const insert = buildNodeReference(data, nodes, selectedPrevNodeId);
+        if (!insert) return;
         const newValue = currentValue + insert;
 
         setter(newValue);
@@ -129,8 +126,7 @@ export function useNodeReferences({
 
         return fullePreview(resolved);
       } catch (error) {
-        // Silently fail for preview errors
-        return "";
+        return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
     [

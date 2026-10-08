@@ -132,3 +132,15 @@ export function isPathSegments(value: unknown): value is PathSegment[] {
     )
   );
 }
+
+/** Build selectors only from a current canonical identity. */
+export function buildNodeReference(
+  payload: JsonReferenceDragPayload,
+  nodes: readonly { id: string }[],
+  selectedSourceId?: string,
+): string | null {
+  const id = payload.sourceNodeId ?? selectedSourceId;
+  const source = nodes.find((node) => node.id === id);
+  if (!source || source.id.toLowerCase().startsWith("__cluster__")) return null;
+  return `{{ $(${JSON.stringify(source.id)}).json${formatPath(payload.pathSegments)} }}`;
+}

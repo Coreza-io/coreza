@@ -1,3 +1,4 @@
+import { allocateNodeName, nodeDisplayName } from "@/domain/nodeNaming";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -280,11 +281,12 @@ const WorkflowEditorContent = () => {
     isNewWorkflow ? crypto.randomUUID() : (id ?? null),
   );
   const hasPersistedRef = useRef<boolean>(!isNewWorkflow);
+  const [importGeneration, setImportGeneration] = useState(0);
   const workflowSessionId = useMemo(() => {
     // Tie lifecycle to workflowId changes (new workflow => new session scope).
     void workflowId;
     return crypto.randomUUID();
-  }, [workflowId]);
+  }, [workflowId, importGeneration]);
   const insertionIntentRef = useRef<InsertionIntent | null>(null);
 
   useEffect(() => () => clearEditorNodeActions(workflowSessionId), [workflowSessionId]);
@@ -430,7 +432,7 @@ const WorkflowEditorContent = () => {
   );
   useCanonicalGraphSync(nodes, edges, workflowSessionId);
   const rf = useReactFlow();
-  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[]; clusters: NodeCluster[] } | null>(null);
+  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[]; clusters: NodeCluster[]; sourceNodes: Node[] } | null>(null);
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 400, y: 300 });
 
   // Connection drag tracking for hiding source handle icon
@@ -1191,14 +1193,18 @@ const WorkflowEditorContent = () => {
   // Handle "+" click on Loop node to add a new downstream node
   const handleAddNode = useCallback(
     (loopNodeId: string) => {
-      const position = rf.getNode(loopNodeId)?.position || { x: 0, y: 0 };
+      const current = { nodes: nodesRef.current, edges: canonicalEdgesRef.current, clusters: clustersRef.current };
+      const parent = current.nodes.find((node) => node.id === loopNodeId);
+      if (!parent) return;
+      const position = parent.position;
+      const allocated = allocateNodeName("New Node", current.nodes);
+      if (allocated.ok === false) return;
       const newNode: Node = {
-        id: `node_${Date.now()}`,
+        id: allocated.name,
         type: "default",
         position: { x: position.x + 200, y: position.y },
-        data: { label: "New Node" },
+        data: { label: "New Node", displayName: allocated.name, workflowSessionId },
       };
-      setNodes((ns) => [...ns, newNode]);
 
       const edgeId = `edge_${loopNodeId}_${newNode.id}`;
       const newEdge: Edge = {
@@ -1209,9 +1215,10 @@ const WorkflowEditorContent = () => {
         type: "removable",
         data: { onRemoveEdge: () => removeEdge(edgeId) },
       };
-      setEdges((es) => [...es, newEdge]);
+      const result = insertNodesInDocument(current, { nodes: [newNode], edges: [newEdge] });
+      if (result.ok) restoreDocument(result.document);
     },
-    [rf, setNodes, setEdges, removeEdge],
+    [restoreDocument, workflowSessionId, removeEdge],
   );
 
   const handleRemoveLoop = useCallback(
@@ -1845,7 +1852,7 @@ const WorkflowEditorContent = () => {
             definition,
             values: merged,
             fieldState: merged,
-            displayName: node.data?.displayName || node.id,
+            displayName: (node as Node & { displayName?: string }).displayName || node.data?.displayName || node.id,
           },
         };
       });
@@ -2187,6 +2194,7 @@ const WorkflowEditorContent = () => {
 
         clipboardRef.current = {
           nodes: nodesCopy,
+          sourceNodes: cloneNodes(nodesRef.current),
           edges: edgesCopy,
           clusters: clusters.filter((cluster) => cluster.memberNodeIds.every((id) => selectedNodeIds.has(id))),
         };
@@ -2222,6 +2230,7 @@ const WorkflowEditorContent = () => {
 
         clipboardRef.current = {
           nodes: nodesCopy,
+          sourceNodes: cloneNodes(nodesRef.current),
           edges: edgesCopy,
           clusters: clusters.filter((cluster) => cluster.memberNodeIds.every((id) => selectedNodeIds.has(id))),
         };
@@ -2240,7 +2249,7 @@ const WorkflowEditorContent = () => {
           return;
         }
 
-        const { nodes: copiedNodes, edges: copiedEdges, clusters: copiedClusters } = clipboardRef.current;
+        const { nodes: copiedNodes, edges: copiedEdges, clusters: copiedClusters, sourceNodes } = clipboardRef.current;
         if (copiedNodes.length === 0) {
           return;
         }
@@ -2260,55 +2269,21 @@ const WorkflowEditorContent = () => {
         );
         const nodeIdMap: Record<string, string> = {};
         const timestamp = Date.now();
-        const existingNodeIds = new Set(current.nodes.map((node) => node.id));
+        const reservations = new Set<string>();
         const existingEdgeIds = new Set(current.edges.map((edge) => edge.id));
-        const existingDisplayNames = new Set(
-          current.nodes.map((n) => n.data?.displayName || n.id),
-        );
-
+        for (const node of copiedNodes) {
+          const validation = allocateNodeName(nodeDisplayName(node), []);
+          if (validation.ok === false) {
+            toast({ title: "Cannot paste selection", description: validation.message, variant: "destructive" });
+            return;
+          }
+        }
         const newNodes = copiedNodes.map((node) => {
-          const nodeType = node.type || "default";
-
-          const existingOfType = current.nodes.filter(
-            (n) => n.type === nodeType,
-          ).length;
-          const alreadyAddedOfType = Object.values(nodeIdMap).filter(
-            (id) => id === nodeType || id.startsWith(nodeType),
-          ).length;
-
-          let count = existingOfType + alreadyAddedOfType;
-          let newId = count === 0 ? nodeType : `${nodeType}${count}`;
-
-          while (existingNodeIds.has(newId)) {
-            count += 1;
-            newId = `${nodeType}${count}`;
-          }
-
-          existingNodeIds.add(newId);
+          const allocated = allocateNodeName(nodeDisplayName(node), current.nodes, undefined, reservations);
+          if (allocated.ok === false) throw new Error(allocated.message);
+          const newId = allocated.name;
+          reservations.add(newId);
           nodeIdMap[node.id] = newId;
-
-          // Generate unique display name
-          const originalDisplayName = (node.data?.displayName ||
-            newId) as string;
-          let uniqueDisplayName = originalDisplayName;
-
-          if (existingDisplayNames.has(uniqueDisplayName)) {
-            const baseMatch = originalDisplayName.match(/^(.+?)\s*\d*$/);
-            const baseName = baseMatch
-              ? baseMatch[1].trim()
-              : originalDisplayName;
-
-            let displayCount = 1;
-            uniqueDisplayName = `${baseName} ${displayCount}`;
-
-            while (existingDisplayNames.has(uniqueDisplayName)) {
-              displayCount++;
-              uniqueDisplayName = `${baseName} ${displayCount}`;
-            }
-          }
-
-          existingDisplayNames.add(uniqueDisplayName);
-
           return {
             ...node,
             id: newId,
@@ -2319,7 +2294,7 @@ const WorkflowEditorContent = () => {
             selected: true,
             data: {
               ...node.data,
-              displayName: uniqueDisplayName,
+              displayName: newId,
               isExecuting: false,
             },
           };
@@ -2357,7 +2332,7 @@ const WorkflowEditorContent = () => {
           .filter((edge): edge is Edge => Boolean(edge));
 
         const result = pasteNodesInDocument(current, {
-          nodes: newNodes, edges: newEdges, idMap: nodeIdMap, copiedClusters,
+          nodes: newNodes, edges: newEdges, idMap: nodeIdMap, copiedClusters, sourceNodes,
           targetClusterId: focusedClusterId, expandedClusterId: focusedClusterId,
         });
         if (result.ok === false) {
@@ -2508,6 +2483,12 @@ const WorkflowEditorContent = () => {
               if (!file) return;
               try {
                 const imported = await importWorkflow(file);
+                if (isEditorExecutionLocked(workflowSessionId)) throw new Error("Stop workflow execution before importing.");
+                clearEditorNodeActions(workflowSessionId);
+                for (const node of nodesRef.current) executionStore.setPinned(node.id, null);
+                executionStore.clear();
+                notifyExecutionStoreUpdate();
+                setImportGeneration((generation) => generation + 1);
                 setWorkflowName(imported.name);
                 const importedNodes = imported.nodes.map((n) => ({
                   id: n.id,
@@ -2515,7 +2496,8 @@ const WorkflowEditorContent = () => {
                   position: n.position,
                   data: {
                     values: n.values,
-                    label: n.displayName,
+                    label: n.type,
+                    displayName: n.displayName,
                     ...(n.pinnedOutput != null
                       ? {
                           pinnedOutput: n.pinnedOutput,

@@ -8,7 +8,6 @@
  * See the LICENSE file for details.
  */
 
-import type { Node } from "@xyflow/react";
 import type ExecutionContext from "@/utils/executionContext";
 import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 
@@ -20,16 +19,16 @@ interface PreviewDataResult {
 export function buildPreviewData(
   previousNodes: readonly SemanticNode[],
   executionStore: ExecutionContext,
-  getNodes: () => Node[]
+  getNodes: () => readonly SemanticNode[]
 ): PreviewDataResult {
   const allNodeData: Record<string, any> = {};
 
   previousNodes.forEach((prevNode) => {
-    const displayName = prevNode.data?.displayName || prevNode.id;
+    const displayName = prevNode.id;
 
     let nodeData = executionStore.getNodeData(prevNode.id).output;
     if (nodeData === undefined) {
-      nodeData = prevNode.data?.output || prevNode.data || {};
+      nodeData = prevNode.data?.pinnedOutput ?? (prevNode.data?.output !== undefined ? prevNode.data.output : prevNode.data ?? {});
     }
 
     if (typeof displayName === "string") {
@@ -50,7 +49,7 @@ export function buildPreviewData(
       return storeOutput;
     }
 
-    return srcNode.data?.output || srcNode.data || {};
+    return srcNode.data?.pinnedOutput ?? (srcNode.data?.output !== undefined ? srcNode.data.output : srcNode.data ?? {});
   };
 
   return { allNodeData, getSourceData };

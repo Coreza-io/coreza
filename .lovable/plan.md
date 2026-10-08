@@ -1,196 +1,149 @@
-# Fix cluster save, in-cluster copy/paste, and full Loop runs in Execute Cluster
+# Execute All: stop the run on the first node failure
 
-## Outcome
+## Goal and acceptance contract
 
-1. A workflow saves even when a cluster contains nodes that are not wired to each other.
-2. Inside an open cluster, Ctrl/Cmd+C then Ctrl/Cmd+V pastes copies into that same cluster, and one undo removes the whole paste.
-3. Execute Cluster runs a Loop's body once per item until the Loop reports `done`, then runs the `done` side once. Today the body runs only once.
+Execute All must stop scheduling work as soon as a node fails. No queued root, sibling, descendant, Loop feedback iteration, or later OnBar iteration may start after that observed failure.
 
-Unchanged: cluster creation rules, collapse/expand, the execution lock, node action snapshots, undo history, the read-only canvas, and the recent drag-performance work.
+For the reported case:
 
-## What the code shows
+```text
+BacktestInit succeeds
+  → OnBar fails: “Backtest ID is required”
+  → Execute All ends
+  → Consolidator, is4hrs, RollingWindow21, ATR14 and remaining work do not start
+```
 
-Every claim in the document was checked against this checkout.
+Show the failed node ID and original error, retain completed outputs and the node's existing inline error, return the Execute All button to idle, and release the editor execution lock so the user can correct the input and retry without refreshing.
 
-### 1. Save fails with `400 disconnected-members`
+This replaces the previous cluster-save/paste/Loop plan with the newly attached Execute All proposal. It does not implement either plan.
 
-- The editor (`src/domain/clusters/validate.ts`) checks connectivity only when `requireConnectedMembers` is set. That flag is used only by `validateClusterSelection`, which runs when a cluster is created.
-- The server (`coreza-backend/src/workflow/validateNodeClusters.ts`, line 152) always rejects disconnected members.
-- `WorkflowQueryService` runs that server check on create and update, so the editor sends a document it accepts and the server rejects it.
-- The other rules already match on both sides: multiple entry/exit, entry-not-root, exit-not-leaf, no-entry-exit-path, attachment boundary, and the Loop boundary exception.
-- The old server-side scoped cluster run (`clusterExecution.ts`, line 188) uses the same check. The editor no longer uses that run path, so relaxing the rule does not change editor behavior.
-- **Dependency with item 2:** pasting copies into a cluster makes that cluster disconnected by design. In-cluster paste would therefore hit the same save error unless item 1 ships first.
+## Verified current state
 
-### 2. Paste is blocked inside a cluster
+The complete attachment was reviewed against checkout `4bfce2ad`, rather than assuming its reviewed snapshot is unchanged.
 
-- `WorkflowEditor` keydown handler, line 2212: `if (focusedClusterId || !clipboardRef.current) return;`. Copy works; paste is deliberately ignored.
-- Overview paste updates nodes, edges and clusters in three separate calls with no single history entry. Edges are appended with a direct `setEdges` call.
-- Paste cannot cause these cluster problems:
-  - Copied edges are kept only when both ends are inside the copy, so a paste never adds a connection that crosses the cluster edge. That rules out new entry or exit violations.
-  - `copiedClusters` holds only clusters whose members were all selected. Re-creating them inside an open cluster would give one node two cluster memberships.
-- The keydown effect reads `focusedClusterId`, but its dependency list does not include it, so the handler can act on a stale value.
-- `insertNodesInDocument` (in `documentCommands.ts`) already validates node, edge and cluster-membership insertion together, using `targetClusterId` and `expandedClusterId`. Palette insertion already uses it with one history push and `restoreDocument`.
-- Paste does not remap `$('oldId')` references inside the copied nodes' settings. `remapNodeReferences` exists for this.
+| Area | Confirmed evidence | Implication |
+| --- | --- | --- |
+| Required-field validation | `src/hooks/useNodeExecution.ts:444–451` returns `status: "failed"` and the field error. | Use the existing structured failure signal; no generic output inspection is needed. |
+| Normal node invocation | `src/utils/workflowExecutor.ts:63–72` converts failed/cancelled outcomes to thrown errors. | Failures already reach the scheduler. Cancellation is currently represented as an error here; do not silently redesign it in this patch. |
+| Queue catch | `workflowExecutor.ts:993–1018` records failure, then enqueues `independentNodes` without rethrowing. Previously queued nodes remain. | Confirmed primary defect: record-and-continue behavior. |
+| OnBar replay | `workflowExecutor.ts:1024–1053` invokes the same queue first for the graph, then for later bars. | An inner-loop break alone is insufficient; failure must escape the queue to the enclosing boundary. |
+| Run-level reporting | `workflowExecutor.ts:1081–1100` has neutral Stop, normal completion, and an outer destructive error notification. | Reuse the error boundary and bypass normal completion. |
+| Executor cleanup | `workflowExecutor.ts:1101–1125` resets its token, running flag, active-node indicator and highlights. | Preserve cleanup on the failure path. Outputs are not globally cleared here. |
+| Actual button caller | `src/pages/WorkflowEditor.tsx:1431–1452` awaits the executor inside `try/finally` and releases the session lock. | No production editor refactor is needed for normal failure cleanup. Verify this through integration, not just executor tests. |
+| Alternative wrapper | `src/hooks/useWorkflowExecution.ts:120–139` shows success whenever the executor resolves. Search found its definition but no imported use in `src`. | Leave this unused wrapper outside the minimal change; its success contract must be corrected before it becomes a live caller. |
+| Timeouts/subscriptions | `workflowExecutor.ts:488–589, 721–730` propagates subscription and timeout errors. Normal execution uses a 30-second `Promise.race`; streaming polls recursively. | These errors must also stop subsequent scheduling, but throwing does not cancel a remote operation or dispose polling. |
+| Loop feedback | `workflowExecutor.ts:595–630` writes `_edgeBuf` into `ExecutionContext`; `setNodeData` merges state. | Clearing the scheduler's `edgePayload` is not equivalent to resetting all Loop/input state. Do not promise a fresh runtime reset. |
+| Compiler/test setup | `tsconfig.app.json` targets ES2020; `jest.config.json` uses Jest/ts-jest and `tests/setup.ts` imports backend Supabase configuration. | Do not require ES2022 `Error` cause options. Isolate regression tests from real database traffic. |
 
-### 3. Loop runs only once in Execute Cluster
+The screenshot/attachment does **not** establish why the Backtest ID expression resolves incorrectly. That diagnosis remains separate from the confirmed scheduler defect.
 
-- In `useNodeExecution`, the Loop action handles one item per call. While items remain it returns `selectedContinuation: "loop"`. On the call after the last item (`loopIndex > maxLoopIndex`) it returns `"done"` with the final aggregate. N items therefore take N+1 Loop calls.
-- In each call the Loop reads feedback from `executionStore.getNodeData(loopId)._edgeBuf`, then clears it.
-- `useClusterExecution.executeCluster` walks a fixed list (`plan.executableNodeIds`) once. For a Loop it only marks the other branch as skipped, and it never calls the Loop again. It also keeps one `skipped` set for the whole run.
-- Only `WorkflowExecutor.aggregateToLoop` writes `_edgeBuf[edge.id]`. The cluster runner never writes feedback, so even with repetition the Loop's final aggregate would be empty.
-- `findLoopFeedbackEdgeIds` already identifies the validated body-to-Loop return connections.
-- `tests/useClusterExecution.test.ts` currently asserts the single-pass behavior; that test changes.
+## Scope
 
-## Plan
+**Production:** `src/utils/workflowExecutor.ts`, restricted to the Execute All failure path and its existing outer error reporting.
 
-### Part 1: Allow saving disconnected cluster members
+**Tests:** new `tests/workflowExecutor.test.ts`, plus a focused editor integration/browser check following the existing browser-test conventions.
 
-1. In `validateNodeClusters.ts`:
-   - add a `requireConnectedMembers` option, default `false`, matching the editor;
-   - apply `disconnected-members` only when the option is set;
-   - leave every other rule untouched.
-2. Keep the editor creation check (`validateClusterSelection`) as is. Creating a cluster from unconnected nodes is still refused.
-3. Server tests in `validateNodeClusters.test.ts`:
-   - a cluster with an unwired member is accepted;
-   - unknown member, overlapping membership, trigger member, attachment crossing the boundary, multiple entry, multiple exit and missing entry-to-exit path are still rejected;
-   - the Loop boundary is still accepted;
-   - with the option on, disconnected members are rejected.
-4. Shared fixture: run one fixture set through both the editor validator and the server validator and assert they give the same verdicts. This catches future drift between them.
-5. Save in the editor: reproduce the `400` first, then confirm the save succeeds. Reload and confirm the cluster and its unwired member are still there.
-6. Execute Cluster with an unwired member: the member runs once, as an independent root, and fail-fast still applies.
-7. The backend repository is separate: the change must also be copied to `coreza-io/coreza-backend` and deployed. Until the server is redeployed, the live save stays broken.
+Preserve individual Execute, editor-local Cluster Execute, successful conditional routing, pins, Loop aggregation, historical OnBar replay, and manual Stop behavior. No backend, migration, API, worker queue, cluster projection, graph mutation, execution-intent type, or action-registry redesign is required.
 
-### Part 2: Paste inside an open cluster
+## Implementation steps
 
-1. Remove `focusedClusterId` from the paste guard so the handler returns only when the clipboard is empty.
-2. Keep the existing new-ID, position-offset, display-name and edge-ID logic. Build the new nodes and edges from `nodesRef`, `canonicalEdgesRef` and `clustersRef`, not render-time state.
-3. Remap references inside the copied nodes' settings with `remapNodeReferences`. Only old copied IDs map to their new IDs. References to nodes outside the copy stay unchanged.
-4. **When a cluster is open:**
-   - call `insertNodesInDocument` with the new nodes and edges, with both `targetClusterId` and `expandedClusterId` set to the open cluster;
-   - ignore `copiedClusters`;
-   - on success, push one document history entry and apply the result with `restoreDocument`. The pasted nodes end up selected and the cluster stays open;
-   - on failure, show the returned message and change nothing, with no history entry.
-5. **In the overview:** keep the current behavior, including recreating whole copied clusters with new titles. Make it atomic: build the full document (nodes, edges, clusters), validate it, push one history entry, then `restoreDocument`. This replaces the three separate updates.
-6. Add `focusedClusterId` and the refs the handler uses to the keydown effect's dependency list.
-7. Toast "Selection pasted" only after a successful paste.
+### 1. Establish failing regression tests
 
-### Part 3: Execute Cluster completes every Loop iteration
+1. Use the current Jest conventions and instantiate a real `WorkflowExecutor` with a fresh `ExecutionContext` and unique editor session per test.
+2. Register deterministic actions through `registerEditorNodeAction`, or mock only the action boundary when necessary. Keep the real queue, routing and error boundary under test.
+3. Capture action invocation order, store outputs, functional node/edge updates, active-node callbacks and run-level notifications.
+4. Model roots using the executor's actual trigger/backtest definition rules and Loop using its current node type and `done`/feedback state, not a different scheduler contract.
+5. Use fake timers for highlighting delays and timeouts; advance only the timers needed for each scenario. Clear registrations and test timers afterward.
+6. Mock the existing setup's Supabase client/configuration for isolated tests; never query production or place real credentials in test fixtures. Do not change global test setup unless isolation cannot otherwise be achieved.
+7. First demonstrate continued execution in the root, sibling and OnBar cases. These are correctness tests, not assertions about copy or styling.
 
-1. **Keep the planner.** `buildClusterExecutionPlan` keeps handling membership, capability filtering, ordering, expression dependencies and generic-cycle rejection.
-2. **Loop regions.** Add a pure helper `buildLoopRegions(plan, edges, nodeById, allowedNodeIds)` that returns one entry per executable Loop: `{ loopNodeId, feedbackEdgeIds, bodyNodeIds, doneStartNodeIds }`.
-   - It uses main connections inside the cluster only.
-   - `loopStarts` are the targets of the `loop` handle; `doneStarts` are the targets of the `done` handle.
-   - The body is everything reachable from `loopStarts` that can also reach a feedback source, computed with the feedback connections removed. A node merely reachable from the Loop is not enough, so a `done` branch that merges back in is not repeated.
-   - Body nodes stay in plan order.
-3. **Unsupported shapes are rejected up front.** These fail before anything runs, with a clear message:
-   - two Loops whose bodies overlap or nest;
-   - a body node that is also on the `done` side;
-   - a Loop with a `loop` branch but no feedback connection.
+### 2. Replace queue continuation with failure propagation
 
-   Separate Loops placed one after another are supported.
-4. **One shared step runner.** Pull the per-node steps of `executeCluster` into a local `runPlannedNode(nodeId, skippedSet)`:
-   - cancellation and session/generation checks;
-   - progress update;
-   - `actionSnapshot.execute`;
-   - cancelled/failed handling, which marks pending nodes and returns early;
-   - If/Switch branch skipping;
-   - listener-started skipping.
+Inside the per-node catch in `executeAllNodes`:
 
-   The outer pass and the Loop runner both use it, so errors and cancellation follow a single path.
-5. **Loop runner.** When the outer pass reaches a Loop, it calls `runLoopRegion(region)`:
+1. Keep timing, failed-node bookkeeping and original error logging.
+2. Keep `clearIncomingEdgePayloads(id)`.
+3. Remove the complete `independentNodes` filter/enqueue block.
+4. Empty the local queue and clear the executor's transient `edgePayload` map.
+5. Normalize the caught value safely with `error instanceof Error ? error.message : String(error)`.
+6. Throw a contextual error containing the reliable canonical node ID and original message. An existing display label may supplement the ID, never replace it.
+7. Preserve the original exception in logging. Do not add unsupported `new Error(message, { cause })` options under the current ES2020 library target or change compiler settings just for this patch.
 
-   ```text
-   repeat:
-     outcome = run Loop
-     "done"  -> stop
-     "loop"  -> run each body node once, with a fresh skipped set for this pass
-                after each feedback-source node succeeds, write its output to the Loop's feedback buffer
-     other   -> fail: "unsupported control result"
-   then: the outer pass continues; done-side nodes run once
-   ```
+```ts
+this.clearIncomingEdgePayloads(id);
+queue.length = 0;
+this.edgePayload.clear();
+const message = error instanceof Error ? error.message : String(error);
+throw new Error(`Execution stopped at node ${id}: ${message}`);
+```
 
-   - The outer pass skips body nodes, which the Loop runner owns.
-   - If/Switch skipping inside the body uses a set created per iteration, so a branch skipped in one pass can run in the next.
-   - Skipping outside the body keeps the existing global set.
-   - Add a safety cap of item count + 1 Loop calls, falling back to 10,000. If it is exceeded, the run fails with a clear message instead of hanging.
-6. **Feedback.** Give `useClusterExecution` a narrow `writeLoopFeedback(loopId, edgeId, value)` callback, supplied by `WorkflowEditor` from `executionStore`.
-   - It mirrors `aggregateToLoop`: it merges `{ [edgeId]: value }` into the existing `_edgeBuf` and keeps other entries.
-   - The next Loop call reads and clears the buffer as it already does.
-   - Pinned body outputs count as normal successful outputs.
-7. **Stop and failure rules:**
-   - stop pressed before a Loop call, or during the body: no further Loop or body calls, status "cancelled";
-   - a body or Loop failure fails the cluster immediately, and the remaining nodes are marked blocked;
-   - if the session changes, the run stops without reporting completion;
-   - the lock is released on every exit, as today.
-8. **Progress shape stays the same.** `phase`, `currentNodeId`, `completed`, `eligible` and `outcomes` are unchanged:
-   - `eligible` stays the number of unique nodes;
-   - `outcomes[nodeId]` holds the latest result;
-   - `completed` is capped at `eligible`.
+Do not call `stop()` as the failure mechanism; that selects the existing user-stop semantics. Do not only remove independent-node enqueueing or break the inner loop, since existing siblings and later OnBar work would remain possible.
 
-   The cluster card needs no change.
-9. **Unchanged:** do not switch cluster runs to `WorkflowExecutor.executeAll()`, add a server run, or change graph structure during a run. Single-node Execute and Run All behave exactly as before.
+### 3. Preserve the existing outer boundary and caller contract
 
-## Tests
+1. Let either `await runInnerQueue()` reject into the enclosing catch. This prevents entering or continuing OnBar replay and bypasses completion reporting.
+2. Keep the executor as the single owner of the run-level destructive failure notification for the actual editor button path. Make its existing message communicate that execution stopped and include the contextual error.
+3. Normalize the outer caught value safely; avoid assuming every thrown value has a usable `.message`.
+4. Do not rethrow from the outer catch or change `Promise<void>` to a new result type in this minimal patch. The actual editor has no catch; changing this contract would require coordinated caller changes.
+5. Preserve the existing executor and editor `finally` blocks. Do not move token release to the node action or clear the entire output store.
+6. Test that manual Stop remains the neutral stop path, not a newly invented failure signal. Preserve current treatment of returned cancelled outcomes unless a separate cancellation change is approved.
 
-### Server and shared rules
-- The cases listed in Part 1, steps 3 and 4.
+### 4. Preserve output and retry semantics honestly
 
-### Paste (editor command tests)
-- **In an open cluster:** new IDs; internal connections remapped; pasted nodes join the open cluster; no cluster copied; originals untouched; pasted nodes selected; one history entry, and undo removes all of it.
-- **Failure:** a rejected insert changes nothing and adds no history entry.
-- **Overview:** copying a whole cluster still creates a renamed copy of the cluster; one undo removes the whole paste.
-- **References:** references between copied nodes point to the new copies; references to outside nodes are unchanged.
-- **Save after paste:** the cluster saves after an in-cluster paste.
+- Keep already completed output values, pins and the failed node's inline error/previous output. Do not fabricate success for unexecuted nodes or clear all previews.
+- Confirm a second run has a new local queue and no scheduler `edgePayload` from the failed run.
+- For retry tests involving Loop feedback, distinguish scheduler-owned payloads from `_edgeBuf`, aggregate, input and loop-index state retained in `ExecutionContext`. Keep existing initialization behavior; no broad runtime reset is part of this fix.
+- A pending/previous preview at a validation failure is not itself a new execution outcome. Improving its presentation or fixing the Backtest ID expression requires separate diagnosis.
 
-### Loop (`tests/useClusterExecution.test.ts`)
-- Replace the single-pass test. The Loop returns loop, loop, loop, done. Expected order: upstream, loop, body, loop, body, loop, body, loop, doneNode, after.
-- The body runs exactly once per `loop` result, and the done node never runs before `done`.
-- No body node runs again after `done`.
-- An If inside the body takes a different branch in iteration 2 than in iteration 1, and both run correctly.
-- The body fails in iteration 2: no third Loop call, and the cluster is marked failed.
-- Stop during iteration 2: no further calls, status cancelled, lock released.
-- The feedback writer receives `feedbackEdgeId -> body output` before each next Loop call.
-- Pinned body output still schedules correctly.
-- Two Loops in sequence both complete. Overlapping Loop bodies are rejected before anything runs.
-- The safety cap stops a Loop that never returns `done`.
-- Existing ordering, fail-fast and non-Loop tests still pass unchanged.
+## Regression matrix
 
-### Browser checks
-- Save a cluster with an unwired node, then reload.
-- Open a cluster, copy two connected members, paste, check, undo.
-- Execute a cluster where a Loop runs over 3 items: the body shows 3 runs, the `done` side runs once, and the Loop output panel shows the full aggregate.
+Each test asserts exact invocation order/non-invocation and appropriate cleanup; error text alone is insufficient.
 
-## Order of work
+| Scenario | Required assertions |
+| --- | --- |
+| Root → failing action → child | Only root and failing action start; completed root output retained; child never invoked. |
+| First of two queued roots fails | Second root never starts. |
+| Fan-out with sibling already queued | Failing child prevents sibling and every later descendant from starting. |
+| Validation failure | Action returns failed with “Backtest ID is required”; no downstream calls; failure identifies node ID and original error. |
+| Direct throw and non-Error throw | Same fail-fast behavior; safe normalization; no secondary error while reporting. |
+| OnBar returns `data.isLast: false`, downstream fails | No second OnBar call. |
+| Failure during a later bar | Prior successful output retained; no later bar or queued sibling starts. |
+| Loop body fails before returning feedback | No next Loop call, remaining body node or done-branch invocation. |
+| Normal node timeout | At the existing 30-second threshold run ends; later nodes do not start. A late result does not restart this queue. |
+| Subscription failure / first-data timeout | Both propagate to run-level failure and prevent subsequent work. Document timer/subscription limitations rather than concealing them with timer teardown. |
+| Failure cleanup | Executor running flag false, active node null, transient highlights reset, one run-level destructive notification, no completion notification. |
+| Correct input and retry | Same executor/session can start a successful new run; editor lock is reacquirable; failed-run queue/payload is not delivered. |
+| Valid output shapes | `false`, a legitimate output property named `error`, pins and non-failure outcomes are not newly classified as failures. |
+| Successful baselines | Ordinary chain, selected If/Switch branch, Loop feedback/done and multi-bar replay still work. |
+| Manual Stop baseline | No later scheduler invocation after the in-flight step settles; existing neutral stopped reporting and cleanup remain. |
 
-1. Write failing tests for all three issues.
-2. Server save fix and shared fixture; this must come before paste.
-3. Paste: open-cluster branch, atomic overview, dependencies, references.
-4. Loop: regions helper, shared step runner, Loop runner, feedback writer, cap.
-5. Type check, focused Jest (editor and backend), lint on changed files, `git diff --check`, preview build, browser checks.
-6. Copy the backend change to `coreza-io/coreza-backend` and redeploy.
-7. Update `AGENTS.md`:
-   - Persisted clusters may contain disconnected members; only cluster creation requires connectivity. The editor and server validators must agree.
-   - Cluster Execute repeats a Loop's body per iteration through the normal node actions and writes Loop feedback the same way Run All does.
+Keep existing editor-node and cluster execution suites passing; Cluster Execute remains an editor-local coordinator, not a Run All caller.
 
-## Files
+## Editor integration and browser acceptance
 
-**Server:**
-- `coreza-backend/src/workflow/validateNodeClusters.ts` and its test.
+1. Exercise the actual Execute All control, not only the executor class. Use an authenticated local preview when available; follow the project's managed-session procedure without logging credentials.
+2. Reproduce BacktestInit → OnBar → Consolidator → remaining nodes with the failing Backtest ID input. Inspect action calls/logs; an unchanged card alone does not prove non-execution.
+3. Confirm failure naming OnBar's ID and original field error, no run-success notification, completed BacktestInit output retained, and Execute All returns to idle.
+4. Confirm another execution can acquire the same editor session lock. Fix the input and retry without refreshing.
+5. Repeat with two independent roots and a failure after one successful Loop/OnBar iteration.
+6. If a deterministic browser fixture is required, it must exercise the real executor and shared-lock behavior. Do not claim a fixture alone verifies the actual WorkflowEditor caller; include the actual caller check or explicitly report it unverified.
 
-**Editor:**
-- `src/pages/WorkflowEditor.tsx`: paste branches, atomic overview paste, effect dependencies, feedback writer supplied to the cluster runner.
-- `src/hooks/useClusterExecution.ts`: shared step runner, Loop runner, per-iteration skipping, cap.
-- `src/domain/clusters/loopRegions.ts`: new pure helper.
-- Possibly `src/domain/clusters/documentCommands.ts`: a small overview paste helper, only if needed for atomic overview paste.
+## Verification and delivery order
 
-**Tests:**
-- `tests/useClusterExecution.test.ts`
-- `tests/domain/clusters.test.ts` (shared fixture)
-- `tests/domain/clusterDocumentCommands.test.ts` (paste)
-- `tests/domain/loopRegions.test.ts`
+1. Add and run red focused tests.
+2. Apply the queue-catch and outer-reporting changes in one patch.
+3. Run the focused Jest file and existing `editorNodeExecution` / `useClusterExecution` suites using repository test configuration.
+4. Review diff for accidental changes to successful routing, cluster behavior, outputs and caller contracts.
+5. Let the preview harness perform build/type verification; inspect its latest diagnostics and resolve related failures. Do not manually run project builds/typechecks.
+6. Run focused browser/integration acceptance and `git diff --check`.
+7. Update the implementation roadmap and, if needed, one architecture rule stating that editor Execute All fails fast while retaining completed outputs. Do not alter unrelated architecture rules.
+8. Report observed test/browser results separately from unverified behavior. No application code or tests have been changed/run in this planning step.
 
-**Not changed:** projection, reconciliation, routing, collapse/expand, single-node Execute, Run All and `WorkflowExecutor`.
+## Limitations and release boundaries
 
-## Open items
-- The server fix needs the separate backend repository updated and redeployed.
-- Browser checks need a signed-in preview session.
+- This is a sequential scheduler fix, not rollback of trading or other remote side effects already started before failure.
+- `Promise.race` does not abort its underlying action. Streaming polling currently has no settled-state disposal, and its waiting flag clears on success only. Failure propagation alone must not be advertised as timer teardown, subscription cancellation or guaranteed protection from late output writes.
+- Add narrow lifecycle cleanup only as separately identified work if timeout/browser tests demonstrate lingering activity; do not silently add a parallel cancellation framework to this patch.
+- The unused `useWorkflowExecution` wrapper would still show success after a resolved handled failure. Before adopting it, coordinate an explicit result/caller contract and notification ownership. It is not the current button path.
+- Missing preview access can block authenticated browser acceptance; isolated scheduler tests can still run, but must not stand in for verified editor lock/UI behavior.
+- The Backtest ID expression cause remains unconfirmed and outside this scope.

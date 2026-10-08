@@ -401,6 +401,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           finishEditing={renderProps.finishEditing}
           setEditingName={renderProps.setEditingName}
           isExecuting={data.isExecuting}
+          hasExecutionError={!!renderProps.error && !renderProps.isSending}
           isTool={isTool}
           onToggleTool={canToggleTool ? handleToggleTool : undefined}
           collapsedExecutionControl={renderProps.collapsedExecutionControl}

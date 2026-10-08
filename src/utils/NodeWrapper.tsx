@@ -108,6 +108,7 @@ interface NodeWrapperProps {
   nodeSurfaceGradient?: string;
   nodeTheme?: NodeVisualTheme;
   isExecuting?: boolean;
+  hasExecutionError?: boolean;
   isStreamingWaiting?: boolean;
   // Stream data received flash
   streamDataReceived?: boolean;
@@ -153,6 +154,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   nodeSurfaceGradient,
   nodeTheme,
   isExecuting = false,
+  hasExecutionError = false,
   isStreamingWaiting = false,
   // Stream data received flash
   streamDataReceived = false,
@@ -303,6 +305,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               `,
         }
       : {}),
+    ...(hasExecutionError && !isExecuting ? {
+      borderColor: "hsl(var(--destructive))",
+      "--node-border-color": "hsl(var(--destructive))",
+    } : {}),
   };
 
   return (

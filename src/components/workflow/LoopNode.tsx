@@ -113,6 +113,7 @@ export function LoopNode({ id, data, selected, workflowId, readOnly }: LoopNodeP
             finishEditing={renderProps.finishEditing}
             setEditingName={renderProps.setEditingName}
             isExecuting={(data as any).isExecuting}
+            hasExecutionError={!!renderProps.error && !renderProps.isSending}
             readOnly={readOnly ?? (data as any).readOnly}
             collapsedExecutionControl={renderProps.collapsedExecutionControl}
           >

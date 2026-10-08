@@ -1,101 +1,146 @@
-# Execute All: stop the run on the first node failure
+# Expanded cluster execution effects and output-only node errors
 
 ## Goal
 
-Execute All must stop scheduling work as soon as a node fails. No queued root, sibling, descendant, Loop feedback iteration, or later OnBar iteration may start after that observed failure.
+1. During Execute Cluster, an expanded cluster shows the currently executing member using the normal editor's electric border and connected-edge animation.
+2. Execution and required-field failures appear in the failed node's Output Data panel, not in a generic error box inside its configuration form.
+3. Keep manual execution, cluster ordering, repeated Loop execution, cancellation, pins, canonical document transactions and drag performance unchanged.
 
-For the reported case:
+This plan supersedes the preceding Execute All error-stopping plan for the newly attached document. That separate scheduler fix is not included. As requested, this plan contains no test cases or testing sections. No application code has been changed.
 
-```text
-BacktestInit succeeds
-  → OnBar fails: “Backtest ID is required”
-  → Execute All ends
-  → Consolidator, is4hrs, RollingWindow21, ATR14 and remaining work do not start
-```
+## Confirmed findings and corrections
 
-Show the failed node ID and original error, retain completed outputs and the node's existing inline error, return the Execute All button to idle, and release the editor execution lock so the user can correct the input and retry without refreshing.
+The complete 122-line attachment was reviewed against checkout `a7b80561`.
 
-This replaces the previous cluster-save/paste/Loop plan with the newly attached Execute All proposal. It does not implement either plan.
-
-## Verified current state
-
-The complete attachment was reviewed against checkout `4bfce2ad`, rather than assuming its reviewed snapshot is unchanged.
-
-| Area | Confirmed evidence | Implication |
+| Area | Confirmed current behavior | Planned response |
 | --- | --- | --- |
-| Required-field validation | `src/hooks/useNodeExecution.ts:444–451` returns `status: "failed"` and the field error. | Use the existing structured failure signal; no generic output inspection is needed. |
-| Normal node invocation | `src/utils/workflowExecutor.ts:63–72` converts failed/cancelled outcomes to thrown errors. | Failures already reach the scheduler. Cancellation is currently represented as an error here; do not silently redesign it in this patch. |
-| Queue catch | `workflowExecutor.ts:993–1018` records failure, then enqueues `independentNodes` without rethrowing. Previously queued nodes remain. | Confirmed primary defect: record-and-continue behavior. |
-| OnBar replay | `workflowExecutor.ts:1024–1053` invokes the same queue first for the graph, then for later bars. | An inner-loop break alone is insufficient; failure must escape the queue to the enclosing boundary. |
-| Run-level reporting | `workflowExecutor.ts:1081–1100` has neutral Stop, normal completion, and an outer destructive error notification. | Reuse the error boundary and bypass normal completion. |
-| Executor cleanup | `workflowExecutor.ts:1101–1125` resets its token, running flag, active-node indicator and highlights. | Preserve cleanup on the failure path. Outputs are not globally cleared here. |
-| Actual button caller | `src/pages/WorkflowEditor.tsx:1431–1452` awaits the executor inside `try/finally` and releases the session lock. | No production editor refactor is needed for normal failure cleanup. |
-| Alternative wrapper | `src/hooks/useWorkflowExecution.ts:120–139` shows success whenever the executor resolves. Search found its definition but no imported use in `src`. | Leave this unused wrapper outside the minimal change; its success contract must be corrected before it becomes a live caller. |
-| Timeouts/subscriptions | `workflowExecutor.ts:488–589, 721–730` propagates subscription and timeout errors. Normal execution uses a 30-second `Promise.race`; streaming polls recursively. | These errors must also stop subsequent scheduling, but throwing does not cancel a remote operation or dispose polling. |
-| Loop feedback | `workflowExecutor.ts:595–630` writes `_edgeBuf` into `ExecutionContext`; `setNodeData` merges state. | Clearing the scheduler's `edgePayload` is not equivalent to resetting all Loop/input state. Do not promise a fresh runtime reset. |
-| Compiler target | `tsconfig.app.json` targets ES2020. | Do not require ES2022 `Error` cause options. |
+| Cluster progress | `useClusterExecution.ts:191–225` publishes `currentNodeId` before an action. Loop body and final Loop calls use this path. Skipped nodes bypass the update. | Reuse progress, but explicitly clear active-member state after settlement; skipped nodes currently leave the prior ID behind. |
+| Terminal state | `finish` retains a failed/cancelled node ID; `cancelRun` aborts without a state update until the action settles. | Separate diagnostic IDs from active visual progress. Clear effects immediately on Stop without releasing the execution lock early. |
+| Editor running indicator | `WorkflowEditor.tsx:918–930` derives `data.isExecuting` only from normal editor `executingNode`. Its cluster disabled reason also reads that state at `:700–703`. | Do not call `setExecutingNode` for clusters: that can make a cluster block itself. Apply a render-only overlay instead. |
+| Existing effects | `NodeWrapper.tsx:323,370` uses `isExecuting`, electric-border settings, dark theme and member-card expansion. `NodeRouter` and `LoopNode` already forward this flag. | Reuse the wrapper; no new animation component or changed theme/expansion policy. Cluster expansion and node-card expansion are distinct. |
+| Connections | `workflowExecutor.ts:369–410` highlights connected edges with animation, `executing-edge`, execution-green stroke and width 3. `EdgeManager.tsx:647–657` honors custom stroke in dark mode, while light mode retains its normal neutral color. | Match existing theme behavior rather than promise a green stroke in every theme. Use a semantic CSS token instead of duplicating a literal color in new feature code. |
+| Projection | `WorkflowEditor.tsx:708–724` reconciles projection before selecting displayed arrays at `:763–764`; `projection.ts:138` considers focus or view-state expansion. | Apply effects after reconciliation, without changing canonical nodes, projection geometry or committed base references. |
+| Required fields | `useNodeExecution.ts:444–451` sets local error and returns failed without publishing output. | Publish the failure envelope before returning; removing the form box alone would hide this diagnostic. |
+| Runtime failures | `useNodeExecution.ts:840–898` parses errors, preserves optional code, and publishes to last output, execution store and canonical node data. | Share a narrow failure publisher; preserve existing parsing and Consolidator expiry handling. |
+| Output updates | `useNodeOutput.ts:140–168` prioritizes stored output and reacts to store version. `ExecutionContext.setNodeData` only merges state; `useNodeExecution` currently imports no notify hook. | Explicitly notify once after failure publication so other output consumers observe the update. Store mutation alone is not a broadcast. |
+| Duplicate diagnostics | BasicNodeLayout `:180` and RepeaterNodeLayout `:1443` render generic execution-error boxes. BaseNode `:577` passes raw error to a control tooltip/live region. | Remove both boxes and use a generic failed-state description on the node control. Preserve field-specific feedback. |
+| Output contract | `StandardNodeOutput` recognizes `{success:false,status:"error",error:...}`; OutputPanel already renders these fields. Current catch adds root `timestamp` and optional `code`. | Keep the existing envelope and metadata shape for compatibility; no schema/normalizer migration is necessary. |
 
-The screenshot/attachment does **not** establish why the Backtest ID expression resolves incorrectly. That diagnosis remains separate from the confirmed scheduler defect.
+Only the document was available for this review; the screenshots it describes were not separately inspected in this turn. The cause of the Backtest ID expression failure remains unconfirmed and outside scope.
 
-## Scope
+## Implementation
 
-**Production:** `src/utils/workflowExecutor.ts`, restricted to the Execute All failure path and its existing outer error reporting.
+### 1. Expose actual active-member progress
 
-Preserve individual Execute, editor-local Cluster Execute, successful conditional routing, pins, Loop aggregation, historical OnBar replay, and manual Stop behavior. No backend, migration, API, worker queue, cluster projection, graph mutation, execution-intent type, or action-registry redesign is required.
+In `src/hooks/useClusterExecution.ts`:
 
-## Implementation steps
+1. Return a small derived `activeMember` value containing session, cluster ID and current node ID, or `null` when no member action is in flight.
+2. Reuse existing run state and controller ownership. Do not add a global store, event bus, polling timer or new execution engine.
+3. Publish the active node immediately before `actionSnapshot.execute` for every real invocation, including repeated Loop/body calls and the Loop's final `done` call.
+4. Once the action and its synchronous control-result handling settle successfully, publish progress without `currentNodeId`. Preserve completed/outcome information. This prevents the previous member remaining highlighted while skipped nodes are processed.
+5. Keep skipped nodes out of active progress. Never derive an active glow from `outcomes` or a terminal diagnostic ID.
+6. On failed/cancelled/completed/blocked state, session replacement or unmount, return no active member. Guard against stale generation/controller ownership before publishing.
+7. On Stop, abort the owned controller and narrowly clear the visual current-node indication immediately. Keep `phase: "running"`, the controller and lock until the in-flight action settles; do not enable a second run prematurely.
+8. Keep diagnostic `currentNodeId` on terminal failure if useful; the derived visual value must still require running phase, current session/generation and a non-aborted owned controller.
+9. Preserve planner, action snapshots, scope, feedback aggregation, safety limits and all existing execution ordering.
 
-### 1. Replace queue continuation with failure propagation
+### 2. Apply effects only to displayed graph copies
 
-Inside the per-node catch in `executeAllNodes`:
+In `src/pages/WorkflowEditor.tsx`, introduce a memoized overlay after `reconcileClusterProjection` and before passing displayed arrays to React Flow.
 
-1. Keep timing, failed-node bookkeeping and original error logging.
-2. Keep `clearIncomingEdgePayloads(id)`.
-3. Remove the complete `independentNodes` filter/enqueue block.
-4. Empty the local queue and clear the executor's transient `edgePayload` map.
-5. Normalize the caught value safely with `error instanceof Error ? error.message : String(error)`.
-6. Throw a contextual error containing the reliable canonical node ID and original message. An existing display label may supplement the ID, never replace it.
-7. Preserve the original exception in logging. Do not add unsupported `new Error(message, { cause })` options under the current ES2020 library target or change compiler settings just for this patch.
+**Ownership and membership**
+- Validate that the active cluster still exists and the current canonical node ID belongs to it.
+- Start from the unmodified base displayed nodes/edges, including the collapse-disabled fallback.
+- Never call canonical `setNodes`/`setEdges`, `updateNodeData`, history/save commands or `setExecutingNode` to publish cluster visual effects.
+- Do not store overlay objects in the committed base-projection reference.
+
+**Node indicator**
+- Copy only the active member and its `data` when adding `isExecuting: true`; preserve all other flags, properties and identities.
+- Apply the flag to its hidden runtime-host copy as well. Opening the cluster mid-run then reveals the same active member without registering a different runtime.
+- Preserve hidden/non-interactive behavior. Do not make hidden hosts selectable or draggable.
+- Derive every update from base projection, so clearing/changing the member restores the previous copy without mutating it.
+
+**Edge animation**
+- Enable cluster edge effects only when that cluster is expanded according to the exact projection rule: focused ID or `isClusterExpanded`, or members already exposed when collapse is disabled.
+- Use canonical IDs and `getClusterEdgeKind` to select internal main edges incident to the active member. Both endpoints must belong to the active cluster.
+- Operate only on visible corresponding displayed edges; exclude synthetic boundary routes, hidden edges and attachment/tool/model/resource edges.
+- Reuse normal inputs: `animated: true`, append `executing-edge` without erasing existing classes, width 3 and round joins/caps.
+- Represent the existing execution-green color with a semantic CSS token in `src/index.css` and reference it in the overlay. Do not hardcode a new color in the helper. Preserve EdgeManager's existing dark/light rendering policy; no edge geometry/theme rewrite.
+- Restore exact base styles/classes/animation values when progress ends. Do not globally clear unrelated edge animation.
+- Highlight incident main connections while the member executes, as the normal editor does; do not imply an unselected branch already executed or add a completed-edge timeline.
+
+**Performance and placement**
+- Put the pure overlay in `src/domain/clusters/executionVisuals.ts` if extraction makes ownership/identity rules clearer; keep it independent of React Flow store subscriptions.
+- Memoize from base arrays, session, active cluster/node and expansion. Return original arrays when no overlay applies, and original objects for unaffected items.
+- Do not depend on the full outcomes map for overlay recomputation and do not add whole-node-array subscriptions to edges/cards.
+- Leave fit-view, canonical selection, insertion hit testing and drag reconciliation on their existing base graph paths.
+
+### 3. Publish every normal action failure to Output Data
+
+In `src/hooks/useNodeExecution.ts`:
+
+1. Add one small local failure-publication helper used by required-field validation and the existing catch path.
+2. Preserve the current compatible envelope:
 
 ```ts
-this.clearIncomingEdgePayloads(id);
-queue.length = 0;
-this.edgePayload.clear();
-const message = error instanceof Error ? error.message : String(error);
-throw new Error(`Execution stopped at node ${id}: ${message}`);
+{
+  success: false,
+  status: "error",
+  error: message,
+  timestamp: new Date().toISOString(),
+  // Existing optional parsed code remains when present.
+}
 ```
 
-Do not call `stop()` as the failure mechanism; that selects the existing user-stop semantics. Do not only remove independent-node enqueueing or break the inner loop, since existing siblings and later OnBar work would remain possible.
+3. Keep the pin short circuit before validation and the catch-path pin protection. Pinned output must not be overwritten or cause a request to be sent.
+4. Before publishing, preserve existing abort/execution-generation guards. Do not write cancelled or obsolete results into the replacement workflow.
+5. Publish the same envelope through `setLastOutput`, `executionStore.setNodeData` and the canonical `updateNodeData` channel. Do not introduce direct writes to projected node `data`; use canonical updates for the new shared failure path.
+6. Add `useExecutionStoreNotify` and notify once after the failure store/canonical update so other consumers refresh. Add the helper/notification to callback dependencies without recreating execution controllers.
+7. Keep `setError(message)` for the failed-control state, including caught runtime failures invoked through the cluster snapshot, which do not pass through individual `handleSubmit`.
+8. Return `NodeExecutionOutcome` with `status: "failed"`, the original message/code and `output: envelope`. The existing outcome type already permits output; no public execution type change is needed.
+9. Preserve detailed JSON error parsing, optional code and `EDITOR_CONTEXT_EXPIRED` handling before publication. Normalize non-Error exceptions safely, without losing server-provided diagnostics.
+10. Do not alter required-field rules, visibility filtering, expression resolution, authentication, request payloads or backend output normalization.
+11. Keep lock/preflight/scope refusals as control diagnostics rather than inventing node runtime output when no action ran. An actual required-field failure is an action result and must be published.
 
-### 2. Preserve the existing outer boundary and caller contract
+Publishing output is not permission to change scheduler behavior. Cluster fail-fast/cancellation remains its existing coordinator logic; Execute All's separate continuation defect remains outside this plan.
 
-1. Let either `await runInnerQueue()` reject into the enclosing catch. This prevents entering or continuing OnBar replay and bypasses completion reporting.
-2. Keep the executor as the single owner of the run-level destructive failure notification for the actual editor button path. Make its existing message communicate that execution stopped and include the contextual error.
-3. Normalize the outer caught value safely; avoid assuming every thrown value has a usable `.message`.
-4. Do not rethrow from the outer catch or change `Promise<void>` to a new result type in this minimal patch. The actual editor has no catch; changing this contract would require coordinated caller changes.
-5. Preserve the existing executor and editor `finally` blocks. Do not move token release to the node action or clear the entire output store.
-6. Keep manual Stop as the neutral stop path, not a newly invented failure signal. Preserve current treatment of returned cancelled outcomes unless a separate cancellation change is approved.
+### 4. Remove duplicate form execution errors
 
-### 3. Preserve output and retry semantics honestly
+1. Delete only the generic execution `{error && ...}` box from `BasicNodeLayout.tsx` and `RepeaterNodeLayout.tsx`.
+2. Remove their now-unused destructured `error` bindings. Keep shared render types/prop contracts unless a change is necessary.
+3. In `BaseNode.tsx`, retain the existing failed icon/state but replace raw `executionHook.error` in `statusDescription` with a generic failure description. The current control exposes that value in both a visible tooltip and live region.
+4. Do not remove field-specific `FieldWrapper` validation, expression previews, credential/authentication notices, configuration help, listening controls or cluster-level preflight diagnostics.
+5. Do not auto-open Output Data, expand the node or reposition panels; the user's existing expansion state governs visibility.
+6. Preserve detailed error/code in output even though the configuration form no longer displays the raw message. Existing runtime cluster failure reason remains diagnostic state; no extra node-form notification is added.
 
-- Keep already completed output values, pins and the failed node's inline error/previous output. Do not fabricate success for unexecuted nodes or clear all previews.
-- Each new run must use a new local queue with no scheduler `edgePayload` from the failed run.
-- For retries involving Loop feedback, distinguish scheduler-owned payloads from `_edgeBuf`, aggregate, input and loop-index state retained in `ExecutionContext`. Keep existing initialization behavior; no broad runtime reset is part of this fix.
-- A pending/previous preview at a validation failure is not itself a new execution outcome. Improving its presentation or fixing the Backtest ID expression requires separate diagnosis.
+## Lifecycle rules
 
-## Implementation order
+- **Planning:** no member glow before an action starts.
+- **Running:** only the current real member invocation is indicated; the same Loop may light repeatedly.
+- **Skipped nodes:** no glow and no retained prior active-member indicator.
+- **Stop:** effects clear immediately; execution ownership remains until settlement.
+- **Failure:** effects clear, failed node output remains, no later cluster node starts under existing fail-fast behavior.
+- **Completion:** restore exact base objects/styles and keep outputs.
+- **Expand/collapse mid-run:** hidden hosts remain mounted; visible internal edge effects obey current expansion.
+- **Session change:** ignore stale progress and guarded late failure publication; do not claim rollback of an already-started remote operation.
+- **Normal Execute / Execute All:** preserve existing visual effects and lock behavior when no cluster overlay is active.
 
-1. Apply the queue-catch and outer-reporting changes together in `src/utils/workflowExecutor.ts`.
-2. Preserve the existing executor/editor cleanup and completed outputs.
-3. Keep all successful routing, cluster behavior and caller contracts unchanged.
-4. Record the fail-fast architecture rule if needed, without altering unrelated rules.
+## Files and order
 
-No application code has been changed in this planning step.
+1. `src/hooks/useClusterExecution.ts`: active-member derivation, successful-settlement clearing and immediate Stop visual cleanup.
+2. `src/index.css`: semantic execution-edge color token only; no new animation CSS.
+3. Optional `src/domain/clusters/executionVisuals.ts`: focused render-only overlay; create before importing it.
+4. `src/pages/WorkflowEditor.tsx`: memoized displayed arrays driven by active-member progress.
+5. `src/hooks/useNodeExecution.ts`: shared guarded failure publication, output envelope and one store notification.
+6. `BasicNodeLayout.tsx`, `RepeaterNodeLayout.tsx`, `BaseNode.tsx`: remove generic form diagnostics and detailed node-control tooltip text.
+7. Record the render-only overlay/shared-failure-publication architecture rules in `AGENTS.md` when implementing; keep unrelated rules unchanged.
 
-## Limitations and release boundaries
+No backend deployment, database migration, API, schema, queue worker, new scheduler, projection/reconciliation change, NodeWrapper rewrite or EdgeManager subscription change is needed.
 
-- This is a sequential scheduler fix, not rollback of trading or other remote side effects already started before failure.
-- `Promise.race` does not abort its underlying action. Streaming polling currently has no settled-state disposal, and its waiting flag clears on success only. Failure propagation alone must not be advertised as timer teardown, subscription cancellation or guaranteed protection from late output writes.
-- Add narrow lifecycle cleanup only as separately identified work if lingering activity is separately confirmed; do not silently add a parallel cancellation framework to this patch.
-- The unused `useWorkflowExecution` wrapper would still show success after a resolved handled failure. Before adopting it, coordinate an explicit result/caller contract and notification ownership. It is not the current button path.
-- The Backtest ID expression cause remains unconfirmed and outside this scope.
+## Boundaries
+
+- Existing electric-border settings and dark/light theme behavior remain authoritative; this is parity with normal editor effects, not a new always-on animation policy.
+- Preserve current timestamp/code shape; migrating every output to a new metadata format is separate work.
+- Stored output publication must notify explicitly; a store write alone does not guarantee every panel rerenders.
+- No global output-store clearing, pin removal, canonical visual-flag persistence or undo-history entry is introduced.
+- Backtest ID expression resolution, Execute All fail-fast, remote rollback and general streaming teardown are separate concerns.

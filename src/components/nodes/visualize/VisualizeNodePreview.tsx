@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import LightweightVisualizeChart from "@/components/charts/LightweightVisualizeChart";
 import type { SeriesPoint, VisualizeChartViewModel, VisualizeOverlay } from "@/components/charts/chartTypes";
 import { resolveReferences } from "@/utils/resolveReferences";
+import type { ReferenceNode } from "@/utils/referenceResolution";
 import { getIndicatorSpec } from "@/utils/indicatorRegistry";
 import { alignSeriesToCandles, classifyOverlay, extractBars, getPaletteColor } from "@/utils/visualizeNormalize";
 
@@ -102,13 +103,19 @@ const VisualizeNodePreview: React.FC<{
   fieldState: Record<string, unknown>;
   sourceData: unknown;
   allNodeData: Record<string, unknown>;
-}> = ({ fieldState, sourceData, allNodeData }) => {
-  const viewModel = useMemo<VisualizeChartViewModel>(() => {
-    const resolvedCandles = resolveReferences(
-      String(fieldState.candles ?? ""),
-      sourceData,
-      allNodeData
-    );
+  nodes: readonly ReferenceNode[];
+}> = ({ fieldState, sourceData, allNodeData, nodes }) => {
+  const preview = useMemo(() => {
+    let diagnostic: string | undefined;
+    const resolve = (expression: string) => {
+      try {
+        return resolveReferences(expression, sourceData, allNodeData, nodes);
+      } catch (error) {
+        diagnostic = error instanceof Error ? error.message : "Reference preview failed.";
+        return undefined;
+      }
+    };
+    const resolvedCandles = resolve(String(fieldState.candles ?? ""));
     const candles = extractBars(resolvedCandles);
     const currentClose = candles[candles.length - 1]?.close;
 
@@ -116,7 +123,7 @@ const VisualizeNodePreview: React.FC<{
     const overlays = overlayRows.reduce<VisualizeOverlay[]>((acc, row, index) => {
       if (!row?.data?.trim()) return acc;
 
-      const resolved = resolveReferences(row.data, sourceData, allNodeData);
+      const resolved = resolve(row.data);
       const name = row.name?.trim() || `Overlay ${index + 1}`;
       const color = getPaletteColor(index, row.color);
       const id = stableId(row);
@@ -194,10 +201,12 @@ const VisualizeNodePreview: React.FC<{
       return acc;
     }, []);
 
-    return { candles, overlays, options: { showVolume: true, showLegend: true, autoFit: true } };
-  }, [allNodeData, fieldState.candles, fieldState.overlays, sourceData]);
+    const viewModel: VisualizeChartViewModel = { candles, overlays, options: { showVolume: true, showLegend: true, autoFit: true } };
+    return { viewModel, diagnostic };
+  }, [allNodeData, fieldState.candles, fieldState.overlays, sourceData, nodes]);
 
-  return <LightweightVisualizeChart viewModel={viewModel} />;
+  if (preview.diagnostic) return <p role="alert" className="text-sm text-destructive">{preview.diagnostic}</p>;
+  return <LightweightVisualizeChart viewModel={preview.viewModel} />;
 };
 
 export default VisualizeNodePreview;

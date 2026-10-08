@@ -594,11 +594,8 @@ export function compileParamsToSlots(
   slotMap: Map<string, number>,
   templateDeps?: string[],
 ): SlotParamResolver | null {
-  // No compiled params available — treat as empty static params
-  if (!compiled) {
-    const empty = {};
-    return () => empty;
-  }
+  // Compilation failures must use runtime resolution, including its diagnostics.
+  if (!compiled) return null;
 
   // Has fallback keys — can't compile to slots
   if (compiled.fallbackKeys && compiled.fallbackKeys.length > 0) {

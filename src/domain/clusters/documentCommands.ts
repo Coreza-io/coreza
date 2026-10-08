@@ -1,7 +1,8 @@
+import { withUniqueInstanceAliases } from "@/utils/referenceResolution";
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeCluster } from "./types";
 import { normalizeClusters, validateClusters } from "./validate";
-import { remapNodeReferences } from "@/utils/remapNodeReferences";
+import { remapNodeReferenceMap } from "@/utils/remapNodeReferences";
 
 export interface WorkflowDocument {
   nodes: Node[];
@@ -79,17 +80,14 @@ export function insertNodesInDocument(
 /** Applies a clipboard batch and its metadata as one validated document. */
 export function pasteNodesInDocument(
   current: WorkflowDocument,
-  request: InsertDocumentRequest & { idMap: Readonly<Record<string, string>>; copiedClusters: readonly NodeCluster[] },
+  request: InsertDocumentRequest & { idMap: Readonly<Record<string, string>>; copiedClusters: readonly NodeCluster[]; sourceNodes?: readonly Node[] },
 ): InsertDocumentResult {
-  const tokens = Object.keys(request.idMap).map((id) => [id, crypto.randomUUID()] as const);
+  const names = withUniqueInstanceAliases(request.idMap, request.sourceNodes ?? []);
   const nodes = request.nodes.map((node) => {
     const data = { ...node.data };
     for (const key of ["values", "fieldState"]) {
       if (!(key in data)) continue;
-      let value = data[key];
-      for (const [id, token] of tokens) value = remapNodeReferences(value, id, token);
-      for (const [id, token] of tokens) value = remapNodeReferences(value, token, request.idMap[id]);
-      data[key] = value;
+      data[key] = remapNodeReferenceMap(data[key], names);
     }
     return { ...node, data };
   });
@@ -161,17 +159,18 @@ export function renameNodeInDocument(
   }
   if (oldId !== newId && current.nodes.some((node) => node.id === newId)) throw new Error(`Node ${newId} already exists.`);
 
+  const names = withUniqueInstanceAliases({ [oldId]: newId }, current.nodes);
   const candidate = cloneDocument(current);
   candidate.nodes = candidate.nodes.map((node) => {
     if (node.id !== oldId) {
       const data = { ...node.data };
-      if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferences(data.values, oldId, newId);
-      if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferences(data.fieldState, oldId, newId);
+      if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferenceMap(data.values, names);
+      if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferenceMap(data.fieldState, names);
       return { ...node, data };
     }
     const data: Record<string, unknown> = { ...node.data, displayName: newId };
-    if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferences(data.values, oldId, newId);
-    if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferences(data.fieldState, oldId, newId);
+    if (Object.prototype.hasOwnProperty.call(data, "values")) data.values = remapNodeReferenceMap(data.values, names);
+    if (Object.prototype.hasOwnProperty.call(data, "fieldState")) data.fieldState = remapNodeReferenceMap(data.fieldState, names);
     return { ...node, id: newId, data };
   });
   candidate.edges = candidate.edges.map((edge) => ({

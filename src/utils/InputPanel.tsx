@@ -1,3 +1,4 @@
+import { nodeDisplayName } from "@/domain/nodeNaming";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -221,7 +222,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
                   <option value="">Select node...</option>
                   {previousNodes.map((node: Node<any>) => (
                     <option key={node.id} value={node.id}>
-                      {node.id}
+                      {nodeDisplayName(node)}
                     </option>
                   ))}
                 </select>

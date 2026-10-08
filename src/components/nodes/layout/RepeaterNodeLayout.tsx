@@ -1,3 +1,4 @@
+import { useStableNodes } from "@/contexts/StableNodeContext";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -26,7 +27,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { X, Plus } from "lucide-react";
-import { useReactFlow } from "@xyflow/react";
 import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -37,7 +37,6 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
 import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
-import { getDisplayName } from "@/components/nodes/layout/utils/nodeDisplay";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import {
   ReferenceDropTarget,
@@ -62,7 +61,7 @@ import {
   type TypedEditFieldRow,
 } from "../../../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import {
-  formatPath,
+  buildNodeReference,
   parseJsonReferenceDragPayload,
 } from "@/utils/referencePath";
 import { insertEditFieldReference } from "@/utils/editFieldReferenceDrop";
@@ -369,7 +368,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   incomingEdgeCount,
   readOnly,
 }) => {
-  const { getNodes } = useReactFlow();
+  const { getNodes } = useStableNodes();
   const executionContext = useExecutionStore();
   const executionStoreVersion = useExecutionStoreVersion();
   const { user } = useAuth();
@@ -726,14 +725,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         if (!drag) return null;
         const sourceId = drag.sourceNodeId ?? selectedPrevNodeId;
         if (!sourceId) return null;
-        const sourceNode = previousNodes.find((n) => n.id === sourceId);
-        const sourceDisplayName =
-          sourceNode?.data?.displayName ||
-          (sourceNode ? getDisplayName(sourceNode, previousNodes) : sourceId);
-        const suffix = formatPath(drag.pathSegments);
-
+        const insert = buildNodeReference(drag, getNodes(), selectedPrevNodeId);
+        if (!insert) return null;
         return {
-          insert: `{{ $(${JSON.stringify(sourceDisplayName)}).json${suffix} }}`,
+          insert,
           sourceId,
         };
       } catch (error) {
@@ -741,7 +736,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return null;
       }
     },
-    [previousNodes, selectedPrevNodeId],
+    [getNodes, selectedPrevNodeId],
   );
 
   const handleDropWithInsert = useCallback(
@@ -814,7 +809,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     return {
       input,
       nodes: allNodeData,
-      definitions: getNodes(),
+      definitions: [...getNodes()],
       hasInput: input !== undefined,
     };
   }, [getPreviewData, getNodes, selectedPrevNodeId]);
@@ -830,8 +825,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return fullePreview(
           resolveReferences(expr, srcData, allNodeData, getNodes()),
         );
-      } catch {
-        return "";
+      } catch (error) {
+        return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
     [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion],
@@ -855,9 +850,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const { allNodeData, getSourceData } = getPreviewData();
     return {
       allNodeData,
+      nodes: getNodes(),
       sourceData: getSourceData(selectedPrevNodeId),
     };
-  }, [getPreviewData, selectedPrevNodeId, executionStoreVersion]);
+  }, [getPreviewData, getNodes, selectedPrevNodeId, executionStoreVersion]);
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {
@@ -1415,6 +1411,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               fieldState={fieldState}
               sourceData={visualizePreviewContext.sourceData}
               allNodeData={visualizePreviewContext.allNodeData}
+              nodes={visualizePreviewContext.nodes}
             />
           </div>
         )}

@@ -53,6 +53,7 @@ export interface INodeExecutor {
 // Type for workflow node structure
 export interface WorkflowNode {
   id: string;
+  displayName?: string;
   name?: string; // Actual node type (e.g., "GoogleWebSearch", "AIAgent", "Loop")
   /** Optional legacy type alias kept for backwards compatibility */
   type?: string;
@@ -64,6 +65,7 @@ export interface WorkflowNode {
   category: string;
   values?: { [key: string]: any };
   data?: {
+    displayName?: string;
     definition?: any;
     values?: { [key: string]: any };
     pinnedOutput?: unknown;

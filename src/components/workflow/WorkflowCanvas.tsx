@@ -1,3 +1,4 @@
+import { allocateNodeName } from "@/domain/nodeNaming";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -128,11 +129,13 @@ export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = ({
         y: loopNode.position.y,
       };
 
+      const allocated = allocateNodeName("New Node", nodes);
+      if (allocated.ok === false) return;
       const newNode: Node = {
-        id: `node_${Date.now()}`,
+        id: allocated.name,
         type: "default",
         position,
-        data: { label: "New Node" },
+        data: { label: "New Node", displayName: allocated.name },
       };
 
       onNodesChange([...nodes, newNode]);

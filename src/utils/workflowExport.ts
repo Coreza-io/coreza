@@ -1,3 +1,8 @@
+import { allocateNodeName } from "@/domain/nodeNaming";
+import { mapNodeReferences, remapNodeReferenceMap } from "@/utils/remapNodeReferences";
+import { resolveNodeIdentity, withUniqueInstanceAliases } from "@/utils/referenceResolution";
+import { nodeManifest } from "@/nodes/manifest";
+import { validateClusters } from "@/domain/clusters/validate";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -133,15 +138,55 @@ export async function importWorkflow(file: File): Promise<{
     return { ...node, id: node.id, type, position: { x: position.x, y: position.y } };
   }) as ExportedWorkflow['nodes'];
   const parsedClusters = parseNodeClusters(importedClusters);
+  const ids = new Set(normalizedNodes.map((node) => node.id));
+  if (ids.size !== normalizedNodes.length) throw new Error("Workflow file contains duplicate node IDs");
+  const edgeIds = new Set<string>();
+  for (const edge of importedEdges) {
+    if (!edge || typeof edge.id !== "string" || edgeIds.has(edge.id) || !ids.has(edge.source) || !ids.has(edge.target)) {
+      throw new Error("Workflow file contains an invalid connection");
+    }
+    edgeIds.add(edge.id);
+  }
+  const validationNodes: Node[] = normalizedNodes.map((node) => ({
+    ...node, data: { values: node.values, definition: nodeManifest[node.type as keyof typeof nodeManifest] },
+  }));
+  const validation = validateClusters(validationNodes, importedEdges, parsedClusters.clusters);
+  if (!validation.valid) throw new Error(validation.violations[0].message);
+  // Validate references before allocating public names could hide ambiguity.
+  for (const node of normalizedNodes) {
+    mapNodeReferences(node.values, (name) => {
+      resolveNodeIdentity(name, normalizedNodes);
+      return undefined;
+    });
+  }
+  const idMap = Object.fromEntries(normalizedNodes.map((node) => [node.id, crypto.randomUUID()]));
+  const references = withUniqueInstanceAliases(idMap, normalizedNodes);
+  const reservations = new Set<string>();
+  const freshNodes = normalizedNodes.map((node) => {
+    const result = allocateNodeName(node.displayName?.trim() ? node.displayName : node.id, [], undefined, reservations);
+    if (result.ok === false) throw new Error(result.message);
+    reservations.add(result.name);
+    return {
+      ...node, id: idMap[node.id], displayName: result.name,
+      values: remapNodeReferenceMap(node.values, references),
+    };
+  });
+  const freshEdges = importedEdges.map((edge) => ({
+    ...edge, id: crypto.randomUUID(), source: idMap[edge.source], target: idMap[edge.target],
+  }));
+  const freshClusters = parsedClusters.clusters.map((cluster) => ({
+    ...cluster, memberNodeIds: cluster.memberNodeIds.map((id) => idMap[id]),
+  }));
+
   const clusterDiagnostics = parsedClusters.invalidIndexes.map((index) =>
     `Cluster metadata entry ${index + 1} is invalid and was not loaded.`);
 
   return {
     name: parsed.name,
-    nodes: normalizedNodes,
-    edges: importedEdges,
+    nodes: freshNodes,
+    edges: freshEdges,
     isActive: parsed.isActive ?? false,
-    clusters: normalizeClusters(parsedClusters.clusters),
+    clusters: normalizeClusters(freshClusters),
     clusterDiagnostics,
     invalidClusterEntries: parsedClusters.invalidEntries,
   };

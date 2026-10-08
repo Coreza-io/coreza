@@ -1,6 +1,7 @@
 export interface ReferenceNode {
   id: string;
   name?: string;
+  displayName?: string;
   label?: string;
   data?: unknown;
 }
@@ -30,56 +31,49 @@ export function pickJsonSource(value: unknown): unknown {
   return candidates.find((candidate) => candidate !== undefined);
 }
 
+export class AmbiguousNodeReferenceError extends Error {
+  readonly code = "ambiguous-node-reference";
+  constructor(name: string) {
+    super(`Ambiguous node reference "${name}". Use a canonical node ID.`);
+    this.name = "AmbiguousNodeReferenceError";
+  }
+}
+
+export function resolveNodeIdentity(name: string, nodes: readonly ReferenceNode[]): ReferenceNode | undefined {
+  const exact = nodes.find((node) => node.id === name);
+  if (exact) return exact;
+  const explicit = nodes.filter((node) => {
+    const data = asRecord(node.data);
+    return [node.displayName, data?.displayName].some((alias) => typeof alias === "string" && alias.trim() && alias === name);
+  });
+  const matches = explicit.length ? explicit : nodes.filter((node) => {
+    const data = asRecord(node.data);
+    return [node.name, node.label, data?.title, data?.name, data?.label].includes(name);
+  });
+  const ids = new Set(matches.map((node) => node.id));
+  if (ids.size > 1) throw new AmbiguousNodeReferenceError(name);
+  return matches[0];
+}
+
 export function resolveNodeKey(
   nodeName: string,
   allNodeData?: Readonly<Record<string, unknown>>,
   nodes?: readonly ReferenceNode[],
 ): string | undefined {
   if (!nodeName) return undefined;
-  if (
-    allNodeData &&
-    Object.prototype.hasOwnProperty.call(allNodeData, nodeName)
-  ) {
-    return nodeName;
+  const candidate = nodes && resolveNodeIdentity(nodeName, nodes);
+  const has = (key: string) => allNodeData && Object.prototype.hasOwnProperty.call(allNodeData, key);
+  // Exact IDs never fall through to another node's alias or output.
+  if (candidate) {
+    if (has(candidate.id)) return candidate.id;
+    if (candidate.id !== nodeName && has(nodeName)) return nodeName;
+    return undefined;
   }
-
-  const candidate = nodes?.find((node) => {
-    const data = asRecord(node.data);
-    return (
-      node.id === nodeName ||
-      node.label === nodeName ||
-      node.name === nodeName ||
-      data?.title === nodeName ||
-      data?.name === nodeName ||
-      data?.label === nodeName ||
-      data?.displayName === nodeName
-    );
-  });
-
-  return candidate &&
-    allNodeData &&
-    Object.prototype.hasOwnProperty.call(allNodeData, candidate.id)
-    ? candidate.id
-    : undefined;
+  return has(nodeName) ? nodeName : undefined;
 }
 
-export function resolveNodeAlias(
-  nodeName: string,
-  nodes: readonly ReferenceNode[],
-): string {
-  const candidate = nodes.find((node) => {
-    const data = asRecord(node.data);
-    return (
-      node.id === nodeName ||
-      node.label === nodeName ||
-      node.name === nodeName ||
-      data?.title === nodeName ||
-      data?.name === nodeName ||
-      data?.label === nodeName ||
-      data?.displayName === nodeName
-    );
-  });
-  return candidate?.id ?? nodeName;
+export function resolveNodeAlias(nodeName: string, nodes: readonly ReferenceNode[]): string {
+  return resolveNodeIdentity(nodeName, nodes)?.id ?? nodeName;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

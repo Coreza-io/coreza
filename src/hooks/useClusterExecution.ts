@@ -1,3 +1,4 @@
+import { resolveNodeIdentity } from "@/utils/referenceResolution";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeCluster } from "@/domain/clusters/types";
@@ -102,12 +103,7 @@ export function buildClusterExecutionPlan(
     const references = new Set<string>();
     collectReferences(nodeById.get(id)?.data?.values, references);
     for (const reference of references) {
-      const matches = nodes.filter((candidate) => {
-        const data = candidate.data as { displayName?: unknown; label?: unknown };
-        return candidate.id === reference || data.displayName === reference || data.label === reference;
-      });
-      if (matches.length > 1) throw new Error(`Node ${id} has an ambiguous reference to ${reference}.`);
-      const referencedId = matches[0]?.id;
+      const referencedId = resolveNodeIdentity(reference, nodes)?.id;
       if (referencedId === id) throw new Error(`Node ${id} contains a self-reference.`);
       if (referencedId && executableSet.has(referencedId)) dependencies.get(id)?.add(referencedId);
     }

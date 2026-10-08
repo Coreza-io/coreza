@@ -119,7 +119,7 @@ export function ExecutionDetailView({
           ...node.data,
           definition,
           values: (node as any).values || node.data?.values || {},
-          displayName: node.id,
+          displayName: (node as any).displayName || node.data?.displayName || node.id,
         },
       };
     });

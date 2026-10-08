@@ -7,7 +7,8 @@ import { buildNodeReference, createJsonReferenceDragPayload } from '../../src/ut
 import { resolveNodeAlias, resolveNodeKey, withUniqueInstanceAliases } from '../../src/utils/referenceResolution';
 import { remapNodeReferenceMap } from '../../src/utils/remapNodeReferences';
 import { resolveReferences } from '../../src/utils/resolveReferences';
-import { renameNodeInDocument } from '../../src/domain/clusters/documentCommands';
+import { resolveNodeRename } from '../../src/domain/clusters/nodeRename';
+import { pasteNodesInDocument, renameNodeInDocument } from '../../src/domain/clusters/documentCommands';
 import { importWorkflow } from '../../src/utils/workflowExport';
 import { serializeWorkflowContent } from '../../src/domain/workflowDocument';
 import { buildPreviewData } from '../../src/utils/previewDataResolver';
@@ -26,6 +27,72 @@ describe('canonical node naming and references', () => {
     expect(allocateNodeName('Strategy2026', [node('Strategy2026')])).toEqual({ ok: true, name: 'Strategy20261' });
     expect(allocateNodeName('Loop', [], undefined, new Set(['Loop', 'loop1']))).toEqual({ ok: true, name: 'Loop2' });
     expect(allocateNodeName('__CLUSTER__1', [])).toMatchObject({ ok: false, code: 'reserved' });
+  });
+
+  it('continues an existing numbered family across repeated copies and batch reservations', () => {
+    const nodes = [node('lows'), node('lows1')];
+    const reservations = new Set<string>();
+    for (const expected of ['lows2', 'lows3', 'lows4']) {
+      const result = allocateNodeName('lows1', nodes, undefined, reservations);
+      expect(result).toEqual({ ok: true, name: expected });
+      if (result.ok) reservations.add(result.name);
+    }
+    expect(allocateNodeName('lows3', [node('lows'), node('lows1'), node('lows3')])).toEqual({ ok: true, name: 'lows2' });
+    expect(allocateNodeName('lows7', nodes)).toEqual({ ok: true, name: 'lows7' });
+    expect(resolveNodeRename('lows1', 'lows', nodes)).toEqual({ ok: true, name: 'lows2', changed: true });
+    expect(allocateNodeName('lows1', [node('lows1')], undefined, new Set(), ['lows', 'lows1'])).toEqual({ ok: true, name: 'lows2' });
+    expect(allocateNodeName('LOWS1', [node('uuid', ' lows '), node('hidden', 'lows1')])).toEqual({ ok: true, name: 'LOWS2' });
+    expect(allocateNodeName('Strategy2026', [node('Strategy2026')])).toEqual({ ok: true, name: 'Strategy20261' });
+  });
+
+  it('pastes a numbered copy with remapped internal references and unchanged external references', () => {
+    const nodes = [node('lows'), node('lows1')];
+    nodes[1].data.values = { self: `{{ $('lows1').json.marker }}`, external: `{{ $('lows').json.marker }}` };
+    const allocated = allocateNodeName(nodeDisplayName(nodes[1]), nodes);
+    expect(allocated).toEqual({ ok: true, name: 'lows2' });
+    if (!allocated.ok) return;
+    const copy = { ...nodes[1], id: allocated.name, data: { ...nodes[1].data, displayName: allocated.name } };
+    const pasted = pasteNodesInDocument({ nodes, edges: [], clusters: [] }, {
+      nodes: [copy], idMap: { lows1: allocated.name }, sourceNodes: nodes, copiedClusters: [],
+    });
+    expect(pasted.ok).toBe(true);
+    if (!pasted.ok) return;
+    expect(pasted.document.nodes.map(nodeDisplayName)).toEqual(['lows', 'lows1', 'lows2']);
+    expect(pasted.document.nodes[2].data.values).toEqual({ self: `{{ $('lows2').json.marker }}`, external: `{{ $('lows').json.marker }}` });
+    expect(nodes[1].data.values).toEqual({ self: `{{ $('lows1').json.marker }}`, external: `{{ $('lows').json.marker }}` });
+  });
+
+  it('renames the screenshot case through topology, references, runtime, history and saved content', () => {
+    const nodes = [node('lows'), node('lows1'), node('lows11')];
+    nodes[1].data.values = { expression: `{{ $('lows11').json.marker }}` };
+    nodes[2].data.fieldState = { expression: `{{ $node['lows11'].json.marker }}` };
+    const current = {
+      nodes,
+      edges: [{ id: 'edge', source: 'lows11', target: 'lows1' }],
+      clusters: [{ id: '00000000-0000-4000-8000-000000000001', title: 'Cluster', memberNodeIds: ['lows11', 'lows1'] }],
+    };
+    const result = resolveNodeRename('lows1', 'lows11', nodes);
+    expect(result).toEqual({ ok: true, name: 'lows2', changed: true });
+    if (!result.ok) return;
+    const renamed = renameNodeInDocument(current, 'lows11', result.name).document;
+    const runtime = new ExecutionContext();
+    runtime.setPinned('lows11', { marker: 42 });
+    runtime.renameNode('lows11', result.name);
+    const preview = buildPreviewData(renamed.nodes, runtime, () => renamed.nodes);
+    expect(renamed.nodes.map(nodeDisplayName)).toEqual(['lows', 'lows1', 'lows2']);
+    expect(renamed.edges[0]).toMatchObject({ id: 'edge', source: 'lows2', target: 'lows1' });
+    expect(renamed.clusters[0].memberNodeIds).toEqual(['lows2', 'lows1']);
+    expect(renamed.nodes[2].data.fieldState).toEqual({ expression: `{{ $node['lows2'].json.marker }}` });
+    expect(resolveReferences((renamed.nodes[1].data.values as { expression: string }).expression, {}, preview.allNodeData, renamed.nodes)).toBe(42);
+    expect(runtime.storeMap.has('lows11')).toBe(false);
+    expect(serializeWorkflowContent('workflow', null, renamed.nodes, renamed.edges, renamed.clusters).nodes[2]).toMatchObject({ id: 'lows2', displayName: 'lows2' });
+    expect(buildNodeReference(createJsonReferenceDragPayload(['marker'], 'lows2', ''), renamed.nodes)).toBe('{{ $("lows2").json.marker }}');
+    // Undo/redo restores committed names and moves pinned state without allocating again.
+    runtime.renameNode('lows2', 'lows11');
+    expect(current.nodes.map(nodeDisplayName)).toEqual(['lows', 'lows1', 'lows11']);
+    runtime.renameNode('lows11', 'lows2');
+    expect(runtime.getNodeData('lows2').output).toEqual({ marker: 42 });
+    expect(resolveNodeRename('lows2', 'lows2', renamed.nodes)).toEqual({ ok: true, name: 'lows2', changed: false });
   });
 
   it('checks truncated suffix candidates and preserves the manual length limit', () => {

@@ -162,8 +162,9 @@ export async function importWorkflow(file: File): Promise<{
   const idMap = Object.fromEntries(normalizedNodes.map((node) => [node.id, crypto.randomUUID()]));
   const references = withUniqueInstanceAliases(idMap, normalizedNodes);
   const reservations = new Set<string>();
-  const freshNodes = normalizedNodes.map((node) => {
-    const result = allocateNodeName(node.displayName?.trim() ? node.displayName : node.id, [], undefined, reservations);
+  const familyNames = normalizedNodes.map((node) => node.displayName?.trim() ? node.displayName : node.id);
+  const freshNodes = normalizedNodes.map((node, index) => {
+    const result = allocateNodeName(familyNames[index], [], undefined, reservations, familyNames);
     if (result.ok === false) throw new Error(result.message);
     reservations.add(result.name);
     return {

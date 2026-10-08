@@ -2278,8 +2278,9 @@ const WorkflowEditorContent = () => {
             return;
           }
         }
+        const familyNames = (sourceNodes ?? copiedNodes).map(nodeDisplayName);
         const newNodes = copiedNodes.map((node) => {
-          const allocated = allocateNodeName(nodeDisplayName(node), current.nodes, undefined, reservations);
+          const allocated = allocateNodeName(nodeDisplayName(node), current.nodes, undefined, reservations, familyNames);
           if (allocated.ok === false) throw new Error(allocated.message);
           const newId = allocated.name;
           reservations.add(newId);

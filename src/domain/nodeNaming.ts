@@ -14,12 +14,13 @@ export function nodeDisplayName(node: NamedNode): string {
   return typeof name === "string" && name.trim() ? name : node.id;
 }
 
-/** Reserve instance identities against the complete canonical document. */
+/** Reserve identities; familyNames supplies non-reserving context for import/clipboard batches. */
 export function allocateNodeName(
   requestedName: string,
   nodes: readonly NamedNode[],
   sourceId?: string,
   reservations: ReadonlySet<string> = new Set(),
+  familyNames: readonly string[] = [],
 ): NodeNameResult {
   const base = requestedName.trim();
   if (!base) return { ok: false, code: "empty", message: "Node name cannot be empty." };
@@ -33,10 +34,18 @@ export function allocateNodeName(
     occupied.add(key(node.id));
     occupied.add(key(nodeDisplayName(node)));
   }
+  // Keep free requests verbatim. On collision, continue a known family instead
+  // of nesting suffixes (lows1 -> lows2); unrelated custom digits stay literal.
+  const stem = /^(.*\D)[1-9]\d*$/.exec(base)?.[1];
+  const familyRoot = stem && key(stem);
+  const hasFamilyRoot = familyRoot && (occupied.has(familyRoot)
+    || nodes.some((node) => key(node.id) === familyRoot || key(nodeDisplayName(node)) === familyRoot)
+    || familyNames.some((name) => key(name) === familyRoot));
+  const suffixBase = stem && hasFamilyRoot ? stem : base;
   let name = base;
   for (let suffix = 1; occupied.has(key(name)); suffix++) {
     const tail = String(suffix);
-    name = base.slice(0, 50 - tail.length) + tail;
+    name = suffixBase.slice(0, 50 - tail.length) + tail;
   }
   return { ok: true, name };
 }

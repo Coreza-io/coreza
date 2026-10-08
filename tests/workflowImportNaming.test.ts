@@ -52,3 +52,13 @@ it('imports a valid dynamic Switch branch and remaps its cluster and endpoints',
   expect(imported.edges[0]).toMatchObject({ source: ids[0], target: ids[1], sourceHandle: 'Long' });
   expect(imported.nodes[0].values).toEqual(nodes[0].values);
 });
+
+it.each([
+  { names: ['lows', 'lows1', 'lows1'] },
+  { names: ['lows1', 'lows1', 'lows'] },
+])('continues imported name families even when their root appears later: $names', async ({ names }) => {
+  const imported = await importWorkflow(file(names.map((displayName, index) => ({ id: `id${index}`, type: 'If', displayName, position }))));
+  expect(imported.nodes.map((node) => node.displayName)).toEqual(names[0] === 'lows'
+    ? ['lows', 'lows1', 'lows2'] : ['lows1', 'lows2', 'lows']);
+  expect(new Set(imported.nodes.map((node) => node.id)).size).toBe(3);
+});

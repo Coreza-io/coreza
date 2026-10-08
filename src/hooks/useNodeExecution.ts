@@ -12,7 +12,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useNodeId } from "@xyflow/react";
 import type { Node } from "@xyflow/react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
+import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
@@ -87,6 +87,7 @@ export function useNodeExecution({
   const { getNodes, getEdges, updateNodeData } = useStableNodes();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
+  const notifyExecutionStoreUpdate = useExecutionStoreNotify();
 
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -378,6 +379,29 @@ export function useNodeExecution({
     ],
   );
 
+  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, code?: string): NodeExecutionOutcome => {
+    const outcomeNodeId = nodeId ?? "unknown";
+    if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+    if (overrideOutput !== null && overrideOutput !== undefined) {
+      return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
+    }
+    const output = {
+      success: false,
+      status: "error",
+      error: message,
+      timestamp: new Date().toISOString(),
+      ...(code !== undefined ? { code } : {}),
+    };
+    setError(message);
+    setLastOutput(output);
+    if (nodeId) {
+      executionStore.setNodeData(nodeId, { output });
+      updateNodeData(nodeId, { output });
+      notifyExecutionStoreUpdate();
+    }
+    return { nodeId: outcomeNodeId, status: "failed", error: { message, ...(code !== undefined ? { code } : {}) }, output };
+  }, [nodeId, overrideOutput, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
+
   // Main execution handler
   const executeAction = useCallback(
     async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number, allowedNodeIds?: ReadonlySet<string>): Promise<NodeExecutionOutcome> => {
@@ -442,12 +466,7 @@ export function useNodeExecution({
           value === undefined || value === null || value === "" || isEmptyArray;
 
         if (f.required && isMissingValue) {
-          setError(`${f.label || f.key} is required`);
-          return {
-            nodeId: outcomeNodeId,
-            status: "failed",
-            error: { message: `${f.label || f.key} is required` },
-          };
+          return publishFailure(`${f.label || f.key} is required`, executionIsCurrent);
         }
       }
 
@@ -841,61 +860,26 @@ export function useNodeExecution({
         if (err?.name === "AbortError" || !executionIsCurrent()) {
           return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution was cancelled." };
         }
-        let errOutput;
-        try {
-          const parsed = JSON.parse(err.message);
+        // Preserve structured server diagnostics, including non-Error throws.
+        let message = typeof err === "string" ? err : typeof err?.message === "string" ? err.message : "Action failed";
+        let code: string | undefined;
+        let parsed = err;
+        try { parsed = JSON.parse(message); } catch { /* plain message or structured exception */ }
+        if (parsed && typeof parsed === "object") {
           const parsedError =
             (typeof parsed.error === "string" && parsed.error) ||
             (typeof parsed.message === "string" && parsed.message) ||
             (typeof parsed.data?.error === "string" && parsed.data.error) ||
             (typeof parsed.data?.message === "string" && parsed.data.message) ||
             (typeof parsed.details === "string" && parsed.details) ||
-            (typeof parsed.details?.message === "string" &&
-              parsed.details.message);
-
-          if (
-            definition?.name === "Consolidator" &&
-            parsed.code === "EDITOR_CONTEXT_EXPIRED"
-          ) {
-            setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);
-          }
-
-          errOutput = {
-            status: "error",
-            success: false,
-            ...(typeof parsed.code === "string" ? { code: parsed.code } : {}),
-            error: parsedError || err.message || "Action failed",
-            timestamp: new Date().toISOString(),
-          };
-        } catch {
-          // If message isn't JSON, use it directly
-          errOutput = {
-            status: "error",
-            success: false,
-            error: err.message || "Action failed",
-            timestamp: new Date().toISOString(),
-          };
+            (typeof parsed.details?.message === "string" && parsed.details.message);
+          message = parsedError || message;
+          code = typeof parsed.code === "string" ? parsed.code : undefined;
         }
-
-        // A pinned output must never be overwritten by an error
-        if (overrideOutput !== null && overrideOutput !== undefined) {
-          setIsSending(false);
-          return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
+        if (definition?.name === "Consolidator" && code === "EDITOR_CONTEXT_EXPIRED") {
+          setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);
         }
-
-        setLastOutput(errOutput);
-        data.output = errOutput;
-
-        if (nodeId) {
-          executionStore.setNodeData(nodeId, { output: errOutput });
-          updateNodeData(nodeId, { output: errOutput });
-        }
-        const message = typeof errOutput.error === "string" ? errOutput.error : "Action failed";
-        return {
-          nodeId: outcomeNodeId,
-          status: err?.name === "AbortError" ? "cancelled" : "failed",
-          error: { message, ...(typeof errOutput.code === "string" ? { code: errOutput.code } : {}) },
-        };
+        return publishFailure(message, executionIsCurrent, code);
       } finally {
         setIsSending(false);
       }
@@ -907,6 +891,7 @@ export function useNodeExecution({
       selectedInputData,
       selectedInputNodeId,
       buildPayload,
+      publishFailure,
       nodeId,
       workflowId,
       setLastOutput,

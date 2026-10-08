@@ -110,6 +110,7 @@ import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
 import { deleteNodesFromDocument, insertNodesInDocument, pasteNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
+import { applyClusterExecutionVisuals } from "@/domain/clusters/executionVisuals";
 import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
 import {
   ON_BAR_NODE_TYPE,
@@ -136,6 +137,7 @@ import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGrap
 import {
   closeFocusedCluster,
   focusedClusterToViewState,
+  isClusterExpanded,
   openFocusedCluster,
   reconcileFocusedCluster,
 } from "@/domain/clusters/viewState";
@@ -760,8 +762,15 @@ const WorkflowEditorContent = () => {
     setEditingClusterId(candidate.id);
     setCanvasMenu(null);
   }, [actionableClusterIds, clusterProjection.visibleNodeIds, clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, openCluster, resolveVisibleCanonicalSelection, saveHistorySnapshot, selectedClusterIds, toast, workflowSessionId]);
-  const displayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
-  const displayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
+  const baseDisplayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
+  const baseDisplayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
+  const activeMember = clusterExecution.activeMember;
+  const activeClusterExpanded = !!activeMember && (!CLUSTER_COLLAPSE_ENABLED ||
+    focusedClusterId === activeMember.clusterId || isClusterExpanded(clusterViewState, activeMember.clusterId));
+  const { nodes: displayedNodes, edges: displayedEdges } = useMemo(() =>
+    applyClusterExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters,
+      activeMember?.sessionId === workflowSessionId ? activeMember : null, activeClusterExpanded),
+  [baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters, activeMember, workflowSessionId, activeClusterExpanded]);
   const fitViewNodes = useMemo(
     () => CLUSTER_COLLAPSE_ENABLED ? getVisibleClusterNodes(clusterProjection) : nodes,
     [clusterProjection, nodes],

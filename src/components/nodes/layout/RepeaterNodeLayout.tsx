@@ -350,7 +350,6 @@ interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   definition,
   fieldState,
-  error,
   loadingSelect,
   selectOptions,
   showAuth,
@@ -1439,12 +1438,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           </div>
         )}
 
-        {/* Error Display */}
-        {error && (
-          <div className="text-red-500 text-xs mt-2 p-2 bg-red-50 rounded">
-            {error}
-          </div>
-        )}
         {expandedExecutionControl}
       </form>
 

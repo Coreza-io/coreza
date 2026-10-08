@@ -18,6 +18,12 @@ import { resolveManualExecution } from "@/nodes/manualExecution";
 import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
 export type ClusterRunPhase = "idle" | "running" | "completed" | "cancelled" | "failed" | "blocked";
+export interface ClusterActiveMember {
+  sessionId: string;
+  clusterId: string;
+  nodeId: string;
+}
+
 export interface ClusterRunState {
   phase: ClusterRunPhase;
   reason?: string;
@@ -131,7 +137,7 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
     () => getEditorExecutionTarget(workflowSessionId),
   );
   const [states, setStates] = useState<Record<string, ClusterRunState>>({});
-  const activeRef = useRef<{ clusterId: string; controller: AbortController } | null>(null);
+  const activeRef = useRef<{ clusterId: string; controller: AbortController; sessionId: string; generation: number } | null>(null);
   const sessionRef = useRef(workflowSessionId);
   const graphRef = useRef({ nodes, edges, clusters });
   graphRef.current = { nodes, edges, clusters };
@@ -141,7 +147,10 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
     activeRef.current?.controller.abort();
     activeRef.current = null;
     setStates({});
-    return () => activeRef.current?.controller.abort();
+    return () => {
+      activeRef.current?.controller.abort();
+      activeRef.current = null;
+    };
   }, [workflowSessionId]);
 
   const update = useCallback((clusterId: string, state: ClusterRunState) => {
@@ -154,8 +163,8 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
     const lockToken = acquireEditorExecutionLock(workflowSessionId, { kind: "cluster", id: clusterId });
     if (!lockToken) return;
     const controller = new AbortController();
-    activeRef.current = { clusterId, controller };
     const generation = getEditorExecutionGeneration();
+    activeRef.current = { clusterId, controller, sessionId: workflowSessionId, generation };
     const sessionId = workflowSessionId;
     const outcomes: Record<string, NodeExecutionOutcome> = {};
     let failRun: ((reason: string) => void) | undefined;
@@ -179,7 +188,8 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
       const skipped = new Set<string>();
       const completed = new Set<string>();
       const eligible = plan.executableNodeIds.length;
-      const isCurrent = () => sessionRef.current === sessionId && getEditorExecutionGeneration() === generation;
+      const isCurrent = () => activeRef.current?.controller === controller &&
+        sessionRef.current === sessionId && getEditorExecutionGeneration() === generation;
       const finish = (phase: "cancelled" | "failed", reason: string, nodeId?: string) => {
         for (const pendingId of plan.executableNodeIds) {
           if (!outcomes[pendingId]) outcomes[pendingId] = { nodeId: pendingId,
@@ -222,6 +232,7 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
         } else if (outcome.status === "listener-started") {
           for (const candidate of reachableNodes(outgoing.map((edge) => edge.target), controlReachabilityEdges, allowedNodeIds)) skippedSet.add(candidate);
         }
+        update(clusterId, { phase: "running", completed: completed.size, eligible, outcomes: { ...outcomes } });
         return outcome;
       };
       const runLoopRegion = async (region: LoopRegion): Promise<boolean> => {
@@ -277,7 +288,13 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
   }, [disabledReason, update, workflowSessionId, writeLoopFeedback]);
 
   const cancelRun = useCallback((clusterId: string) => {
-    if (activeRef.current?.clusterId === clusterId) activeRef.current.controller.abort();
+    if (activeRef.current?.clusterId !== clusterId) return;
+    activeRef.current.controller.abort();
+    // Keep ownership and the running phase until the action settles.
+    setStates((current) => {
+      const state = current[clusterId];
+      return state ? { ...current, [clusterId]: { ...state, currentNodeId: undefined } } : current;
+    });
   }, []);
 
   const getState = useCallback((clusterId: string): ClusterRunState => {
@@ -288,5 +305,14 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
   }, [activeTarget, disabledReason, states]);
 
   const isExecutionActive = useMemo(() => Object.values(states).some(({ phase }) => phase === "running"), [states]);
-  return { executeCluster, cancelRun, getState, isExecutionActive };
+  const active = activeRef.current;
+  const activeState = active ? states[active.clusterId] : undefined;
+  const activeClusterId = active?.clusterId;
+  const activeNodeId = !disabledReason && active?.sessionId === workflowSessionId &&
+    active.generation === getEditorExecutionGeneration() && !active.controller.signal.aborted &&
+    activeState?.phase === "running" ? activeState.currentNodeId : undefined;
+  const activeMember = useMemo<ClusterActiveMember | null>(() =>
+    activeClusterId && activeNodeId ? { sessionId: workflowSessionId, clusterId: activeClusterId, nodeId: activeNodeId } : null,
+  [workflowSessionId, activeClusterId, activeNodeId]);
+  return { executeCluster, cancelRun, getState, isExecutionActive, activeMember };
 }

@@ -1003,18 +1003,10 @@ export class WorkflowExecutor {
           );
 
           this.clearIncomingEdgePayloads(id);
-
-          // Continue execution of non-dependent nodes
-          const independentNodes = this.context.nodes.filter(
-            (n) =>
-              !executed.has(n.id) &&
-              !failed.has(n.id) &&
-              !queue.includes(n.id) &&
-              !this.context.edges.some(
-                (e) => e.target === n.id && e.source === id,
-              ),
-          );
-          independentNodes.forEach((n) => queue.push(n.id));
+          queue.length = 0;
+          this.edgePayload.clear();
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Execution stopped at node ${id}: ${message}`);
         }
       }
     };
@@ -1091,11 +1083,11 @@ export class WorkflowExecutor {
           }`,
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("❌ [WORKFLOW EXECUTOR] Critical execution error:", err);
       this.context.toast({
-        title: "Workflow Execution Error",
-        description: err.message || String(err),
+        title: "Workflow execution stopped due to an error",
+        description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
     } finally {

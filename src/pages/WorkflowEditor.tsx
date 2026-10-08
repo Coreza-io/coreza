@@ -15,6 +15,7 @@ import {
   useMemo,
   useRef,
   useLayoutEffect,
+  useSyncExternalStore,
   type ComponentType,
 } from "react";
 import { createPortal } from "react-dom";
@@ -110,7 +111,7 @@ import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
 import { deleteNodesFromDocument, insertNodesInDocument, pasteNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
-import { applyClusterExecutionVisuals } from "@/domain/clusters/executionVisuals";
+import { applyClusterExecutionVisuals, applyNodeExecutionVisuals } from "@/domain/clusters/executionVisuals";
 import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
 import {
   ON_BAR_NODE_TYPE,
@@ -127,6 +128,8 @@ import {
   canRenameEditorNodeAction,
   clearEditorNodeActions,
   isEditorExecutionLocked,
+  getEditorExecutionTarget,
+  subscribeEditorExecution,
   releaseEditorExecutionLock,
   retireEditorNodeAction,
 } from "@/services/editorNodeExecution";
@@ -762,15 +765,23 @@ const WorkflowEditorContent = () => {
     setEditingClusterId(candidate.id);
     setCanvasMenu(null);
   }, [actionableClusterIds, clusterProjection.visibleNodeIds, clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, openCluster, resolveVisibleCanonicalSelection, saveHistorySnapshot, selectedClusterIds, toast, workflowSessionId]);
+  const manualExecutionTarget = useSyncExternalStore(
+    useCallback((listener) => subscribeEditorExecution(workflowSessionId, listener), [workflowSessionId]),
+    useCallback(() => getEditorExecutionTarget(workflowSessionId), [workflowSessionId]),
+  );
+  const manualExecutingNodeId = manualExecutionTarget.startsWith("node:")
+    ? manualExecutionTarget.slice("node:".length) : null;
   const baseDisplayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const baseDisplayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
   const activeMember = clusterExecution.activeMember;
   const activeClusterExpanded = !!activeMember && (!CLUSTER_COLLAPSE_ENABLED ||
     focusedClusterId === activeMember.clusterId || isClusterExpanded(clusterViewState, activeMember.clusterId));
   const { nodes: displayedNodes, edges: displayedEdges } = useMemo(() =>
-    applyClusterExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters,
+    manualExecutingNodeId
+      ? applyNodeExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, manualExecutingNodeId)
+      : applyClusterExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters,
       activeMember?.sessionId === workflowSessionId ? activeMember : null, activeClusterExpanded),
-  [baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters, activeMember, workflowSessionId, activeClusterExpanded]);
+  [baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters, activeMember, workflowSessionId, activeClusterExpanded, manualExecutingNodeId]);
   const fitViewNodes = useMemo(
     () => CLUSTER_COLLAPSE_ENABLED ? getVisibleClusterNodes(clusterProjection) : nodes,
     [clusterProjection, nodes],

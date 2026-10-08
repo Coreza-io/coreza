@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import { applyClusterExecutionVisuals } from "@/domain/clusters/executionVisuals";
+import { applyClusterExecutionVisuals, applyNodeExecutionVisuals } from "@/domain/clusters/executionVisuals";
 
 const nodes: Node[] = ["a", "b", "outside"].map((id) => ({
   id, position: { x: 0, y: 0 }, data: { definition: { node_type: "action" } },
@@ -11,6 +11,18 @@ const edges: Edge[] = [
 ];
 const clusters = [{ id: "cluster", title: "Cluster", memberNodeIds: ["a", "b"] }];
 const active = { sessionId: "session", clusterId: "cluster", nodeId: "a" };
+
+it("highlights manual Play execution across visible incident connections and restores the base graph", () => {
+  const result = applyNodeExecutionVisuals(nodes, edges, nodes, edges, "a");
+  expect(result.nodes[0].data.isExecuting).toBe(true);
+  expect(result.nodes[1]).toBe(nodes[1]);
+  expect(result.edges[0].className).toBe("existing executing-edge");
+  expect(result.edges[1]).toMatchObject({ animated: true, className: "executing-edge" });
+  expect(result.edges[2]).toBe(edges[2]);
+  const cleared = applyNodeExecutionVisuals(nodes, edges, nodes, edges, null);
+  expect(cleared.nodes).toBe(nodes);
+  expect(cleared.edges).toBe(edges);
+});
 
 it("copies only the active member and visible internal main connections, restoring exact base identities", () => {
   const result = applyClusterExecutionVisuals(nodes, edges, nodes, edges, clusters, active, true);

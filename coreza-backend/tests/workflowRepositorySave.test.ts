@@ -40,6 +40,7 @@ describe("WorkflowRepository.update", () => {
     ["workflow-not-found", undefined, 404, "Workflow not found"],
     ["empty-workflow", undefined, 400, "A saved workflow cannot be empty"],
     ["workflow-revision-conflict", "40001", 409, "workflow-revision-conflict"],
+    ["cluster-writer-upgrade-required", undefined, 409, "cluster-writer-upgrade-required"],
   ])("maps %s to an actionable response", async (message, code, statusCode, expectedMessage) => {
     rpc.mockResolvedValue({ data: null, error: { message, code } });
 
@@ -78,4 +79,21 @@ describe("WorkflowRepository.update", () => {
     await expect(new WorkflowRepository().update("user-1", "workflow-1", input))
       .resolves.toEqual(saved);
   });
+});
+
+it('forwards hierarchy declarations to the atomic RPC without changing old flat calls',async()=> {
+  rpc.mockReset(); rpc.mockResolvedValue({data:{id:'workflow-1'},error:null});
+  const repo=new WorkflowRepository();
+  await repo.update('user-1','workflow-1',{...input,cluster_format_version:2});
+  expect(rpc).toHaveBeenLastCalledWith('save_workflow_document',expect.objectContaining({p_cluster_format_version:2}));
+  await repo.update('user-1','workflow-1',input);
+  expect(rpc.mock.calls[1][1]).not.toHaveProperty('p_cluster_format_version');
+});
+
+it('fails closed when database readiness is absent or reports an error',async()=> {
+  rpc.mockReset(); const repo=new WorkflowRepository();
+  rpc.mockResolvedValueOnce({data:null,error:{message:'missing function'}});
+  expect(await repo.hierarchyReady()).toBe(false);
+  rpc.mockResolvedValueOnce({data:true,error:null});
+  expect(await repo.hierarchyReady()).toBe(true);
 });

@@ -168,3 +168,59 @@ describe('clipboard document transactions', () => {
     if (result.ok) expect(result.document.nodes[0].data.values).toEqual({ value: "$('b').json + $('c').json" });
   });
 });
+
+
+describe('cluster copy title allocation', () => {
+  const workflow = (titles: string[]): WorkflowDocument => ({
+    nodes: titles.map((_, index) => node(`member${index}`)),
+    edges: [],
+    clusters: titles.map((title, index) => ({ id: crypto.randomUUID(), title, memberNodeIds: [`member${index}`], note: 'Keep this note' })),
+  });
+  const copy = (current: WorkflowDocument, copiedClusters: WorkflowDocument['clusters']) => {
+    const idMap = Object.fromEntries(copiedClusters.flatMap((cluster) => cluster.memberNodeIds.map((id) => [id, crypto.randomUUID()])));
+    const result = pasteNodesInDocument(current, {
+      nodes: Object.values(idMap).map(node), idMap, sourceNodes: current.nodes, copiedClusters,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok === false) throw new Error(result.message);
+    for (const [index, cluster] of result.document.clusters.slice(current.clusters.length).entries()) {
+      expect(cluster.id).not.toBe(copiedClusters[index].id);
+      expect(cluster.memberNodeIds).toEqual(copiedClusters[index].memberNodeIds.map((id) => idMap[id]));
+      expect(cluster.note).toBe(copiedClusters[index].note);
+    }
+    return result.document;
+  };
+
+  it('continues hl, hl 2, hl 3 when copying each newly pasted cluster', () => {
+    const original = workflow(['hl']);
+    const before = structuredClone(original);
+    let current = original;
+    for (const expected of ['hl 2', 'hl 3', 'hl 4']) {
+      current = copy(current, [current.clusters[current.clusters.length - 1]]);
+      expect(current.clusters[current.clusters.length - 1].title).toBe(expected);
+    }
+    expect(current.clusters.map(({ title }) => title)).toEqual(['hl', 'hl 2', 'hl 3', 'hl 4']);
+    expect(original).toEqual(before);
+  });
+
+  it('reuses a free suffix without renaming existing clusters', () => {
+    const current = workflow(['hl', 'hl 3']);
+    expect(copy(current, [current.clusters[1]]).clusters.map(({ title }) => title)).toEqual(['hl', 'hl 3', 'hl 2']);
+  });
+
+  it('reserves trimmed case-insensitive titles while keeping copied spelling', () => {
+    const current = workflow([' hl ', 'HL 2']);
+    expect(copy(current, [current.clusters[1]]).clusters.map(({ title }) => title)).toEqual([' hl ', 'HL 2', 'HL 3']);
+  });
+
+  it('uses the complete clipboard family inventory and earlier batch reservations', () => {
+    const current = workflow(['hl 2']);
+    const clipboard = workflow(['hl 2', 'hl']);
+    expect(copy(current, clipboard.clusters).clusters.map(({ title }) => title)).toEqual(['hl 2', 'hl 3', 'hl']);
+  });
+
+  it('preserves unrelated custom numeric titles', () => {
+    const current = workflow(['Strategy 2026']);
+    expect(copy(current, current.clusters).clusters.map(({ title }) => title)).toEqual(['Strategy 2026', 'Strategy 2026 2']);
+  });
+});

@@ -39,6 +39,7 @@ export interface EditorNodeActionSnapshot {
 }
 
 const actions = new Map<string, Map<string, EditorNodeAction>>();
+const canonicalNodeIds = new Map<string, ReadonlySet<string>>();
 const executionLocks = new Map<string, symbol>();
 const executionTargets = new Map<string, { kind: "node" | "cluster" | "workflow"; id: string }>();
 const executionListeners = new Map<string, Set<() => void>>();
@@ -54,11 +55,26 @@ export const setEditorConsolidatorSeries = (sessionId: string, nodeId: string, s
   else consolidatorSeries.set(key, signature);
 };
 
+/** Keep actions for hidden canonical members, but never for removed identities. */
+export function syncEditorNodeActionIds(sessionId: string, nodes: readonly { id: string }[]): void {
+  const previous = canonicalNodeIds.get(sessionId);
+  if (previous?.size === nodes.length && nodes.every(({ id }) => previous.has(id))) return;
+  const ids = new Set(nodes.map(({ id }) => id));
+  canonicalNodeIds.set(sessionId, ids);
+  const sessionActions = actions.get(sessionId);
+  for (const id of sessionActions?.keys() ?? []) {
+    if (!ids.has(id)) sessionActions?.delete(id);
+  }
+}
+
 export function registerEditorNodeAction(
   sessionId: string,
   nodeId: string,
   action: EditorNodeAction,
 ): () => void {
+  // A projected host can publish an old effect after its identity was retired.
+  const ids = canonicalNodeIds.get(sessionId);
+  if (ids && !ids.has(nodeId)) return () => undefined;
   const sessionActions = actions.get(sessionId) ?? new Map<string, EditorNodeAction>();
   sessionActions.set(nodeId, action);
   actions.set(sessionId, sessionActions);
@@ -183,6 +199,7 @@ export function captureEditorNodeActions(
 
 export function clearEditorNodeActions(sessionId: string): void {
   actions.delete(sessionId);
+  canonicalNodeIds.delete(sessionId);
   executionLocks.delete(sessionId);
   executionTargets.delete(sessionId);
   executionListeners.get(sessionId)?.forEach((listener) => listener());

@@ -11,6 +11,7 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
+import { syncEditorNodeActionIds } from '@/services/editorNodeExecution';
 import { createCanonicalGraphStore, type CanonicalGraphSnapshot, type SemanticGraphSnapshot } from './canonicalGraphStore';
 
 export interface RenameNodeRequest {
@@ -72,6 +73,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
         : reactFlow.getNodes()).find(n => n.id === id),
     setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[], sessionId?: string) => {
       canonicalPublishedRef.current = true;
+      if (sessionId) syncEditorNodeActionIds(sessionId, nodes);
       canonicalStore.publish(nodes, edges, sessionId);
     },
     subscribe: canonicalStore.subscribe,

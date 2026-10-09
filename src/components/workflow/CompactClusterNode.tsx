@@ -10,7 +10,7 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 export function CompactClusterNode({ id, data: cluster, selected, dragging }: NodeProps<CompactClusterFlowNode>): JSX.Element {
   const updateNodeInternals = useUpdateNodeInternals();
   const showExecutionBorder = useResolvedTheme() === "dark"
-    && cluster.runState.phase === "running" && !!cluster.runState.currentNodeId;
+    && (cluster.isExecuting === true || ((cluster.runState.phase === "running" || !!cluster.runState.ownerClusterId) && !!cluster.runState.currentNodeId));
   const expand = (): void => cluster.onExpand(cluster.clusterId);
   const persistentExecutionStatus = cluster.runState.phase !== "idle"
     && cluster.runState.phase !== "completed"
@@ -25,7 +25,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
     <article
       id={`cluster-card-${cluster.clusterId}`}
       className={`cluster-card relative group/cluster h-[180px] w-[280px] cursor-grab rounded-xl border-2 p-4 text-[hsl(var(--cluster-title))] shadow-[var(--cluster-shadow)] outline-none motion-safe:transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-[hsl(var(--cluster-selection-ring))] ${selected ? "cluster-card--selected" : ""} ${dragging ? "cursor-grabbing" : ""}`}
-      style={cluster.runState.phase === "failed" ? { borderColor: "hsl(var(--destructive))" } : undefined}
+      style={cluster.runState.phase === "failed" || Object.values(cluster.runState.outcomes ?? {}).some(outcome=>outcome.status === "failed") ? { borderColor: "hsl(var(--destructive))" } : undefined}
       tabIndex={0}
       aria-label={`Cluster ${cluster.title}, ${cluster.memberCount} ${cluster.memberCount === 1 ? "node" : "nodes"}`}
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } }}
@@ -33,10 +33,10 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
     >
       {showExecutionBorder && <ElectricBorderSVG isExpanded={false} color="#22d3ee" />}
       {cluster.incomingHandleIds.map((id, index, handles) => (
-        <Handle key={id} id={id} type="target" position={Position.Left} isConnectable={false} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
+        <Handle key={id} id={id} type="target" position={Position.Left} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
       ))}
       {cluster.outgoingHandleIds.map((id, index, handles) => (
-        <Handle key={id} id={id} type="source" position={Position.Right} isConnectable={false} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
+        <Handle key={id} id={id} type="source" position={Position.Right} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
       ))}
       <div className="flex items-start gap-3">
         <Network className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(var(--cluster-accent))]" aria-hidden="true" />

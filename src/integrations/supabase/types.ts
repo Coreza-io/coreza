@@ -1052,8 +1052,13 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      cluster_hierarchy_write_ready: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       save_workflow_document: {
         Args: {
+          p_cluster_format_version?: number
           p_edges?: Json
           p_expected_revision: number
           p_name?: string

@@ -1,3 +1,4 @@
+import { resolveClusterHierarchy } from './clusterHierarchy';
 import { createError } from "../middleware/errorHandler";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,6 +29,7 @@ export interface PersistedEdge {
 export interface PersistedNodeCluster {
   id: string;
   title: string;
+  parentClusterId?: string;
   note?: string;
   memberNodeIds: string[];
 }
@@ -79,6 +81,8 @@ export function validateNodeClusterDocument(document: ClusterDocument, options: 
         !nodeById.has(edge.source) || !nodeById.has(edge.target)) invalid("invalid-edge-endpoint");
   }
 
+  const hierarchy = resolveClusterHierarchy(document.node_clusters, nodeById.keys());
+  if (hierarchy.diagnostics.length) invalid(hierarchy.diagnostics[0].code);
   const clusterIds = new Set<string>();
   const titles = new Set<string>();
   const owners = new Set<string>();
@@ -91,7 +95,7 @@ export function validateNodeClusterDocument(document: ClusterDocument, options: 
     if (!title) invalid("empty-title");
     if (titles.has(titleKey)) invalid("duplicate-title");
     if ((note?.length ?? 0) > MAX_NOTE_LENGTH) invalid("note-too-long");
-    if (cluster.memberNodeIds.length === 0) invalid("empty-cluster");
+    if (!hierarchy.effectiveMembers.get(cluster.id)?.length) invalid("empty-cluster");
     clusterIds.add(cluster.id);
     titles.add(titleKey);
 
@@ -104,8 +108,8 @@ export function validateNodeClusterDocument(document: ClusterDocument, options: 
       members.add(nodeId);
       owners.add(nodeId);
     }
-    validateTopology(members, document.edges, nodeById, options.requireConnectedMembers ?? false);
-    return { id: cluster.id, title, ...(note ? { note } : {}), memberNodeIds: [...members].sort() };
+    validateTopology(new Set(hierarchy.effectiveMembers.get(cluster.id)), document.edges, nodeById, options.requireConnectedMembers ?? false);
+    return { id: cluster.id, title, ...(cluster.parentClusterId !== undefined ? { parentClusterId: cluster.parentClusterId } : {}), ...(note ? { note } : {}), memberNodeIds: [...members].sort() };
   });
   return normalized;
 }

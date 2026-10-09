@@ -1,3 +1,4 @@
+import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
 import { resolveNodeIdentity } from "@/utils/referenceResolution";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Edge, Node } from "@xyflow/react";
@@ -31,6 +32,7 @@ export interface ClusterRunState {
   currentNodeId?: string;
   completed?: number;
   eligible?: number;
+  ownerClusterId?: string;
   outcomes?: Readonly<Record<string, NodeExecutionOutcome>>;
 }
 
@@ -69,9 +71,12 @@ export function buildClusterExecutionPlan(
   cluster: NodeCluster,
   nodes: readonly Node[],
   edges: readonly Edge[],
+  clusters: readonly NodeCluster[] = [cluster],
 ): ClusterExecutionPlan {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const members = [...new Set(cluster.memberNodeIds)];
+  const hierarchy = resolveClusterHierarchy(clusters, nodeById.keys());
+  if (hierarchy.invalidIds.has(cluster.id)) throw new Error(hierarchy.diagnostics[0]?.message ?? "Invalid cluster hierarchy.");
+  const members = hierarchy.effectiveMembers.get(cluster.id) ?? [];
   for (const id of members) {
     if (!nodeById.has(id)) throw new Error(`Cluster member ${id} no longer exists.`);
   }
@@ -134,6 +139,7 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
   );
   const [states, setStates] = useState<Record<string, ClusterRunState>>({});
   const activeRef = useRef<{ clusterId: string; controller: AbortController; sessionId: string; generation: number } | null>(null);
+  const lastRunRef = useRef<{clusterId:string; sessionId:string; hierarchy:ReturnType<typeof resolveClusterHierarchy>; executableNodeIds:readonly string[]} | null>(null);
   const sessionRef = useRef(workflowSessionId);
   const graphRef = useRef({ nodes, edges, clusters });
   graphRef.current = { nodes, edges, clusters };
@@ -142,6 +148,7 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
     sessionRef.current = workflowSessionId;
     activeRef.current?.controller.abort();
     activeRef.current = null;
+    lastRunRef.current = null;
     setStates({});
     return () => {
       activeRef.current?.controller.abort();
@@ -169,9 +176,12 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
       const cluster = snapshot.clusters.find(({ id }) => id === clusterId);
       if (!cluster) throw new Error("This cluster no longer exists.");
       const validation = validateClusters(snapshot.nodes, snapshot.edges, snapshot.clusters);
-      const violation = validation.violations.find((item) => item.clusterId === clusterId);
+      const hierarchy = resolveClusterHierarchy(snapshot.clusters);
+      const relevant = new Set([clusterId, ...(hierarchy.ancestors.get(clusterId) ?? []), ...(hierarchy.descendants.get(clusterId) ?? [])]);
+      const violation = validation.violations.find((item) => !item.clusterId || relevant.has(item.clusterId));
       if (violation) throw new Error(violation.message);
-      const plan = buildClusterExecutionPlan(cluster, snapshot.nodes, snapshot.edges);
+      const plan = buildClusterExecutionPlan(cluster, snapshot.nodes, snapshot.edges, snapshot.clusters);
+      lastRunRef.current = {clusterId, sessionId, hierarchy, executableNodeIds:plan.executableNodeIds};
       const actionSnapshot = captureEditorNodeActions(sessionId, plan.executableNodeIds);
       const allowedNodeIds = new Set(plan.memberNodeIds);
       const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]));
@@ -295,10 +305,30 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
 
   const getState = useCallback((clusterId: string): ClusterRunState => {
     if (disabledReason) return { phase: "blocked", reason: disabledReason };
-    if (states[clusterId]) return states[clusterId];
+    const latest = lastRunRef.current;
+    const ownerId = latest?.sessionId === workflowSessionId ? latest.clusterId : undefined;
+    if (ownerId && ownerId !== clusterId && latest) {
+      const {hierarchy, executableNodeIds} = latest;
+      const owner = states[ownerId];
+      const related = (hierarchy.ancestors.get(clusterId) ?? []).includes(ownerId) || (hierarchy.ancestors.get(ownerId) ?? []).includes(clusterId);
+      if (related && owner) {
+        const members = new Set(hierarchy.effectiveMembers.get(clusterId) ?? []);
+        const outcomes = Object.fromEntries(Object.entries(owner.outcomes ?? {}).filter(([id])=>members.has(id)));
+        const running = activeTarget === `cluster:${ownerId}`;
+        const failed = Object.values(outcomes).find(outcome=>outcome.status === 'failed');
+        return {
+          phase: running ? 'blocked' : failed ? 'failed' : owner.phase === 'failed' ? 'cancelled' : owner.phase,
+          ...(running ? {ownerClusterId:ownerId, reason:`Running in ${clusters.find(c=>c.id === ownerId)?.title ?? ownerId}`} : failed ? {reason:owner.reason} : {}),
+          completed:Object.values(outcomes).filter(outcome=>!["failed","cancelled","dependency-blocked"].includes(outcome.status)).length,
+          eligible:executableNodeIds.filter(id=>members.has(id)).length,
+          outcomes,
+          currentNodeId:running && owner.currentNodeId && members.has(owner.currentNodeId) ? owner.currentNodeId : undefined,
+        };
+      }
+    }
     if (activeTarget && activeTarget !== `cluster:${clusterId}`) return { phase: "blocked", reason: "Another editor execution is active." };
-    return { phase: "idle" };
-  }, [activeTarget, disabledReason, states]);
+    return states[clusterId] ?? { phase: "idle" };
+  }, [activeTarget, disabledReason, states, clusters, workflowSessionId]);
 
   const isExecutionActive = useMemo(() => Object.values(states).some(({ phase }) => phase === "running"), [states]);
   const active = activeRef.current;

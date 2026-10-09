@@ -111,7 +111,9 @@ export const WorkflowVersionHistory: React.FC<WorkflowVersionHistoryProps> = ({
         const nodes = data.nodes as unknown as Node[];
         const edges = data.edges as unknown as Edge[];
 
-        onRestore(nodes, edges, parseNodeClusters(data.node_clusters).clusters);
+        const parsed = parseNodeClusters(data.node_clusters);
+        if (parsed.invalidEntries.length) throw new Error('This version contains invalid cluster metadata. Export and repair it before restoring.');
+        onRestore(nodes, edges, parsed.clusters);
         setOpen(false);
         toast({
           title: "Version Restored",

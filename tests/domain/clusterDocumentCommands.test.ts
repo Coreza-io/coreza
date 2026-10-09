@@ -141,8 +141,9 @@ describe('clipboard document transactions', () => {
     const result = pasteNodesInDocument(original, { ...batch(), targetClusterId: original.clusters[0].id, expandedClusterId: original.clusters[0].id });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.document.clusters).toHaveLength(1);
-    expect(result.document.clusters[0].memberNodeIds).toEqual(['a', 'b', 'a2', 'b2']);
+    expect(result.document.clusters).toHaveLength(2);
+    expect(result.document.clusters[0].memberNodeIds).toEqual(['a', 'b']);
+    expect(result.document.clusters[1]).toMatchObject({parentClusterId:original.clusters[0].id, memberNodeIds:['a2','b2']});
     expect(result.document.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(['a2', 'b2']);
     expect(result.document.nodes[2].data.values).toEqual({ internal: "$('b2').json", external: "$node['outside'].json" });
     expect(original).toEqual(before);

@@ -2,6 +2,7 @@ import type { NodeCluster } from './types';
 
 export interface ParsedClusters {
   clusters: NodeCluster[];
+  sourceIndexes?: number[];
   invalidIndexes: number[];
   invalidEntries: Array<{ index: number; value: unknown }>;
 }
@@ -20,6 +21,7 @@ export function parseNodeClusters(value: unknown): ParsedClusters {
   }
 
   const clusters: NodeCluster[] = [];
+  const sourceIndexes: number[] = [];
   const invalidIndexes: number[] = [];
   const invalidEntries: Array<{ index: number; value: unknown }> = [];
 
@@ -30,6 +32,7 @@ export function parseNodeClusters(value: unknown): ParsedClusters {
       typeof candidate.title !== 'string' ||
       !Array.isArray(candidate.memberNodeIds) ||
       !candidate.memberNodeIds.every((memberId) => typeof memberId === 'string') ||
+      (Object.prototype.hasOwnProperty.call(candidate, 'parentClusterId') && (typeof candidate.parentClusterId !== 'string' || !candidate.parentClusterId.trim())) ||
       (candidate.note !== undefined && typeof candidate.note !== 'string')
     ) {
       invalidIndexes.push(index);
@@ -38,13 +41,15 @@ export function parseNodeClusters(value: unknown): ParsedClusters {
     }
 
     const note = typeof candidate.note === 'string' ? candidate.note : undefined;
+    sourceIndexes.push(index);
     clusters.push({
       id: candidate.id,
       title: candidate.title,
+      ...(candidate.parentClusterId !== undefined ? { parentClusterId: candidate.parentClusterId as string } : {}),
       memberNodeIds: candidate.memberNodeIds,
       ...(note !== undefined ? { note } : {}),
     });
   });
 
-  return { clusters, invalidIndexes, invalidEntries };
+  return { clusters, ...(sourceIndexes.length ? {sourceIndexes} : {}), invalidIndexes, invalidEntries };
 }

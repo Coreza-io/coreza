@@ -1,3 +1,4 @@
+import { resolveClusterHierarchy } from './hierarchy';
 import type { Edge, Node } from '@xyflow/react';
 import {
   MAX_CLUSTER_NOTE_LENGTH,
@@ -38,10 +39,12 @@ export function validateClusters(
 ): ClusterValidationResult {
   const violations: ClusterViolation[] = [];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const hierarchy = resolveClusterHierarchy(clusters, nodeById.keys());
+  violations.push(...hierarchy.diagnostics.map(d => ({ ...d, edgeIds: [] })));
   const kindOf = options.getEdgeKind ?? getClusterEdgeKind;
   const isTrigger = options.isTrigger ?? isTriggerNode;
   const ids = new Set<string>();
-  const titles = new Set<string>();
+  const titles = new Map<string, string>();
   const ownerByNode = new Map<string, string>();
 
   for (const cluster of clusters) {
@@ -50,12 +53,15 @@ export function validateClusters(
     ids.add(cluster.id);
     const title = cluster.title.trim();
     if (!title) violations.push(violation('empty-title', 'Cluster title cannot be empty.', cluster.id));
-    else if (titles.has(title.toLocaleLowerCase())) violations.push(violation('duplicate-title', 'Cluster titles must be unique.', cluster.id));
-    titles.add(title.toLocaleLowerCase());
+    else if (titles.has(title.toLocaleLowerCase())) {
+      violations.push(violation('duplicate-title', 'Cluster titles must be unique.', cluster.id));
+      violations.push(violation('duplicate-title', 'Cluster titles must be unique.', titles.get(title.toLocaleLowerCase())));
+    }
+    titles.set(title.toLocaleLowerCase(), cluster.id);
     if ((cluster.note?.length ?? 0) > MAX_CLUSTER_NOTE_LENGTH) {
       violations.push(violation('note-too-long', `Cluster notes cannot exceed ${MAX_CLUSTER_NOTE_LENGTH} characters.`, cluster.id));
     }
-    if (cluster.memberNodeIds.length === 0) violations.push(violation('empty-cluster', 'A cluster must contain a node.', cluster.id));
+    if (!hierarchy.invalidIds.has(cluster.id) && (hierarchy.effectiveMembers.get(cluster.id)?.length ?? 0) === 0) violations.push(violation('empty-cluster', 'A cluster must contain a node.', cluster.id));
     const members = new Set<string>();
     for (const nodeId of cluster.memberNodeIds) {
       if (members.has(nodeId)) violations.push(violation('duplicate-member', 'A node can appear only once in a cluster.', cluster.id, [nodeId]));
@@ -67,7 +73,7 @@ export function validateClusters(
       const node = nodeById.get(nodeId);
       if (node && isTrigger(node)) violations.push(violation('trigger-member', 'Trigger nodes cannot be clustered.', cluster.id, [nodeId]));
     }
-    validateTopology(cluster, members, edges, nodeById, kindOf, violations, options.requireConnectedMembers ?? false);
+    if (!hierarchy.invalidIds.has(cluster.id) || (!cluster.parentClusterId && !hierarchy.children.get(cluster.id)?.length)) validateTopology(cluster, new Set(hierarchy.effectiveMembers.get(cluster.id) ?? cluster.memberNodeIds), edges, nodeById, kindOf, violations, options.requireConnectedMembers ?? false);
   }
   return { valid: violations.length === 0, violations };
 }

@@ -11,6 +11,20 @@ const file = (nodes: unknown[], edges: unknown[] = [], clusters: unknown[] = [])
   text: async () => JSON.stringify({ meta: { source: 'coreza' }, name: 'Test', nodes, edges, clusters }),
 } as File);
 
+it.each([null, "", 42])("rejects a malformed parent before replacing a document or allocating IDs: %p", async parentClusterId => {
+  const importedFile = file([{id:"a",type:"If",position}], [], [
+    {id:"11111111-1111-4111-8111-111111111111",title:"Invalid",memberNodeIds:["a"],parentClusterId},
+  ]);
+  await expect(importWorkflow(importedFile)).rejects.toThrow("Cluster metadata entry 1 is invalid");
+});
+
+it("rejects a file containing a parse-invalid child instead of importing a stripped parent", async () => {
+  await expect(importWorkflow(file([{id:"a",type:"If",position},{id:"b",type:"If",position}], [], [
+    {id:"11111111-1111-4111-8111-111111111111",title:"Outer",memberNodeIds:["a"]},
+    {id:"22222222-2222-4222-8222-222222222222",title:"Inner",memberNodeIds:["b"],parentClusterId:"11111111-1111-4111-8111-111111111111",note:42},
+  ]))).rejects.toThrow("Cluster metadata entry 2 is invalid");
+});
+
 it.each([`{{ $('Legacy').json.marker }}`, '{{ $node["Legacy"].json.marker }}'])(
   'rejects an ambiguous imported selector before name allocation: %s', async (expression) => {
     const nodes = [

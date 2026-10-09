@@ -4,10 +4,12 @@ export interface NodeCluster {
   id: string;
   title: string;
   memberNodeIds: string[];
+  parentClusterId?: string;
   note?: string;
 }
 
 export type ClusterViolationCode =
+  | 'invalid-parent' | 'missing-parent' | 'self-parent' | 'cluster-cycle' | 'cluster-depth'
   | 'duplicate-cluster-id'
   | 'invalid-cluster-id'
   | 'duplicate-title'

@@ -1,3 +1,4 @@
+import { resolveClusterHierarchy } from './hierarchy';
 import type { Node } from "@xyflow/react";
 import type { NodeCluster } from "./types";
 
@@ -12,9 +13,10 @@ export const resolveCanonicalSelection = (
   const selectedNodeIds = nodes
     .filter(({ id, selected }) => selected && !hiddenRuntimeHostIds.has(id))
     .map(({ id }) => id);
+  const hierarchy = resolveClusterHierarchy(clusters);
   const selectedClusterMemberIds = clusters
     .filter(({ id }) => selectedClusterIds.has(id) && actionableClusterIds.has(id))
-    .flatMap(({ memberNodeIds }) => memberNodeIds);
+    .flatMap(({ id }) => hierarchy.effectiveMembers.get(id) ?? []);
 
   return [...new Set([...selectedNodeIds, ...selectedClusterMemberIds])]
     .filter((id) => canonicalNodeIds.has(id));

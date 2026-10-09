@@ -20,7 +20,7 @@
 - [x] Browser and focused regression acceptance
 
 ## Requested migration
-- [ ] Apply and verify `20261009090000_cluster_hierarchy_writer_guard.sql` (locate supplied SQL first)
+- [ ] Apply and verify `20261009090000_cluster_hierarchy_writer_guard.sql` — blocked: named file is absent; awaiting the exact SQL from the user.
 
 ## External blockers
 - [ ] Set a shorter authentication email-code expiry in Supabase settings

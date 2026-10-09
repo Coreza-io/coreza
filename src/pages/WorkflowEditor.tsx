@@ -133,6 +133,7 @@ import {
   subscribeEditorExecution,
   releaseEditorExecutionLock,
   retireEditorNodeAction,
+  syncEditorNodeActionIds,
 } from "@/services/editorNodeExecution";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
@@ -578,13 +579,14 @@ const WorkflowEditorContent = () => {
     const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes)));
     const nextEdges = cloneEdges(document.edges);
     const nextClusters = document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] }));
+    syncEditorNodeActionIds(workflowSessionId, nextNodes);
     nodesRef.current = nextNodes;
     canonicalEdgesRef.current = nextEdges;
     clustersRef.current = nextClusters;
     setNodes(nextNodes);
     setEdges(nextEdges);
     setClusters(nextClusters);
-  }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession]);
+  }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession, workflowSessionId]);
 
   useEffect(() => stableNodes.registerNodeRenamer(({ nodeId, requestedName }) => {
     if (loading) return { ok: false, code: "loading", message: "Wait for the workflow to finish loading." };

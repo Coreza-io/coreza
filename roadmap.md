@@ -25,6 +25,7 @@
 - [ ] Upgrade the Supabase Postgres version to the available patched release
 
 ## Two-level nested clusters
+- [x] Close review gaps: reject malformed imports atomically, quarantine raw relationship/ownership claims, preserve pre-migration flat saves, guard paste, enable boundary connections and validate undoable metadata drafts
 - [x] Portable hierarchy resolver, maximum-depth validation and parent-preserving metadata
 - [x] Complete-component recovery, canonical round trips and old-writer API/database protection
 - [x] Inner grouping, root wrapping, promotion on dissolve/delete and subtree clipboard commands

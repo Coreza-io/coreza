@@ -56,6 +56,27 @@ const cloneDocument = (document: WorkflowDocument): WorkflowDocument => ({
   })),
 });
 
+/** A metadata edit is one validated transaction, including stale-draft checks. */
+export function updateClusterMetadataInDocument(
+  current: WorkflowDocument,
+  clusterId: string,
+  patch: Partial<Pick<NodeCluster, "title" | "note">>,
+  expected: Pick<NodeCluster, "title" | "note">,
+): (InsertDocumentResult & { changed?: boolean }) {
+  const cluster = current.clusters.find(c => c.id === clusterId);
+  if (!cluster || cluster.title !== expected.title || cluster.note !== expected.note)
+    return {ok:false, code:"stale-cluster", message:"This cluster changed while its metadata was being edited."};
+  const candidate = {...current, clusters:current.clusters.map(c => c.id === clusterId ? {...c, ...patch} : c)};
+  const validation = validateClusters(candidate.nodes, candidate.edges, candidate.clusters);
+  if (!validation.valid)
+    return {ok:false, code:"invalid-document", message:validation.violations[0].message};
+  const updated = normalizeClusters(candidate.clusters.filter(c => c.id === clusterId))[0];
+  const changed = updated.title !== cluster.title || updated.note !== cluster.note;
+  if (!changed) return {ok:true, document:current, changed:false};
+  candidate.clusters = candidate.clusters.map(c => c.id === clusterId ? updated : c);
+  return {ok:true, document:candidate, changed:true};
+}
+
 /** Builds a complete insertion candidate without exposing a partially updated graph. */
 export function insertNodesInDocument(
   current: WorkflowDocument,

@@ -31,8 +31,9 @@ export class WorkflowQueryService {
     const nestedCandidate = input.node_clusters?.some(
       (c) => c.parentClusterId !== undefined,
     );
+    const existingNested = existing.some((c) => c.parentClusterId !== undefined);
     const replacingNested =
-      existing.some((c) => c.parentClusterId !== undefined) &&
+      existingNested &&
       (input.nodes !== undefined ||
         input.edges !== undefined ||
         input.node_clusters !== undefined);
@@ -42,12 +43,15 @@ export class WorkflowQueryService {
           statusCode: 409,
           isOperational: true,
         });
+    }
+    if (nestedCandidate || existingNested) {
       if (!(await this.workflowRepo.hierarchyReady()))
         throw Object.assign(new Error("cluster-hierarchy-unavailable"), {
           statusCode: 409,
           isOperational: true,
         });
     }
+    return !!(nestedCandidate || existingNested);
   }
 
   async listWorkflows(userId: string) {
@@ -94,7 +98,7 @@ export class WorkflowQueryService {
         isOperational: true,
       });
     }
-    await this.protectHierarchy(input, existing.node_clusters);
+    const hierarchyWrite = await this.protectHierarchy(input, existing.node_clusters);
     const candidateNodes = input.nodes ?? existing.nodes ?? [];
     if ((existing.nodes?.length ?? 0) > 0 && candidateNodes.length === 0) {
       throw Object.assign(new Error("empty-workflow"), {
@@ -109,14 +113,10 @@ export class WorkflowQueryService {
     });
     return this.workflowRepo.update(userId, workflowId, {
       ...input,
-      // A metadata-only update preserves the complete graph. Declare the
-      // server's own supported representation when forwarding that snapshot.
-      ...(input.nodes === undefined &&
-      input.edges === undefined &&
-      input.node_clusters === undefined &&
-      existing.node_clusters?.some((c) => c.parentClusterId !== undefined)
-        ? { cluster_format_version: 2 as const }
-        : {}),
+      // Flat writes need no new RPC argument and must work before migration,
+      // even when a capable client supplied its format declaration. Nested
+      // metadata-only updates forward the server's supported snapshot as well.
+      cluster_format_version: hierarchyWrite ? 2 : undefined,
       name: input.name ?? existing.name,
       nodes: candidateNodes,
       edges: input.edges ?? existing.edges ?? [],

@@ -2,6 +2,10 @@
 
 The editor reads two cluster levels, but nested creation and paste require the authenticated `/workflows/capabilities` response to advertise `cluster_format_version: 2` and `max_cluster_depth: 2`. Capability is separate from editable workflow content.
 
+While capability is unavailable, flat updates retain the legacy save RPC argument shape, including requests from clients that declare format two. Verify a flat save before applying the hierarchy migration as part of staged deployment. Replacements of existing nested documents still require the format-two declaration and deployed protection, even when the requested replacement dissolves all clusters.
+
+Malformed file imports are rejected before replacing canonical or runtime state. Loading/version recovery keeps raw invalid entries and quarantines their identifiable parent and ownership components until explicit repair; it cannot select an owner by ignoring a parse-invalid record. Metadata edits use local drafts and one validated, undoable commit, and structural commands refuse live execution/drag or stale-session mutations.
+
 1. Synchronize the changed `coreza-backend` sources with the standalone backend. Deploy readers, validators and write guards before enabling frontend authoring.
 2. Apply `supabase/migrations/20261009090000_cluster_hierarchy_writer_guard.sql`. It upgrades the atomic save RPC with an optional writer declaration and adds a trigger that refuses alternate graph replacements of nested documents. Canonical nodes, edges and cluster JSON remain in existing columns; versions retain the complete JSON.
 3. Verify the hosted `cluster_hierarchy_write_ready` RPC returns true for the backend identity. Check that the authenticated capability endpoint advertises format two/depth two.

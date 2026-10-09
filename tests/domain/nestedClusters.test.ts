@@ -10,6 +10,7 @@ import {
   pasteNodesInDocument,
   insertNodesInDocument,
   copyClusterMetadata,
+  updateClusterMetadataInDocument,
 } from "@/domain/clusters/documentCommands";
 import {
   projectClusterGraph,
@@ -368,4 +369,52 @@ it("reuses hierarchy indexes across position, title and note changes", () => {
       nodes.map((n) => n.id),
     ),
   );
+});
+
+it.each([false, true])("quarantines parse-invalid children and conflicting ownership (reversed=%s)", reversed => {
+  const raw = [
+    {...clusters[0], note:42},
+    clusters[1],
+    {id:third, title:"Conflicting owner", memberNodeIds:["a"]},
+  ];
+  if (reversed) raw.reverse();
+  const recovered = recoverClusterDocument(raw, nodes, []);
+  expect(recovered.clusters).toEqual([]);
+  expect(recovered.invalidEntries).toEqual(raw.map((value,index) => ({index,value})));
+});
+
+it("quarantines relationships even when the raw child's ID or membership shape cannot parse", () => {
+  const broken = {parentClusterId:outer, memberNodeIds:["a",42]};
+  const raw = [broken, clusters[1], {id:third, title:"Shared", memberNodeIds:["a"]}];
+  expect(recoverClusterDocument(raw, nodes, []).invalidEntries).toEqual(raw.map((value,index) => ({index,value})));
+});
+
+it("retains independent safe roots when an invalid entry has an empty ID", () => {
+  const broken={id:"",title:"Broken",memberNodeIds:["a"]};
+  const recovered=recoverClusterDocument([broken,clusters[1]],nodes,[]);
+  expect(recovered.clusters).toEqual([clusters[1]]);
+  expect(recovered.invalidEntries).toEqual([{index:0,value:broken}]);
+});
+
+it("commits normalized cluster metadata without changing hierarchy or canonical identity", () => {
+  const current = document();
+  const result = updateClusterMetadataInDocument(current, inner, {title:" Renamed ", note:" note "}, clusters[0]);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.changed).toBe(true);
+  expect(result.document.clusters[0]).toEqual({...clusters[0], title:"Renamed", note:"note"});
+  expect(result.document.nodes).toEqual(current.nodes);
+  expect(result.document.edges).toEqual(current.edges);
+  expect(current.clusters).toEqual(clusters);
+});
+
+it.each([{title:" "}, {title:" outer "}, {note:"x".repeat(201)}])("refuses invalid metadata atomically: %p", patch => {
+  expect(updateClusterMetadataInDocument(document(), inner, patch, clusters[0]).ok).toBe(false);
+  expect(document().clusters).toEqual(clusters);
+});
+
+it("refuses stale/deleted metadata targets and marks normalized no-ops unchanged", () => {
+  expect(updateClusterMetadataInDocument(document(), inner, {note:"new"}, {...clusters[0],title:"Old"}).ok).toBe(false);
+  expect(updateClusterMetadataInDocument({...document(),clusters:[]}, inner, {note:"new"}, clusters[0]).ok).toBe(false);
+  expect(updateClusterMetadataInDocument(document(), inner, {title:" Inner "}, clusters[0])).toEqual({ok:true,changed:false,document:document()});
 });

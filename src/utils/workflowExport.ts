@@ -138,6 +138,9 @@ export async function importWorkflow(file: File): Promise<{
     return { ...node, id: node.id, type, position: { x: position.x, y: position.y } };
   }) as ExportedWorkflow['nodes'];
   const parsedClusters = parseNodeClusters(importedClusters);
+  if (parsedClusters.invalidEntries.length > 0) {
+    throw new Error(`Cluster metadata entry ${parsedClusters.invalidEntries[0].index + 1} is invalid. Repair the file before importing.`);
+  }
   const ids = new Set(normalizedNodes.map((node) => node.id));
   if (ids.size !== normalizedNodes.length) throw new Error("Workflow file contains duplicate node IDs");
   const edgeIds = new Set<string>();

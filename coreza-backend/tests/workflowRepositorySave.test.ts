@@ -20,6 +20,7 @@ jest.mock("../src/utils/logger", () => ({
 }));
 
 import { WorkflowRepository } from "../src/workflow/WorkflowRepository";
+import { WorkflowQueryService } from "../src/workflow/WorkflowQueryService";
 
 const input = {
   expected_revision: 2,
@@ -96,4 +97,18 @@ it('fails closed when database readiness is absent or reports an error',async()=
   expect(await repo.hierarchyReady()).toBe(false);
   rpc.mockResolvedValueOnce({data:true,error:null});
   expect(await repo.hierarchyReady()).toBe(true);
+});
+
+it("saves flat documents against the pre-migration RPC even when the client declares format two", async () => {
+  const flat={...input,revision:2};
+  rpc.mockReset();
+  rpc.mockImplementation(async (name,args) => name === "cluster_hierarchy_write_ready" || args?.p_cluster_format_version !== undefined
+    ? {data:null,error:{code:"PGRST202",message:"Could not find the function in the schema cache"}}
+    : {data:{...flat,revision:3},error:null});
+  const repo=new WorkflowRepository();
+  jest.spyOn(repo,"getOwnedWorkflow").mockResolvedValue(flat as any);
+  const service=new WorkflowQueryService(repo,{} as any,{} as any);
+  expect(await service.getCapabilities()).toEqual({cluster_format_version:1,max_cluster_depth:1});
+  await expect(service.updateWorkflow("user","workflow",{...input,cluster_format_version:2})).resolves.toMatchObject({revision:3});
+  expect(rpc).toHaveBeenLastCalledWith("save_workflow_document",expect.not.objectContaining({p_cluster_format_version:2}));
 });

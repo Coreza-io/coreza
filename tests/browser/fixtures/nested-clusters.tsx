@@ -7,6 +7,7 @@ import {
   Position,
   type NodeProps,
   type Node,
+  type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "../../../src/index.css";
@@ -16,7 +17,9 @@ import { UserPreferencesProvider } from "../../../src/contexts/UserPreferencesCo
 import {
   projectClusterGraph,
   getExpandedClusterFrameRect,
+  resolveProjectedConnection,
 } from "../../../src/domain/clusters/projection";
+import { validateClusters } from "../../../src/domain/clusters/validate";
 import {
   focusedClusterToViewState,
   closeFocusedCluster,
@@ -42,9 +45,12 @@ const initialNodes: Node[] = ["a", "b", "c"].map((id, i) => ({
   id,
   type: "member",
   position: { x: 100 + i * 330, y: 200 },
-  data: {},
-}));
-const edges = [
+  data: {definition:{name:"Action",node_type:"main"}},
+})).concat([
+  {id:"d",type:"member",position:{x:850,y:550},data:{definition:{name:"Action",node_type:"main"}}},
+  {id:"e",type:"member",position:{x:1200,y:550},data:{definition:{name:"Action",node_type:"main"}}},
+]);
+const initialEdges: Edge[] = [
   { id: "ab", source: "a", target: "b" },
   { id: "bc", source: "b", target: "c" },
 ];
@@ -52,6 +58,7 @@ declare global {
   interface Window {
     nestedMounts: Record<string, number>;
     nestedPositions: Record<string, { x: number; y: number }>;
+    nestedEdges: Edge[];
   }
 }
 window.nestedMounts = {};
@@ -73,6 +80,7 @@ function Member({ id }: NodeProps): JSX.Element {
 const nodeTypes = { member: Member, compactCluster: CompactClusterNode };
 function Fixture(): JSX.Element {
   const [nodes, setNodes] = useState(initialNodes);
+  const [edges, setEdges] = useState(initialEdges);
   const [focus, setFocus] = useState<string | null>(null);
   const hierarchy = resolveClusterHierarchy(clusters);
   const view = focusedClusterToViewState(focus, clusters);
@@ -83,7 +91,7 @@ function Fixture(): JSX.Element {
         focusedClusterId: focus,
         zoom: viewport.zoom,
       }),
-    [nodes, focus],
+    [nodes, edges, focus],
   );
   const drag = useRef<{
     start: { x: number; y: number };
@@ -92,6 +100,7 @@ function Fixture(): JSX.Element {
   window.nestedPositions = Object.fromEntries(
     nodes.map((n) => [n.id, n.position]),
   );
+  window.nestedEdges = edges;
   return (
     <main style={{ height: "100vh" }} className="bg-background text-foreground">
       <nav style={{ height: 48 }}>
@@ -108,6 +117,18 @@ function Fixture(): JSX.Element {
           edges={projection.edges}
           nodeTypes={nodeTypes}
           viewport={viewport}
+          onConnect={connection => {
+            const canonical = resolveProjectedConnection(connection,projection,nodes,edges);
+            if (!canonical) return;
+            const candidate = [...edges,{id:crypto.randomUUID(),...canonical}];
+            if (validateClusters(nodes,candidate,clusters).valid) setEdges(candidate);
+          }}
+          onReconnect={(edge,connection) => {
+            const canonical = resolveProjectedConnection(connection,projection,nodes,edges);
+            if (!canonical) return;
+            const candidate = edges.map(item => item.id === edge.id ? {...item,...canonical} : item);
+            if (validateClusters(nodes,candidate,clusters).valid) setEdges(candidate);
+          }}
         />
         <div className="pointer-events-none absolute inset-0">
           {clusters

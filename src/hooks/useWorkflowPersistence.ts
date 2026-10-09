@@ -180,7 +180,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           nodes: snapshot.nodes,
           edges: snapshot.edges,
           node_clusters: snapshot.clusters,
-          cluster_format_version: 2,
+          ...(hierarchySupported ? { cluster_format_version: 2 } : {}),
           project_id: snapshot.projectId,
           ...(workflowId && !opts.isNew ? { expected_revision: revisionRef.current } : {}),
         };

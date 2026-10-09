@@ -33,10 +33,10 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
     >
       {showExecutionBorder && <ElectricBorderSVG isExpanded={false} color="#22d3ee" />}
       {cluster.incomingHandleIds.map((id, index, handles) => (
-        <Handle key={id} id={id} type="target" position={Position.Left} isConnectable={false} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
+        <Handle key={id} id={id} type="target" position={Position.Left} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
       ))}
       {cluster.outgoingHandleIds.map((id, index, handles) => (
-        <Handle key={id} id={id} type="source" position={Position.Right} isConnectable={false} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
+        <Handle key={id} id={id} type="source" position={Position.Right} style={{ top: 38 + ((index + 1) / (handles.length + 1)) * 76 }} />
       ))}
       <div className="flex items-start gap-3">
         <Network className="mt-0.5 h-5 w-5 shrink-0 text-[hsl(var(--cluster-accent))]" aria-hidden="true" />

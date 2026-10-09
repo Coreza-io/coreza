@@ -138,3 +138,19 @@ it("keeps old flat writers compatible", async () => {
     ).node_clusters,
   ).toEqual([]);
 });
+
+it("uses the legacy flat RPC argument shape even when the new client declares format two", async () => {
+  const {query, repo} = service(false, {...workflow,node_clusters:[]});
+  const result = await query.updateWorkflow("user", "workflow", {
+    expected_revision:1, nodes, edges:workflow.edges, node_clusters:[], cluster_format_version:2,
+  });
+  expect(result.cluster_format_version).toBeUndefined();
+  expect(repo.hierarchyReady).not.toHaveBeenCalled();
+});
+
+it("forwards a format-two declaration for intentional dissolution of an existing nested document", async () => {
+  const {query} = service();
+  expect((await query.updateWorkflow("user","workflow",{
+    expected_revision:1, node_clusters:[], cluster_format_version:2,
+  })).cluster_format_version).toBe(2);
+});

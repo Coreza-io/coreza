@@ -1,6 +1,6 @@
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
 import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
-import { groupSelectionInDocument, dissolveClusterInDocument, copyClusterMetadata, mutateDocument } from '@/domain/clusters/documentCommands';
+import { groupSelectionInDocument, dissolveClusterInDocument, copyClusterMetadata, mutateDocument, updateClusterMetadataInDocument } from '@/domain/clusters/documentCommands';
 import { allocateNodeName, nodeDisplayName } from "@/domain/nodeNaming";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -89,6 +89,8 @@ import {
 import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHistory";
+import { ClusterMetadataEditor, type ClusterMetadataEditIntent } from "@/components/workflow/ClusterMetadataEditor";
+import { useWorkflowMutationGuard } from "@/hooks/useWorkflowMutationGuard";
 
 // Import node types
 import NodeRouter from "@/components/nodes/NodeRouter";
@@ -469,6 +471,12 @@ const WorkflowEditorContent = () => {
   const commitEdgeCandidateRef = useRef<(candidateEdges: Edge[]) => void>(() => undefined);
   const canonicalEdgesRef = useRef(edges);
   canonicalEdgesRef.current = edges;
+  const canMutateDocument = useWorkflowMutationGuard({
+    workflowSessionId, loading: loading || persistLoading,
+    hasInvalidMetadata: invalidClusterEntries.length > 0,
+    clusterMove: clusterMoveRef, nodeDrag: activeNodeDragRef,
+    selectionDrag: selectionDragRef, connectionDrag: connectionDragRef,
+  });
 
   useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
     setNodes((current) => current.map((node) => node.id === nodeId
@@ -578,12 +586,12 @@ const WorkflowEditorContent = () => {
 
   const saveHistorySnapshot = useCallback(() => {
     historyRef.current.past.push({ type: "document", document: {
-      nodes: cloneNodes(nodes),
-      edges: cloneEdges(edges),
-      clusters: clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })),
+      nodes: cloneNodes(nodesRef.current),
+      edges: cloneEdges(canonicalEdgesRef.current),
+      clusters: clustersRef.current.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] })),
     } });
     historyRef.current.future = [];
-  }, [cloneEdges, cloneNodes, clusters, edges, nodes]);
+  }, [cloneEdges, cloneNodes]);
 
   const restoreDocument = useCallback((document: WorkflowDocument) => {
     const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes)));
@@ -600,6 +608,23 @@ const WorkflowEditorContent = () => {
     setEdges(nextEdges);
     setClusters(nextClusters);
   }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession, workflowSessionId]);
+
+  const commitClusterMetadata = useCallback((patch: Partial<Pick<NodeCluster, "title" | "note">>, intent: ClusterMetadataEditIntent): boolean => {
+    if (intent.workflowSessionId !== workflowSessionId || !canMutateDocument()) return false;
+    const result = updateClusterMetadataInDocument(
+      {nodes:nodesRef.current, edges:canonicalEdgesRef.current, clusters:clustersRef.current},
+      intent.clusterId, patch, intent,
+    );
+    if (result.ok === false) {
+      toast({title:"Cannot edit cluster", description:result.message, variant:"destructive"});
+      return false;
+    }
+    if (result.changed) {
+      saveHistorySnapshot();
+      restoreDocument(result.document);
+    }
+    return true;
+  }, [workflowSessionId, canMutateDocument, saveHistorySnapshot, restoreDocument, toast]);
 
   useEffect(() => stableNodes.registerNodeRenamer(({ nodeId, requestedName }) => {
     if (loading) return { ok: false, code: "loading", message: "Wait for the workflow to finish loading." };
@@ -662,7 +687,7 @@ const WorkflowEditorContent = () => {
   }), [cloneEdges, cloneNodes, dragSource.nodeId, executionStore, loading, notifyExecutionStoreUpdate, restoreDocument, stableNodes, workflowSessionId]);
 
   const deleteNodeIds = useCallback((nodeIds: readonly string[]) => {
-    if (nodeIds.length === 0 || dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
+    if (nodeIds.length === 0 || !canMutateDocument()) return;
     if (!nodeIds.some(id=>nodes.some(n=>n.id === id))) return;
     try {
       const result = deleteNodesFromDocument({ nodes, edges, clusters }, new Set(nodeIds));
@@ -670,13 +695,13 @@ const WorkflowEditorContent = () => {
       restoreDocument(result.document);
       if (result.dissolvedClusters.length > 0) toast({title:'Clusters dissolved', description:result.dissolvedClusters.map(c=>c.title).join(', ')});
     } catch (error) { toast({title:'Cannot delete nodes', description:String(error)}); }
-  }, [clusters, dragSource.nodeId, edges, nodes, restoreDocument, saveHistorySnapshot, toast, workflowSessionId]);
+  }, [clusters, canMutateDocument, edges, nodes, restoreDocument, saveHistorySnapshot, toast]);
 
   const dissolveClustersForNodes = useCallback((nodeIds: readonly string[]) => {
     const selected = new Set(nodeIds);
     const explicit = [...selectedClusterIds].filter(id=>clusters.some(c=>c.id === id));
     const matchingIds = explicit.length ? explicit : clusters.filter(c=>c.memberNodeIds.some(id=>selected.has(id))).map(c=>c.id);
-    if (!matchingIds.length || dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
+    if (!matchingIds.length || !canMutateDocument()) return;
     let document: WorkflowDocument = {nodes, edges, clusters};
     try {
       for (const id of matchingIds) document = dissolveClusterInDocument(document, id).document;
@@ -684,16 +709,16 @@ const WorkflowEditorContent = () => {
     saveHistorySnapshot();
     restoreDocument(document);
     setCanvasMenu(null);
-  }, [clusters, nodes, edges, selectedClusterIds, dragSource.nodeId, saveHistorySnapshot, restoreDocument, toast, workflowSessionId]);
+  }, [clusters, nodes, edges, selectedClusterIds, canMutateDocument, saveHistorySnapshot, restoreDocument, toast]);
 
   const dissolveClusterById = useCallback((id: string) => {
-    if (dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
+    if (!canMutateDocument() || !clusters.some(c => c.id === id)) return;
     try {
       const result = dissolveClusterInDocument({nodes, edges, clusters}, id);
       saveHistorySnapshot(); restoreDocument(result.document);
       if (result.dissolvedClusters.length) toast({title:'Clusters dissolved', description:result.dissolvedClusters.map(c=>c.title).join(', ')});
     } catch (error) { toast({title:'Cannot dissolve cluster', description:String(error)}); }
-  }, [nodes, edges, clusters, dragSource.nodeId, workflowSessionId, saveHistorySnapshot, restoreDocument, toast]);
+  }, [nodes, edges, clusters, canMutateDocument, saveHistorySnapshot, restoreDocument, toast]);
 
   const nextClusterTitle = useMemo(() => {
     const usedTitles = new Set(clusters.map(({ title }) => title.toLocaleLowerCase()));
@@ -775,7 +800,7 @@ const WorkflowEditorContent = () => {
     ), [actionableClusterIds, clusterProjection.hiddenRuntimeHostIds, clusters, nodes, selectedClusterIds]);
 
   const createClusterFromSelection = useCallback((requestedIds?: readonly string[]) => {
-    if (dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
+    if (!canMutateDocument()) return;
     const selectedIds = requestedIds?.length ? [...new Set(requestedIds)] : resolveVisibleCanonicalSelection();
     const candidate: NodeCluster = { id: crypto.randomUUID(), title: nextClusterTitle, memberNodeIds: [] };
     const nested = selectedClusterIds.size > 0 || clusters.some(c=>c.memberNodeIds.some(id=>selectedIds.includes(id)));
@@ -788,7 +813,7 @@ const WorkflowEditorContent = () => {
     setEditingClusterId(candidate.id);
     setSelectedClusterIds(new Set());
     setCanvasMenu(null);
-  }, [clusters, dragSource.nodeId, edges, nextClusterTitle, nodes, openCluster, resolveVisibleCanonicalSelection, restoreDocument, saveHistorySnapshot, selectedClusterIds, toast, workflowSessionId, hierarchySupported]);
+  }, [clusters, canMutateDocument, edges, nextClusterTitle, nodes, openCluster, resolveVisibleCanonicalSelection, restoreDocument, saveHistorySnapshot, selectedClusterIds, toast, hierarchySupported]);
   const manualExecutionTarget = useSyncExternalStore(
     useCallback((listener) => subscribeEditorExecution(workflowSessionId, listener), [workflowSessionId]),
     useCallback(() => getEditorExecutionTarget(workflowSessionId), [workflowSessionId]),
@@ -918,7 +943,7 @@ const WorkflowEditorContent = () => {
   }, [finishClusterMove, rf, setNodes, workflowSessionId]);
 
   const commitEdgeCandidate = useCallback((candidateEdges: Edge[]) => {
-    if (isEditorExecutionLocked(workflowSessionId)) return;
+    if (!canMutateDocument({allowConnectionDrag:true})) return;
     const currentInvalid = new Set(validateClusters(nodes, edges, clusters).violations.flatMap(
       ({ clusterId }) => clusterId ? [clusterId] : [],
     ));
@@ -941,7 +966,7 @@ const WorkflowEditorContent = () => {
         <ToastAction
           altText="Dissolve affected clusters and apply connection change"
           onClick={() => {
-            if (isEditorExecutionLocked(workflowSessionId) || clustersRef.current !== clusters || canonicalEdgesRef.current !== edges) return;
+            if (!canMutateDocument() || clustersRef.current !== clusters || canonicalEdgesRef.current !== edges) return;
             try {
               const result = mutateDocument({nodes:nodesRef.current, edges:canonicalEdgesRef.current, clusters:clustersRef.current}, candidate=>{candidate.edges=candidateEdges;});
               saveHistorySnapshot(); restoreDocument(result.document);
@@ -953,7 +978,7 @@ const WorkflowEditorContent = () => {
         </ToastAction>
       ),
     });
-  }, [clusters, edges, nodes, saveHistorySnapshot, restoreDocument, setEdges, toast, workflowSessionId]);
+  }, [clusters, edges, nodes, saveHistorySnapshot, restoreDocument, setEdges, toast, canMutateDocument]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const structural = changes.some(({ type }) => type === "add" || type === "remove" || type === "replace");
@@ -1228,6 +1253,7 @@ const WorkflowEditorContent = () => {
   // Handle "+" click on Loop node to add a new downstream node
   const handleAddNode = useCallback(
     (loopNodeId: string) => {
+      if (!canMutateDocument()) return;
       const current = { nodes: nodesRef.current, edges: canonicalEdgesRef.current, clusters: clustersRef.current };
       const parent = current.nodes.find((node) => node.id === loopNodeId);
       if (!parent) return;
@@ -1251,9 +1277,9 @@ const WorkflowEditorContent = () => {
         data: { onRemoveEdge: () => removeEdge(edgeId) },
       };
       const result = insertNodesInDocument(current, { nodes: [newNode], edges: [newEdge] });
-      if (result.ok) restoreDocument(result.document);
+      if (result.ok) { saveHistorySnapshot(); restoreDocument(result.document); }
     },
-    [restoreDocument, workflowSessionId, removeEdge],
+    [restoreDocument, workflowSessionId, removeEdge, canMutateDocument, saveHistorySnapshot],
   );
 
   const handleRemoveLoop = useCallback(
@@ -1763,6 +1789,7 @@ const WorkflowEditorContent = () => {
         toast({ title: "Cannot add node", description: "Wait for the active execution to finish before adding a node.", variant: "destructive" });
         return false;
       }
+      if (!canMutateDocument()) return false;
 
       const viewport = rf.getViewport();
       const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
@@ -1837,6 +1864,7 @@ const WorkflowEditorContent = () => {
       persistLoading,
       invalidClusterEntries.length,
       dragSource.nodeId,
+      canMutateDocument,
       rf,
       restoreDocument,
       cloneNodes,
@@ -1874,6 +1902,7 @@ const WorkflowEditorContent = () => {
   // Restore workflow from a version snapshot
   const handleRestoreFromVersion = useCallback(
     (restoredNodes: Node[], restoredEdges: Edge[], restoredClusters?: NodeCluster[]) => {
+      if (!canMutateDocument({allowInvalidMetadata:true})) return;
       // Restore nodes with definitions from manifest
       const nodesWithDefinitions = restoredNodes.map((node) => {
         const nodeName = (node as any).name || node.type || node.id;
@@ -1921,7 +1950,7 @@ const WorkflowEditorContent = () => {
         description: `Restored ${nodesWithDefinitions.length} nodes. Remember to save your changes.`,
       });
     },
-    [removeEdge, saveHistorySnapshot, restoreDocument, toast],
+    [removeEdge, saveHistorySnapshot, restoreDocument, toast, canMutateDocument],
   );
 
   // Check for user authentication and load latest workflow
@@ -2158,7 +2187,7 @@ const WorkflowEditorContent = () => {
       const isModKey = event.metaKey || event.ctrlKey;
 
       if (isModKey && event.key.toLowerCase() === "z") {
-        if (isEditorExecutionLocked(workflowSessionId) || clusterMoveRef.current) return;
+        if (!canMutateDocument({allowInvalidMetadata:true})) return;
         const direction = event.shiftKey ? "redo" : "undo";
         const source = direction === "undo" ? historyRef.current.past : historyRef.current.future;
         const destination = direction === "undo" ? historyRef.current.future : historyRef.current.past;
@@ -2238,6 +2267,7 @@ const WorkflowEditorContent = () => {
 
       // Cut (Ctrl+X) - Copy to clipboard then delete
       if (isModKey && event.key.toLowerCase() === "x") {
+        if (!canMutateDocument()) { event.preventDefault(); return; }
         const selectedIds = new Set(resolveVisibleCanonicalSelection());
         const selectedNodes = nodes.filter((node) => selectedIds.has(node.id));
         if (selectedNodes.length === 0) {
@@ -2279,6 +2309,7 @@ const WorkflowEditorContent = () => {
       }
 
       if (isModKey && event.key.toLowerCase() === "v") {
+        if (!canMutateDocument()) { event.preventDefault(); return; }
         if (!clipboardRef.current) {
           return;
         }
@@ -2432,6 +2463,7 @@ const WorkflowEditorContent = () => {
     resolveVisibleCanonicalSelection,
     focusedClusterId,
     hierarchySupported,
+    canMutateDocument,
     nodesRef,
     canonicalEdgesRef,
     clustersRef,
@@ -2526,7 +2558,7 @@ const WorkflowEditorContent = () => {
               if (!file) return;
               try {
                 const imported = await importWorkflow(file);
-                if (isEditorExecutionLocked(workflowSessionId)) throw new Error("Stop workflow execution before importing.");
+                if (!canMutateDocument({allowInvalidMetadata:true})) throw new Error("Finish the active canvas action or execution before importing.");
                 clearEditorNodeActions(workflowSessionId);
                 for (const node of nodesRef.current) executionStore.setPinned(node.id, null);
                 executionStore.clear();
@@ -2556,7 +2588,6 @@ const WorkflowEditorContent = () => {
                   sourceHandle: ed.sourceHandle,
                   targetHandle: ed.targetHandle,
                 })) as Edge[];
-                setInvalidClusterEntries(imported.invalidClusterEntries);
                 handleRestoreFromVersion(importedNodes, importedEdges, imported.clusters);
                 toast({
                   title: "Workflow imported",
@@ -2711,35 +2742,13 @@ const WorkflowEditorContent = () => {
                       onPointerCancel={() => finishClusterMove(true)}
                       onLostPointerCapture={() => finishClusterMove(true)}
                     >
-                      {editingClusterId === cluster.id ? (
-                        <Input
-                          autoFocus
-                          className="h-7 min-w-0 flex-1"
-                          value={cluster.title}
-                          onChange={(event) => setClusters((current) => current.map((item) => item.id === cluster.id ? { ...item, title: event.target.value } : item))}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onBlur={() => setEditingClusterId(null)}
-                          onKeyDown={(event) => { if (event.key === "Enter" || event.key === "Escape") setEditingClusterId(null); }}
-                        />
-                      ) : (
-                        <button
-                          className="nodrag min-w-0 flex-1 truncate text-left text-sm font-semibold"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onDoubleClick={() => setEditingClusterId(cluster.id)}
-                        >
-                          {cluster.title}
-                        </button>
-                      )}
-                      <Input
-                        aria-label={`${cluster.title} note`}
-                        className="h-7 w-36"
-                        maxLength={200}
-                        placeholder="Add note"
-                        value={cluster.note ?? ""}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onChange={(event) => setClusters((current) => current.map((item) => item.id === cluster.id
-                          ? { ...item, note: event.target.value || undefined }
-                          : item))}
+                      <ClusterMetadataEditor
+                        cluster={cluster} workflowSessionId={workflowSessionId}
+                        editingTitle={editingClusterId === cluster.id}
+                        disabled={!canMutateDocument()}
+                        onEditTitle={() => setEditingClusterId(cluster.id)}
+                        onFinishTitle={() => setEditingClusterId(null)}
+                        onCommit={commitClusterMetadata}
                       />
                       <span className="text-xs text-muted-foreground">{memberCount} nodes</span>
                       {CLUSTER_COLLAPSE_ENABLED && <Button

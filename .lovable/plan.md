@@ -1,166 +1,183 @@
-# Unify node naming across the editor and execution
+# Implement two-level nested clusters end to end
 
-## Goal
+## Goal and scope
 
-Give each node a stable instance name and make its canvas label, live input label, dragged reference, preview and executed result identify the same canonical node.
+Support an outer cluster containing inner clusters and directly owned nodes. Users can group nodes inside an outer cluster, wrap sibling root clusters and unclustered nodes, navigate both levels, move either container, insert/paste into the intended body, dissolve safely and run the selected scope.
 
-For a newly created node whose canonical ID is `Loop3`, dragging `data.Item[0]` must produce `{{ $("Loop3").json.data.Item[0] }}` in ordinary fields, Edit Fields and If/repeater fields. Existing nodes must not be renumbered when their neighbours are deleted, reordered or collapsed.
+The initial maximum is **two cluster levels**, confirmed by your answer. Hierarchy traversal remains depth-independent, but both frontend and backend enforce this maximum. No drag-to-reparent interaction is included.
 
-This replaces the previous cluster-visuals plan. It includes implementation details only: no test cases or testing sections, as requested. No application code is changed by this plan.
+This plan replaces the preceding node-naming plan. Existing naming rules remain authoritative. It contains no test cases or testing sections, as previously requested; no application source is changed by this plan.
 
-## Confirmed findings
+## Review findings and improvements
 
-The full 296-line `Node-Naming-Fix-Plan.md` was reviewed against checkout `f97af3fb`, rather than assuming its earlier reviewed snapshot still applies.
+The complete 260-line attachment was checked against checkout `6b053c7e`, not assumed identical to its cited `9b5044d` revision.
 
-- `nodeDisplay.ts` derives fallback names from a node's index among same-definition nodes. `BaseNode` uses the complete canonical list; Repeater uses an upstream subset. These can produce different names for the same ID.
-- `InputPanel` displays the ID, while the canvas may display an explicit alias or calculated fallback. The numeric screenshot discrepancy requires the actual workflow to reproduce; the inconsistent computations are confirmed.
-- Palette creation has its own exact-ID allocator and does not set `displayName`. Paste independently allocates IDs and space-suffixed names. Rename has a third allocator; appended suffixes can exceed its initial 50-character validation.
-- Canonical transactional rename already exists. It updates identity, connections, membership, references and runtime/history state. Extend it rather than replacing it with projected-node mutations.
-- Preview data can be keyed by aliases that overwrite one another; some semantic lookups use React Flow's projected nodes.
-- Shared `referenceResolution` selects the first alias match. The frontend entry re-exports the backend module; `resolveReferences` also has separate frontend/backend consumers. Ambiguity handling must be added deliberately.
-- Cluster reference planning already rejects multiple matches, but combines exact IDs and aliases in one search. An exact ID can therefore be rejected because another node has that alias.
-- Serialization omits `displayName`; ordinary hydration resets it to ID. Import assigns an exported name to `label`, not `displayName`. The inspected import parser currently preserves incoming IDs.
-- The inspected repository passes node records to the save RPC; the checked-in RPC stores JSON node arrays. Optional name metadata can fit that representation without a new table or column. Hosted deployment behaviour is not verified here.
+Confirmed from current source:
+- Cluster types/parsing remain flat. Validators enforce unique direct ownership, reject empty direct lists and run topology on those direct lists. Request schemas require at least one direct member.
+- Focus/view state expands one cluster. Projection assigns collapsed owners from flat lists, and focused-frame occlusion cannot distinguish legitimate descendants.
+- Selection, editor frames, drag capture and insertion use direct membership. Insertion requires its target to equal the single expanded/focused ID.
+- Paste discards copied cluster metadata when targeting a cluster. Node deletion removes zero-direct-member containers; generic invalidation removes entries without promoting children.
+- Persistence loads incrementally accepted cluster prefixes, making that approach unsuitable for parent relationships in arbitrary array order.
+- Editor execution checks only a violation with the requested cluster ID and plans its direct members. Execution visuals also require direct membership and exclude remapped edge endpoints.
+- Server scoped compilation uses direct members. Its hash already includes the requested cluster and source revision; it must additionally describe the resolved hierarchy and leaf scope, rather than claiming parent changes currently bypass revision protection.
+- The inspected save service uses ownership/revision checks and an atomic JSONB RPC. Omitting cluster metadata preserves it, but submitting stripped objects or an empty array can erase hierarchy. The checked-in RPC snapshots JSON cluster arrays; hosted deployment is unverified.
 
-## Corrections to the attachment
+Corrections to the attachment/review recommendations:
+1. Store parent links only on cluster metadata, **not node data or React Flow `parentId`**.
+2. Retain a single focus ID and derive its ancestor path; do not persist a second independent focus-path state.
+3. Keep direct ownership unique; ancestor/descendant effective membership overlap is intentional, not invalid overlapping ownership.
+4. Preserve all metadata or return a clear refusal for unsupported writers. Never treat a submitted empty array as a silent successful no-op.
+5. Add an explicit API write-capability declaration with server enforcement; a new database format-version column is not necessary for the initial hierarchy representation.
+6. Parent Execute remains one editor-local sequence of normal node actions. Server-plan compatibility does not route the editor button back through queued Run All.
+7. Count and progress semantics distinguish unique leaf nodes from repeated Loop invocations; a parent does not recursively start child runs.
 
-1. Keep one allocator and one read-only accessor, but distinguish instance identity from definition metadata and legacy aliases.
-2. Make preservation of existing explicit names a concrete serialization change, not an optional unresolved step.
-3. Use canonical IDs for newly generated selectors. A legacy display alias may differ from the ID; the shown label and reference must still resolve to the same node, not force an unsafe automatic rename.
-4. Preserve the project's fresh-UUID file-import requirement. Imported IDs are a compatibility exception to the normal human-readable ID/name model; do not silently remove remount protection to simplify naming.
-5. Apply exact-ID-first resolution to cluster dependencies and Edit Fields context construction as well as generic preview/backend lookup.
-6. Add an explicit ambiguity outcome and its error propagation. Do not describe it as already supported or turn ambiguity into an arbitrary match.
-7. Do not introduce generated-name provenance, a shared-package migration or an immutable-ID migration for all existing nodes as part of this fix.
+## 1. Metadata and hierarchy contract
 
-## 1. Establish the naming contract
+Extend `NodeCluster` with optional `parentClusterId`. `memberNodeIds` contains only directly owned canonical node IDs. No cluster/display IDs, duplicated ancestor members or persisted effective-member arrays.
 
-- Ordinary new and explicitly renamed nodes receive `id === data.displayName` in one canonical transaction.
-- Existing committed IDs remain unchanged on load, history viewing and undo/redo. Preserve explicit legacy names when present; otherwise show the ID, never an array-derived label.
-- `node.type`, serialized `name`, `definition.name` and `data.label` remain definition metadata. Do not repurpose them as persisted instance names.
-- Reserve names against the complete canonical workflow, including hidden cluster members and nonempty legacy instance names. Exclude synthetic projection cards.
-- Node names, cluster titles and edge IDs have separate namespaces.
-- Dropdown values, drag source metadata, output keys and topology always use canonical IDs. Display labels never select a node.
-- No renumbering, global naming counters or allocation during rendering.
+```ts
+interface NodeCluster {
+  id: string;
+  title: string;
+  memberNodeIds: string[];
+  parentClusterId?: string;
+  note?: string;
+}
+```
 
-## 2. Add one allocator and accessor
+Root means an absent parent. Reject explicit null, invalid types, empty parent IDs and parents outside the document, rather than silently stripping them; old flat records already omit the field.
 
-Create a small pure `src/domain/nodeNaming.ts` before its consumers.
+Preserve unique UUID cluster IDs, globally unique titles and the 200-character note limit. Each node has at most one direct owner. Reject self-parenting, cycles and a third level. An effective cluster must contain at least one canonical node; a parent with zero direct nodes is valid when its children supply members.
 
-### Allocation
+Keep absolute canonical positions, canonical edges and node identities unchanged by nesting. Connectivity is required only for newly created grouping; persisted disconnected members remain allowed. Retain trigger, attachment, entry/exit, path and supported Loop-boundary restrictions for every effective scope.
 
-Accept a requested base, canonical nodes, optional source exclusion and batch reservations; return the allocated name or the existing structured validation failure.
+## 2. Pure hierarchy resolver and authoritative validation
 
-- Trim once; preserve allowed letters, numbers, spaces, hyphens and underscores and the 50-character limit for manual requests.
-- Reject the reserved `__cluster__` prefix case-insensitively.
-- Compare trimmed collision keys with deterministic `toLowerCase`, while preserving output spelling. Reference resolution itself remains exact/case-sensitive for compatibility.
-- Reserve both canonical IDs and explicit instance names, excluding only the source during rename. Honour earlier batch reservations.
-- Keep the unsuffixed first name and choose the first free positive suffix: `Loop`, `Loop1`, `Loop2`; gaps can be reused without renaming existing nodes.
-- Append suffixes to the complete requested base. Do not strip meaningful custom digits: an occupied `Strategy2026` becomes `Strategy20261`; copying occupied `Loop2` may yield `Loop21`. This follows the document's literal-base policy rather than guessing generated provenance.
-- Budget the base length for each suffix; check every truncated candidate for collisions. Reject invalid automatic bases through a structured result rather than silently inserting malformed nodes.
-- Keep edge-ID allocation separate.
+Add a dependency-free hierarchy helper with indexes for clusters, children, direct node owners, ancestors, descendants, effective members and visible representatives. Index every cluster before resolving links; preserve deterministic output independent of array order.
 
-### Reading
+Detect duplicate IDs/direct ownership, missing parents, self-links, cycles and excessive depth before expanding effective sets. Use iterative traversal or guarded expansion so malformed metadata cannot cause infinite recursion. Report structured diagnostics tied to all affected relationships; never resolve an invalid subtree as if it were flat.
 
-Expose `nodeDisplayName(node)` as nonempty explicit `data.displayName`, otherwise `node.id`. Remove the list argument and index calculation from `getDisplayName`, or retain only a thin compatibility wrapper while migrating callers.
+Place the portable source within the backend's supported source boundary and expose a thin frontend re-export, following the existing shared resolver pattern. The backend currently has `rootDir: src`; do not import frontend-only modules into it or create an unrelated packaging migration. Copy the portable source to the separate backend repository at delivery.
 
-Keep `resolveNodeRename` as an adapter so existing command outcomes and error handling remain compatible.
+Update types, parser, normalization, frontend validation, backend request schema and server normalizer together. Permit empty direct arrays structurally, then validate nonempty effective membership semantically. Check hierarchy before existing graph topology for each effective scope. Connectivity on creation applies only to the new candidate, not every previously persisted disconnected cluster.
 
-## 3. Route creation and copying through canonical commands
+Preserve the existing minimum of two effective nodes for grouping; selecting two containers does not excuse invalid leaf topology. Collect exclusively owned attachments during candidate creation, transfer their direct ownership consistently and reject shared attachments that cross the new child boundary.
 
-### Palette and automatic companions
+Build hierarchy indexes only when cluster relationships/membership or canonical node identities change. Position updates must not rebuild effective membership or introduce whole-graph subscriptions in edges/cards. Effective-set storage can cost the sum of subtree sizes; do not claim universal linear complexity.
 
-Update `createPaletteNodeBatch` to allocate once per node and explicitly assign ID/name together. Reserve BacktestInit before its optional OnBar companion. Preserve positions, companion eligibility, handles, edges and existing atomic cluster insertion.
+## 3. Persistence, recovery and compatibility protection
 
-Keep palette click, drag/drop and edge/cluster insertion on this batch path. Inspect the editor's reachable Loop `onAddNode` writer and the secondary `WorkflowCanvas` writer: active additions must use the shared policy and canonical insertion command; do not leave ad-hoc timestamp names on an active path or refactor unused UI unnecessarily.
+### Full-document loading
 
-### Rename
+Replace prefix acceptance in `useWorkflowPersistence` with complete-array parsing and hierarchy validation. Preserve original source indexes and raw invalid entries so diagnostics still identify the supplied metadata accurately.
 
-Keep the registered editor transaction, execution/listener locks, validation, runtime/pin rekey, action retirement, history identity metadata and single `restoreDocument` commit.
+Recover only intact valid relationship components when safe; a child must not be rejected because its parent appears later. Structural or cross-component ownership conflicts must not be repaired by guessing. Retain canonical nodes and raw invalid metadata, show diagnostics and block lossy saves until an explicit repair resolves them. Never silently flatten malformed hierarchy.
 
-Use the allocator's final name in every dependent change and the success message. Remap the old ID plus a differing explicit old name only when pre-transaction identity resolution proves that alias belongs uniquely to this source. Never rewrite generic/shared aliases. A failure must leave document and runtime unchanged; publish success only after commit.
+### Canonical round trips
 
-### Copy, paste, duplicate and cut/paste
+Preserve `parentClusterId` through normalization, canonical serialization, dirty comparison, API responses, file export/import, workflow versions, local history and run snapshots. A parent-link-only edit must mark the document dirty. Restore a complete document atomically, retaining zero-direct-node parents with children.
 
-Remove the independent type-count ID and display-name loops. Request each copied node's explicit instance name or ID; allocate against the destination's current canonical state and immediately reserve the result.
+Use existing JSONB cluster arrays; no new cluster table, coordinate system or parent-column migration is required. Confirm the deployed RPC/migrations during implementation before enabling writes; source inspection alone does not establish deployment readiness.
 
-Build the complete old-ID → new-ID map before rewriting anything. Preserve the existing single `pasteNodesInDocument` transaction, cluster handling and cut/delete semantics.
+### Old-writer protection
 
-- Rewrite pasted internal edge endpoints, membership and supported selectors using simultaneous mappings, not sequential A → B → C replacements.
-- Include a copied explicit alias only when source-workflow resolution proves its identity. An alias colliding with another exact ID must not redirect that ID.
-- Preserve references outside the copied selection and leave original nodes unchanged.
-- Remap editable values and field-state references through the existing supported-selector utility, not arbitrary strings, output data or unrestricted text replacement.
-- Any active keyboard/context-menu duplication must converge on the same command. Revalidate destination reservations at commit rather than trusting stale render closures.
+Introduce one explicit supported cluster format value, proposed `cluster_format_version: 2`, in create/update request schemas. It is a transient write declaration, not node/cluster content or user identity. Advertise server support and maximum depth through the existing authenticated workflow API response boundary; expose this separately from the document content used for dirty comparison.
 
-## 4. Preserve names through persistence and imports
+At `WorkflowQueryService` before normalization:
+- Reject a nesting candidate unless the server supports it and the writer declares hierarchy support.
+- For an existing nested workflow, reject graph/document replacement from a writer lacking that support, even when its submitted cluster array looks flat or empty.
+- A supported writer may intentionally dissolve all clusters after normal validation; do not silently preserve an empty array.
+- Preserve omitted metadata for compatible partial updates, while validating the complete candidate.
+- Apply the rule to version restores, import-over-existing and equivalent write paths. Keep expected revision and token-derived ownership authoritative.
 
-### Save, export and ordinary restoration
+Fail closed for nested authoring if capability is absent/unavailable. Keep existing flat workflow writes compatible. Audit alternate/direct writers; if any canonical write bypass exists, close or protect it before release rather than assuming a frontend flag is enough.
 
-Whitelist an optional top-level instance `displayName` in `serializeWorkflowContent`, separate from definition `name`. Hydrate it into `data.displayName`; use ID only when it is absent. Update exported/imported types and editor mapping to preserve this field.
+## 4. Canonical hierarchy commands
 
-Carry the same representation through dirty comparison, versions, local restore, templates and execution-snapshot restoration. Undo/redo restores exact identities/names without allocation. Preserve historical snapshot labels in read-only panels rather than substituting today's names.
+Use one document command per operation for keyboard, context menu and visible controls. Preserve session/drag/execution guards, strict candidate validation and one undo entry per successful mutation; no partial commits or no-op history entries.
 
-Older files without the field remain valid. Do not infer discarded names from array order or rewrite stored workflows automatically. Validate duplicate IDs as document errors; legacy duplicate aliases remain diagnosable, not grounds for silently changing identities.
+### Create an inner cluster
 
-### Manual file import
+Require selected nodes to share one direct outer owner. Resolve exclusive attachments, transfer selected IDs from the outer direct list into the new child and set the child's parent. Reject attempts inside an inner cluster. Validate the final hierarchy and both child and affected outer topology before commit.
 
-Retain fresh UUIDs for imported nodes and edges so prior component state cannot be reused. The current parser's preserved-ID behaviour needs reconciliation with this project requirement.
+### Wrap root containers and nodes
 
-Before replacing the editor document:
+Keep container selections distinct from leaf selections so a selected cluster remains atomic. Wrap selected root clusters and/or unclustered nodes in a new outer cluster. Link the selected roots to it and directly own the ordinary nodes. Reject partial crossing selections and depth overflow; wrapping a root that already has an inner cluster would create a third level and must fail.
 
-1. Parse and validate the incoming complete document.
-2. Allocate imported public instance names through the shared allocator, reserving the incoming batch rather than the outgoing replacement document.
-3. Build a separate old-ID → fresh-UUID map for imported identities; keep that map distinct from allocated display names.
-4. Remap edges, cluster membership and identity-bearing selectors simultaneously; remap proven unique old aliases to the correct new identity where necessary.
-5. Restore the imported document and reset the workflow session/runtime ownership once; do not leave imported output/action keys attached to outgoing nodes.
+Remove redundant descendant selections when an ancestor is already selected. Reuse unique-title allocation and attachment expansion; do not flatten selected clusters into a new member list.
 
-Imported UUID/name divergence is an explicit compatibility case, not a second suffix policy. New dragged selectors use the imported canonical UUID and show the preserved public label. An explicit later rename uses the existing full identity transaction. If an actual import-as-add/merge path is found, reserve against the destination too; do not build a new merge feature.
+### Dissolve, delete and ordinary edits
 
-No database migration is planned for optional metadata inside existing node JSON. Update backend node types/alias readers to recognise it; retain existing ownership and revision checks.
+- `dissolveCluster(id)` promotes its direct nodes into the parent direct list, or unclusters them at root; reparent its children to that parent. Preserve nodes/edges.
+- Delete-cluster-nodes resolves the complete subtree, deletes each leaf once and removes subtree metadata. Repair ancestors in the same transaction.
+- Ordinary node deletion removes direct membership and prunes truly empty containers bottom-up. A parent with children must not be deleted merely because its own member list is empty.
+- Replace flat invalidation removal with an explicit promote/revalidate process. Recalculate affected ancestors until the candidate is valid, report every dissolved container, and refuse unexpected structural corruption rather than committing dangling links.
+- Node rename updates only direct membership, using the existing identity/reference/runtime transaction; effective sets derive automatically.
+- Undo/redo restores nodes, edges, parent links, memberships and runtime-relevant identity state together. Reconcile transient focus to the nearest surviving ancestor.
 
-## 5. Unify labels, drag references and previews
+## 5. Expansion, projection, frames and navigation
 
-Use the accessor in BaseNode and live InputPanel labels. Retain canonical IDs as option values and selection keys.
+Keep one focus ID. Derive expanded IDs from its complete ancestor path. Opening an inner retains its outer frame; closing the inner focuses its parent, and closing the outer returns to root. Add a concise parent/back action or breadcrumb using existing controls. Clear obsolete focus after removal/session replacement without saving view state as document content.
 
-Create one `buildNodeReference` helper for general/If/Edit Fields/repeater insertion:
+Compute frame bounds bottom-up from visible direct nodes and child compact cards/expanded frames, retaining existing header/footer/padding allowances and absolute coordinates. Parents containing only child containers must still have inspectable bounds. Derive fit-view from the effective visible content without repeated automatic fits during drag.
 
-- Accept typed path segments and payload source ID.
-- Resolve that exact ID against current canonical state at drop time; reject synthetic, deleted or foreign sources.
-- Generate the selector with `JSON.stringify(source.id)` and existing `formatPath`. Preserve array indexes, property escaping, caret insertion and drop isolation.
-- Only legacy payloads lacking a source ID may fall back to the selected source. An explicit missing ID must not silently target another node.
-- Reject stale renamed sources unless an existing session-local identity map proves the replacement.
+Projection order:
+1. Resolve visibility from the root ownership path: the first collapsed ancestor represents a leaf.
+2. Allocate collision-safe synthetic IDs only for visible collapsed containers. Suppressed descendants receive no hidden duplicate card.
+3. Map each canonical edge endpoint to its visible representative; suppress edges whose endpoints share one collapsed representative.
+4. Preserve canonical edge IDs and per-edge boundary handles/mapping for sibling, inner-to-outer and external connections.
+5. Maintain exactly one canonical runtime host per leaf, invisible/non-interactive when hidden, with no duplicate mounts.
+6. Reconcile displayed copies using the existing identity-reuse layer; preserve unchanged canonical references.
 
-Keep upstream lists for topology/selection, not name derivation. Replace semantic projected-graph lookups in `useNodeReferences`, Repeater previews and `previewDataResolver` without changing geometry subscriptions or drag performance.
+Make occlusion relationship-aware: legitimate descendants, child cards and ancestor frames cannot hide one another. Keep unrelated intersecting objects under the existing policy, hide orphaned visual connections coherently and make frame stacking/event isolation deterministic. Child header drag/control clicks cannot trigger ancestor drag.
 
-Build primary output maps by canonical ID. Resolve compatible aliases through identity metadata rather than overwriting data keys. Preserve pinned/live precedence and valid `false`, `0`, empty-string and empty-array outputs; use explicit absence checks.
+Edge creation, deletion and reconnection must resolve canonical endpoints through projection metadata; never save synthetic IDs or replace canonical arrays with displayed copies.
 
-## 6. Make reference resolution consistent end to end
+## 6. Selection, movement and insertion
 
-Extend the shared identity resolver with a distinguishable resolved/missing/ambiguous result or compatible typed ambiguity error. Keep wrappers where needed; audit each caller before changing its return contract.
+Resolve selected actionable cluster cards to effective leaves; deduplicate ancestor/child combinations. Select-all excludes hidden hosts and suppressed descendant cards. Preserve explicit selected-container identity for wrap/copy/dissolve rather than inferring it solely from coincident selected leaves.
 
-Resolution order:
+For compact or expanded container drag, capture every effective leaf's absolute starting position once and apply a single delta. Inner drag moves its subtree; outer drag moves all descendants. Avoid double translation when ancestors and children are selected. Preserve drag cancellation, position-only history, stale-session guards and insertion-hit-test suppression during active drags. Child cards/frames derive positions from canonical leaves rather than moving independently.
 
-1. Exact canonical ID wins across the complete node inventory, even if another node has that alias. Missing output for that ID must not fall through to another node.
-2. Without an exact ID, collect unique explicit instance aliases, including persisted top-level names and editor `data.displayName`.
-3. Preserve existing metadata aliases only when they identify exactly one node; deduplicate candidates by ID.
-4. Multiple candidates produce a named-reference ambiguity error, never array-order selection. With node metadata available, validate aliases before accepting alias-keyed data.
-5. Keep ordinary missing-node/property behaviour and `pickJsonSource` unchanged unless ambiguity must be distinguished.
+Insertion uses the deepest expanded body under the explicit pointer, excluding headers/footers. Member-placement uses that member's direct expanded owner. Explicit insertion into an expanded outer body remains valid while an inner is focused.
 
-Apply this policy to preview resolution, frontend/backend `resolveReferences`, compiler dependency lookup, ParameterResolver and Edit Fields identities/results. Update `useNodeExecution`'s Edit Fields context filtering to resolve referenced selectors to IDs before selecting results; do not discard required context or conceal alias ambiguity.
+Capture session/target intent and revalidate target existence, expanded-path eligibility and full candidate at commit. Replace single-focus equality checks with expanded-ID eligibility. Add new nodes to exactly one direct list; derive ancestors afterward. Retain external fallback placement for actions without a valid explicit body. Keep all dimensions in consistent canvas coordinates, converting screen-fixed allowances once where required.
 
-Update cluster planning's combined ID/alias search to the same precedence, preserving self-reference, scope and ordering rules. Do not change Loop scheduling, run modes or execution outputs.
+## 7. Clipboard and portable import
 
-Propagate ambiguity through existing expression diagnostics and failed action outcomes. Preview render paths must catch it and display a diagnostic rather than crash. Backend execution must fail the affected expression rather than execute against arbitrary data. Audit preview/static compilation and runtime catches so one layer cannot silently swallow the new diagnostic.
+An explicitly selected cluster copies its complete subtree. Ordinary member copying stays supported. Store the source inventory needed for proven alias remapping and copied-root IDs so partial selection cannot produce dangling copied parents.
 
-Existing malformed `$("Loop")` selectors cannot reliably reveal whether the author intended Loop or Loop2. Repair only when recorded identity or a unique alias proves the target; otherwise retain the expression and report the issue for user correction.
+At paste, use the existing shared instance-name allocator and separate complete node/edge/cluster ID maps. Remap canonical edges, direct members, parent links and supported editable selectors simultaneously. Preserve existing unique-title behaviour.
 
-## Technical change map and delivery order
+Attach only copied subtree roots to the destination; preserve internal parents. Standalone copied nodes become direct destination members, not duplicate owners of copied child leaves. Root paste detaches copied roots from uncopied original parents. Remove the target branch that discards copied metadata. Reject depth/topology violations atomically; never flatten to make paste succeed.
 
-1. Shared allocator/accessor and reference-identity contract.
-2. Rename adapter, palette batch, active direct-add writers and canonical paste/remapping integration.
-3. Serializer, hydration, export/import and restoration paths; preserve fresh-UUID import handling.
-4. BaseNode/InputPanel labels and shared reference builder; both drop paths and canonical previews.
-5. Backend/shared reference resolver, frontend/backend resolution consumers, compiler/ParameterResolver, Edit Fields context and cluster reference planning.
-6. Record the shared naming and identity-resolution architecture rules in `AGENTS.md`, without replacing canonical mutation or render-only projection rules.
-7. Copy backend changes to `coreza-io/coreza-backend` and deploy them with the frontend compatibility changes. A frontend-only release does not update the separately deployed execution service.
+File import retains fresh UUID node/edge identities and separately allocated public names under the current naming rules. Preserve or consistently remap cluster UUIDs with all parent links; validate the complete imported array before session replacement. Export/restore retain canonical content, not display cards. Protect import-over-existing through the same supported-writer save boundary.
 
-Keep scope limited to naming, identity-based reference lookup and persistence compatibility. No cluster projection rewrite, edge rendering change, new store, global counter, queue/API redesign, batch execution change, output-shape change or all-node immutable-ID migration.
+## 8. Execution, scope and visible progress
+
+At start capture one canonical graph/hierarchy snapshot and resolve the requested cluster's effective leaves. Block preflight on structural defects affecting that component, its descendants or relevant ancestor boundaries; checking only the requested cluster's first violation is insufficient.
+
+Feed the flattened leaf scope into existing editor planning, action capture, allowed-node restrictions, references, attachments and Loop regions. Parent execution owns one lock/controller and invokes each normal action in dependency/control order; **do not call child Execute recursively or queue the editor button**. Preserve BacktestInit single manual initialization, scoped inputs, pins, listener rules, fail-fast and normal Loop feedback repetitions. Unsupported overlapping/nested Loop bodies remain a clear preflight refusal; organizational nesting does not enable them.
+
+Track the active invocation separately from aggregate unique-leaf completion. Repeated Loop body actions do not manufacture duplicate eligible counts. Derive child/ancestor summaries from the owning run's outcomes; do not overwrite independently stored child-run state or start another run. Non-owning controls show the active owner and remain blocked. Stop belongs to the active scope, clears visuals promptly and retains ownership until in-flight settlement. Stale sessions cannot publish late progress/results.
+
+Resolve active leaves to displayed representatives: show normal effects on visible leaves and running/failed state on their visible collapsed child/outer card. Extend `executionVisuals` with effective membership and explicit canonical-to-projected edge mapping, not relaxed endpoint comparisons. Keep effects as overlays after reconciliation; never persist flags/styles or contaminate base projection. Detailed errors remain in the failed leaf's Output Data. Navigation during a run changes display only.
+
+Update the retained backend scoped compiler for effective members, boundaries, attachments, reference limits and plan identity. Include deterministic relevant parent links, direct/effective leaf IDs and planner version alongside existing workflow revision/hash inputs. Persist canonical leaf scope snapshots and existing cancellation ownership. Keep server execution capability restrictions intact; do not promise newly supported node types. Execute All continues scheduling only canonical executable nodes, not organizational containers.
+
+## 9. Delivery order and rollout
+
+1. Portable hierarchy model/resolver, structural diagnostics, frontend/backend validation and parent-preserving parsing/normalization.
+2. Complete-document recovery, serializer/import/history/snapshot support and server writer-capability protection.
+3. Hierarchy-aware create/wrap/dissolve/delete/paste commands; current naming and runtime identity transactions retained.
+4. Ancestor-path navigation, bottom-up bounds, representative edge projection, occlusion and reconciliation.
+5. Effective selection/movement and deepest-body insertion integration.
+6. Editor flattened execution, derived progress/effects and retained backend scope compiler.
+7. Copy backend changes to `coreza-io/coreza-backend`; deploy hierarchy readers/guards before enabling frontend authoring. Inspect deployed RPC readiness and alternate writer paths before the feature gate opens.
+8. Enable creation only when server capability advertises hierarchy support and depth two. Rollback disables authoring but retains readers and save protection; never deploy a metadata-stripping writer against nested documents.
+
+Primary files: cluster `types`, new portable hierarchy helper/frontend facade, `parse`, `validate`, `documentCommands`, `viewState`, `projection`, `selection`, `positions`, `insertion`, `executionVisuals`; `WorkflowEditor`, `CompactClusterNode`, `ClusterExecutionControl`, `useClusterExecution`, `useWorkflowPersistence`, canonical serializer/export/version readers; backend `schemas`, `validateNodeClusters`, `WorkflowQueryService`, request/response boundary, scoped compiler and run consumers.
+
+Audit every `memberNodeIds` consumer: direct membership remains correct for ownership/rename; scope, container movement, summary and selection usually require effective membership. Do not mechanically replace all accesses. Record hierarchy/visibility/write-contract architectural rules in `AGENTS.md` during implementation and add the work to the roadmap then; plan mode leaves those files unchanged.
+
+No new execution engine, sub-workflow runtime, all-node identity migration, graph store, whole-node edge subscriptions, drag-to-reparent, commercial gate or automatic flattening is included. This is a source-grounded implementation proposal, not a claim of completed behaviour or deployed readiness.

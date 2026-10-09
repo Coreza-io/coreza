@@ -91,12 +91,18 @@ export function pasteNodesInDocument(
     }
     return { ...node, data };
   });
-  const titles = new Set(current.clusters.map(({ title }) => title.toLocaleLowerCase()));
+  const titleKey = (title: string) => title.trim().toLocaleLowerCase();
+  const titles = new Set(current.clusters.map(({ title }) => titleKey(title)));
+  const familyTitles = new Set([...titles, ...request.copiedClusters.map(({ title }) => titleKey(title))]);
   const clusters = request.targetClusterId ? [] : request.copiedClusters.map((cluster) => {
-    let title = cluster.title;
+    const requestedTitle = cluster.title.trim();
+    const root = /^(.*) [1-9]\d*$/.exec(requestedTitle)?.[1];
+    // Continue a known family (hl 2 -> hl 3), preserving unrelated custom digits.
+    const base = root && familyTitles.has(titleKey(root)) ? root : requestedTitle;
+    let title = requestedTitle;
     let suffix = 2;
-    while (titles.has(title.toLocaleLowerCase())) title = `${cluster.title} ${suffix++}`;
-    titles.add(title.toLocaleLowerCase());
+    while (titles.has(titleKey(title))) title = `${base} ${suffix++}`;
+    titles.add(titleKey(title));
     return { ...cluster, id: crypto.randomUUID(), title, memberNodeIds: cluster.memberNodeIds.map((id) => request.idMap[id]) };
   });
   const result = insertNodesInDocument({ ...current, clusters: [...current.clusters, ...clusters] }, { ...request, nodes });

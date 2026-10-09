@@ -9,10 +9,12 @@ import {
   deleteNodesFromDocument,
   pasteNodesInDocument,
   insertNodesInDocument,
+  copyClusterMetadata,
 } from "@/domain/clusters/documentCommands";
 import {
   projectClusterGraph,
   getExpandedClusterFrameRect,
+  resolveProjectedConnection,
 } from "@/domain/clusters/projection";
 import {
   focusedClusterToViewState,
@@ -318,4 +320,52 @@ it("inserts into either expanded body while inner is focused and executes effect
     buildClusterExecutionPlan(clusters[1], nodes, edges, clusters)
       .executableNodeIds,
   ).toEqual(["a", "b", "c"]);
+});
+
+it("keeps explicit container copying distinct from coincident leaf selection", () => {
+  expect(copyClusterMetadata(clusters, new Set(["a", "b"]), new Set())).toEqual(
+    [],
+  );
+  expect(
+    copyClusterMetadata(clusters, new Set(["a", "b"]), new Set([inner])),
+  ).toEqual([{ ...clusters[0], parentClusterId: undefined }]);
+  expect(
+    copyClusterMetadata(clusters, new Set(["a", "b", "c"]), new Set([outer])),
+  ).toEqual(clusters);
+});
+
+it("maps reconnect endpoints through exact boundary handles and refuses unresolved cards", () => {
+  const projection = projectClusterGraph(
+    nodes,
+    edges,
+    clusters,
+    focusedClusterToViewState(outer, clusters),
+    () => {},
+  );
+  const projected = projection.edges.find((edge) => edge.id === "bc")!;
+  expect(
+    resolveProjectedConnection(projected, projection, nodes, edges),
+  ).toMatchObject({ source: "b", target: "c" });
+  expect(
+    resolveProjectedConnection(
+      { ...projected, sourceHandle: "out:missing" },
+      projection,
+      nodes,
+      edges,
+    ),
+  ).toBeNull();
+});
+
+it("reuses hierarchy indexes across position, title and note changes", () => {
+  expect(
+    resolveClusterHierarchy(
+      clusters,
+      nodes.map((n) => n.id),
+    ),
+  ).toBe(
+    resolveClusterHierarchy(
+      clusters.map((c) => ({ ...c, title: "Changed", note: "Changed" })),
+      nodes.map((n) => n.id),
+    ),
+  );
 });

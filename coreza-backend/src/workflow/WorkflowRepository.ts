@@ -26,6 +26,7 @@ function mapWorkflowSaveError(error: WorkflowRpcError) {
   if (error.message.includes("workflow-revision-conflict") || error.code === "40001") {
     return createError("workflow-revision-conflict", 409);
   }
+  if (error.message.includes("cluster-writer-upgrade-required")) return createError("cluster-writer-upgrade-required", 409);
   if (error.message.includes("workflow-not-found")) {
     return createError("Workflow not found", 404);
   }

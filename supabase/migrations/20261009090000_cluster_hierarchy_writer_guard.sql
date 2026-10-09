@@ -108,6 +108,8 @@ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   SELECT to_regprocedure('public.save_workflow_document(uuid,uuid,bigint,text,jsonb,jsonb,jsonb,uuid,integer)') IS NOT NULL
     AND NOT has_table_privilege('authenticated', 'public.workflows', 'UPDATE')
     AND NOT has_table_privilege('authenticated', 'public.workflows', 'INSERT')
+    AND NOT has_table_privilege('anon', 'public.workflows', 'UPDATE')
+    AND NOT has_table_privilege('anon', 'public.workflows', 'INSERT')
     AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'guard_nested_workflow_writer'
       AND tgrelid = 'public.workflows'::regclass AND tgenabled = 'O');
 $$;

@@ -314,3 +314,79 @@ it.each([false, true])('executes sequential Loops or rejects overlap before exec
   }
   act(() => renderer.unmount());
 });
+
+it("executes a parent once under one lock and derives child progress without starting child runs", async () => {
+  const outerId = "11111111-1111-4111-8111-111111111111";
+  const innerId = "22222222-2222-4222-8222-222222222222";
+  const calls: string[] = [];
+  let settle!: () => void;
+  const unregister = ["a", "b", "c"].map((id) =>
+    registerEditorNodeAction("nested-run", id, async () => {
+      calls.push(id);
+      if (id === "a")
+        await new Promise<void>((resolve) => {
+          settle = resolve;
+        });
+      return { nodeId: id, status: "success" };
+    }),
+  );
+  let hook!: ReturnType<typeof useClusterExecution>;
+  function Harness() {
+    hook = useClusterExecution({
+      workflowSessionId: "nested-run",
+      nodes: ["a", "b", "c"].map((id) => node(id)),
+      edges: [
+        { id: "ab", source: "a", target: "b" },
+        { id: "bc", source: "b", target: "c" },
+      ],
+      clusters: [
+        { id: outerId, title: "Outer", memberNodeIds: ["c"] },
+        {
+          id: innerId,
+          title: "Inner",
+          memberNodeIds: ["a", "b"],
+          parentClusterId: outerId,
+        },
+      ],
+    });
+    return null;
+  }
+  let renderer!: ReactTestRenderer;
+  let run!: Promise<void>;
+  act(() => {
+    renderer = create(React.createElement(Harness));
+  });
+  act(() => {
+    run = hook.executeCluster(outerId);
+  });
+  expect(getEditorExecutionTarget("nested-run")).toBe(`cluster:${outerId}`);
+  expect(hook.getState(innerId)).toMatchObject({
+    phase: "blocked",
+    ownerClusterId: outerId,
+    currentNodeId: "a",
+    completed: 0,
+    eligible: 2,
+  });
+  await act(async () => {
+    await hook.executeCluster(innerId);
+  });
+  expect(calls).toEqual(["a"]);
+  await act(async () => {
+    settle();
+    await run;
+  });
+  expect(calls).toEqual(["a", "b", "c"]);
+  expect(hook.getState(outerId)).toMatchObject({
+    phase: "completed",
+    completed: 3,
+    eligible: 3,
+  });
+  expect(hook.getState(innerId)).toMatchObject({
+    phase: "completed",
+    completed: 2,
+    eligible: 2,
+  });
+  expect(getEditorExecutionTarget("nested-run")).toBe("");
+  act(() => renderer.unmount());
+  unregister.forEach((remove) => remove());
+});

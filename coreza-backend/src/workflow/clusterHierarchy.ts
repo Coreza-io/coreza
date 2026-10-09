@@ -28,6 +28,9 @@ const cache = new WeakMap<
   readonly HierarchyCluster[],
   Map<string, ReturnType<typeof buildHierarchy>>
 >();
+// Reuse indexes across title/note edits and normalization clones. Bound retention
+// because effective sets cost the sum of subtree sizes.
+const structuralCache = new Map<string, ReturnType<typeof buildHierarchy>>();
 export function resolveClusterHierarchy<T extends HierarchyCluster>(
   clusters: readonly T[],
   nodeIds?: Iterable<string>,
@@ -41,7 +44,21 @@ export function resolveClusterHierarchy<T extends HierarchyCluster>(
   }
   let result = entries.get(key);
   if (!result) {
-    result = buildHierarchy(clusters, inventory);
+    const relationships = [...clusters]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((c) => ({
+        id: c.id,
+        parentClusterId: c.parentClusterId,
+        memberNodeIds: [...c.memberNodeIds],
+      }));
+    const signature = JSON.stringify([relationships, inventory]);
+    result = structuralCache.get(signature);
+    if (!result) {
+      result = buildHierarchy(relationships, inventory);
+      structuralCache.set(signature, result);
+      if (structuralCache.size > 64)
+        structuralCache.delete(structuralCache.keys().next().value!);
+    }
     entries.set(key, result);
   }
   return result;
@@ -115,6 +132,7 @@ function buildHierarchy(
       } else directOwner.set(id, c.id);
     }
   }
+  for (const ids of children.values()) ids.sort();
   for (const c of [...clusters].sort((a, b) => a.id.localeCompare(b.id))) {
     const path: string[] = [];
     const visited = new Set([c.id]);

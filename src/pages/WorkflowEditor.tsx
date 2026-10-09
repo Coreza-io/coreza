@@ -1,6 +1,6 @@
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
 import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
-import { groupSelectionInDocument, dissolveClusterInDocument, copyClusterMetadata } from '@/domain/clusters/documentCommands';
+import { groupSelectionInDocument, dissolveClusterInDocument, copyClusterMetadata, mutateDocument } from '@/domain/clusters/documentCommands';
 import { allocateNodeName, nodeDisplayName } from "@/domain/nodeNaming";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -141,7 +141,7 @@ import {
 import { ActivateControl } from "@/components/workflow/ActivateControl";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
-import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph, type ClusterProjection } from "@/domain/clusters/projection";
+import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph, resolveProjectedConnection, type ClusterProjection } from "@/domain/clusters/projection";
 import {
   closeFocusedCluster,
   focusedClusterToViewState,
@@ -528,7 +528,7 @@ const WorkflowEditorContent = () => {
       setEditingClusterId(null);
       return next;
     });
-  }, [clusters, rf, workflowSessionId]);
+  }, [clusters, rf]);
 
   const closeCluster = useCallback((clusterId?: string) => {
     if (clusterMoveRef.current) return;
@@ -542,7 +542,7 @@ const WorkflowEditorContent = () => {
       overviewViewportRef.current = null;
       if (restore) void rf.setViewport(restore);
     }
-  }, [rf, workflowSessionId]);
+  }, [rf]);
 
   const clusterViewState = useMemo(() => focusedClusterToViewState(focusedClusterId, clusters), [focusedClusterId, clusters]);
 
@@ -663,12 +663,13 @@ const WorkflowEditorContent = () => {
 
   const deleteNodeIds = useCallback((nodeIds: readonly string[]) => {
     if (nodeIds.length === 0 || dragSource.nodeId || isEditorExecutionLocked(workflowSessionId)) return;
-    saveHistorySnapshot();
-    const result = deleteNodesFromDocument({ nodes, edges, clusters }, new Set(nodeIds));
-    restoreDocument(result.document);
-    if (result.dissolvedClusters.length > 0) {
-      toast({ title: "Cluster dissolved", description: result.dissolvedClusters.map(({ title }) => title).join(", ") });
-    }
+    if (!nodeIds.some(id=>nodes.some(n=>n.id === id))) return;
+    try {
+      const result = deleteNodesFromDocument({ nodes, edges, clusters }, new Set(nodeIds));
+      saveHistorySnapshot();
+      restoreDocument(result.document);
+      if (result.dissolvedClusters.length > 0) toast({title:'Clusters dissolved', description:result.dissolvedClusters.map(c=>c.title).join(', ')});
+    } catch (error) { toast({title:'Cannot delete nodes', description:String(error)}); }
   }, [clusters, dragSource.nodeId, edges, nodes, restoreDocument, saveHistorySnapshot, toast, workflowSessionId]);
 
   const dissolveClustersForNodes = useCallback((nodeIds: readonly string[]) => {
@@ -940,23 +941,34 @@ const WorkflowEditorContent = () => {
         <ToastAction
           altText="Dissolve affected clusters and apply connection change"
           onClick={() => {
-            saveHistorySnapshot();
-            setClusters((current) => current.filter(({ id }) => !newlyInvalidIds.has(id)));
-            setEdges(candidateEdges);
+            if (isEditorExecutionLocked(workflowSessionId) || clustersRef.current !== clusters || canonicalEdgesRef.current !== edges) return;
+            try {
+              const result = mutateDocument({nodes:nodesRef.current, edges:canonicalEdgesRef.current, clusters:clustersRef.current}, candidate=>{candidate.edges=candidateEdges;});
+              saveHistorySnapshot(); restoreDocument(result.document);
+              toast({title:'Clusters dissolved', description:result.dissolvedClusters.map(c=>c.title).join(', ')});
+            } catch (error) { toast({title:'Cannot apply connection', description:String(error)}); }
           }}
         >
           Dissolve cluster and apply
         </ToastAction>
       ),
     });
-  }, [clusters, edges, nodes, saveHistorySnapshot, setEdges, toast, workflowSessionId]);
+  }, [clusters, edges, nodes, saveHistorySnapshot, restoreDocument, setEdges, toast, workflowSessionId]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const structural = changes.some(({ type }) => type === "add" || type === "remove" || type === "replace");
-    const candidate = applyEdgeChanges(changes, edges);
+    const canonicalChanges = changes.flatMap((change): EdgeChange[] => {
+      if (change.type !== 'add' && change.type !== 'replace') return [change];
+      const connection = resolveProjectedConnection(change.item, clusterProjection, nodesRef.current, canonicalEdgesRef.current);
+      if (!connection) return [];
+      const existing = canonicalEdgesRef.current.find(edge=>edge.id === change.item.id);
+      const item = existing ? {...existing, ...connection} : {id:change.item.id, type:change.item.type, ...connection};
+      return [{...change, item}];
+    });
+    const candidate = applyEdgeChanges(canonicalChanges, edges);
     if (structural) commitEdgeCandidate(candidate);
     else setEdges(candidate);
-  }, [commitEdgeCandidate, edges, setEdges]);
+  }, [commitEdgeCandidate, clusterProjection, edges, setEdges]);
   commitEdgeCandidateRef.current = commitEdgeCandidate;
 
   // Inject execution state into node data for visual feedback
@@ -1071,7 +1083,7 @@ const WorkflowEditorContent = () => {
       currentMemberPositions: initialMemberPositions,
       initialDisplayPosition: { ...node.position },
     };
-  }, [clusterProjection.displayNodeToCluster, clusters, dragSource.nodeId, resolveVisibleCanonicalSelection, selectedClusterIds, workflowSessionId]);
+  }, [clusterProjection.displayNodeToCluster, clusters, dragSource.nodeId, effectiveMembers, resolveVisibleCanonicalSelection, selectedClusterIds, workflowSessionId]);
 
   const onCompactDragStop = useCallback(() => {
     activeNodeDragRef.current = null;
@@ -1155,7 +1167,7 @@ const WorkflowEditorContent = () => {
       }
       if (canonicalChanges.length > 0) applyNodeChanges(canonicalChanges);
     },
-    [applyNodeChanges, cleanupNewsSubscription, clusterProjection.displayNodeToCluster, clusterProjection.visibleNodeIds, clusters, deleteNodeIds, executionStore, nodes, setNodes, workflowSessionId],
+    [applyNodeChanges, cleanupNewsSubscription, clusterProjection.displayNodeToCluster, clusterProjection.visibleNodeIds, clusters, deleteNodeIds, effectiveMembers, executionStore, nodes, setNodes, workflowSessionId],
   );
 
   const handleNodeOutputMessage = useCallback(
@@ -1366,17 +1378,26 @@ const WorkflowEditorContent = () => {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      const canonicalConnection = resolveProjectedConnection(params, clusterProjection, nodesRef.current, canonicalEdgesRef.current);
+      if (!canonicalConnection) return;
       const id = `edge_${crypto.randomUUID()}`;
       const newEdge: Edge = {
         id,
-        ...params,
+        ...canonicalConnection,
         type: "removable",
         data: { onRemoveEdge: () => removeEdge(id) },
       };
       commitEdgeCandidate(addEdge(newEdge, edges));
     },
-    [commitEdgeCandidate, edges, removeEdge],
+    [commitEdgeCandidate, clusterProjection, edges, removeEdge],
   );
+
+  const onReconnect = useCallback((displayedEdge: Edge, connection: Connection) => {
+    const canonical = resolveProjectedConnection(connection, clusterProjection, nodesRef.current, canonicalEdgesRef.current);
+    const id = clusterProjection.displayEdgeToCanonicalEdge.get(displayedEdge.id) ?? displayedEdge.id;
+    if (!canonical || !canonicalEdgesRef.current.some(e=>e.id === id)) return;
+    commitEdgeCandidate(canonicalEdgesRef.current.map(edge=>edge.id === id ? {...edge, ...canonical} : edge));
+  }, [clusterProjection, commitEdgeCandidate]);
 
   // Memoized WorkflowExecutor instance - only recreate when structure changes
   const workflowExecutor = useMemo(() => {
@@ -2081,7 +2102,7 @@ const WorkflowEditorContent = () => {
       setSelectedClusterIds(clusterId ? new Set([clusterId]) : new Set());
     }
     openCanvasMenu(event, nodeIds, "selection");
-  }, [clusterProjection.displayNodeToCluster, clusters, openCanvasMenu, resolveVisibleCanonicalSelection, setNodes]);
+  }, [clusterProjection.displayNodeToCluster, effectiveMembers, openCanvasMenu, resolveVisibleCanonicalSelection, setNodes]);
 
   const onSelectionContextMenu = useCallback((event: React.MouseEvent, selectedNodes: Node[]) => {
     const canonicalIds = selectedNodes.flatMap(({ id }) => {
@@ -2089,7 +2110,7 @@ const WorkflowEditorContent = () => {
       return clusterId ? effectiveMembers(clusterId) : [id];
     });
     openCanvasMenu(event, [...new Set(canonicalIds)], "selection");
-  }, [clusterProjection.displayNodeToCluster, clusters, openCanvasMenu]);
+  }, [clusterProjection.displayNodeToCluster, effectiveMembers, openCanvasMenu]);
 
   useEffect(() => {
     const move = clusterMoveRef.current;
@@ -2103,7 +2124,7 @@ const WorkflowEditorContent = () => {
       || move.movedNodeIds.some((id) => !currentNodeIds.has(id))) {
       finishClusterMove(true);
     }
-  }, [clusters, finishClusterMove, nodes]);
+  }, [clusters, effectiveMembers, finishClusterMove, nodes]);
 
   const menuValidation = useMemo(() => {
     if (!canvasMenu || canvasMenu.kind !== "selection") return null;
@@ -2209,7 +2230,7 @@ const WorkflowEditorContent = () => {
           nodes: nodesCopy,
           sourceNodes: cloneNodes(nodesRef.current),
           edges: edgesCopy,
-          clusters: copyClusterMetadata(clusters, selectedNodeIds),
+          clusters: copyClusterMetadata(clusters, selectedNodeIds, selectedClusterIds),
         };
         toast({ description: "Selection copied" });
         return;
@@ -2245,7 +2266,7 @@ const WorkflowEditorContent = () => {
           nodes: nodesCopy,
           sourceNodes: cloneNodes(nodesRef.current),
           edges: edgesCopy,
-          clusters: copyClusterMetadata(clusters, selectedNodeIds),
+          clusters: copyClusterMetadata(clusters, selectedNodeIds, selectedClusterIds),
         };
 
         // 2. Delete selected nodes from canvas (same as Delete key)
@@ -2269,10 +2290,14 @@ const WorkflowEditorContent = () => {
 
         const current = { nodes: nodesRef.current, edges: canonicalEdgesRef.current, clusters: clustersRef.current };
 
-        const flowPosition = rf.screenToFlowPosition({
+        const pointerPosition = rf.screenToFlowPosition({
           x: mousePosRef.current.x,
           y: mousePosRef.current.y,
         });
+
+        const placement = resolveInsertionPosition({intent:insertionIntentRef.current, fallbackPosition:pointerPosition, nodes:current.nodes, clusters:current.clusters, expandedClusterId:focusedClusterIdRef.current, workflowSessionId, zoom:rf.getViewport().zoom});
+        if (placement.reason) { toast({title:'Cannot paste selection', description:'The insertion target is no longer available.'}); return; }
+        const flowPosition = placement.position;
 
         const minX = Math.min(
           ...copiedNodes.map((node) => node.position?.x ?? 0),
@@ -2347,11 +2372,14 @@ const WorkflowEditorContent = () => {
 
         const result = pasteNodesInDocument(current, {
           nodes: newNodes, edges: newEdges, idMap: nodeIdMap, copiedClusters, sourceNodes,
-          targetClusterId: resolveInsertionPosition({ intent: insertionIntentRef.current, fallbackPosition: { x:0, y:0 }, nodes:current.nodes, clusters:current.clusters, expandedClusterId:focusedClusterId, workflowSessionId, zoom:rf.getViewport().zoom }).targetClusterId, expandedClusterId: focusedClusterId,
+          targetClusterId: placement.targetClusterId, expandedClusterId: focusedClusterIdRef.current,
         });
         if (result.ok === false) {
           toast({ title: "Cannot paste selection", description: result.message, variant: "destructive" });
           return;
+        }
+        if (!hierarchySupported && result.document.clusters.some(c=>c.parentClusterId !== undefined)) {
+          toast({title:'Cannot paste nested clusters', description:'The server has not confirmed hierarchy write support.'}); return;
         }
         historyRef.current.past.push({ type: "document", document: {
           nodes: cloneNodes(current.nodes), edges: cloneEdges(current.edges),
@@ -2403,6 +2431,7 @@ const WorkflowEditorContent = () => {
     restoreDocument,
     resolveVisibleCanonicalSelection,
     focusedClusterId,
+    hierarchySupported,
     nodesRef,
     canonicalEdgesRef,
     clustersRef,
@@ -2606,6 +2635,7 @@ const WorkflowEditorContent = () => {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onReconnect={onReconnect}
                 onConnectStart={onConnectStart}
                 onConnectEnd={onConnectEnd}
                 onDrop={onDrop}

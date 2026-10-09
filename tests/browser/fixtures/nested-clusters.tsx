@@ -93,8 +93,8 @@ function Fixture(): JSX.Element {
     nodes.map((n) => [n.id, n.position]),
   );
   return (
-    <main className="h-screen bg-background text-foreground">
-      <nav className="h-12">
+    <main style={{ height: "100vh" }} className="bg-background text-foreground">
+      <nav style={{ height: 48 }}>
         <button
           id="back"
           onClick={() => setFocus(closeFocusedCluster(focus, clusters))}
@@ -102,7 +102,7 @@ function Fixture(): JSX.Element {
           Back
         </button>
       </nav>
-      <div className="relative h-[calc(100vh-3rem)]">
+      <div style={{ position: "relative", height: "calc(100vh - 48px)" }}>
         <ReactFlow
           nodes={projection.nodes}
           edges={projection.edges}

@@ -317,9 +317,9 @@ export function useClusterExecution({ workflowSessionId, nodes, edges, clusters,
         const running = activeTarget === `cluster:${ownerId}`;
         const failed = Object.values(outcomes).find(outcome=>outcome.status === 'failed');
         return {
-          phase: running ? 'blocked' : failed ? 'failed' : owner.phase === 'failed' ? 'completed' : owner.phase,
+          phase: running ? 'blocked' : failed ? 'failed' : owner.phase === 'failed' ? 'cancelled' : owner.phase,
           ...(running ? {ownerClusterId:ownerId, reason:`Running in ${clusters.find(c=>c.id === ownerId)?.title ?? ownerId}`} : failed ? {reason:owner.reason} : {}),
-          completed:Object.keys(outcomes).length,
+          completed:Object.values(outcomes).filter(outcome=>!["failed","cancelled","dependency-blocked"].includes(outcome.status)).length,
           eligible:executableNodeIds.filter(id=>members.has(id)).length,
           outcomes,
           currentNodeId:running && owner.currentNodeId && members.has(owner.currentNodeId) ? owner.currentNodeId : undefined,

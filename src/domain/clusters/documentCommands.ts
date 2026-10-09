@@ -530,10 +530,20 @@ export function groupSelectionInDocument(
 export function copyClusterMetadata(
   clusters: readonly NodeCluster[],
   selectedNodeIds: ReadonlySet<string>,
+  selectedClusterIds?: ReadonlySet<string>,
 ): NodeCluster[] {
   const hierarchy = resolveClusterHierarchy(clusters);
+  const explicitSubtrees =
+    selectedClusterIds &&
+    new Set(
+      [...selectedClusterIds].flatMap((id) => [
+        id,
+        ...(hierarchy.descendants.get(id) ?? []),
+      ]),
+    );
   const copied = clusters.filter(
     (c) =>
+      (!explicitSubtrees || explicitSubtrees.has(c.id)) &&
       (hierarchy.effectiveMembers.get(c.id)?.length ?? 0) > 0 &&
       hierarchy.effectiveMembers
         .get(c.id)!

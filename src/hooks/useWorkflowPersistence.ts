@@ -19,8 +19,6 @@ import { nodeManifest } from '@/nodes/manifest';
 import { reconcileNodeValues } from '@/utils/reconcileNodeValues';
 import type { NodeCluster } from '@/domain/clusters/types';
 import { normalizeClusters, validateClusters } from '@/domain/clusters/validate';
-import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
-import { parseNodeClusters } from '@/domain/clusters/parse';
 import { apiClient } from '@/lib/apiClient';
 import { hashEditableWorkflowContent, savedWorkflowFromRow, serializeWorkflowContent } from '@/domain/workflowDocument';
 

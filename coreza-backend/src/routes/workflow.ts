@@ -40,6 +40,10 @@ function normalizeValidationError(error: unknown) {
   return error;
 }
 
+router.get('/capabilities', async (req, res, next) => {
+  try { res.json(await queryService.getCapabilities()); } catch (error) { next(error); }
+});
+
 router.get("/", async (req, res, next) => {
   try {
     const userId = requireUserId(req);

@@ -4,15 +4,17 @@ const nodeClusterSchema = z.object({
   id: z.string().uuid(),
   title: z.string().trim().min(1).max(200),
   note: z.string().max(200).optional(),
-  memberNodeIds: z.array(z.string().min(1)).min(1),
+  memberNodeIds: z.array(z.string().min(1)),
+  parentClusterId: z.string().min(1).optional(),
 });
 
 export const createWorkflowSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   nodes: z.array(z.any()).min(1, "At least one node is required"),
   edges: z.array(z.any()),
-  project_id: z.string().uuid().optional(),
+  project_id: z.string().uuid().nullable().optional(),
   schedule_cron: z.string().optional(),
+  cluster_format_version: z.literal(2).optional(),
   node_clusters: z.array(nodeClusterSchema).optional().default([]),
 });
 
@@ -22,6 +24,7 @@ export const updateWorkflowSchema = z.object({
   nodes: z.array(z.any()).optional(),
   edges: z.array(z.any()).optional(),
   project_id: z.string().uuid().nullable().optional(),
+  cluster_format_version: z.literal(2).optional(),
   node_clusters: z.array(nodeClusterSchema).optional(),
 });
 

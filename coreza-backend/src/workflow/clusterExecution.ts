@@ -1,3 +1,4 @@
+import { resolveClusterHierarchy } from './clusterHierarchy';
 import { createHash } from "crypto";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import {
@@ -107,7 +108,7 @@ export interface CompileClusterPlanInput {
 const MAX_SNAPSHOT_BYTES = 256 * 1024;
 const MAX_SNAPSHOT_DEPTH = 20;
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
-const PLANNER_VERSION = 1;
+const PLANNER_VERSION = 2;
 
 function validateSnapshot(value: unknown, code: ClusterPreflightCode, depth = 0): void {
   if (depth > MAX_SNAPSHOT_DEPTH) throw new ClusterPreflightError(code);
@@ -197,7 +198,11 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
   const snapshotBytes = Buffer.byteLength(JSON.stringify([input.boundaryInputs ?? {}, input.referenceSnapshots ?? {}]));
   if (snapshotBytes > MAX_SNAPSHOT_BYTES) throw new ClusterPreflightError("invalid_reference_snapshot", { clusterId });
 
-  const memberIds = new Set(cluster.memberNodeIds);
+  const hierarchy = resolveClusterHierarchy(workflow.node_clusters);
+  const members = hierarchy.effectiveMembers.get(clusterId) ?? [];
+  const relevantIds = new Set([clusterId, ...(hierarchy.ancestors.get(clusterId) ?? []), ...(hierarchy.descendants.get(clusterId) ?? [])]);
+  const hierarchySnapshot = workflow.node_clusters.filter(c=>relevantIds.has(c.id)).map(c=>({...c, memberNodeIds:[...c.memberNodeIds].sort()})).sort((a,b)=>a.id.localeCompare(b.id));
+  const memberIds = new Set(members);
   const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]));
   const internalMainEdges: WorkflowEdge[] = [];
   const internalAttachmentEdges: WorkflowEdge[] = [];
@@ -215,8 +220,8 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
     else boundaryOutputEdges.push(edge);
   }
 
-  const attachmentNodeIds = cluster.memberNodeIds.filter((id) => nodeById.get(id)?.node_type === "sub").sort();
-  const executableNodeIds = cluster.memberNodeIds.filter((id) => nodeById.get(id)?.node_type !== "sub").sort();
+  const attachmentNodeIds = members.filter((id) => nodeById.get(id)?.node_type === "sub").sort();
+  const executableNodeIds = members.filter((id) => nodeById.get(id)?.node_type !== "sub").sort();
   if (executableNodeIds.length === 0) throw new ClusterPreflightError("empty_executable_scope", { clusterId });
   const unsupportedNodeIds = executableNodeIds.filter((id) => {
     const node = nodeById.get(id);
@@ -268,7 +273,9 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
     workflowId: workflow.id,
     sourceRevision: workflow.revision,
     cluster,
-    nodes: cluster.memberNodeIds.map((id) => nodeById.get(id)),
+    hierarchy: hierarchySnapshot,
+    effectiveMembers: members,
+    nodes: members.map((id) => nodeById.get(id)),
     internalMainEdges,
     internalAttachmentEdges,
     boundaryInputEdges,
@@ -283,7 +290,7 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
     sourceRevision: workflow.revision,
     clusterId,
     titleSnapshot: cluster.title,
-    memberNodeIds: [...cluster.memberNodeIds].sort(),
+    memberNodeIds: [...members].sort(),
     executableNodeIds,
     attachmentNodeIds,
     internalMainEdges: internalMainEdges.map(cloneEdge).sort((a, b) => a.id.localeCompare(b.id)),

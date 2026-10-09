@@ -1,7 +1,7 @@
+import { resolveClusterHierarchy } from './hierarchy';
 import type { Edge, Node, XYPosition } from "@xyflow/react";
 import type { NodeCluster } from "./types";
 import type { ClusterViewState } from "./viewState";
-import { isClusterExpanded } from "./viewState";
 import type { ClusterRunState } from "@/hooks/useClusterExecution";
 import { CLUSTER_RUNTIME_HOST_CLASS } from "./canonicalNode";
 
@@ -47,6 +47,7 @@ export interface ClusterProjection {
 
 export interface ClusterProjectionOptions {
   focusedClusterId?: string | null;
+  zoom?: number;
   draggable?: boolean;
   selectedClusterIds?: ReadonlySet<string>;
   getRunState?: (clusterId: string) => ClusterRunState;
@@ -95,6 +96,9 @@ export const getProjectedNodeRect = (node: Node): FlowRect => ({
 export const getExpandedClusterFrameRect = (
   cluster: NodeCluster | undefined,
   canonicalNodes: readonly Node[],
+  clusters: readonly NodeCluster[] = cluster ? [cluster] : [],
+  viewState: ClusterViewState = {},
+  zoom = 1,
 ): FlowRect | null => {
   if (!cluster) return null;
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
@@ -102,12 +106,21 @@ export const getExpandedClusterFrameRect = (
     const member = nodeById.get(id);
     return member ? [member] : [];
   });
-  if (members.length === 0) return null;
+  const hierarchy = resolveClusterHierarchy(clusters);
+  if (hierarchy.diagnostics.some(d=>['invalid-parent','missing-parent','self-parent','cluster-cycle','cluster-depth'].includes(d.code))) return null;
   const rects = members.map(getProjectedNodeRect);
+  for (const childId of hierarchy.children.get(cluster.id) ?? []) {
+    const child = clusters.find(c=>c.id === childId)!;
+    const leaves = (hierarchy.effectiveMembers.get(child.id) ?? []).flatMap(id=>nodeById.has(id) ? [nodeById.get(id)!] : []);
+    const rect = viewState[childId] ? getExpandedClusterFrameRect(child, canonicalNodes, clusters, viewState, zoom)
+      : leaves.length ? {...getCompactClusterPosition(leaves), width:COMPACT_CLUSTER_WIDTH, height:COMPACT_CLUSTER_HEIGHT} : null;
+    if (rect) rects.push(rect);
+  }
+  if (rects.length === 0) return null;
   const minX = Math.min(...rects.map(({ x }) => x)) - CLUSTER_FRAME_PADDING;
-  const minY = Math.min(...rects.map(({ y }) => y)) - CLUSTER_FRAME_PADDING - CLUSTER_FRAME_HEADER_HEIGHT;
+  const minY = Math.min(...rects.map(({ y }) => y)) - CLUSTER_FRAME_PADDING - CLUSTER_FRAME_HEADER_HEIGHT / Math.max(zoom, 0.01);
   const maxX = Math.max(...rects.map(({ x, width }) => x + width)) + CLUSTER_FRAME_PADDING;
-  const maxY = Math.max(...rects.map(({ y, height }) => y + height)) + CLUSTER_FRAME_PADDING + CLUSTER_FRAME_FOOTER_HEIGHT;
+  const maxY = Math.max(...rects.map(({ y, height }) => y + height)) + CLUSTER_FRAME_PADDING + CLUSTER_FRAME_FOOTER_HEIGHT / Math.max(zoom, 0.01);
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
 
@@ -127,19 +140,18 @@ export function projectClusterGraph(
   options: ClusterProjectionOptions = {},
 ): ClusterProjection {
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
-  const focusedCluster = options.focusedClusterId
-    ? clusters.find(({ id }) => id === options.focusedClusterId)
-    : undefined;
+  const hierarchy = resolveClusterHierarchy(clusters, nodeById.keys());
+  const expandedIds = new Set([...Object.keys(viewState).filter(id=>viewState[id]), ...hierarchy.expandedPath(options.focusedClusterId)]);
   const collapsedOwnerByNode = new Map<string, NodeCluster>();
   const displayNodeToCluster = new Map<string, string>();
   const displayEdgeToCanonicalEdge = new Map<string, string>();
   const displayIdByCluster = new Map<string, string>();
-  const isExpanded = (clusterId: string): boolean =>
-    clusterId === options.focusedClusterId || isClusterExpanded(viewState, clusterId);
+  const isExpanded = (clusterId: string): boolean => expandedIds.has(clusterId);
+  const isVisibleContainer = (id: string): boolean => !hierarchy.invalidIds.has(id) && (hierarchy.ancestors.get(id) ?? []).every(isExpanded);
 
   for (const cluster of clusters) {
-    if (isExpanded(cluster.id)) continue;
-    for (const memberId of cluster.memberNodeIds) collapsedOwnerByNode.set(memberId, cluster);
+    if (isExpanded(cluster.id) || !isVisibleContainer(cluster.id)) continue;
+    for (const memberId of hierarchy.effectiveMembers.get(cluster.id) ?? []) collapsedOwnerByNode.set(memberId, cluster);
   }
 
   // Allocate every synthetic ID before rewriting edges. An allocation may need
@@ -147,7 +159,7 @@ export function projectClusterGraph(
   // endpoints from the unsuffixed ID would leave those edges dangling.
   const reservedIds = new Set(canonicalNodes.map(({ id }) => id));
   for (const cluster of clusters) {
-    if (isExpanded(cluster.id)) continue;
+    if (isExpanded(cluster.id) || !isVisibleContainer(cluster.id)) continue;
     const baseId = getClusterDisplayNodeId(cluster.id);
     let id = baseId;
     let collisionIndex = 1;
@@ -200,8 +212,8 @@ export function projectClusterGraph(
   // every display-layer interaction so component-owned runtimes stay alive.
   const displayNodes = canonicalNodes.map((node): Node => collapsedOwnerByNode.has(node.id) ? asRuntimeHost(node) : node);
   for (const cluster of clusters) {
-    if (isExpanded(cluster.id)) continue;
-    const members = cluster.memberNodeIds.flatMap((id) => {
+    if (isExpanded(cluster.id) || !isVisibleContainer(cluster.id)) continue;
+    const members = (hierarchy.effectiveMembers.get(cluster.id) ?? []).flatMap((id) => {
       const member = nodeById.get(id);
       return member ? [member] : [];
     });
@@ -237,14 +249,15 @@ export function projectClusterGraph(
   // This compatibility field now includes both collapsed canonical runtime
   // hosts and temporarily occluded display nodes (including synthetic cards).
   const hiddenRuntimeHostIds = new Set(collapsedOwnerByNode.keys());
-  const expandedCluster = options.focusedClusterId
-    ? clusters.find(({ id }) => id === options.focusedClusterId)
-    : undefined;
-  const expandedMemberNodeIds = new Set(expandedCluster?.memberNodeIds.filter((id) => nodeById.has(id)) ?? []);
-  const frameRect = getExpandedClusterFrameRect(expandedCluster, canonicalNodes);
-  if (frameRect) {
+  for (const expandedId of options.focusedClusterId ? expandedIds : []) {
+    const expandedCluster = clusters.find(c=>c.id === expandedId);
+    const expandedMembers = new Set(hierarchy.effectiveMembers.get(expandedId) ?? []);
+    const frameRect = getExpandedClusterFrameRect(expandedCluster, canonicalNodes, clusters, Object.fromEntries([...expandedIds].map(id=>[id,true])), options.zoom);
+    if (!frameRect) continue;
     for (const node of displayNodes) {
-      if (hiddenRuntimeHostIds.has(node.id) || expandedMemberNodeIds.has(node.id)) continue;
+      const displayClusterId = displayNodeToCluster.get(node.id);
+      if (hiddenRuntimeHostIds.has(node.id) || expandedMembers.has(node.id) ||
+        (displayClusterId && (hierarchy.ancestors.get(displayClusterId) ?? []).includes(expandedId))) continue;
       if (hasPositiveAreaIntersection(frameRect, getProjectedNodeRect(node))) hiddenRuntimeHostIds.add(node.id);
     }
   }

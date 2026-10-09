@@ -1,3 +1,4 @@
+import { recoverClusterDocument } from '@/domain/clusters/recovery';
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -8,7 +9,7 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +19,7 @@ import { nodeManifest } from '@/nodes/manifest';
 import { reconcileNodeValues } from '@/utils/reconcileNodeValues';
 import type { NodeCluster } from '@/domain/clusters/types';
 import { normalizeClusters, validateClusters } from '@/domain/clusters/validate';
+import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
 import { parseNodeClusters } from '@/domain/clusters/parse';
 import { apiClient } from '@/lib/apiClient';
 import { hashEditableWorkflowContent, savedWorkflowFromRow, serializeWorkflowContent } from '@/domain/workflowDocument';
@@ -54,6 +56,16 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
   const { user: authUser, session } = useAuth();
   const { shouldBlockEmptySave } = useWorkflowVersioning();
 
+  const [hierarchySupported, setHierarchySupported] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setHierarchySupported(false);
+    if (session?.access_token) void apiClient.get('/workflows/capabilities', session.access_token)
+      .then(async response => response.ok ? response.json() : null)
+      .then(data => { if (live) setHierarchySupported(data?.cluster_format_version === 2 && data?.max_cluster_depth === 2); })
+      .catch(() => { if (live) setHierarchySupported(false); });
+    return () => { live = false; };
+  }, [session?.access_token]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const lastSavedHashRef = useRef<string>('');
@@ -138,6 +150,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
 
       try {
         const candidateClusters = opts.clusters ?? [];
+        if (candidateClusters.some(c=>c.parentClusterId !== undefined) && !hierarchySupported) throw new Error('The server has not confirmed hierarchy write support.');
         const clusterValidation = validateClusters(nodes, edges, candidateClusters);
         if (!clusterValidation.valid) {
           toast({
@@ -169,6 +182,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           nodes: snapshot.nodes,
           edges: snapshot.edges,
           node_clusters: snapshot.clusters,
+          cluster_format_version: 2,
           project_id: snapshot.projectId,
           ...(workflowId && !opts.isNew ? { expected_revision: revisionRef.current } : {}),
         };
@@ -210,6 +224,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
     },
     [
       authUser,
+      hierarchySupported,
       projectId,
       toast,
       shouldBlockEmptySave,
@@ -281,21 +296,14 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           },
         }));
 
-        const parsedClusters = parseNodeClusters(data.node_clusters);
-        const validClusters: NodeCluster[] = [];
-        const semanticInvalidEntries: Array<{ index: number; value: unknown }> = [];
-        parsedClusters.clusters.forEach((cluster, index) => {
-          const validation = validateClusters(restoredNodes, restoredEdges, [...validClusters, cluster]);
-          if (validation.valid) validClusters.push(cluster);
-          else semanticInvalidEntries.push({ index, value: cluster });
-        });
+        const recovered = recoverClusterDocument(data.node_clusters, restoredNodes, restoredEdges);
         const result: LoadedWorkflow = {
           name: typeof data.name === 'string' ? data.name : 'Untitled Workflow',
           isActive: !!data.is_active,
           nodes: restoredNodes,
           edges: restoredEdges,
-          clusters: validClusters,
-          invalidClusterEntries: [...parsedClusters.invalidEntries, ...semanticInvalidEntries],
+          clusters: recovered.clusters,
+          invalidClusterEntries: recovered.invalidEntries,
           revision: typeof data.revision === 'number' ? data.revision : 0,
         };
 
@@ -356,6 +364,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
   );
 
   return {
+    hierarchySupported,
     saving,
     loading,
     saveWorkflow,

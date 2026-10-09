@@ -40,6 +40,11 @@ function mapWorkflowSaveError(error: WorkflowRpcError) {
 }
 
 export class WorkflowRepository {
+  async hierarchyReady(): Promise<boolean> {
+    const { data, error } = await (supabase.rpc as any)('cluster_hierarchy_write_ready');
+    return !error && data === true;
+  }
+
   async getOwnedWorkflow(userId: string, workflowId: string, select = "*") {
     const { data, error } = await supabase
       .from("workflows")
@@ -111,6 +116,7 @@ export class WorkflowRepository {
         p_edges: candidate.edges,
         p_node_clusters: candidate.node_clusters,
         p_project_id: candidate.project_id,
+        ...(candidate.cluster_format_version === 2 ? { p_cluster_format_version: 2 } : {}),
       });
 
     if (error) {

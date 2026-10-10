@@ -3,12 +3,15 @@ import request from "supertest";
 import comparatorRoutes from "../src/routes/comparator";
 import { applyFieldRows } from "../src/nodes/logic/editFields";
 import { prepareHelperTransport } from "../src/nodes/logic/helperTransport";
-import { compileEditTemplate } from "../src/nodes/logic/editTemplate";
+import { compileEditTemplate, evaluateEditTemplate } from "../src/nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES } from "../src/nodes/logic/safeExpression";
+import { previewSliceRepair } from "../../src/utils/editFieldSliceRepair";
+import { ControlFlowExecutor } from "../src/nodes/executors/ControlFlowExecutor";
 
 jest.mock("../src/middleware/jwtAuth", () => ({
   requireAuth: (_req: unknown, _res: unknown, next: () => void): void => next(),
 }));
+jest.mock("../src/nodes/executors/LoopExecutorV2", () => ({ LoopExecutorV2: class {} }));
 
 const app = express().use(express.json()).use("/comparator", comparatorRoutes);
 
@@ -78,6 +81,32 @@ describe("POST /comparator/field", () => {
 });
 
 describe("typed lastN transport", () => {
+  test("the screenshot repair agrees across preview, manual HTTP and workflow execution", async () => {
+    const source = '{{ $("get_atr_history").json.data.value[-$("short_len").json.data:] }}';
+    const value = previewSliceRepair(source)!;
+    const fields = [{ fieldName: "var1", valueMode: "expression" as const, dataType: "array", value }];
+    const nodes = [{ id: "get_atr_history" }, { id: "short_len" }];
+    const outputs = {
+      get_atr_history: { success: true, status: "success", data: { value: [1,2,3,4,5,6,7,8] } },
+      short_len: { success: true, status: "success", data: 5 },
+    };
+    const context = { $json: {}, nodes, helperOutputs: outputs };
+    const compiled = compileEditTemplate(value, TYPED_EXPRESSION_FEATURES);
+    expect(compiled.nodeReferences).toEqual(["get_atr_history", "short_len"]);
+    const expected = [4,5,6,7,8];
+    // Preview uses this same shared evaluator and the unchanged output envelopes.
+    expect(evaluateEditTemplate(compiled, context)).toEqual(expected);
+    const packet = prepareHelperTransport(compiled, context);
+    const response = await request(app).post("/comparator/field").send({ fields, data: {}, expressionContext: { nodeIdentities: nodes, helperContexts: { 0: packet } } });
+    expect(response.status).toBe(200);
+    expect(response.body.data.var1).toEqual(expected);
+    const executor = new ControlFlowExecutor();
+    const node = { id: "edit", name: "Edit Fields", node_type: "main", category: "Logic", values: { fields } };
+    expect(await executor.execute(node, {}, { nodes, getAllNodeResults: () => outputs })).toMatchObject({ success: true, data: { var1: expected } });
+    // Later invocations must read the latest count, including the strict zero case.
+    outputs.short_len.data = 0;
+    expect(await executor.execute(node, {}, { nodes, getAllNodeResults: () => outputs })).toMatchObject({ success: true, data: { var1: [] } });
+  });
   const field = { fieldName: "tail", valueMode: "expression", dataType: "array", value: '{{ lastN($("ATR").json.data.value, $("Length").json.data) }}' };
   test("preserves display aliases, envelopes and strict available results", async () => {
     const response = await request(app).post("/comparator/field").send({ fields: [field], data: { seed: true }, expressionContext: {

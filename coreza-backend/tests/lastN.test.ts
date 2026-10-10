@@ -1,4 +1,4 @@
-import { previewNestedSliceRepair } from "../../src/utils/editFieldSliceRepair";
+import { previewSliceRepair } from "../../src/utils/editFieldSliceRepair";
 import { compileExpression, ExpressionError, HELPER_LIMITS, TYPED_EXPRESSION_FEATURES } from "../src/nodes/logic/safeExpression";
 import { compileEditTemplate, evaluateEditTemplate } from "../src/nodes/logic/editTemplate";
 import { applyFieldRows, EditFieldError } from "../src/nodes/logic/editFields";
@@ -149,9 +149,18 @@ describe("dependencies, insertion and persistence", () => {
 
 
 test("repairs only the recognized nested-reference suffix form, with a preview", () => {
-  expect(previewNestedSliceRepair('{{ $("history").json.items[-{{ $("count").json.data }}:] }}')).toBe('{{ lastN($("history").json.items, $("count").json.data) }}');
-  expect(previewNestedSliceRepair('{{ "literal {{ quoted }}" }}')).toBeNull();
-  expect(previewNestedSliceRepair('{{ items[-{{ arbitrary }}:] }}')).toBeNull();
+  expect(previewSliceRepair('{{ $("history").json.items[-{{ $("count").json.data }}:] }}')).toBe('{{ lastN($("history").json.items, $("count").json.data) }}');
+  expect(previewSliceRepair('{{ "literal {{ quoted }}" }}')).toBeNull();
+  expect(previewSliceRepair('{{ items[-{{ arbitrary }}:] }}')).toBeNull();
+});
+
+test("offers the screenshot suffix repair without expanding the parser grammar", () => {
+  const source = '{{ $("get_atr_history").json.data.value[-$("short_len").json.data:] }}';
+  expect(() => compileEditTemplate(source, TYPED_EXPRESSION_FEATURES)).toThrow("Bracket access requires");
+  expect(previewSliceRepair(source)).toBe('{{ lastN($("get_atr_history").json.data.value, $("short_len").json.data) }}');
+  for (const value of ['{{ items[-5:] }}', '{{ items[-0:] }}', '{{ items[count:] }}', '{{ items[-$("count").json.data:2] }}', '{{ "items[-$(count).json.data:]" }}', 'prefix {{ items[-$("count").json.data:] }}']) {
+    expect(previewSliceRepair(value)).toBeNull();
+  }
 });
 
 test("remaps mixed selector syntax in one pass when replacement lengths change", () => {

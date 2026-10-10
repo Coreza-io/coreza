@@ -1,4 +1,4 @@
-import { previewNestedSliceRepair } from "@/utils/editFieldSliceRepair";
+import { previewSliceRepair } from "@/utils/editFieldSliceRepair";
 import { referenceInsertionSpans } from "@/utils/editFieldReferenceDrop";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
@@ -89,7 +89,7 @@ interface EditFieldEditorProps {
   canRemove: boolean;
 }
 
-const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
+export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   row,
   index,
   disabled,
@@ -196,7 +196,7 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       document.body.classList.remove("cursor-grabbing", "select-none");
     }
   };
-  const sliceRepair = expression && helpersSupported ? previewNestedSliceRepair(value) : null;
+  const sliceRepair = expression && helpersSupported ? previewSliceRepair(value) : null;
   const editorClass =
     "nodrag w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
   return (
@@ -348,7 +348,7 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             </pre>
           )}
           {sliceRepair && <div className="mt-2">
-            <p>Suggested suffix repair:</p><pre className="whitespace-pre-wrap">{sliceRepair}</pre>
+            <p>Dynamic slice bounds are unsupported. Use lastN for a dynamic suffix:</p><pre className="whitespace-pre-wrap">{sliceRepair}</pre>
             <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => update(index, "value", sliceRepair)}>Apply lastN repair</Button>
           </div>}
           {!hasInput && (

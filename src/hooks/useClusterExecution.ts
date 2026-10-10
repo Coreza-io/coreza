@@ -1,5 +1,8 @@
+import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
+import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
+import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
-import { resolveNodeIdentity } from "@/utils/referenceResolution";
+import { resolveNodeIdentity, AmbiguousNodeReferenceError } from "@/utils/referenceResolution";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import type { NodeCluster } from "@/domain/clusters/types";
@@ -56,13 +59,20 @@ function mainEdges(edges: readonly Edge[], nodeById: ReadonlyMap<string, Node>):
 
 const NODE_REFERENCE = /(?:\$node\s*\[\s*["']([^"']+)["']\s*\]|\$\(\s*["']([^"']+)["']\s*\))/g;
 
-function collectReferences(value: unknown, references: Set<string>): void {
+function collectReferences(value: unknown, references: Set<string>, typedRows = false, helperReferences = new Set<string>()): void {
+  if (typedRows && isTypedEditFieldRow(value)) {
+    if (value.valueMode === "expression") {
+      const compiled = compileEditTemplate(String(value.value ?? ""), TYPED_EXPRESSION_FEATURES);
+      for (const name of compiled.nodeReferences) (compiled.hasHelpers ? helperReferences : references).add(name);
+    }
+    return;
+  }
   if (typeof value === "string") {
     for (const match of value.matchAll(NODE_REFERENCE)) references.add(match[1] ?? match[2]);
   } else if (Array.isArray(value)) {
-    value.forEach((item) => collectReferences(item, references));
+    value.forEach((item) => collectReferences(item, references, typedRows, helperReferences));
   } else if (value && typeof value === "object") {
-    Object.values(value as Record<string, unknown>).forEach((item) => collectReferences(item, references));
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => collectReferences(item, references, typedRows && key === "fields", helperReferences));
   }
 }
 
@@ -106,9 +116,18 @@ export function buildClusterExecutionPlan(
   }
   for (const id of executable) {
     const references = new Set<string>();
-    collectReferences(nodeById.get(id)?.data?.values, references);
-    for (const reference of references) {
-      const referencedId = resolveNodeIdentity(reference, nodes)?.id;
+    const helperReferences = new Set<string>();
+    const node = nodeById.get(id);
+    collectReferences(node?.data?.values, references, (node?.data?.definition as NodeConfig)?.name === "Edit Fields", helperReferences);
+    for (const reference of new Set([...references, ...helperReferences])) {
+      let referencedId: string | undefined;
+      try { referencedId = resolveNodeIdentity(reference, nodes)?.id; }
+      catch (error) {
+        // Ambiguous helper aliases cannot create a scheduling edge. The normal
+        // action diagnoses them if that subtree is actually evaluated.
+        if (!references.has(reference) && error instanceof AmbiguousNodeReferenceError) continue;
+        throw error;
+      }
       if (referencedId === id) throw new Error(`Node ${id} contains a self-reference.`);
       if (referencedId && executableSet.has(referencedId)) dependencies.get(id)?.add(referencedId);
     }

@@ -1,3 +1,4 @@
+import { snapshotTypedExpressionContext } from "../logic/typedExpressionContext";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -186,8 +187,11 @@ export class ControlFlowExecutor implements INodeExecutor {
           return operation;
         }
       : undefined;
+    const outputs = context?.getAllNodeResults?.() ?? {};
+    const typedContext = snapshotTypedExpressionContext(context?.nodes ?? [], id => outputs[id]);
     const result = applyFieldRows(fields, {
       nodeId: node.id,
+      abortSignal: context?.abortSignal,
       input,
       legacyResultSeed: {},
       legacyPersistentRead: true,
@@ -195,9 +199,10 @@ export class ControlFlowExecutor implements INodeExecutor {
         persistent,
         getPersistentValue: context?.getPersistentValue,
         setPersistentValue,
-        $nodes: context?.getAllNodeResults?.() ?? {},
+        $nodes: outputs,
+        helperOutputs: typedContext.nodeResults,
         $state: context?.persistentValues ?? {},
-        nodes: context?.nodes,
+        nodes: typedContext.nodeIdentities,
       },
     });
     return leanSuccess(result);

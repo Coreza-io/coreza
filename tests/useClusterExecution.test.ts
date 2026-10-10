@@ -16,6 +16,13 @@ const node = (id: string, values: Record<string, unknown> = {}): Node => ({
 
 describe("manual cluster execution", () => {
   const clusterId = "00000000-0000-4000-8000-000000000001";
+  it("defers ambiguous helper aliases to evaluated action subtrees", () => {
+    const edit = node("edit", { fields: [{fieldName:"flag",dataType:"boolean",valueMode:"expression",value:'{{ false && lastN($("same").json.items, 1) }}'}] });
+    edit.data.definition = { name:"Edit Fields",node_type:"action",manualExecution:"available" };
+    const a = node("a"), b = node("b");
+    a.data.displayName = "same"; b.data.displayName = "same";
+    expect(buildClusterExecutionPlan({id:clusterId,title:"Folder",memberNodeIds:["edit"]},[edit,a,b],[]).executableNodeIds).toEqual(["edit"]);
+  });
   it("clears active visuals on Stop while retaining ownership until settlement", async () => {
     let settle!: () => void;
     const unregister = registerEditorNodeAction("visual-stop", "one", async () => {
@@ -389,4 +396,15 @@ it("executes a parent once under one lock and derives child progress without sta
   expect(getEditorExecutionTarget("nested-run")).toBe("");
   act(() => renderer.unmount());
   unregister.forEach((remove) => remove());
+});
+
+test("typed lastN dependencies order both operands and ignore fixed/quoted selector text", () => {
+  const edit = node("edit", { fields: [
+    { fieldName: "tail", valueMode: "expression", dataType: "array", value: '{{ lastN($("history").json.items, $("count").json.value) }}' },
+    { fieldName: "fixed", valueMode: "fixed", dataType: "string", value: '{{ $("edit").json }}' },
+    { fieldName: "quoted", valueMode: "expression", dataType: "string", value: `{{ "$('edit').json" }}` },
+  ] });
+  edit.data.definition = { name: "Edit Fields", node_type: "action", manualExecution: "available" };
+  const cluster = { id: "00000000-0000-4000-8000-000000000001", title: "Folder", memberNodeIds: ["edit", "count", "history"] };
+  expect(buildClusterExecutionPlan(cluster, [edit, node("count"), node("history")], []).executableNodeIds).toEqual(["count", "history", "edit"]);
 });

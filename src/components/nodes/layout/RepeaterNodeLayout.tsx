@@ -1,3 +1,8 @@
+import { previewNestedSliceRepair } from "@/utils/editFieldSliceRepair";
+import { referenceInsertionSpans } from "@/utils/editFieldReferenceDrop";
+import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../../../coreza-backend/src/nodes/logic/typedExpressionContext";
+import { TYPED_EXPRESSION_FEATURES } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
+import { useSafeExpressionHelpers } from "@/hooks/useSafeExpressionHelpers";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -64,18 +69,19 @@ import {
   buildNodeReference,
   parseJsonReferenceDragPayload,
 } from "@/utils/referencePath";
-import { insertEditFieldReference } from "@/utils/editFieldReferenceDrop";
+import { useReferenceTextDrop, planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
 
 interface EditFieldEditorProps {
   row: TypedEditFieldRow;
   index: number;
   disabled?: boolean;
-  update: (index: number, field: string, value: unknown) => void;
-  updateMany: (index: number, values: Record<string, unknown>) => void;
+  update: (index: number, field: string, value: unknown) => boolean | void;
+  updateMany: (index: number, values: Record<string, unknown>) => boolean | void;
   remove: (index: number) => void;
   getExpressionContext: () => {
     input: unknown;
     nodes: Record<string, unknown>;
+    helperOutputs: Record<string, unknown>;
     definitions: ReferenceNode[];
     hasInput: boolean;
   };
@@ -94,6 +100,7 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   makeReference,
   canRemove,
 }) => {
+  const helpersSupported = useSafeExpressionHelpers();
   const value = String(row.value ?? "");
   const expression = row.valueMode === "expression";
   const [preview, setPreview] = useState<{
@@ -120,9 +127,12 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
         const dataType = isEditFieldDataType(row.dataType)
           ? row.dataType
           : "string";
-        const result = evaluateEditTemplate(compileEditTemplate(value), {
-          $json: pickJsonSource(context.input),
+        const compiled = compileEditTemplate(value, TYPED_EXPRESSION_FEATURES);
+        if (compiled.hasHelpers && !helpersSupported) throw new Error("This server has not advertised typed lastN support.");
+        const result = evaluateEditTemplate(compiled, {
+          $json: compiled.hasHelpers ? pickTypedJsonSource(context.input) : pickJsonSource(context.input),
           $nodes: context.nodes,
+          helperOutputs: context.helperOutputs,
           nodes: context.definitions,
         });
         const rendered =
@@ -156,39 +166,37 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
+  }, [expression, getExpressionContext, row.dataType, row.fieldName, value, helpersSupported]);
+  const [dropError, setDropError] = useState<string>();
+  const referenceDrop = useReferenceTextDrop({
+    value, meta: row.valueMode,
+    onChange: value => {
+      if (expression && !helpersSupported && referenceInsertionSpans(value).spans.some(span => span.kind === "code" && /\blastN\s*\(/.test(value.slice(span.start, span.end)))) { setDropError("This server has not advertised typed lastN support."); return false; }
+      setDropError(undefined); return update(index, "value", value);
+    },
+    onRestore: (value, mode) => updateMany(index, { value, valueMode: mode }),
+    disabled,
+  });
   const onDrop = (event: React.DragEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    referenceDrop.clearCaret();
     try {
       const reference = makeReference(event);
       if (!reference) return;
-      const eventTarget = event.target;
-      const textControl =
-        eventTarget instanceof HTMLInputElement ||
-        eventTarget instanceof HTMLTextAreaElement
-          ? eventTarget
-          : null;
-      const insertion = insertEditFieldReference(
-        value,
-        reference,
-        textControl?.selectionStart ?? undefined,
-        textControl?.selectionEnd ?? undefined,
-      );
-      if (!insertion) return;
-      updateMany(index, {
-        value: insertion.value,
-        valueMode: "expression",
-      });
-      if (textControl)
-        window.requestAnimationFrame(() => {
-          textControl.focus();
-          textControl.setSelectionRange(insertion.caret, insertion.caret);
-        });
+      referenceDrop.bind(event);
+      referenceDrop.clearCaret();
+      if (disabled) return;
+      const insertion = planReferenceTextDrop(event, reference, expression, true);
+      if (!insertion) { setDropError("Place the reference in editable text or unquoted expression code. Repair partial delimiters first."); return; }
+      if (updateMany(index, { value: insertion.value, valueMode: "expression" }) === false) return;
+      finishReferenceTextDrop(event, insertion, "expression");
+      setDropError(undefined);
     } finally {
       document.body.classList.remove("cursor-grabbing", "select-none");
     }
   };
+  const sliceRepair = expression && helpersSupported ? previewNestedSliceRepair(value) : null;
   const editorClass =
     "nodrag w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
   return (
@@ -249,7 +257,12 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               type="button"
               key={mode}
               disabled={disabled}
-              onClick={() => update(index, "valueMode", mode)}
+              onClick={() => {
+                if (mode === "expression" && !helpersSupported && referenceInsertionSpans(value).spans.some(span => span.kind === "code" && /\blastN\s*\(/.test(value.slice(span.start, span.end)))) {
+                  setDropError("This server has not advertised typed lastN support."); return;
+                }
+                update(index, "valueMode", mode);
+              }}
               className={`rounded px-2 py-1 text-xs ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
             >
               {mode === "fixed" ? "Fixed" : "Expression"}
@@ -258,7 +271,7 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
         </div>
       </div>
       <div>
-        <ReferenceDropTarget onDrop={onDrop}>
+        <ReferenceDropTarget onDrop={onDrop} onDragOver={referenceDrop.props.onDragOver} onDragLeave={referenceDrop.props.onDragLeave}>
           <Label>Value</Label>
           {!expression && row.dataType === "boolean" ? (
             <Select
@@ -280,22 +293,25 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             <textarea
               className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
               value={value}
-              onChange={(e) => update(index, "value", e.target.value)}
+              {...referenceDrop.props}
+              ref={referenceDrop.controlRef as React.MutableRefObject<HTMLTextAreaElement | null>}
+              onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
-              {...referenceDropEventHandlers}
               disabled={disabled}
             />
           ) : (
             <input
               className={editorClass}
               value={value}
-              onChange={(e) => update(index, "value", e.target.value)}
+              {...referenceDrop.props}
+              ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
+              onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
-              {...referenceDropEventHandlers}
               disabled={disabled}
             />
           )}
         </ReferenceDropTarget>
+        {dropError && <p className="text-xs text-destructive">{dropError}</p>}
         {!expression &&
           (row.dataType === "array" || row.dataType === "object") &&
           value &&
@@ -331,6 +347,10 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               {preview.evaluationError}
             </pre>
           )}
+          {sliceRepair && <div className="mt-2">
+            <p>Suggested suffix repair:</p><pre className="whitespace-pre-wrap">{sliceRepair}</pre>
+            <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => update(index, "value", sliceRepair)}>Apply lastN repair</Button>
+          </div>}
           {!hasInput && (
             <p className="text-muted-foreground">
               Execute previous nodes to use input data
@@ -415,9 +435,28 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     [fieldState.cases],
   );
 
+  const casesRef = useRef(cases); casesRef.current = cases;
+  const rowsRef = useRef(conditions); rowsRef.current = conditions;
+  const liveReadOnly = useRef(readOnly); liveReadOnly.current = readOnly;
+
+  // Row identities are transient: edits preserve them; document restore/removal rebases history.
+  const rowKeys = useRef(new WeakMap<object, string>());
+  const rowKey = (row: object) => {
+    let key = rowKeys.current.get(row);
+    if (!key) { key = crypto.randomUUID(); rowKeys.current.set(row, key); }
+    return key;
+  };
+  const editedRow = (row: object, changes: Record<string, unknown>) => {
+    const next = { ...row, ...changes };
+    rowKeys.current.set(next, rowKey(row));
+    return next;
+  };
+
   const [sourceMap, setSourceMap] = useState<
     { left?: string; right?: string }[]
   >(conditions.map(() => ({})));
+
+  const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
 
   const overlays = useMemo(
     () => (Array.isArray(fieldState.overlays) ? fieldState.overlays : []),
@@ -529,7 +568,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const updateOverlay = useCallback(
     (idx: number, key: string, val: unknown) => {
-      handleFieldStateBatch({
+      return handleFieldStateBatch({
         overlays: overlays.map((row, rowIndex) =>
           rowIndex === idx
             ? { ...(row as Record<string, unknown>), [key]: val }
@@ -567,24 +606,26 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const updateCondition = useCallback(
     (idx: number, field: string, value: any) => {
-      handleChange(
-        repeaterKey!,
-        conditions.map((row, i) =>
-          i === idx ? { ...row, [field]: value } : row,
-        ),
-      );
+      const expected = conditions[idx];
+      if (liveReadOnly.current || !expected) return false;
+      const key = rowKey(expected);
+      if (!rowsRef.current.some(row => rowKey(row) === key)) return false;
+      return handleChange(repeaterKey!, rowsRef.current.map(row =>
+        rowKey(row) === key ? editedRow(row, { [field]: value }) : row,
+      ));
     },
     [conditions, handleChange, repeaterKey],
   );
 
   const updateFieldsRow = useCallback(
     (index: number, values: Record<string, unknown>) => {
-      handleChange(
-        "fields",
-        conditions.map((row, rowIndex) =>
-          rowIndex === index ? { ...row, ...values } : row,
-        ),
-      );
+      const expected = conditions[index];
+      if (liveReadOnly.current || !expected) return false;
+      const key = rowKey(expected);
+      if (!rowsRef.current.some(row => rowKey(row) === key)) return false;
+      return handleChange("fields", rowsRef.current.map(row =>
+        rowKey(row) === key ? editedRow(row, values) : row,
+      ));
     },
     [conditions, handleChange],
   );
@@ -605,7 +646,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             updated.right = "";
           }
 
-          return updated;
+          return editedRow(row, updated);
         }),
       );
     },
@@ -652,10 +693,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const updateCase = useCallback(
     (idx: number, field: string, value: string) => {
-      handleChange(
-        "cases",
-        cases.map((row, i) => (i === idx ? { ...row, [field]: value } : row)),
-      );
+      const expected = cases[idx];
+      if (liveReadOnly.current || !expected) return false;
+      const key = rowKey(expected);
+      if (!casesRef.current.some(row => rowKey(row) === key)) return false;
+      return handleChange("cases", casesRef.current.map(row => rowKey(row) === key ? editedRow(row, { [field]: value }) : row));
     },
     [cases, handleChange],
   );
@@ -743,7 +785,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     (
       e: React.DragEvent,
       currentValue: string,
-      onInsert: (insert: string, sourceId: string) => void,
+      onInsert: (insert: string, sourceId: string) => { beforeMeta?: unknown; meta?: unknown } | boolean | void,
     ) => {
       e.preventDefault();
       e.stopPropagation();
@@ -754,7 +796,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return;
       }
 
-      onInsert(result.insert, result.sourceId);
+      const insertion = planReferenceTextDrop(e, result.insert);
+      if (insertion) { const metadata = onInsert(insertion.value, result.sourceId); if (metadata !== false) finishReferenceTextDrop(e, insertion, typeof metadata === "object" ? metadata?.meta : undefined, typeof metadata === "object" ? metadata?.beforeMeta : undefined); }
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
     [computeDropInsert],
@@ -764,7 +807,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const handleRepeaterDrop = useCallback(
     (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
       handleDropWithInsert(e, currentValue, (insert, sourceId) => {
-        updateCondition(idx, field, currentValue + insert);
+        if (updateCondition(idx, field, insert) === false) return false;
+        const beforeSource = sourceMapRef.current[idx]?.[field];
+        const key = rowKey(conditions[idx]);
+        const restoreSource = (source: string | undefined) => () => setSourceMap(sm => {
+          const currentIndex = rowsRef.current.findIndex(row => rowKey(row) === key);
+          if (currentIndex < 0) return sm;
+          const next = [...sm], item = { ...next[currentIndex] }; if (source === undefined) delete item[field]; else item[field] = source; next[currentIndex] = item; return next;
+        });
 
         setSourceMap((sm) => {
           const next = Array.isArray(sm) ? [...sm] : [];
@@ -774,16 +824,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           };
           return next;
         });
+        return { beforeMeta: { restore: restoreSource(beforeSource) }, meta: { restore: restoreSource(sourceId) } };
       });
     },
-    [handleDropWithInsert, updateCondition],
+    [handleDropWithInsert, updateCondition, conditions],
   );
 
   // Drag helper for switch
   const handleSwitchDrop = useCallback(
     (field: string, e: React.DragEvent, currentValue: string) => {
       handleDropWithInsert(e, currentValue, (insert) => {
-        handleChange(field, currentValue + insert);
+        return handleChange(field, insert);
       });
     },
     [handleDropWithInsert, handleChange],
@@ -792,7 +843,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   const handleSwitchConditionDrop = useCallback(
     (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
       handleDropWithInsert(e, currentValue, (insert) => {
-        updateCase(idx, field, currentValue + insert);
+        return updateCase(idx, field, insert);
       });
     },
     [handleDropWithInsert, updateCase],
@@ -805,14 +856,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
   const getEditExpressionContext = useCallback(() => {
     const { allNodeData, getSourceData } = getPreviewData();
-    const input = getSourceData(selectedPrevNodeId);
+    const input = selectedInputData;
+    const snapshot = snapshotTypedExpressionContext(getNodes(), id => executionContext.getNodeData(id).output);
     return {
       input,
       nodes: allNodeData,
-      definitions: [...getNodes()],
+      helperOutputs: snapshot.nodeResults,
+      definitions: snapshot.nodeIdentities,
       hasInput: input !== undefined,
     };
-  }, [getPreviewData, getNodes, selectedPrevNodeId]);
+  }, [getPreviewData, getNodes, selectedInputData, executionContext]);
 
   const getOverlayPreviewFor = useCallback(
     (expr: unknown) => {
@@ -840,7 +893,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       currentValue: string,
     ) => {
       handleDropWithInsert(e, currentValue, (insert) => {
-        updateOverlay(rowIndex, field, currentValue + insert);
+        return updateOverlay(rowIndex, field, insert);
       });
     },
     [handleDropWithInsert, updateOverlay],
@@ -939,6 +992,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   return;
                 handleChange(fieldKey, nextValue);
               }}
+              normalizeBlank
               onBatchChange={handleFieldStateBatch}
               onDrop={(fieldDef, e, currentValue) => {
                 if (isSwitch) {
@@ -982,7 +1036,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 if (isFieldRepeater && isTypedEditFieldRow(cond)) {
                   return (
                     <EditFieldEditor
-                      key={i}
+                      key={rowKey(cond)}
                       row={cond}
                       index={i}
                       disabled={readOnly}
@@ -1014,7 +1068,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 );
 
                 return (
-                  <div key={i} className="space-y-2">
+                  <div key={rowKey(cond)} className="space-y-2">
                     {repeaterField?.key === "conditions" && i > 0 && (
                       <div className="flex items-center gap-2">
                         <Select
@@ -1218,6 +1272,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     selectOptions={selectOptions}
                     loadingSelect={loadingSelect}
                     onChange={handleChange}
+                    normalizeBlank
                     referenceStyle={referenceStyle}
                     fetchDependentOptions={fetchDependentOptions}
                     setShowAuth={setShowAuth}
@@ -1251,7 +1306,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               );
 
               return (
-                <div key={i} className="space-y-2">
+                <div key={rowKey(caseItem)} className="space-y-2">
                   <div className="grid grid-cols-1 md:grid-cols-[1.5fr_auto_1.5fr_auto] gap-2 items-start p-2 border rounded bg-white/[0.03] border-white/10">
                     {leftField && (
                       <NodeFieldRenderer
@@ -1396,6 +1451,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 selectOptions={selectOptions}
                 loadingSelect={loadingSelect}
                 onChange={(key, val) => handleChange(key, val)}
+                normalizeBlank
                 referenceStyle={referenceStyle}
                 fetchDependentOptions={fetchDependentOptions}
                 setShowAuth={setShowAuth}

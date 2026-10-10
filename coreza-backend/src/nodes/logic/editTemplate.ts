@@ -1,5 +1,6 @@
-import { compileExpression, ExpressionError } from "./safeExpression";
-import type { CompiledExpression, ExpressionContext } from "./safeExpression";
+import { compileExpression, ExpressionError, ExpressionBudget } from "./safeExpression";
+import { encodeHelperJson } from "./boundedJson";
+import type { ExpressionFeatures, CompiledExpression, ExpressionContext } from "./safeExpression";
 
 const MAX_SOURCE = 8192;
 const MAX_SEGMENTS = 64;
@@ -17,6 +18,7 @@ export type EditTemplateSegment =
     };
 
 export interface CompiledEditTemplate {
+  readonly hasHelpers: boolean;
   readonly source: string;
   readonly segments: readonly EditTemplateSegment[];
   readonly nodeReferences: readonly string[];
@@ -24,8 +26,9 @@ export interface CompiledEditTemplate {
 
 const cache = new Map<string, CompiledEditTemplate>();
 
-export function compileEditTemplate(source: string): CompiledEditTemplate {
-  const cached = cache.get(source);
+export function compileEditTemplate(source: string, features: ExpressionFeatures = {}): CompiledEditTemplate {
+  const cacheKey = `${features.lastN === true ? "typed-lastN:" : "base:"}${source}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
   if (source.length > MAX_SOURCE)
     throw new ExpressionError("Template source limit exceeded", MAX_SOURCE);
@@ -89,12 +92,13 @@ export function compileEditTemplate(source: string): CompiledEditTemplate {
       open + 2 + rawCode.length - rawCode.trimStart().length;
     let expression: CompiledExpression;
     try {
-      expression = compileExpression(rawCode.trim());
+      expression = compileExpression(rawCode.trim(), features);
     } catch (error) {
       if (error instanceof ExpressionError)
         throw new ExpressionError(
           error.message.replace(/ at position \d+$/, ""),
           expressionStart + error.position,
+          error.phase, error.path, error.argument,
         );
       throw error;
     }
@@ -124,6 +128,7 @@ export function compileEditTemplate(source: string): CompiledEditTemplate {
         nodeReferences.add(name);
   const compiled = Object.freeze({
     source,
+    hasHelpers: segments.some(segment => segment.kind === "code" && segment.expression.hasHelpers),
     segments: Object.freeze(segments),
     nodeReferences: Object.freeze([...nodeReferences]),
   });
@@ -131,7 +136,7 @@ export function compileEditTemplate(source: string): CompiledEditTemplate {
     const oldest = cache.keys().next();
     if (!oldest.done) cache.delete(oldest.value);
   }
-  cache.set(source, compiled);
+  cache.set(cacheKey, compiled);
   return compiled;
 }
 
@@ -150,14 +155,16 @@ function render(value: unknown, position: number): string {
 function evaluateSegment(
   segment: Extract<EditTemplateSegment, { kind: "code" }>,
   context: ExpressionContext,
+  budget?: ExpressionBudget,
 ): unknown {
   try {
-    return segment.expression.evaluate(context);
+    return segment.expression.evaluate(context, budget);
   } catch (error) {
     if (error instanceof ExpressionError) {
       throw new ExpressionError(
         error.message.replace(/ at position \d+$/, ""),
         segment.expressionStart + error.position,
+        error.phase, error.path, error.argument,
       );
     }
     throw error;
@@ -168,14 +175,25 @@ export function evaluateEditTemplate(
   compiled: CompiledEditTemplate,
   context: ExpressionContext,
 ): unknown {
-  if (compiled.segments.length === 1 && compiled.segments[0].kind === "code")
-    return evaluateSegment(compiled.segments[0], context);
+  const budget = compiled.hasHelpers ? new ExpressionBudget() : undefined;
+  if (compiled.segments.length === 1 && compiled.segments[0].kind === "code") {
+    const value = evaluateSegment(compiled.segments[0], context, budget);
+    if (budget) encodeHelperJson(value, budget, compiled.segments[0].expressionStart);
+    return value;
+  }
   let result = "";
   for (const segment of compiled.segments) {
-    result +=
-      segment.kind === "text"
-        ? segment.value
-        : render(evaluateSegment(segment, context), segment.start + 2);
+    let rendered: string;
+    if (segment.kind === "text") rendered = segment.value;
+    else {
+      const value = evaluateSegment(segment, context, budget);
+      if (budget) {
+        const json = encodeHelperJson(value, budget, segment.expressionStart);
+        rendered = value === null ? "" : typeof value === "string" ? value : json;
+      } else rendered = render(value, segment.start + 2);
+    }
+    if (budget) encodeHelperJson(result + rendered, budget, segment.end);
+    result += rendered;
     if (result.length > MAX_RENDERED)
       throw new ExpressionError("Rendered output limit exceeded", segment.end);
   }

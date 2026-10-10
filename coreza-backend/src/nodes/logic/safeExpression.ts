@@ -1,26 +1,57 @@
+import { encodeHelperJson } from "./boundedJson";
+import { pickTypedJsonSource } from "./typedExpressionContext";
 import {
   pickJsonSource,
   resolveNodeKey,
+  resolveNodeIdentity,
 } from "../../utils/referenceResolution";
 import type { ReferenceNode } from "../../utils/referenceResolution";
 
 export interface ExpressionContext {
   $json: unknown;
   $nodes?: Record<string, unknown>;
+  helperOutputs?: Record<string, unknown>;
   $state?: Record<string, unknown>;
   nodes?: ReferenceNode[];
+}
+
+export interface ExpressionFeatures {
+  readonly lastN?: boolean;
+}
+export const TYPED_EXPRESSION_FEATURES = Object.freeze({ lastN: true });
+export const LAST_N_CAPABILITY = Object.freeze({ contract_version: 1, scope: "typed-edit-fields-v2" });
+
+// Provisional, centrally defined limits. Counters belong to one evaluation, never the cache.
+export const HELPER_LIMITS = Object.freeze({ copiedElements: 100_000, workSteps: 1_000_000, outputBytes: 256 * 1024, depth: 32 });
+export class ExpressionBudget {
+  private copied = 0;
+  private work = 0;
+  step(position: number, count = 1): void {
+    if ((this.work += count) > HELPER_LIMITS.workSteps)
+      throw new ExpressionError("Expression work limit exceeded", position, "resource");
+  }
+  copy(count: number, position: number): void {
+    if ((this.copied += count) > HELPER_LIMITS.copiedElements)
+      throw new ExpressionError("Expression allocation limit exceeded", position, "resource");
+    this.step(position, count);
+  }
 }
 
 export interface CompiledExpression {
   readonly source: string;
   readonly nodeReferences: readonly string[];
-  evaluate(context: ExpressionContext): unknown;
+  readonly features: Readonly<ExpressionFeatures>;
+  readonly hasHelpers: boolean;
+  evaluate(context: ExpressionContext, budget?: ExpressionBudget): unknown;
 }
 
 export class ExpressionError extends Error {
   constructor(
     message: string,
     public readonly position: number,
+    public readonly phase: "evaluate" | "reference" | "argument" | "resource" | "serialization" = "evaluate",
+    public readonly path?: string,
+    public readonly argument?: number,
   ) {
     super(`${message} at position ${position}`);
     this.name = "ExpressionError";
@@ -40,6 +71,7 @@ interface Token {
   position: number;
 }
 type Ast =
+  | { kind: "lastN"; source: Ast; count: Ast; position: number }
   | { kind: "literal"; value: unknown; position: number }
   | { kind: "array"; elements: Ast[]; position: number }
   | { kind: "root"; name: "$json" | "$nodes" | "$state"; position: number }
@@ -131,12 +163,24 @@ function tokenize(source: string): Token[] {
             n: "\n",
             r: "\r",
             t: "\t",
+            b: "\b",
+            f: "\f",
+            "/": "/",
             "\\": "\\",
             "'": "'",
             '"': '"',
           };
-          value += escaped[source[i]] ?? source[i];
-          i++;
+          if (source[i] === "u") {
+            const hex = source.slice(i + 1, i + 5);
+            if (!/^[0-9a-fA-F]{4}$/.test(hex))
+              throw new ExpressionError("Invalid Unicode escape", i - 1);
+            value += String.fromCharCode(parseInt(hex, 16));
+            i += 5;
+          } else {
+            if (!(source[i] in escaped))
+              throw new ExpressionError("Unsupported string escape", i - 1);
+            value += escaped[source[i++]];
+          }
         } else value += source[i++];
         if (value.length > MAX_STRING)
           throw new ExpressionError("String literal limit exceeded", start);
@@ -199,7 +243,7 @@ function tokenize(source: string): Token[] {
 class Parser {
   private index = 0;
   private nodes = 0;
-  constructor(private readonly tokens: Token[]) {}
+  constructor(private readonly tokens: Token[], private readonly features: ExpressionFeatures) {}
   parse(): Ast {
     const result = this.expression(0, 1);
     const end = this.peek();
@@ -370,6 +414,14 @@ class Parser {
         { kind: "root", name: token.value, position: token.position },
         depth,
       );
+    if (token.value === "lastN" && this.peek().value === "(" && this.features.lastN) {
+      this.take("(");
+      const source = this.expression(0, depth + 1);
+      this.take(",");
+      const count = this.expression(0, depth + 1);
+      this.take(")");
+      return this.make({ kind: "lastN", source, count, position: token.position }, depth);
+    }
     if (token.value === "$") {
       this.take("(");
       const name = this.take();
@@ -531,10 +583,33 @@ function lookupNode(name: string, context: ExpressionContext): unknown {
   return key ? pickJsonSource(all[key]) : undefined;
 }
 
-function evaluate(node: Ast, context: ExpressionContext): unknown {
+function evaluate(node: Ast, context: ExpressionContext, budget?: ExpressionBudget, strict = false): unknown {
+  budget?.step(node.position);
+  if (node.kind === "lastN") {
+    const argument = (operand: Ast, index: number) => {
+      try { return evaluate(operand, context, budget, true); }
+      catch (error) {
+        if (error instanceof ExpressionError && error.argument === undefined)
+          throw new ExpressionError(error.message.replace(/ at position \d+$/, ""), error.position, error.phase, error.path, index);
+        throw error;
+      }
+    };
+    const source = argument(node.source, 1);
+    const count = argument(node.count, 2);
+    if (!Array.isArray(source))
+      throw new ExpressionError("lastN source must be an array", node.source.position, "argument", undefined, 1);
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+      throw new ExpressionError("lastN count must be a finite nonnegative safe integer number", node.count.position, "argument", undefined, 2);
+    const size = Math.min(count, source.length);
+    const suffix = copyArray(source, source.length - size, size, node.position, budget);
+    encodeHelperJson(suffix, budget ?? new ExpressionBudget(), node.position);
+    return suffix;
+  }
   if (node.kind === "literal") return node.value;
-  if (node.kind === "array")
-    return node.elements.map((element) => evaluate(element, context));
+  if (node.kind === "array") {
+    budget?.copy(node.elements.length, node.position);
+    return node.elements.map((element) => evaluate(element, context, budget, strict));
+  }
   if (node.kind === "identifier") {
     const input = context.$json;
     if (
@@ -543,31 +618,61 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
       BLOCKED_MEMBERS.has(node.name)
     )
       return undefined;
-    return Object.prototype.hasOwnProperty.call(input, node.name)
-      ? (input as Record<string, unknown>)[node.name]
-      : undefined;
+    return readMember(input, node.name, strict, node.position);
   }
-  if (node.kind === "root") return context[node.name];
-  if (node.kind === "node") return lookupNode(node.name, context);
+  if (node.kind === "root") return strict && node.name === "$nodes" ? context.helperOutputs ?? context.$nodes : context[node.name];
+  if (node.kind === "node") {
+    if (!strict) return lookupNode(node.name, context);
+    let identity;
+    try { identity = resolveNodeIdentity(node.name, context.nodes ?? []); }
+    catch (error) { throw new ExpressionError(error instanceof Error ? error.message : String(error), node.position, "reference"); }
+    if (!identity) throw new ExpressionError(`Missing node identity "${node.name}"`, node.position, "reference");
+    const outputs = context.helperOutputs ?? context.$nodes ?? {};
+    if (!Object.prototype.hasOwnProperty.call(outputs, identity.id) || readOwnData(outputs, identity.id, node.position) === undefined)
+      throw new ExpressionError(`Output unavailable for node "${identity.id}"`, node.position, "reference");
+    try { return pickTypedJsonSource(readOwnData(outputs, identity.id, node.position)); }
+    catch (error) { if (error instanceof ExpressionError) throw error; throw new ExpressionError(error instanceof Error ? error.message : String(error), node.position, "serialization"); }
+  }
   if (node.kind === "slice") {
-    const value = evaluate(node.object, context);
-    return Array.isArray(value) ? value.slice(node.start, node.end) : undefined;
+    const value = evaluate(node.object, context, budget, strict);
+    if (!Array.isArray(value)) return undefined;
+    if (!budget) return value.slice(node.start, node.end);
+    const bound = (n: number | undefined, fallback: number) => n === undefined ? fallback : n < 0 ? Math.max(value.length + n, 0) : Math.min(n, value.length);
+    const start = bound(node.start, 0), end = bound(node.end, value.length);
+    return copyArray(value, start, Math.max(end - start, 0), node.position, budget);
   }
   if (node.kind === "member" || node.kind === "projection") {
-    const object = evaluate(node.object, context);
+    const object = evaluate(node.object, context, budget, strict);
+    if (strict && node.kind === "member" && node.object.kind === "root" && node.object.name === "$nodes") {
+      let identity;
+      try { identity = resolveNodeIdentity(String(node.key), context.nodes ?? []); }
+      catch (error) { throw new ExpressionError(error instanceof Error ? error.message : String(error), node.position, "reference"); }
+      if (!identity) throw new ExpressionError(`Missing node identity "${node.key}"`, node.position, "reference");
+      const result = readMember(object, identity.id, true, node.position);
+      if (result === undefined) throw new ExpressionError(`Output unavailable for node "${identity.id}"`, node.position, "reference");
+      return result;
+    }
     if (
       object == null ||
       (typeof object !== "object" && typeof object !== "string")
     )
       return undefined;
-    if (node.kind === "projection")
-      return Array.isArray(object)
-        ? object.map((item) => readMember(item, node.key))
-        : undefined;
-    return readMember(object, node.key);
+    if (node.kind === "projection") {
+      if (!Array.isArray(object)) return undefined;
+      budget?.copy(object.length, node.position);
+      if (!budget) return object.map((item) => readMember(item, node.key, strict, node.position));
+      const projected = new Array(object.length);
+      for (let i = 0; i < object.length; i++) {
+        if (!Object.prototype.hasOwnProperty.call(object, String(i)))
+          throw new ExpressionError("Sparse array slots are not supported", node.position, "serialization", `[${i}]`);
+        projected[i] = readMember(readOwnData(object, String(i), node.position), node.key, true, node.position);
+      }
+      return projected;
+    }
+    return readMember(object, node.key, strict, node.position);
   }
   if (node.kind === "unary") {
-    const value = evaluate(node.value, context);
+    const value = evaluate(node.value, context, budget, strict);
     if (node.operator === "!") return !value;
     if (typeof value !== "number")
       throw new ExpressionError(
@@ -576,12 +681,12 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
       );
     return -value;
   }
-  const left = evaluate(node.left, context);
+  const left = evaluate(node.left, context, budget, strict);
   if (node.operator === "&&")
-    return left ? evaluate(node.right, context) : left;
+    return left ? evaluate(node.right, context, budget, strict) : left;
   if (node.operator === "||")
-    return left ? left : evaluate(node.right, context);
-  const right = evaluate(node.right, context);
+    return left ? left : evaluate(node.right, context, budget, strict);
+  const right = evaluate(node.right, context, budget, strict);
   switch (node.operator) {
     case "===":
       return left === right;
@@ -623,7 +728,11 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
     typeof left === "string" &&
     typeof right === "string"
   )
-    return left + right;
+    {
+      if (budget && left.length + right.length > HELPER_LIMITS.outputBytes)
+        throw new ExpressionError("Expression string limit exceeded", node.position, "resource");
+      return left + right;
+    }
   if (typeof left !== "number" || typeof right !== "number")
     throw new ExpressionError(
       `Operator "${node.operator}" requires numbers`,
@@ -647,7 +756,7 @@ function evaluate(node: Ast, context: ExpressionContext): unknown {
   return result;
 }
 
-function readMember(object: unknown, key: string | number): unknown {
+function readMember(object: unknown, key: string | number, strict = false, position = 0): unknown {
   if (
     object == null ||
     (typeof object !== "object" && typeof object !== "string")
@@ -661,7 +770,26 @@ function readMember(object: unknown, key: string | number): unknown {
   return BLOCKED_MEMBERS.has(property) ||
     !Object.prototype.hasOwnProperty.call(object, property)
     ? undefined
-    : (object as Record<string, unknown>)[property];
+    : strict ? readOwnData(object, property, position) : (object as Record<string, unknown>)[property];
+}
+
+function readOwnData(object: object | string, key: string, position: number): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  if (!descriptor) return undefined;
+  if (!("value" in descriptor)) throw new ExpressionError("Accessor properties are not supported", position, "serialization", key);
+  return descriptor.value;
+}
+
+function copyArray(source: unknown[], start: number, size: number, position: number, budget?: ExpressionBudget): unknown[] {
+  budget?.copy(size, position);
+  const result = new Array(size);
+  for (let i = 0; i < size; i++) {
+    const key = String(start + i);
+    if (!Object.prototype.hasOwnProperty.call(source, key))
+      throw new ExpressionError("Sparse array slots are not supported", position, "serialization", `[${key}]`);
+    result[i] = readOwnData(source, key, position);
+  }
+  return result;
 }
 
 export function evaluateExpression(
@@ -671,16 +799,20 @@ export function evaluateExpression(
   return compileExpression(text).evaluate(context);
 }
 
-export function compileExpression(text: string): CompiledExpression {
+export function compileExpression(text: string, options: ExpressionFeatures = {}): CompiledExpression {
   if (text.length > MAX_INPUT)
     throw new ExpressionError("Input length limit exceeded", MAX_INPUT);
   const source = text.trim();
   if (!source) throw new ExpressionError("Expression is empty", 0);
-  const ast = new Parser(tokenize(source)).parse();
+  const features = Object.freeze({ lastN: options.lastN === true });
+  const ast = new Parser(tokenize(source), features).parse();
+  let hasHelpers = false;
   const nodeReferences = new Set<string>();
   const visit = (node: Ast): void => {
     if (node.kind === "node") nodeReferences.add(node.name);
-    if (node.kind === "array") node.elements.forEach(visit);
+    if (node.kind === "member" && node.object.kind === "root" && node.object.name === "$nodes") nodeReferences.add(String(node.key));
+    if (node.kind === "lastN") { hasHelpers = true; visit(node.source); visit(node.count); }
+    else if (node.kind === "array") node.elements.forEach(visit);
     else if (
       node.kind === "member" ||
       node.kind === "slice" ||
@@ -697,6 +829,8 @@ export function compileExpression(text: string): CompiledExpression {
   return Object.freeze({
     source,
     nodeReferences: Object.freeze([...nodeReferences]),
-    evaluate: (context: ExpressionContext) => evaluate(ast, context),
+    features,
+    hasHelpers,
+    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasHelpers ? new ExpressionBudget() : undefined)),
   });
 }

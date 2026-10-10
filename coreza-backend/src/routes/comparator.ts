@@ -182,6 +182,12 @@ router.post("/field", async (req, res) => {
         .json({ error: "expressionContext must be an object" });
     const nodeResults = expressionContext?.nodeResults;
     const nodeIdentities = expressionContext?.nodeIdentities;
+    const helperResults = expressionContext?.helperResults;
+    const helperContexts = expressionContext?.helperContexts;
+    if (helperContexts !== undefined && (!helperContexts || typeof helperContexts !== "object" || Array.isArray(helperContexts) || Object.keys(helperContexts).some(key => !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= fields.length)))
+      return res.status(400).json({ error: "expressionContext.helperContexts must contain valid row indexes" });
+    if (helperResults !== undefined && (!helperResults || typeof helperResults !== "object" || Array.isArray(helperResults)))
+      return res.status(400).json({ error: "expressionContext.helperResults must be an object" });
     if (
       nodeResults !== undefined &&
       (!nodeResults ||
@@ -191,7 +197,7 @@ router.post("/field", async (req, res) => {
       return res
         .status(400)
         .json({ error: "expressionContext.nodeResults must be an object" });
-    if (nodeIdentities !== undefined && !Array.isArray(nodeIdentities))
+    if (nodeIdentities !== undefined && (!Array.isArray(nodeIdentities) || nodeIdentities.length > 10_000))
       return res
         .status(400)
         .json({ error: "expressionContext.nodeIdentities must be an array" });
@@ -203,6 +209,8 @@ router.post("/field", async (req, res) => {
           typeof identity === "object" &&
           !Array.isArray(identity) &&
           typeof identity.id === "string" &&
+          (identity.displayName === undefined || typeof identity.displayName === "string") &&
+          (identity.data === undefined || (identity.data && typeof identity.data === "object" && Object.keys(identity.data).every(key => key === "title") && typeof identity.data.title === "string")) &&
           (identity.name === undefined || typeof identity.name === "string") &&
           (identity.label === undefined || typeof identity.label === "string"),
       )
@@ -214,7 +222,7 @@ router.post("/field", async (req, res) => {
       ? Object.fromEntries(Object.entries(nodeResults))
       : {};
     const safeNodeIdentities = Array.isArray(nodeIdentities)
-      ? nodeIdentities.map(({ id, name, label }) => ({ id, name, label }))
+      ? nodeIdentities.map(({ id, name, label, displayName, data }) => ({ id, name, label, displayName, data }))
       : [];
     const result = applyFieldRows(fields, {
       nodeId:
@@ -224,6 +232,8 @@ router.post("/field", async (req, res) => {
       context: {
         persistent: !!persistent,
         $nodes: safeNodeResults,
+        helperOutputs: helperResults ? Object.fromEntries(Object.entries(helperResults)) : safeNodeResults,
+        helperContexts,
         nodes: safeNodeIdentities,
       },
     });

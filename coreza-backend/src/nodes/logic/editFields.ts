@@ -1,4 +1,6 @@
-import { ExpressionContext, ExpressionError } from "./safeExpression";
+import { pickTypedJsonSource } from "./typedExpressionContext";
+import { restoreHelperTransport } from "./helperTransport";
+import { ExpressionContext, ExpressionError, TYPED_EXPRESSION_FEATURES } from "./safeExpression";
 import { compileEditTemplate, evaluateEditTemplate } from "./editTemplate";
 import {
   hasTypedEditFieldShape,
@@ -41,6 +43,7 @@ export interface LegacyFieldRow {
 export type EditFieldRow = EditFieldRowV2 | LegacyFieldRow;
 
 export interface EditFieldsContext extends Partial<ExpressionContext> {
+  helperContexts?: Record<string, unknown>;
   persistent?: boolean;
   getPersistentValue?: (key: string) => unknown;
   setPersistentValue?: (key: string, value: unknown) => unknown;
@@ -53,6 +56,7 @@ export interface ApplyFieldRowsOptions {
   /** Preserve the executor's historical read-before-write persistent Set behavior. */
   legacyPersistentRead?: boolean;
   nodeId?: string;
+  abortSignal?: AbortSignal;
 }
 
 export type EditFieldErrorPhase =
@@ -60,7 +64,11 @@ export type EditFieldErrorPhase =
   | "compile"
   | "evaluate"
   | "type"
-  | "coerce";
+  | "coerce"
+  | "reference"
+  | "argument"
+  | "resource"
+  | "serialization";
 
 export class EditFieldError extends Error {
   readonly code = "EDIT_FIELD_ERROR";
@@ -74,6 +82,8 @@ export class EditFieldError extends Error {
       fieldName: string;
       phase: EditFieldErrorPhase;
       position?: number;
+      path?: string;
+      argument?: number;
       expected?: string;
       actual?: string;
     },
@@ -263,8 +273,9 @@ export function applyTypedFieldRow(
   nodeId?: string,
 ): unknown {
   const expressionContext: ExpressionContext = {
-    $json: pickJsonSource(input),
+    $json: input,
     $nodes: context.$nodes,
+    helperOutputs: context.helperOutputs,
     $state: context.$state,
     nodes: context.nodes,
   };
@@ -289,7 +300,7 @@ export function applyTypedFieldRow(
   }
   let compiled: ReturnType<typeof compileEditTemplate>;
   try {
-    compiled = compileEditTemplate(String(row.value ?? ""));
+    compiled = compileEditTemplate(String(row.value ?? ""), TYPED_EXPRESSION_FEATURES);
   } catch (error) {
     const position =
       error instanceof ExpressionError ? error.position : undefined;
@@ -308,6 +319,9 @@ export function applyTypedFieldRow(
     );
   }
   try {
+    const transported = compiled.hasHelpers ? context.helperContexts?.[String(rowIndex)] : undefined;
+    if (transported !== undefined) Object.assign(expressionContext, restoreHelperTransport(transported));
+    else expressionContext.$json = compiled.hasHelpers ? pickTypedJsonSource(input) : pickJsonSource(input);
     value = evaluateEditTemplate(compiled, expressionContext);
   } catch (error) {
     throw new EditFieldError(
@@ -316,7 +330,9 @@ export function applyTypedFieldRow(
         nodeId,
         rowIndex,
         fieldName: row.fieldName,
-        phase: "evaluate",
+        phase: error instanceof ExpressionError ? error.phase : "evaluate",
+        path: error instanceof ExpressionError ? error.path : undefined,
+        argument: error instanceof ExpressionError ? error.argument : undefined,
         position: error instanceof ExpressionError ? error.position : undefined,
         expected: labels[row.dataType],
         actual: "Unavailable",
@@ -346,6 +362,7 @@ export function applyFieldRows(
   rows: EditFieldRow[],
   options: ApplyFieldRowsOptions,
 ): Record<string, unknown> {
+  if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   validateRows(rows, options.nodeId);
   const hasV2Rows = rows.some(isV2);
   if (hasV2Rows && options.context?.persistent)
@@ -416,5 +433,6 @@ export function applyFieldRows(
       delete result[fieldName];
     }
   }
+  if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   return result;
 }

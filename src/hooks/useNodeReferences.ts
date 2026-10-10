@@ -1,3 +1,4 @@
+import { planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -9,7 +10,7 @@ import { useStableNodes } from "@/contexts/StableNodeContext";
  * See the LICENSE file for details.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
@@ -53,6 +54,8 @@ export function useNodeReferences({
   const executionStore = useExecutionStore();
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
+  const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
+
   // Handle drag start for reference expressions
   const handleDragStart = useCallback(
     (_e: React.DragEvent, _keyPath: string, _value: string) => {
@@ -83,9 +86,14 @@ export function useNodeReferences({
         const nodes = getNodes();
         const insert = buildNodeReference(data, nodes, selectedPrevNodeId);
         if (!insert) return;
-        const newValue = currentValue + insert;
-
-        setter(newValue);
+        const insertion = planReferenceTextDrop(e, insert);
+        if (!insertion) return;
+        if ((setter as (value: string) => boolean | void)(insertion.value) === false) return;
+        const beforeSource = sourceMapRef.current[fieldKey];
+        const restoreSource = (source: string | undefined) => () => setSourceMap(sm => {
+          const next = { ...sm }; if (source === undefined) delete next[fieldKey]; else next[fieldKey] = source; return next;
+        });
+        finishReferenceTextDrop(e, insertion, { restore: restoreSource(sourceId) }, { restore: restoreSource(beforeSource) });
         setSourceMap((sm) => ({ ...sm, [fieldKey]: sourceId }));
       } catch (err) {
         console.error("❌ Drop error:", err);

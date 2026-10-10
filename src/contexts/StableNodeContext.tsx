@@ -34,8 +34,8 @@ interface StableNodeContextValue {
   getSnapshot: () => CanonicalGraphSnapshot;
   subscribeSemantic: (listener: () => void) => () => void;
   getSemanticSnapshot: () => SemanticGraphSnapshot;
-  updateNodeData: (id: string, patch: Record<string, unknown>) => void;
-  registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => void) => () => void;
+  updateNodeData: (id: string, patch: Record<string, unknown>) => boolean;
+  registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => boolean | void) => () => void;
   renameNode: (request: RenameNodeRequest) => Promise<RenameNodeResult>;
   registerNodeRenamer: (renamer: NodeRenamer) => () => void;
 }
@@ -55,7 +55,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
   const reactFlow = useReactFlow();
   const canonicalStoreRef = useRef<ReturnType<typeof createCanonicalGraphStore>>();
   const canonicalPublishedRef = useRef(false);
-  const nodeDataUpdaterRef = useRef<((id: string, patch: Record<string, unknown>) => void) | null>(null);
+  const nodeDataUpdaterRef = useRef<((id: string, patch: Record<string, unknown>) => boolean | void) | null>(null);
   const nodeRenamerRef = useRef<NodeRenamer | null>(null);
   if (!canonicalStoreRef.current) canonicalStoreRef.current = createCanonicalGraphStore();
   const canonicalStore = canonicalStoreRef.current;
@@ -81,9 +81,10 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
     subscribeSemantic: canonicalStore.subscribeSemantic,
     getSemanticSnapshot: canonicalStore.getSemanticSnapshot,
     updateNodeData: (id: string, patch: Record<string, unknown>) => {
-      nodeDataUpdaterRef.current?.(id, patch);
+      if (!nodeDataUpdaterRef.current) return false;
+      return nodeDataUpdaterRef.current(id, patch) !== false;
     },
-    registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => void) => {
+    registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => boolean | void) => {
       nodeDataUpdaterRef.current = updater;
       return () => {
         if (nodeDataUpdaterRef.current === updater) nodeDataUpdaterRef.current = null;

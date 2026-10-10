@@ -992,6 +992,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   return;
                 handleChange(fieldKey, nextValue);
               }}
+              normalizeBlank
               onBatchChange={handleFieldStateBatch}
               onDrop={(fieldDef, e, currentValue) => {
                 if (isSwitch) {
@@ -1271,6 +1272,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     selectOptions={selectOptions}
                     loadingSelect={loadingSelect}
                     onChange={handleChange}
+                    normalizeBlank
                     referenceStyle={referenceStyle}
                     fetchDependentOptions={fetchDependentOptions}
                     setShowAuth={setShowAuth}
@@ -1449,6 +1451,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 selectOptions={selectOptions}
                 loadingSelect={loadingSelect}
                 onChange={(key, val) => handleChange(key, val)}
+                normalizeBlank
                 referenceStyle={referenceStyle}
                 fetchDependentOptions={fetchDependentOptions}
                 setShowAuth={setShowAuth}

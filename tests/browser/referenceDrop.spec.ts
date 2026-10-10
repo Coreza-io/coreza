@@ -136,3 +136,26 @@ test("native beforeinput history is routed through the field transaction once", 
   await input.evaluate(control => control.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "historyRedo" })));
   await expect(textarea).toHaveValue(`abc${reference}def`);
 });
+
+test("generic blank normalization preserves history and skips whitespace no-op edits", async ({ page }) => {
+  const input = page.locator("#normalized input");
+  await input.fill("changed");
+  await input.fill("");
+  await input.press("Space"); await expect(input).toHaveValue("");
+  await input.press("Control+z"); await expect(input).toHaveValue("changed");
+  await input.press("Control+z"); await expect(input).toHaveValue("original");
+  await input.press("Control+Shift+z"); await expect(input).toHaveValue("changed");
+  await input.press("Control+Shift+z"); await expect(input).toHaveValue("");
+  await input.press("Space"); await expect(input).toHaveValue("");
+  await input.press("Control+z"); await expect(input).toHaveValue("changed");
+  await input.press("Control+z"); await expect(input).toHaveValue("original");
+});
+
+test("owners without blank normalization preserve whitespace and its history", async ({ page }) => {
+  for (const selector of ["#typed input", "#generic input"]) {
+    const input = page.locator(selector);
+    await input.fill(" "); await expect(input).toHaveValue(" ");
+    await input.press("Control+z"); await expect(input).toHaveValue("abcdef");
+    await input.press("Control+Shift+z"); await expect(input).toHaveValue(" ");
+  }
+});

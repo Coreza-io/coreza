@@ -5,6 +5,22 @@ import { applyFieldRows } from "../src/nodes/logic/editFields";
 
 const compile = (code: string) => compileEditTemplate(`{{ ${code} }}`, TYPED_EXPRESSION_FEATURES);
 const wire = (packet: unknown) => JSON.parse(JSON.stringify(packet));
+test.each(["4294967295", "4294967296", "999999999999999999999999999999"])("rejects non-index numeric array property %s before direct or manual serialization", key => {
+  for (const value of [undefined, () => 1, 7]) {
+    const selected = [1];
+    Object.defineProperty(selected, key, { value, enumerable: true });
+    const compiled = compile("lastN(items, 1)");
+    const context = { $json: { items: [selected] } };
+    expect(() => evaluateEditTemplate(compiled, context)).toThrow("Custom array output properties");
+    expect(() => prepareHelperTransport(compiled, context)).toThrow("Custom array output properties");
+  }
+});
+test("preserves dense arrays and numeric plain-object keys in direct and manual output", () => {
+  const compiled = compile("lastN(items, 1)");
+  const context = { $json: { items: [[{ "4294967295": "data" }, 2]] } };
+  expect(evaluateEditTemplate(compiled, context)).toEqual(context.$json.items);
+  expect(evaluateEditTemplate(compiled, restoreHelperTransport(wire(prepareHelperTransport(compiled, context))))).toEqual(context.$json.items);
+});
 test("manual transport preserves suffixes without reading unselected serializers or BigInt", () => {
   let calls = 0;
   const items = [1n, { toJSON: () => { calls++; return null; } }, { value: 3 }];

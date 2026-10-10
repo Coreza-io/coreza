@@ -51,7 +51,8 @@ export function encodeHelperJson(value: unknown, budget: ExpressionBudget, posit
       const descriptor = Object.getOwnPropertyDescriptor(object, key)!;
       if (!("value" in descriptor)) fail("Accessor output properties are not supported", `${path}[${JSON.stringify(key)}]`);
       if (!descriptor.enumerable) fail("Non-enumerable output properties are not supported", path);
-      if (array && !/^(0|[1-9]\d*)$/.test(key)) fail("Custom array output properties are not supported", path);
+      if (array && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= (object as unknown[]).length))
+        fail("Custom array output properties are not supported", `${path}[${JSON.stringify(key)}]`);
     }
     const toJSON = Object.getOwnPropertyDescriptor(object, "toJSON");
     if (typeof toJSON?.value === "function") fail("Custom output serializers are not supported", path);

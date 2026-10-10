@@ -9,6 +9,7 @@ import "../../../src/index.css";
 const reference = '{{ $("history").json.items }}';
 function Fixture() {
   const [generic, setGeneric] = useState("abcdef");
+  const [normalized, setNormalized] = useState<{ value: string | null }>({ value: "original" });
   const [number, setNumber] = useState("12");
   const [restoreBlocked, setRestoreBlocked] = useState(false);
   const [typed, setTyped] = useState({ value: "abcdef", mode: "fixed" });
@@ -49,6 +50,7 @@ function Fixture() {
         : <input {...hook.props} ref={hook.controlRef as React.MutableRefObject<HTMLInputElement | null>} value={typed.value} disabled={disabled} onDrop={drop} style={{ display: "block", width: 260, height: 48, padding: 12, border: "2px solid gray", font: "16px/24px monospace" }}/>}</section>
       <output id="mode">{typed.mode}</output><output id="generic-value">{generic}</output>
       <section id="number"><NodeFieldRenderer field={{ key: "number", type: "number", label: "Number" }} definition={{}} fieldState={{}} value={number} selectOptions={{}} loadingSelect={{}} readOnly={disabled} onChange={(_, value) => setNumber(value)} /></section>
+      <section id="normalized"><NodeFieldRenderer field={{ key: "value", type: "string", label: "Normalized" }} definition={{}} fieldState={normalized} value={normalized.value} selectOptions={{}} loadingSelect={{}} readOnly={disabled} normalizeBlank onChange={(_, value) => setNormalized({ value: typeof value === "string" && value.trim() === "" ? null : value })} /></section>
     </div>
   </main>;
 }

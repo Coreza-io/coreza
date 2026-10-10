@@ -27,6 +27,7 @@ interface NodeFieldRendererProps {
   selectOptions: Record<string, any[]>;
   loadingSelect: Record<string, boolean>;
   onChange: (fieldKey: string, value: any, dataType?: string) => void;
+  normalizeBlank?: boolean;
   onBatchChange?: (updates: Record<string, any>) => void;
   onDrop?: (field: any, e: React.DragEvent, currentValue: string) => void;
   getPreview?: (fieldKey: string) => string | null;
@@ -47,6 +48,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   selectOptions,
   loadingSelect,
   onChange,
+  normalizeBlank,
   onBatchChange,
   onDrop,
   getPreview,
@@ -187,6 +189,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const referenceDrop = useReferenceTextDrop({
     value: String(fieldValue ?? ""),
     onChange: value => onChange(field.key, value),
+    normalizeValue: normalizeBlank ? value => value.trim() === "" ? "" : value : undefined,
     disabled: readOnly,
     identity: field.key,
   });

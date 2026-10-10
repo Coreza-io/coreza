@@ -145,6 +145,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               selectOptions={selectOptions}
               loadingSelect={loadingSelect}
               onChange={handleChange}
+              normalizeBlank
               onBatchChange={handleFieldStateBatch}
               onDrop={(fieldDef, e, currentValue) =>
                 handleDrop(

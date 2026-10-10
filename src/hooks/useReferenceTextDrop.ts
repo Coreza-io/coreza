@@ -55,6 +55,7 @@ export function finishReferenceTextDrop(event: React.DragEvent, insertion: Refer
 export function useReferenceTextDrop(options: {
   value: string;
   onChange: (value: string) => boolean | void;
+  normalizeValue?: (value: string) => string;
   meta?: unknown;
   onRestore?: (value: string, meta: unknown) => boolean | void;
   disabled?: boolean;
@@ -170,6 +171,8 @@ export function useReferenceTextDrop(options: {
         const before = selected.current?.value === latest.current.value ? selected.current : snapshot();
         const after = { ...snapshot(), value: event.target.value, start: event.target.selectionStart ?? 0, end: event.target.selectionEnd ?? 0 };
         if (latest.current.onChange(after.value) === false) { event.target.value = latest.current.value; return; }
+        // History follows the owner's accepted value, including legacy blank normalization.
+        after.value = latest.current.normalizeValue?.(after.value) ?? after.value;
         if (!composing.current) record(before, after);
         else expected.current = after.value;
         selected.current = after;

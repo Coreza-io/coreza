@@ -1,183 +1,131 @@
-# Implement two-level nested clusters end to end
+# Implement lastN and reliable reference drag insertion
 
-## Goal and scope
+## Goal and selected scope
 
-Support an outer cluster containing inner clusters and directly owned nodes. Users can group nodes inside an outer cluster, wrap sibling root clusters and unclustered nodes, navigate both levels, move either container, insert/paste into the intended body, dissolve safely and run the selected scope.
+Implement the complete 232-line attachment's narrow release: **`lastN(array, count)` in typed Edit Fields v2 only**, plus shared pointer-position reference insertion across existing native text fields. Preserve generic legacy expressions, literal slices, canonical identities, nested clusters and normal editor execution.
 
-The initial maximum is **two cluster levels**, confirmed by your answer. Hierarchy traversal remains depth-independent, but both frontend and backend enforce this maximum. No drag-to-reparent interaction is included.
+Select Expression + Array and use:
 
-This plan replaces the preceding node-naming plan. Existing naming rules remain authoritative. It contains no test cases or testing sections, as previously requested; no application source is changed by this plan.
-
-## Review findings and improvements
-
-The complete 260-line attachment was checked against checkout `6b053c7e`, not assumed identical to its cited `9b5044d` revision.
-
-Confirmed from current source:
-- Cluster types/parsing remain flat. Validators enforce unique direct ownership, reject empty direct lists and run topology on those direct lists. Request schemas require at least one direct member.
-- Focus/view state expands one cluster. Projection assigns collapsed owners from flat lists, and focused-frame occlusion cannot distinguish legitimate descendants.
-- Selection, editor frames, drag capture and insertion use direct membership. Insertion requires its target to equal the single expanded/focused ID.
-- Paste discards copied cluster metadata when targeting a cluster. Node deletion removes zero-direct-member containers; generic invalidation removes entries without promoting children.
-- Persistence loads incrementally accepted cluster prefixes, making that approach unsuitable for parent relationships in arbitrary array order.
-- Editor execution checks only a violation with the requested cluster ID and plans its direct members. Execution visuals also require direct membership and exclude remapped edge endpoints.
-- Server scoped compilation uses direct members. Its hash already includes the requested cluster and source revision; it must additionally describe the resolved hierarchy and leaf scope, rather than claiming parent changes currently bypass revision protection.
-- The inspected save service uses ownership/revision checks and an atomic JSONB RPC. Omitting cluster metadata preserves it, but submitting stripped objects or an empty array can erase hierarchy. The checked-in RPC snapshots JSON cluster arrays; hosted deployment is unverified.
-
-Corrections to the attachment/review recommendations:
-1. Store parent links only on cluster metadata, **not node data or React Flow `parentId`**.
-2. Retain a single focus ID and derive its ancestor path; do not persist a second independent focus-path state.
-3. Keep direct ownership unique; ancestor/descendant effective membership overlap is intentional, not invalid overlapping ownership.
-4. Preserve all metadata or return a clear refusal for unsupported writers. Never treat a submitted empty array as a silent successful no-op.
-5. Add an explicit API write-capability declaration with server enforcement; a new database format-version column is not necessary for the initial hierarchy representation.
-6. Parent Execute remains one editor-local sequence of normal node actions. Server-plan compatibility does not route the editor button back through queued Run All.
-7. Count and progress semantics distinguish unique leaf nodes from repeated Loop invocations; a parent does not recursively start child runs.
-
-## 1. Metadata and hierarchy contract
-
-Extend `NodeCluster` with optional `parentClusterId`. `memberNodeIds` contains only directly owned canonical node IDs. No cluster/display IDs, duplicated ancestor members or persisted effective-member arrays.
-
-```ts
-interface NodeCluster {
-  id: string;
-  title: string;
-  memberNodeIds: string[];
-  parentClusterId?: string;
-  note?: string;
-}
+```text
+{{ lastN($("get_atr_history").json.data.value, $("short_len").json.data) }}
 ```
 
-Root means an absent parent. Reject explicit null, invalid types, empty parent IDs and parents outside the document, rather than silently stripping them; old flat records already omit the field.
+The paths above depend on actual output envelopes; they are not an instruction to unwrap every `data` property. This plan excludes test cases/testing sections, as previously requested. No application changes or deployments are authorized by plan authoring.
 
-Preserve unique UUID cluster IDs, globally unique titles and the 200-character note limit. Each node has at most one direct owner. Reject self-parenting, cycles and a third level. An effective cluster must contain at least one canonical node; a parent with zero direct nodes is valid when its children supply members.
+## Confirmed review and corrections
 
-Keep absolute canonical positions, canonical edges and node identities unchanged by nesting. Connectivity is required only for newly created grouping; persisted disconnected members remain allowed. Retain trigger, attachment, entry/exit, path and supported Loop-boundary restrictions for every effective scope.
+Checked current checkout `eff5d3d3`, rather than assuming the attachment's `7835314` matches it:
+- `safeExpression.ts` supports arrays, literal slices, named references and own-property reads; function calls are rejected. There is no implemented lastN intrinsic or helper capability.
+- `editTemplate.ts` is quote-aware and rejects nested/unclosed templates. Pure code returns native values; mixed templates stringify. Its rendered ceiling checks characters after rendering, not bounded UTF-8 bytes.
+- `editFields.ts` uses the shared evaluator and shallow destination checks. Each typed row reads original input. The manual route and executor retain different legacy seeds/wrappers.
+- Typed drop uses the existing selection, not pointer coordinates. `editFieldReferenceDrop.ts` falls back to wrapped insertion when whole-template compilation fails. Basic, condition, Switch/case and overlay handlers append.
+- `NodeFieldRenderer` selects all on focus. Fixed-to-expression editing can replace an input with a textarea. Editable controls bypass canvas undo; explicit field transaction history is not present.
+- `handleChange` and batch changes write immediately through the canonical updater; a separate 50ms effect also synchronizes drafts. This is **not merely a deferred canonical commit**. The canonical updater currently applies patches without the full live mutation guard.
+- Typed rows are transported raw. `templateCompiler` currently gives them empty dependencies and unions dependency sets only from accessor entries, not static entries. Repair both gaps; do not claim missing metadata proves every run lacks data.
+- Manual payload builds fallback data for every node and synthesizes unresolved identities with `resolved?.id ?? name`. The route drops explicit display-name metadata. Preview has different fallback behavior.
+- Pins already enter the execution store through `setPinned`. Preserve pins available there; do not interpret the attachment's no-new-fallback policy as disabling existing pins.
+- Cluster planning already resolves effective leaves and uses normal actions, but reference collection is regex-based. Run All dependency readiness is graph-edge-driven.
+- Drag paths use typed segments and current canonical IDs. The safe tokenizer lacks some JSON string escapes emitted by `JSON.stringify`, including Unicode control escapes. Correct safe decoding rather than blaming the drag-payload JSON parser.
+- The authenticated capabilities response currently advertises hierarchy readiness only. Helper support must be added independently without coupling it to the cluster database guard.
 
-## 2. Pure hierarchy resolver and authoritative validation
+External n8n comparisons and reported probes are reference material, not verified behavior of this checkout. Deployed helper support, browser geometry and actual user result envelopes remain unverified.
 
-Add a dependency-free hierarchy helper with indexes for clusters, children, direct node owners, ancestors, descendants, effective members and visible representatives. Index every cluster before resolving links; preserve deterministic output independent of array order.
+## 1. Freeze the helper and compatibility contract
 
-Detect duplicate IDs/direct ownership, missing parents, self-links, cycles and excessive depth before expanding effective sets. Use iterative traversal or guarded expansion so malformed metadata cannot cause infinite recursion. Report structured diagnostics tied to all affected relationships; never resolve an invalid subtree as if it were flat.
+- Accept exactly two expression operands. Source must be an array; count must be a number that is finite, nonnegative and a safe integer. No string/boolean/null coercion; negative, fractional, missing and unsafe counts fail.
+- Evaluate operands once in source order and validate both contracts before zero/empty early returns. Numeric `-0` equals zero. Return a fresh empty array for zero; otherwise a new shallow suffix copy, capped at source length. Never mutate input or blindly use `slice(-count)`.
+- Preserve nested helper composition and ordinary post-result indexing/member access without inventing Python projection semantics for a function result.
+- Preserve bare input identifier `lastN` when it is not called. Permit only the trusted registered intrinsic: no host lookup, computed function names, methods, callbacks, eval or dynamic node names.
+- Helper registration is explicitly enabled by the typed Edit Fields caller. Keep compilation/cache options distinct if other consumers are added; generic fields never acquire safe-function semantics by exception fallback.
+- Preserve pure native types, safe mixed-template rendering, typed destination rules, whitespace, literal slice zero behavior, original-input row semantics and legacy persistence restrictions.
+- Missing node, ambiguous alias, unavailable output, invalid source/count and resource/serialization failures have separate codes and positions. Strict missing-reference behavior applies only inside the new helper's evaluated subtree; unrelated existing reads still return undefined as before. Short-circuiting must not eagerly fail unreachable branches.
 
-Place the portable source within the backend's supported source boundary and expose a thin frontend re-export, following the existing shared resolver pattern. The backend currently has `rootDir: src`; do not import frontend-only modules into it or create an unrelated packaging migration. Copy the portable source to the separate backend repository at delivery.
+## 2. Shared safe implementation and bounded output
 
-Update types, parser, normalization, frontend validation, backend request schema and server normalizer together. Permit empty direct arrays structurally, then validate nonempty effective membership semantically. Check hierarchy before existing graph topology for each effective scope. Connectivity on creation applies only to the new candidate, not every previously persisted disconnected cluster.
+Extend backend-owned `safeExpression.ts`, `editTemplate.ts` and `editFields.ts`, keeping their frontend imports as the single implementation:
 
-Preserve the existing minimum of two effective nodes for grouping; selecting two containers does not excuse invalid leaf topology. Collect exclusively owned attachments during candidate creation, transfer their direct ownership consistently and reject shared attachments that cross the new child boundary.
+1. Add an intrinsic AST node with both argument ASTs/positions; extend parser, evaluation and reference/feature visitors. Preserve existing compile limits and error offset mapping.
+2. Add immutable compiled feature metadata identifying lastN-bearing rows. Allocate runtime budgets per evaluation, never inside cached compiled objects.
+3. Use a cumulative budget across the entire helper-bearing row: nested calls, code segments, array/projection/slice allocations, rendering and selected-output boundary traversal. Meter upstream argument operations before allocation; guarding only lastN's final copy leaves large slice/projection arguments unprotected.
+4. Proposed starting ceilings: **100,000 copied elements, 1,000,000 work steps, 256KiB UTF-8 output** per helper-bearing row. Treat these as provisional, centrally configured limits requiring representative trading-output calibration, not measured capacity. Add bounded traversal depth/cycle handling.
+5. Compute suffix length before copying; a small suffix must not require scanning the whole source. Selected sparse slots/undefined values fail the strict output boundary rather than silently becoming null.
+6. Validate newly assigned helper-bearing row values before assignment/publication: reject undefined root/property/slot, functions, symbols, BigInt, cycles, non-finite numbers and unsupported host objects; preserve JSON null. Do not invoke custom toJSON/getters to sanitize values. HTTP JSON is the normal context boundary, not a guarantee against hostile in-process objects.
+7. Count UTF-8 bytes and JSON escaping incrementally in bounded encoding/traversal before an unbounded stringify allocation. Apply the same accounting during mixed rendering and preview. Do not truncate or stringify first and check afterward.
+8. Keep existing non-helper rows and inherited/legacy seed serialization behavior unchanged. Optional-field omission is allowed only by an explicit schema; do not add a new omission policy to this release.
+9. Reuse structured field/node/row/position errors, extending phases for serialization/resource failures. Do not publish partially accumulated success when a later row fails.
 
-Build hierarchy indexes only when cluster relationships/membership or canonical node identities change. Position updates must not rebuild effective membership or introduce whole-graph subscriptions in edges/cards. Effective-set storage can cost the sum of subtree sizes; do not claim universal linear complexity.
+Native undefined remains an internal value; strict helper output rejection is a boundary rule, not conversion to null. Preview can show a bounded native summary and a separate boundary diagnostic when safe to obtain both.
 
-## 3. Persistence, recovery and compatibility protection
+## 3. Identity, available results and transport
 
-### Full-document loading
+Introduce a shared typed-context builder/resolution contract for preview, manual actions and server evaluation:
+- Capture canonical identity inventory and selected result availability once per evaluation/payload. Use exact IDs before unique aliases, including explicit displayName; ambiguity never resolves by array order or result availability.
+- For new-helper named references, accept only output available in the current execution store/context, including already integrated pins. Do not treat node configuration/static `data` as an executed result or add a new pin/static fallback. Existing non-helper expressions retain their current fallback behavior.
+- Distinguish an identity that does not exist from a known node with no result. Send truthful identity/alias metadata sufficient to detect ambiguity, never invented nodes. Resolve results by canonical ID without alias-key fallback borrowing another node's result.
+- Capture representative actual history/count envelopes during implementation before finalizing adapters. Preserve StandardNodeOutput/NodeResult wrappers and existing `pickJsonSource` semantics; no repeated `data` unwrapping or n8n item/run pairing.
+- Preserve selected original input and latest available Loop result semantics. Immutable evaluation snapshots are per invocation: do not freeze results once for an entire cluster, which would hide outputs produced by earlier actions.
+- Before HTTP JSON serialization, check selected helper argument data with bounded checks so undefined/sparse values cannot disappear or become null before server validation. Send only relevant results plus truthful identities, with bounded request size. Do not reject unrelated legacy result/configuration fields globally.
+- Update comparator input validation to retain relevant displayName metadata and enforce payload bounds. Client-supplied expression context is calculation input, never authorization; user identity remains token-derived. Server Run All uses authoritative saved nodes/results.
+- Preserve stale-session/cancellation publication guards and existing single-notification error pathway. Detailed errors belong in Output Data, with concise field feedback.
 
-Replace prefix acceptance in `useWorkflowPersistence` with complete-array parsing and hierarchy validation. Preserve original source indexes and raw invalid entries so diagnostics still identify the supplied metadata accurately.
+## 4. Dependencies and execution parity
 
-Recover only intact valid relationship components when safe; a child must not be rejected because its parent appears later. Structural or cross-component ownership conflicts must not be repaired by guessing. Retain canonical nodes and raw invalid metadata, show diagnostics and block lossy saves until an explicit repair resolves them. Never silently flatten malformed hierarchy.
+- Extend typed AST visitors through both helper operands, nested calls, arrays and members. Deduplicate genuine references; ignore fixed rows and selector-looking quoted strings.
+- In `templateCompiler`, retain raw typed rows while collecting expression dependencies. Union dependencies from static and accessor entries and preserve them in optimized metadata/slot paths, including mixed generic/typed parameters. Never pre-evaluate typed rows during parameter compilation.
+- In `useClusterExecution`, route typed expression rows through shared AST discovery, skip typed fixed rows, and retain the existing separate legacy collector for other values.
+- Use resolved internal references as ordering prerequisites only for eligible effective leaves. External references consume available output or diagnose; never execute outside the captured scope.
+- Preserve one parent controller/lock, normal actions, BacktestInit's single manual initialization, Loop repetitions/feedback and unique leaf progress. Do not queue Cluster Execute or recursively start children.
+- Run All remains graph-edge-driven; reference lookup must not create scheduling edges or implicitly run missing upstream nodes. Same helper semantics do not imply identical input seed, envelope or scheduling behavior across modes.
 
-### Canonical round trips
+## 5. Tolerant lexical insertion and encoded paths
 
-Preserve `parentClusterId` through normalization, canonical serialization, dirty comparison, API responses, file export/import, workflow versions, local history and run snapshots. A parent-link-only edit must mark the document dirty. Restore a complete document atomically, retaining zero-direct-node parents with children.
+Replace compilation-as-location-detection with a pure tolerant span scanner shared with template delimiter rules; strict compilation remains authoritative for evaluation.
+- Classify text, unquoted code, quoted code strings, delimiter tokens and ambiguous malformed spans; expose UTF-16 ranges and diagnostics without requiring a valid full expression.
+- Safe typed text gets one wrapped selector; unquoted code gets raw selector. Block insertion into quoted strings, within delimiter tokens, or across partial quote/template boundaries.
+- A full unclosed `{{` permits raw insertion into unambiguous unquoted code; strict incomplete-expression errors remain. Block lone/ambiguous brace fragments, with repair feedback rather than wrapped fallback.
+- At expressionStart/before the closing pair use code context; immediately before opening/after closing use text context. Exactly selected whole-template replacement inserts one wrapped selector.
+- Generic legacy destinations support pointer placement of complete selector templates and whole-template replacement only; reject composed raw-code insertion without switching their language.
+- Keep current payload/identity design; reject deleted/stale/projection sources at commit while allowing hidden canonical leaves. Decode JSON escapes correctly in safe string literals, preserving numeric index versus string key and arbitrary encoded keys.
+- Unsupported legacy selector escapes receive a clear refusal, not corruption or a global legacy resolver rewrite.
+- Offer only a user-triggered repair preview for the recognized nested-slice example once lastN support is available; require a reliable recognized pattern. No recursive brace removal, automatic conversion, trimming or quote/fixed-value rewrites.
 
-Use existing JSONB cluster arrays; no new cluster table, coordinate system or parent-column migration is required. Confirm the deployed RPC/migrations during implementation before enabling writes; source inspection alone does not establish deployment readiness.
+## 6. Pointer geometry and shared native-control adapter
 
-### Old-writer protection
+Add proposed `textControlCaret.ts` and `useReferenceTextDrop.ts`; extend the existing `ReferenceDropTarget` plumbing rather than creating separate editors:
+- Map client coordinates to UTF-16 offsets/caret rectangles with an offscreen styled mirror and range/glyph measurements. Handle borders, padding, font, wrapping, tabs, trailing newlines, scroll, CSS transforms and React Flow zoom; snap to grapheme boundaries.
+- Limit initial support to standard LTR desktop Chromium. Do not claim RTL/mobile/other-browser support before it is established.
+- Animate/throttle dragover measurement, recompute on value/scroll/resize and final drop, and support bounded edge autoscroll. Caret overlay is noninteractive/aria-hidden and token-styled; hovering does not alter the saved selection.
+- Track destination-owned active selection before drag blur, with field/control identity, value revision and range. Replace only when the pointer is inside its half-open range; elsewhere insert at pointer, including at selection end. Invalidate stale ranges. Keyboard insertion replaces its saved valid selection independently.
+- Use an explicit live text-control ref for wrapper drops. Geometry failure/no eligible target rejects without mutation; never append or reuse stale selection as a pointer fallback.
+- Non-text number/select/checkbox targets require explicit Expression selection/dedicated text control; never call selection APIs on unsupported inputs or silently swap a boolean selector after a wrapper drop.
+- Clear caret/classes on genuine leave, cancellation, Escape, disabled state and unmount. Ignore foreign/palette payloads; route one drop once, isolating canvas/parent handlers.
 
-Introduce one explicit supported cluster format value, proposed `cluster_format_version: 2`, in create/update request schemas. It is a transient write declaration, not node/cluster content or user identity. Advertise server support and maximum depth through the existing authenticated workflow API response boundary; expose this separately from the document content used for dirty comparison.
+## 7. Atomic field edits, focus and history
 
-At `WorkflowQueryService` before normalization:
-- Reject a nesting candidate unless the server supports it and the writer declares hierarchy support.
-- For an existing nested workflow, reject graph/document replacement from a writer lacking that support, even when its submitted cluster array looks flat or empty.
-- A supported writer may intentionally dissolve all clusters after normal validation; do not silently preserve an empty array.
-- Preserve omitted metadata for compatible partial updates, while validating the complete candidate.
-- Apply the rule to version restores, import-over-existing and equivalent write paths. Keep expected revision and token-derived ownership authoritative.
+- One shared transaction stores field/row identity, before/after value and mode, source-map update and transient selection/scroll. Read latest drafts and live canonical source/session/guard immediately before commit; stale callbacks cannot overwrite newer typing or resurrect deleted rows.
+- Reuse owner callbacks for Basic, condition, Switch/case, overlays and typed rows. Source-map adapters preserve existing record/array shapes without a persisted schema migration.
+- Add a guarded canonical field-update boundary covering loading, execution, read-only and session changes. Prevent the existing delayed sync effect from overwriting an acknowledged transaction.
+- Restore focus with preventScroll after React commit, retain control scroll, collapse caret after inserted text and suppress select-all once. Fixed-to-expression changes must resolve the newly mounted textarea, not a detached input.
+- Provide explicit field-local history for typing, paste, composition and drops. Each drop is one undo unit; neighboring typing remains undoable. Handle Ctrl/Cmd-Z, redo variants and beforeinput history requests without triggering canvas structural undo or double-applying browser history.
+- Track row identity transiently across reorder/removal; clear or rebase history after external document restore/session changes. Do not persist caret, mirror, history or source-map bookkeeping as undeclared node fields.
+- Reject/atomically roll back a drop whose mode/control transition cannot safely restore history/focus; no history-unsafe fallback or no-op history entry.
 
-Fail closed for nested authoring if capability is absent/unavailable. Keep existing flat workflow writes compatible. Audit alternate/direct writers; if any canonical write bypass exists, close or protect it before release rather than assuming a frontend flag is enough.
+## 8. Capability, persistence and rollout
 
-## 4. Canonical hierarchy commands
+1. Implement shared intrinsic/budgets/boundary and context/discovery contracts first; manual comparator and ControlFlowExecutor consume the same code.
+2. Extend authenticated capabilities with proposed `safe_expression_helpers.lastN: { contract_version: 1, scope: "typed-edit-fields-v2" }`, binding strict arguments, budgets and helper output boundary. Report helper support independently of hierarchy readiness.
+3. Add session-aware frontend capability consumption, unavailable/unsupported feedback and stale-response guards. Missing/unknown support blocks helper-dependent authoring/evaluation, not all ordinary typing or legacy workflows. Server enforces its supported contract independently.
+4. Wire shared lexical insertion, geometry, owner adapters and field history together. Preserve existing theme/components and avoid graph-wide drag subscriptions.
+5. Keep expression text in existing typed row values through save/export/import, dirty comparison, versions, undo and run snapshots. Manual import retains fresh UUID identities and simultaneous reference remapping, including references inside helper arguments.
+6. **No database migration, generic expression_version marker, new table, queue or execution engine is required.** The hierarchy migration/guard remains untouched.
+7. Manually copy backend changes to `coreza-io/coreza-backend`; deploy evaluator/readers/capability before enabling dependent frontend authoring. Establish actual envelopes, calibrated limits and deployed capability before release, not from source presence alone.
+8. Rollback disables new helper authoring while retaining saved-text readers and compatible evaluation, or explicitly refuses unsupported runs. Never reinterpret helper text through legacy fallback.
+9. During implementation record scoped architecture decisions in AGENTS.md and requested work/blockers in roadmap.md; plan mode changes neither file.
 
-Use one document command per operation for keyboard, context menu and visible controls. Preserve session/drag/execution guards, strict candidate validation and one undo entry per successful mutation; no partial commits or no-op history entries.
+## Deferred alternatives and explicit exclusions
 
-### Create an inner cluster
+Computed Python bounds and array-only slice are independent alternatives, not mandatory phases; their raw zero/negative semantics do not implement a strict last-count contract. Preserve existing literal slice syntax.
 
-Require selected nodes to share one direct outer owner. Resolve exclusive attachments, transfer selected IDs from the outer direct list into the new child and set the child's parent. Reject attempts inside an inner cluster. Validate the final hierarchy and both child and affected outer topology before commit.
+Generic safe-language adoption is separate authorization: it would need an explicit persisted version/router, complete serialization/import/history/snapshot support, capability/writer protection, unknown-version refusal and user-triggered atomic conversion. Absent markers stay legacy; no failure fallback. Do not implement that architecture for lastN.
 
-### Wrap root containers and nodes
-
-Keep container selections distinct from leaf selections so a selected cluster remains atomic. Wrap selected root clusters and/or unclustered nodes in a new outer cluster. Link the selected roots to it and directly own the ordinary nodes. Reject partial crossing selections and depth overflow; wrapping a root that already has an inner cluster would create a third level and must fail.
-
-Remove redundant descendant selections when an ancestor is already selected. Reuse unique-title allocation and attachment expansion; do not flatten selected clusters into a new member list.
-
-### Dissolve, delete and ordinary edits
-
-- `dissolveCluster(id)` promotes its direct nodes into the parent direct list, or unclusters them at root; reparent its children to that parent. Preserve nodes/edges.
-- Delete-cluster-nodes resolves the complete subtree, deletes each leaf once and removes subtree metadata. Repair ancestors in the same transaction.
-- Ordinary node deletion removes direct membership and prunes truly empty containers bottom-up. A parent with children must not be deleted merely because its own member list is empty.
-- Replace flat invalidation removal with an explicit promote/revalidate process. Recalculate affected ancestors until the candidate is valid, report every dissolved container, and refuse unexpected structural corruption rather than committing dangling links.
-- Node rename updates only direct membership, using the existing identity/reference/runtime transaction; effective sets derive automatically.
-- Undo/redo restores nodes, edges, parent links, memberships and runtime-relevant identity state together. Reconcile transient focus to the nearest surviving ancestor.
-
-## 5. Expansion, projection, frames and navigation
-
-Keep one focus ID. Derive expanded IDs from its complete ancestor path. Opening an inner retains its outer frame; closing the inner focuses its parent, and closing the outer returns to root. Add a concise parent/back action or breadcrumb using existing controls. Clear obsolete focus after removal/session replacement without saving view state as document content.
-
-Compute frame bounds bottom-up from visible direct nodes and child compact cards/expanded frames, retaining existing header/footer/padding allowances and absolute coordinates. Parents containing only child containers must still have inspectable bounds. Derive fit-view from the effective visible content without repeated automatic fits during drag.
-
-Projection order:
-1. Resolve visibility from the root ownership path: the first collapsed ancestor represents a leaf.
-2. Allocate collision-safe synthetic IDs only for visible collapsed containers. Suppressed descendants receive no hidden duplicate card.
-3. Map each canonical edge endpoint to its visible representative; suppress edges whose endpoints share one collapsed representative.
-4. Preserve canonical edge IDs and per-edge boundary handles/mapping for sibling, inner-to-outer and external connections.
-5. Maintain exactly one canonical runtime host per leaf, invisible/non-interactive when hidden, with no duplicate mounts.
-6. Reconcile displayed copies using the existing identity-reuse layer; preserve unchanged canonical references.
-
-Make occlusion relationship-aware: legitimate descendants, child cards and ancestor frames cannot hide one another. Keep unrelated intersecting objects under the existing policy, hide orphaned visual connections coherently and make frame stacking/event isolation deterministic. Child header drag/control clicks cannot trigger ancestor drag.
-
-Edge creation, deletion and reconnection must resolve canonical endpoints through projection metadata; never save synthetic IDs or replace canonical arrays with displayed copies.
-
-## 6. Selection, movement and insertion
-
-Resolve selected actionable cluster cards to effective leaves; deduplicate ancestor/child combinations. Select-all excludes hidden hosts and suppressed descendant cards. Preserve explicit selected-container identity for wrap/copy/dissolve rather than inferring it solely from coincident selected leaves.
-
-For compact or expanded container drag, capture every effective leaf's absolute starting position once and apply a single delta. Inner drag moves its subtree; outer drag moves all descendants. Avoid double translation when ancestors and children are selected. Preserve drag cancellation, position-only history, stale-session guards and insertion-hit-test suppression during active drags. Child cards/frames derive positions from canonical leaves rather than moving independently.
-
-Insertion uses the deepest expanded body under the explicit pointer, excluding headers/footers. Member-placement uses that member's direct expanded owner. Explicit insertion into an expanded outer body remains valid while an inner is focused.
-
-Capture session/target intent and revalidate target existence, expanded-path eligibility and full candidate at commit. Replace single-focus equality checks with expanded-ID eligibility. Add new nodes to exactly one direct list; derive ancestors afterward. Retain external fallback placement for actions without a valid explicit body. Keep all dimensions in consistent canvas coordinates, converting screen-fixed allowances once where required.
-
-## 7. Clipboard and portable import
-
-An explicitly selected cluster copies its complete subtree. Ordinary member copying stays supported. Store the source inventory needed for proven alias remapping and copied-root IDs so partial selection cannot produce dangling copied parents.
-
-At paste, use the existing shared instance-name allocator and separate complete node/edge/cluster ID maps. Remap canonical edges, direct members, parent links and supported editable selectors simultaneously. Preserve existing unique-title behaviour.
-
-Attach only copied subtree roots to the destination; preserve internal parents. Standalone copied nodes become direct destination members, not duplicate owners of copied child leaves. Root paste detaches copied roots from uncopied original parents. Remove the target branch that discards copied metadata. Reject depth/topology violations atomically; never flatten to make paste succeed.
-
-File import retains fresh UUID node/edge identities and separately allocated public names under the current naming rules. Preserve or consistently remap cluster UUIDs with all parent links; validate the complete imported array before session replacement. Export/restore retain canonical content, not display cards. Protect import-over-existing through the same supported-writer save boundary.
-
-## 8. Execution, scope and visible progress
-
-At start capture one canonical graph/hierarchy snapshot and resolve the requested cluster's effective leaves. Block preflight on structural defects affecting that component, its descendants or relevant ancestor boundaries; checking only the requested cluster's first violation is insufficient.
-
-Feed the flattened leaf scope into existing editor planning, action capture, allowed-node restrictions, references, attachments and Loop regions. Parent execution owns one lock/controller and invokes each normal action in dependency/control order; **do not call child Execute recursively or queue the editor button**. Preserve BacktestInit single manual initialization, scoped inputs, pins, listener rules, fail-fast and normal Loop feedback repetitions. Unsupported overlapping/nested Loop bodies remain a clear preflight refusal; organizational nesting does not enable them.
-
-Track the active invocation separately from aggregate unique-leaf completion. Repeated Loop body actions do not manufacture duplicate eligible counts. Derive child/ancestor summaries from the owning run's outcomes; do not overwrite independently stored child-run state or start another run. Non-owning controls show the active owner and remain blocked. Stop belongs to the active scope, clears visuals promptly and retains ownership until in-flight settlement. Stale sessions cannot publish late progress/results.
-
-Resolve active leaves to displayed representatives: show normal effects on visible leaves and running/failed state on their visible collapsed child/outer card. Extend `executionVisuals` with effective membership and explicit canonical-to-projected edge mapping, not relaxed endpoint comparisons. Keep effects as overlays after reconciliation; never persist flags/styles or contaminate base projection. Detailed errors remain in the failed leaf's Output Data. Navigation during a run changes display only.
-
-Update the retained backend scoped compiler for effective members, boundaries, attachments, reference limits and plan identity. Include deterministic relevant parent links, direct/effective leaf IDs and planner version alongside existing workflow revision/hash inputs. Persist canonical leaf scope snapshots and existing cancellation ownership. Keep server execution capability restrictions intact; do not promise newly supported node types. Execute All continues scheduling only canonical executable nodes, not organizational containers.
-
-## 9. Delivery order and rollout
-
-1. Portable hierarchy model/resolver, structural diagnostics, frontend/backend validation and parent-preserving parsing/normalization.
-2. Complete-document recovery, serializer/import/history/snapshot support and server writer-capability protection.
-3. Hierarchy-aware create/wrap/dissolve/delete/paste commands; current naming and runtime identity transactions retained.
-4. Ancestor-path navigation, bottom-up bounds, representative edge projection, occlusion and reconciliation.
-5. Effective selection/movement and deepest-body insertion integration.
-6. Editor flattened execution, derived progress/effects and retained backend scope compiler.
-7. Copy backend changes to `coreza-io/coreza-backend`; deploy hierarchy readers/guards before enabling frontend authoring. Inspect deployed RPC readiness and alternate writer paths before the feature gate opens.
-8. Enable creation only when server capability advertises hierarchy support and depth two. Rollback disables authoring but retains readers and save protection; never deploy a metadata-stripping writer against nested documents.
-
-Primary files: cluster `types`, new portable hierarchy helper/frontend facade, `parse`, `validate`, `documentCommands`, `viewState`, `projection`, `selection`, `positions`, `insertion`, `executionVisuals`; `WorkflowEditor`, `CompactClusterNode`, `ClusterExecutionControl`, `useClusterExecution`, `useWorkflowPersistence`, canonical serializer/export/version readers; backend `schemas`, `validateNodeClusters`, `WorkflowQueryService`, request/response boundary, scoped compiler and run consumers.
-
-Audit every `memberNodeIds` consumer: direct membership remains correct for ownership/rename; scope, container movement, summary and selection usually require effective membership. Do not mechanically replace all accesses. Record hierarchy/visibility/write-contract architectural rules in `AGENTS.md` during implementation and add the work to the roadmap then; plan mode leaves those files unchanged.
-
-No new execution engine, sub-workflow runtime, all-node identity migration, graph store, whole-node edge subscriptions, drag-to-reparent, commercial gate or automatic flattening is included. This is a source-grounded implementation proposal, not a claim of completed behaviour or deployed readiness.
+No full JavaScript/n8n engine, recursive templates, dynamic selectors, callbacks, arbitrary methods, item pairing, .first/.all proxies, leading-equals format, automatic upstream execution, envelope rewriting or CodeMirror replacement. n8n receives no changes. Canonical hierarchy/projection/runtime rules remain authoritative throughout.

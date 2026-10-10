@@ -1,14 +1,14 @@
-import { ExpressionBudget, ExpressionError, HELPER_LIMITS } from "./safeExpression";
+import { ExpressionBudget, ExpressionError, EXPRESSION_LIMITS } from "./safeExpression";
 
-/** Strict helper boundary. Does not invoke getters, toJSON, or host serializers. */
-export function encodeHelperJson(value: unknown, budget: ExpressionBudget, position = 0): string {
+/** Strict expression boundary. Does not invoke getters, toJSON, or host serializers. */
+export function encodeExpressionJson(value: unknown, budget: ExpressionBudget, position = 0): string {
   let bytes = 0;
   const parts: string[] = [];
   const ancestors = new Set<object>();
   const emit = (text: string, size = text.length) => {
     bytes += size;
-    if (bytes > HELPER_LIMITS.outputBytes)
-      throw new ExpressionError("Helper output UTF-8 limit exceeded", position, "resource");
+    if (bytes > EXPRESSION_LIMITS.outputBytes)
+      throw new ExpressionError("Expression output UTF-8 limit exceeded", position, "resource");
     parts.push(text);
   };
   const fail = (message: string, path: string): never => {
@@ -29,7 +29,7 @@ export function encodeHelperJson(value: unknown, budget: ExpressionBudget, posit
   };
   const walk = (current: unknown, path: string, depth: number): void => {
     budget.step(position);
-    if (depth > HELPER_LIMITS.depth) fail("Helper output depth limit exceeded", path);
+    if (depth > EXPRESSION_LIMITS.depth) fail("Expression output depth limit exceeded", path);
     if (current === null) { emit("null"); return; }
     if (typeof current === "string") { string(current); return; }
     if (typeof current === "boolean") { emit(String(current)); return; }
@@ -56,7 +56,7 @@ export function encodeHelperJson(value: unknown, budget: ExpressionBudget, posit
     }
     const toJSON = Object.getOwnPropertyDescriptor(object, "toJSON");
     if (typeof toJSON?.value === "function") fail("Custom output serializers are not supported", path);
-    if (ancestors.has(object)) fail("Cyclic helper output", path);
+    if (ancestors.has(object)) fail("Cyclic expression output", path);
     if (Object.getOwnPropertySymbols(object).length) fail("Symbol output properties are not supported", path);
     ancestors.add(object);
     const own = (key: string): unknown => {

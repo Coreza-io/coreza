@@ -1,4 +1,3 @@
-import { LAST_N_CAPABILITY } from "../nodes/logic/safeExpression";
 import express, { Request } from "express";
 import { z } from "zod";
 import { createError } from "../middleware/errorHandler";
@@ -42,7 +41,7 @@ function normalizeValidationError(error: unknown) {
 }
 
 router.get('/capabilities', async (req, res, next) => {
-  try { res.json({ ...await queryService.getCapabilities(), safe_expression_helpers: { lastN: LAST_N_CAPABILITY } }); } catch (error) { next(error); }
+  try { res.json(await queryService.getCapabilities()); } catch (error) { next(error); }
 });
 
 router.get("/", async (req, res, next) => {

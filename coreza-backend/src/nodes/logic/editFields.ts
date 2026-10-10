@@ -1,5 +1,5 @@
 import { pickTypedJsonSource } from "./typedExpressionContext";
-import { restoreHelperTransport } from "./helperTransport";
+import { restoreExpressionTransport } from "./expressionTransport";
 import { ExpressionContext, ExpressionError, TYPED_EXPRESSION_FEATURES } from "./safeExpression";
 import { compileEditTemplate, evaluateEditTemplate } from "./editTemplate";
 import {
@@ -43,7 +43,7 @@ export interface LegacyFieldRow {
 export type EditFieldRow = EditFieldRowV2 | LegacyFieldRow;
 
 export interface EditFieldsContext extends Partial<ExpressionContext> {
-  helperContexts?: Record<string, unknown>;
+  expressionContexts?: Record<string, unknown>;
   persistent?: boolean;
   getPersistentValue?: (key: string) => unknown;
   setPersistentValue?: (key: string, value: unknown) => unknown;
@@ -275,7 +275,7 @@ export function applyTypedFieldRow(
   const expressionContext: ExpressionContext = {
     $json: input,
     $nodes: context.$nodes,
-    helperOutputs: context.helperOutputs,
+    expressionOutputs: context.expressionOutputs,
     $state: context.$state,
     nodes: context.nodes,
   };
@@ -319,9 +319,9 @@ export function applyTypedFieldRow(
     );
   }
   try {
-    const transported = compiled.hasHelpers ? context.helperContexts?.[String(rowIndex)] : undefined;
-    if (transported !== undefined) Object.assign(expressionContext, restoreHelperTransport(transported));
-    else expressionContext.$json = compiled.hasHelpers ? pickTypedJsonSource(input) : pickJsonSource(input);
+    const transported = compiled.hasComputedSlices ? context.expressionContexts?.[String(rowIndex)] : undefined;
+    if (transported !== undefined) Object.assign(expressionContext, restoreExpressionTransport(transported));
+    else expressionContext.$json = compiled.hasComputedSlices ? pickTypedJsonSource(input) : pickJsonSource(input);
     value = evaluateEditTemplate(compiled, expressionContext);
   } catch (error) {
     throw new EditFieldError(

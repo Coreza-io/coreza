@@ -200,7 +200,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         getPersistentValue: context?.getPersistentValue,
         setPersistentValue,
         $nodes: outputs,
-        helperOutputs: typedContext.nodeResults,
+        expressionOutputs: typedContext.nodeResults,
         $state: context?.persistentValues ?? {},
         nodes: typedContext.nodeIdentities,
       },

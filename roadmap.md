@@ -39,12 +39,12 @@
 - [ ] Verify hosted save/version/run round trips before rollout; retain guards/readers during rollback
 
 ## Typed suffix expressions and native reference drops
-- [x] Add typed-only `lastN(array,count)`, strict arguments, cumulative resource limits and bounded UTF-8 JSON publication
+- [x] Add typed-only computed slice bounds and nested bound expressions, strict arguments, cumulative resource limits and bounded UTF-8 JSON publication
 - [x] Share canonical identity/current-output snapshots and collect both operands through typed AST metadata; keep Run All graph driven
-- [x] Advertise authenticated versioned helper capability and guard session-aware frontend authoring/evaluation
+- [x] Remove the retired suffix helper, its capability advertisement, and repair UI; report saved helper calls without silently converting zero semantics
 - [x] Use tolerant lexical placement and shared LTR Chromium pointer geometry, mounted-control focus and transient field undo/redo
-- [x] Preserve raw typed values and simultaneously remap helper references during canonical identity/import operations
-- [x] Bound manual helper transport to evaluated reads, preserve skipped references, and retain rejected undo entries and row-owned source-map history
+- [x] Preserve raw typed values and simultaneously remap expression references during canonical identity/import operations
+- [x] Bound manual expression transport to evaluated reads, preserve skipped references, and retain rejected undo entries and row-owned source-map history
 - [ ] Calibrate provisional limits against actual manual/Run All/Loop/pin trading envelopes before hosted rollout
-- [ ] Synchronize standalone Coreza-io/coreza-backend and deploy evaluator/capability before frontend; retain compatible evaluation during rollback
+- [ ] Synchronize standalone Coreza-io/coreza-backend and deploy the computed-slice evaluator before frontend; retain compatible evaluation during rollback
 - [ ] Broaden browser acceptance to every owner, IME, edge autoscroll and platforms beyond standard LTR Chromium

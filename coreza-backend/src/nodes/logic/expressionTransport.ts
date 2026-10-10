@@ -1,4 +1,4 @@
-import { encodeHelperJson } from "./boundedJson";
+import { encodeExpressionJson } from "./boundedJson";
 import { evaluateEditTemplate, type CompiledEditTemplate } from "./editTemplate";
 import { ExpressionBudget, ExpressionError, type ExpressionContext } from "./safeExpression";
 
@@ -11,7 +11,7 @@ interface Packet {
 
 /** Capture only evaluated reads. Array lengths/indices and shared identity survive HTTP;
  * unread history slots never enter JSON.stringify or invoke their serializers. */
-export function prepareHelperTransport(compiled: CompiledEditTemplate, context: ExpressionContext): Packet {
+export function prepareExpressionTransport(compiled: CompiledEditTemplate, context: ExpressionContext): Packet {
   const reads = new WeakMap<object, Set<string>>();
   const proxies = new WeakMap<object, object>();
   const budget = new ExpressionBudget();
@@ -46,7 +46,7 @@ export function prepareHelperTransport(compiled: CompiledEditTemplate, context: 
     ...context,
     $json: wrap(context.$json),
     $nodes: wrap(context.$nodes) as ExpressionContext["$nodes"],
-    helperOutputs: wrap(context.helperOutputs) as ExpressionContext["helperOutputs"],
+    expressionOutputs: wrap(context.expressionOutputs) as ExpressionContext["expressionOutputs"],
   });
   const objects: Packet["objects"] = [], ids = new WeakMap<object, number>();
   const encode = (value: unknown): Value => {
@@ -54,7 +54,7 @@ export function prepareHelperTransport(compiled: CompiledEditTemplate, context: 
     if (value === undefined) return { undefined: true };
     if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0))) return { number: String(value === 0 ? "-0" : value) };
     if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value as Value;
-    if (typeof value !== "object") throw new ExpressionError("Unsupported helper transport value", 0, "serialization");
+    if (typeof value !== "object") throw new ExpressionError("Unsupported expression transport value", 0, "serialization");
     const cached = ids.get(value); if (cached !== undefined) return { ref: cached };
     const id = objects.length;
     budget.copy(1, 0); ids.set(value, id);
@@ -64,22 +64,22 @@ export function prepareHelperTransport(compiled: CompiledEditTemplate, context: 
       if (object.array && key === "length") continue;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor) continue;
-      if (!("value" in descriptor)) throw new ExpressionError("Accessor helper transport property", 0, "serialization", key);
+      if (!("value" in descriptor)) throw new ExpressionError("Accessor expression transport property", 0, "serialization", key);
       budget.copy(1, 0); object.entries.push([key, encode(descriptor.value)]);
     }
     return { ref: id };
   };
-  const packet: Packet = { roots: { json: encode(context.$json), nodes: encode(context.$nodes), outputs: encode(context.helperOutputs) }, objects };
-  encodeHelperJson(packet, budget);
+  const packet: Packet = { roots: { json: encode(context.$json), nodes: encode(context.$nodes), outputs: encode(context.expressionOutputs) }, objects };
+  encodeExpressionJson(packet, budget);
   return packet;
 }
 
 /** Treat the packet only as calculation input. Validate bounds before allocating,
  * then let the ordinary evaluator enforce references, arguments and output safety. */
-export function restoreHelperTransport(input: unknown): Pick<ExpressionContext, "$json" | "$nodes" | "helperOutputs"> {
+export function restoreExpressionTransport(input: unknown): Pick<ExpressionContext, "$json" | "$nodes" | "expressionOutputs"> {
   const budget = new ExpressionBudget();
-  encodeHelperJson(input, budget);
-  const fail = (): never => { throw new ExpressionError("Invalid helper transport context", 0, "serialization"); };
+  encodeExpressionJson(input, budget);
+  const fail = (): never => { throw new ExpressionError("Invalid expression transport context", 0, "serialization"); };
   const packet = input as Packet;
   if (!packet || !packet.roots || !Array.isArray(packet.objects)) return fail();
   budget.copy(packet.objects.length, 0);
@@ -118,5 +118,5 @@ export function restoreHelperTransport(input: unknown): Pick<ExpressionContext, 
   });
   const json = decode(packet.roots.json), nodes = decode(packet.roots.nodes), outputs = decode(packet.roots.outputs);
   if ((nodes !== undefined && (!nodes || typeof nodes !== "object" || Array.isArray(nodes))) || (outputs !== undefined && (!outputs || typeof outputs !== "object" || Array.isArray(outputs)))) return fail();
-  return { $json: json, $nodes: nodes as ExpressionContext["$nodes"], helperOutputs: outputs as ExpressionContext["helperOutputs"] };
+  return { $json: json, $nodes: nodes as ExpressionContext["$nodes"], expressionOutputs: outputs as ExpressionContext["expressionOutputs"] };
 }

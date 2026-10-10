@@ -182,12 +182,12 @@ router.post("/field", async (req, res) => {
         .json({ error: "expressionContext must be an object" });
     const nodeResults = expressionContext?.nodeResults;
     const nodeIdentities = expressionContext?.nodeIdentities;
-    const helperResults = expressionContext?.helperResults;
-    const helperContexts = expressionContext?.helperContexts;
-    if (helperContexts !== undefined && (!helperContexts || typeof helperContexts !== "object" || Array.isArray(helperContexts) || Object.keys(helperContexts).some(key => !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= fields.length)))
-      return res.status(400).json({ error: "expressionContext.helperContexts must contain valid row indexes" });
-    if (helperResults !== undefined && (!helperResults || typeof helperResults !== "object" || Array.isArray(helperResults)))
-      return res.status(400).json({ error: "expressionContext.helperResults must be an object" });
+    const expressionResults = expressionContext?.expressionResults;
+    const expressionContexts = expressionContext?.expressionContexts;
+    if (expressionContexts !== undefined && (!expressionContexts || typeof expressionContexts !== "object" || Array.isArray(expressionContexts) || Object.keys(expressionContexts).some(key => !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= fields.length)))
+      return res.status(400).json({ error: "expressionContext.expressionContexts must contain valid row indexes" });
+    if (expressionResults !== undefined && (!expressionResults || typeof expressionResults !== "object" || Array.isArray(expressionResults)))
+      return res.status(400).json({ error: "expressionContext.expressionResults must be an object" });
     if (
       nodeResults !== undefined &&
       (!nodeResults ||
@@ -232,8 +232,8 @@ router.post("/field", async (req, res) => {
       context: {
         persistent: !!persistent,
         $nodes: safeNodeResults,
-        helperOutputs: helperResults ? Object.fromEntries(Object.entries(helperResults)) : safeNodeResults,
-        helperContexts,
+        expressionOutputs: expressionResults ? Object.fromEntries(Object.entries(expressionResults)) : safeNodeResults,
+        expressionContexts,
         nodes: safeNodeIdentities,
       },
     });

@@ -21,6 +21,7 @@ export function referenceInsertionSpans(value: string): { spans: Span[]; templat
     spans.push({ kind: "delimiter", start: open, end: open + 2 });
     let i = open + 2, codeStart = i;
     const brackets: string[] = [];
+    const nestedTemplates: number[] = [];
     let closed = false;
     for (; i < value.length;) {
       const char = value[i];
@@ -34,6 +35,17 @@ export function referenceInsertionSpans(value: string): { spans: Span[]; templat
         }
         spans.push({ kind: quoteClosed ? "string" : "ambiguous", start, end: i });
         codeStart = quoteClosed ? i : value.length + 1; continue;
+      }
+      if (value.startsWith("{{", i) && brackets.length > 0) {
+        if (i > codeStart) spans.push({ kind: "code", start: codeStart, end: i });
+        spans.push({ kind: "delimiter", start: i, end: i + 2 });
+        nestedTemplates.push(i); i += 2; codeStart = i; continue;
+      }
+      if (value.startsWith("}}", i) && nestedTemplates.length > 0) {
+        spans.push({ kind: "code", start: codeStart, end: i });
+        spans.push({ kind: "delimiter", start: i, end: i + 2 });
+        templates.push({ start: nestedTemplates.pop()!, end: i + 2 });
+        i += 2; codeStart = i; continue;
       }
       if (char === "}" && value[i + 1] === "}" && brackets.length === 0) {
         spans.push({ kind: "code", start: codeStart, end: i });

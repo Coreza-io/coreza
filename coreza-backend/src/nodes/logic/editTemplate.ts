@@ -1,5 +1,5 @@
 import { compileExpression, ExpressionError, ExpressionBudget } from "./safeExpression";
-import { encodeHelperJson } from "./boundedJson";
+import { encodeExpressionJson } from "./boundedJson";
 import type { ExpressionFeatures, CompiledExpression, ExpressionContext } from "./safeExpression";
 
 const MAX_SOURCE = 8192;
@@ -18,7 +18,7 @@ export type EditTemplateSegment =
     };
 
 export interface CompiledEditTemplate {
-  readonly hasHelpers: boolean;
+  readonly hasComputedSlices: boolean;
   readonly source: string;
   readonly segments: readonly EditTemplateSegment[];
   readonly nodeReferences: readonly string[];
@@ -27,7 +27,7 @@ export interface CompiledEditTemplate {
 const cache = new Map<string, CompiledEditTemplate>();
 
 export function compileEditTemplate(source: string, features: ExpressionFeatures = {}): CompiledEditTemplate {
-  const cacheKey = `${features.lastN === true ? "typed-lastN:" : "base:"}${source}`;
+  const cacheKey = `${features.computedSlices === true ? "typed-slices:" : "base:"}${source}`;
   const cached = cache.get(cacheKey);
   if (cached) return cached;
   if (source.length > MAX_SOURCE)
@@ -57,6 +57,7 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
     let quote: "'" | '"' | null = null;
     let escaped = false;
     let brackets = 0;
+    let nestedTemplates = 0;
     for (; i < source.length; i++) {
       const char = source[i];
       if (quote) {
@@ -81,9 +82,16 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
           throw new ExpressionError("Unexpected closing bracket", i);
         continue;
       }
-      if (char === "{" && source[i + 1] === "{")
-        throw new ExpressionError("Nested template delimiter", i);
-      if (char === "}" && source[i + 1] === "}" && brackets === 0) break;
+      if (char === "{" && source[i + 1] === "{") {
+        if (!features.computedSlices || brackets === 0)
+          throw new ExpressionError("Nested template delimiter", i);
+        if (++nestedTemplates > 32) throw new ExpressionError("Template nesting limit exceeded", i);
+        i++; continue;
+      }
+      if (char === "}" && source[i + 1] === "}") {
+        if (nestedTemplates > 0) { nestedTemplates--; i++; continue; }
+        if (brackets === 0) break;
+      }
     }
     if (i >= source.length)
       throw new ExpressionError("Unclosed template delimiter", open);
@@ -128,7 +136,7 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
         nodeReferences.add(name);
   const compiled = Object.freeze({
     source,
-    hasHelpers: segments.some(segment => segment.kind === "code" && segment.expression.hasHelpers),
+    hasComputedSlices: segments.some(segment => segment.kind === "code" && segment.expression.hasComputedSlices),
     segments: Object.freeze(segments),
     nodeReferences: Object.freeze([...nodeReferences]),
   });
@@ -175,10 +183,10 @@ export function evaluateEditTemplate(
   compiled: CompiledEditTemplate,
   context: ExpressionContext,
 ): unknown {
-  const budget = compiled.hasHelpers ? new ExpressionBudget() : undefined;
+  const budget = compiled.hasComputedSlices ? new ExpressionBudget() : undefined;
   if (compiled.segments.length === 1 && compiled.segments[0].kind === "code") {
     const value = evaluateSegment(compiled.segments[0], context, budget);
-    if (budget) encodeHelperJson(value, budget, compiled.segments[0].expressionStart);
+    if (budget) encodeExpressionJson(value, budget, compiled.segments[0].expressionStart);
     return value;
   }
   let result = "";
@@ -188,11 +196,11 @@ export function evaluateEditTemplate(
     else {
       const value = evaluateSegment(segment, context, budget);
       if (budget) {
-        const json = encodeHelperJson(value, budget, segment.expressionStart);
+        const json = encodeExpressionJson(value, budget, segment.expressionStart);
         rendered = value === null ? "" : typeof value === "string" ? value : json;
       } else rendered = render(value, segment.start + 2);
     }
-    if (budget) encodeHelperJson(result + rendered, budget, segment.end);
+    if (budget) encodeExpressionJson(result + rendered, budget, segment.end);
     result += rendered;
     if (result.length > MAX_RENDERED)
       throw new ExpressionError("Rendered output limit exceeded", segment.end);

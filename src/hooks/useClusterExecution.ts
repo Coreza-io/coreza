@@ -59,20 +59,20 @@ function mainEdges(edges: readonly Edge[], nodeById: ReadonlyMap<string, Node>):
 
 const NODE_REFERENCE = /(?:\$node\s*\[\s*["']([^"']+)["']\s*\]|\$\(\s*["']([^"']+)["']\s*\))/g;
 
-function collectReferences(value: unknown, references: Set<string>, typedRows = false, helperReferences = new Set<string>()): void {
+function collectReferences(value: unknown, references: Set<string>, typedRows = false, computedReferences = new Set<string>()): void {
   if (typedRows && isTypedEditFieldRow(value)) {
     if (value.valueMode === "expression") {
       const compiled = compileEditTemplate(String(value.value ?? ""), TYPED_EXPRESSION_FEATURES);
-      for (const name of compiled.nodeReferences) (compiled.hasHelpers ? helperReferences : references).add(name);
+      for (const name of compiled.nodeReferences) (compiled.hasComputedSlices ? computedReferences : references).add(name);
     }
     return;
   }
   if (typeof value === "string") {
     for (const match of value.matchAll(NODE_REFERENCE)) references.add(match[1] ?? match[2]);
   } else if (Array.isArray(value)) {
-    value.forEach((item) => collectReferences(item, references, typedRows, helperReferences));
+    value.forEach((item) => collectReferences(item, references, typedRows, computedReferences));
   } else if (value && typeof value === "object") {
-    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => collectReferences(item, references, typedRows && key === "fields", helperReferences));
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => collectReferences(item, references, typedRows && key === "fields", computedReferences));
   }
 }
 
@@ -116,10 +116,10 @@ export function buildClusterExecutionPlan(
   }
   for (const id of executable) {
     const references = new Set<string>();
-    const helperReferences = new Set<string>();
+    const computedReferences = new Set<string>();
     const node = nodeById.get(id);
-    collectReferences(node?.data?.values, references, (node?.data?.definition as NodeConfig)?.name === "Edit Fields", helperReferences);
-    for (const reference of new Set([...references, ...helperReferences])) {
+    collectReferences(node?.data?.values, references, (node?.data?.definition as NodeConfig)?.name === "Edit Fields", computedReferences);
+    for (const reference of new Set([...references, ...computedReferences])) {
       let referencedId: string | undefined;
       try { referencedId = resolveNodeIdentity(reference, nodes)?.id; }
       catch (error) {

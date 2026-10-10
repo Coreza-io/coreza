@@ -16,8 +16,8 @@ const node = (id: string, values: Record<string, unknown> = {}): Node => ({
 
 describe("manual cluster execution", () => {
   const clusterId = "00000000-0000-4000-8000-000000000001";
-  it("defers ambiguous helper aliases to evaluated action subtrees", () => {
-    const edit = node("edit", { fields: [{fieldName:"flag",dataType:"boolean",valueMode:"expression",value:'{{ false && lastN($("same").json.items, 1) }}'}] });
+  it("defers ambiguous expression aliases to evaluated action subtrees", () => {
+    const edit = node("edit", { fields: [{fieldName:"flag",dataType:"boolean",valueMode:"expression",value:'{{ false && ($("same").json.items)[-(1 + 0):] }}'}] });
     edit.data.definition = { name:"Edit Fields",node_type:"action",manualExecution:"available" };
     const a = node("a"), b = node("b");
     a.data.displayName = "same"; b.data.displayName = "same";
@@ -398,9 +398,9 @@ it("executes a parent once under one lock and derives child progress without sta
   unregister.forEach((remove) => remove());
 });
 
-test("typed lastN dependencies order both operands and ignore fixed/quoted selector text", () => {
+test("computed slice dependencies order both operands and ignore fixed/quoted selector text", () => {
   const edit = node("edit", { fields: [
-    { fieldName: "tail", valueMode: "expression", dataType: "array", value: '{{ lastN($("history").json.items, $("count").json.value) }}' },
+    { fieldName: "tail", valueMode: "expression", dataType: "array", value: '{{ ($("history").json.items)[-($("count").json.value + 0):] }}' },
     { fieldName: "fixed", valueMode: "fixed", dataType: "string", value: '{{ $("edit").json }}' },
     { fieldName: "quoted", valueMode: "expression", dataType: "string", value: `{{ "$('edit').json" }}` },
   ] });

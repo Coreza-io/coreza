@@ -1,8 +1,5 @@
-import { previewNestedSliceRepair } from "@/utils/editFieldSliceRepair";
-import { referenceInsertionSpans } from "@/utils/editFieldReferenceDrop";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
-import { useSafeExpressionHelpers } from "@/hooks/useSafeExpressionHelpers";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -81,7 +78,7 @@ interface EditFieldEditorProps {
   getExpressionContext: () => {
     input: unknown;
     nodes: Record<string, unknown>;
-    helperOutputs: Record<string, unknown>;
+    expressionOutputs: Record<string, unknown>;
     definitions: ReferenceNode[];
     hasInput: boolean;
   };
@@ -89,7 +86,7 @@ interface EditFieldEditorProps {
   canRemove: boolean;
 }
 
-const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
+export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   row,
   index,
   disabled,
@@ -100,7 +97,6 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   makeReference,
   canRemove,
 }) => {
-  const helpersSupported = useSafeExpressionHelpers();
   const value = String(row.value ?? "");
   const expression = row.valueMode === "expression";
   const [preview, setPreview] = useState<{
@@ -128,11 +124,10 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
           ? row.dataType
           : "string";
         const compiled = compileEditTemplate(value, TYPED_EXPRESSION_FEATURES);
-        if (compiled.hasHelpers && !helpersSupported) throw new Error("This server has not advertised typed lastN support.");
         const result = evaluateEditTemplate(compiled, {
-          $json: compiled.hasHelpers ? pickTypedJsonSource(context.input) : pickJsonSource(context.input),
+          $json: compiled.hasComputedSlices ? pickTypedJsonSource(context.input) : pickJsonSource(context.input),
           $nodes: context.nodes,
-          helperOutputs: context.helperOutputs,
+          expressionOutputs: context.expressionOutputs,
           nodes: context.definitions,
         });
         const rendered =
@@ -166,12 +161,11 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [expression, getExpressionContext, row.dataType, row.fieldName, value, helpersSupported]);
+  }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
   const [dropError, setDropError] = useState<string>();
   const referenceDrop = useReferenceTextDrop({
     value, meta: row.valueMode,
     onChange: value => {
-      if (expression && !helpersSupported && referenceInsertionSpans(value).spans.some(span => span.kind === "code" && /\blastN\s*\(/.test(value.slice(span.start, span.end)))) { setDropError("This server has not advertised typed lastN support."); return false; }
       setDropError(undefined); return update(index, "value", value);
     },
     onRestore: (value, mode) => updateMany(index, { value, valueMode: mode }),
@@ -196,7 +190,6 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       document.body.classList.remove("cursor-grabbing", "select-none");
     }
   };
-  const sliceRepair = expression && helpersSupported ? previewNestedSliceRepair(value) : null;
   const editorClass =
     "nodrag w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
   return (
@@ -258,9 +251,6 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               key={mode}
               disabled={disabled}
               onClick={() => {
-                if (mode === "expression" && !helpersSupported && referenceInsertionSpans(value).spans.some(span => span.kind === "code" && /\blastN\s*\(/.test(value.slice(span.start, span.end)))) {
-                  setDropError("This server has not advertised typed lastN support."); return;
-                }
                 update(index, "valueMode", mode);
               }}
               className={`rounded px-2 py-1 text-xs ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
@@ -347,10 +337,6 @@ const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               {preview.evaluationError}
             </pre>
           )}
-          {sliceRepair && <div className="mt-2">
-            <p>Suggested suffix repair:</p><pre className="whitespace-pre-wrap">{sliceRepair}</pre>
-            <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => update(index, "value", sliceRepair)}>Apply lastN repair</Button>
-          </div>}
           {!hasInput && (
             <p className="text-muted-foreground">
               Execute previous nodes to use input data
@@ -861,7 +847,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     return {
       input,
       nodes: allNodeData,
-      helperOutputs: snapshot.nodeResults,
+      expressionOutputs: snapshot.nodeResults,
       definitions: snapshot.nodeIdentities,
       hasInput: input !== undefined,
     };

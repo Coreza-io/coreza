@@ -1,4 +1,4 @@
-import { encodeHelperJson } from "./boundedJson";
+import { encodeExpressionJson } from "./boundedJson";
 import { pickTypedJsonSource } from "./typedExpressionContext";
 import {
   pickJsonSource,
@@ -10,28 +10,27 @@ import type { ReferenceNode } from "../../utils/referenceResolution";
 export interface ExpressionContext {
   $json: unknown;
   $nodes?: Record<string, unknown>;
-  helperOutputs?: Record<string, unknown>;
+  expressionOutputs?: Record<string, unknown>;
   $state?: Record<string, unknown>;
   nodes?: ReferenceNode[];
 }
 
 export interface ExpressionFeatures {
-  readonly lastN?: boolean;
+  readonly computedSlices?: boolean;
 }
-export const TYPED_EXPRESSION_FEATURES = Object.freeze({ lastN: true });
-export const LAST_N_CAPABILITY = Object.freeze({ contract_version: 1, scope: "typed-edit-fields-v2" });
+export const TYPED_EXPRESSION_FEATURES = Object.freeze({ computedSlices: true });
 
 // Provisional, centrally defined limits. Counters belong to one evaluation, never the cache.
-export const HELPER_LIMITS = Object.freeze({ copiedElements: 100_000, workSteps: 1_000_000, outputBytes: 256 * 1024, depth: 32 });
+export const EXPRESSION_LIMITS = Object.freeze({ copiedElements: 100_000, workSteps: 1_000_000, outputBytes: 256 * 1024, depth: 32 });
 export class ExpressionBudget {
   private copied = 0;
   private work = 0;
   step(position: number, count = 1): void {
-    if ((this.work += count) > HELPER_LIMITS.workSteps)
+    if ((this.work += count) > EXPRESSION_LIMITS.workSteps)
       throw new ExpressionError("Expression work limit exceeded", position, "resource");
   }
   copy(count: number, position: number): void {
-    if ((this.copied += count) > HELPER_LIMITS.copiedElements)
+    if ((this.copied += count) > EXPRESSION_LIMITS.copiedElements)
       throw new ExpressionError("Expression allocation limit exceeded", position, "resource");
     this.step(position, count);
   }
@@ -41,7 +40,7 @@ export interface CompiledExpression {
   readonly source: string;
   readonly nodeReferences: readonly string[];
   readonly features: Readonly<ExpressionFeatures>;
-  readonly hasHelpers: boolean;
+  readonly hasComputedSlices: boolean;
   evaluate(context: ExpressionContext, budget?: ExpressionBudget): unknown;
 }
 
@@ -71,7 +70,6 @@ interface Token {
   position: number;
 }
 type Ast =
-  | { kind: "lastN"; source: Ast; count: Ast; position: number }
   | { kind: "literal"; value: unknown; position: number }
   | { kind: "array"; elements: Ast[]; position: number }
   | { kind: "root"; name: "$json" | "$nodes" | "$state"; position: number }
@@ -87,8 +85,9 @@ type Ast =
   | {
       kind: "slice";
       object: Ast;
-      start?: number;
-      end?: number;
+      start?: Ast;
+      end?: Ast;
+      computed: boolean;
       position: number;
       memberDepth: number;
     }
@@ -230,6 +229,10 @@ function tokenize(source: string): Token[] {
       i += op.length;
       continue;
     }
+    if (source.startsWith("{{", i) || source.startsWith("}}", i)) {
+      tokens.push({ kind: "punctuation", value: source.slice(i, i + 2), position: i }); i += 2;
+      continue;
+    }
     if (".[]():,".includes(c)) {
       tokens.push({ kind: "punctuation", value: c, position: i++ });
       continue;
@@ -240,9 +243,16 @@ function tokenize(source: string): Token[] {
   return tokens;
 }
 
+function literalSliceBound(node: Ast): number | undefined {
+  if (node.kind === "literal" && typeof node.value === "number") return node.value;
+  if (node.kind === "unary" && node.operator === "-" && node.value.kind === "literal" && typeof node.value.value === "number") return -node.value.value;
+  return undefined;
+}
+
 class Parser {
   private index = 0;
   private nodes = 0;
+  private boundDepth = 0;
   constructor(private readonly tokens: Token[], private readonly features: ExpressionFeatures) {}
   parse(): Ast {
     const result = this.expression(0, 1);
@@ -310,6 +320,10 @@ class Parser {
         },
         depth,
       );
+    } else if (token.value === "{{" && this.features.computedSlices && this.boundDepth > 0) {
+      this.take();
+      result = this.expression(0, depth + 1);
+      this.take("}}");
     } else if (token.value === "(") {
       this.take();
       result = this.expression(0, depth + 1);
@@ -414,14 +428,8 @@ class Parser {
         { kind: "root", name: token.value, position: token.position },
         depth,
       );
-    if (token.value === "lastN" && this.peek().value === "(" && this.features.lastN) {
-      this.take("(");
-      const source = this.expression(0, depth + 1);
-      this.take(",");
-      const count = this.expression(0, depth + 1);
-      this.take(")");
-      return this.make({ kind: "lastN", source, count, position: token.position }, depth);
-    }
+    if (token.value === "lastN" && this.peek().value === "(")
+      throw new ExpressionError("lastN has been removed; use array[-count:] (zero selects the whole array)", token.position);
     if (token.value === "$") {
       this.take("(");
       const name = this.take();
@@ -474,77 +482,39 @@ class Parser {
         position = token.position;
       } else {
         const slicePosition = opener.position;
-        const readInteger = (): number | undefined => {
-          let sign = 1;
-          if (this.peek().value === "-") {
-            if (this.tokens[this.index + 1]?.kind !== "number")
-              return undefined;
-            this.take();
-            sign = -1;
-          }
-          const part = this.peek();
-          if (part.kind !== "number") return undefined;
-          if (!/^\d+$/.test(part.value))
-            throw new ExpressionError(
-              "Array index must be an integer",
-              part.position,
-            );
-          this.take();
-          return sign * Number(part.value);
+        const boundTokenStart = this.index;
+        const readBound = (): Ast | undefined => {
+          if ([":", "]"].includes(this.peek().value)) return undefined;
+          this.boundDepth++;
+          try { return this.expression(0, depth + memberDepth + 1); }
+          finally { this.boundDepth--; }
         };
-        const first = readInteger();
+        const first = readBound();
         if (this.peek().value === ":") {
           this.take();
-          const end = readInteger();
+          const end = readBound();
           this.take("]");
+          const computed = this.tokens.slice(boundTokenStart, this.index).some(token => token.value === "{{")
+            || [first, end].some(bound => bound !== undefined && literalSliceBound(bound) === undefined);
+          if (computed && !this.features.computedSlices)
+            throw new ExpressionError("Computed slice bounds require a typed Edit Fields expression", slicePosition);
+          for (const bound of [first, end]) {
+            const number = bound && literalSliceBound(bound);
+            if (number !== undefined && !Number.isInteger(number))
+              throw new ExpressionError("Array index must be an integer", bound!.position);
+          }
           if (++memberDepth > MAX_MEMBERS)
-            throw new ExpressionError(
-              "Member-access depth limit exceeded",
-              slicePosition,
-            );
-          result = this.make(
-            {
-              kind: "slice",
-              object: result,
-              start: first,
-              end,
-              position: slicePosition,
-              memberDepth,
-            },
-            depth + memberDepth - 1,
-          );
+            throw new ExpressionError("Member-access depth limit exceeded", slicePosition);
+          result = this.make({ kind: "slice", object: result, start: first, end, computed, position: slicePosition, memberDepth }, depth + memberDepth - 1);
           continue;
         }
-        let negative = false;
-        const token =
-          first !== undefined
-            ? {
-                kind: "number" as const,
-                value: String(Math.abs(first)),
-                position: slicePosition,
-              }
-            : this.take();
-        negative = first !== undefined && first < 0;
-        if (token.kind !== "string" && token.kind !== "number")
-          throw new ExpressionError(
-            "Bracket access requires a string or integer literal",
-            token.position,
-          );
-        if (negative && token.kind !== "number")
-          throw new ExpressionError(
-            "Array index must be an integer",
-            token.position,
-          );
-        if (token.kind === "number" && !/^\d+$/.test(token.value))
-          throw new ExpressionError(
-            "Array index must be an integer",
-            token.position,
-          );
-        key =
-          token.kind === "number"
-            ? Number(token.value) * (negative ? -1 : 1)
-            : token.value;
-        position = token.position;
+        const number = first && literalSliceBound(first);
+        if (this.tokens.slice(boundTokenStart, this.index).some(token => token.value === "{{"))
+          throw new ExpressionError("Nested expressions are only supported in slice bounds", slicePosition);
+        if (first?.kind === "literal" && typeof first.value === "string") key = first.value;
+        else if (number !== undefined && Number.isInteger(number)) key = number;
+        else throw new ExpressionError("Bracket access requires a string or integer literal", first?.position ?? slicePosition);
+        position = first!.position;
         this.take("]");
       }
       if (BLOCKED_MEMBERS.has(String(key)))
@@ -557,7 +527,7 @@ class Parser {
       result = this.make(
         {
           kind:
-            result.kind === "slice" || result.kind === "projection"
+            (result.kind === "slice" && !result.computed) || result.kind === "projection"
               ? "projection"
               : "member",
           object: result,
@@ -585,26 +555,6 @@ function lookupNode(name: string, context: ExpressionContext): unknown {
 
 function evaluate(node: Ast, context: ExpressionContext, budget?: ExpressionBudget, strict = false): unknown {
   budget?.step(node.position);
-  if (node.kind === "lastN") {
-    const argument = (operand: Ast, index: number) => {
-      try { return evaluate(operand, context, budget, true); }
-      catch (error) {
-        if (error instanceof ExpressionError && error.argument === undefined)
-          throw new ExpressionError(error.message.replace(/ at position \d+$/, ""), error.position, error.phase, error.path, index);
-        throw error;
-      }
-    };
-    const source = argument(node.source, 1);
-    const count = argument(node.count, 2);
-    if (!Array.isArray(source))
-      throw new ExpressionError("lastN source must be an array", node.source.position, "argument", undefined, 1);
-    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
-      throw new ExpressionError("lastN count must be a finite nonnegative safe integer number", node.count.position, "argument", undefined, 2);
-    const size = Math.min(count, source.length);
-    const suffix = copyArray(source, source.length - size, size, node.position, budget);
-    encodeHelperJson(suffix, budget ?? new ExpressionBudget(), node.position);
-    return suffix;
-  }
   if (node.kind === "literal") return node.value;
   if (node.kind === "array") {
     budget?.copy(node.elements.length, node.position);
@@ -620,26 +570,47 @@ function evaluate(node: Ast, context: ExpressionContext, budget?: ExpressionBudg
       return undefined;
     return readMember(input, node.name, strict, node.position);
   }
-  if (node.kind === "root") return strict && node.name === "$nodes" ? context.helperOutputs ?? context.$nodes : context[node.name];
+  if (node.kind === "root") return strict && node.name === "$nodes" ? context.expressionOutputs ?? context.$nodes : context[node.name];
   if (node.kind === "node") {
     if (!strict) return lookupNode(node.name, context);
     let identity;
     try { identity = resolveNodeIdentity(node.name, context.nodes ?? []); }
     catch (error) { throw new ExpressionError(error instanceof Error ? error.message : String(error), node.position, "reference"); }
     if (!identity) throw new ExpressionError(`Missing node identity "${node.name}"`, node.position, "reference");
-    const outputs = context.helperOutputs ?? context.$nodes ?? {};
+    const outputs = context.expressionOutputs ?? context.$nodes ?? {};
     if (!Object.prototype.hasOwnProperty.call(outputs, identity.id) || readOwnData(outputs, identity.id, node.position) === undefined)
       throw new ExpressionError(`Output unavailable for node "${identity.id}"`, node.position, "reference");
     try { return pickTypedJsonSource(readOwnData(outputs, identity.id, node.position)); }
     catch (error) { if (error instanceof ExpressionError) throw error; throw new ExpressionError(error instanceof Error ? error.message : String(error), node.position, "serialization"); }
   }
   if (node.kind === "slice") {
-    const value = evaluate(node.object, context, budget, strict);
-    if (!Array.isArray(value)) return undefined;
-    if (!budget) return value.slice(node.start, node.end);
+    const operand = (ast: Ast, argument: number): unknown => {
+      try { return evaluate(ast, context, budget, strict || node.computed); }
+      catch (error) {
+        if (error instanceof ExpressionError && error.argument === undefined)
+          throw new ExpressionError(error.message.replace(/ at position \d+$/, ""), error.position, error.phase, error.path, argument);
+        throw error;
+      }
+    };
+    const value = operand(node.object, 1);
+    const readBound = (ast: Ast | undefined, argument: number): number | undefined => {
+      if (!ast) return undefined;
+      const bound = operand(ast, argument);
+      if (typeof bound !== "number" || ((node.computed || strict) && !Number.isSafeInteger(bound)))
+        throw new ExpressionError("Slice bound must be a finite safe integer number", ast.position, "argument", undefined, argument);
+      return bound;
+    };
+    const first = readBound(node.start, 2), last = readBound(node.end, 3);
+    if (!Array.isArray(value)) {
+      if (node.computed) throw new ExpressionError("Slice source must be an array", node.object.position, "argument", undefined, 1);
+      return undefined;
+    }
+    if (!budget) return value.slice(first, last);
     const bound = (n: number | undefined, fallback: number) => n === undefined ? fallback : n < 0 ? Math.max(value.length + n, 0) : Math.min(n, value.length);
-    const start = bound(node.start, 0), end = bound(node.end, value.length);
-    return copyArray(value, start, Math.max(end - start, 0), node.position, budget);
+    const start = bound(first, 0), end = bound(last, value.length);
+    const selected = copyArray(value, start, Math.max(end - start, 0), node.position, budget);
+    if (node.computed) encodeExpressionJson(selected, budget, node.position);
+    return selected;
   }
   if (node.kind === "member" || node.kind === "projection") {
     const object = evaluate(node.object, context, budget, strict);
@@ -729,7 +700,7 @@ function evaluate(node: Ast, context: ExpressionContext, budget?: ExpressionBudg
     typeof right === "string"
   )
     {
-      if (budget && left.length + right.length > HELPER_LIMITS.outputBytes)
+      if (budget && left.length + right.length > EXPRESSION_LIMITS.outputBytes)
         throw new ExpressionError("Expression string limit exceeded", node.position, "resource");
       return left + right;
     }
@@ -804,18 +775,20 @@ export function compileExpression(text: string, options: ExpressionFeatures = {}
     throw new ExpressionError("Input length limit exceeded", MAX_INPUT);
   const source = text.trim();
   if (!source) throw new ExpressionError("Expression is empty", 0);
-  const features = Object.freeze({ lastN: options.lastN === true });
+  const features = Object.freeze({ computedSlices: options.computedSlices === true });
   const ast = new Parser(tokenize(source), features).parse();
-  let hasHelpers = false;
+  let hasComputedSlices = false;
   const nodeReferences = new Set<string>();
   const visit = (node: Ast): void => {
     if (node.kind === "node") nodeReferences.add(node.name);
     if (node.kind === "member" && node.object.kind === "root" && node.object.name === "$nodes") nodeReferences.add(String(node.key));
-    if (node.kind === "lastN") { hasHelpers = true; visit(node.source); visit(node.count); }
+    if (node.kind === "slice") {
+      hasComputedSlices ||= node.computed; visit(node.object);
+      if (node.start) visit(node.start); if (node.end) visit(node.end);
+    }
     else if (node.kind === "array") node.elements.forEach(visit);
     else if (
       node.kind === "member" ||
-      node.kind === "slice" ||
       node.kind === "projection"
     )
       visit(node.object);
@@ -830,7 +803,7 @@ export function compileExpression(text: string, options: ExpressionFeatures = {}
     source,
     nodeReferences: Object.freeze([...nodeReferences]),
     features,
-    hasHelpers,
-    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasHelpers ? new ExpressionBudget() : undefined)),
+    hasComputedSlices,
+    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasComputedSlices ? new ExpressionBudget() : undefined)),
   });
 }

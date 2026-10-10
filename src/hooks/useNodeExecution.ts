@@ -1,7 +1,6 @@
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
-import { prepareHelperTransport } from "../../coreza-backend/src/nodes/logic/helperTransport";
-import { useSafeExpressionHelpers } from "@/hooks/useSafeExpressionHelpers";
+import { prepareExpressionTransport } from "../../coreza-backend/src/nodes/logic/expressionTransport";
 import { resolveNodeIdentity } from "@/utils/referenceResolution";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -90,7 +89,6 @@ export function useNodeExecution({
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
   const { getNodes, getEdges, updateNodeData } = useStableNodes();
-  const helpersSupported = useSafeExpressionHelpers();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
   const notifyExecutionStoreUpdate = useExecutionStoreNotify();
@@ -218,14 +216,13 @@ export function useNodeExecution({
         payload.data = selectedInputData;
         const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
         const referencedNodes = new Set<string>();
-        const helperContexts: Record<string, unknown> = {};
+        const expressionContexts: Record<string, unknown> = {};
         for (const [rowIndex, row] of (Array.isArray(payload.fields) ? payload.fields : []).entries()) {
           if (!isTypedEditFieldRow(row) || row.valueMode !== "expression") continue;
           const compiled = compileEditTemplate(String(row.value ?? ""), TYPED_EXPRESSION_FEATURES);
-          if (compiled.hasHelpers) {
-            if (!helpersSupported) throw new Error("This server has not advertised typed lastN support.");
+          if (compiled.hasComputedSlices) {
             // Validate evaluated arguments and selected contents before HTTP JSON can erase undefined/sparse values.
-            helperContexts[String(rowIndex)] = prepareHelperTransport(compiled, { $json: pickTypedJsonSource(selectedInputData), $nodes: allNodeData, helperOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities });
+            expressionContexts[String(rowIndex)] = prepareExpressionTransport(compiled, { $json: pickTypedJsonSource(selectedInputData), $nodes: allNodeData, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities });
             continue;
           }
           for (const name of compiled.nodeReferences) {
@@ -235,7 +232,7 @@ export function useNodeExecution({
         }
         payload.expressionContext = {
           nodeResults: Object.fromEntries(Object.entries(allNodeData).filter(([id]) => referencedNodes.has(id))),
-          helperContexts,
+          expressionContexts,
           nodeIdentities: snapshot.nodeIdentities,
         };
       }
@@ -362,7 +359,7 @@ export function useNodeExecution({
         ...payload,
       };
     },
-    [helpersSupported,
+    [
       definition,
       executionStore,
       resolveDeep,

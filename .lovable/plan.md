@@ -10,7 +10,7 @@ Select Expression + Array and use:
 {{ lastN($("get_atr_history").json.data.value, $("short_len").json.data) }}
 ```
 
-The paths above depend on actual output envelopes; they are not an instruction to unwrap every `data` property. This plan excludes test cases/testing sections, as previously requested. No application changes or deployments are authorized by plan authoring.
+The paths above depend on actual output envelopes; they are not an instruction to unwrap every `data` property. The attachment's acceptance requirements are retained because this request asks for complete coverage. No application changes or deployments are authorized by plan authoring.
 
 ## Confirmed review and corrections
 
@@ -121,6 +121,38 @@ Add proposed `textControlCaret.ts` and `useReferenceTextDrop.ts`; extend the exi
 7. Manually copy backend changes to `coreza-io/coreza-backend`; deploy evaluator/readers/capability before enabling dependent frontend authoring. Establish actual envelopes, calibrated limits and deployed capability before release, not from source presence alone.
 8. Rollback disables new helper authoring while retaining saved-text readers and compatible evaluation, or explicitly refuses unsupported runs. Never reinterpret helper text through legacy fallback.
 9. During implementation record scoped architecture decisions in AGENTS.md and requested work/blockers in roadmap.md; plan mode changes neither file.
+
+## 9. Acceptance criteria and release evidence
+
+These are future verification requirements, not reported passes. Extend existing safeExpression, editTemplate, editFieldsV2, editFieldsRoute, editFieldsParameterResolution, editFieldReferenceDrop, referencePath and legacy resolveReferences-parity suites. Add real Chromium coverage using actual canonical owner callbacks; jsdom cannot establish pointer geometry or field history.
+
+### Language, native values and safety
+- Preserve rejection of the submitted nested slice, dynamic bounds, .slice and step syntax. Verify positional diagnostics without partial success; avoid hardcoding an offset across different source strings.
+- Verify lastN counts 0/-0/1/2/equal/oversized, empty sources, fresh shallow copies and unchanged inputs. Reject every negative/fractional/string/boolean/null/undefined/non-finite/unsafe count, and non-array source, including invalid combinations with zero count or empty arrays.
+- Distinguish missing identity, unavailable result, ambiguous alias and missing source/count paths. Confirm strict behavior stays inside evaluated helper subtrees and does not change unrelated missing-value reads or short-circuiting.
+- Reject wrong arity, unknown/computed functions, callbacks, dynamic selectors, forbidden prototype keys and host access. Verify bare input identifier lastN and post-helper member/index semantics.
+- Preserve existing literal [-5:]/[-0:], pure false/0/empty string/native types, Array destination versus interpolated string, comparisons versus adjacent template text, whitespace, safe null/undefined interpolation and legacy differences.
+- Verify quoted braces/escaped keys cause neither false delimiters nor dependencies. Check new-helper undefined properties/slots, sparse arrays, non-JSON values and cycles fail with paths while legacy omission/null serialization remains unchanged.
+- Check exact approved resource thresholds and overflow, nested/repeated cumulative work, upstream slice/projection allocation, traversal depth, multibyte UTF-8 and JSON escape expansion. No truncation, per-call reset or unbounded pre-check encoding.
+
+### Execution, dependencies and persistence
+- Compare preview, authenticated manual route, Run All, optimized/fallback params and Cluster Execute against matching canonical/result snapshots; separately record seed/wrapper differences.
+- Verify both operand dependencies, deduplication, quoted/fixed-row exclusion, static-row metadata and mixed typed/generic slots; exact IDs win and ambiguous aliases fail.
+- Cover execution-store pins, absent outputs and static-only data without invented fallback or recursive envelope unwrapping. Capture actual history/count/manual/Run All/Loop/pin envelopes before adapter sign-off.
+- Verify Run All does not schedule references without edges; parent/child cluster scopes order only eligible internal actions, preserve Loop feedback/latest results and never execute external references or recurse into child runs.
+- Preserve original input across two typed rows. Verify errors, cancellation and changed sessions cannot publish stale/partial success or duplicate notifications.
+- Round-trip raw helper text through save/reload/export/import/version/history/run snapshots and fresh-ID reference remapping. Phase A adds no generic marker; unknown helper capability/rollback refuses unsupported semantics without legacy fallback. Generic legacy date/null/string/escape behavior remains unchanged.
+
+### Drag, focus and history
+- Cover empty/start/middle/end, selection inside/outside/at end, inactive/stale ranges and keyboard insertion. Verify latest-value repeated drops and caret collapsed after exactly one transaction.
+- Cover raw safe-code versus wrapped text, exact whole-template selection, partial delimiter/quote crossings, code strings, escaped braces, full unclosed opening, malformed slice and lone/half delimiters. Ambiguous cases reject without mutation; generic fields never silently switch language.
+- Cover hard/soft wrapping, proportional fonts, tabs, trailing newline, horizontal/vertical scroll, resize, browser zoom, React Flow zoom and autoscroll. Emoji/combining sequences must not split; do not claim unsupported RTL/browser targets.
+- Verify focus/select-all suppression, mounted input-to-textarea restoration, scroll retention, typing/paste/composition then drop then undo/redo, source-map/mode restoration and no canvas structural undo.
+- Exercise Basic, condition, Switch/case, overlay, typed rows and wrapper targets. Geometry failure, invalid target or unsafe swap rejects/rolls back atomically without append or history residue.
+- Round-trip numeric 0 versus string "0", dotted/empty/spaced/quoted/backslash/newline/brace/Unicode keys; unsupported legacy escapes give useful refusal. Deleted/renamed sources reject stale IDs, hidden leaves remain valid and projection IDs reject.
+- Cover foreign/palette/invalid payloads, genuine leave, Escape, disabled/unmount and guards changing after callback capture. Cleanup occurs even when mutation is blocked; no duplicate drop.
+
+Release gates: actual envelope evidence, fixed/deployed capability contract, calibrated budgets with bounded encoding evidence, and Chromium pointer/history acceptance. Synchronous evaluation cannot be interrupted merely by an abort signal; bounded work is mandatory and cancellation is checked before/after evaluation. Host proxies/getters are not a claimed sandbox. External n8n runtime parity remains unverified and is not a release requirement.
 
 ## Deferred alternatives and explicit exclusions
 

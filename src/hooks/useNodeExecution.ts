@@ -1,3 +1,7 @@
+import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
+import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
+import { prepareHelperTransport } from "../../coreza-backend/src/nodes/logic/helperTransport";
+import { useSafeExpressionHelpers } from "@/hooks/useSafeExpressionHelpers";
 import { resolveNodeIdentity } from "@/utils/referenceResolution";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -86,6 +90,7 @@ export function useNodeExecution({
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
   const { getNodes, getEdges, updateNodeData } = useStableNodes();
+  const helpersSupported = useSafeExpressionHelpers();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
   const notifyExecutionStoreUpdate = useExecutionStoreNotify();
@@ -211,24 +216,27 @@ export function useNodeExecution({
 
       if (definition?.name === "Edit Fields") {
         payload.data = selectedInputData;
-        const nodeIdentities: Array<{ id: string; name: string }> = [];
+        const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
         const referencedNodes = new Set<string>();
-        for (const row of Array.isArray(payload.fields) ? payload.fields : []) {
-          if (!isTypedEditFieldRow(row) || row.valueMode !== "expression")
+        const helperContexts: Record<string, unknown> = {};
+        for (const [rowIndex, row] of (Array.isArray(payload.fields) ? payload.fields : []).entries()) {
+          if (!isTypedEditFieldRow(row) || row.valueMode !== "expression") continue;
+          const compiled = compileEditTemplate(String(row.value ?? ""), TYPED_EXPRESSION_FEATURES);
+          if (compiled.hasHelpers) {
+            if (!helpersSupported) throw new Error("This server has not advertised typed lastN support.");
+            // Validate evaluated arguments and selected contents before HTTP JSON can erase undefined/sparse values.
+            helperContexts[String(rowIndex)] = prepareHelperTransport(compiled, { $json: pickTypedJsonSource(selectedInputData), $nodes: allNodeData, helperOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities });
             continue;
-          for (const name of compileEditTemplate(String(row.value ?? ""))
-            .nodeReferences) {
-            const id = resolveNodeIdentity(name, nodes)?.id ?? name;
-            referencedNodes.add(id);
-            nodeIdentities.push({ id, name });
+          }
+          for (const name of compiled.nodeReferences) {
+            const identity = resolveNodeIdentity(name, snapshot.nodeIdentities);
+            if (identity) referencedNodes.add(identity.id);
           }
         }
-        const referencedResults = Object.fromEntries(
-          Object.entries(allNodeData).filter(([key]) => referencedNodes.has(key)),
-        );
         payload.expressionContext = {
-          nodeResults: referencedResults,
-          nodeIdentities,
+          nodeResults: Object.fromEntries(Object.entries(allNodeData).filter(([id]) => referencedNodes.has(id))),
+          helperContexts,
+          nodeIdentities: snapshot.nodeIdentities,
         };
       }
 
@@ -354,7 +362,7 @@ export function useNodeExecution({
         ...payload,
       };
     },
-    [
+    [helpersSupported,
       definition,
       executionStore,
       resolveDeep,

@@ -1,3 +1,4 @@
+import { resetReferenceTextHistory } from "@/hooks/useReferenceTextDrop";
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
 import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
 import { groupSelectionInDocument, dissolveClusterInDocument, copyClusterMetadata, mutateDocument, updateClusterMetadataInDocument } from '@/domain/clusters/documentCommands';
@@ -479,10 +480,16 @@ const WorkflowEditorContent = () => {
   });
 
   useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
-    setNodes((current) => current.map((node) => node.id === nodeId
+    const fields = "values" in patch || "fieldState" in patch;
+    if (fields && (!canMutateDocument() || !nodesRef.current.some(node => node.id === nodeId))) return false;
+    setNodes((current) => {
+      if (fields && !canMutateDocument()) return current;
+      return current.map((node) => node.id === nodeId
       ? { ...node, data: { ...node.data, ...patch } }
-      : node));
-  }), [setNodes, stableNodes]);
+      : node);
+    });
+    return true;
+  }), [setNodes, stableNodes, canMutateDocument]);
 
   useEffect(() => setFocusedClusterId((current) => {
     const reconciled = reconcileFocusedCluster(current, clusters, new Set(nodes.map(({ id }) => id)));
@@ -499,6 +506,7 @@ const WorkflowEditorContent = () => {
   }), [clusters, nodes, rf]);
 
   useEffect(() => {
+    resetReferenceTextHistory();
     setFocusedClusterId(null);
     overviewViewportRef.current = null;
     focusFitRef.current = null;
@@ -594,6 +602,7 @@ const WorkflowEditorContent = () => {
   }, [cloneEdges, cloneNodes]);
 
   const restoreDocument = useCallback((document: WorkflowDocument) => {
+    resetReferenceTextHistory();
     const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes)));
     const nextEdges = cloneEdges(document.edges);
     const nextClusters = document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] }));

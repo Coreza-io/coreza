@@ -8,6 +8,8 @@
  * See the LICENSE file for details.
  */
 
+import { compileEditTemplate } from "../nodes/logic/editTemplate";
+import { TYPED_EXPRESSION_FEATURES } from "../nodes/logic/safeExpression";
 import { WorkflowNode } from "../nodes/types";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { pickJsonSource, resolveNodeAlias } from "./referenceResolution";
@@ -352,7 +354,11 @@ function compileValue(
   | { compiled: true; staticValue: any; deps: Set<string> }
   | { compiled: false } {
   if (editFieldsRows && isTypedEditFieldRow(value)) {
-    return { compiled: true, staticValue: value, deps: new Set<string>() };
+    const deps = new Set<string>();
+    if (value.valueMode === "expression")
+      for (const name of compileEditTemplate(String(value.value ?? ""), TYPED_EXPRESSION_FEATURES).nodeReferences)
+        deps.add(resolveNodeKeyStatic(name, nodeIdSet, nodes));
+    return { compiled: true, staticValue: value, deps };
   }
   if (typeof value === "string") {
     if (!value.includes("{{")) {
@@ -511,6 +517,7 @@ export function compileNodeParams(
         staticValue: (result as any).staticValue,
         deps: (result as any).deps,
       });
+      for (const dep of result.deps) templateDeps.add(dep);
     }
   }
 

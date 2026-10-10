@@ -37,3 +37,14 @@
 - [ ] Deploy and verify `20261009090000_cluster_hierarchy_writer_guard.sql`; capability remains disabled until the readiness RPC succeeds
 - [ ] Synchronize/deploy the standalone `Coreza-io/coreza-backend` repository (repository access unavailable in this implementation session)
 - [ ] Verify hosted save/version/run round trips before rollout; retain guards/readers during rollback
+
+## Typed suffix expressions and native reference drops
+- [x] Add typed-only `lastN(array,count)`, strict arguments, cumulative resource limits and bounded UTF-8 JSON publication
+- [x] Share canonical identity/current-output snapshots and collect both operands through typed AST metadata; keep Run All graph driven
+- [x] Advertise authenticated versioned helper capability and guard session-aware frontend authoring/evaluation
+- [x] Use tolerant lexical placement and shared LTR Chromium pointer geometry, mounted-control focus and transient field undo/redo
+- [x] Preserve raw typed values and simultaneously remap helper references during canonical identity/import operations
+- [x] Bound manual helper transport to evaluated reads, preserve skipped references, and retain rejected undo entries and row-owned source-map history
+- [ ] Calibrate provisional limits against actual manual/Run All/Loop/pin trading envelopes before hosted rollout
+- [ ] Synchronize standalone Coreza-io/coreza-backend and deploy evaluator/capability before frontend; retain compatible evaluation during rollback
+- [ ] Broaden browser acceptance to every owner, IME, edge autoscroll and platforms beyond standard LTR Chromium

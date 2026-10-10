@@ -1,3 +1,4 @@
+import { useReferenceTextDrop, consumeReferenceFocusRestore } from "@/hooks/useReferenceTextDrop";
 import React from "react";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
 import { createPortal } from "react-dom";
@@ -183,8 +184,17 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     shouldRender,
   ]);
 
+  const referenceDrop = useReferenceTextDrop({
+    value: String(fieldValue ?? ""),
+    onChange: value => onChange(field.key, value),
+    disabled: readOnly,
+    identity: field.key,
+  });
+
   const handleDropWrapper = (e: React.DragEvent) => {
-    if (!onDrop) return;
+    referenceDrop.clearCaret();
+    if (!onDrop || readOnly) return;
+    referenceDrop.bind(e);
     e.preventDefault();
     e.stopPropagation();
     onDrop(field, e, fieldValue || "");
@@ -200,7 +210,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const handleInputFocus = (
     e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
-    e.target.select();
+    if (!consumeReferenceFocusRestore(e.target)) e.target.select();
     if (isReference) {
       openFloatingPreview(e.currentTarget);
     }
@@ -216,15 +226,15 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
   const commonInputProps = {
     value: fieldValue ?? "",
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      onChange(field.key, e.target.value),
+    ref: referenceDrop.controlRef,
+    ...referenceDrop.props,
     placeholder: field.placeholder,
     className: cn("nodrag", isReference && "font-mono text-xs truncate"),
     style: undefined,
     "data-is-reference": isReference || undefined,
     onClick: handleInputClick,
     onFocus: handleInputFocus,
-    ...referenceDropEventHandlers,
+    onDragEnter: referenceDropEventHandlers.onDragEnter,
     onDrop: handleDropWrapper,
     disabled: readOnly,
   };
@@ -403,20 +413,24 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         return (
           <div
             className="nodrag"
-            {...referenceDropEventHandlers}
+            onDragEnter={referenceDropEventHandlers.onDragEnter}
+            onDragOver={referenceDrop.props.onDragOver}
+            onDragLeave={referenceDrop.props.onDragLeave}
             onDrop={handleDropWrapper}
             ref={fieldWrapperRef}
           >
             <Input
               {...commonInputProps}
+              ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
               type={
                 field.type === "number"
-                  ? "number"
+                  ? isReference ? "text" : "number"
                   : field.type === "password"
                     ? "password"
                     : undefined
               }
             />
+            {referenceDrop.error && <p role="status" className="text-xs text-destructive">{referenceDrop.error}</p>}
             {renderPreviewCard()}
           </div>
         );
@@ -426,16 +440,20 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         return (
           <div
             className="nodrag"
-            {...referenceDropEventHandlers}
+            onDragEnter={referenceDropEventHandlers.onDragEnter}
+            onDragOver={referenceDrop.props.onDragOver}
+            onDragLeave={referenceDrop.props.onDragLeave}
             onDrop={handleDropWrapper}
             ref={fieldWrapperRef}
           >
             <textarea
               {...commonInputProps}
+              ref={referenceDrop.controlRef as React.MutableRefObject<HTMLTextAreaElement | null>}
               className={cn(
                 "w-full border border-input bg-background text-foreground placeholder:text-muted-foreground p-2 text-sm min-h-[100px] nodrag focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               )}
             />
+            {referenceDrop.error && <p role="status" className="text-xs text-destructive">{referenceDrop.error}</p>}
             {renderPreviewCard()}
           </div>
         );

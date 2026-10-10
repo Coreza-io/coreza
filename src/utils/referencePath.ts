@@ -38,12 +38,13 @@ export function parseJsonReferenceDragPayload(
         (typeof payload.sourceNodeId !== "string" || !payload.sourceNodeId))
     )
       return null;
+    if (payload.pathSegments !== undefined && !isPathSegments(payload.pathSegments)) return null;
     const pathSegments = isPathSegments(payload.pathSegments)
       ? payload.pathSegments
       : parseLegacyPath(
           typeof payload.keyPath === "string" ? payload.keyPath.trim() : "",
         );
-    if (!pathSegments) return null;
+    if (!pathSegments || !isPathSegments(pathSegments)) return null;
     const sourceNodeId =
       typeof payload.sourceNodeId === "string"
         ? payload.sourceNodeId
@@ -124,10 +125,10 @@ export function parseLegacyPath(path: string): PathSegment[] | null {
 
 export function isPathSegments(value: unknown): value is PathSegment[] {
   return (
-    Array.isArray(value) &&
+    Array.isArray(value) && value.length <= 32 &&
     value.every(
       (segment) =>
-        typeof segment === "string" ||
+        (typeof segment === "string" && segment.length <= 1000) ||
         (typeof segment === "number" && Number.isSafeInteger(segment)),
     )
   );

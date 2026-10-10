@@ -2,6 +2,9 @@ import express from "express";
 import request from "supertest";
 import comparatorRoutes from "../src/routes/comparator";
 import { applyFieldRows } from "../src/nodes/logic/editFields";
+import { prepareHelperTransport } from "../src/nodes/logic/helperTransport";
+import { compileEditTemplate } from "../src/nodes/logic/editTemplate";
+import { TYPED_EXPRESSION_FEATURES } from "../src/nodes/logic/safeExpression";
 
 jest.mock("../src/middleware/jwtAuth", () => ({
   requireAuth: (_req: unknown, _res: unknown, next: () => void): void => next(),
@@ -71,5 +74,38 @@ describe("POST /comparator/field", () => {
       phase: "configuration",
     });
     consoleError.mockRestore();
+  });
+});
+
+describe("typed lastN transport", () => {
+  const field = { fieldName: "tail", valueMode: "expression", dataType: "array", value: '{{ lastN($("ATR").json.data.value, $("Length").json.data) }}' };
+  test("preserves display aliases, envelopes and strict available results", async () => {
+    const response = await request(app).post("/comparator/field").send({ fields: [field], data: { seed: true }, expressionContext: {
+      nodeIdentities: [{ id: "atr", displayName: "ATR" }, { id: "count", displayName: "Length" }],
+      helperResults: { atr: { output: { json: { data: { value: [1,2,3] } } } }, count: { json: { data: 2 } } },
+    }});
+    expect(response.status).toBe(200); expect(response.body.data).toEqual({ seed: true, tail: [2,3] });
+  });
+  test("refuses legacy/static fallback and returns a structured availability diagnostic", async () => {
+    const spy = jest.spyOn(console, "error").mockImplementation();
+    const response = await request(app).post("/comparator/field").send({ fields: [field], expressionContext: {
+      nodeIdentities: [{ id: "atr", displayName: "ATR" }, { id: "count", displayName: "Length" }],
+      nodeResults: { atr: { json: { data: { value: [99] } } }, count: { json: { data: 1 } } }, helperResults: {},
+    }});
+    expect(response.status).toBe(500); expect(response.body.details).toMatchObject({ phase: "reference", rowIndex: 0, fieldName: "tail" });
+    spy.mockRestore();
+  });
+  test("re-evaluates the bounded manual snapshot without serializing an unrelated prefix", async () => {
+    const source = [1n, 2, 3];
+    const nodes = [{ id: "atr", displayName: "ATR" }, { id: "count", displayName: "Length" }];
+    const packet = prepareHelperTransport(compileEditTemplate(field.value, TYPED_EXPRESSION_FEATURES), {
+      $json: {}, nodes, helperOutputs: { atr: { output: { json: { data: { value: source } } } }, count: { json: { data: 1 } } },
+    });
+    const response = await request(app).post("/comparator/field").send({ fields: [field], data: { seed: true }, expressionContext: { nodeIdentities: nodes, helperContexts: { 0: packet } } });
+    expect(response.status).toBe(200); expect(response.body.data).toEqual({ seed: true, tail: [3] });
+  });
+  test("rejects packets for rows outside the submitted field list", async () => {
+    const response = await request(app).post("/comparator/field").send({ fields: [field], expressionContext: { helperContexts: { 1: {} } } });
+    expect(response.status).toBe(400);
   });
 });

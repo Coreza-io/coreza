@@ -33,17 +33,14 @@ describe("Edit Fields reference insertion", () => {
     });
   });
 
-  it("falls back to wrapped insertion for incomplete expressions", () => {
+  it("inserts raw selectors in unambiguous unfinished code", () => {
     expect(insertEditFieldReference("{{ high >", reference, 3, 7)).toEqual({
-      value: `{{ ${reference} >`,
-      caret: 3 + reference.length,
+      value: '{{ $("window").json.data[0].high >',
+      caret: 3 + '$("window").json.data[0].high'.length,
     });
   });
 
-  it("appends when the selection is outside the current value", () => {
-    expect(insertEditFieldReference("fixed", reference, 99, 100)).toEqual({
-      value: `fixed${reference}`,
-      caret: `fixed${reference}`.length,
-    });
+  it("rejects selections outside the current value", () => {
+    expect(insertEditFieldReference("fixed", reference, 99, 100)).toBeNull();
   });
 });

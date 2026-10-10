@@ -25,8 +25,8 @@ interface UseNodeFieldStateProps {
 
 interface UseNodeFieldStateReturn {
   fieldState: Record<string, any>;
-  handleChange: (key: string, value: any) => void;
-  handleFieldStateBatch: (updates: Record<string, any>) => void;
+  handleChange: (key: string, value: any) => boolean;
+  handleFieldStateBatch: (updates: Record<string, any>) => boolean;
 }
 
 /**
@@ -46,11 +46,18 @@ export function useNodeFieldState({
   readOnly = false,
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
   const nodeId = useNodeId();
-  const { updateNodeData } = useStableNodes();
+  const { updateNodeData, getNodeById } = useStableNodes();
+  const live = useRef({ readOnly, data });
+  live.current = { readOnly, data };
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const allowed = () => mounted.current && !live.current.readOnly && !!nodeId && !!getNodeById(nodeId) &&
+    live.current.data?.workflowSessionId === data?.workflowSessionId &&
+    !(typeof live.current.data?.workflowSessionId === "string" && isEditorExecutionLocked(live.current.data.workflowSessionId));
 
   // Track the schema signature so we re-reconcile when fields change
   const lastSignatureRef = useRef<string>("");
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const ownWrite = useRef<Record<string, any> | null>(null);
 
   // ── Initial state ────────────────────────────────────────────────────
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
@@ -61,6 +68,8 @@ export function useNodeFieldState({
     );
     return merged;
   });
+
+  const draft = useRef(fieldState); draft.current = fieldState;
 
   // ── Reconcile when definition schema structurally changes ────────────
   // Uses a lightweight signature (field keys + types) to avoid running on
@@ -82,82 +91,53 @@ export function useNodeFieldState({
     );
 
     // Always update local state to match the reconciled result
+    draft.current = merged;
     setFieldState(merged);
 
     // If we discovered missing keys, immediately push them into the
     // React Flow store so save/live execution will see them even if the
     // user never interacts with this node's panel.
-    if (hadMissingKeys && nodeId && !readOnly) {
+    if (hadMissingKeys && nodeId && allowed()) {
       console.log(
         "🔄 useNodeFieldState: backfilling missing fields for",
         definition?.name,
       );
-      updateNodeData(nodeId, { values: { ...merged }, fieldState: { ...merged } });
+      if (updateNodeData(nodeId, { values: merged, fieldState: merged })) ownWrite.current = merged;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getSchemaSignature(definition), nodeId, readOnly]);
 
-  // ── Debounced sync: local fieldState → React Flow node.data.values ──
-  // Keeps the store up-to-date as the user types / selects values.
+  // Writes are synchronous; a delayed mirror must not overwrite a document restore.
   useEffect(() => {
-    if (readOnly) return;
-    if (Object.keys(fieldState).length === 0 || !nodeId) return;
+    const restored = data.values ?? data.fieldState;
+    if (restored && restored !== ownWrite.current) {
+      const { merged } = reconcileNodeValues(definition, restored, data.fieldState ?? {});
+      draft.current = merged; setFieldState(merged);
+    }
+  }, [data.values, data.fieldState, data.workflowSessionId]);
 
-    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+  const commit = (updates: Record<string, any>): boolean => {
+    if (!allowed()) return false;
+    const canonical = getNodeById(nodeId!)?.data?.values as Record<string, any> | undefined;
+    const base = canonical && canonical !== ownWrite.current ? { ...draft.current, ...canonical } : draft.current;
+    const next = { ...base, ...updates };
+    if (!updateNodeData(nodeId!, { values: next, fieldState: next })) return false;
+    ownWrite.current = next; draft.current = next; setFieldState(next);
+    return true;
+  };
 
-    syncTimeoutRef.current = setTimeout(() => {
-      updateNodeData(nodeId, { values: { ...fieldState } });
-    }, 50);
+  const handleChange = useCallback((key: string, value: any) => {
+    const updates: Record<string, any> = { [key]: typeof value === "string" && value.trim() === "" ? null : value };
+    for (const field of definition?.fields ?? []) {
+      if (field.dynamicOptions?.dependsOn !== key) continue;
+      const options = field.dynamicOptions.optionsByValue?.[value];
+      if (options?.length) updates[field.key] = options[0].value;
+    }
+    return commit(updates);
+  }, [nodeId, updateNodeData, definition?.fields, readOnly, data?.workflowSessionId]);
 
-    return () => {
-      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-    };
-  }, [fieldState, nodeId, updateNodeData, readOnly]);
-
-  // ── Single field change ──────────────────────────────────────────────
-  const handleChange = useCallback(
-    (key: string, value: any) => {
-      if (readOnly || (typeof data?.workflowSessionId === "string" && isEditorExecutionLocked(data.workflowSessionId))) return;
-
-      const normalizedValue =
-        typeof value === "string" && value.trim() === "" ? null : value;
-
-      setFieldState((prevState) => {
-        const nextFieldState = { ...prevState, [key]: normalizedValue };
-
-        // Handle dynamicOptions dependencies
-        if (definition?.fields) {
-          for (const field of definition.fields) {
-            if (field.dynamicOptions?.dependsOn === key) {
-              const options = field.dynamicOptions.optionsByValue?.[value];
-              if (options && options.length > 0) {
-                nextFieldState[field.key] = options[0].value;
-              }
-            }
-          }
-        }
-
-        if (nodeId) updateNodeData(nodeId, { values: nextFieldState, fieldState: nextFieldState });
-
-        return nextFieldState;
-      });
-    },
-    [nodeId, updateNodeData, definition?.fields, readOnly, data?.workflowSessionId],
-  );
-
-  // ── Batch field update ───────────────────────────────────────────────
-  const handleFieldStateBatch = useCallback(
-    (updates: Record<string, any>) => {
-      if (readOnly || (typeof data?.workflowSessionId === "string" && isEditorExecutionLocked(data.workflowSessionId))) return;
-
-      setFieldState((prevState) => {
-        const nextFieldState = { ...prevState, ...updates };
-        if (nodeId) updateNodeData(nodeId, { values: nextFieldState, fieldState: nextFieldState });
-        return nextFieldState;
-      });
-    },
-    [nodeId, updateNodeData, readOnly, data?.workflowSessionId],
-  );
+  const handleFieldStateBatch = useCallback((updates: Record<string, any>) => commit(updates),
+    [nodeId, updateNodeData, readOnly, data?.workflowSessionId]);
 
   return { fieldState, handleChange, handleFieldStateBatch };
 }

@@ -1036,6 +1036,7 @@ export type Database = {
     }
     Functions: {
       check_execution_limit: { Args: { p_user_id: string }; Returns: boolean }
+      cluster_hierarchy_write_ready: { Args: never; Returns: boolean }
       get_current_usage: {
         Args: { p_user_id: string }
         Returns: {
@@ -1054,6 +1055,7 @@ export type Database = {
       }
       save_workflow_document: {
         Args: {
+          p_cluster_format_version?: number
           p_edges?: Json
           p_expected_revision: number
           p_name?: string

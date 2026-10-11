@@ -182,7 +182,7 @@ export function useNodeExecution({
         let nodeData = executionStore.getNodeData(prevNode.id).output;
         if (nodeData === undefined) {
           // fallback to static data if not yet executed
-          nodeData = prevNode.data?.output !== undefined ? prevNode.data.output : prevNode.data ?? {};
+          nodeData = prevNode.data?.pinnedOutput ?? (prevNode.data?.output !== undefined ? prevNode.data.output : prevNode.data ?? {});
         }
 
         allNodeData[displayName] = nodeData;

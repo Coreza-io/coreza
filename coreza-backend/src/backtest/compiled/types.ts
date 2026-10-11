@@ -48,7 +48,7 @@ export type ExecFn = (
  * Resolves node parameters by reading from the slots array
  * instead of the dynamic allNodeData record.
  */
-export type SlotParamResolver = (slots: any[]) => Record<string, any>;
+export type SlotParamResolver = (slots: any[], input?: any) => Record<string, any>;
 
 export interface ActivationTarget {
   instructionIndex: number;

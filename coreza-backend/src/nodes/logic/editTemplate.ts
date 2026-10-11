@@ -19,6 +19,7 @@ export type EditTemplateSegment =
 
 export interface CompiledEditTemplate {
   readonly hasComputedSlices: boolean;
+  readonly strictJson: boolean;
   readonly source: string;
   readonly segments: readonly EditTemplateSegment[];
   readonly nodeReferences: readonly string[];
@@ -27,7 +28,7 @@ export interface CompiledEditTemplate {
 const cache = new Map<string, CompiledEditTemplate>();
 
 export function compileEditTemplate(source: string, features: ExpressionFeatures = {}): CompiledEditTemplate {
-  const cacheKey = `${features.computedSlices === true ? "typed-slices:" : "base:"}${source}`;
+  const cacheKey = `${JSON.stringify(features)}:${source}`;
   const cached = cache.get(cacheKey);
   if (cached) return cached;
   if (source.length > MAX_SOURCE)
@@ -35,12 +36,21 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
   const segments: EditTemplateSegment[] = [];
   let cursor = 0;
   while (cursor < source.length) {
-    const open = source.indexOf("{{", cursor);
+    let open = source.indexOf("{{", cursor);
+    if (features.literalEscapes) {
+      while (open >= 0) {
+        let slashes = 0;
+        for (let j = open - 1; j >= cursor && source[j] === "\\"; j--) slashes++;
+        if (slashes % 2 === 0) break;
+        open = source.indexOf("{{", open + 2);
+      }
+    }
+    const literal = (text: string) => features.literalEscapes ? text.replace(/\\(\\|\{\{)/g, "$1") : text;
     if (open < 0) {
       if (cursor < source.length)
         segments.push({
           kind: "text",
-          value: source.slice(cursor),
+          value: literal(source.slice(cursor)),
           start: cursor,
           end: source.length,
         });
@@ -49,7 +59,7 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
     if (open > cursor)
       segments.push({
         kind: "text",
-        value: source.slice(cursor, open),
+        value: literal(source.slice(cursor, open)),
         start: cursor,
         end: open,
       });
@@ -136,6 +146,7 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
         nodeReferences.add(name);
   const compiled = Object.freeze({
     source,
+    strictJson: features.strictJson === true,
     hasComputedSlices: segments.some(segment => segment.kind === "code" && segment.expression.hasComputedSlices),
     segments: Object.freeze(segments),
     nodeReferences: Object.freeze([...nodeReferences]),
@@ -183,7 +194,7 @@ export function evaluateEditTemplate(
   compiled: CompiledEditTemplate,
   context: ExpressionContext,
 ): unknown {
-  const budget = compiled.hasComputedSlices ? new ExpressionBudget() : undefined;
+  const budget = (compiled.hasComputedSlices || compiled.strictJson) ? new ExpressionBudget() : undefined;
   if (compiled.segments.length === 1 && compiled.segments[0].kind === "code") {
     const value = evaluateSegment(compiled.segments[0], context, budget);
     if (budget) encodeExpressionJson(value, budget, compiled.segments[0].expressionStart);

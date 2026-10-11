@@ -95,6 +95,7 @@ it.each([
 it("requires deployed protection, preserves partial metadata, and permits intentional dissolution", async () => {
   const { query, repo } = service(false);
   expect(await query.getCapabilities()).toEqual({
+    expression_format_version: 0,
     cluster_format_version: 1,
     max_cluster_depth: 1,
   });

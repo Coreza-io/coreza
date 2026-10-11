@@ -82,7 +82,7 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
 
     // Resolve params from slots
     const resolveStart = timingEnabled ? performance.now() : 0;
-    const params = instr.resolveParams(slots);
+    const params = instr.resolveParams(slots, slots[activeInputSlots[i]]);
     if (timingEnabled) {
       resolveParamsMs += performance.now() - resolveStart;
     }

@@ -1,3 +1,6 @@
+import { isExpressionContract, compileNodeFieldValues } from "../nodes/logic/fieldExpression";
+import { loadNodeDefinition } from "../nodes/nodeDefinitions";
+import { pickTypedJsonSource } from "../nodes/logic/typedExpressionContext";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -12,7 +15,7 @@ import { compileEditTemplate } from "../nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES } from "../nodes/logic/safeExpression";
 import { WorkflowNode } from "../nodes/types";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
-import { pickJsonSource, resolveNodeAlias } from "./referenceResolution";
+import { pickJsonSource, resolveNodeAlias, AmbiguousNodeReferenceError } from "./referenceResolution";
 
 /**
  * Template Pre-Compilation
@@ -458,6 +461,20 @@ export function compileNodeParams(
   nodes: WorkflowNode[],
 ): CompiledNodeParams {
   const nodeParams = (node as any).values || {};
+  if (isExpressionContract(nodeParams)) {
+    const definition = node.data?.definition ?? loadNodeDefinition(node.name ?? node.type ?? '');
+    if (!definition) throw new Error(`Missing parameter descriptors for node ${node.id}`);
+    const compiled = compileNodeFieldValues(nodeParams, definition.fields ?? [], node.id);
+    const identities = new Set(nodes.map(n => n.id));
+    const deps = compiled.references.flatMap(name => {
+      try { return [resolveNodeKeyStatic(name, identities, nodes)]; }
+      catch (error) { if (error instanceof AmbiguousNodeReferenceError) return []; throw error; }
+    });
+    const resolve = (outputs: Record<string, unknown>, input: unknown) => compiled.resolve({ $json: pickTypedJsonSource(input), $nodes: outputs, expressionOutputs: outputs, nodes });
+    if (compiled.references.length === 0 && !JSON.stringify(nodeParams).includes('{{'))
+      return { hasTemplates: false, staticParams: resolve({}, {}) };
+    return { hasTemplates: true, templateDeps: deps, resolve };
+  }
   // const entries = Object.entries(nodeParams).filter(
   //   ([k]) => k !== "credential_id",
   // );
@@ -573,6 +590,7 @@ export function preCompileAllNodes(
     try {
       compiled.set(node.id, compileNodeParams(node, nodes));
     } catch (e) {
+      if (isExpressionContract(node.values)) throw e;
       // If compilation fails for a node, skip it — runtime fallback will handle it
       console.warn(`Template compilation failed for node ${node.id}:`, e);
     }
@@ -584,7 +602,7 @@ export function preCompileAllNodes(
 // Slot-based param compilation for Compiled Plan VM
 // ─────────────────────────────────────────────────────────────────────────────
 
-type SlotParamResolver = (slots: any[]) => Record<string, any>;
+type SlotParamResolver = (slots: any[], input?: any) => Record<string, any>;
 
 /**
  * Rewire a CompiledNodeParams so that template accessors read from
@@ -636,11 +654,11 @@ export function compileParamsToSlots(
 
   const lookup: Record<string, any> = Object.create(null);
 
-  return (slots: any[]) => {
+  return (slots: any[], input?: any) => {
     for (let i = 0; i < deps.length; i++) {
       const [name, slotIdx] = deps[i];
       lookup[name] = slots[slotIdx];
     }
-    return compiled.resolve!(lookup, slots);
+    return compiled.resolve!(lookup, input ?? slots);
   };
 }

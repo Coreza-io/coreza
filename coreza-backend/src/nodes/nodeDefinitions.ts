@@ -1,3 +1,4 @@
+import type { FieldDescriptor } from "./logic/fieldExpression";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -11,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface NodeField {
+export interface NodeField extends FieldDescriptor {
   key: string;
   label?: string;
   type: string;
@@ -19,7 +20,7 @@ export interface NodeField {
   description?: string;
   required?: boolean;
   default?: any;
-  options?: Array<{ id: string; name: string }>;
+  options?: Array<{ id?: string; name?: string; value?: unknown }>;
   displayOptions?: any;
 }
 
@@ -61,6 +62,14 @@ export function loadNodeDefinition(nodeName: string): NodeDefinition | null {
     path.join(__dirname, '../../../src/nodes', `${nodeName}.json`),
   ];
 
+  // Public names need not match filenames (Edit Fields is Field.json).
+  const definitionsDir = path.join(__dirname, '../../../src/nodes');
+  if (fs.existsSync(definitionsDir)) {
+    for (const file of fs.readdirSync(definitionsDir).filter(file => file.endsWith('.json'))) {
+      const filename = path.join(definitionsDir, file);
+      try { if (JSON.parse(fs.readFileSync(filename, 'utf-8')).name === nodeName) possiblePaths.unshift(filename); } catch { /* non-definition file */ }
+    }
+  }
   for (const filePath of possiblePaths) {
     try {
       if (fs.existsSync(filePath)) {

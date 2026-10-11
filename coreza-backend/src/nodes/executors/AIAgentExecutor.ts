@@ -107,8 +107,9 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      // Get credentials from the connected Chat Model node
-      const credential_id = chatModelNode.values?.credential_id;
+      // Model fields are runtime parameters too; use this invocation's resolver.
+      const modelParams = context?.resolveNodeParameters ? context.resolveNodeParameters(chatModelNode, input) : chatModelNode.values ?? {};
+      const credential_id = modelParams.credential_id;
       if (!credential_id) {
         const errOutput = createErrorOutput(
           "Chat Model node must have credentials configured",
@@ -147,7 +148,7 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       // Get model from Chat Model node
-      const model = chatModelNode.values?.model;
+      const model = modelParams.model;
 
       // Resolve parameters from AI Agent node
       const nodeValues = node.values ?? {};
@@ -167,14 +168,14 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      const isSearchModel = chatModelNode.values?.isSearchModel === true;
-      const isReasoningModel = chatModelNode.values?.supportsReasoning === true;
+      const isSearchModel = modelParams.isSearchModel === true;
+      const isReasoningModel = modelParams.supportsReasoning === true;
 
       const llmConfig: LLMConfig = {
         apiKey,
         model,
-        maxTokens: chatModelNode.values?.maxTokens
-          ? Number(chatModelNode.values.maxTokens)
+        maxTokens: modelParams.maxTokens
+          ? Number(modelParams.maxTokens)
           : undefined,
         isSearchModel,
         isReasoningModel,
@@ -186,7 +187,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       if (isReasoningModel) {
         llmConfig.reasoningEffort =
-          chatModelNode.values?.reasoningEffort ?? "medium";
+          modelParams.reasoningEffort ?? "medium";
       }
 
       const llm = getLLM(providerId, llmConfig);
@@ -541,7 +542,7 @@ export class AIAgentExecutor implements INodeExecutor {
     // If workflow node doesn't have fields, try to load from JSON definition
     if (!nodeFields || !Array.isArray(nodeFields) || nodeFields.length === 0) {
       const nodeName = node.name || "";
-      let nodeDefinition = loadNodeDefinition(nodeName);
+      const nodeDefinition = loadNodeDefinition(nodeName);
 
       if (nodeDefinition?.fields && nodeDefinition.fields.length > 0) {
         nodeFields = nodeDefinition.fields;

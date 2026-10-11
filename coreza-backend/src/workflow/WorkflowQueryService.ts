@@ -1,3 +1,5 @@
+import { validateExpressionDocument } from "./expressionDocument";
+import type { WorkflowNode } from "../nodes/types";
 import type { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
 import type { CreateWorkflowInput, UpdateWorkflowInput } from "./schemas";
 import type { WorkflowRepository } from "./WorkflowRepository";
@@ -14,6 +16,7 @@ export class WorkflowQueryService {
   async getCapabilities() {
     const ready = await this.workflowRepo.hierarchyReady();
     return {
+      expression_format_version: process.env.COREZA_EXPRESSION_AUTHORING !== 'disabled' && await this.workflowRepo.expressionReady?.() ? 1 : 0,
       cluster_format_version: ready ? 2 : 1,
       max_cluster_depth: ready ? 2 : 1,
     };
@@ -63,6 +66,7 @@ export class WorkflowQueryService {
   }
 
   async createWorkflow(userId: string, input: CreateWorkflowInput) {
+    validateExpressionDocument(input.nodes as WorkflowNode[]);
     await this.protectHierarchy(input);
     const nodeClusters = validateNodeClusterDocument({
       nodes: input.nodes,
@@ -100,6 +104,7 @@ export class WorkflowQueryService {
     }
     const hierarchyWrite = await this.protectHierarchy(input, existing.node_clusters);
     const candidateNodes = input.nodes ?? existing.nodes ?? [];
+    validateExpressionDocument(candidateNodes as WorkflowNode[], existing.nodes as WorkflowNode[] ?? []);
     if ((existing.nodes?.length ?? 0) > 0 && candidateNodes.length === 0) {
       throw Object.assign(new Error("empty-workflow"), {
         statusCode: 400,

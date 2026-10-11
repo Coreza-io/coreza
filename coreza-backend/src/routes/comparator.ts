@@ -1,3 +1,6 @@
+import { compileNodeFieldValues, FieldExpressionError } from "../nodes/logic/fieldExpression";
+import { getNodeFields } from "../nodes/nodeDefinitions";
+import { pickTypedJsonSource } from "../nodes/logic/typedExpressionContext";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -224,13 +227,21 @@ router.post("/field", async (req, res) => {
     const safeNodeIdentities = Array.isArray(nodeIdentities)
       ? nodeIdentities.map(({ id, name, label, displayName, data }) => ({ id, name, label, displayName, data }))
       : [];
-    const result = applyFieldRows(fields, {
+    const rawContract = fields.some((row: any) => row?.expression_format_version === 1);
+    const fieldContexts = expressionContext?.fieldContexts;
+    if (fieldContexts !== undefined && (!fieldContexts || typeof fieldContexts !== 'object' || Array.isArray(fieldContexts) || Object.keys(fieldContexts).some(path => {
+      if (path === 'persistent') return false;
+      const match = /^fields\[(\d+)\]\.(fieldName|dataType|value)$/.exec(path);
+      return !match || Number(match[1]) >= fields.length;
+    }))) return res.status(400).json({ error: 'expressionContext.fieldContexts must contain valid field paths' });
+    const resolved = rawContract ? compileNodeFieldValues({ fields, persistent }, getNodeFields('Edit Fields'), req.body.node_id).resolve({ $json: pickTypedJsonSource(data), $nodes: safeNodeResults, expressionOutputs: expressionResults ?? safeNodeResults, nodes: safeNodeIdentities, fieldContexts }) : undefined;
+    const result = applyFieldRows((resolved?.fields ?? fields) as any, {
       nodeId:
         typeof req.body.node_id === "string" ? req.body.node_id : undefined,
       input: data,
       legacyResultSeed: { ...data },
       context: {
-        persistent: !!persistent,
+        persistent: !!(resolved?.persistent ?? persistent),
         $nodes: safeNodeResults,
         expressionOutputs: expressionResults ? Object.fromEntries(Object.entries(expressionResults)) : safeNodeResults,
         expressionContexts,
@@ -247,7 +258,7 @@ router.post("/field", async (req, res) => {
     res.status(500).json({
       error: "Failed to process field operations",
       details:
-        error instanceof EditFieldError
+        error instanceof EditFieldError || error instanceof FieldExpressionError
           ? { code: error.code, message: error.message, ...error.details }
           : { message: error instanceof Error ? error.message : String(error) },
     });

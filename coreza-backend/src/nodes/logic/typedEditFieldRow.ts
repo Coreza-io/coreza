@@ -1,7 +1,8 @@
 export interface TypedEditFieldRow {
   fieldName: string;
   dataType: string;
-  valueMode: "fixed" | "expression";
+  valueMode?: "fixed" | "expression";
+  expression_format_version?: 1;
   value: unknown;
 }
 
@@ -19,10 +20,8 @@ export function isTypedEditFieldRow(
   const row = value as Partial<TypedEditFieldRow>;
   return (
     typeof row.fieldName === "string" &&
-    ["string", "number", "boolean", "array", "object"].includes(
-      row.dataType ?? "",
-    ) &&
-    (row.valueMode === "fixed" || row.valueMode === "expression") &&
+    (row.expression_format_version === 1 ? typeof row.dataType === "string" : ["string", "number", "boolean", "array", "object"].includes(row.dataType ?? "")) &&
+    (row.valueMode === "fixed" || row.valueMode === "expression" || row.expression_format_version === 1) &&
     "value" in row
   );
 }

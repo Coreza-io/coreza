@@ -8,6 +8,7 @@ import {
 import type { ReferenceNode } from "../../utils/referenceResolution";
 
 export interface ExpressionContext {
+  fieldContexts?: Record<string, unknown>;
   $json: unknown;
   $nodes?: Record<string, unknown>;
   expressionOutputs?: Record<string, unknown>;
@@ -17,6 +18,8 @@ export interface ExpressionContext {
 
 export interface ExpressionFeatures {
   readonly computedSlices?: boolean;
+  readonly strictJson?: boolean;
+  readonly literalEscapes?: boolean;
 }
 export const TYPED_EXPRESSION_FEATURES = Object.freeze({ computedSlices: true });
 
@@ -775,7 +778,7 @@ export function compileExpression(text: string, options: ExpressionFeatures = {}
     throw new ExpressionError("Input length limit exceeded", MAX_INPUT);
   const source = text.trim();
   if (!source) throw new ExpressionError("Expression is empty", 0);
-  const features = Object.freeze({ computedSlices: options.computedSlices === true });
+  const features = Object.freeze({ computedSlices: options.computedSlices === true, strictJson: options.strictJson === true });
   const ast = new Parser(tokenize(source), features).parse();
   let hasComputedSlices = false;
   const nodeReferences = new Set<string>();
@@ -804,6 +807,6 @@ export function compileExpression(text: string, options: ExpressionFeatures = {}
     nodeReferences: Object.freeze([...nodeReferences]),
     features,
     hasComputedSlices,
-    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasComputedSlices ? new ExpressionBudget() : undefined)),
+    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasComputedSlices || features.strictJson ? new ExpressionBudget() : undefined), features.strictJson),
   });
 }

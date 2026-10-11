@@ -26,6 +26,7 @@ function mapWorkflowSaveError(error: WorkflowRpcError) {
   if (error.message.includes("workflow-revision-conflict") || error.code === "40001") {
     return createError("workflow-revision-conflict", 409);
   }
+  if (error.message.includes("expression-writer-upgrade-required")) return createError("expression-writer-upgrade-required", 409);
   if (error.message.includes("cluster-writer-upgrade-required")) return createError("cluster-writer-upgrade-required", 409);
   if (error.message.includes("workflow-not-found")) {
     return createError("Workflow not found", 404);
@@ -41,6 +42,10 @@ function mapWorkflowSaveError(error: WorkflowRpcError) {
 }
 
 export class WorkflowRepository {
+  async expressionReady(): Promise<boolean> {
+    const { data, error } = await (supabase.rpc as any)('expression_workflow_write_ready');
+    return !error && data === true;
+  }
   async hierarchyReady(): Promise<boolean> {
     const { data, error } = await (supabase.rpc as any)('cluster_hierarchy_write_ready');
     return !error && data === true;
@@ -107,8 +112,7 @@ export class WorkflowRepository {
     const { data, error } = await (supabase.rpc as unknown as (
       name: string,
       args: Record<string, unknown>,
-    ) => Promise<{ data: unknown; error: WorkflowRpcError | null}>)
-      ("save_workflow_document", {
+    ) => Promise<{ data: unknown; error: WorkflowRpcError | null}>)("save_workflow_document", {
         p_workflow_id: workflowId,
         p_user_id: userId,
         p_expected_revision: expected_revision,

@@ -141,3 +141,13 @@ describe("computed slice transport", () => {
     expect(response.status).toBe(400);
   });
 });
+describe('generic mode-free raw source ownership', () => {
+  test('field name, result type and value share the generic resolver with stable-path transport', async () => {
+    const { compileFieldValue, prepareFieldExpressionTransport } = await import('../src/nodes/logic/fieldExpression');
+    const value = '{{ $("history").json.values[-1:] }}';
+    const nodes = [{ id: 'history' }];
+    const packet = prepareFieldExpressionTransport(compileFieldValue(value, { key: 'value', type: 'array' }, 'fields[0].value'), { $json: {}, nodes, expressionOutputs: { history: { values: [1n, 2, 3] } } });
+    const response = await request(app).post('/comparator/field').send({ fields: [{ fieldName: '{{ "tail" }}', dataType: '{{ "array" }}', expression_format_version: 1, value }], data: {}, expressionContext: { nodeIdentities: nodes, fieldContexts: { 'fields[0].value': packet } } });
+    expect(response.status).toBe(200); expect(response.body.data.tail).toEqual([3]);
+  });
+});

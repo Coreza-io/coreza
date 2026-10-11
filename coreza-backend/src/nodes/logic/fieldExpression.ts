@@ -51,8 +51,12 @@ export function isExpressionContract(values: Record<string, unknown> | undefined
 }
 export const escapeFieldLiteral = (value: string): string => value.replace(/\\/g, '\\\\').replace(/\{\{/g, '\\{{');
 
+export function fieldResultType(descriptor: FieldDescriptor) {
+  return descriptor.resultType ?? (descriptor.optionsSource === 'credentialsApi' ? 'string' : FIELD_ADAPTERS[descriptor.type]);
+}
+
 export function compileFieldValue(raw: unknown, descriptor: FieldDescriptor, fieldPath = descriptor.key) {
-  const expected = descriptor.resultType ?? FIELD_ADAPTERS[descriptor.type];
+  const expected = fieldResultType(descriptor);
   if (!expected) throw new FieldExpressionError(`Unsupported field adapter ${descriptor.type}`, { fieldPath, phase: 'configuration' });
   if (typeof raw === 'string' && (expected === 'array' || expected === 'object' || descriptor.type === 'json')) {
     try { const literal = JSON.parse(raw); if (literal && typeof literal === 'object') raw = literal; } catch { /* Template or invalid JSON is diagnosed by normal compilation/coercion. */ }
@@ -127,8 +131,17 @@ function validateOptions(field: FieldDescriptor, value: unknown, read: (key: str
 }
 
 /** Row shape is schema-owned; legacy operations are explicit variants, not node-name guesses. */
+export function typedRowSchema(fields: readonly FieldDescriptor[]): boolean {
+  return ['fieldName', 'dataType', 'value'].every(key => fields.some(field => field.key === key));
+}
 export function repeaterRowFields(field: FieldDescriptor, row: Record<string, unknown>): readonly FieldDescriptor[] {
-  return field.rowVariants?.find(variant => Object.prototype.hasOwnProperty.call(row, variant.whenPresent))?.subFields ?? field.subFields ?? [];
+  const defaults = field.subFields ?? [];
+  // An explicit typed dialect/mode wins over row-owned metadata named operator.
+  if (typedRowSchema(defaults) && (row.expression_format_version !== undefined || row.valueMode === 'fixed' || row.valueMode === 'expression')) return defaults;
+  return field.rowVariants?.find(variant => Object.prototype.hasOwnProperty.call(row, variant.whenPresent))?.subFields ?? defaults;
+}
+function modeFreeRow(field: FieldDescriptor, row: Record<string, unknown>): boolean {
+  return typedRowSchema(repeaterRowFields(field, row)) && row.expression_format_version === 1;
 }
 
 export function compileNodeFieldValues(values: Record<string, unknown>, fields: readonly FieldDescriptor[], nodeId?: string, prefix = ''): { references: string[]; resolve: (context: ExpressionContext) => Record<string, unknown>; resolveField: (key: string, context: ExpressionContext) => unknown } {
@@ -160,16 +173,22 @@ export function compileNodeFieldValues(values: Record<string, unknown>, fields: 
       objects.set(field.key, plan); plan.references.forEach(name => references.add(name));
     }
     if (field.type === 'repeater' && Array.isArray(raw)) {
-      const plans = raw.map((row, index) => {
+      const normalizedRows = raw.map((row, index) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) throw new FieldExpressionError('Invalid repeater row', { nodeId, fieldPath: `${prefix}${field.key}[${index}]`, phase: 'configuration' });
         const record = row as Record<string, unknown>;
-        const plan = compileNodeFieldValues(record, repeaterRowFields(field, record).filter(child => child.key !== 'value' || record.expression_format_version !== 1), nodeId, `${prefix}${field.key}[${index}].`);
+        try { return normalizeExpressionRows(record, field) as Record<string, unknown>; }
+        catch (error) {
+          if (error instanceof FieldExpressionError) throw new FieldExpressionError(error.message, { ...error.details, nodeId, fieldPath: `${prefix}${field.key}[${index}].${error.details.fieldPath}` }, error);
+          throw new FieldExpressionError(error instanceof Error ? error.message : String(error), { nodeId, fieldPath: `${prefix}${field.key}[${index}].value`, phase: 'migration', expected: String(record.dataType), actual: editFieldValueType(record.value) }, error);
+        }
+      });
+      const plans = normalizedRows.map((record, index) => {
+        const plan = compileNodeFieldValues(record, repeaterRowFields(field, record).filter(child => child.key !== 'value' || !modeFreeRow(field, record)), nodeId, `${prefix}${field.key}[${index}].`);
         plan.references.forEach(name => references.add(name));
         return plan;
       });
-      const values = raw.map((row, index) => {
-        const record = row as Record<string, unknown>;
-        if (record.expression_format_version !== 1) return undefined;
+      const values = normalizedRows.map((record, index) => {
+        if (!modeFreeRow(field, record)) return undefined;
         const variants = new Map<EditFieldDataType, CompiledFieldValue | Error>();
         const types: EditFieldDataType[] = ['string', 'number', 'boolean', 'array', 'object'];
         const staticType = types.includes(record.dataType as EditFieldDataType) ? record.dataType as EditFieldDataType : undefined;
@@ -216,7 +235,8 @@ export function compileNodeFieldValues(values: Record<string, unknown>, fields: 
           const path = `${prefix}${key}[${index}]`;
           if (!row || typeof row !== 'object' || Array.isArray(row)) throw new FieldExpressionError('Invalid repeater row', { nodeId, fieldPath: path, phase: 'type', expected: 'Object', actual: editFieldValueType(row) });
           const record = row as Record<string, unknown>;
-          const typed = record.expression_format_version === 1 || record.valueMode === 'fixed' || record.valueMode === 'expression';
+          if (typedRowSchema(repeaterRowFields(field, record)) && record.expression_format_version !== undefined && record.expression_format_version !== 1) throw new FieldExpressionError('Unsupported typed row expression dialect', { nodeId, fieldPath: `${path}.expression_format_version`, phase: 'configuration' });
+          const typed = typedRowSchema(repeaterRowFields(field, record)) && (record.expression_format_version === 1 || record.valueMode === 'fixed' || record.valueMode === 'expression');
           const resolved = validateResolvedFields(record, repeaterRowFields(field, record).filter(child => !typed || child.key !== 'value'), nodeId, `${path}.`);
           if (!typed) return resolved;
           const type = record.dataType as EditFieldDataType;
@@ -232,7 +252,7 @@ export function compileNodeFieldValues(values: Record<string, unknown>, fields: 
       } finally { resolving.delete(key); }
     };
     if (selectedKey !== undefined) { read(selectedKey); return out; }
-    for (const field of fields) { if (field.key in values) read(field.key); else if (field.required && included(field, read)) throw new FieldExpressionError('Required value is missing', { nodeId, fieldPath: `${prefix}${field.key}`, phase: 'type', expected: field.resultType ?? FIELD_ADAPTERS[field.type], actual: 'Undefined' }); }
+    for (const field of fields) { if (field.key in values) read(field.key); else if (field.required && included(field, read)) throw new FieldExpressionError('Required value is missing', { nodeId, fieldPath: `${prefix}${field.key}`, phase: 'type', expected: fieldResultType(field), actual: 'Undefined' }); }
     // Unknown values and row metadata survive; never interpret structure as source.
     for (const [key, value] of Object.entries(values)) if (!byKey.has(key) && key !== EXPRESSION_VERSION_KEY) out[key] = value;
     return out;
@@ -247,7 +267,7 @@ function validateResolvedFields(values: Record<string, unknown>, fields: readonl
     const path = `${prefix}${field.key}`;
     if (!included(field, read)) { delete result[field.key]; continue; }
     const value = values[field.key];
-    const expected = field.resultType ?? FIELD_ADAPTERS[field.type];
+    const expected = fieldResultType(field);
     try {
       if (value == null || value === '') {
         if (field.required) throw new Error('Required value is missing');
@@ -269,10 +289,13 @@ function validateResolvedFields(values: Record<string, unknown>, fields: readonl
   return result;
 }
 
-export function normalizeExpressionRows(raw: unknown): unknown {
-    if (Array.isArray(raw)) return raw.map(normalizeExpressionRows);
+export function normalizeExpressionRows(raw: unknown, descriptor?: FieldDescriptor): unknown {
+    if (Array.isArray(raw)) return raw.map(row => normalizeExpressionRows(row, descriptor));
     if (!raw || typeof raw !== 'object') return raw;
     const row = raw as Record<string, unknown>;
+    if (descriptor && !typedRowSchema(repeaterRowFields(descriptor, row))) return raw;
+    if (row.expression_format_version !== undefined && row.expression_format_version !== 1) throw new FieldExpressionError('Unsupported typed row expression dialect', { fieldPath: 'expression_format_version', phase: 'configuration' });
+    if (row.expression_format_version === 1) return raw;
     if ('fieldName' in row && 'dataType' in row && (row.valueMode === 'fixed' || row.valueMode === 'expression')) {
       const { valueMode, ...rest } = row;
       let value = row.value;
@@ -287,10 +310,9 @@ export function normalizeExpressionRows(raw: unknown): unknown {
 }
 
 function migrateLegacyFieldSource(raw: unknown, field: FieldDescriptor): unknown {
-  if (field.type === 'repeater') raw = normalizeExpressionRows(raw);
-  if (raw && typeof raw === 'object' && (raw as Record<string, unknown>).expression_format_version === 1) return raw;
+  if (field.type === 'repeater') raw = normalizeExpressionRows(raw, field);
   if (Array.isArray(raw) && field.type === 'repeater') return raw.map(row => {
-    if (!row || typeof row !== 'object' || (row as Record<string, unknown>).expression_format_version === 1) return row;
+    if (!row || typeof row !== 'object' || modeFreeRow(field, row as Record<string, unknown>)) return row;
     const migrated = { ...row as Record<string, unknown> };
     for (const child of repeaterRowFields(field, row as Record<string, unknown>)) if (child.key in migrated) migrated[child.key] = migrateLegacyFieldSource(migrated[child.key], child);
     return migrated;

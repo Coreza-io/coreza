@@ -30,3 +30,9 @@ test('schema-owned legacy row variants and structured JSON source remap through 
   expect(typeof result.config).toBe('string');
   expect(JSON.parse(result.config).count).toContain('$("new")');
 });
+
+test('row-owned mode metadata cannot hide references in ordinary schema fields', () => {
+  const fields = [{ key: 'headers', type: 'repeater', subFields: [{ key: 'name', type: 'string' }, { key: 'value', type: 'text' }] }];
+  const source = { __expressionFormatVersion: 1, headers: [{ name: 'x', value: '{{ $("old").json.count }}', valueMode: 'fixed', expression_format_version: 2, fieldName: 'metadata', dataType: 'number' }] };
+  expect(remapNodeReferenceMap(source, { old: 'new' }, fields).headers[0].value).toContain('$("new")');
+});

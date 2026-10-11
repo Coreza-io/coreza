@@ -130,7 +130,7 @@ export function useNodeFieldState({
     if (expressionSupported) {
       try {
         // Normalize the original source before applying edits; a fixed literal keeps its meaning.
-        next = { ...migrateNodeExpressionValues(base, definition?.fields ?? []), ...Object.fromEntries(Object.entries(updates).map(([key, value]) => [key, definition?.fields?.find((field: any) => field.key === key)?.type === 'repeater' ? normalizeExpressionRows(value) : value])) };
+        next = { ...migrateNodeExpressionValues(base, definition?.fields ?? []), ...Object.fromEntries(Object.entries(updates).map(([key, value]) => [key, definition?.fields?.find((field: any) => field.key === key)?.type === 'repeater' ? normalizeExpressionRows(value, definition.fields.find((field: any) => field.key === key)) : value])) };
       } catch (error) {
         try { next = migrateNodeExpressionValues({ ...base, ...updates }, definition?.fields ?? []); }
         catch (repairError) { setMigrationError(repairError instanceof Error ? repairError.message : String(repairError)); return false; }

@@ -172,6 +172,7 @@ test('ParameterResolver invalidates changed source/descriptors and refuses malfo
   expect(resolver.resolve(changed, { count: 2 }, () => ({})).count).toBe(3);
   const typed = { ...changed, data: { definition: { fields: [{ key: 'count', type: 'boolean' }] } } };
   expect(() => resolver.resolve(typed, { count: 2 }, () => ({}))).toThrow('expected Boolean');
+  expect(resolver.resolve({ ...node, values: { count: '7' } }, {}, () => ({})).count).toBe('7');
   expect(() => resolver.resolve({ ...node, values: { __expressionFormatVersion: 1, count: '{{' } }, {}, () => ({}))).toThrow('Unclosed');
 });
 
@@ -185,6 +186,30 @@ test('compiled slots preserve explicit null and absent current input', () => {
 
 test('String prompt descriptors reject native structured results before a provider request', () => {
   const definition = loadNodeDefinition('AIAgent')!;
-  const source = { userPrompt: '{{ $json.prompt }}' };
+  const source = { systemPrompt: 'You are a helpful assistant.', userPrompt: '{{ $json.prompt }}' };
   expect(() => compileNodeFieldValues(source, definition.fields!, 'agent').resolve({ $json: { prompt: [1, 2] } })).toThrow('agent: userPrompt');
+});
+
+test('mixed versioned documents preserve legacy fixed rows and row-owned operator metadata', () => {
+  const definition = loadNodeDefinition('Edit Fields')!;
+  const source = { __expressionFormatVersion: 1, fields: [{ fieldName: 'literal', dataType: 'string', valueMode: 'fixed', value: '{{ $json.count }}', operator: 'audit metadata' }, { fieldName: 'active', dataType: 'number', expression_format_version: 1, value: '{{ $json.count }}' }] };
+  const resolved = compileNodeFieldValues(source, definition.fields!).resolve(context);
+  expect(applyFieldRows(resolved.fields as any, { input: {}, legacyResultSeed: {} })).toEqual({ literal: '{{ $json.count }}', active: 2 });
+  expect((resolved.fields as any)[0].operator).toBe('audit metadata');
+  expect(source.fields[0].valueMode).toBe('fixed');
+});
+test('typed ownership is declared by the schema, not guessed from arbitrary repeater metadata', () => {
+  const descriptors = [{ key: 'headers', type: 'repeater', subFields: [{ key: 'name', type: 'string' }, { key: 'value', type: 'text' }] }];
+  const values = { headers: [{ name: 'x-header', value: '{{ $json.count }}', fieldName: 'metadata', dataType: 'number', valueMode: 'fixed', expression_format_version: 2 }] };
+  const migrated = migrateNodeExpressionValues(values, descriptors);
+  expect((compileNodeFieldValues(migrated, descriptors).resolve(context).headers as any)[0]).toEqual({ ...values.headers[0], value: 2 });
+});
+test('unsupported typed row dialects fail before persistence or execution', () => {
+  expect(() => compileNodeFieldValues({ fields: [{ fieldName: 'x', dataType: 'number', expression_format_version: 2, value: '1' }] }, fields, 'editor')).toThrow('Unsupported typed row expression dialect');
+});
+
+test('credential selectors validate a scalar ID before existing authorization checks', () => {
+  const descriptor = { key: 'credential_id', type: 'select', optionsSource: 'credentialsApi' };
+  expect(evaluateFieldValue(compileFieldValue('{{ $json.id }}', descriptor), { $json: { id: 'authorized-id' } })).toBe('authorized-id');
+  expect(() => evaluateFieldValue(compileFieldValue('{{ $json.id }}', descriptor), { $json: { id: ['authorized-id'] } }, 'model')).toThrow('expected String');
 });

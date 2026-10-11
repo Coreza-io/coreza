@@ -1,7 +1,7 @@
 import { fullePreview, summarizePreview } from '@/utils/preview';
 import { ExpressionFieldEditor } from "./ExpressionFieldEditor";
 import { useExpressionCapability } from "@/hooks/useExpressionCapability";
-import { isExpressionContract, FIELD_ADAPTERS, type FieldPreviewScope, repeaterRowFields, included } from "../../../../../coreza-backend/src/nodes/logic/fieldExpression";
+import { isExpressionContract, FIELD_ADAPTERS, type FieldPreviewScope, repeaterRowFields, included, fieldResultType } from "../../../../../coreza-backend/src/nodes/logic/fieldExpression";
 import { useReferenceTextDrop, consumeReferenceFocusRestore } from "@/hooks/useReferenceTextDrop";
 import React from "react";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
@@ -890,7 +890,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               onDrop={onDrop ? (itemField, event, source, setter) => onDrop(itemField, event, source, setter ?? (text => onChange(field.key, fieldValue.map((current, itemIndex) => itemIndex === index ? text : current)))) : undefined} />
           ))}
           <ExpressionFieldEditor value={fieldValue} onChange={value => onChange(field.key, value)} identity={fieldPath}
-            expectedType={field.resultType ?? FIELD_ADAPTERS[field.type]} disabled={readOnly || !expressionSupported} masked={field.type === 'password'}
+            expectedType={fieldResultType(field)} disabled={readOnly || !expressionSupported} masked={field.type === 'password'}
             multiline={['textarea', 'json', 'array', 'object', 'repeater'].includes(field.type)} placeholder={field.placeholder}
             preview={referencePreview} onDrop={onDrop ? (event, source) => { onDrop(field, event, source); } : undefined} />
         </div>

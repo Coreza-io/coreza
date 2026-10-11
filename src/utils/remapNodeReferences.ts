@@ -1,4 +1,4 @@
-import { isExpressionContract, compileFieldValue, type FieldDescriptor, repeaterRowFields } from "../../coreza-backend/src/nodes/logic/fieldExpression";
+import { isExpressionContract, compileFieldValue, type FieldDescriptor, repeaterRowFields, typedRowSchema } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 import { compileExpression } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { referenceInsertionSpans } from "./editFieldReferenceDrop";
@@ -18,9 +18,11 @@ export function mapNodeReferences<T>(value: T, mapName: (name: string) => string
           if (!row || typeof row !== 'object') return row;
           const record = row as Record<string, unknown>;
           const mappedRow = { ...record };
-          for (const child of repeaterRowFields(descriptor, record)) if (child.key in record) {
-            if (child.key === 'value' && record.valueMode === 'fixed') continue;
-            const typed = child.key === 'value' && record.expression_format_version === 1 && ['string', 'number', 'boolean', 'array', 'object'].includes(String(record.dataType)) ? { ...child, type: String(record.dataType) } : child;
+          const rowFields = repeaterRowFields(descriptor, record);
+          const owned = typedRowSchema(rowFields);
+          for (const child of rowFields) if (child.key in record) {
+            if (owned && child.key === 'value' && record.valueMode === 'fixed' && record.expression_format_version !== 1) continue;
+            const typed = owned && child.key === 'value' && record.expression_format_version === 1 && ['string', 'number', 'boolean', 'array', 'object'].includes(String(record.dataType)) ? { ...child, type: String(record.dataType) } : child;
             mappedRow[child.key] = mapField(record[child.key], typed);
           }
           return mappedRow;

@@ -46,7 +46,7 @@ export class ParameterResolver {
     const source = this.compiledSources.get(node.id);
     // Canonical document changes replace values/definitions. Do not serialize
     // the graph or context on every event merely to check cache freshness.
-    if (versioned && (!this.compiledParams.has(node.id) || !source || source.values !== node.values || source.definition !== node.data?.definition)) {
+    if ((versioned || this.compiledParams.get(node.id)?.expressionFormatVersion === 1) && (!this.compiledParams.has(node.id) || !source || source.values !== node.values || source.definition !== node.data?.definition)) {
       this.compiledParams.set(node.id, compileNodeParams(node, this.nodes));
       this.compiledSources.set(node.id, { values: node.values, definition: node.data?.definition });
       this.nodeHasTemplatesCache.delete(node.id);

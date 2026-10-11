@@ -5,7 +5,7 @@ import { FIELD_VALUE_MODES_KEY, getFieldValueMode, type FieldValueMode } from ".
 import FieldValueModeSelector from "./FieldValueModeSelector";
 import React from "react";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
-import { createPortal } from "react-dom";
+import { useFieldPreview } from "@/hooks/useFieldPreview";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -67,12 +67,6 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   selectedSourceNodeId,
 }) => {
   const { getNodes } = useStableNodes();
-  const [showFloatingPreview, setShowFloatingPreview] = React.useState(false);
-  const [previewAnchorRect, setPreviewAnchorRect] =
-    React.useState<DOMRect | null>(null);
-  const fieldWrapperRef = React.useRef<HTMLDivElement | null>(null);
-  const previewCardRef = React.useRef<HTMLDivElement | null>(null);
-  const activeElementRef = React.useRef<HTMLElement | null>(null);
   const shouldShowDescription = field.showDescription !== false;
   const isHiddenField = field.type === "hidden";
   const matchesShowOptions = field.displayOptions?.show
@@ -135,6 +129,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     typeof fieldValue === "string" && fieldValue.includes("{{");
   const referencePreview =
     isReference && getPreview ? getPreview(field.key) : null;
+  const fieldPreview = useFieldPreview(isReference && !!referencePreview, referencePreview);
   const multiselectValueMapDeps = React.useMemo(() => {
     if (field.type !== "multiselect") return "";
     const options = selectOptions[field.key] || field.options || [];
@@ -240,19 +235,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     onDrop(field, e, fieldValue || "");
   };
 
-  const openFloatingPreview = (target: HTMLElement) => {
-    if (!referencePreview) return;
-    activeElementRef.current = target;
-    setPreviewAnchorRect(target.getBoundingClientRect());
-    setShowFloatingPreview(true);
-  };
-
   const handleInputFocus = (
     e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     if (!consumeReferenceFocusRestore(e.target)) e.target.select();
     if (isReference) {
-      openFloatingPreview(e.currentTarget);
+      fieldPreview.open(e.currentTarget);
     }
   };
 
@@ -260,7 +248,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     e: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     if (isReference) {
-      openFloatingPreview(e.currentTarget);
+      fieldPreview.open(e.currentTarget);
     }
   };
 
@@ -279,95 +267,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     disabled: readOnly,
   };
 
-  React.useEffect(() => {
-    if (!showFloatingPreview) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (previewCardRef.current?.contains(target)) return;
-      if (fieldWrapperRef.current?.contains(target)) return;
-      setShowFloatingPreview(false);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    return () =>
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [showFloatingPreview]);
-
-  React.useEffect(() => {
-    if (!showFloatingPreview) return;
-
-    const updatePosition = () => {
-      if (activeElementRef.current) {
-        setPreviewAnchorRect(activeElementRef.current.getBoundingClientRect());
-      }
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [showFloatingPreview]);
-
-  React.useEffect(() => {
-    if (!isReference || !referencePreview) {
-      setShowFloatingPreview(false);
-    }
-  }, [isReference, referencePreview]);
-
   if (!shouldRender) return null;
-
-  const renderPreviewCard = () => {
-    if (!referencePreview || !showFloatingPreview || !previewAnchorRect)
-      return null;
-
-    const availableWidth = window.innerWidth - 16;
-    const width = Math.min(
-      Math.max(previewAnchorRect.width, 260),
-      availableWidth,
-    );
-    const left = Math.min(
-      Math.max(8, previewAnchorRect.left),
-      availableWidth - width + 8,
-    );
-
-    return createPortal(
-      <div
-        ref={previewCardRef}
-        style={{
-          position: "fixed",
-          top: previewAnchorRect.top,
-          left,
-          width,
-          transform: "translateY(calc(-100% - 8px))",
-          zIndex: 50,
-        }}
-        className="pointer-events-auto"
-      >
-        <div className="rounded-lg border bg-card text-card-foreground shadow-lg overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/60">
-            <span className="text-xs font-medium text-muted-foreground">
-              Result
-            </span>
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-              Preview
-            </span>
-          </div>
-          <div className="px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-40 overflow-auto font-mono bg-background">
-            {referencePreview}
-          </div>
-          <div className="px-3 py-2 bg-muted/50 text-[11px] text-muted-foreground flex items-center gap-1">
-            <span className="font-semibold text-foreground">Tip:</span>
-            <span>Anything inside {"{{ }}"} is JavaScript.</span>
-          </div>
-        </div>
-      </div>,
-      document.body,
-    );
-  };
 
   const renderField = () => {
     switch (field.type) {
@@ -457,7 +357,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             onDragOver={referenceDrop.props.onDragOver}
             onDragLeave={referenceDrop.props.onDragLeave}
             onDrop={handleDropWrapper}
-            ref={fieldWrapperRef}
+            ref={fieldPreview.wrapperRef}
           >
             <Input
               {...commonInputProps}
@@ -471,7 +371,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               }
             />
             {referenceDrop.error && <p role="status" className="text-xs text-destructive">{referenceDrop.error}</p>}
-            {renderPreviewCard()}
+            {fieldPreview.popup}
           </div>
         );
       }
@@ -484,7 +384,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             onDragOver={referenceDrop.props.onDragOver}
             onDragLeave={referenceDrop.props.onDragLeave}
             onDrop={handleDropWrapper}
-            ref={fieldWrapperRef}
+            ref={fieldPreview.wrapperRef}
           >
             <textarea
               {...commonInputProps}
@@ -494,7 +394,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               )}
             />
             {referenceDrop.error && <p role="status" className="text-xs text-destructive">{referenceDrop.error}</p>}
-            {renderPreviewCard()}
+            {fieldPreview.popup}
           </div>
         );
 

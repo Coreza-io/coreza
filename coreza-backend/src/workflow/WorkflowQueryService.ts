@@ -1,3 +1,4 @@
+import { isExpressionContract } from '../nodes/logic/fieldExpression';
 import { validateExpressionDocument } from "./expressionDocument";
 import type { WorkflowNode } from "../nodes/types";
 import type { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
@@ -57,6 +58,13 @@ export class WorkflowQueryService {
     return !!(nestedCandidate || existingNested);
   }
 
+  private async protectExpressionAuthoring(candidate: WorkflowNode[], previous: WorkflowNode[] = []) {
+    const existing = new Map(previous.map(node => [node.id, node]));
+    const upgrades = candidate.some(node => isExpressionContract(node.values) && !isExpressionContract(existing.get(node.id)?.values));
+    if (upgrades && (process.env.COREZA_EXPRESSION_AUTHORING === 'disabled' || !await this.workflowRepo.expressionReady?.()))
+      throw Object.assign(new Error('expression-authoring-unavailable'), { statusCode: 409, isOperational: true });
+  }
+
   async listWorkflows(userId: string) {
     return this.workflowRepo.listByUser(userId);
   }
@@ -67,6 +75,7 @@ export class WorkflowQueryService {
 
   async createWorkflow(userId: string, input: CreateWorkflowInput) {
     validateExpressionDocument(input.nodes as WorkflowNode[]);
+    await this.protectExpressionAuthoring(input.nodes as WorkflowNode[]);
     await this.protectHierarchy(input);
     const nodeClusters = validateNodeClusterDocument({
       nodes: input.nodes,
@@ -105,6 +114,7 @@ export class WorkflowQueryService {
     const hierarchyWrite = await this.protectHierarchy(input, existing.node_clusters);
     const candidateNodes = input.nodes ?? existing.nodes ?? [];
     validateExpressionDocument(candidateNodes as WorkflowNode[], existing.nodes as WorkflowNode[] ?? []);
+    await this.protectExpressionAuthoring(candidateNodes as WorkflowNode[], existing.nodes as WorkflowNode[] ?? []);
     if ((existing.nodes?.length ?? 0) > 0 && candidateNodes.length === 0) {
       throw Object.assign(new Error("empty-workflow"), {
         statusCode: 400,

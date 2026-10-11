@@ -1,7 +1,9 @@
+import { isExpressionContract } from '../nodes/logic/fieldExpression';
 import { WorkflowNode } from "../nodes/types";
 import { resolveReferences } from "../utils/resolveReferences";
 import {
   CompiledNodeParams,
+  compileNodeParams,
   preCompileAllNodes,
 } from "../utils/templateCompiler";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
@@ -9,9 +11,10 @@ import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 
 export class ParameterResolver {
   private compiledParams: Map<string, CompiledNodeParams>;
+  private compiledSources = new Map<string, { values: WorkflowNode['values']; definition: unknown }>();
   private nodeHasTemplatesCache = new Map<string, boolean>();
 
-  constructor(private readonly nodes: WorkflowNode[]) {
+  constructor(private readonly nodes: WorkflowNode[], precompiled?: Map<string, CompiledNodeParams>) {
     // Backend safety net: merge any missing definition defaults into node
     // values so live execution never fails due to fields added after the
     // workflow was last saved.
@@ -30,7 +33,8 @@ export class ParameterResolver {
     //   }
     // }
 
-    this.compiledParams = preCompileAllNodes(nodes);
+    this.compiledParams = precompiled ? new Map(precompiled) : preCompileAllNodes(nodes);
+    for (const node of nodes) this.compiledSources.set(node.id, { values: node.values, definition: node.data?.definition });
   }
 
   resolve(
@@ -38,6 +42,15 @@ export class ParameterResolver {
     input: any,
     getAllResults: () => Record<string, any>,
   ): Record<string, any> {
+    const versioned = isExpressionContract(node.values);
+    const source = this.compiledSources.get(node.id);
+    // Canonical document changes replace values/definitions. Do not serialize
+    // the graph or context on every event merely to check cache freshness.
+    if (versioned && (!this.compiledParams.has(node.id) || !source || source.values !== node.values || source.definition !== node.data?.definition)) {
+      this.compiledParams.set(node.id, compileNodeParams(node, this.nodes));
+      this.compiledSources.set(node.id, { values: node.values, definition: node.data?.definition });
+      this.nodeHasTemplatesCache.delete(node.id);
+    }
     const compiled = this.compiledParams.get(node.id);
     if (compiled) {
       if (!compiled.hasTemplates) return compiled.staticParams ?? {};
@@ -58,6 +71,7 @@ export class ParameterResolver {
       }
     }
 
+    if (versioned) throw new Error(`Missing shared expression plan for node ${node.id}`);
     const nodeParams = node.values || {};
     if (!this.nodeHasTemplates(node.id, nodeParams)) {
       const out: Record<string, any> = {};

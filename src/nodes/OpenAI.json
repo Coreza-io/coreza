@@ -50,6 +50,7 @@
     },
     {
       "key": "prompt",
+      "resultType": "string",
       "label": "System Prompt",
       "type": "textarea",
       "placeholder": "You are a helpful assistant...",
@@ -58,6 +59,7 @@
     },
     {
       "key": "userMessage",
+      "resultType": "string",
       "label": "User Message",
       "type": "textarea",
       "placeholder": "Enter message or use {{variable}}",

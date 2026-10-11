@@ -34,6 +34,7 @@ const UNSUPPORTED_PATTERNS = /\$parentStore|\$env|\$execution/;
 type AccessorFn = (allNodeData: Record<string, any>) => any;
 
 export interface CompiledNodeParams {
+  expressionFormatVersion?: number;
   hasTemplates: boolean;
   /** For nodes with zero templates — just return these directly */
   staticParams?: Record<string, any>;
@@ -472,8 +473,8 @@ export function compileNodeParams(
     });
     const resolve = (outputs: Record<string, unknown>, input: unknown) => compiled.resolve({ $json: pickTypedJsonSource(input), $nodes: outputs, expressionOutputs: outputs, nodes });
     if (compiled.references.length === 0 && !JSON.stringify(nodeParams).includes('{{'))
-      return { hasTemplates: false, staticParams: resolve({}, {}) };
-    return { hasTemplates: true, templateDeps: deps, resolve };
+      return { expressionFormatVersion: 1, hasTemplates: false, staticParams: resolve({}, {}) };
+    return { expressionFormatVersion: 1, hasTemplates: true, templateDeps: deps, resolve };
   }
   // const entries = Object.entries(nodeParams).filter(
   //   ([k]) => k !== "credential_id",
@@ -659,6 +660,6 @@ export function compileParamsToSlots(
       const [name, slotIdx] = deps[i];
       lookup[name] = slots[slotIdx];
     }
-    return compiled.resolve!(lookup, input ?? slots);
+    return compiled.resolve!(lookup, compiled.expressionFormatVersion === 1 ? input : input ?? slots);
   };
 }

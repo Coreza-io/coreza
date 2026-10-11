@@ -30,6 +30,7 @@
   "fields": [
     {
       "key": "systemPrompt",
+      "resultType": "string",
       "label": "System Prompt",
       "type": "textarea",
       "placeholder": "You are a helpful AI assistant...",
@@ -38,6 +39,7 @@
     },
     {
       "key": "userPrompt",
+      "resultType": "string",
       "label": "User Prompt",
       "type": "textarea",
       "placeholder": "Enter user message or use {{variable}}",

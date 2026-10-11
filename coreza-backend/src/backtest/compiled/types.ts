@@ -150,7 +150,7 @@ export interface CompiledPlan {
 /**
  * Execution context passed to compiled plan executors.
  * Mirrors the WorkflowEngine's ExecutionContext but with
- * resolveNodeParameters overridden to return pre-resolved params.
+ * resolveNodeParameters reuses current instruction params and resolves support nodes independently.
  */
 export interface CompiledExecContext {
   isWarmingUp: boolean;
@@ -175,7 +175,7 @@ export interface CompiledExecContext {
   executionMode: ExecutionMode;
   /** Per-instruction pre-resolved params injected by VM */
   resolvedParams?: Record<string, any>;
-  /** Overridden to return pre-resolved params from slots */
+  /** Current instruction returns pre-resolved params; support nodes use their own plans. */
   resolveNodeParameters: (node: WorkflowNode, input: any) => any;
   /** Returns all node results — reads from slots for compiled plan */
   getAllNodeResults: () => Record<string, any>;

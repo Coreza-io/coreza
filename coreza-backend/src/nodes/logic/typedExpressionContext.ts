@@ -2,7 +2,7 @@ import type { ReferenceNode } from "../../utils/referenceResolution";
 
 /** Snapshot canonical identities and current results once per action/preview.
  * Availability comes from the execution context (including its existing pins),
- * never from static node configuration. Wrappers are preserved for pickJsonSource.
+ * with canonical pinned/output fallback, never from static node configuration. Wrappers are preserved for pickJsonSource.
  */
 export function snapshotTypedExpressionContext(
   nodes: readonly ReferenceNode[],
@@ -19,7 +19,8 @@ export function snapshotTypedExpressionContext(
     })) if (typeof value === "string") (identity as unknown as Record<string, unknown>)[key] = value;
     // title is also an explicit legacy alias; retain it without the rest of node data.
     if (typeof data?.title === "string") identity.data = { title: data.title };
-    const output = getOutput(node.id);
+    const stored = getOutput(node.id);
+    const output = stored !== undefined ? stored : data?.pinnedOutput !== undefined ? data.pinnedOutput : data?.output;
     if (output !== undefined) nodeResults[node.id] = output;
     return identity;
   });

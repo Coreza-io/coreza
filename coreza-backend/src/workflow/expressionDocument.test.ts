@@ -29,3 +29,36 @@ test('authoring capability requires writer readiness and respects reader-only ro
     else process.env.COREZA_EXPRESSION_AUTHORING = previous;
   }
 });
+
+test('alternate API writers cannot enable the dialect before storage readiness or during rollback', async () => {
+  const previous = process.env.COREZA_EXPRESSION_AUTHORING;
+  const create = jest.fn().mockImplementation((_user, input) => input);
+  const expressionReady = jest.fn().mockResolvedValue(false);
+  const query = new WorkflowQueryService({ hierarchyReady: async () => true, expressionReady, create } as any, {} as any, {} as any);
+  const input = { name: 'Example', nodes: [node], edges: [], node_clusters: [] } as any;
+  try {
+    delete process.env.COREZA_EXPRESSION_AUTHORING;
+    await expect(query.createWorkflow('user', input)).rejects.toThrow('expression-authoring-unavailable');
+    expect(create).not.toHaveBeenCalled();
+    expressionReady.mockResolvedValue(true);
+    await expect(query.createWorkflow('user', input)).resolves.toMatchObject({ nodes: [node] });
+    process.env.COREZA_EXPRESSION_AUTHORING = 'disabled';
+    await expect(query.createWorkflow('user', input)).rejects.toThrow('expression-authoring-unavailable');
+  } finally {
+    if (previous === undefined) delete process.env.COREZA_EXPRESSION_AUTHORING;
+    else process.env.COREZA_EXPRESSION_AUTHORING = previous;
+  }
+});
+
+test('workflow updates gate newly introduced dialect nodes before committing', async () => {
+  const existing = { name: 'Example', nodes: [{ ...node, values: { value: '1' } }], edges: [], node_clusters: [], revision: 1, project_id: null };
+  const update = jest.fn().mockImplementation((_user, _id, input) => input);
+  const expressionReady = jest.fn().mockResolvedValue(false);
+  const query = new WorkflowQueryService({ getOwnedWorkflow: async () => existing, hierarchyReady: async () => true, expressionReady, update } as any, {} as any, {} as any);
+  const input = { expected_revision: 1, nodes: [node], edges: [], node_clusters: [] } as any;
+  await expect(query.updateWorkflow('user', 'workflow', input)).rejects.toThrow('expression-authoring-unavailable');
+  expect(update).not.toHaveBeenCalled();
+  expressionReady.mockResolvedValue(true);
+  await expect(query.updateWorkflow('user', 'workflow', input)).resolves.toMatchObject({ nodes: [node] });
+  expect(update).toHaveBeenCalledTimes(1);
+});

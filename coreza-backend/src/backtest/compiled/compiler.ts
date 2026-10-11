@@ -11,6 +11,7 @@
 import { WorkflowNode, WorkflowEdge, INodeExecutor } from "../../nodes/types";
 import { CompiledNodeParams } from "../../utils/templateCompiler";
 import { compileParamsToSlots } from "../../utils/templateCompiler";
+import { ParameterResolver } from "../../engine/parameterResolver";
 import { GraphRuntime } from "../../engine/graphRuntime";
 import {
   OpCode,
@@ -259,6 +260,7 @@ export function compilePlan(
     slots[entry.slotIndex] = entry.value;
   }
 
+  let supportParameterResolver: ParameterResolver | undefined;
   const ctx: CompiledExecContext = {
     isWarmingUp: false,
     nodeId: "",
@@ -272,7 +274,13 @@ export function compilePlan(
     indicatorStateManager: ctxBase.indicatorStateManager,
     abortSignal: ctxBase.abortSignal,
     executionMode: "backtest",
-    resolveNodeParameters: () => ctx.resolvedParams ?? {},
+    resolveNodeParameters: (requestedNode, input) => {
+      if (requestedNode.id === ctx.nodeId) return ctx.resolvedParams ?? {};
+      // Support-node requests own different descriptors/source. Reuse compiled
+      // plans while reading this invocation's current input and slot outputs.
+      supportParameterResolver ??= new ParameterResolver(ctxBase.nodes, compiledParams);
+      return supportParameterResolver.resolve(requestedNode, input, ctx.getAllNodeResults);
+    },
     getAllNodeResults: () => {
       if (plan.nodeResultsDirty) {
         for (const [nodeId, slotIdx] of slotMap.entries()) {

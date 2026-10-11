@@ -16,7 +16,8 @@ export const FIELD_ADAPTERS: Readonly<Record<string, EditFieldDataType | 'any' |
 export interface FieldOption {
   value?: unknown;
   id?: unknown;
-  valueMap?: { values?: Record<string, unknown> };
+  valueMap?: { field?: string; values?: Record<string, unknown> };
+  displayOptions?: FieldDescriptor['displayOptions'];
 }
 export interface FieldDescriptor {
   key: string;
@@ -34,6 +35,7 @@ export interface FieldDescriptor {
   dependsOn?: string;
   displayOptions?: { show?: Record<string, unknown>; hide?: Record<string, unknown> };
   subFields?: FieldDescriptor[];
+  rowVariants?: { whenPresent: string; subFields: FieldDescriptor[] }[];
   items?: FieldDescriptor;
 }
 export class FieldExpressionError extends Error {
@@ -96,31 +98,40 @@ export function prepareFieldExpressionTransport(compiled: CompiledFieldValue, co
 }
 export function collectFieldReferences(compiled: CompiledFieldValue): readonly string[] { return compiled.template?.nodeReferences ?? []; }
 
-function included(field: FieldDescriptor, read: (key: string) => unknown): boolean {
-  const matches = (value: unknown, options: unknown) => {
-    const allowed = Array.isArray(options) ? options : [options];
-    return Array.isArray(value) ? value.some(v => allowed.includes(v)) : allowed.includes(value);
+export function included(field: FieldDescriptor, read: (key: string) => unknown, options: { ignoreKeys?: readonly string[]; unresolvedKeys?: ReadonlySet<string> } = {}): boolean {
+  const ignored = options.ignoreKeys ?? ['portfolio_tab'];
+  const matches = (value: unknown, rawOptions: unknown, hide = false) => {
+    const allowed = (Array.isArray(rawOptions) ? rawOptions : [rawOptions]).map(option => option && typeof option === 'object' ? (option as FieldOption).id ?? (option as FieldOption).value : option);
+    const values = Array.isArray(value) ? value : [value];
+    return values.some(current => allowed.some(option => hide ? String(current) === String(option) : current === option));
   };
-  return Object.entries(field.displayOptions?.show ?? {}).every(([key, allowed]) => key === 'portfolio_tab' || matches(read(key), allowed)) &&
-    !Object.entries(field.displayOptions?.hide ?? {}).some(([key, allowed]) => key !== 'portfolio_tab' && matches(read(key), allowed));
+  return Object.entries(field.displayOptions?.show ?? {}).every(([key, allowed]) => ignored.includes(key) || options.unresolvedKeys?.has(key) || matches(read(key), allowed)) &&
+    !Object.entries(field.displayOptions?.hide ?? {}).some(([key, allowed]) => !ignored.includes(key) && !options.unresolvedKeys?.has(key) && matches(read(key), allowed, true));
 }
+
 function validateOptions(field: FieldDescriptor, value: unknown, read: (key: string) => unknown, nodeId: string | undefined, fieldPath: string): void {
   if (value == null || value === '' || field.optionsSource) return;
   const options = field.dynamicOptions ? field.dynamicOptions.optionsByValue[String(read(field.dynamicOptions.dependsOn))]
     : field.conditionalOptions ? field.conditionalOptions[String(read(field.dependsOn!))]
     : field.groupedOptions ? Object.values(field.groupedOptions).flatMap(group => group.options) : field.options;
-  if (!options?.length) return;
+  if (!options) return;
+  const activeOptions = options.filter(option => included({ key: field.key, type: field.type, displayOptions: option.displayOptions }, read));
   if (field.type === 'multiselect' && Array.isArray(value)) {
-    const allowed = options.flatMap(option => [option.id ?? option.value, ...Object.values(option.valueMap?.values ?? {})]);
-    if (value.some(item => !allowed.includes(item))) throw new FieldExpressionError('Value is not an allowed option', { nodeId, fieldPath, phase: 'type', actual: 'Array' });
+    const allowed = activeOptions.map(option => option.valueMap?.field ? option.valueMap.values?.[String(read(option.valueMap.field))] ?? option.id ?? option.value : option.id ?? option.value);
+    if (value.some(item => !allowed.includes(item))) throw new FieldExpressionError('Value is not an allowed option', { nodeId, fieldPath, phase: 'type', expected: 'allowed option', actual: 'Array' });
     return;
   }
   if (field.type !== 'select' && field.type !== 'grouped-select') return;
-  if (!options.some(option => (('id' in option ? option.id : undefined) ?? option.value) === value))
-    throw new FieldExpressionError('Value is not an allowed option', { nodeId, fieldPath, phase: 'type', actual: editFieldValueType(value) });
+  if (!activeOptions.some(option => (('id' in option ? option.id : undefined) ?? option.value) === value))
+    throw new FieldExpressionError('Value is not an allowed option', { nodeId, fieldPath, phase: 'type', expected: 'allowed option', actual: editFieldValueType(value) });
 }
 
-export function compileNodeFieldValues(values: Record<string, unknown>, fields: readonly FieldDescriptor[], nodeId?: string, prefix = ''): { references: string[]; resolve: (context: ExpressionContext) => Record<string, unknown> } {
+/** Row shape is schema-owned; legacy operations are explicit variants, not node-name guesses. */
+export function repeaterRowFields(field: FieldDescriptor, row: Record<string, unknown>): readonly FieldDescriptor[] {
+  return field.rowVariants?.find(variant => Object.prototype.hasOwnProperty.call(row, variant.whenPresent))?.subFields ?? field.subFields ?? [];
+}
+
+export function compileNodeFieldValues(values: Record<string, unknown>, fields: readonly FieldDescriptor[], nodeId?: string, prefix = ''): { references: string[]; resolve: (context: ExpressionContext) => Record<string, unknown>; resolveField: (key: string, context: ExpressionContext) => unknown } {
   const byKey = new Map(fields.map(field => [field.key, field]));
   const compile = (raw: unknown, descriptor: FieldDescriptor, path: string): CompiledFieldValue => {
     try { return compileFieldValue(raw, descriptor, path); }
@@ -152,7 +163,7 @@ export function compileNodeFieldValues(values: Record<string, unknown>, fields: 
       const plans = raw.map((row, index) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) throw new FieldExpressionError('Invalid repeater row', { nodeId, fieldPath: `${prefix}${field.key}[${index}]`, phase: 'configuration' });
         const record = row as Record<string, unknown>;
-        const plan = compileNodeFieldValues(record, (field.subFields ?? []).filter(child => child.key !== 'value' || record.expression_format_version !== 1), nodeId, `${prefix}${field.key}[${index}].`);
+        const plan = compileNodeFieldValues(record, repeaterRowFields(field, record).filter(child => child.key !== 'value' || record.expression_format_version !== 1), nodeId, `${prefix}${field.key}[${index}].`);
         plan.references.forEach(name => references.add(name));
         return plan;
       });
@@ -173,18 +184,19 @@ export function compileNodeFieldValues(values: Record<string, unknown>, fields: 
       rows.set(field.key, plans); rowValues.set(field.key, values);
     }
   }
-  const resolve = (context: ExpressionContext): Record<string, unknown> => {
+  const resolve = (context: ExpressionContext, selectedKey?: string): Record<string, unknown> => {
     const out: Record<string, unknown> = Object.create(null); const resolving = new Set<string>();
     const read = (key: string): unknown => {
       if (Object.prototype.hasOwnProperty.call(out, key)) return out[key];
       if (!compiled.has(key)) return values[key];
-      if (resolving.has(key)) throw new FieldExpressionError('Cyclic field visibility dependency', { nodeId, fieldPath: key, phase: 'configuration' });
+      if (resolving.has(key)) throw new FieldExpressionError('Cyclic field visibility dependency', { nodeId, fieldPath: `${prefix}${key}`, phase: 'configuration' });
       resolving.add(key);
       try {
         const field = byKey.get(key)!;
         if (!included(field, read)) return undefined;
         let value = evaluateFieldValue(compiled.get(key)!, context, nodeId);
         if (items.has(key)) value = items.get(key)!.map(plan => { const result = evaluateFieldValue(plan, context, nodeId); validateOptions(plan.descriptor, result, read, nodeId, plan.fieldPath); return result; });
+        if (field.items && !items.has(key) && Array.isArray(value)) value = value.map((item, index) => validateResolvedFields({ [field.items!.key]: item }, [field.items!], nodeId, `${prefix}${key}[${index}].`)[field.items!.key]);
         if (objects.has(key)) value = objects.get(key)!.resolve(context);
         if (rows.has(key)) value = rows.get(key)!.map((plan, index) => {
           const resolved = plan.resolve(context);
@@ -201,24 +213,60 @@ export function compileNodeFieldValues(values: Record<string, unknown>, fields: 
           return resolved;
         });
         if (field.type === 'repeater' && !rows.has(key) && Array.isArray(value)) value = value.map((row, index) => {
-          if (!row || typeof row !== 'object' || (row as Record<string, unknown>).expression_format_version !== 1) return row;
+          const path = `${prefix}${key}[${index}]`;
+          if (!row || typeof row !== 'object' || Array.isArray(row)) throw new FieldExpressionError('Invalid repeater row', { nodeId, fieldPath: path, phase: 'type', expected: 'Object', actual: editFieldValueType(row) });
           const record = row as Record<string, unknown>;
+          const typed = record.expression_format_version === 1 || record.valueMode === 'fixed' || record.valueMode === 'expression';
+          const resolved = validateResolvedFields(record, repeaterRowFields(field, record).filter(child => !typed || child.key !== 'value'), nodeId, `${path}.`);
+          if (!typed) return resolved;
           const type = record.dataType as EditFieldDataType;
-          if (!['string', 'number', 'boolean', 'array', 'object'].includes(type)) throw new FieldExpressionError('Invalid row type', { nodeId, fieldPath: `${prefix}${key}[${index}].dataType`, phase: 'type' });
-          const { expression_format_version, ...resolved } = record;
-          return { ...resolved, value: checkExpressionResult(record.value, type, `${prefix}${key}[${index}].value`), valueMode: 'fixed' };
+          if (!['string', 'number', 'boolean', 'array', 'object'].includes(type)) throw new FieldExpressionError('Invalid row type', { nodeId, fieldPath: `${path}.dataType`, phase: 'type' });
+          delete resolved.expression_format_version;
+          try { return { ...resolved, value: checkExpressionResult(record.value, type, `${path}.value`), valueMode: 'fixed' }; }
+          catch (error) { throw new FieldExpressionError(error instanceof Error ? error.message : String(error), { nodeId, fieldPath: `${path}.value`, phase: 'type', expected: type, actual: editFieldValueType(record.value) }, error); }
         });
-        validateOptions(field, value, read, nodeId, key);
+        if (field.type === 'object' && field.subFields && !objects.has(key) && value && typeof value === 'object') value = validateResolvedFields(value as Record<string, unknown>, field.subFields, nodeId, `${prefix}${key}.`);
+        validateOptions(field, value, read, nodeId, `${prefix}${key}`);
         out[key] = value;
         return value;
       } finally { resolving.delete(key); }
     };
-    for (const field of fields) { if (field.key in values) read(field.key); else if (field.required && included(field, read)) throw new FieldExpressionError('Required value is missing', { nodeId, fieldPath: field.key, phase: 'type' }); }
+    if (selectedKey !== undefined) { read(selectedKey); return out; }
+    for (const field of fields) { if (field.key in values) read(field.key); else if (field.required && included(field, read)) throw new FieldExpressionError('Required value is missing', { nodeId, fieldPath: `${prefix}${field.key}`, phase: 'type', expected: field.resultType ?? FIELD_ADAPTERS[field.type], actual: 'Undefined' }); }
     // Unknown values and row metadata survive; never interpret structure as source.
     for (const [key, value] of Object.entries(values)) if (!byKey.has(key) && key !== EXPRESSION_VERSION_KEY) out[key] = value;
     return out;
   };
-  return { references: [...references], resolve };
+  return { references: [...references], resolve, resolveField: (key, context) => resolve(context, key)[key] };
+}
+
+function validateResolvedFields(values: Record<string, unknown>, fields: readonly FieldDescriptor[], nodeId?: string, prefix = ''): Record<string, unknown> {
+  const result = { ...values };
+  const read = (key: string) => values[key];
+  for (const field of fields) {
+    const path = `${prefix}${field.key}`;
+    if (!included(field, read)) { delete result[field.key]; continue; }
+    const value = values[field.key];
+    const expected = field.resultType ?? FIELD_ADAPTERS[field.type];
+    try {
+      if (value == null || value === '') {
+        if (field.required) throw new Error('Required value is missing');
+        if (value === null && field.nullable === false) throw new Error('Null is not allowed');
+      }
+      if (value != null && expected !== 'any' && expected !== 'structure') result[field.key] = checkExpressionResult(value, expected, path);
+      if (typeof value === 'number' && (field.min !== undefined && value < field.min || field.max !== undefined && value > field.max)) throw new Error('Number is outside the allowed bounds');
+      validateOptions(field, result[field.key], read, nodeId, path);
+      if (field.type === 'object' && field.subFields && value && typeof value === 'object') result[field.key] = validateResolvedFields(value as Record<string, unknown>, field.subFields, nodeId, `${path}.`);
+      if (field.type === 'repeater' && Array.isArray(value)) result[field.key] = value.map((row, index) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid repeater row');
+        return validateResolvedFields(row as Record<string, unknown>, repeaterRowFields(field, row as Record<string, unknown>), nodeId, `${path}[${index}].`);
+      });
+    } catch (error) {
+      if (error instanceof FieldExpressionError) throw error;
+      throw new FieldExpressionError(error instanceof Error ? error.message : String(error), { nodeId, fieldPath: path, phase: 'type', expected, actual: editFieldValueType(value) }, error);
+    }
+  }
+  return result;
 }
 
 export function normalizeExpressionRows(raw: unknown): unknown {
@@ -232,7 +280,8 @@ export function normalizeExpressionRows(raw: unknown): unknown {
         value = coerceFixedValue(value, row.dataType as EditFieldDataType);
         if (typeof value === 'string') value = escapeFieldLiteral(value);
       }
-      return { ...rest, value, expression_format_version: 1 };
+      if (valueMode === 'expression' && typeof value === 'string') value = migrateLegacyTemplate(value, false);
+      return { ...rest, fieldName: typeof row.fieldName === 'string' ? escapeFieldLiteral(row.fieldName) : row.fieldName, value, expression_format_version: 1 };
     }
     return raw;
 }
@@ -243,19 +292,36 @@ function migrateLegacyFieldSource(raw: unknown, field: FieldDescriptor): unknown
   if (Array.isArray(raw) && field.type === 'repeater') return raw.map(row => {
     if (!row || typeof row !== 'object' || (row as Record<string, unknown>).expression_format_version === 1) return row;
     const migrated = { ...row as Record<string, unknown> };
-    for (const child of field.subFields ?? []) if (child.key in migrated) migrated[child.key] = migrateLegacyFieldSource(migrated[child.key], child);
+    for (const child of repeaterRowFields(field, row as Record<string, unknown>)) if (child.key in migrated) migrated[child.key] = migrateLegacyFieldSource(migrated[child.key], child);
     return migrated;
   });
-  if (typeof raw !== 'string' || FIELD_ADAPTERS[field.type] === 'structure') return raw;
-  if (!raw.includes('{{')) return escapeFieldLiteral(raw);
-  const template = compileEditTemplate(raw, FIELD_EXPRESSION_FEATURES);
-  for (const segment of template.segments) if (segment.kind === 'code') {
-    // The legacy resolver supports accessors, not generic arithmetic/calls. Do not
-    // reinterpret a saved source that its permissive path scanner read differently.
-    const accessor = /^(?:\$json|\$\(\s*(?:"[^"\\]*"|'[^'\\]*')\s*\)\s*\.json|\$node\[\s*(?:"[^"\\]*"|'[^'\\]*')\s*\]\s*\.json)(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*(?:-?\d+|(?:-?\d*)?:(?:-?\d*)?|"[^"\\]*"|'[^'\\]*')\s*\])*\s*$/;
-    if (!accessor.test(segment.value)) throw new FieldExpressionError('Legacy source needs an explicit conversion before changing dialect', { fieldPath: field.key, phase: 'migration', position: segment.expressionStart });
+  if (Array.isArray(raw) && field.items) return raw.map(item => migrateLegacyFieldSource(item, field.items!));
+  if (field.type === 'object' && raw && typeof raw === 'object' && !Array.isArray(raw) && field.subFields) {
+    const migrated = { ...raw as Record<string, unknown> };
+    for (const child of field.subFields) if (child.key in migrated) migrated[child.key] = migrateLegacyFieldSource(migrated[child.key], child);
+    return migrated;
   }
-  return raw;
+  const hasLegacyTemplate = (value: unknown): boolean => typeof value === 'string' ? value.includes('{{') : Array.isArray(value) ? value.some(hasLegacyTemplate) : value != null && typeof value === 'object' ? Object.values(value).some(hasLegacyTemplate) : false;
+  if (raw && typeof raw === 'object' && hasLegacyTemplate(raw)) throw new FieldExpressionError('Legacy structured templates need an explicit conversion before changing dialect', { fieldPath: field.key, phase: 'migration' });
+  if (typeof raw === 'string' && (field.type === 'json' || ['array', 'object'].includes(field.resultType ?? FIELD_ADAPTERS[field.type]))) {
+    let literal: unknown;
+    try { literal = JSON.parse(raw); } catch { /* Ordinary expression source. */ }
+    if (literal && typeof literal === 'object' && hasLegacyTemplate(literal)) throw new FieldExpressionError('Legacy structured templates need an explicit conversion before changing dialect', { fieldPath: field.key, phase: 'migration' });
+  }
+  if (typeof raw !== 'string' || FIELD_ADAPTERS[field.type] === 'structure' && !field.resultType) return raw;
+  return migrateLegacyTemplate(raw, true, field.key);
+}
+
+function migrateLegacyTemplate(raw: string, accessorOnly: boolean, fieldPath = 'value'): string {
+  if (!raw.includes('{{')) return escapeFieldLiteral(raw);
+  // Legacy template text did not interpret backslash escapes. Parse it with
+  // that grammar, then encode text segments for the new dialect exactly once.
+  const template = compileEditTemplate(raw, { computedSlices: true });
+  for (const segment of template.segments) if (accessorOnly && segment.kind === 'code') {
+    const accessor = /^(?:\$json|\$\(\s*(?:"[^"\\]*"|'[^'\\]*')\s*\)\s*\.json|\$node\[\s*(?:"[^"\\]*"|'[^'\\]*')\s*\]\s*\.json)(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*(?:-?\d+|(?:-?\d*)?:(?:-?\d*)?|"[^"\\]*"|'[^'\\]*')\s*\])*\s*$/;
+    if (!accessor.test(segment.value)) throw new FieldExpressionError('Legacy source needs an explicit conversion before changing dialect', { fieldPath, phase: 'migration', position: segment.expressionStart });
+  }
+  return template.segments.map(segment => segment.kind === 'text' ? escapeFieldLiteral(segment.value) : raw.slice(segment.start, segment.end)).join('');
 }
 
 /** Builds a candidate only; callers commit it through canonical document commands. */
@@ -264,4 +330,23 @@ export function migrateNodeExpressionValues(values: Record<string, unknown>, fie
   const candidate = { ...values, ...Object.fromEntries(fields.filter(field => field.key in values).map(field => [field.key, migrateLegacyFieldSource(values[field.key], field)])), [EXPRESSION_VERSION_KEY]: 1 };
   compileNodeFieldValues(candidate, fields); // Unsupported legacy syntax keeps the original document unchanged.
   return candidate;
+}
+
+export interface FieldPreviewScope {
+  values: Record<string, unknown>;
+  fields: readonly FieldDescriptor[];
+  prefix?: string;
+}
+export function previewFieldValue(key: string, scope: FieldPreviewScope, context: ExpressionContext, nodeId?: string): unknown {
+  const byKey = new Map(scope.fields.map(field => [field.key, field]));
+  const selected = new Set<string>();
+  const include = (key: string) => {
+    if (selected.has(key)) return;
+    selected.add(key);
+    const field = byKey.get(key);
+    if (!field) return;
+    for (const dependency of [field.dependsOn, field.dynamicOptions?.dependsOn, ...Object.keys(field.displayOptions?.show ?? {}), ...Object.keys(field.displayOptions?.hide ?? {}), ...(field.options ?? []).flatMap(option => [option.valueMap?.field, ...Object.keys(option.displayOptions?.show ?? {}), ...Object.keys(option.displayOptions?.hide ?? {})])]) if (dependency) include(dependency);
+  };
+  include(key);
+  return compileNodeFieldValues({ ...scope.values, [key]: scope.values[key] }, scope.fields.filter(field => selected.has(field.key)), nodeId, scope.prefix).resolveField(key, context);
 }

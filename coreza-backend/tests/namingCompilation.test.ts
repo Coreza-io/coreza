@@ -2,6 +2,7 @@ import { preCompileAllNodes, compileParamsToSlots } from '../src/utils/templateC
 import { compilePlan } from '../src/backtest/compiled/compiler';
 import { GraphRuntime } from '../src/engine/graphRuntime';
 import { ParameterResolver } from '../src/engine/parameterResolver';
+import { runBar } from '../src/backtest/compiled/vm';
 import type { WorkflowNode, INodeExecutor } from '../src/nodes/types';
 
 it('rejects a compiled backtest after ambiguous parameter compilation and preserves runtime diagnostics', () => {
@@ -34,4 +35,32 @@ it('keeps successfully compiled empty and static parameters eligible', () => {
   expect(compileParamsToSlots({ hasTemplates: false, staticParams: {} }, new Map())?.([])).toEqual({});
   expect(compileParamsToSlots({ hasTemplates: false, staticParams: { threshold: 42 } }, new Map())?.([]))
     .toEqual({ threshold: 42 });
+});
+
+it('compiled contexts resolve requested support nodes with fresh input and pinned slot outputs', async () => {
+  const consumer: WorkflowNode = { id: 'consumer', name: 'Compute', node_type: 'main', category: 'Logic', values: { __expressionFormatVersion: 1, userPrompt: '{{ $json.prompt }}' }, data: { definition: { fields: [{ key: 'userPrompt', type: 'string' }] } } };
+  const model: WorkflowNode = { id: 'model', name: 'OpenAIChatModel', node_type: 'sub', category: 'ChatModel', values: { __expressionFormatVersion: 1, credential_id: '{{ $("settings").json.credential_id }}', model: '{{ $json.model }}' }, data: { definition: { fields: [{ key: 'credential_id', type: 'string' }, { key: 'model', type: 'string' }] } } };
+  const settings: WorkflowNode = { id: 'settings', name: 'Compute', node_type: 'main', category: 'Logic' };
+  const nodes = [consumer, model, settings];
+  const compiled = preCompileAllNodes(nodes);
+  const ownResolve = jest.spyOn(compiled.get(consumer.id)!, 'resolve');
+  const requests: unknown[] = [];
+  const executor: INodeExecutor = { category: 'Logic', syncCapable: true, execute: (node, input, context) => {
+    const own = context.resolveNodeParameters(node, input);
+    expect(context.resolveNodeParameters(node, input)).toBe(own);
+    const support = context.resolveNodeParameters(model, input);
+    requests.push({ own, support });
+    return { success: true, data: support };
+  } };
+  const plan = compilePlan(new GraphRuntime([consumer], []), new Map([[consumer.id, executor]]), [consumer.id], compiled, { settings: { json: { credential_id: 'authorized-id' } } }, {
+    runId: 'test', workflowId: 'test', userId: 'owner', nodes, edges: [], dataContext: {}, indicatorStateManager: {}, storeGetState: () => undefined, storeSetState: () => {},
+  })!;
+  expect(plan).not.toBeNull();
+  await runBar(plan, { prompt: '{{ returned data }}', model: 'first-model' });
+  await runBar(plan, { prompt: 'next prompt', model: 'second-model' });
+  expect(requests).toEqual([
+    { own: { userPrompt: '{{ returned data }}' }, support: { credential_id: 'authorized-id', model: 'first-model' } },
+    { own: { userPrompt: 'next prompt' }, support: { credential_id: 'authorized-id', model: 'second-model' } },
+  ]);
+  expect(ownResolve).toHaveBeenCalledTimes(2);
 });

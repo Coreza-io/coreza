@@ -26,7 +26,8 @@
       "label": "Candle Data",
       "type": "string",
       "placeholder": "{{ $('Alpaca').json.data.BarSeries[0].bars }}",
-      "required": false
+      "required": false,
+      "resultType": "array"
     },
     {
       "key": "overlays",
@@ -41,7 +42,8 @@
         {
           "key": "data",
           "type": "string",
-          "placeholder": "{{ $('BB').json.data }}"
+          "placeholder": "{{ $('BB').json.data }}",
+          "resultType": "any"
         },
         {
           "key": "indicatorType",

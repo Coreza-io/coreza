@@ -55,6 +55,49 @@
           "placeholder": "Value"
         }
       ],
+      "rowVariants": [
+        {
+          "whenPresent": "operator",
+          "subFields": [
+            {
+              "key": "left",
+              "label": "Field Name",
+              "type": "string"
+            },
+            {
+              "key": "operator",
+              "label": "Operation",
+              "type": "select",
+              "options": [
+                {
+                  "value": "set",
+                  "label": "Set"
+                },
+                {
+                  "value": "copy",
+                  "label": "Copy"
+                },
+                {
+                  "value": "remove",
+                  "label": "Remove"
+                }
+              ]
+            },
+            {
+              "key": "right",
+              "label": "Value",
+              "type": "text",
+              "displayOptions": {
+                "hide": {
+                  "operator": [
+                    "remove"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ],
       "default": [
         { "fieldName": "", "dataType": "string", "expression_format_version": 1, "value": "" }
       ]

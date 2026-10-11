@@ -20,3 +20,13 @@ test('descriptor remapping preserves JSON data, inactive schema metadata and unk
   const result = remapNodeReferenceMap(values, { old: 'new' }, [{ key: 'source', type: 'text' }, { key: 'data', type: 'json' }, { key: 'tab', type: 'tabs' }]);
   expect(result.source).toContain('$("new")'); expect(result.data).toEqual(values.data); expect(result.unknown).toBe(values.unknown); expect(result.tab).toBe(values.tab);
 });
+
+test('schema-owned legacy row variants and structured JSON source remap through child descriptors', () => {
+  const fields = [{ key: 'fields', type: 'repeater', subFields: [], rowVariants: [{ whenPresent: 'operator', subFields: [{ key: 'left', type: 'string' }, { key: 'operator', type: 'select' }, { key: 'right', type: 'text' }] }] }, { key: 'config', type: 'object', subFields: [{ key: 'count', type: 'number' }] }];
+  const source = { __expressionFormatVersion: 1, fields: [{ left: 'added', operator: 'set', right: '{{ $("old").json.count }}', metadata: '{{ $("old").json }}' }], config: JSON.stringify({ count: '{{ $("old").json.count }}' }) };
+  const result = remapNodeReferenceMap(source, { old: 'new' }, fields);
+  expect(result.fields[0].right).toContain('$("new")');
+  expect(result.fields[0].metadata).toBe(source.fields[0].metadata);
+  expect(typeof result.config).toBe('string');
+  expect(JSON.parse(result.config).count).toContain('$("new")');
+});

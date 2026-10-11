@@ -1,4 +1,4 @@
-import { isExpressionContract, compileFieldValue, evaluateFieldValue } from "../../coreza-backend/src/nodes/logic/fieldExpression";
+import { isExpressionContract, previewFieldValue, type FieldPreviewScope } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
 import { useStableNodes } from "@/contexts/StableNodeContext";
@@ -26,8 +26,10 @@ import {
 interface UseNodeReferencesProps {
   fieldState: Record<string, any>;
   definition?: any;
+  nodeId?: string;
   previousNodes: readonly SemanticNode[];
   selectedPrevNodeId: string;
+  selectedInputData?: unknown;
   selectedPrevNode: SemanticNode | undefined;
 }
 
@@ -40,7 +42,7 @@ interface UseNodeReferencesReturn {
     currentValue: string,
   ) => void;
   getFieldPreview: (fieldKey: string) => string | null;
-  getFieldPreviewResult: (fieldKey: string, raw?: unknown) => { value?: unknown; error?: string } | null;
+  getFieldPreviewResult: (fieldKey: string, raw?: unknown, scope?: FieldPreviewScope) => { value?: unknown; error?: string } | null;
   referenceStyle: React.CSSProperties;
 }
 
@@ -51,8 +53,10 @@ interface UseNodeReferencesReturn {
 export function useNodeReferences({
   fieldState,
   definition,
+  nodeId,
   previousNodes,
   selectedPrevNodeId,
+  selectedInputData,
   selectedPrevNode,
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
   const { getNodes } = useStableNodes();
@@ -109,10 +113,12 @@ export function useNodeReferences({
     [getNodes, selectedPrevNodeId],
   );
 
-  const getFieldPreviewResult = useCallback((fieldKey: string, raw?: unknown) => {
-    const expr = raw ?? fieldState[fieldKey];
-    if (typeof expr !== 'string' || !expr.includes('{{')) return null;
-    const field = definition?.fields?.find((field: any) => field.key === fieldKey);
+  const getFieldPreviewResult = useCallback((fieldKey: string, raw?: unknown, scope?: FieldPreviewScope) => {
+    const expr = raw === undefined ? (scope?.values ?? fieldState)[fieldKey] : raw;
+    const fields = scope?.fields ?? definition?.fields ?? [];
+    const field = fields.find((field: any) => field.key === fieldKey);
+    if (!field) return null;
+    if (!isExpressionContract(fieldState) && (typeof expr !== 'string' || !expr.includes('{{'))) return null;
     if (field?.type === 'password') return null;
     const srcId = sourceMap[fieldKey] ?? selectedPrevNodeId;
     const { getSourceData, allNodeData } = buildPreviewData(previousNodes, executionStore, getNodes);
@@ -120,11 +126,11 @@ export function useNodeReferences({
       const nodes = getNodes();
       const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
       const value = isExpressionContract(fieldState)
-        ? evaluateFieldValue(compileFieldValue(expr, field ?? { key: fieldKey, type: 'text' }), { $json: pickTypedJsonSource(getSourceData(srcId)), $nodes: snapshot.nodeResults, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities })
+        ? previewFieldValue(fieldKey, { ...scope, fields, values: { ...(scope?.values ?? fieldState), [fieldKey]: expr } }, { $json: pickTypedJsonSource(snapshot.nodeResults[selectedPrevNodeId] !== undefined ? snapshot.nodeResults[selectedPrevNodeId] : selectedInputData), $nodes: snapshot.nodeResults, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities }, nodeId)
         : resolveReferences(expr, getSourceData(srcId), allNodeData, nodes);
       return { value };
     } catch (error) { return { error: error instanceof Error ? error.message : 'Reference preview failed.' }; }
-  }, [fieldState, definition, sourceMap, selectedPrevNodeId, previousNodes, executionStore, getNodes]);
+  }, [fieldState, definition, nodeId, sourceMap, selectedPrevNodeId, selectedInputData, previousNodes, executionStore, getNodes]);
   const getFieldPreview = useCallback((fieldKey: string) => {
     const result = getFieldPreviewResult(fieldKey);
     if (!result) return null;

@@ -1,5 +1,5 @@
 import { useExpressionCapability } from "./useExpressionCapability";
-import { migrateNodeExpressionValues, normalizeExpressionRows } from "../../coreza-backend/src/nodes/logic/fieldExpression";
+import { migrateNodeExpressionValues, normalizeExpressionRows, isExpressionContract } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -125,6 +125,7 @@ export function useNodeFieldState({
     if (!allowed()) return false;
     const canonical = getNodeById(nodeId!)?.data?.values as Record<string, any> | undefined;
     const base = canonical && canonical !== ownWrite.current ? { ...draft.current, ...canonical } : draft.current;
+    if (!expressionSupported && isExpressionContract(base)) { setMigrationError('Expression authoring is unavailable on this backend.'); return false; }
     let next = { ...base, ...updates };
     if (expressionSupported) {
       try {
@@ -145,6 +146,7 @@ export function useNodeFieldState({
     const updates: Record<string, any> = { [key]: value };
     for (const field of definition?.fields ?? []) {
       if (field.dynamicOptions?.dependsOn !== key) continue;
+      if (typeof draft.current[field.key] === 'string' && draft.current[field.key].includes('{{')) continue;
       const options = field.dynamicOptions.optionsByValue?.[value];
       if (options?.length) updates[field.key] = options[0].value;
     }

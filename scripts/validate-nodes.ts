@@ -25,6 +25,7 @@ async function validateAllNodes() {
         if (!FIELD_ADAPTERS[field.type]) { hasErrors = true; console.error(`${file}: ${prefix}${field.key}: no expression adapter for ${field.type}`); }
         if (field.items) visit([field.items], `${prefix}${field.key}[].`);
         visit(field.subFields ?? [], `${prefix}${field.key}.`);
+        for (const variant of field.rowVariants ?? []) visit(variant.subFields, `${prefix}${field.key}.${variant.whenPresent}.`);
       }
     };
     visit(content.fields ?? []);

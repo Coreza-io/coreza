@@ -1,3 +1,6 @@
+import { compileNodeFieldValues, isExpressionContract } from '../../../../coreza-backend/src/nodes/logic/fieldExpression';
+import { pickTypedJsonSource } from '../../../../coreza-backend/src/nodes/logic/typedExpressionContext';
+import visualizeDefinition from '../../../nodes/Visualize.json';
 import React, { useMemo } from "react";
 import LightweightVisualizeChart from "@/components/charts/LightweightVisualizeChart";
 import type { SeriesPoint, VisualizeChartViewModel, VisualizeOverlay } from "@/components/charts/chartTypes";
@@ -6,7 +9,7 @@ import type { ReferenceNode } from "@/utils/referenceResolution";
 import { getIndicatorSpec } from "@/utils/indicatorRegistry";
 import { alignSeriesToCandles, classifyOverlay, extractBars, getPaletteColor } from "@/utils/visualizeNormalize";
 
-type OverlayRow = { id?: string; name?: string; data?: string; render?: string; color?: string; indicatorType?: string };
+type OverlayRow = { id?: string; name?: string; data?: unknown; render?: string; color?: string; indicatorType?: string };
 
 const getSeriesSource = (resolved: unknown): unknown => {
   if (Array.isArray(resolved)) return resolved;
@@ -107,26 +110,32 @@ const VisualizeNodePreview: React.FC<{
 }> = ({ fieldState, sourceData, allNodeData, nodes }) => {
   const preview = useMemo(() => {
     let diagnostic: string | undefined;
-    const resolve = (expression: string) => {
+    const versioned = isExpressionContract(fieldState);
+    let values = fieldState;
+    if (versioned) {
+      try { values = compileNodeFieldValues(fieldState, visualizeDefinition.fields as any).resolve({ $json: pickTypedJsonSource(sourceData), $nodes: allNodeData, expressionOutputs: allNodeData, nodes: [...nodes] }); }
+      catch (error) { diagnostic = error instanceof Error ? error.message : 'Chart configuration failed.'; values = {}; }
+    }
+    const resolve = (expression: unknown) => {
       try {
-        return resolveReferences(expression, sourceData, allNodeData, nodes);
+        return versioned ? expression : resolveReferences(String(expression ?? ''), sourceData, allNodeData, nodes);
       } catch (error) {
         diagnostic = error instanceof Error ? error.message : "Reference preview failed.";
         return undefined;
       }
     };
-    const resolvedCandles = resolve(String(fieldState.candles ?? ""));
+    const resolvedCandles = resolve(values.candles);
     const candles = extractBars(resolvedCandles);
     const currentClose = candles[candles.length - 1]?.close;
 
-    const overlayRows = Array.isArray(fieldState.overlays) ? (fieldState.overlays as OverlayRow[]) : [];
+    const overlayRows = Array.isArray(values.overlays) ? (values.overlays as OverlayRow[]) : [];
     const overlays = overlayRows.reduce<VisualizeOverlay[]>((acc, row, index) => {
-      if (!row?.data?.trim()) return acc;
+      if (row?.data == null || !versioned && (typeof row.data !== 'string' || !row.data.trim())) return acc;
 
       const resolved = resolve(row.data);
       const name = row.name?.trim() || `Overlay ${index + 1}`;
       const color = getPaletteColor(index, row.color);
-      const id = stableId(row);
+      const id = stableId(Array.isArray(fieldState.overlays) ? fieldState.overlays[index] : row);
       const spec = row.indicatorType && row.indicatorType !== "auto" ? getIndicatorSpec(row.indicatorType) : undefined;
 
       if (spec) {

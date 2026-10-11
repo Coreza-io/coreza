@@ -148,10 +148,10 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               onChange={handleChange}
               normalizeBlank
               onBatchChange={handleFieldStateBatch}
-              onDrop={(fieldDef, e, currentValue) =>
+              onDrop={(fieldDef, e, currentValue, setter) =>
                 handleDrop(
                   fieldDef.key,
-                  (val: string) => handleChange(fieldDef.key, val),
+                  setter ?? ((val: string) => handleChange(fieldDef.key, val)),
                   e,
                   currentValue,
                 )

@@ -1,3 +1,4 @@
+import type { FieldDescriptor } from '../../../coreza-backend/src/nodes/logic/fieldExpression';
 import { z } from "zod";
 
 export const HandleSchema = z.object({
@@ -48,18 +49,6 @@ export const GroupedOptionsSchema = z.record(
   }),
 );
 
-export const SubFieldSchema = z.object({
-  key: z.string().min(1),
-  type: z.string(),
-  resultType: z.enum(['string', 'number', 'boolean', 'array', 'object', 'any']).optional(),
-  nullable: z.boolean().optional(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  placeholder: z.string().optional(),
-  label: z.string().optional(),
-  options: z.array(OptionSchema).optional(),
-  groupedOptions: GroupedOptionsSchema.optional(),
-});
 
 const DisplayValueSchema = z.union([
   z.string(),
@@ -103,6 +92,30 @@ export const DynamicLabelSchema = z.object({
   labelsByValue: z.record(z.string(), z.string()),
 });
 
+type SubFieldConfig = FieldDescriptor & { label?: string; placeholder?: string; default?: unknown };
+export const SubFieldSchema: z.ZodType<SubFieldConfig> = z.lazy(() => z.object({
+  key: z.string().min(1),
+  type: z.string(),
+  label: z.string().optional(),
+  placeholder: z.string().optional(),
+  default: z.any().optional(),
+  resultType: z.enum(['string', 'number', 'boolean', 'array', 'object', 'any']).optional(),
+  required: z.boolean().optional(),
+  nullable: z.boolean().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  options: z.array(OptionSchema).optional(),
+  optionsSource: z.string().optional(),
+  dependsOn: z.string().optional(),
+  groupedOptions: GroupedOptionsSchema.optional(),
+  conditionalOptions: ConditionalOptionsSchema.optional(),
+  dynamicOptions: DynamicOptionsSchema.optional(),
+  displayOptions: DisplayOptionsSchema.optional(),
+  subFields: z.array(SubFieldSchema).optional(),
+  items: SubFieldSchema.optional(),
+  rowVariants: z.array(z.object({ whenPresent: z.string(), subFields: z.array(SubFieldSchema) })).optional(),
+})) as unknown as z.ZodType<SubFieldConfig>;
+
 export const FieldSchema = z.object({
   key: z.string().min(1),
   label: z.string().optional(),
@@ -120,6 +133,8 @@ export const FieldSchema = z.object({
     "webhookUrl",
     "tags",
     "json",
+    "array",
+    "object",
     "grouped-select",
     "hidden",
     "string",
@@ -143,6 +158,7 @@ export const FieldSchema = z.object({
   hidden: z.boolean().optional(),
   subFields: z.array(SubFieldSchema).optional(),
   items: SubFieldSchema.optional(),
+  rowVariants: z.array(z.object({ whenPresent: z.string(), subFields: z.array(SubFieldSchema) })).optional(),
   displayOptions: DisplayOptionsSchema.optional(),
   condition: ConditionSchema.optional(),
   description: z.string().optional(),

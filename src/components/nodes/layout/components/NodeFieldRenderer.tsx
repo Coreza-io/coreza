@@ -1,6 +1,7 @@
+import { fullePreview, summarizePreview } from '@/utils/preview';
 import { ExpressionFieldEditor } from "./ExpressionFieldEditor";
 import { useExpressionCapability } from "@/hooks/useExpressionCapability";
-import { isExpressionContract, FIELD_ADAPTERS } from "../../../../../coreza-backend/src/nodes/logic/fieldExpression";
+import { isExpressionContract, FIELD_ADAPTERS, type FieldPreviewScope, repeaterRowFields, included } from "../../../../../coreza-backend/src/nodes/logic/fieldExpression";
 import { useReferenceTextDrop, consumeReferenceFocusRestore } from "@/hooks/useReferenceTextDrop";
 import React from "react";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
@@ -32,9 +33,10 @@ interface NodeFieldRendererProps {
   onChange: (fieldKey: string, value: any, dataType?: string) => void;
   normalizeBlank?: boolean;
   onBatchChange?: (updates: Record<string, any>) => void;
-  onDrop?: (field: any, e: React.DragEvent, currentValue: string) => void;
+  onDrop?: (field: any, e: React.DragEvent, currentValue: string, setter?: (value: string) => boolean | void) => void;
+  fieldPath?: string;
   getPreview?: (fieldKey: string) => string | null;
-  getPreviewResult?: (fieldKey: string, raw?: unknown) => { value?: unknown; error?: string } | null;
+  getPreviewResult?: (fieldKey: string, raw?: unknown, scope?: FieldPreviewScope) => { value?: unknown; error?: string } | null;
   referenceStyle?: React.CSSProperties;
   fetchDependentOptions?: (field: any, parentValue: string) => void;
   setShowAuth?: (show: boolean) => void;
@@ -46,6 +48,7 @@ interface NodeFieldRendererProps {
 
 const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   field,
+  fieldPath = field.key,
   definition,
   fieldState: rawFieldState,
   value,
@@ -63,10 +66,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   workflowId,
   nodeId,
   userId,
-  readOnly,
+  readOnly: providedReadOnly,
 }) => {
   const expressionSupported = useExpressionCapability();
+  const readOnly = providedReadOnly || isExpressionContract(rawFieldState) && !expressionSupported;
   const fieldState = { ...rawFieldState };
+  const unresolvedControllers = new Set<string>();
   const controllers = new Set([
     ...Object.keys(field.displayOptions?.show ?? {}), ...Object.keys(field.displayOptions?.hide ?? {}),
     field.dependsOn, field.dynamicOptions?.dependsOn, field.dynamicLabel?.dependsOn,
@@ -75,8 +80,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   for (const key of controllers) {
     const raw = rawFieldState[key];
     if (typeof raw !== 'string' || !raw.includes('{{')) continue;
-    const result = getPreviewResult?.(key, raw);
+    const result = getPreviewResult?.(key, raw, { fields: definition?.fields ?? [field], values: rawFieldState, prefix: fieldPath.endsWith(field.key) ? fieldPath.slice(0, -field.key.length) : '' });
     if (result && !result.error) fieldState[key] = result.value;
+    else unresolvedControllers.add(key);
   }
 
   const [showFloatingPreview, setShowFloatingPreview] = React.useState(false);
@@ -87,46 +93,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const activeElementRef = React.useRef<HTMLElement | null>(null);
   const shouldShowDescription = field.showDescription !== false;
   const isHiddenField = field.type === "hidden";
-  const matchesShowOptions = field.displayOptions?.show
-    ? Object.entries(field.displayOptions.show).every(
-        ([depKey, allowedValues]) => {
-          const currentValue = fieldState[depKey];
-          if (typeof currentValue === 'string' && currentValue.includes('{{')) return true;
-          if (
-            currentValue === undefined ||
-            currentValue === null ||
-            currentValue === ""
-          ) {
-            return false;
-          }
-          const values = Array.isArray(allowedValues)
-            ? allowedValues
-            : [allowedValues];
-          if (Array.isArray(currentValue)) {
-            return currentValue.some((v: string) => values.includes(v));
-          }
-          return values.includes(currentValue);
-        },
-      )
-    : true;
-  const matchesHideOptions = field.displayOptions?.hide
-    ? !Object.entries(field.displayOptions.hide).some(
-        ([depKey, allowedValues]) => {
-          const currentValue = fieldState[depKey];
-          if (typeof currentValue === 'string' && currentValue.includes('{{')) return false;
-          const values = Array.isArray(allowedValues)
-            ? allowedValues
-            : [allowedValues];
-          return values.some((v: any) => {
-            const compareVal =
-              typeof v === "object" && v !== null ? v.id || v.value : v;
-            return String(currentValue) === String(compareVal);
-          });
-        },
-      )
-    : true;
-  const shouldRender =
-    !isHiddenField && matchesShowOptions && matchesHideOptions;
+  const shouldRender = !isHiddenField && included(field, key => fieldState[key], { ignoreKeys: [], unresolvedKeys: unresolvedControllers });
 
   let displayLabel = field.label;
   if (field.dynamicLabel?.dependsOn && field.dynamicLabel?.labelsByValue) {
@@ -135,11 +102,14 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
       field.dynamicLabel.labelsByValue[dependentValue] || field.label;
   }
 
-  const fieldValue = value ?? fieldState[field.key];
+  const fieldValue = value === undefined ? fieldState[field.key] : value;
   const isReference =
     typeof fieldValue === "string" && fieldValue.includes("{{");
-  const referencePreview =
-    isReference && getPreview && field.type !== "password" ? getPreview(field.key) : null;
+  const previewResult = field.type !== 'password' && (expressionSupported || isExpressionContract(fieldState))
+    ? getPreviewResult?.(field.key, fieldValue, { fields: definition?.fields ?? [field], values: rawFieldState, prefix: fieldPath.endsWith(field.key) ? fieldPath.slice(0, -field.key.length) : '' }) : null;
+  const referencePreview = previewResult ? previewResult.error ?? (Array.isArray(previewResult.value) && previewResult.value.length > 100 ? summarizePreview(previewResult.value, 5, 200) : fullePreview(previewResult.value))
+    : isReference && getPreview && field.type !== 'password' ? getPreview(field.key) : null;
+  const literalPickerValue = previewResult && !previewResult.error ? previewResult.value : fieldValue;
   const multiselectValueMapDeps = React.useMemo(() => {
     if (field.type !== "multiselect") return "";
     const options = selectOptions[field.key] || field.options || [];
@@ -155,7 +125,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
   React.useEffect(() => {
     if (!shouldRender) return;
-    if (field.type !== "multiselect" || isReference) return;
+    if (field.type !== "multiselect" || typeof fieldValue === "string") return;
     const options = selectOptions[field.key] || field.options || [];
     const valueMappedOpts = options.filter(
       (opt: any) => opt.valueMap?.field && opt.valueMap?.values,
@@ -346,7 +316,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           </div>
           <div className="px-3 py-2 bg-muted/50 text-[11px] text-muted-foreground flex items-center gap-1">
             <span className="font-semibold text-foreground">Tip:</span>
-            <span>Anything inside {"{{ }}"} is JavaScript.</span>
+            <span>Use {"{{ }}"} to insert referenced values.</span>
           </div>
         </div>
       </div>,
@@ -737,13 +707,14 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-sm text-foreground">{field.label}</span>
             <Switch
-              checked={!!fieldValue}
+              checked={expressionSupported || isExpressionContract(fieldState) ? literalPickerValue === true : !!fieldValue}
               onCheckedChange={(checked) => onChange(field.key, checked)}
               disabled={readOnly}
             />
           </div>
         );
 
+      case "boolean":
       case "toggle":
         return (
           <div className="flex items-center justify-between gap-3">
@@ -752,7 +723,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
             </div>
             <Switch
               checked={
-                typeof fieldValue === "boolean" ? fieldValue : !!field.default
+                expressionSupported || isExpressionContract(fieldState) ? literalPickerValue === true : typeof fieldValue === 'boolean' ? fieldValue : !!field.default
               }
               onCheckedChange={(checked) => onChange(field.key, checked)}
               disabled={readOnly}
@@ -761,8 +732,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         );
 
       case "multiselect": {
-        const selectedValues = Array.isArray(fieldValue)
-          ? fieldValue
+        const selectedValues = Array.isArray(literalPickerValue)
+          ? literalPickerValue
           : field.default || [];
         const availableOptions =
           selectOptions[field.key] || field.options || [];
@@ -893,13 +864,35 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
       hideLabel={field.type === "checkbox" || field.type === "toggle"}
       description={undefined}
     >
-      {(expressionSupported || isExpressionContract(fieldState)) && FIELD_ADAPTERS[field.type] !== 'structure' && field.type !== 'repeater' ? (
+      {(expressionSupported || isExpressionContract(fieldState)) && FIELD_ADAPTERS[field.type] !== 'structure' ? (
         <div className="space-y-2">
-          {['select', 'grouped-select', 'checkbox', 'toggle', 'multiselect'].includes(field.type) && !isReference && renderField()}
-          <ExpressionFieldEditor value={fieldValue} onChange={value => onChange(field.key, value)} identity={field.key}
-            expectedType={FIELD_ADAPTERS[field.type]} disabled={readOnly || !expressionSupported} masked={field.type === 'password'}
-            multiline={['textarea', 'json', 'array', 'object'].includes(field.type)} placeholder={field.placeholder}
-            preview={referencePreview} onDrop={onDrop ? (event, source) => { referenceDrop.bind(event); onDrop(field, event, source); } : undefined} />
+          {['select', 'grouped-select', 'checkbox', 'boolean', 'toggle', 'multiselect'].includes(field.type) && !isReference && renderField()}
+          {field.type === 'repeater' && Array.isArray(fieldValue) && fieldValue.map((row, index) => (
+            <div key={row?.id ?? index} className="space-y-2 rounded border p-2">
+              {repeaterRowFields(field, row ?? {}).map((child: any) => <NodeFieldRenderer key={child.key} field={child} fieldPath={`${fieldPath}[${index}].${child.key}`}
+                definition={{ ...definition, fields: repeaterRowFields(field, row ?? {}) }} fieldState={{ ...rawFieldState, ...row }} value={row?.[child.key]}
+                selectOptions={selectOptions} loadingSelect={loadingSelect} readOnly={readOnly}
+                onChange={(key, childValue) => onChange(field.key, fieldValue.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: childValue } : item))}
+                onDrop={onDrop ? (childField, event, source, setter) => onDrop(childField, event, source, setter ?? (text => onChange(field.key, fieldValue.map((item, itemIndex) => itemIndex === index ? { ...item, [childField.key]: text } : item)))) : undefined}
+                getPreviewResult={getPreviewResult} fetchDependentOptions={fetchDependentOptions} setShowAuth={setShowAuth} />)}
+            </div>
+          ))}
+          {field.type === 'object' && field.subFields && fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue) && field.subFields.map((child: any) => (
+            <NodeFieldRenderer key={child.key} field={child} fieldPath={`${fieldPath}.${child.key}`} definition={{ ...definition, fields: field.subFields }}
+              fieldState={{ ...rawFieldState, ...fieldValue }} value={fieldValue[child.key]} selectOptions={selectOptions} loadingSelect={loadingSelect} readOnly={readOnly}
+              onChange={(key, childValue) => onChange(field.key, { ...fieldValue, [key]: childValue })} getPreviewResult={getPreviewResult}
+              onDrop={onDrop ? (childField, event, source, setter) => onDrop(childField, event, source, setter ?? (text => onChange(field.key, { ...fieldValue, [childField.key]: text }))) : undefined} />
+          ))}
+          {field.type === 'array' && field.items && Array.isArray(fieldValue) && fieldValue.map((item, index) => (
+            <NodeFieldRenderer key={index} field={field.items} fieldPath={`${fieldPath}[${index}].${field.items.key}`} definition={{ ...definition, fields: [field.items] }}
+              fieldState={{ ...rawFieldState, [field.items.key]: item }} value={item} selectOptions={selectOptions} loadingSelect={loadingSelect} readOnly={readOnly}
+              onChange={(_key, itemValue) => onChange(field.key, fieldValue.map((current, itemIndex) => itemIndex === index ? itemValue : current))} getPreviewResult={getPreviewResult}
+              onDrop={onDrop ? (itemField, event, source, setter) => onDrop(itemField, event, source, setter ?? (text => onChange(field.key, fieldValue.map((current, itemIndex) => itemIndex === index ? text : current)))) : undefined} />
+          ))}
+          <ExpressionFieldEditor value={fieldValue} onChange={value => onChange(field.key, value)} identity={fieldPath}
+            expectedType={field.resultType ?? FIELD_ADAPTERS[field.type]} disabled={readOnly || !expressionSupported} masked={field.type === 'password'}
+            multiline={['textarea', 'json', 'array', 'object', 'repeater'].includes(field.type)} placeholder={field.placeholder}
+            preview={referencePreview} onDrop={onDrop ? (event, source) => { onDrop(field, event, source); } : undefined} />
         </div>
       ) : renderField()}
     </FieldWrapper>

@@ -40,6 +40,8 @@ import { fullePreview } from "@/utils/preview";
 import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
+import FieldValueModeSelector from "./components/FieldValueModeSelector";
+import { FIELD_VALUE_MODES_KEY } from "../../../../coreza-backend/src/utils/fieldValueModes";
 import {
   ReferenceDropTarget,
   referenceDropEventHandlers,
@@ -245,26 +247,12 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       <div className="group/value-mode nodrag">
         <div className="flex items-center justify-between gap-2">
           <Label>Value</Label>
-          <div
-            role="group"
-            aria-label={`${String(row.fieldName || `Field ${index + 1}`)} value mode`}
-            className="edit-field-value-mode flex shrink-0 rounded-md bg-muted p-0.5 opacity-0 pointer-events-none group-hover/value-mode:opacity-100 group-hover/value-mode:pointer-events-auto group-focus-within/value-mode:opacity-100 group-focus-within/value-mode:pointer-events-auto"
-          >
-            {["fixed", "expression"].map((mode) => (
-              <button
-                type="button"
-                key={mode}
-                disabled={disabled}
-                aria-pressed={row.valueMode === mode}
-                onClick={() => {
-                  update(index, "valueMode", mode);
-                }}
-                className={`rounded px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
-              >
-                {mode === "fixed" ? "Fixed" : "Expression"}
-              </button>
-            ))}
-          </div>
+          <FieldValueModeSelector
+            label={String(row.fieldName || `Field ${index + 1}`)}
+            value={expression ? "expression" : "fixed"}
+            disabled={disabled}
+            onChange={mode => update(index, "valueMode", mode)}
+          />
         </div>
         <ReferenceDropTarget onDrop={onDrop} onDragOver={referenceDrop.props.onDragOver} onDragLeave={referenceDrop.props.onDragLeave}>
           {!expression && row.dataType === "boolean" ? (
@@ -602,6 +590,19 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       if (!rowsRef.current.some(row => rowKey(row) === key)) return false;
       return handleChange(repeaterKey!, rowsRef.current.map(row =>
         rowKey(row) === key ? editedRow(row, { [field]: value }) : row,
+      ));
+    },
+    [conditions, handleChange, repeaterKey],
+  );
+
+  const updateConditionValues = useCallback(
+    (index: number, updates: Record<string, any>) => {
+      const expected = conditions[index];
+      if (liveReadOnly.current || !expected) return false;
+      const key = rowKey(expected);
+      if (!rowsRef.current.some(row => rowKey(row) === key)) return false;
+      return handleChange(repeaterKey!, rowsRef.current.map(row =>
+        rowKey(row) === key ? editedRow(row, updates) : row,
       ));
     },
     [conditions, handleChange, repeaterKey],
@@ -1005,6 +1006,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               fetchDependentOptions={fetchDependentOptions}
               setShowAuth={setShowAuth}
               readOnly={readOnly}
+              selectedSourceNodeId={selectedPrevNodeId}
             />
           );
         })}
@@ -1084,12 +1086,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           definition={definition}
                           fieldState={{
                             ...fieldState,
+                            [FIELD_VALUE_MODES_KEY]: cond[FIELD_VALUE_MODES_KEY],
                             [leftField.key]: cond.left,
                           }}
                           value={cond.left}
                           selectOptions={selectOptions}
                           loadingSelect={loadingSelect}
                           onChange={(key, val) => updateCondition(i, key, val)}
+                          onBatchChange={updates => updateConditionValues(i, updates)}
                           onDrop={(fieldDef, e, currentValue) =>
                             handleRepeaterDrop(i, fieldDef.key, e, currentValue)
                           }
@@ -1098,6 +1102,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           fetchDependentOptions={fetchDependentOptions}
                           setShowAuth={setShowAuth}
                           readOnly={readOnly}
+                          selectedSourceNodeId={selectedPrevNodeId}
                         />
                       )}
 
@@ -1120,6 +1125,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             fetchDependentOptions={fetchDependentOptions}
                             setShowAuth={setShowAuth}
                             readOnly={readOnly}
+                            selectedSourceNodeId={selectedPrevNodeId}
                           />
                         </div>
                       )}
@@ -1130,12 +1136,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           definition={definition}
                           fieldState={{
                             ...fieldState,
+                            [FIELD_VALUE_MODES_KEY]: cond[FIELD_VALUE_MODES_KEY],
                             [rightField.key]: cond.right,
                           }}
                           value={cond.right}
                           selectOptions={selectOptions}
                           loadingSelect={loadingSelect}
                           onChange={(key, val) => updateCondition(i, key, val)}
+                          onBatchChange={updates => updateConditionValues(i, updates)}
                           onDrop={(fieldDef, e, currentValue) =>
                             handleRepeaterDrop(i, fieldDef.key, e, currentValue)
                           }
@@ -1146,6 +1154,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           fetchDependentOptions={fetchDependentOptions}
                           setShowAuth={setShowAuth}
                           readOnly={readOnly}
+                          selectedSourceNodeId={selectedPrevNodeId}
                         />
                       )}
 
@@ -1169,6 +1178,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         definition={definition}
                         fieldState={{
                           ...fieldState,
+                          [FIELD_VALUE_MODES_KEY]: cond[FIELD_VALUE_MODES_KEY],
                           [persistentField.key]: cond.persistent,
                         }}
                         value={cond.persistent}
@@ -1179,6 +1189,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         fetchDependentOptions={fetchDependentOptions}
                         setShowAuth={setShowAuth}
                         readOnly={readOnly}
+                        selectedSourceNodeId={selectedPrevNodeId}
                       />
                     )}
                   </div>
@@ -1198,12 +1209,16 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       definition={definition}
                       fieldState={{
                         ...fieldState,
+                        [FIELD_VALUE_MODES_KEY]: overlayRow?.[FIELD_VALUE_MODES_KEY],
                         [subField.key]: overlayRow?.[subField.key],
                       }}
                       value={overlayRow?.[subField.key]}
                       selectOptions={selectOptions}
                       loadingSelect={loadingSelect}
                       onChange={(key, val) => updateOverlay(rowIndex, key, val)}
+                      onBatchChange={updates => handleFieldStateBatch({
+                        overlays: overlays.map((row, index) => index === rowIndex ? { ...row, ...updates } : row),
+                      })}
                       onDrop={(fieldDef, e, currentValue) =>
                         handleOverlayDrop(
                           rowIndex,
@@ -1219,6 +1234,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       fetchDependentOptions={fetchDependentOptions}
                       setShowAuth={setShowAuth}
                       readOnly={readOnly}
+                      selectedSourceNodeId={selectedPrevNodeId}
                     />
                   ))}
                   <div className="flex justify-end">
@@ -1267,6 +1283,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                     fetchDependentOptions={fetchDependentOptions}
                     setShowAuth={setShowAuth}
                     readOnly={readOnly}
+                    selectedSourceNodeId={selectedPrevNodeId}
                   />
                 ) : null,
               )}
@@ -1323,6 +1340,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         fetchDependentOptions={fetchDependentOptions}
                         setShowAuth={setShowAuth}
                         readOnly={readOnly}
+                        selectedSourceNodeId={selectedPrevNodeId}
                       />
                     )}
 
@@ -1345,6 +1363,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           fetchDependentOptions={fetchDependentOptions}
                           setShowAuth={setShowAuth}
                           readOnly={readOnly}
+                          selectedSourceNodeId={selectedPrevNodeId}
                         />
                       </div>
                     )}
@@ -1374,6 +1393,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                         fetchDependentOptions={fetchDependentOptions}
                         setShowAuth={setShowAuth}
                         readOnly={readOnly}
+                        selectedSourceNodeId={selectedPrevNodeId}
                       />
                     )}
 
@@ -1414,6 +1434,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       fetchDependentOptions={fetchDependentOptions}
                       setShowAuth={setShowAuth}
                       readOnly={readOnly}
+                      selectedSourceNodeId={selectedPrevNodeId}
                     />
                   )}
                 </div>
@@ -1446,6 +1467,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                 fetchDependentOptions={fetchDependentOptions}
                 setShowAuth={setShowAuth}
                 readOnly={readOnly}
+                selectedSourceNodeId={selectedPrevNodeId}
               />
             )}
           </div>

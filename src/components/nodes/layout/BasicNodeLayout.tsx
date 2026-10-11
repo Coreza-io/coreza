@@ -23,6 +23,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectOptions,
   showAuth,
   selectedInputData,
+  selectedPrevNodeId,
   incomingEdgeCount,
   workflowId,
   nodeId,
@@ -156,6 +157,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                 )
               }
               getPreview={getFieldPreview}
+              selectedSourceNodeId={selectedPrevNodeId}
               referenceStyle={referenceStyle}
               fetchDependentOptions={fetchDependentOptions}
               setShowAuth={setShowAuth}

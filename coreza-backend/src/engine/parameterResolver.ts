@@ -5,6 +5,7 @@ import {
   preCompileAllNodes,
 } from "../utils/templateCompiler";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
+import { isFixedField, parameterEntries } from "../utils/fieldValueModes";
 //import { loadNodeDefinition } from "../nodes/nodeDefinitions";
 
 export class ParameterResolver {
@@ -61,18 +62,20 @@ export class ParameterResolver {
     const nodeParams = node.values || {};
     if (!this.nodeHasTemplates(node.id, nodeParams)) {
       const out: Record<string, any> = {};
-      for (const [key, value] of Object.entries(nodeParams)) {
+      for (const [key, value] of parameterEntries(nodeParams)) {
         // if (key !== "credential_id") out[key] = value;
-        out[key] = value;
+        out[key] = isFixedField(nodeParams, key) ? value : this.resolveDeep(
+          value, input, {}, this.isEditFieldsNode(node) && key === "fields",
+        );
       }
       return out;
     }
 
     const allNodeData = getAllResults();
     const resolvedParams: Record<string, any> = {};
-    for (const [key, value] of Object.entries(nodeParams)) {
+    for (const [key, value] of parameterEntries(nodeParams)) {
       //if (key === "credential_id") continue;
-      resolvedParams[key] = this.resolveDeep(
+      resolvedParams[key] = isFixedField(nodeParams, key) ? value : this.resolveDeep(
         value,
         input,
         allNodeData,
@@ -103,9 +106,9 @@ export class ParameterResolver {
     }
     if (val !== null && typeof val === "object") {
       return Object.fromEntries(
-        Object.entries(val).map(([k, v]) => [
+        parameterEntries(val).map(([k, v]) => [
           k,
-          this.resolveDeep(v, input, allNodeData),
+          isFixedField(val, k) ? v : this.resolveDeep(v, input, allNodeData),
         ]),
       );
     }

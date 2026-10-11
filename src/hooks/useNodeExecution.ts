@@ -19,6 +19,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
+import { isFixedField, parameterEntries } from "../../coreza-backend/src/utils/fieldValueModes";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
@@ -150,7 +151,7 @@ export function useNodeExecution({
           Object.prototype.toString.call(value) === "[object Object]"
         ) {
           return Object.fromEntries(
-            Object.entries(value).map(([k, v]) => [k, _resolve(v)]),
+            parameterEntries(value).map(([k, v]) => [k, isFixedField(value, k) ? v : _resolve(v)]),
           );
         }
 
@@ -203,7 +204,7 @@ export function useNodeExecution({
         }
 
         if (fieldState[field.key] !== undefined) {
-          payload[field.key] = resolveDeep(
+          payload[field.key] = isFixedField(fieldState, field.key) ? fieldState[field.key] : resolveDeep(
             fieldState[field.key],
             selectedInputData,
             allNodeData,

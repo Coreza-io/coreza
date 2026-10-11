@@ -1,3 +1,5 @@
+import { FIELD_VALUE_MODES_KEY } from "../../coreza-backend/src/utils/fieldValueModes";
+
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -67,6 +69,9 @@ export function reconcileNodeValues(
   }
 
   const merged = { ...existingValues };
+  if (merged[FIELD_VALUE_MODES_KEY] === undefined && existingFieldState[FIELD_VALUE_MODES_KEY] !== undefined) {
+    merged[FIELD_VALUE_MODES_KEY] = existingFieldState[FIELD_VALUE_MODES_KEY];
+  }
   let hadMissingKeys = false;
 
   for (const field of definition.fields) {

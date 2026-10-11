@@ -13,6 +13,7 @@ import { TYPED_EXPRESSION_FEATURES } from "../nodes/logic/safeExpression";
 import { WorkflowNode } from "../nodes/types";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { pickJsonSource, resolveNodeAlias } from "./referenceResolution";
+import { isFixedField, parameterEntries } from "./fieldValueModes";
 
 /**
  * Template Pre-Compilation
@@ -408,7 +409,7 @@ function compileValue(
   }
 
   if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value);
+    const entries = parameterEntries(value);
     const compiledEntries: Array<{
       key: string;
       accessor?: AccessorFn;
@@ -417,7 +418,9 @@ function compileValue(
     }> = [];
     const deps = new Set<string>();
     for (const [k, v] of entries) {
-      const result = compileValue(v, nodeIdSet, nodes);
+      const result = isFixedField(value, k)
+        ? { compiled: true as const, staticValue: v, deps: new Set<string>() }
+        : compileValue(v, nodeIdSet, nodes);
       if (!result.compiled) return { compiled: false };
       compiledEntries.push({ key: k, ...(result as any) });
       for (const dep of (result as any).deps) deps.add(dep);
@@ -461,21 +464,13 @@ export function compileNodeParams(
   // const entries = Object.entries(nodeParams).filter(
   //   ([k]) => k !== "credential_id",
   // );
-  const entries = Object.entries(nodeParams);
+  const entries = parameterEntries(nodeParams);
 
   if (entries.length === 0) {
     return { hasTemplates: false, staticParams: {} };
   }
 
   const nodeIdSet = new Set(nodes.map((n) => n.id));
-
-  // Check if any entry has templates at all
-  const hasAnyTemplates = entries.some(([, v]) => containsTemplates(v));
-  if (!hasAnyTemplates) {
-    const staticParams: Record<string, any> = {};
-    for (const [k, v] of entries) staticParams[k] = v;
-    return { hasTemplates: false, staticParams };
-  }
 
   // Try to compile all entries
   const compiledEntries: Array<{
@@ -494,12 +489,14 @@ export function compileNodeParams(
     node.data?.definition?.name === "Edit Fields";
 
   for (const [key, value] of entries) {
-    const result = compileValue(
-      value,
-      nodeIdSet,
-      nodes,
-      isEditFieldsNode && key === "fields",
-    );
+    const result = isFixedField(nodeParams, key)
+      ? { compiled: true as const, staticValue: value, deps: new Set<string>() }
+      : compileValue(
+          value,
+          nodeIdSet,
+          nodes,
+          isEditFieldsNode && key === "fields",
+        );
     if (!result.compiled) {
       // This entry can't be compiled — mark for runtime fallback
       compiledEntries.push({ key, fallback: true, staticValue: value });
@@ -519,6 +516,13 @@ export function compileNodeParams(
       });
       for (const dep of result.deps) templateDeps.add(dep);
     }
+  }
+
+  if (compiledEntries.every(entry => !entry.accessor && !entry.fallback) && templateDeps.size === 0) {
+    return {
+      hasTemplates: false,
+      staticParams: Object.fromEntries(compiledEntries.map(entry => [entry.key, entry.staticValue])),
+    };
   }
 
   // Collect fallback keys explicitly
@@ -550,15 +554,6 @@ export function compileNodeParams(
       return reusableResult;
     },
   };
-}
-
-function containsTemplates(value: any): boolean {
-  if (typeof value === "string") return value.includes("{{");
-  if (Array.isArray(value)) return value.some((v) => containsTemplates(v));
-  if (value && typeof value === "object") {
-    return Object.values(value).some((v) => containsTemplates(v));
-  }
-  return false;
 }
 
 /**

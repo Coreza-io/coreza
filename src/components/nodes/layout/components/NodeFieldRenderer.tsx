@@ -1,4 +1,8 @@
-import { useReferenceTextDrop, consumeReferenceFocusRestore } from "@/hooks/useReferenceTextDrop";
+import { useReferenceTextDrop, consumeReferenceFocusRestore, planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
+import { useStableNodes } from "@/contexts/StableNodeContext";
+import { buildNodeReference, parseJsonReferenceDragPayload } from "@/utils/referencePath";
+import { FIELD_VALUE_MODES_KEY, getFieldValueMode, type FieldValueMode } from "../../../../../coreza-backend/src/utils/fieldValueModes";
+import FieldValueModeSelector from "./FieldValueModeSelector";
 import React from "react";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
 import { createPortal } from "react-dom";
@@ -26,9 +30,9 @@ interface NodeFieldRendererProps {
   value: any;
   selectOptions: Record<string, any[]>;
   loadingSelect: Record<string, boolean>;
-  onChange: (fieldKey: string, value: any, dataType?: string) => void;
+  onChange: (fieldKey: string, value: any, dataType?: string) => boolean | void;
   normalizeBlank?: boolean;
-  onBatchChange?: (updates: Record<string, any>) => void;
+  onBatchChange?: (updates: Record<string, any>) => boolean | void;
   onDrop?: (field: any, e: React.DragEvent, currentValue: string) => void;
   getPreview?: (fieldKey: string) => string | null;
   referenceStyle?: React.CSSProperties;
@@ -38,6 +42,7 @@ interface NodeFieldRendererProps {
   nodeId?: string;
   userId?: string;
   readOnly?: boolean;
+  selectedSourceNodeId?: string;
 }
 
 const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
@@ -59,7 +64,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   nodeId,
   userId,
   readOnly,
+  selectedSourceNodeId,
 }) => {
+  const { getNodes } = useStableNodes();
   const [showFloatingPreview, setShowFloatingPreview] = React.useState(false);
   const [previewAnchorRect, setPreviewAnchorRect] =
     React.useState<DOMRect | null>(null);
@@ -115,7 +122,16 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   }
 
   const fieldValue = value ?? fieldState[field.key];
+  const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
+    && !field.options?.length && !!onBatchChange;
+  const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
+  const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
+    onBatchChange?.({
+      ...updates,
+      [FIELD_VALUE_MODES_KEY]: { ...fieldState[FIELD_VALUE_MODES_KEY], [field.key]: mode },
+    });
   const isReference =
+    (!supportsValueMode || valueMode === "expression") &&
     typeof fieldValue === "string" && fieldValue.includes("{{");
   const referencePreview =
     isReference && getPreview ? getPreview(field.key) : null;
@@ -192,6 +208,10 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     normalizeValue: normalizeBlank ? value => value.trim() === "" ? "" : value : undefined,
     disabled: readOnly,
     identity: field.key,
+    meta: supportsValueMode ? valueMode : undefined,
+    onRestore: supportsValueMode
+      ? (value, mode) => updateValueMode(mode as FieldValueMode, { [field.key]: value })
+      : undefined,
   });
 
   const handleDropWrapper = (e: React.DragEvent) => {
@@ -200,6 +220,23 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     referenceDrop.bind(e);
     e.preventDefault();
     e.stopPropagation();
+    if (supportsValueMode) {
+      try {
+        const data = parseJsonReferenceDragPayload(e.dataTransfer.getData("application/reactflow"));
+        if (!data) return;
+        const reference = buildNodeReference(data, getNodes(), selectedSourceNodeId);
+        if (!reference) return;
+        const insertion = planReferenceTextDrop(e, reference);
+        if (!insertion) return;
+        if (updateValueMode("expression", { [field.key]: insertion.value }) === false) return;
+        finishReferenceTextDrop(e, insertion, "expression", valueMode);
+      } catch (error) {
+        console.error("Reference drop failed:", error);
+      } finally {
+        document.body.classList.remove("cursor-grabbing", "select-none");
+      }
+      return;
+    }
     onDrop(field, e, fieldValue || "");
   };
 
@@ -427,7 +464,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
               type={
                 field.type === "number"
-                  ? isReference ? "text" : "number"
+                  ? valueMode === "expression" || (typeof fieldValue === "string" && fieldValue.includes("{{")) ? "text" : "number"
                   : field.type === "password"
                     ? "password"
                     : undefined
@@ -869,6 +906,15 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           : displayLabel
       }
       hideLabel={field.type === "checkbox" || field.type === "toggle"}
+      className={supportsValueMode ? "group/value-mode nodrag" : undefined}
+      labelAction={supportsValueMode ? (
+        <FieldValueModeSelector
+          label={String(displayLabel || field.key)}
+          value={valueMode}
+          disabled={readOnly}
+          onChange={updateValueMode}
+        />
+      ) : undefined}
       description={undefined}
     >
       {renderField()}

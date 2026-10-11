@@ -9,6 +9,7 @@ interface FieldWrapperProps {
   children: React.ReactNode;
   className?: string;
   hideLabel?: boolean;
+  labelAction?: React.ReactNode;
 }
 
 export const FieldWrapper: React.FC<FieldWrapperProps> = ({
@@ -18,10 +19,18 @@ export const FieldWrapper: React.FC<FieldWrapperProps> = ({
   children,
   className,
   hideLabel,
+  labelAction,
 }) => {
   return (
     <div className={cn("space-y-2", className)}>
-      {!hideLabel && label && <Label>{label}</Label>}
+      {!hideLabel && label && (
+        labelAction ? (
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <Label>{label}</Label>
+            {labelAction}
+          </div>
+        ) : <Label>{label}</Label>
+      )}
       {children}
       {description && (
         <div className="text-xs text-muted-foreground">{description}</div>

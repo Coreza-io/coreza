@@ -22,6 +22,13 @@
 @tailwind components;
 @tailwind utilities;
 
+@media (hover: none) {
+  .edit-field-value-mode {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* Coreza Trading Platform Design System */
 
 @layer components {

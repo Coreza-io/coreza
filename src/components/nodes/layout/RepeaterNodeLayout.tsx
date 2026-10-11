@@ -242,27 +242,31 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
           </Button>
         )}
       </div>
-      <div>
-        <Label>Value Mode</Label>
-        <div className="grid grid-cols-2 rounded-md bg-muted p-1">
-          {["fixed", "expression"].map((mode) => (
-            <button
-              type="button"
-              key={mode}
-              disabled={disabled}
-              onClick={() => {
-                update(index, "valueMode", mode);
-              }}
-              className={`rounded px-2 py-1 text-xs ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
-            >
-              {mode === "fixed" ? "Fixed" : "Expression"}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <ReferenceDropTarget onDrop={onDrop} onDragOver={referenceDrop.props.onDragOver} onDragLeave={referenceDrop.props.onDragLeave}>
+      <div className="group/value-mode nodrag">
+        <div className="flex items-center justify-between gap-2">
           <Label>Value</Label>
+          <div
+            role="group"
+            aria-label={`${String(row.fieldName || `Field ${index + 1}`)} value mode`}
+            className="edit-field-value-mode flex shrink-0 rounded-md bg-muted p-0.5 opacity-0 pointer-events-none group-hover/value-mode:opacity-100 group-hover/value-mode:pointer-events-auto group-focus-within/value-mode:opacity-100 group-focus-within/value-mode:pointer-events-auto"
+          >
+            {["fixed", "expression"].map((mode) => (
+              <button
+                type="button"
+                key={mode}
+                disabled={disabled}
+                aria-pressed={row.valueMode === mode}
+                onClick={() => {
+                  update(index, "valueMode", mode);
+                }}
+                className={`rounded px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
+              >
+                {mode === "fixed" ? "Fixed" : "Expression"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ReferenceDropTarget onDrop={onDrop} onDragOver={referenceDrop.props.onDragOver} onDragLeave={referenceDrop.props.onDragLeave}>
           {!expression && row.dataType === "boolean" ? (
             <Select
               value={value || "false"}

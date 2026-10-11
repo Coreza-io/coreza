@@ -41,6 +41,7 @@ import { buildPreviewData } from "@/utils/previewDataResolver";
 import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/operators";
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import FieldValueModeSelector from "./components/FieldValueModeSelector";
+import { useFieldPreview } from "@/hooks/useFieldPreview";
 import { FIELD_VALUE_MODES_KEY } from "../../../../coreza-backend/src/utils/fieldValueModes";
 import {
   ReferenceDropTarget,
@@ -108,10 +109,29 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
     evaluationError?: string;
   }>({ value: "No data", type: "No data" });
   const [hasInput, setHasInput] = useState(false);
+  const fieldPreview = useFieldPreview(expression, (
+    <>
+      <span className="font-mono">{preview.value}</span>
+      <span> · {preview.type}</span>
+      {preview.typeError && (
+        <span className="text-destructive"> — {preview.typeError}</span>
+      )}
+      {preview.evaluationError && (
+        <pre className="mt-1 whitespace-pre-wrap font-mono text-destructive">
+          {preview.evaluationError}
+        </pre>
+      )}
+      {!hasInput && (
+        <p className="text-muted-foreground">
+          Execute previous nodes to use input data
+        </p>
+      )}
+    </>
+  ));
   const previewGeneration = useRef(0);
   useEffect(() => {
     const generation = ++previewGeneration.current;
-    if (!expression) return () => undefined;
+    if (!expression || !fieldPreview.isOpen) return () => undefined;
     const timer = window.setTimeout(() => {
       if (!value.trim()) {
         if (generation === previewGeneration.current)
@@ -163,7 +183,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
+  }, [expression, fieldPreview.isOpen, getExpressionContext, row.dataType, row.fieldName, value]);
   const [dropError, setDropError] = useState<string>();
   const referenceDrop = useReferenceTextDrop({
     value, meta: row.valueMode,
@@ -244,7 +264,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
           </Button>
         )}
       </div>
-      <div className="group/value-mode nodrag">
+      <div className="group/value-mode nodrag" ref={fieldPreview.wrapperRef}>
         <div className="flex items-center justify-between gap-2">
           <Label>Value</Label>
           <FieldValueModeSelector
@@ -276,6 +296,8 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
               value={value}
               {...referenceDrop.props}
+              onFocus={event => fieldPreview.open(event.currentTarget)}
+              onClick={event => fieldPreview.open(event.currentTarget)}
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLTextAreaElement | null>}
               onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
@@ -286,6 +308,8 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               className={editorClass}
               value={value}
               {...referenceDrop.props}
+              onFocus={event => fieldPreview.open(event.currentTarget)}
+              onClick={event => fieldPreview.open(event.currentTarget)}
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
               onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
@@ -293,6 +317,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             />
           )}
         </ReferenceDropTarget>
+        {fieldPreview.popup}
         {dropError && <p className="text-xs text-destructive">{dropError}</p>}
         {!expression &&
           (row.dataType === "array" || row.dataType === "object") &&
@@ -316,26 +341,6 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             }
           })()}
       </div>
-      {expression && (
-        <div className="rounded bg-muted/50 p-2 text-xs">
-          <strong>Result: </strong>
-          <span className="font-mono">{preview.value}</span>
-          <span> · {preview.type}</span>
-          {preview.typeError && (
-            <span className="text-destructive"> — {preview.typeError}</span>
-          )}
-          {preview.evaluationError && (
-            <pre className="mt-1 whitespace-pre-wrap font-mono text-destructive">
-              {preview.evaluationError}
-            </pre>
-          )}
-          {!hasInput && (
-            <p className="text-muted-foreground">
-              Execute previous nodes to use input data
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 };

@@ -1,4 +1,6 @@
 #!/usr/bin/env npx tsx
+import fieldExpressions from "../coreza-backend/src/nodes/logic/fieldExpression";
+const { FIELD_ADAPTERS } = fieldExpressions;
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -18,6 +20,14 @@ async function validateAllNodes() {
     const filePath = path.join(NODES_DIR, file);
     const content = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 
+    const visit = (fields: any[], prefix = '') => {
+      for (const field of fields) {
+        if (!FIELD_ADAPTERS[field.type]) { hasErrors = true; console.error(`${file}: ${prefix}${field.key}: no expression adapter for ${field.type}`); }
+        if (field.items) visit([field.items], `${prefix}${field.key}[].`);
+        visit(field.subFields ?? [], `${prefix}${field.key}.`);
+      }
+    };
+    visit(content.fields ?? []);
     const result = NodeConfigSchema.safeParse(content);
 
     if (!result.success) {

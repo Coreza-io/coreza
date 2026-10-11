@@ -103,6 +103,7 @@ export interface BaseNodeRenderProps {
   ) => void;
   handleDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   getFieldPreview: (fieldKey: string) => string | null;
+  getFieldPreviewResult?: (fieldKey: string, raw?: unknown) => { value?: unknown; error?: string } | null;
   setShowAuth: (show: boolean) => void;
   setSelectedPrevNodeId: (id: string) => void;
   handlePanelSave: (newData: any) => void;
@@ -261,8 +262,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     readOnly,
   });
 
+  // References (drag-drop and previews)
+  const referencesHook = useNodeReferences({
+    definition,
+    fieldState: fieldStateHook.fieldState,
+    previousNodes,
+    selectedPrevNodeId: resolvedPrevNodeId ?? "",
+    selectedPrevNode,
+  });
+
   // Credentials and options
   const credentialsHook = useNodeCredentials({
+    getFieldPreviewResult: referencesHook.getFieldPreviewResult,
     definition,
     fieldState: fieldStateHook.fieldState,
     workflowId,
@@ -285,14 +296,6 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     setLastOutput: outputHook.setLastOutput,
     overrideOutput: outputHook.pinnedOutput,
     workflowId,
-  });
-
-  // References (drag-drop and previews)
-  const referencesHook = useNodeReferences({
-    fieldState: fieldStateHook.fieldState,
-    previousNodes,
-    selectedPrevNodeId: resolvedPrevNodeId ?? "",
-    selectedPrevNode,
   });
 
   // Get auth context for API calls
@@ -584,7 +587,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     definition,
     displayName,
     fieldState: fieldStateHook.fieldState,
-    error: executionHook.error,
+    error: executionHook.error || fieldStateHook.migrationError || "",
     isSending: executionHook.isSending,
     loadingSelect: credentialsHook.loadingSelect,
     selectOptions: credentialsHook.selectOptions,
@@ -612,6 +615,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     handleDrop: referencesHook.handleDrop,
     handleDragStart: referencesHook.handleDragStart,
     getFieldPreview: referencesHook.getFieldPreview,
+    getFieldPreviewResult: referencesHook.getFieldPreviewResult,
     setShowAuth,
     setSelectedPrevNodeId,
     handlePanelSave: outputHook.handlePanelSave,

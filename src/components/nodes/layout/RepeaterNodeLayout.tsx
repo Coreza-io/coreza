@@ -1,3 +1,6 @@
+import { useExpressionCapability } from "@/hooks/useExpressionCapability";
+import { ExpressionFieldEditor } from "./components/ExpressionFieldEditor";
+import { compileFieldValue, evaluateFieldValue, normalizeExpressionRows, isExpressionContract } from "../../../../coreza-backend/src/nodes/logic/fieldExpression";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
 import { useStableNodes } from "@/contexts/StableNodeContext";
@@ -97,8 +100,12 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   makeReference,
   canRemove,
 }) => {
-  const value = String(row.value ?? "");
-  const expression = row.valueMode === "expression";
+  let normalizationError: string | undefined;
+  let normalized = row;
+  try { normalized = normalizeExpressionRows(row) as TypedEditFieldRow; }
+  catch (error) { normalizationError = error instanceof Error ? error.message : String(error); }
+  const value = typeof normalized.value === 'string' ? normalized.value : JSON.stringify(normalized.value) ?? '';
+  const expression = true;
   const [preview, setPreview] = useState<{
     value: string;
     type: string;
@@ -120,15 +127,13 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       if (generation !== previewGeneration.current) return;
       setHasInput(context.hasInput);
       try {
-        const dataType = isEditFieldDataType(row.dataType)
-          ? row.dataType
-          : "string";
-        const compiled = compileEditTemplate(value, TYPED_EXPRESSION_FEATURES);
-        const result = evaluateEditTemplate(compiled, {
-          $json: compiled.hasComputedSlices ? pickTypedJsonSource(context.input) : pickJsonSource(context.input),
-          $nodes: context.nodes,
-          expressionOutputs: context.expressionOutputs,
-          nodes: context.definitions,
+        const previewContext = { $json: pickTypedJsonSource(context.input), $nodes: context.nodes, expressionOutputs: context.expressionOutputs, nodes: context.definitions };
+        const resolvedType = evaluateFieldValue(compileFieldValue(row.dataType, { key: 'dataType', type: 'string' }), previewContext);
+        if (!isEditFieldDataType(resolvedType)) throw new Error('Invalid result type');
+        const dataType = resolvedType;
+        const result = evaluateFieldValue(compileFieldValue(value, { key: 'value', type: dataType }), {
+          $json: pickTypedJsonSource(context.input), $nodes: context.nodes,
+          expressionOutputs: context.expressionOutputs, nodes: context.definitions,
         });
         const rendered =
           typeof result === "string"
@@ -162,34 +167,6 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       window.clearTimeout(timer);
     };
   }, [expression, getExpressionContext, row.dataType, row.fieldName, value]);
-  const [dropError, setDropError] = useState<string>();
-  const referenceDrop = useReferenceTextDrop({
-    value, meta: row.valueMode,
-    onChange: value => {
-      setDropError(undefined); return update(index, "value", value);
-    },
-    onRestore: (value, mode) => updateMany(index, { value, valueMode: mode }),
-    disabled,
-  });
-  const onDrop = (event: React.DragEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    referenceDrop.clearCaret();
-    try {
-      const reference = makeReference(event);
-      if (!reference) return;
-      referenceDrop.bind(event);
-      referenceDrop.clearCaret();
-      if (disabled) return;
-      const insertion = planReferenceTextDrop(event, reference, expression, true);
-      if (!insertion) { setDropError("Place the reference in editable text or unquoted expression code. Repair partial delimiters first."); return; }
-      if (updateMany(index, { value: insertion.value, valueMode: "expression" }) === false) return;
-      finishReferenceTextDrop(event, insertion, "expression");
-      setDropError(undefined);
-    } finally {
-      document.body.classList.remove("cursor-grabbing", "select-none");
-    }
-  };
   const editorClass =
     "nodrag w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
   return (
@@ -197,12 +174,8 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       <div className="flex gap-2">
         <div className="flex-1">
           <Label>Field Name</Label>
-          <input
-            className={editorClass}
-            value={String(row.fieldName ?? "")}
-            onChange={(e) => update(index, "fieldName", e.target.value)}
-            disabled={disabled}
-          />
+          <ExpressionFieldEditor value={row.fieldName} identity={`fields.${index}.fieldName`} expectedType="string"
+            onChange={value => updateMany(index, { ...normalized, fieldName: value })} disabled={disabled} makeReference={makeReference} />
         </div>
         <div className="w-32">
           <Label>Type</Label>
@@ -210,7 +183,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             value={String(row.dataType ?? "string")}
             onValueChange={(dataType) =>
               updateMany(index, {
-                dataType,
+                ...normalized, dataType,
                 ...(value === ""
                   ? { value: dataType === "boolean" ? "false" : "" }
                   : {}),
@@ -229,6 +202,8 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               ))}
             </SelectContent>
           </Select>
+          <ExpressionFieldEditor value={row.dataType} identity={`fields.${index}.dataType`} expectedType="string"
+            onChange={value => updateMany(index, { ...normalized, dataType: value })} disabled={disabled} makeReference={makeReference} />
         </div>
         {canRemove && (
           <Button
@@ -243,65 +218,11 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
         )}
       </div>
       <div>
-        <Label>Value Mode</Label>
-        <div className="grid grid-cols-2 rounded-md bg-muted p-1">
-          {["fixed", "expression"].map((mode) => (
-            <button
-              type="button"
-              key={mode}
-              disabled={disabled}
-              onClick={() => {
-                update(index, "valueMode", mode);
-              }}
-              className={`rounded px-2 py-1 text-xs ${row.valueMode === mode ? "bg-background shadow" : "text-muted-foreground"}`}
-            >
-              {mode === "fixed" ? "Fixed" : "Expression"}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <ReferenceDropTarget onDrop={onDrop} onDragOver={referenceDrop.props.onDragOver} onDragLeave={referenceDrop.props.onDragLeave}>
-          <Label>Value</Label>
-          {!expression && row.dataType === "boolean" ? (
-            <Select
-              value={value || "false"}
-              onValueChange={(v) => update(index, "value", v)}
-              disabled={disabled}
-            >
-              <SelectTrigger {...referenceDropEventHandlers} onDrop={onDrop}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="true">true</SelectItem>
-                <SelectItem value="false">false</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : expression ||
-            row.dataType === "array" ||
-            row.dataType === "object" ? (
-            <textarea
-              className={`${editorClass} min-h-20 ${expression ? "font-mono" : ""}`}
-              value={value}
-              {...referenceDrop.props}
-              ref={referenceDrop.controlRef as React.MutableRefObject<HTMLTextAreaElement | null>}
-              onDragEnter={referenceDropEventHandlers.onDragEnter}
-              onDrop={onDrop}
-              disabled={disabled}
-            />
-          ) : (
-            <input
-              className={editorClass}
-              value={value}
-              {...referenceDrop.props}
-              ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
-              onDragEnter={referenceDropEventHandlers.onDragEnter}
-              onDrop={onDrop}
-              disabled={disabled}
-            />
-          )}
-        </ReferenceDropTarget>
-        {dropError && <p className="text-xs text-destructive">{dropError}</p>}
+        <Label>Value</Label>
+        <ExpressionFieldEditor value={normalized.value} identity={`fields.${index}.value`} expectedType={row.dataType}
+          onChange={value => updateMany(index, { ...normalized, value })} disabled={disabled} multiline
+          makeReference={makeReference} />
+        {normalizationError && <p className="text-xs text-destructive">{normalizationError}</p>}
         {!expression &&
           (row.dataType === "array" || row.dataType === "object") &&
           value &&
@@ -364,6 +285,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   expandedExecutionControl,
   handleDrop,
   getFieldPreview,
+  getFieldPreviewResult,
   setShowAuth,
   fetchCredentials,
   fetchDependentOptions,
@@ -374,6 +296,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   incomingEdgeCount,
   readOnly,
 }) => {
+
+  const expressionSupported = useExpressionCapability();
   const { getNodes } = useStableNodes();
   const executionContext = useExecutionStore();
   const executionStoreVersion = useExecutionStoreVersion();
@@ -454,7 +378,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     if (!repeaterField) return;
     const key = repeaterField.key; // "conditions", "fields" or "cases"
     const current = fieldState[key] || [];
-    if (Array.isArray(current) && current.length > 0) return; // already seeded
+    if (typeof current === "string" || Array.isArray(current) && current.length > 0) return; // already seeded
 
     // 1) build the seed rows array from your manifest
     const seedRows = Array.isArray(repeaterField.default)
@@ -717,6 +641,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       const resolveValue = (value: any): any => {
         if (typeof value === "string") {
           const allNodes = getNodes();
+          if (isExpressionContract(fieldState)) {
+            const snapshot = snapshotTypedExpressionContext(allNodes, id => executionContext.getNodeData(id).output);
+            return evaluateFieldValue(compileFieldValue(value, { key: 'value', type: 'text' }), { $json: pickTypedJsonSource(selectedInputData), $nodes: snapshot.nodeResults, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities });
+          }
           return resolveReferences(
             value,
             selectedInputData,
@@ -740,7 +668,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       return resolveValue(val);
     },
-    [getNodes],
+    [getNodes, fieldState, executionContext],
   );
 
   const computeDropInsert = useCallback(
@@ -992,6 +920,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   );
                 }
               }}
+              getPreviewResult={getFieldPreviewResult}
               getPreview={(fieldKey) =>
                 isSwitch
                   ? getSwitchPreviewFor(fieldState[fieldKey])
@@ -1017,6 +946,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                   : "Fields"}
             </h4>
 
+            {repeaterKey && (expressionSupported || isExpressionContract(fieldState)) && <ExpressionFieldEditor value={fieldState[repeaterKey]} identity={repeaterKey} expectedType="array" multiline disabled={readOnly || !expressionSupported}
+              onChange={value => handleChange(repeaterKey, value)} makeReference={event => computeDropInsert(event)?.insert ?? null} />}
             {(isConditional || isFieldRepeater) &&
               conditions.map((cond, i) => {
                 if (isFieldRepeater && isTypedEditFieldRow(cond)) {
@@ -1025,7 +956,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       key={rowKey(cond)}
                       row={cond}
                       index={i}
-                      disabled={readOnly}
+                      disabled={readOnly || !expressionSupported}
                       canRemove={conditions.length > 1}
                       update={updateCondition}
                       updateMany={updateFieldsRow}
@@ -1069,6 +1000,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             <SelectItem value="OR">OR</SelectItem>
                           </SelectContent>
                         </Select>
+                        {expressionSupported && <ExpressionFieldEditor value={logicalOps[i - 1]} identity={`logicalOps.${i - 1}`} expectedType="AND / OR" disabled={readOnly}
+                          onChange={value => updateLogicalOp(i - 1, value)} makeReference={event => computeDropInsert(event)?.insert ?? null} />}
                         <hr className="flex-1 border-t border-white/10" />
                       </div>
                     )}
@@ -1089,7 +1022,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           onDrop={(fieldDef, e, currentValue) =>
                             handleRepeaterDrop(i, fieldDef.key, e, currentValue)
                           }
-                          getPreview={() => getPreviewFor(i, "left", cond.left)}
+                          getPreviewResult={getFieldPreviewResult}
+              getPreview={() => getPreviewFor(i, "left", cond.left)}
                           referenceStyle={referenceStyle}
                           fetchDependentOptions={fetchDependentOptions}
                           setShowAuth={setShowAuth}
@@ -1135,7 +1069,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           onDrop={(fieldDef, e, currentValue) =>
                             handleRepeaterDrop(i, fieldDef.key, e, currentValue)
                           }
-                          getPreview={() =>
+                          getPreviewResult={getFieldPreviewResult}
+              getPreview={() =>
                             getPreviewFor(i, "right", cond.right)
                           }
                           referenceStyle={referenceStyle}
@@ -1208,7 +1143,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                           currentValue,
                         )
                       }
-                      getPreview={() =>
+                      getPreviewResult={getFieldPreviewResult}
+              getPreview={() =>
                         getOverlayPreviewFor(overlayRow?.[subField.key])
                       }
                       referenceStyle={referenceStyle}
@@ -1314,7 +1250,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             currentValue,
                           )
                         }
-                        getPreview={() => getSwitchPreviewFor(caseItem.left)}
+                        getPreviewResult={getFieldPreviewResult}
+              getPreview={() => getSwitchPreviewFor(caseItem.left)}
                         referenceStyle={referenceStyle}
                         fetchDependentOptions={fetchDependentOptions}
                         setShowAuth={setShowAuth}
@@ -1365,7 +1302,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                             currentValue,
                           )
                         }
-                        getPreview={() => getSwitchPreviewFor(caseItem.right)}
+                        getPreviewResult={getFieldPreviewResult}
+              getPreview={() => getSwitchPreviewFor(caseItem.right)}
                         referenceStyle={referenceStyle}
                         fetchDependentOptions={fetchDependentOptions}
                         setShowAuth={setShowAuth}

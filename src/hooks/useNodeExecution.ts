@@ -1,3 +1,4 @@
+import { isExpressionContract, compileNodeFieldValues } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { prepareExpressionTransport } from "../../coreza-backend/src/nodes/logic/expressionTransport";
@@ -192,7 +193,12 @@ export function useNodeExecution({
       const payload: Record<string, any> = {};
       const definedFields = definition?.fields || [];
 
-      for (const field of definedFields) {
+      const newContract = isExpressionContract(fieldState);
+      if (newContract) {
+        const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
+        Object.assign(payload, compileNodeFieldValues(fieldState, definedFields, nodeId ?? undefined).resolve({ $json: pickTypedJsonSource(selectedInputData), $nodes: snapshot.nodeResults, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities }));
+      }
+      for (const field of newContract ? [] : definedFields) {
         if (
           !shouldIncludeFieldInPayload(field, fieldState, {
             ignoreShowKeys: ["portfolio_tab"],
@@ -212,7 +218,8 @@ export function useNodeExecution({
         }
       }
 
-      if (definition?.name === "Edit Fields") {
+      if (definition?.name === "Edit Fields" && newContract) payload.data = selectedInputData;
+      if (definition?.name === "Edit Fields" && !newContract) {
         payload.data = selectedInputData;
         const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
         const referencedNodes = new Set<string>();
@@ -239,7 +246,7 @@ export function useNodeExecution({
 
       if (definition?.name === "If") {
         // Ensure logical operators array is passed through
-        if (Array.isArray(fieldState.logicalOps)) {
+        if (!newContract && Array.isArray(fieldState.logicalOps)) {
           payload.logicalOps = fieldState.logicalOps;
         }
 
@@ -282,9 +289,12 @@ export function useNodeExecution({
           );
           const visibleKeys = new Set(visibleFields.map((f: any) => f.key));
           const filteredValues: Record<string, any> = {};
-
+          if (isExpressionContract(nodeValues as Record<string, unknown>)) {
+            const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
+            Object.assign(filteredValues, compileNodeFieldValues(nodeValues as Record<string, unknown>, allFields, n.id).resolve({ $json: pickTypedJsonSource(selectedInputData), $nodes: snapshot.nodeResults, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities }));
+          }
           for (const key of Object.keys(nodeValues)) {
-            if (visibleKeys.has(key) || key === "__isTool") {
+            if (!isExpressionContract(nodeValues as Record<string, unknown>) && (visibleKeys.has(key) || key === "__isTool")) {
               filteredValues[key] = nodeValues[key];
             }
           }
@@ -440,7 +450,7 @@ export function useNodeExecution({
 
       // Validate required fields using payload inclusion rules.
       // Tabs are UI-only groupings, so hidden tab fields still validate when relevant.
-      for (const f of definition?.fields || []) {
+      for (const f of isExpressionContract(fieldState) ? [] : definition?.fields || []) {
         if (
           !shouldIncludeFieldInPayload(f, fieldState, {
             ignoreShowKeys: ["portfolio_tab"],
@@ -524,11 +534,11 @@ export function useNodeExecution({
           // Read edges imperatively for loop processing
           const edges = getEdges();
 
-          const batchSize = parseInt(fieldState.batchSize) || 1;
-          const parallel = !!fieldState.parallel;
-          const aggregateMode = !!fieldState.aggregate;
-          const continueOnError = !!fieldState.continueOnError;
-          const throttleMs = parseInt(fieldState.throttleMs) || 200;
+          const batchSize = parseInt(payload.batchSize) || 1;
+          const parallel = !!payload.parallel;
+          const aggregateMode = !!payload.aggregate;
+          const continueOnError = !!payload.continueOnError;
+          const throttleMs = Number(payload.throttleMs ?? 200);
 
           // Normalize input → loopItems
           let loopItems: any[];
@@ -662,7 +672,7 @@ export function useNodeExecution({
 
         if (operationField) {
           const opSelected = (operationField.options || []).find(
-            (opt: any) => opt.id === fieldState.operation,
+            (opt: any) => opt.id === payload.operation,
           );
           if (opSelected && opSelected.method) {
             operationMethod = opSelected.method;
@@ -675,13 +685,13 @@ export function useNodeExecution({
         if (url.includes("{{") && url.includes("}}")) {
           url = url.replace(
             /\{\{(\w+)\}\}/g,
-            (_, key) => fieldState[key] || "",
+            (_, key) => payload[key] ?? "",
           );
         }
 
         if (method.includes("{{") && method.includes("}}")) {
           method = method.replace(/\{\{(\w+)\}\}/g, (_, key) =>
-            key === "method" ? operationMethod : fieldState[key] || "",
+            key === "method" ? operationMethod : payload[key] ?? "",
           );
         }
 
@@ -691,7 +701,7 @@ export function useNodeExecution({
 
           if (method === "GET") {
             params = new URLSearchParams();
-            params.append("credential_id", fieldState.credential_id ?? "");
+            params.append("credential_id", payload.credential_id ?? "");
             fullUrl += `?${params.toString()}`;
           }
 
@@ -750,7 +760,7 @@ export function useNodeExecution({
           // Handle listening modes (streaming and webhook)
           const isStreamingSubscribe =
             definition?.executionMode === "streaming" &&
-            (fieldState.operation ?? fieldState.mode) === "subscribe";
+            (payload.operation ?? payload.mode) === "subscribe";
 
           const isStreamingTrigger =
             definition?.executionMode === "streaming" &&
@@ -781,7 +791,7 @@ export function useNodeExecution({
             const handler = createListeningHandler(
               buildWebhookListeningConfig({
                 definition,
-                fieldState,
+                fieldState: payload,
                 nodeId: nodeId!,
               }),
               listeningDeps,
@@ -799,7 +809,7 @@ export function useNodeExecution({
             const handler = createListeningHandler(
               buildStreamingTriggerListeningConfig({
                 definition,
-                fieldState,
+                fieldState: payload,
                 nodeId: nodeId!,
                 workflowId: workflowId!,
               }),
@@ -816,7 +826,7 @@ export function useNodeExecution({
             const handler = createListeningHandler(
               buildStreamingSubscribeListeningConfig({
                 definition,
-                fieldState,
+                fieldState: payload,
                 nodeId,
                 payload,
               }),

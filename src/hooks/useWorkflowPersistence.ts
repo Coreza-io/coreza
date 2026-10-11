@@ -1,3 +1,5 @@
+import { useExpressionCapability } from "./useExpressionCapability";
+import { isExpressionContract } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -50,6 +52,7 @@ export interface NodeReductionCheck {
 }
 
 export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions) => {
+  const expressionSupported = useExpressionCapability();
   const { toast } = useToast();
   const { user: authUser, session } = useAuth();
   const { shouldBlockEmptySave } = useWorkflowVersioning();
@@ -147,6 +150,11 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       setSaving(true);
 
       try {
+        if (!expressionSupported && nodes.some(node => {
+          if (isExpressionContract(node.data.values as Record<string, unknown>)) return true;
+          const definition = node.data.definition as { fields?: Array<{ key: string; type: string }> } | undefined;
+          return definition?.fields?.some(field => field.type === 'repeater' && Array.isArray((node.data.values as any)?.[field.key]) && (node.data.values as any)[field.key].some((row: any) => row?.expression_format_version === 1));
+        })) throw new Error('The backend does not support expression authoring. Deploy the evaluator and writer guard first.');
         const candidateClusters = opts.clusters ?? [];
         if (candidateClusters.some(c=>c.parentClusterId !== undefined) && !hierarchySupported) throw new Error('The server has not confirmed hierarchy write support.');
         const clusterValidation = validateClusters(nodes, edges, candidateClusters);
@@ -222,6 +230,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
     },
     [
       authUser,
+      expressionSupported,
       hierarchySupported,
       projectId,
       toast,

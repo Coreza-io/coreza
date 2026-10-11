@@ -1,3 +1,5 @@
+import { isExpressionContract, compileFieldValue, evaluateFieldValue } from "../../coreza-backend/src/nodes/logic/fieldExpression";
+import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 /**
@@ -23,6 +25,7 @@ import {
 
 interface UseNodeReferencesProps {
   fieldState: Record<string, any>;
+  definition?: any;
   previousNodes: readonly SemanticNode[];
   selectedPrevNodeId: string;
   selectedPrevNode: SemanticNode | undefined;
@@ -37,6 +40,7 @@ interface UseNodeReferencesReturn {
     currentValue: string,
   ) => void;
   getFieldPreview: (fieldKey: string) => string | null;
+  getFieldPreviewResult: (fieldKey: string, raw?: unknown) => { value?: unknown; error?: string } | null;
   referenceStyle: React.CSSProperties;
 }
 
@@ -46,6 +50,7 @@ interface UseNodeReferencesReturn {
  */
 export function useNodeReferences({
   fieldState,
+  definition,
   previousNodes,
   selectedPrevNodeId,
   selectedPrevNode,
@@ -104,49 +109,28 @@ export function useNodeReferences({
     [getNodes, selectedPrevNodeId],
   );
 
-  // Get preview of resolved reference expression
-  const getFieldPreview = useCallback(
-    (fieldKey: string) => {
-      const expr = fieldState[fieldKey] || "";
-      if (!expr.includes("{{")) return null;
-
-      const srcId = sourceMap[fieldKey] || selectedPrevNodeId;
-      const srcNode =
-        previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
-
-      const { allNodeData, getSourceData } = buildPreviewData(
-        previousNodes,
-        executionStore,
-        getNodes,
-      );
-
-      const srcData = srcNode ? getSourceData(srcId) : {};
-
-      try {
-        // Read nodes imperatively for reference resolution - avoids subscription re-renders
-        const nodes = getNodes();
-        const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
-
-        // For very large arrays, use quick summarized preview to avoid performance issues
-        if (Array.isArray(resolved) && resolved.length > 100) {
-          return summarizePreview(resolved, 5, 200);
-        }
-
-        return fullePreview(resolved);
-      } catch (error) {
-        return error instanceof Error ? error.message : "Reference preview failed.";
-      }
-    },
-    [
-      fieldState,
-      sourceMap,
-      selectedPrevNodeId,
-      previousNodes,
-      selectedPrevNode,
-      executionStore,
-      getNodes,
-    ],
-  );
+  const getFieldPreviewResult = useCallback((fieldKey: string, raw?: unknown) => {
+    const expr = raw ?? fieldState[fieldKey];
+    if (typeof expr !== 'string' || !expr.includes('{{')) return null;
+    const field = definition?.fields?.find((field: any) => field.key === fieldKey);
+    if (field?.type === 'password') return null;
+    const srcId = sourceMap[fieldKey] ?? selectedPrevNodeId;
+    const { getSourceData, allNodeData } = buildPreviewData(previousNodes, executionStore, getNodes);
+    try {
+      const nodes = getNodes();
+      const snapshot = snapshotTypedExpressionContext(nodes, id => executionStore.getNodeData(id).output);
+      const value = isExpressionContract(fieldState)
+        ? evaluateFieldValue(compileFieldValue(expr, field ?? { key: fieldKey, type: 'text' }), { $json: pickTypedJsonSource(getSourceData(srcId)), $nodes: snapshot.nodeResults, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities })
+        : resolveReferences(expr, getSourceData(srcId), allNodeData, nodes);
+      return { value };
+    } catch (error) { return { error: error instanceof Error ? error.message : 'Reference preview failed.' }; }
+  }, [fieldState, definition, sourceMap, selectedPrevNodeId, previousNodes, executionStore, getNodes]);
+  const getFieldPreview = useCallback((fieldKey: string) => {
+    const result = getFieldPreviewResult(fieldKey);
+    if (!result) return null;
+    if (result.error) return result.error;
+    return Array.isArray(result.value) && result.value.length > 100 ? summarizePreview(result.value, 5, 200) : fullePreview(result.value);
+  }, [getFieldPreviewResult]);
 
   // Visual styling now handled via [data-node-surface="dark"] CSS rules
   // targeting [data-is-reference="true"]. Kept as no-op for backward compat.
@@ -156,6 +140,7 @@ export function useNodeReferences({
     handleDragStart,
     handleDrop,
     getFieldPreview,
+    getFieldPreviewResult,
     referenceStyle,
   };
 }

@@ -2,6 +2,7 @@ import { allocateNodeName } from "@/domain/nodeNaming";
 import { mapNodeReferences, remapNodeReferenceMap } from "@/utils/remapNodeReferences";
 import { resolveNodeIdentity, withUniqueInstanceAliases } from "@/utils/referenceResolution";
 import { nodeManifest } from "@/nodes/manifest";
+import type { FieldDescriptor } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 import { validateClusters } from "@/domain/clusters/validate";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -160,7 +161,7 @@ export async function importWorkflow(file: File): Promise<{
     mapNodeReferences(node.values, (name) => {
       resolveNodeIdentity(name, normalizedNodes);
       return undefined;
-    });
+    }, false, nodeManifest[node.type as keyof typeof nodeManifest]?.fields as readonly FieldDescriptor[]);
   }
   const idMap = Object.fromEntries(normalizedNodes.map((node) => [node.id, crypto.randomUUID()]));
   const references = withUniqueInstanceAliases(idMap, normalizedNodes);
@@ -172,7 +173,7 @@ export async function importWorkflow(file: File): Promise<{
     reservations.add(result.name);
     return {
       ...node, id: idMap[node.id], displayName: result.name,
-      values: remapNodeReferenceMap(node.values, references),
+      values: remapNodeReferenceMap(node.values, references, nodeManifest[node.type as keyof typeof nodeManifest]?.fields as readonly FieldDescriptor[]),
     };
   });
   const freshEdges = importedEdges.map((edge) => ({

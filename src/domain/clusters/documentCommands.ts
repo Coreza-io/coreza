@@ -187,7 +187,7 @@ export function pasteNodesInDocument(
     const data = { ...node.data };
     for (const key of ["values", "fieldState"]) {
       if (!(key in data)) continue;
-      data[key] = remapNodeReferenceMap(data[key], names);
+      data[key] = remapNodeReferenceMap(data[key], names, (data.definition as any)?.fields);
     }
     return { ...node, data };
   });
@@ -328,16 +328,16 @@ export function renameNodeInDocument(
     if (node.id !== oldId) {
       const data = { ...node.data };
       if (Object.prototype.hasOwnProperty.call(data, "values"))
-        data.values = remapNodeReferenceMap(data.values, names);
+        data.values = remapNodeReferenceMap(data.values, names, (data.definition as any)?.fields);
       if (Object.prototype.hasOwnProperty.call(data, "fieldState"))
-        data.fieldState = remapNodeReferenceMap(data.fieldState, names);
+        data.fieldState = remapNodeReferenceMap(data.fieldState, names, (data.definition as any)?.fields);
       return { ...node, data };
     }
     const data: Record<string, unknown> = { ...node.data, displayName: newId };
     if (Object.prototype.hasOwnProperty.call(data, "values"))
-      data.values = remapNodeReferenceMap(data.values, names);
+      data.values = remapNodeReferenceMap(data.values, names, (data.definition as any)?.fields);
     if (Object.prototype.hasOwnProperty.call(data, "fieldState"))
-      data.fieldState = remapNodeReferenceMap(data.fieldState, names);
+      data.fieldState = remapNodeReferenceMap(data.fieldState, names, (data.definition as any)?.fields);
     return { ...node, id: newId, data };
   });
   candidate.edges = candidate.edges.map((edge) => ({

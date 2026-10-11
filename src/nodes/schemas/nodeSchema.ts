@@ -51,6 +51,10 @@ export const GroupedOptionsSchema = z.record(
 export const SubFieldSchema = z.object({
   key: z.string().min(1),
   type: z.string(),
+  resultType: z.enum(['string', 'number', 'boolean', 'array', 'object', 'any']).optional(),
+  nullable: z.boolean().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
   placeholder: z.string().optional(),
   label: z.string().optional(),
   options: z.array(OptionSchema).optional(),
@@ -101,12 +105,13 @@ export const DynamicLabelSchema = z.object({
 
 export const FieldSchema = z.object({
   key: z.string().min(1),
-  label: z.string(),
+  label: z.string().optional(),
   type: z.enum([
     "text",
     "textarea",
     "select",
     "checkbox",
+    "boolean",
     "number",
     "password",
     "repeater",
@@ -120,6 +125,10 @@ export const FieldSchema = z.object({
     "string",
     "tabs",
   ]),
+  resultType: z.enum(['string', 'number', 'boolean', 'array', 'object', 'any']).optional(),
+  nullable: z.boolean().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
   tabs: z.array(z.object({ id: z.string(), label: z.string() })).optional(),
   placeholder: z.string().optional(),
   required: z.boolean().optional(),
@@ -133,12 +142,13 @@ export const FieldSchema = z.object({
   dynamicOptions: DynamicOptionsSchema.optional(),
   hidden: z.boolean().optional(),
   subFields: z.array(SubFieldSchema).optional(),
+  items: SubFieldSchema.optional(),
   displayOptions: DisplayOptionsSchema.optional(),
   condition: ConditionSchema.optional(),
   description: z.string().optional(),
   groupedOptions: GroupedOptionsSchema.optional(),
   width: z.enum(["full", "half"]).optional(),
-});
+}).refine(field => field.type === "hidden" || typeof field.label === "string", { message: "Editable fields require a label", path: ["label"] });
 
 export const AuthFieldSchema = z.object({
   key: z.string().min(1),

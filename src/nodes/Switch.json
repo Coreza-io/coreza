@@ -42,7 +42,8 @@
           "key": "left",
           "label": "Value 1",
           "type": "string",
-          "placeholder": "{{ $('Market Status').json.market_type }}"
+          "placeholder": "{{ $('Market Status').json.market_type }}",
+          "resultType": "any"
         },
         {
           "key": "operator",
@@ -279,7 +280,8 @@
           "key": "right",
           "label": "Value 2",
           "type": "string",
-          "placeholder": "stocks"
+          "placeholder": "stocks",
+          "resultType": "any"
         },
         {
           "key": "outputName",

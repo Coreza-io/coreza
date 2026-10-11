@@ -1,3 +1,5 @@
+import { useExpressionCapability } from "./useExpressionCapability";
+import { migrateNodeExpressionValues, normalizeExpressionRows } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -25,6 +27,7 @@ interface UseNodeFieldStateProps {
 
 interface UseNodeFieldStateReturn {
   fieldState: Record<string, any>;
+  migrationError?: string;
   handleChange: (key: string, value: any) => boolean;
   handleFieldStateBatch: (updates: Record<string, any>) => boolean;
 }
@@ -45,6 +48,8 @@ export function useNodeFieldState({
   data,
   readOnly = false,
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
+  const expressionSupported = useExpressionCapability();
+  const [migrationError, setMigrationError] = useState<string>();
   const nodeId = useNodeId();
   const { updateNodeData, getNodeById } = useStableNodes();
   const live = useRef({ readOnly, data });
@@ -120,24 +125,34 @@ export function useNodeFieldState({
     if (!allowed()) return false;
     const canonical = getNodeById(nodeId!)?.data?.values as Record<string, any> | undefined;
     const base = canonical && canonical !== ownWrite.current ? { ...draft.current, ...canonical } : draft.current;
-    const next = { ...base, ...updates };
+    let next = { ...base, ...updates };
+    if (expressionSupported) {
+      try {
+        // Normalize the original source before applying edits; a fixed literal keeps its meaning.
+        next = { ...migrateNodeExpressionValues(base, definition?.fields ?? []), ...Object.fromEntries(Object.entries(updates).map(([key, value]) => [key, definition?.fields?.find((field: any) => field.key === key)?.type === 'repeater' ? normalizeExpressionRows(value) : value])) };
+      } catch (error) {
+        try { next = migrateNodeExpressionValues({ ...base, ...updates }, definition?.fields ?? []); }
+        catch (repairError) { setMigrationError(repairError instanceof Error ? repairError.message : String(repairError)); return false; }
+      }
+    }
+    setMigrationError(undefined);
     if (!updateNodeData(nodeId!, { values: next, fieldState: next })) return false;
     ownWrite.current = next; draft.current = next; setFieldState(next);
     return true;
   };
 
   const handleChange = useCallback((key: string, value: any) => {
-    const updates: Record<string, any> = { [key]: typeof value === "string" && value.trim() === "" ? null : value };
+    const updates: Record<string, any> = { [key]: value };
     for (const field of definition?.fields ?? []) {
       if (field.dynamicOptions?.dependsOn !== key) continue;
       const options = field.dynamicOptions.optionsByValue?.[value];
       if (options?.length) updates[field.key] = options[0].value;
     }
     return commit(updates);
-  }, [nodeId, updateNodeData, definition?.fields, readOnly, data?.workflowSessionId]);
+  }, [nodeId, updateNodeData, definition?.fields, readOnly, data?.workflowSessionId, expressionSupported]);
 
   const handleFieldStateBatch = useCallback((updates: Record<string, any>) => commit(updates),
-    [nodeId, updateNodeData, readOnly, data?.workflowSessionId]);
+    [nodeId, updateNodeData, readOnly, data?.workflowSessionId, expressionSupported]);
 
-  return { fieldState, handleChange, handleFieldStateBatch };
+  return { fieldState, migrationError, handleChange, handleFieldStateBatch };
 }

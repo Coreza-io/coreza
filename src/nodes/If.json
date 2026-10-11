@@ -25,6 +25,7 @@
       "subFields": [
         {
           "key": "left",
+          "resultType": "any",
           "label": "Value 1",
           "type": "string",
           "placeholder": "{{ $('Market Status').json.market_type }}"
@@ -128,13 +129,15 @@
             }
           }
         },
-        { "key": "right", "label": "Value 2", "type": "string", "placeholder": "stocks" }
+        { "key": "right", "resultType": "any", "label": "Value 2", "type": "string", "placeholder": "stocks" }
       ],
       "default": { "left": "", "operator": "===", "right": "" }
     },
     {
       "key": "logicalOps",
       "label": "Logical Operators",
+      "resultType": "array",
+      "items": { "key": "operator", "type": "select", "options": [{"value":"AND"},{"value":"OR"}] },
       "type": "hidden",
       "default": []
     }

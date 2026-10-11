@@ -1,3 +1,4 @@
+import { useExpressionCapability } from "@/hooks/useExpressionCapability";
 import { resetReferenceTextHistory } from "@/hooks/useReferenceTextDrop";
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
 import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
@@ -265,6 +266,7 @@ type HistoryEntry =
   | { type: "positions"; nodeIds: string[]; before: PositionMap; after: PositionMap };
 
 const WorkflowEditorContent = () => {
+  const expressionSupported = useExpressionCapability();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1834,6 +1836,7 @@ const WorkflowEditorContent = () => {
 
       const batch = createPaletteNodeBatch({
         nodeType,
+        expressionSupported,
         definition: nodeDefinition,
         onBarDefinition: nodeManifest[ON_BAR_NODE_TYPE],
         position,
@@ -1868,6 +1871,7 @@ const WorkflowEditorContent = () => {
     },
     [
       workflowSessionId,
+      expressionSupported,
       removeEdge,
       loading,
       persistLoading,

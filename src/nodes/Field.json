@@ -49,16 +49,6 @@
           "default": "string"
         },
         {
-          "key": "valueMode",
-          "label": "Value Mode",
-          "type": "select",
-          "options": [
-            { "label": "Fixed", "value": "fixed" },
-            { "label": "Expression", "value": "expression" }
-          ],
-          "default": "fixed"
-        },
-        {
           "key":         "value",
           "label":       "Value",
           "type":        "string",
@@ -66,7 +56,7 @@
         }
       ],
       "default": [
-        { "fieldName": "", "dataType": "string", "valueMode": "fixed", "value": "" }
+        { "fieldName": "", "dataType": "string", "expression_format_version": 1, "value": "" }
       ]
     }
   ]

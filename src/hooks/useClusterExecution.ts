@@ -1,3 +1,4 @@
+import { isExpressionContract, compileNodeFieldValues } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
@@ -118,7 +119,10 @@ export function buildClusterExecutionPlan(
     const references = new Set<string>();
     const computedReferences = new Set<string>();
     const node = nodeById.get(id);
-    collectReferences(node?.data?.values, references, (node?.data?.definition as NodeConfig)?.name === "Edit Fields", computedReferences);
+    if (isExpressionContract(node?.data?.values as Record<string, unknown>)) {
+      const compiled = compileNodeFieldValues(node!.data.values as Record<string, unknown>, (node!.data.definition as NodeConfig).fields as any ?? [], id);
+      compiled.references.forEach(reference => computedReferences.add(reference));
+    } else collectReferences(node?.data?.values, references, (node?.data?.definition as NodeConfig)?.name === "Edit Fields", computedReferences);
     for (const reference of new Set([...references, ...computedReferences])) {
       let referencedId: string | undefined;
       try { referencedId = resolveNodeIdentity(reference, nodes)?.id; }

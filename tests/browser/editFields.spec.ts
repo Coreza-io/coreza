@@ -19,9 +19,10 @@ test("nested bounds resolve without rewriting text and participate in undo/redo"
   await expect(textarea).toHaveValue(nested);
   await textarea.press("Control+z"); await expect(textarea).toHaveValue(source);
   await textarea.press("Control+Shift+z"); await expect(textarea).toHaveValue(nested);
-  await page.getByRole("button", { name: "Fixed", exact: true }).click();
-  await expect(textarea).toHaveValue(nested);
-  await expect(page.getByText("[4,5,6,7,8]", { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Value Mode', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Fixed", exact: true })).toHaveCount(0);
+  await textarea.fill('[10,20]');
+  await expect(page.getByText('[10,20]', { exact: true })).toBeVisible();
 });
 
 test("retired saved calls stay editable and report an explicit conversion diagnostic", async ({ page }) => {

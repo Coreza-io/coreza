@@ -28,6 +28,7 @@ export function referenceDropControl(event: React.DragEvent): ReferenceTextContr
 export function planReferenceTextDrop(event: React.DragEvent, reference: string, allowCode = false, typed = allowCode): ReferenceInsertion | null {
   const control = referenceDropControl(event);
   if (!control || control.disabled || control.readOnly || owners.get(control)?.disabled()) return null;
+  if (control.dataset.expressionContract === '1') { allowCode = true; typed = true; }
   const owner = owners.get(control);
   if (!typed) {
     const match = /^\{\{ \$\("([^"\\]*)"\)\.json(.*) \}\}$/.exec(reference);

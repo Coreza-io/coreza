@@ -8,13 +8,14 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
 
 interface UseNodeCredentialsProps {
   definition: any;
   fieldState: Record<string, any>;
+  getFieldPreviewResult?: (key: string, raw?: unknown) => { value?: unknown; error?: string } | null;
   workflowId?: string;
   workflowSessionId?: string;
 }
@@ -35,6 +36,7 @@ interface UseNodeCredentialsReturn {
 export function useNodeCredentials({
   definition,
   fieldState,
+  getFieldPreviewResult,
   workflowId,
   workflowSessionId,
 }: UseNodeCredentialsProps): UseNodeCredentialsReturn {
@@ -248,6 +250,19 @@ export function useNodeCredentials({
     [userId, session?.access_token, workflowId, workflowSessionId],
   );
 
+  const parentValues: Record<string, string | null> = {};
+  for (const field of definition?.fields ?? []) {
+    if (!field.dependsOn) continue;
+    const raw = fieldState[field.dependsOn];
+    if (typeof raw === 'string' && raw.includes('{{')) {
+      const preview = getFieldPreviewResult?.(field.dependsOn, raw);
+      parentValues[field.dependsOn] = preview && !preview.error && typeof preview.value === 'string' ? preview.value : null;
+    } else parentValues[field.dependsOn] = typeof raw === 'string' ? raw : null;
+  }
+  // Only scalar controlling results drive API requests, not unrelated source keystrokes.
+  const dependencySignature = JSON.stringify(parentValues);
+  const dependencyValues = useMemo(() => JSON.parse(dependencySignature) as Record<string, string | null>, [dependencySignature]);
+
   // Load credentials and static options on mount (wait for auth to be ready)
   useEffect(() => {
     // Don't fetch until auth is resolved
@@ -256,8 +271,9 @@ export function useNodeCredentials({
     (definition?.fields || []).forEach(async (f: any) => {
       if (f.type === "select" && f.optionsSource === "credentialsApi") {
         const serviceTypeOverride = f.dependsOn
-          ? fieldState[f.dependsOn]
+          ? dependencyValues[f.dependsOn]
           : undefined;
+        if (f.dependsOn && serviceTypeOverride == null) return;
         fetchCredentials(f.key, serviceTypeOverride);
       }
       if (f.type === "select" && f.optionsSource === "storeWorkflowsApi") {
@@ -272,7 +288,7 @@ export function useNodeCredentials({
     definition?.name,
     fetchCredentials,
     fetchStoreWorkflows,
-    fieldState,
+    dependencyValues,
     loading,
   ]);
 
@@ -283,12 +299,12 @@ export function useNodeCredentials({
         field.type === "select" &&
         field.optionsSource === "credentialsApi" &&
         field.dependsOn &&
-        fieldState[field.dependsOn]
+        dependencyValues[field.dependsOn]
       ) {
-        fetchCredentials(field.key, fieldState[field.dependsOn]);
+        fetchCredentials(field.key, dependencyValues[field.dependsOn]);
       }
     });
-  }, [definition?.fields, fieldState, fetchCredentials]);
+  }, [definition?.fields, dependencyValues, fetchCredentials]);
 
   // Load dependent API options on mount or when parent field changes
   useEffect(() => {
@@ -297,16 +313,16 @@ export function useNodeCredentials({
         field.type === "select" &&
         field.optionsSource === "dependentApi" &&
         field.dependsOn &&
-        fieldState[field.dependsOn]
+        dependencyValues[field.dependsOn]
       ) {
-        fetchDependentOptions(field, fieldState[field.dependsOn]);
+        fetchDependentOptions(field, dependencyValues[field.dependsOn]);
       }
       if (
         field.type === "select" &&
         field.optionsSource === "storeVariablesApi"
       ) {
         const selectedWorkflowId = field.dependsOn
-          ? fieldState[field.dependsOn]
+          ? dependencyValues[field.dependsOn]
           : undefined;
 
         if (selectedWorkflowId) {
@@ -318,7 +334,7 @@ export function useNodeCredentials({
     });
   }, [
     definition?.fields,
-    fieldState,
+    dependencyValues,
     fetchDependentOptions,
     fetchStoreVariables,
   ]);

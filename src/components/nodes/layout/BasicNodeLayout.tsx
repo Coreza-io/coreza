@@ -32,6 +32,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   handleSubmit,
   handleDrop,
   getFieldPreview,
+  getFieldPreviewResult,
   setShowAuth,
   fetchCredentials,
   fetchDependentOptions,
@@ -155,6 +156,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
                   currentValue,
                 )
               }
+              getPreviewResult={getFieldPreviewResult}
               getPreview={getFieldPreview}
               referenceStyle={referenceStyle}
               fetchDependentOptions={fetchDependentOptions}

@@ -1,3 +1,4 @@
+import { EXPRESSION_VERSION_KEY } from "../../../coreza-backend/src/nodes/logic/fieldExpression";
 import { allocateNodeName } from "@/domain/nodeNaming";
 import type { Edge, Node, XYPosition } from "@xyflow/react";
 import type { NodeConfig } from "@/nodes/manifest";
@@ -22,6 +23,7 @@ const allocateId = (baseId: string, reservedIds: Set<string>): string => {
 
 export function createPaletteNodeBatch(args: {
   nodeType: string;
+  expressionSupported?: boolean;
   definition: NodeConfig;
   onBarDefinition?: NodeConfig;
   position: XYPosition;
@@ -47,6 +49,7 @@ export function createPaletteNodeBatch(args: {
       label: args.definition.name || `${args.nodeType} node`,
       definition: args.definition,
       workflowSessionId: args.workflowSessionId,
+      ...(args.expressionSupported ? { values: { [EXPRESSION_VERSION_KEY]: 1 } } : {}),
     },
   }];
   const edges: Edge[] = [];
@@ -66,6 +69,7 @@ export function createPaletteNodeBatch(args: {
       label: args.onBarDefinition?.name || "OnBar node",
       definition: args.onBarDefinition,
       workflowSessionId: args.workflowSessionId,
+      ...(args.expressionSupported ? { values: { [EXPRESSION_VERSION_KEY]: 1 } } : {}),
     },
   });
 

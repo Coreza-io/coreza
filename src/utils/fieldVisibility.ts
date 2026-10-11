@@ -1,3 +1,4 @@
+import { isExpressionContract, EXPRESSION_VERSION_KEY } from "../../coreza-backend/src/nodes/logic/fieldExpression";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -123,6 +124,7 @@ export const getVisibleValues = (
   values: Record<string, any>,
 ): Record<string, any> => {
   if (!definition?.fields || !values) return values || {};
+  if (isExpressionContract(values)) return { ...values };
 
   const result: Record<string, any> = {};
 
@@ -135,7 +137,7 @@ export const getVisibleValues = (
   }
 
   // Preserve system-level keys not in definition.fields
-  const systemKeys = ["checkDependency", "logicalOps", "__isTool"];
+  const systemKeys = ["checkDependency", "logicalOps", "__isTool", EXPRESSION_VERSION_KEY];
   for (const key of systemKeys) {
     if (values[key] !== undefined) {
       result[key] = values[key];

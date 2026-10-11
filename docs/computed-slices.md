@@ -1,6 +1,6 @@
-# Computed slices in Edit Fields
+# Computed slices in editable parameters
 
-Select **Expression** and **Array** to select a suffix using another node's count:
+Enter an expression in an array-capable field (or choose **Array** as the Edit Fields result type) to select a suffix using another node's count:
 
 ```text
 {{ $("get_atr_history").json.data.value[-$("short_len").json.data:] }}
@@ -12,7 +12,7 @@ Nested bounds also work without rewriting the saved expression:
 {{ $("get_atr_history").json.data.value[-{{ $("short_len").json.data }}:] }}
 ```
 
-Bounds accept existing reference and arithmetic expressions. They must resolve to finite safe-integer numbers; strings are not coerced. Omitted bounds select the beginning or end. Negative bounds count from the end, oversized bounds clamp to the array, and `[-0:]` selects the whole array. Steps and computed property indexes remain unsupported. Generic legacy fields keep their existing grammar.
+Bounds accept existing reference and arithmetic expressions. They must resolve to finite safe-integer numbers; strings are not coerced. Omitted bounds select the beginning or end. Negative bounds count from the end, oversized bounds clamp to the array, and `[-0:]` selects the whole array. Steps and computed property indexes remain unsupported. Versioned generic fields use the same grammar; unversioned legacy fields keep their existing grammar. See [expression fields](expression-fields.md) for typing, escaping and rollout.
 
 The array and bounds use current canonical node outputs, including existing pins. Selecting a small suffix does not serialize unrelated history slots. Preview and server execution share validation, resource limits, and output checks. Deploy the updated backend before using the new frontend.
 

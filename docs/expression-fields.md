@@ -1,0 +1,35 @@
+# Expression-capable node parameters
+
+Editable action parameters always expose source text and a compact Expression indicator. Option, Boolean and multiselect pickers are conveniences; there is no Fixed/Expression mode. Password source remains masked and has no preview. Generated webhook URLs, tabs, hidden schema controls without runtime descriptors, graph identity and dependency scheduling metadata are document structure.
+
+## Contract and ownership
+
+`values.__expressionFormatVersion: 1` selects the new contract independently for each node. This is intentionally inside the existing values JSON, so canonical save, history, export, clipboard, import and execution snapshots carry it without another database column or RPC argument. Absent version keeps legacy execution. Unknown versions fail explicitly. Typed mode-free rows additionally carry `expression_format_version: 1`, avoiding ambiguous shape inference.
+
+The portable backend `fieldExpression.ts` module owns descriptors, compilation, reference collection, literal coercion, validation, inclusion and evaluation. Node JSON is the descriptor source. Number, Boolean, String, array and object destinations validate their declared type. Existing `text`/`textarea` action inputs accept JSON values because many consumers take candle arrays, model inputs or objects in those controls; `resultType` narrows any such field. Comparator operands explicitly retain their polymorphic types, with operator/dataType conversion owned by the comparator. Scalars accepted by String destinations convert to text; objects never become `[object Object]`. Select options are validated after resolution, including dynamic and grouped options. API credential selectors produce IDs only: existing authenticated endpoint ownership/provider checks still apply.
+
+Plain `SPY` is literal text. `10` in Number converts to 10 and `false` in Boolean converts to false. `{{ "10" }}` in Number fails. A single code segment preserves its type; mixed segments produce text. Native literals are preserved and checked. Zero, false, empty String, absent and null remain distinct. Optional null is allowed unless `nullable: false`; empty Number/Boolean is an error. `min`/`max`, `required`, enum and inclusion constraints share the same resolver.
+
+Use `\{{` to enter a literal opening delimiter and `\\` to encode a literal backslash in source. Escapes apply only to template text, never to quoted code. Migration uses the tested serializer rather than manual concatenation. An unmatched opening delimiter, unsupported syntax, forbidden property or strict JSON violation is an error.
+
+Preview uses a request-local canonical identity/output snapshot. Manual and Cluster Execute resolve locally before calling normal action endpoints; Run All uses `ParameterResolver` and compiled execution uses the same precompiled fields with fresh slot outputs and the current input. A resolved String containing `{{…}}` stays data. Raw-source HTTP owners use bounded evaluated-read packets keyed by stable descriptor paths (`fields[0].value`), retaining selected slices before JSON can erase sparse/undefined data. Edit Fields receives validated fixed rows at its application boundary, so it does not evaluate their source again. Native row/object plans compile once; arrays/objects returned by expressions are already data. References do not add Run All graph edges.
+
+All new expressions use source/AST limits, work/allocation budgets and the strict bounded JSON output boundary, including expressions without computed slices. Lazy branches do not read skipped references. Pins and the established output envelope precedence remain intact. Source ASTs are bounded-cached; invocation results are not cached. Changing source/descriptors creates a new node plan, while the template cache key includes dialect features.
+
+## Saved documents and rollout
+
+Deploy `20261011090000_expression_dialect_writer_guard.sql` and the backend before authoring with this frontend. The authenticated capabilities endpoint advertises authoring only after the deployed readiness RPC confirms the guard. `COREZA_EXPRESSION_AUTHORING=disabled` disables new authoring while keeping readers. The database trigger and backend reject a replacement that strips the version from a retained node; deletion remains a normal document command.
+
+On an authorized editor change, build and compile a migration candidate, then commit once through canonical node operations. Fixed String rows escape their exact output; other fixed rows use their existing conversion and retain native literals. Expression rows retain source/type. Legacy set/copy/remove rows and unknown row-owned metadata remain intact. Migration is idempotent. Invalid fixed conversion and unsupported legacy source retain the original document and report a conversion diagnostic. Legacy generic arithmetic/calls cannot silently become new arithmetic: the legacy accessor-only grammar must be converted explicitly. Missing references in the new dialect fail when read; no permissive regex fallback follows compilation failure.
+
+Save preserves inactive source fields; runtime resolves controlling fields before inclusion and avoids reading inactive optional references. UI controlling expressions use typed previews when available; unresolved controlling sources keep dependent controls editable without clearing sibling data.
+
+`expression-field-coverage.csv` inventories every schema field, renderer, expected type, inclusion policy and endpoint. `validate:nodes` rejects any field type without an adapter. Auth configuration is not a workflow expression context, and credential secrets are never available to preview. Graph `checkDependency`/`__isTool` and generated/hidden control metadata remain structural. The If logical-operator side array has an explicit runtime descriptor, with expression-capable AND/OR items. Custom action consumers retain their existing payload shapes.
+
+## Validation
+
+Contract tests cover literal types, escaping, nested slices, strict JSON, lazy branches, migration/round trips, visibility and compiled input freshness. Existing Edit Fields/route/slice, cluster and VM suites protect legacy ownership. Browser fixtures exercise shared source editing, draft undo/redo and native pointer drops. Run the expression benchmark with the same event count on the base and candidate; it reports compilation, event resolution and heap changes for static and expression-heavy fixtures.
+
+The database migration must be applied and exercised in staging before enabling authoring. This PR does not deploy production services or promise full JavaScript/n8n syntax. Slice steps and computed property indexes remain unsupported.
+
+Measured locally on the 100-field/10,000-event fixture: static event resolution was 0.32 ms total versus 0.40 ms legacy; expression resolution was 2,517 ms total versus 35 ms legacy (about 0.25 ms per event). Strict reads, validation and JSON budgeting add cost relative to legacy unchecked accessors. Heap deltas include garbage collection and are observational, not retained-memory measurements.

@@ -6,7 +6,7 @@ import { UtilityExecutor } from "../src/nodes/executors/UtilityExecutor";
 
 const row = (valueMode = "expression") => ({ fieldName: "risk", dataType: "string", valueMode, value: "{{ $vars.RISK }}" });
 async function request(body: any, path = "/comparator/field", method = "POST", user: any = { id: "owner" }) {
-  const req: any = { body, path, method, user };
+  const req: any = { body: { workflowId: "workflow", ...body }, path, method, user };
   const res: any = { locals: {}, status: jest.fn().mockReturnThis(), json: jest.fn() };
   const next = jest.fn();
   await variableContext(req, res, next);
@@ -29,13 +29,13 @@ test.each([
 });
 test("typed expressions use only the authenticated owner's snapshot", async () => {
   const { res, next } = await request({ fields: [row()], user_id: "other" }, "/comparator/field/");
-  expect(mockLoad).toHaveBeenCalledWith("owner");
+  expect(mockLoad).toHaveBeenCalledWith("owner", "workflow");
   expect(res.locals.variables).toEqual({ RISK: 5 });
   expect(next).toHaveBeenCalledTimes(1);
 });
 test("explicit revisions load snapshots for resolved generic actions", async () => {
   const { res, next } = await request({ value: 5, variableRevision: "1" }, "/comparator/compute");
-  expect(mockLoad).toHaveBeenCalledWith("owner");
+  expect(mockLoad).toHaveBeenCalledWith("owner", "workflow");
   expect(res.locals.variables).toEqual({ RISK: 5 });
   expect(next).toHaveBeenCalledTimes(1);
 });

@@ -1,3 +1,4 @@
+import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { compileEditTemplate } from "../nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES } from "../nodes/logic/safeExpression";
 export type VariableValue = string | number | boolean | null;
@@ -6,6 +7,7 @@ export interface VariableEntry { key: string; value: VariableValue; value_type: 
 export interface VariableSnapshot {
   schemaVersion: 1;
   owner: string;
+  workflowId?: string;
   revision: string;
   loadedAt: number;
   values: Readonly<Record<string, VariableValue>>;
@@ -18,9 +20,9 @@ export function validateVariable(key: unknown, value: unknown): asserts value is
     throw new Error("Variables support only strings, finite numbers, booleans and null");
   if (new TextEncoder().encode(JSON.stringify(value)).length > VARIABLE_LIMITS.valueBytes) throw new Error("Variable value exceeds 4096 bytes");
 }
-export function freezeVariableSnapshot(raw: unknown, owner: string): VariableSnapshot {
+export function freezeVariableSnapshot(raw: unknown, owner: string, workflowId?: string): VariableSnapshot {
   const data = raw as VariableSnapshot;
-  if (!data || data.schemaVersion !== 1 || data.owner !== owner || !/^\d+$/.test(data.revision) || !Number.isFinite(data.loadedAt) || !Array.isArray(data.entries) || data.entries.length > VARIABLE_LIMITS.count)
+  if (!data || data.schemaVersion !== 1 || data.owner !== owner || data.workflowId !== workflowId || !/^\d+$/.test(data.revision) || !Number.isFinite(data.loadedAt) || !Array.isArray(data.entries) || data.entries.length > VARIABLE_LIMITS.count)
     throw new Error("Invalid variable snapshot");
   const values: Record<string, VariableValue> = Object.create(null);
   const entries = data.entries.map(entry => {
@@ -31,7 +33,7 @@ export function freezeVariableSnapshot(raw: unknown, owner: string): VariableSna
     return Object.freeze({ key: entry.key, value: entry.value, value_type: type, updated_at: entry.updated_at });
   });
   if (new TextEncoder().encode(JSON.stringify(entries)).length > VARIABLE_LIMITS.snapshotBytes) throw new Error("Variable snapshot exceeds 65536 bytes");
-  return Object.freeze({ schemaVersion: 1, owner, revision: data.revision, loadedAt: data.loadedAt, values: Object.freeze(values), entries: Object.freeze(entries) });
+  return Object.freeze({ schemaVersion: 1, owner, ...(workflowId ? { workflowId } : {}), revision: data.revision, loadedAt: data.loadedAt, values: Object.freeze(values), entries: Object.freeze(entries) });
 }
 export function referencesVariables(value: unknown): boolean {
   if (typeof value === "string") {
@@ -45,4 +47,20 @@ export function referencesVariables(value: unknown): boolean {
   if (fields.valueMode === "fixed") return false;
   if (fields.valueMode === "expression") return referencesVariables(fields.value);
   return Object.entries(fields).some(([key, item]) => key !== "__fieldValueModes" && fields.__fieldValueModes?.[key] !== "fixed" && referencesVariables(item));
+}
+
+export interface VariableChange { key: string; value: VariableValue }
+export function overlayVariables(snapshot: VariableSnapshot, changes: readonly VariableChange[]): VariableSnapshot {
+  const entries = new Map(snapshot.entries.map(entry => [entry.key, entry]));
+  for (const { key, value } of changes) {
+    validateVariable(key, value);
+    entries.set(key, { key, value, value_type: value === null ? "null" : typeof value, updated_at: new Date().toISOString() });
+  }
+  return freezeVariableSnapshot({ ...snapshot, loadedAt: Date.now(), entries: [...entries.values()] }, snapshot.owner, snapshot.workflowId);
+}
+
+export function isPersistentVariableEdit(node: any): boolean {
+  return (node.name === "Edit Fields" || node.type === "Edit Fields" || node.data?.definition?.name === "Edit Fields")
+    && node.values?.persistent === true && Array.isArray(node.values.fields)
+    && node.values.fields.some(isTypedEditFieldRow);
 }

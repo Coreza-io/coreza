@@ -11,6 +11,8 @@ export interface MultiBarExecutionContext {
 }
 
 export interface NodeExecutionContext {
+  variableEventId?: string;
+  commitVariables?: (changes: readonly import("../../variables/contract").VariableChange[]) => void | Promise<void>;
   variables?: Readonly<Record<string, unknown>>;
   user_id?: string;
   userId: string;

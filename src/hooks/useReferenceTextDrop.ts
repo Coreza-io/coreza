@@ -160,6 +160,10 @@ export function useReferenceTextDrop(options: {
   undoRef.current = undo;
   return {
     controlRef,
+    recordInsertion: (insertion: ReferenceInsertion, meta?: unknown) => {
+      const control = controlRef.current;
+      if (control) owners.get(control)?.record(insertion, meta);
+    },
     error,
     bind: (event: React.DragEvent) => bindReferenceDropControl(event, controlRef.current),
     clearCaret,

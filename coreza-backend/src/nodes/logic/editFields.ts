@@ -1,3 +1,4 @@
+import { VARIABLE_LIMITS, validateVariable, type VariableChange } from "../../variables/contract";
 import { pickTypedJsonSource } from "./typedExpressionContext";
 import { restoreExpressionTransport } from "./expressionTransport";
 import { ExpressionContext, ExpressionError, TYPED_EXPRESSION_FEATURES } from "./safeExpression";
@@ -386,25 +387,9 @@ export function applyFieldRows(
         context,
         options.nodeId,
       );
-      let finalValue = value;
-      if (context.persistent && context.setPersistentValue) {
-        const current = options.legacyPersistentRead && context.getPersistentValue
-          ? context.getPersistentValue(row.fieldName)
-          : undefined;
-        if (current !== undefined) {
-          try {
-            finalValue = checkExpressionResult(current, row.dataType, row.fieldName);
-          } catch (error) {
-            throw new EditFieldError(
-              error instanceof Error ? error.message : String(error),
-              { nodeId: options.nodeId, rowIndex, fieldName: row.fieldName,
-                phase: "type", expected: labels[row.dataType], actual: editFieldValueType(current) },
-              { cause: error },
-            );
-          }
-        } else context.setPersistentValue(row.fieldName, value);
-      }
-      defineResultValue(result, row.fieldName, finalValue);
+      if (context.persistent && context.setPersistentValue)
+        context.setPersistentValue(row.fieldName, value);
+      defineResultValue(result, row.fieldName, value);
       continue;
     }
     const fieldName = row.left;
@@ -444,4 +429,26 @@ export function applyFieldRows(
   }
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   return result;
+}
+
+// Stage all rows before invoking any storage callback. No partial or preview writes.
+export function stagePersistentFields(rows: EditFieldRow[], options: ApplyFieldRowsOptions) {
+  if (rows.length > VARIABLE_LIMITS.count) throw new Error("Persistent Edit Fields supports at most 128 variables");
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (!isTypedEditFieldRow(row)) throw new Error("Persistent variables require typed Edit Fields rows; migrate legacy rows explicitly");
+    if (!row.fieldName) throw new Error("Persistent Edit Fields requires a variable name");
+    validateVariable(row.fieldName, null);
+    if (names.has(row.fieldName)) throw new Error(`Duplicate persistent variable name: ${row.fieldName}`);
+    if (row.dataType === "array" || row.dataType === "object") throw new Error("Persistent variables support String, Number and Boolean; turn Persistent off for Array/Object fields");
+    names.add(row.fieldName);
+  }
+  const result = applyFieldRows(rows, { ...options, context: { ...options.context, persistent: false } });
+  const changes: VariableChange[] = [];
+  for (const key of names) {
+    const value = result[key];
+    validateVariable(key, value);
+    changes.push({ key, value });
+  }
+  return { result, changes };
 }

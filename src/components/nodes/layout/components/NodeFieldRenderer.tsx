@@ -120,7 +120,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
     && !field.options?.length && !!onBatchChange;
   const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
-  const variableQuery = useVariableSnapshot(supportsValueMode && valueMode === "expression");
+  const variableQuery = useVariableSnapshot(supportsValueMode && valueMode === "expression", workflowId);
   const variableListId = React.useId();
   const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
     onBatchChange?.({

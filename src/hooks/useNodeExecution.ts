@@ -20,13 +20,14 @@ import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/Execution
 import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { isFixedField, parameterEntries } from "../../coreza-backend/src/utils/fieldValueModes";
-import { referencesVariables, type VariableSnapshot } from "../../coreza-backend/src/variables/contract";
+import { freezeVariableSnapshot, referencesVariables, type VariableSnapshot } from "../../coreza-backend/src/variables/contract";
 import { loadVariableSnapshot } from "./useVariableSnapshot";
 import { supabase } from "@/integrations/supabase/client";
-import { getEditorVariableSnapshot } from "@/services/editorNodeExecution";
+import { getEditorVariableSnapshot, publishEditorVariableSnapshot } from "@/services/editorNodeExecution";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { createListeningHandler } from "@/hooks/useListeningHandler";
 import {
@@ -93,6 +94,7 @@ export function useNodeExecution({
   workflowId,
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
+  const variableQueryClient = useQueryClient();
   const { getNodes, getEdges, updateNodeData } = useStableNodes();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
@@ -483,9 +485,9 @@ export function useNodeExecution({
         }
 
         let variables: VariableSnapshot | undefined;
-        if (referencesVariables(fieldState)) {
+        if (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.persistent === true && fieldState.fields?.some(isTypedEditFieldRow))) {
           const { data: { session } } = await supabase.auth.getSession();
-          variables = await getEditorVariableSnapshot(lockToken, userId, () => loadVariableSnapshot(userId, session?.access_token));
+          variables = await getEditorVariableSnapshot(lockToken, userId, () => loadVariableSnapshot(userId, session?.access_token, workflowId), workflowId);
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during variable initialization" };
         }
         const payload = buildPayload(fieldState, effectiveInput, variables);
@@ -494,6 +496,7 @@ export function useNodeExecution({
         payload.nodeName = definition.name;
         payload.node_type = definition.node_type;
         payload.workflowId = workflowId;
+        if (definition?.name === "Edit Fields" && payload.persistent === true) payload.variableInvocationId = crypto.randomUUID();
         payload.workflowSessionId = data?.workflowSessionId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
@@ -751,7 +754,15 @@ export function useNodeExecution({
             token: session?.access_token,
             signal,
           });
-          const responseData = await res.json();
+          const { variableSnapshot: committedVariables, ...responseData } = await res.json();
+          if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+          if (res.ok && committedVariables) {
+            const committed = freezeVariableSnapshot(committedVariables, userId, workflowId);
+            await variableQueryClient.cancelQueries({ queryKey: ["workflow-variables", userId, workflowId] });
+            if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+            publishEditorVariableSnapshot(lockToken, userId, committed);
+            variableQueryClient.setQueryData(["workflow-variables", userId, workflowId], committed);
+          }
           if (!executionIsCurrent()) {
             return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
           }
@@ -898,6 +909,7 @@ export function useNodeExecution({
       publishFailure,
       nodeId,
       workflowId,
+      variableQueryClient,
       setLastOutput,
       overrideOutput,
       data,

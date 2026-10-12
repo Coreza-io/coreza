@@ -124,11 +124,9 @@ describe("Edit Fields v2", () => {
       .toMatchObject({ enabled: false, amount: 5 });
     expect(state).toEqual({ enabled: false, amount: 5 });
     expect(applyFieldRows(rows, { input: { amount: 10 }, legacyResultSeed: {}, legacyPersistentRead: true, context }))
-      .toMatchObject({ enabled: false, amount: 5 });
-    expect(setPersistentValue).toHaveBeenCalledTimes(2);
-    state.amount = "wrong type";
-    expect(() => applyFieldRows(rows, { input: { amount: 10 }, legacyResultSeed: {}, legacyPersistentRead: true, context }))
-      .toThrow("expected Number");
+      .toMatchObject({ enabled: false, amount: 10 });
+    expect(setPersistentValue).toHaveBeenCalledTimes(4);
+    expect(state.amount).toBe(10);
   });
 
   test("persistent typed manual execution still works without runner state callbacks", () => {

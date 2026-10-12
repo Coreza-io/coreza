@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+import { isPersistentVariableEdit } from "../variables/contract";
 import { performance } from "perf_hooks";
 import { resolveCategory } from "../nodes/categoryMap";
 import { getNodeExecutor } from "../nodes/registry";
@@ -32,14 +34,16 @@ export type RuntimeOptions = {
   indicatorStateManager: IndicatorStateManager;
   allowedExecutableNodeIds?: readonly string[];
   executionScope?: NodeExecutionContext["executionScope"];
+  commitVariables?: (changes: readonly import("../variables/contract").VariableChange[], token: string) => void | Promise<void>;
   getVariables?: () => Readonly<Record<string, unknown>> | undefined;
 };
 
 type ExecutionContextExtras = Partial<
-  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp">
+  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp" | "variableEventId">
 >;
 
 export abstract class BaseExecutionRuntime {
+  private readonly variableInvocations = new Map<string, number>();
   protected readonly queue = new NodeQueueManager();
   protected readonly nodeExecutorMap = new Map<string, INodeExecutor>();
   protected readonly nodeTiming = new Map<
@@ -79,6 +83,7 @@ export abstract class BaseExecutionRuntime {
   hasPending(): boolean {
     return this.queue.length > 0;
   }
+  resetVariableInvocations(): void { this.variableInvocations.clear(); }
   releaseVariables(): void { if (this.execCtx) this.execCtx.variables = undefined; }
 
   enqueue(item: QueueItem): boolean {
@@ -175,6 +180,14 @@ export abstract class BaseExecutionRuntime {
         executionScope: this.options.executionScope,
         isWarmingUp: false,
         variables: this.options.getVariables?.(),
+        commitVariables: (changes) => {
+          const invocation = this.variableInvocations.get(ctx.nodeId) ?? 0;
+          this.variableInvocations.set(ctx.nodeId, invocation + 1);
+          const event = ctx.variableEventId ?? ctx.runId ?? ctx.executionId;
+          const token = createHash("sha256").update(JSON.stringify([event, ctx.nodeId, invocation])).digest("hex");
+          if (!this.options.commitVariables) throw new Error("Persistent variable context unavailable");
+          return this.options.commitVariables(changes, token);
+        },
         getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
         setState: (key: string, value: any) =>
           this.store.setNodeState(ctx.nodeId, key, value),
@@ -183,6 +196,7 @@ export abstract class BaseExecutionRuntime {
     }
 
     this.execCtx.nodeId = nodeId;
+    this.execCtx.variables = this.options.getVariables?.();
     Object.assign(this.execCtx, this.executionContextExtras);
     return this.execCtx;
   }
@@ -267,7 +281,7 @@ export abstract class BaseExecutionRuntime {
       data: null,
       error: errorMessage,
     });
-    if (this.options.mode === "fail-fast") throw error;
+    if (this.options.mode === "fail-fast" || isPersistentVariableEdit(this.graph.nodeById.get(nodeId))) throw error;
   }
 
   executeOnce(item: QueueItem): void | Promise<void> {
@@ -463,6 +477,7 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 
   resetForNextBar(full = false): void {
+    this.resetVariableInvocations();
     this.store.clearResults();
     this.queue.clear();
     this.enqueuedKeys.clear();
@@ -535,6 +550,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   }
 
   resetForNextBar(full = false): void {
+    this.resetVariableInvocations();
     const t0 = performance.now();
     this.store.clearResults();
     this.lastStoreClearMs = performance.now() - t0;

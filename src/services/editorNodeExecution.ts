@@ -28,12 +28,19 @@ export interface NodeExecutionRequest {
   executionGeneration?: number;
   lockToken?: symbol;
 }
-const variableInvocations = new Map<symbol, { owner: string; snapshot: Promise<import("../../coreza-backend/src/variables/contract").VariableSnapshot> }>();
-export function getEditorVariableSnapshot(token: symbol | undefined, owner: string, load: () => Promise<import("../../coreza-backend/src/variables/contract").VariableSnapshot>) {
+const variableInvocations = new Map<symbol, { owner: string; workflowId?: string; snapshot: Promise<import("../../coreza-backend/src/variables/contract").VariableSnapshot> }>();
+export function getEditorVariableSnapshot(token: symbol | undefined, owner: string, load: () => Promise<import("../../coreza-backend/src/variables/contract").VariableSnapshot>, workflowId?: string) {
   if (!token) return load();
   const existing = variableInvocations.get(token);
-  if (existing) { if (existing.owner !== owner) throw new Error("Variable invocation owner changed"); return existing.snapshot; }
-  const snapshot = load(); variableInvocations.set(token, { owner, snapshot }); return snapshot;
+  if (existing) { if (existing.owner !== owner || existing.workflowId !== workflowId) throw new Error("Variable invocation owner changed"); return existing.snapshot; }
+  const snapshot = load(); variableInvocations.set(token, { owner, workflowId, snapshot }); return snapshot;
+}
+
+export function publishEditorVariableSnapshot(token: symbol | undefined, owner: string, snapshot: import("../../coreza-backend/src/variables/contract").VariableSnapshot): void {
+  if (!token) return;
+  const existing = variableInvocations.get(token);
+  if (!existing || existing.owner !== owner || snapshot.owner !== owner || existing.workflowId !== snapshot.workflowId) throw new Error("Variable invocation owner changed");
+  variableInvocations.set(token, { owner, workflowId: snapshot.workflowId, snapshot: Promise.resolve(snapshot) });
 }
 
 export type EditorNodeAction = (

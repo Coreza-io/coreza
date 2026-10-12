@@ -16,6 +16,8 @@ import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview, summarizePreview } from "@/utils/preview";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
 import { buildPreviewData } from "@/utils/previewDataResolver";
+import { useVariableSnapshot } from "./useVariableSnapshot";
+import { referencesVariables } from "../../coreza-backend/src/variables/contract";
 import {
   buildNodeReference,
   parseJsonReferenceDragPayload,
@@ -52,6 +54,7 @@ export function useNodeReferences({
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
   const { getNodes } = useStableNodes();
   const executionStore = useExecutionStore();
+  const variableQuery = useVariableSnapshot(referencesVariables(fieldState));
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
@@ -124,8 +127,9 @@ export function useNodeReferences({
 
       try {
         // Read nodes imperatively for reference resolution - avoids subscription re-renders
+        if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? "Variable snapshot unavailable" : "Loading variables…";
         const nodes = getNodes();
-        const resolved = resolveReferences(expr, srcData, allNodeData, nodes);
+        const resolved = resolveReferences(expr, srcData, allNodeData, nodes, variableQuery.data?.values);
 
         // For very large arrays, use quick summarized preview to avoid performance issues
         if (Array.isArray(resolved) && resolved.length > 100) {
@@ -139,6 +143,8 @@ export function useNodeReferences({
     },
     [
       fieldState,
+      variableQuery.data,
+      variableQuery.error,
       sourceMap,
       selectedPrevNodeId,
       previousNodes,

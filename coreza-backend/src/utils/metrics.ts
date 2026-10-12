@@ -10,6 +10,12 @@
 
 import client from 'prom-client';
 
+export const variableSnapshotLoads = new client.Counter({ name: 'coreza_variable_snapshot_loads_total', help: 'Variable snapshot loads', labelNames: ['source', 'status'] });
+export const variableSnapshotLoadSeconds = new client.Histogram({ name: 'coreza_variable_snapshot_load_seconds', help: 'Variable startup latency', labelNames: ['source'] });
+export const activeVariableSnapshots = new client.Gauge({ name: 'coreza_active_variable_snapshots', help: 'Pinned execution variable snapshots' });
+export const variableSnapshotBytes = new client.Histogram({ name: 'coreza_variable_snapshot_bytes', help: 'Variable snapshot size', buckets: [1024, 4096, 16384, 65536] });
+export const variableSnapshotCount = new client.Histogram({ name: 'coreza_variable_snapshot_count', help: 'Variable count per snapshot', buckets: [0, 8, 32, 64, 128] });
+
 // Counters
 export const marketMessagesCounter = new client.Counter({
   name: 'coreza_market_messages_total',

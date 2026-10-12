@@ -96,12 +96,16 @@ export class WorkflowRunner {
 
   async start(): Promise<void> {
     if (this.running) return;
+    await this.initialize();
+    if (this.abortController.signal.aborted) throw new Error("Strategy startup cancelled");
     this.running = true;
 
     await this.ensureConsumerGroup();
     await this.reclaimPendingMessages();
     await this.pollLoop();
   }
+
+  initialize(): Promise<void> { return this.engine.initialize(); }
 
   private async ensureConsumerGroup(): Promise<void> {
     try {
@@ -226,6 +230,7 @@ export class WorkflowRunner {
           node_count: this.serializedSnapshot.nodeCount,
           edge_count: this.serializedSnapshot.edgeCount,
           source: "stream",
+          variable_revision: this.engine.variableRevision,
         },
         this.executionId,
       );

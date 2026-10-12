@@ -7,6 +7,7 @@ import {
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
+import { referencesVariables, type VariableSnapshot } from "../variables/contract";
 import { WorkflowPlan } from "./workflowPlan";
 import {
   ExecutionMode,
@@ -61,6 +62,29 @@ function mergeActivationInputs(inputs: WorkflowEntryActivation["inputs"]): unkno
 
 export class WorkflowRun {
   private _lastBuildResultMs = 0;
+  private variables?: VariableSnapshot;
+  private variableInitialization?: Promise<void>;
+  private disposed = false;
+  private variablesCounted = false;
+
+  initialize(): Promise<void> {
+    if (this.disposed || this.options.abortSignal?.aborted) return Promise.reject(new Error("Workflow initialization cancelled"));
+    if (this.variableInitialization) return this.variableInitialization;
+    this.variableInitialization = (async () => {
+      if (referencesVariables(this.plan.nodes.map(node => node.values))) {
+        const { variableSnapshots } = await import("../variables/VariableSnapshotService");
+        const snapshot = await variableSnapshots.load(this.options.userId);
+        if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow initialization cancelled");
+        this.variables = snapshot;
+        const { activeVariableSnapshots } = await import("../utils/metrics");
+        if (this.disposed) { this.variables = undefined; throw new Error("Workflow initialization cancelled"); }
+        activeVariableSnapshots.inc();
+        this.variablesCounted = true;
+      }
+    })();
+    return this.variableInitialization;
+  }
+  get variableRevision(): string | undefined { return this.variables?.revision; }
 
   private readonly store: NodeStoreV2;
   private runtime: BaseExecutionRuntime;
@@ -125,6 +149,7 @@ export class WorkflowRun {
       indicatorStateManager: this.indicatorStateManager,
       allowedExecutableNodeIds: this.options.allowedExecutableNodeIds,
       executionScope: this.options.executionScope,
+      getVariables: () => this.variables?.values,
     };
 
     return this.plan.isBacktest
@@ -273,6 +298,13 @@ export class WorkflowRun {
   }
 
   destroy(): void {
+    if (this.variablesCounted) {
+      this.variablesCounted = false;
+      void import("../utils/metrics").then(({ activeVariableSnapshots }) => activeVariableSnapshots.dec());
+    }
+    this.disposed = true;
+    this.variables = undefined;
+    this.runtime.releaseVariables();
     DataContextManager.getInstance().destroyContext(this.options.executionId);
     this.indicatorStateManager.clearL1Cache();
   }
@@ -283,6 +315,7 @@ export class WorkflowRun {
     this._lastBuildResultMs = 0;
 
     try {
+      await this.initialize();
       enqueueWork();
       await this.drainQueue();
 

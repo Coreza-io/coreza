@@ -202,6 +202,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         $nodes: outputs,
         expressionOutputs: typedContext.nodeResults,
         $state: context?.persistentValues ?? {},
+        $vars: context?.variables,
         nodes: typedContext.nodeIdentities,
       },
     });

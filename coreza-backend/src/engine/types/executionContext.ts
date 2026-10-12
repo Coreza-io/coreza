@@ -11,6 +11,7 @@ export interface MultiBarExecutionContext {
 }
 
 export interface NodeExecutionContext {
+  variables?: Readonly<Record<string, unknown>>;
   user_id?: string;
   userId: string;
   executionId: string;

@@ -32,6 +32,7 @@ export type RuntimeOptions = {
   indicatorStateManager: IndicatorStateManager;
   allowedExecutableNodeIds?: readonly string[];
   executionScope?: NodeExecutionContext["executionScope"];
+  getVariables?: () => Readonly<Record<string, unknown>> | undefined;
 };
 
 type ExecutionContextExtras = Partial<
@@ -78,6 +79,7 @@ export abstract class BaseExecutionRuntime {
   hasPending(): boolean {
     return this.queue.length > 0;
   }
+  releaseVariables(): void { if (this.execCtx) this.execCtx.variables = undefined; }
 
   enqueue(item: QueueItem): boolean {
     this.assertNodeAllowed(item.nodeId, "enqueue");
@@ -159,6 +161,7 @@ export abstract class BaseExecutionRuntime {
             node,
             input,
             () => this.store.getAllResults() ?? {},
+            this.options.getVariables?.(),
           );
           ctx.resolvedParams = resolved;
           return resolved;
@@ -171,6 +174,7 @@ export abstract class BaseExecutionRuntime {
         executionMode: this.options.executionMode,
         executionScope: this.options.executionScope,
         isWarmingUp: false,
+        variables: this.options.getVariables?.(),
         getState: (key: string) => this.store.getNodeState(ctx.nodeId, key),
         setState: (key: string, value: any) =>
           this.store.setNodeState(ctx.nodeId, key, value),

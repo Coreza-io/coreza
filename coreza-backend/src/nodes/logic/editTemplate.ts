@@ -19,6 +19,7 @@ export type EditTemplateSegment =
 
 export interface CompiledEditTemplate {
   readonly hasComputedSlices: boolean;
+  readonly hasVariables: boolean;
   readonly source: string;
   readonly segments: readonly EditTemplateSegment[];
   readonly nodeReferences: readonly string[];
@@ -137,6 +138,7 @@ export function compileEditTemplate(source: string, features: ExpressionFeatures
   const compiled = Object.freeze({
     source,
     hasComputedSlices: segments.some(segment => segment.kind === "code" && segment.expression.hasComputedSlices),
+    hasVariables: segments.some(segment => segment.kind === "code" && segment.expression.hasVariables),
     segments: Object.freeze(segments),
     nodeReferences: Object.freeze([...nodeReferences]),
   });
@@ -183,7 +185,7 @@ export function evaluateEditTemplate(
   compiled: CompiledEditTemplate,
   context: ExpressionContext,
 ): unknown {
-  const budget = compiled.hasComputedSlices ? new ExpressionBudget() : undefined;
+  const budget = compiled.hasComputedSlices || compiled.hasVariables ? new ExpressionBudget() : undefined;
   if (compiled.segments.length === 1 && compiled.segments[0].kind === "code") {
     const value = evaluateSegment(compiled.segments[0], context, budget);
     if (budget) encodeExpressionJson(value, budget, compiled.segments[0].expressionStart);

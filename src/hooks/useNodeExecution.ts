@@ -20,6 +20,10 @@ import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/Execution
 import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { isFixedField, parameterEntries } from "../../coreza-backend/src/utils/fieldValueModes";
+import { referencesVariables, type VariableSnapshot } from "../../coreza-backend/src/variables/contract";
+import { loadVariableSnapshot } from "./useVariableSnapshot";
+import { supabase } from "@/integrations/supabase/client";
+import { getEditorVariableSnapshot } from "@/services/editorNodeExecution";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
 import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
 import { getAllUpstreamNodes } from "@/utils/getAllUpstreamNodes";
@@ -120,6 +124,7 @@ export function useNodeExecution({
       selectedInputData: any,
       allNodeData: any,
       editFieldsRows = false,
+      variables?: Readonly<Record<string, unknown>>,
     ): any => {
       const nodes = getNodes(); // only once per call
 
@@ -135,6 +140,7 @@ export function useNodeExecution({
             selectedInputData,
             allNodeData,
             nodes,
+            variables,
           );
         }
 
@@ -168,6 +174,7 @@ export function useNodeExecution({
     (
       fieldState: Record<string, any>,
       selectedInputData: Record<string, any>,
+      variableSnapshot?: VariableSnapshot,
     ): Record<string, any> => {
       // Read nodes/edges imperatively when building payload - avoids subscription re-renders
       const nodes = getNodes();
@@ -188,9 +195,9 @@ export function useNodeExecution({
         allNodeData[displayName] = nodeData;
       });
 
-      console.log("🔧 All node data map:", allNodeData);
 
       const payload: Record<string, any> = {};
+      if (variableSnapshot) payload.variableRevision = variableSnapshot.revision;
       const definedFields = definition?.fields || [];
 
       for (const field of definedFields) {
@@ -209,6 +216,7 @@ export function useNodeExecution({
             selectedInputData,
             allNodeData,
             definition?.name === "Edit Fields" && field.key === "fields",
+            variableSnapshot?.values,
           );
         }
       }
@@ -223,7 +231,7 @@ export function useNodeExecution({
           const compiled = compileEditTemplate(String(row.value ?? ""), TYPED_EXPRESSION_FEATURES);
           if (compiled.hasComputedSlices) {
             // Validate evaluated arguments and selected contents before HTTP JSON can erase undefined/sparse values.
-            expressionContexts[String(rowIndex)] = prepareExpressionTransport(compiled, { $json: pickTypedJsonSource(selectedInputData), $nodes: allNodeData, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities });
+            expressionContexts[String(rowIndex)] = prepareExpressionTransport(compiled, { $json: pickTypedJsonSource(selectedInputData), $nodes: allNodeData, expressionOutputs: snapshot.nodeResults, nodes: snapshot.nodeIdentities, $vars: variableSnapshot?.values });
             continue;
           }
           for (const name of compiled.nodeReferences) {
@@ -247,7 +255,6 @@ export function useNodeExecution({
         // Add inputData as the current available data
         //payload.inputData = allNodeData;
 
-        console.log("🔧 If node special payload:", payload);
       }
 
       // Special handling for support node to include nodes and edges
@@ -395,7 +402,7 @@ export function useNodeExecution({
 
   // Main execution handler
   const executeAction = useCallback(
-    async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number, allowedNodeIds?: ReadonlySet<string>): Promise<NodeExecutionOutcome> => {
+    async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number, allowedNodeIds?: ReadonlySet<string>, lockToken?: symbol): Promise<NodeExecutionOutcome> => {
       if (e) e.preventDefault();
       const outcomeNodeId = nodeId ?? "unknown";
       if (allowedNodeIds && !allowedNodeIds.has(outcomeNodeId)) {
@@ -475,7 +482,13 @@ export function useNodeExecution({
           effectiveInput = { ...fieldState };
         }
 
-        const payload = buildPayload(fieldState, effectiveInput);
+        let variables: VariableSnapshot | undefined;
+        if (referencesVariables(fieldState)) {
+          const { data: { session } } = await supabase.auth.getSession();
+          variables = await getEditorVariableSnapshot(lockToken, userId, () => loadVariableSnapshot(userId, session?.access_token));
+          if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during variable initialization" };
+        }
+        const payload = buildPayload(fieldState, effectiveInput, variables);
         let consolidatorSeriesSignature: string | undefined;
         payload.node_id = nodeId;
         payload.nodeName = definition.name;
@@ -723,13 +736,13 @@ export function useNodeExecution({
               operationId: payload.operationId,
               seriesAction: payload.seriesAction,
             });
-          } else {
+          } else if (!variables) {
             console.log(
               "🚀 [BACKEND REQUEST] Payload:",
               JSON.stringify(payload, null, 2),
             );
           }
-          if (method === "GET" && params) {
+          if (method === "GET" && params && !variables) {
             console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
           }
 
@@ -898,9 +911,9 @@ export function useNodeExecution({
   useEffect(() => {
     const sessionId = data?.workflowSessionId;
     if (!sessionId || !nodeId) return;
-    return registerEditorNodeAction(sessionId, nodeId, ({ input, signal, executionGeneration, allowedNodeIds } = {}) => {
+    return registerEditorNodeAction(sessionId, nodeId, ({ input, signal, executionGeneration, allowedNodeIds, lockToken } = {}) => {
       if (signal?.aborted) return Promise.resolve({ nodeId, status: "cancelled", reason: "Execution was cancelled." });
-      return executeAction(undefined, input, signal, executionGeneration, allowedNodeIds);
+      return executeAction(undefined, input, signal, executionGeneration, allowedNodeIds, lockToken);
     });
   }, [data?.workflowSessionId, executeAction, nodeId]);
 

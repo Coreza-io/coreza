@@ -38,13 +38,16 @@ export class ParameterResolver {
     node: WorkflowNode,
     input: any,
     getAllResults: () => Record<string, any>,
+    variables?: Readonly<Record<string, unknown>>,
   ): Record<string, any> {
     const compiled = this.compiledParams.get(node.id);
     if (compiled) {
       if (!compiled.hasTemplates) return compiled.staticParams ?? {};
       if (compiled.resolve) {
         const allNodeData = getAllResults();
-        const resolved = compiled.resolve(allNodeData, input);
+        const parameters = compiled.resolve(allNodeData, input);
+        // Plans can be reused by overlapping runs with different pinned revisions.
+        const resolved = variables ? { ...parameters } : parameters;
         if (compiled.fallbackKeys?.length) {
           for (const key of compiled.fallbackKeys) {
             resolved[key] = this.resolveDeep(
@@ -52,6 +55,7 @@ export class ParameterResolver {
               input,
               allNodeData,
               this.isEditFieldsNode(node) && key === "fields",
+              variables,
             );
           }
         }
@@ -65,7 +69,7 @@ export class ParameterResolver {
       for (const [key, value] of parameterEntries(nodeParams)) {
         // if (key !== "credential_id") out[key] = value;
         out[key] = isFixedField(nodeParams, key) ? value : this.resolveDeep(
-          value, input, {}, this.isEditFieldsNode(node) && key === "fields",
+          value, input, {}, this.isEditFieldsNode(node) && key === "fields", variables,
         );
       }
       return out;
@@ -80,6 +84,7 @@ export class ParameterResolver {
         input,
         allNodeData,
         this.isEditFieldsNode(node) && key === "fields",
+        variables,
       );
     }
     return resolvedParams;
@@ -94,21 +99,22 @@ export class ParameterResolver {
     input: any,
     allNodeData: Record<string, any>,
     editFieldsRows = false,
+    variables?: Readonly<Record<string, unknown>>,
   ): any {
     if (typeof val === "string" && val.includes("{{")) {
-      return resolveReferences(val, input, allNodeData, this.nodes);
+      return resolveReferences(val, input, allNodeData, this.nodes, variables);
     }
     if (Array.isArray(val)) {
       return val.map((item) => {
         if (editFieldsRows && isTypedEditFieldRow(item)) return item;
-        return this.resolveDeep(item, input, allNodeData);
+        return this.resolveDeep(item, input, allNodeData, false, variables);
       });
     }
     if (val !== null && typeof val === "object") {
       return Object.fromEntries(
         parameterEntries(val).map(([k, v]) => [
           k,
-          isFixedField(val, k) ? v : this.resolveDeep(v, input, allNodeData),
+          isFixedField(val, k) ? v : this.resolveDeep(v, input, allNodeData, false, variables),
         ]),
       );
     }

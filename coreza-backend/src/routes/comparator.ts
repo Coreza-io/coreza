@@ -231,6 +231,7 @@ router.post("/field", async (req, res) => {
       legacyResultSeed: { ...data },
       context: {
         persistent: !!persistent,
+        $vars: res.locals.variables,
         $nodes: safeNodeResults,
         expressionOutputs: expressionResults ? Object.fromEntries(Object.entries(expressionResults)) : safeNodeResults,
         expressionContexts,

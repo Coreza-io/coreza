@@ -20,9 +20,8 @@ import {
   leanSuccess,
   leanError,
 } from "../../utils/normalizeOutput";
-import { stagePersistentFields } from "../../variables/editFieldVariables";
 import { isTypedEditFieldRow } from "../logic/typedEditFieldRow";
-import { applyFieldRows } from "../logic/editFields";
+import { applyFieldRows, stagePersistentFields } from "../logic/editFields";
 
 export class ControlFlowExecutor implements INodeExecutor {
   private isPromiseLike(value: unknown): value is PromiseLike<unknown> {

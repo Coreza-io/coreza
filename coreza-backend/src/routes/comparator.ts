@@ -8,14 +8,13 @@
  * See the LICENSE file for details.
  */
 
-import { stagePersistentFields } from "../variables/editFieldVariables";
 import { variableSnapshots } from "../variables/VariableSnapshotService";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import express from "express";
 import { ComparatorService, ComparatorInput } from "../nodes/logic/comparator";
 import { ComputeService } from "../nodes/logic/compute";
 import { requireAuth } from "../middleware/jwtAuth";
-import { applyFieldRows, EditFieldError } from "../nodes/logic/editFields";
+import { applyFieldRows, stagePersistentFields, EditFieldError } from "../nodes/logic/editFields";
 
 const router = express.Router();
 

@@ -3,8 +3,7 @@ const mockCache = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
 jest.mock("../src/config/redis", () => ({ getRedisCache: () => mockCache }));
 import { VariableSnapshotService } from "../src/variables/VariableSnapshotService";
 import { freezeVariableSnapshot, overlayVariables } from "../src/variables/contract";
-import { stagePersistentFields } from "../src/variables/editFieldVariables";
-import { applyFieldRows, type EditFieldRowV2 } from "../src/nodes/logic/editFields";
+import { applyFieldRows, stagePersistentFields, type EditFieldRowV2 } from "../src/nodes/logic/editFields";
 import { evaluateExpression } from "../src/nodes/logic/safeExpression";
 
 const owner = "11111111-1111-4111-8111-111111111111";

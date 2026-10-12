@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { isPersistentVariableEdit } from "../variables/editFieldVariables";
+import { isPersistentVariableEdit } from "../variables/contract";
 import { performance } from "perf_hooks";
 import { resolveCategory } from "../nodes/categoryMap";
 import { getNodeExecutor } from "../nodes/registry";

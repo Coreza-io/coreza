@@ -7,8 +7,7 @@ import {
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
-import { isPersistentVariableEdit } from "../variables/editFieldVariables";
-import { overlayVariables, type VariableChange, referencesVariables, type VariableSnapshot } from "../variables/contract";
+import { isPersistentVariableEdit, overlayVariables, type VariableChange, referencesVariables, type VariableSnapshot } from "../variables/contract";
 import { WorkflowPlan } from "./workflowPlan";
 import {
   ExecutionMode,

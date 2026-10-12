@@ -1,3 +1,4 @@
+import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { compileEditTemplate } from "../nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES } from "../nodes/logic/safeExpression";
 export type VariableValue = string | number | boolean | null;
@@ -56,4 +57,10 @@ export function overlayVariables(snapshot: VariableSnapshot, changes: readonly V
     entries.set(key, { key, value, value_type: value === null ? "null" : typeof value, updated_at: new Date().toISOString() });
   }
   return freezeVariableSnapshot({ ...snapshot, loadedAt: Date.now(), entries: [...entries.values()] }, snapshot.owner, snapshot.workflowId);
+}
+
+export function isPersistentVariableEdit(node: any): boolean {
+  return (node.name === "Edit Fields" || node.type === "Edit Fields" || node.data?.definition?.name === "Edit Fields")
+    && node.values?.persistent === true && Array.isArray(node.values.fields)
+    && node.values.fields.some(isTypedEditFieldRow);
 }

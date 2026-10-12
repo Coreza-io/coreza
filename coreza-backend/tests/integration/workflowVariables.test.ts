@@ -83,7 +83,7 @@ suite("Workflow-scoped persistent Edit transactions", () => {
   beforeEach(async () => { await database.query("SAVEPOINT scoped_test"); await database.query("select set_config('test.role','service_role',true),set_config('test.user',$1,true)", [owner]); });
   afterEach(async () => { await database.query("RESET ROLE"); await database.query("ROLLBACK TO SAVEPOINT scoped_test"); });
   const commit = (revision: string, token: string, changes: unknown, id = workflow, scopeOwner = owner) => database.query("select commit_workflow_variables($1,$2,$3,$4,$5::jsonb) as result", [scopeOwner, id, revision, token, JSON.stringify(changes)]);
-  const load = (id = workflow, scopeOwner = owner) => database.query("select scoped_workflow_variables_snapshot($1,$2) as result", [scopeOwner, id]);
+  const load = (id = workflow, scopeOwner = owner) => database.query("select workflow_variables_snapshot($1,$2) as result", [scopeOwner, id]);
   const rejected = async (operation: () => Promise<unknown>) => { await database.query("SAVEPOINT rejected"); try { await expect(operation()).rejects.toThrow(); } finally { await database.query("ROLLBACK TO SAVEPOINT rejected"); } };
   test("atomic scalar batch overwrites 10 with zero and restart reads committed revision", async () => {
     await commit("0", "first", [{ key: "bonus", value: 10 }]);
@@ -96,7 +96,7 @@ suite("Workflow-scoped persistent Edit transactions", () => {
     await rejected(() => commit("0", "duplicate", [{ key: "bonus", value: 0 }, { key: "bonus", value: 1 }]));
     await rejected(() => commit("0", "unsafe", [{ key: "__proto__", value: 0 }]));
     expect((await load()).rows[0].result).toMatchObject({ revision: "0", entries: [] });
-    expect((await database.query("select count(*) from workflow_variable_commits")).rows[0].count).toBe("0");
+    expect((await database.query("select count(*) from workflow_variable_revisions r cross join lateral jsonb_object_keys(r.commit_receipts) receipt")).rows[0].count).toBe("0");
   });
   test("competing writers conflict; exact replay advances revision only once", async () => {
     const changes = [{ key: "bonus", value: 0 }];
@@ -105,11 +105,11 @@ suite("Workflow-scoped persistent Edit transactions", () => {
     await rejected(() => commit("0", "other-worker", [{ key: "bonus", value: 10 }]));
     await rejected(() => commit("1", "event/node/0", [{ key: "bonus", value: 1 }]));
     expect((await load()).rows[0].result.revision).toBe("1");
-    expect((await database.query("select count(*) from workflow_variable_commits")).rows[0].count).toBe("1");
+    expect((await database.query("select count(*) from workflow_variable_revisions r cross join lateral jsonb_object_keys(r.commit_receipts) receipt")).rows[0].count).toBe("1");
   });
   test("workflow namespaces are isolated and service-role calls still require workflow ownership", async () => {
     await commit("0", "first", [{ key: "bonus", value: 10 }]);
-    await commit("0", "second", [{ key: "bonus", value: -5 }], second);
+    await commit("1", "second", [{ key: "bonus", value: -5 }], second);
     expect((await load()).rows[0].result.entries[0].value).toBe(10);
     expect((await load(second)).rows[0].result.entries[0].value).toBe(-5);
     await rejected(() => commit("0", "foreign", [{ key: "bonus", value: 0 }], foreign));
@@ -119,10 +119,10 @@ suite("Workflow-scoped persistent Edit transactions", () => {
     await commit("0", "own", [{ key: "bonus", value: 0 }]);
     await database.query("select set_config('test.role','authenticated',true),set_config('test.user',$1,true)", [other]);
     await database.query("SET LOCAL ROLE authenticated");
-    expect((await database.query("select * from workflow_scoped_variables")).rows).toHaveLength(0);
+    expect((await database.query("select * from workflow_variables")).rows).toHaveLength(0);
     await rejected(() => load());
     await rejected(() => commit("1", "foreign-auth", [{ key: "bonus", value: 2 }]));
-    await rejected(() => database.query("update workflow_scoped_variables set value='1'::jsonb"));
+    await rejected(() => database.query("update workflow_variables set value='1'::jsonb"));
   });
   test("unknown fields and oversized snapshots reject without revision publication", async () => {
     await rejected(() => commit("0", "unknown", [{ key: "bonus", value: 0, unexpected: true }]));

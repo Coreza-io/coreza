@@ -2,12 +2,12 @@ import { supabase } from "../config/supabase";
 import { freezeVariableSnapshot, validateVariable, type VariableChange, type VariableSnapshot } from "./contract";
 export class VariableRepository {
   async revision(owner: string, workflowId?: string): Promise<string> {
-    const { data, error } = await (supabase.rpc as any)(workflowId ? "scoped_workflow_variables_revision" : "workflow_variables_revision", { p_owner: owner, ...(workflowId ? { p_workflow: workflowId } : {}) });
+    const { data, error } = await (supabase.rpc as any)("workflow_variables_revision", { p_owner: owner, ...(workflowId ? { p_workflow: workflowId } : {}) });
     if (error || typeof data !== "string" || !/^\d+$/.test(data)) throw Object.assign(new Error("Variable revision unavailable"), { statusCode: error?.code === "42501" ? 403 : 503 });
     return data;
   }
   async snapshot(owner: string, workflowId?: string): Promise<VariableSnapshot> {
-    const { data, error } = await (supabase.rpc as any)(workflowId ? "scoped_workflow_variables_snapshot" : "workflow_variables_snapshot", { p_owner: owner, ...(workflowId ? { p_workflow: workflowId } : {}) });
+    const { data, error } = await (supabase.rpc as any)("workflow_variables_snapshot", { p_owner: owner, ...(workflowId ? { p_workflow: workflowId } : {}) });
     if (error) throw new Error("Variable snapshot unavailable");
     return freezeVariableSnapshot(data, owner, workflowId);
   }

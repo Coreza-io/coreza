@@ -221,7 +221,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         if (!data) return;
         const reference = buildNodeReference(data, getNodes(), selectedSourceNodeId);
         if (!reference) return;
-        const insertion = planReferenceTextDrop(e, reference);
+        const insertion = planReferenceTextDrop(e, reference, valueMode === "expression", false);
         if (!insertion) return;
         if (updateValueMode("expression", { [field.key]: insertion.value }) === false) return;
         finishReferenceTextDrop(e, insertion, "expression", valueMode);

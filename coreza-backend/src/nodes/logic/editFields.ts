@@ -386,25 +386,9 @@ export function applyFieldRows(
         context,
         options.nodeId,
       );
-      let finalValue = value;
-      if (context.persistent && context.setPersistentValue) {
-        const current = options.legacyPersistentRead && context.getPersistentValue
-          ? context.getPersistentValue(row.fieldName)
-          : undefined;
-        if (current !== undefined) {
-          try {
-            finalValue = checkExpressionResult(current, row.dataType, row.fieldName);
-          } catch (error) {
-            throw new EditFieldError(
-              error instanceof Error ? error.message : String(error),
-              { nodeId: options.nodeId, rowIndex, fieldName: row.fieldName,
-                phase: "type", expected: labels[row.dataType], actual: editFieldValueType(current) },
-              { cause: error },
-            );
-          }
-        } else context.setPersistentValue(row.fieldName, value);
-      }
-      defineResultValue(result, row.fieldName, finalValue);
+      if (context.persistent && context.setPersistentValue)
+        context.setPersistentValue(row.fieldName, value);
+      defineResultValue(result, row.fieldName, value);
       continue;
     }
     const fieldName = row.left;

@@ -1,5 +1,6 @@
 const mockLoad = jest.fn();
-jest.mock("../src/variables/VariableSnapshotService", () => ({ variableSnapshots: { load: mockLoad } }));
+const mockCommit = jest.fn();
+jest.mock("../src/variables/VariableSnapshotService", () => ({ variableSnapshots: { load: mockLoad, commit: mockCommit } }));
 jest.mock("../src/engine/nodeStoreV2", () => ({ NodeStoreV2: class {} }));
 jest.mock("../src/engine/DataContext", () => ({ DataContextManager: { getInstance: () => ({ getContext: () => ({}), destroyContext: jest.fn() }) } }));
 jest.mock("../src/engine/indicatorStateManager", () => ({ IndicatorStateManager: class { clearL1Cache() {} } }));
@@ -38,4 +39,32 @@ test("stop during loading cannot attach a late snapshot", async () => {
   await Promise.resolve(); run.destroy(); resolve({ revision: "1", values: { RISK: 5 } });
   await expect(initializing).rejects.toThrow("cancelled");
   expect(mockRuntimes[0].options.getVariables()).toBeUndefined();
+});
+
+test("persistent Edit initializes without a reference and publishes only committed snapshots", async () => {
+  const before = freezeVariableSnapshot({ owner, workflowId: "workflow", revision: "1", schemaVersion: 1, loadedAt: Date.now(), entries: [{ key: "bonus", value: 10, value_type: "number", updated_at: "today" }] }, owner, "workflow");
+  mockLoad.mockResolvedValue(before);
+  const run = new WorkflowRun({ nodes: [{ id: "edit", name: "Edit Fields", values: { persistent: true, fields: [{ fieldName: "bonus", dataType: "number", valueMode: "fixed", value: "0" }] } }], edges: [], nodeExecutorMap: new Map(), graph: {}, isBacktest: false, executionMode: "live" } as any,
+    { executionId: "run", workflowId: "workflow", userId: owner, executionMode: "live" });
+  await run.initialize(); expect(mockLoad).toHaveBeenCalledWith(owner, "workflow");
+  let release!: (value: any) => void;
+  mockCommit.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+  const options = mockRuntimes[0].options;
+  const writing = options.commitVariables([{ key: "bonus", value: 0 }], "event-node");
+  await Promise.resolve(); await Promise.resolve();
+  expect(options.getVariables().bonus).toBe(10);
+  release(freezeVariableSnapshot({ ...before, revision: "2", entries: [{ key: "bonus", value: 0, value_type: "number", updated_at: "today" }] }, owner, "workflow"));
+  await writing; expect(options.getVariables().bonus).toBe(0); expect(run.variableRevision).toBe("2");
+  for (let bar=0; bar<10000; bar++) run.resetForNextBar(true);
+  expect(options.getVariables().bonus).toBe(0); expect(mockLoad).toHaveBeenCalledTimes(1);
+  mockCommit.mockRejectedValue(new Error("SQL down"));
+  await expect(options.commitVariables([{ key: "bonus", value: 1 }], "later-event")).rejects.toThrow("SQL down");
+  expect(options.getVariables().bonus).toBe(0); run.destroy();
+});
+test("backtest persistent Edit uses an ephemeral snapshot overlay", async () => {
+  mockLoad.mockResolvedValue(freezeVariableSnapshot({ owner, workflowId: "workflow", revision: "1", schemaVersion: 1, loadedAt: Date.now(), entries: [] }, owner, "workflow"));
+  const run = new WorkflowRun({ nodes: [{ id: "compute", values: { value: "{{ $vars.bonus }}" } }], edges: [], nodeExecutorMap: new Map(), graph: {}, isBacktest: true, executionMode: "backtest" } as any,
+    { executionId: "backtest", workflowId: "workflow", userId: owner, executionMode: "backtest" });
+  await run.initialize(); mockRuntimes[0].options.commitVariables([{ key: "bonus", value: 0 }], "event");
+  expect(mockRuntimes[0].options.getVariables().bonus).toBe(0); expect(mockCommit).not.toHaveBeenCalled(); run.destroy();
 });

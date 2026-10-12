@@ -1,3 +1,4 @@
+import { insertEditFieldReference } from "@/utils/editFieldReferenceDrop";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
 import { useStableNodes } from "@/contexts/StableNodeContext";
@@ -74,6 +75,7 @@ import {
 import { useReferenceTextDrop, planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
 
 interface EditFieldEditorProps {
+  variableNames?: readonly string[];
   row: TypedEditFieldRow;
   index: number;
   disabled?: boolean;
@@ -95,6 +97,7 @@ interface EditFieldEditorProps {
 export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   row,
   index,
+  variableNames = [],
   disabled,
   update,
   updateMany,
@@ -321,6 +324,20 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             />
           )}
         </ReferenceDropTarget>
+        {expression && variableNames.length > 0 && (
+          <select aria-label="Insert workflow variable" className={`${editorClass} text-xs`} value="" disabled={disabled}
+            onChange={event => {
+              const control = referenceDrop.controlRef.current;
+              const current = control?.value ?? value;
+              const insertion = insertEditFieldReference(current, `{{ $vars.${event.target.value} }}`, control?.selectionStart ?? current.length, control?.selectionEnd ?? current.length);
+              if (!insertion) { setDropError("Place the reference in editable text or unquoted expression code."); return; }
+              if (update(index, "value", insertion.value) === false) return;
+              referenceDrop.recordInsertion(insertion, "expression"); setDropError(undefined);
+            }}>
+            <option value="" disabled>Insert variable…</option>
+            {variableNames.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+        )}
         {fieldPreview.popup}
         {dropError && <p className="text-xs text-destructive">{dropError}</p>}
         {!expression &&
@@ -354,6 +371,7 @@ interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
 }
 
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
+  workflowId,
   definition,
   fieldState,
   loadingSelect,
@@ -376,7 +394,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   readOnly,
 }) => {
   const { getNodes } = useStableNodes();
-  const variableQuery = useVariableSnapshot(referencesVariables(fieldState));
+  const variableQuery = useVariableSnapshot(referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression")), workflowId);
   const executionContext = useExecutionStore();
   const executionStoreVersion = useExecutionStoreVersion();
   const { user } = useAuth();
@@ -980,6 +998,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             <NodeFieldRenderer
               key={f.key}
               field={f}
+              workflowId={workflowId}
               definition={definition}
               fieldState={fieldState}
               value={fieldState[f.key]}
@@ -1014,6 +1033,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           );
         })}
 
+        {isFieldRepeater && fieldState.persistent && (
+          <p className="text-xs text-muted-foreground">Execute saves String, Number and Boolean fields as workflow variables. Use {"{{ $vars.name }}"} in following nodes.</p>
+        )}
         {/* --------- CONDITIONAL/FIELDS REPEATER --------- */}
         {(isConditional || isFieldRepeater || isOverlays) && repeaterField && (
           <div className="space-y-3">
@@ -1040,6 +1062,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       updateMany={updateFieldsRow}
                       remove={removeCondition}
                       getExpressionContext={getEditExpressionContext}
+                      variableNames={Object.keys(variableQuery.data?.values ?? {})}
                       makeReference={(event) =>
                         computeDropInsert(event)?.insert ?? null
                       }

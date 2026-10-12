@@ -9,6 +9,7 @@ import {
   updateRunStatusInRedis,
 } from "../utils/redisRunStorage";
 import { WorkflowExecutionResult } from "../engine/types";
+import { RedisOps } from "../infra/redisOps";
 import { RedisKeys } from "../infra/redisKeys";
 
 const STRATEGY_GROUP = "strategy-group";
@@ -245,6 +246,7 @@ export class WorkflowRunner {
     // Phase 4: Execute workflow — skip trigger, start from downstream
     this.engine.resetForNextBar(true);
     this.engine.setRunId(runId);
+    this.engine.setVariableEventId(`${this.streamKey}:${messageId}`);
 
     // Preload trigger node results with actual stream data so downstream
     // nodes can reference them (e.g. $('OnBar').json.data)
@@ -262,8 +264,8 @@ export class WorkflowRunner {
         this.downstreamEntryIds,
       );
 
-      // Phase 5a: Record success
-      await this.recordSuccess(runId, executionResult, messageId);
+      if (executionResult.success) await this.recordSuccess(runId, executionResult, messageId);
+      else await this.recordFailure(runId, new Error(executionResult.error?.message ?? "Workflow execution failed"));
     } catch (error) {
       // Phase 5b: Record failure (execution failed — not retryable)
       await this.recordFailure(runId, error);
@@ -343,6 +345,7 @@ export class WorkflowRunner {
     messageId: string,
   ): Promise<void> {
     try {
+      if (this.engine.variableRevision) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_revision: this.engine.variableRevision });
       await updateRunStatusInRedis(
         this.userId,
         runId,
@@ -359,6 +362,7 @@ export class WorkflowRunner {
 
   private async recordFailure(runId: string, error: unknown): Promise<void> {
     try {
+      if (this.engine.variableRevision) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_revision: this.engine.variableRevision });
       await updateRunStatusInRedis(this.userId, runId, "failed", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });

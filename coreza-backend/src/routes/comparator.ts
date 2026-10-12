@@ -8,6 +8,9 @@
  * See the LICENSE file for details.
  */
 
+import { stagePersistentFields } from "../variables/editFieldVariables";
+import { variableSnapshots } from "../variables/VariableSnapshotService";
+import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import express from "express";
 import { ComparatorService, ComparatorInput } from "../nodes/logic/comparator";
 import { ComputeService } from "../nodes/logic/compute";
@@ -224,7 +227,7 @@ router.post("/field", async (req, res) => {
     const safeNodeIdentities = Array.isArray(nodeIdentities)
       ? nodeIdentities.map(({ id, name, label, displayName, data }) => ({ id, name, label, displayName, data }))
       : [];
-    const result = applyFieldRows(fields, {
+    const options = {
       nodeId:
         typeof req.body.node_id === "string" ? req.body.node_id : undefined,
       input: data,
@@ -237,15 +240,21 @@ router.post("/field", async (req, res) => {
         expressionContexts,
         nodes: safeNodeIdentities,
       },
-    });
-
-    res.json({
-      success: true,
-      data: result,
-    });
+    };
+    let result: Record<string, unknown>;
+    let variableSnapshot;
+    if (persistent === true && fields.some(isTypedEditFieldRow)) {
+      const staged = stagePersistentFields(fields, options);
+      if (!res.locals.variableSnapshot || !req.user?.id) throw new Error("Persistent variable snapshot unavailable");
+      if (typeof req.body.variableInvocationId !== "string" || !/^[0-9a-f-]{36}$/i.test(req.body.variableInvocationId))
+        return res.status(400).json({ error: "Persistent Edit execution requires an invocation ID" });
+      variableSnapshot = await variableSnapshots.commit(res.locals.variableSnapshot, staged.changes, req.body.variableInvocationId);
+      result = staged.result;
+    } else result = applyFieldRows(fields, options);
+    res.json({ success: true, data: result, ...(variableSnapshot ? { variableSnapshot } : {}) });
   } catch (error) {
-    console.error("Field manipulation error:", error);
-    res.status(500).json({
+    console.error("Field manipulation failed");
+    res.status((error as any).statusCode ?? (error instanceof EditFieldError ? 400 : 503)).json({
       error: "Failed to process field operations",
       details:
         error instanceof EditFieldError

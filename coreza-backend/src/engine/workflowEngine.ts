@@ -98,6 +98,7 @@ export class WorkflowEngine {
   setRunId(runId: string): void {
     this.run.setRunId(runId);
   }
+  setVariableEventId(eventId: string): void { this.run.setExecutionContextExtras({ variableEventId: eventId }); }
   checkCancellation(): boolean {
     return this.run.checkCancellation();
   }

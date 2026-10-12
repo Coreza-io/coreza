@@ -496,7 +496,10 @@ export function compileNodeParams(
     node.data?.definition?.name === "Edit Fields";
 
   for (const [key, value] of entries) {
-    const result = isFixedField(nodeParams, key)
+    const result = isEditFieldsNode && key === "fields" && nodeParams.persistent === true
+      && Array.isArray(value) && value.some(isTypedEditFieldRow)
+      ? { compiled: false as const }
+      : isFixedField(nodeParams, key)
       ? { compiled: true as const, staticValue: value, deps: new Set<string>() }
       : compileValue(
           value,

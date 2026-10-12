@@ -20,6 +20,8 @@ import {
   leanSuccess,
   leanError,
 } from "../../utils/normalizeOutput";
+import { stagePersistentFields } from "../../variables/editFieldVariables";
+import { isTypedEditFieldRow } from "../logic/typedEditFieldRow";
 import { applyFieldRows } from "../logic/editFields";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -168,7 +170,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     node: WorkflowNode,
     input: NodeInput,
     context: any,
-  ): NodeResult {
+  ): NodeResult | Promise<NodeResult> {
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
@@ -189,7 +191,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       : undefined;
     const outputs = context?.getAllNodeResults?.() ?? {};
     const typedContext = snapshotTypedExpressionContext(context?.nodes ?? [], id => outputs[id]);
-    const result = applyFieldRows(fields, {
+    const options = {
       nodeId: node.id,
       abortSignal: context?.abortSignal,
       input,
@@ -205,8 +207,16 @@ export class ControlFlowExecutor implements INodeExecutor {
         $vars: context?.variables,
         nodes: typedContext.nodeIdentities,
       },
-    });
-    return leanSuccess(result);
+    };
+    if (persistent && fields.some(isTypedEditFieldRow)) {
+      const staged = stagePersistentFields(fields, options);
+      if (!context?.commitVariables) throw new Error("Persistent Edit Fields requires a workflow variable execution context");
+      const committed = context.commitVariables(staged.changes);
+      if (this.isPromiseLike(committed))
+        return Promise.resolve(committed).then(() => leanSuccess(staged.result));
+      return leanSuccess(staged.result);
+    }
+    return leanSuccess(applyFieldRows(fields, options));
   }
 
   private executeComputeNode(
@@ -308,6 +318,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       : Number(resolvedParams.throttleMs) || 200;
     const maxConcurrency = Number(resolvedParams.maxConcurrency) || 10;
 
+    if (resolvedParams.parallel && context?.variables)
+      throw new Error("Workflow variables require sequential Loop execution; disable Parallel");
     // If parallel=true and we have required context, delegate to LoopExecutorV2 for BullMQ distributed execution
     if (
       parallel &&

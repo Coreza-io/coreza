@@ -24,6 +24,7 @@ import {
 } from "@/utils/referencePath";
 
 interface UseNodeReferencesProps {
+  workflowId?: string;
   fieldState: Record<string, any>;
   previousNodes: readonly SemanticNode[];
   selectedPrevNodeId: string;
@@ -47,6 +48,7 @@ interface UseNodeReferencesReturn {
  * Manages reference expressions like {{ $('NodeName').json.path }}
  */
 export function useNodeReferences({
+  workflowId,
   fieldState,
   previousNodes,
   selectedPrevNodeId,
@@ -54,7 +56,7 @@ export function useNodeReferences({
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
   const { getNodes } = useStableNodes();
   const executionStore = useExecutionStore();
-  const variableQuery = useVariableSnapshot(referencesVariables(fieldState));
+  const variableQuery = useVariableSnapshot(referencesVariables(fieldState), workflowId);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
@@ -127,6 +129,7 @@ export function useNodeReferences({
 
       try {
         // Read nodes imperatively for reference resolution - avoids subscription re-renders
+        if (referencesVariables(expr) && !workflowId) return "Save the workflow to preview variables";
         if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? "Variable snapshot unavailable" : "Loading variables…";
         const nodes = getNodes();
         const resolved = resolveReferences(expr, srcData, allNodeData, nodes, variableQuery.data?.values);
@@ -143,6 +146,7 @@ export function useNodeReferences({
     },
     [
       fieldState,
+      workflowId,
       variableQuery.data,
       variableQuery.error,
       sourceMap,

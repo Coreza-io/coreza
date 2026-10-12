@@ -1,4 +1,6 @@
 import {
+  getEditorVariableSnapshot,
+  publishEditorVariableSnapshot,
   acquireEditorExecutionLock,
   canRenameEditorNodeAction,
   captureEditorNodeActions,
@@ -120,5 +122,22 @@ describe("editor node execution service", () => {
     retireEditorNodeAction(sessionId, "OnBar");
     await expect(executeEditorNode(sessionId, "OnBar")).resolves.toMatchObject({ status: "failed" });
     await expect(executeEditorNode(sessionId, "Test")).resolves.toMatchObject({ status: "success" });
+  });
+});
+
+describe("workflow variable invocation snapshots", () => {
+  it("publishes a committed snapshot for later cluster actions without reloading", async () => {
+    const token = Symbol("cluster"); const load = jest.fn().mockResolvedValue({ owner: "owner", workflowId: "workflow", revision: "1", values: { bonus: 10 } });
+    await getEditorVariableSnapshot(token, "owner", load, "workflow");
+    publishEditorVariableSnapshot(token, "owner", { owner: "owner", workflowId: "workflow", revision: "2", values: { bonus: 0 } } as any);
+    expect((await getEditorVariableSnapshot(token, "owner", load, "workflow")).values.bonus).toBe(0);
+    expect(load).toHaveBeenCalledTimes(1); releaseEditorExecutionLock("none", token);
+  });
+  it("rejects cross-workflow reads and publication under the same owner", async () => {
+    const token = Symbol("cluster"); const load = jest.fn().mockResolvedValue({ owner: "owner", workflowId: "first", values: {} });
+    await getEditorVariableSnapshot(token, "owner", load, "first");
+    expect(() => getEditorVariableSnapshot(token, "owner", load, "second")).toThrow();
+    expect(() => publishEditorVariableSnapshot(token, "owner", { owner: "owner", workflowId: "second" } as any)).toThrow();
+    releaseEditorExecutionLock("none", token);
   });
 });

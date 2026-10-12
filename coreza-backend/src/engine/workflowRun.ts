@@ -7,7 +7,8 @@ import {
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
-import { referencesVariables, type VariableSnapshot } from "../variables/contract";
+import { isPersistentVariableEdit } from "../variables/editFieldVariables";
+import { overlayVariables, type VariableChange, referencesVariables, type VariableSnapshot } from "../variables/contract";
 import { WorkflowPlan } from "./workflowPlan";
 import {
   ExecutionMode,
@@ -35,6 +36,7 @@ interface WorkflowRunOptions {
 }
 
 interface ExecutionContextExtras {
+  variableEventId?: string;
   multiBarContext?: MultiBarExecutionContext;
   runId?: string;
 }
@@ -71,9 +73,9 @@ export class WorkflowRun {
     if (this.disposed || this.options.abortSignal?.aborted) return Promise.reject(new Error("Workflow initialization cancelled"));
     if (this.variableInitialization) return this.variableInitialization;
     this.variableInitialization = (async () => {
-      if (referencesVariables(this.plan.nodes.map(node => node.values))) {
+      if (referencesVariables(this.plan.nodes.map(node => node.values)) || this.plan.nodes.some(isPersistentVariableEdit)) {
         const { variableSnapshots } = await import("../variables/VariableSnapshotService");
-        const snapshot = await variableSnapshots.load(this.options.userId);
+        const snapshot = await variableSnapshots.load(this.options.userId, this.options.workflowId);
         if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow initialization cancelled");
         this.variables = snapshot;
         const { activeVariableSnapshots } = await import("../utils/metrics");
@@ -84,6 +86,18 @@ export class WorkflowRun {
     })();
     return this.variableInitialization;
   }
+  private commitVariables = (changes: readonly VariableChange[], token: string): void | Promise<void> => {
+    if (!this.variables || this.disposed || this.options.abortSignal?.aborted) throw new Error("Persistent variable execution unavailable");
+    if (this.plan.isBacktest) {
+      this.variables = overlayVariables(this.variables, changes);
+      return;
+    }
+    const previous = this.variables;
+    return import("../variables/VariableSnapshotService").then(({ variableSnapshots }) => variableSnapshots.commit(previous, changes, token)).then(snapshot => {
+      if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow cancelled after variable commit");
+      this.variables = snapshot;
+    });
+  };
   get variableRevision(): string | undefined { return this.variables?.revision; }
 
   private readonly store: NodeStoreV2;
@@ -149,6 +163,7 @@ export class WorkflowRun {
       indicatorStateManager: this.indicatorStateManager,
       allowedExecutableNodeIds: this.options.allowedExecutableNodeIds,
       executionScope: this.options.executionScope,
+      commitVariables: this.commitVariables,
       getVariables: () => this.variables?.values,
     };
 

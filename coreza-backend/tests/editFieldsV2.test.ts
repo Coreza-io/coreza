@@ -112,38 +112,29 @@ describe("Edit Fields v2", () => {
     ).toEqual({ empty: [], values: [1, 2] });
   });
 
-  test("rejects typed persistence before any writes", () => {
-    const persisted: Array<[string, unknown]> = [];
-    const setPersistentValue = (key: string, value: unknown) => {
-      persisted.push([key, value]);
-    };
-    expect(() =>
-      applyFieldRows(
-        [
-          { left: "old", operator: "set", right: 2 },
-          {
-            fieldName: "typed",
-            dataType: "boolean",
-            valueMode: "fixed",
-            value: "false",
-          },
-          {
-            fieldName: "readBack",
-            dataType: "boolean",
-            valueMode: "expression",
-            value: "{{ $state.typed === false }}",
-          },
-          { left: "copy", operator: "copy", right: "old" },
-          { left: "old", operator: "remove" },
-        ],
-        {
-          input: {},
-          legacyResultSeed: {},
-          context: { persistent: true, setPersistentValue },
-        },
-      ),
-    ).toThrow("typed rows do not support persistence");
-    expect(persisted).toEqual([]);
+  test("persists typed fixed and expression values through the existing state callbacks", () => {
+    const state: Record<string, unknown> = {};
+    const setPersistentValue = jest.fn((key: string, value: unknown) => { state[key] = value; });
+    const context = { persistent: true, getPersistentValue: (key: string) => state[key], setPersistentValue };
+    const rows: Array<{ fieldName: string; dataType: "boolean" | "number"; valueMode: "fixed" | "expression"; value: string }> = [
+      { fieldName: "enabled", dataType: "boolean", valueMode: "fixed", value: "false" },
+      { fieldName: "amount", dataType: "number", valueMode: "expression", value: "{{ $json.amount }}" },
+    ];
+    expect(applyFieldRows(rows, { input: { amount: 5 }, legacyResultSeed: {}, legacyPersistentRead: true, context }))
+      .toMatchObject({ enabled: false, amount: 5 });
+    expect(state).toEqual({ enabled: false, amount: 5 });
+    expect(applyFieldRows(rows, { input: { amount: 10 }, legacyResultSeed: {}, legacyPersistentRead: true, context }))
+      .toMatchObject({ enabled: false, amount: 5 });
+    expect(setPersistentValue).toHaveBeenCalledTimes(2);
+    state.amount = "wrong type";
+    expect(() => applyFieldRows(rows, { input: { amount: 10 }, legacyResultSeed: {}, legacyPersistentRead: true, context }))
+      .toThrow("expected Number");
+  });
+
+  test("persistent typed manual execution still works without runner state callbacks", () => {
+    expect(applyFieldRows([
+      { fieldName: "amount", dataType: "number", valueMode: "fixed", value: "5" },
+    ], { input: {}, legacyResultSeed: {}, context: { persistent: true } })).toEqual({ amount: 5 });
   });
 
   test("uses one input snapshot and applies duplicate fields in row order", () => {

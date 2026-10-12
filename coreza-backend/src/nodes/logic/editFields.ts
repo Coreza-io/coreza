@@ -366,16 +366,6 @@ export function applyFieldRows(
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   validateRows(rows, options.nodeId);
   const hasV2Rows = rows.some(isV2);
-  if (hasV2Rows && options.context?.persistent)
-    throw new EditFieldError(
-      "Edit Fields: typed rows do not support persistence",
-      {
-        nodeId: options.nodeId,
-        rowIndex: rows.findIndex(isV2),
-        fieldName: "",
-        phase: "configuration",
-      },
-    );
   const inputRecord = isPlainObject(options.input) ? options.input : {};
   const result: Record<string, unknown> = Object.create(null);
   const legacyResult: Record<string, unknown> = Object.create(null);
@@ -396,7 +386,25 @@ export function applyFieldRows(
         context,
         options.nodeId,
       );
-      defineResultValue(result, row.fieldName, value);
+      let finalValue = value;
+      if (context.persistent && context.setPersistentValue) {
+        const current = options.legacyPersistentRead && context.getPersistentValue
+          ? context.getPersistentValue(row.fieldName)
+          : undefined;
+        if (current !== undefined) {
+          try {
+            finalValue = checkExpressionResult(current, row.dataType, row.fieldName);
+          } catch (error) {
+            throw new EditFieldError(
+              error instanceof Error ? error.message : String(error),
+              { nodeId: options.nodeId, rowIndex, fieldName: row.fieldName,
+                phase: "type", expected: labels[row.dataType], actual: editFieldValueType(current) },
+              { cause: error },
+            );
+          }
+        } else context.setPersistentValue(row.fieldName, value);
+      }
+      defineResultValue(result, row.fieldName, finalValue);
       continue;
     }
     const fieldName = row.left;

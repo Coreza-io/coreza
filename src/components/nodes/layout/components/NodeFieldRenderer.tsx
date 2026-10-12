@@ -257,7 +257,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     ref: referenceDrop.controlRef,
     ...referenceDrop.props,
     placeholder: field.placeholder,
-    className: cn("nodrag", isReference && "font-mono text-xs truncate"),
+    className: cn("nodrag", isReference && "font-mono text-xs"),
     style: undefined,
     "data-is-reference": isReference || undefined,
     onClick: handleInputClick,

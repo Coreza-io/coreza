@@ -1,11 +1,17 @@
 import type { RequestHandler } from "express";
+import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { referencesVariables } from "../variables/contract";
 import { variableSnapshots } from "../variables/VariableSnapshotService";
 import { requireAuth } from "./jwtAuth";
 // Manual typed Edit Fields requests keep expressions intact for the central evaluator.
 // Other editor actions send already resolved parameters plus a revision, never a variable registry.
 export const variableContext: RequestHandler = async (req, res, next) => {
-  if (!referencesVariables(req.body) && req.body?.variableRevision === undefined) { next(); return; }
+  const typedExpression = req.method === "POST" && /^\/comparator\/field\/?$/i.test(req.path)
+    && Array.isArray(req.body?.fields)
+    && req.body.fields.some((row: unknown) => isTypedEditFieldRow(row)
+      && row.valueMode === "expression" && referencesVariables(row.value));
+  // Generic actions already resolve expressions; raw request strings can be Fixed literals.
+  if (!typedExpression && req.body?.variableRevision === undefined) { next(); return; }
   if (!req.user?.id) {
     requireAuth(req, res, error => { if (error) next(error); else void variableContext(req, res, next); });
     return;

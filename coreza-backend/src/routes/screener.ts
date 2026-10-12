@@ -28,7 +28,7 @@ router.post('/:screener/:operation', async (req, res) => {
     const { screener, operation } = req.params;
     const { credential_id, ...params } = req.body;
 
-    console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} request:`, { userId, credential_id, params });
+    console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} request`);
 
     const screenerService = getScreenerService(screener);
     if (!screenerService) {
@@ -45,7 +45,7 @@ router.post('/:screener/:operation', async (req, res) => {
       ...params
     });
 
-    console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} result:`, result);
+    console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} completed`);
     res.json(result);
   } catch (error: any) {
     console.error('[SCREENER-ROUTE] Error:', error);

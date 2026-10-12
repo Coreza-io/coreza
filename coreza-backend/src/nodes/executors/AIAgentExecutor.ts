@@ -225,7 +225,7 @@ export class AIAgentExecutor implements INodeExecutor {
       });
 
       // Execute agent
-      console.log(`🚀 [AIAgent] Executing agent with prompt: ${userPrompt}`);
+      console.log(`🚀 [AIAgent] Executing agent for node ${node.id}`);
       const result = await agent.invoke(
         {
           messages: [
@@ -338,10 +338,7 @@ export class AIAgentExecutor implements INodeExecutor {
       schema: toolSchema as ZodTypeAny,
       func: async (input: Record<string, any>) => {
         try {
-          console.log(
-            `🔧 [AIAgent] Executing tool: ${toolName} with input:`,
-            input,
-          );
+          console.log(`🔧 [AIAgent] Executing tool: ${toolName}`);
 
           // Resolve any dataRef inputs to actual data
           const resolvedInput = resolveDataRef(input, dataContext);

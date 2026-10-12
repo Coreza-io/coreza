@@ -7,6 +7,7 @@ import { compileEditTemplate, evaluateEditTemplate } from "../src/nodes/logic/ed
 import { TYPED_EXPRESSION_FEATURES, evaluateExpression } from "../src/nodes/logic/safeExpression";
 import { resolveReferences } from "../src/utils/resolveReferences";
 import { ParameterResolver } from "../src/engine/parameterResolver";
+import { compileNodeParams, compileParamsToSlots } from "../src/utils/templateCompiler";
 import { applyFieldRows } from "../src/nodes/logic/editFields";
 
 const owner = "11111111-1111-4111-8111-111111111111";
@@ -59,6 +60,18 @@ describe("read-only workflow variables", () => {
     expect(applyFieldRows(fields, { input: {}, context: { $vars: snapshot().values }, legacyResultSeed: {} })).toMatchObject({ risk: 5 });
     node.values.__fieldValueModes = { value: "fixed" };
     expect(new ParameterResolver([node]).resolve(node, input, () => ({}), snapshot().values).value).toBe(expression);
+  });
+  test("typed variable rows force backtests onto the snapshot-aware runtime path", () => {
+    const fields = [{ fieldName: "risk", dataType: "number", valueMode: "expression", value: "{{ $vars.BASE_RISK }}" }];
+    const node: any = { id: "edit", name: "Edit Fields", values: { fields } };
+    const compiled = compileNodeParams(node, [node]);
+    expect(compiled.fallbackKeys).toEqual(["fields"]);
+    expect(compileParamsToSlots(compiled, new Map())).toBeNull();
+    const resolved = new ParameterResolver([node]).resolve(node, {}, () => ({}), snapshot().values);
+    expect(resolved.fields).toEqual(fields);
+    expect(applyFieldRows(resolved.fields, { input: {}, context: { $vars: snapshot().values }, legacyResultSeed: {} })).toMatchObject({ risk: 5 });
+    node.values.fields[0].valueMode = "fixed";
+    expect(compileNodeParams(node, [node]).fallbackKeys).toBeUndefined();
   });
   test("shared plans do not overwrite another run's resolved variables", () => {
     const node: any = { id: "Compute", values: { value: "{{ $vars.BASE_RISK }}" } };

@@ -34,7 +34,7 @@ export class ToolExecutor implements INodeExecutor {
           ? nodename.replace(/Tool$/, "")
           : nodename;
 
-      console.log(`🔧 [Tool] Executing ${nodename} with input:`, input);
+      console.log(`🔧 [Tool] Executing ${nodename} node:`, node.id);
 
       let result;
       switch (nodename) {
@@ -85,7 +85,7 @@ export class ToolExecutor implements INodeExecutor {
       }
 
       console.log(
-        `🔍 [GoogleWebSearch] Searching for: "${query}" with ${numResults} results`,
+        `🔍 [GoogleWebSearch] Requesting ${numResults} results`,
       );
 
       // Get credentials

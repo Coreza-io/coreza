@@ -359,9 +359,13 @@ function compileValue(
   | { compiled: false } {
   if (editFieldsRows && isTypedEditFieldRow(value)) {
     const deps = new Set<string>();
-    if (value.valueMode === "expression")
-      for (const name of compileEditTemplate(String(value.value ?? ""), TYPED_EXPRESSION_FEATURES).nodeReferences)
+    if (value.valueMode === "expression") {
+      const template = compileEditTemplate(String(value.value ?? ""), TYPED_EXPRESSION_FEATURES);
+      // The compiled backtest VM has no run-local variable context.
+      if (template.hasVariables) return { compiled: false };
+      for (const name of template.nodeReferences)
         deps.add(resolveNodeKeyStatic(name, nodeIdSet, nodes));
+    }
     return { compiled: true, staticValue: value, deps };
   }
   if (typeof value === "string") {

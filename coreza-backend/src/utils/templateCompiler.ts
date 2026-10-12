@@ -14,6 +14,7 @@ import { WorkflowNode } from "../nodes/types";
 import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import { pickJsonSource, resolveNodeAlias } from "./referenceResolution";
 import { isFixedField, parameterEntries } from "./fieldValueModes";
+import { compileComputedSliceReference } from "./computedSliceReferences";
 
 /**
  * Template Pre-Compilation
@@ -228,6 +229,8 @@ function compileTemplate(
   nodeIdSet: Set<string>,
   nodes: WorkflowNode[],
 ): { accessor: AccessorFn; deps: Set<string> } | null {
+  // Dynamic bounds need the runtime input and the shared expression budget.
+  if (compileComputedSliceReference(templateStr)) return null;
   // Check for unsupported dynamic patterns
   if (UNSUPPORTED_PATTERNS.test(templateStr)) return null;
 

@@ -10,6 +10,7 @@
 
 import { pickJsonSource, resolveNodeKey } from "./referenceResolution";
 import type { ReferenceNode } from "./referenceResolution";
+import { compileComputedSliceReference, evaluateComputedSliceReference } from "./computedSliceReferences";
 
 type SliceObject = { type: "slice"; start: number | null; end: number | null };
 type PathKey = string | number | SliceObject;
@@ -62,6 +63,9 @@ export function resolveReferences(
   if (typeof expr !== "string") {
     return expr;
   }
+
+  const computedSlice = compileComputedSliceReference(expr);
+  if (computedSlice) return evaluateComputedSliceReference(computedSlice, inputData, allNodeData, nodes);
 
   const templateRegex =
     /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;

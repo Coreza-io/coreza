@@ -115,7 +115,7 @@ export function useNodeReferences({
         previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
 
       const { allNodeData, getSourceData } = buildPreviewData(
-        previousNodes,
+        getNodes(),
         executionStore,
         getNodes,
       );

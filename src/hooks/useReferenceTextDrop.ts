@@ -190,12 +190,16 @@ export function useReferenceTextDrop(options: {
         event.dataTransfer.dropEffect = "copy";
         const x = event.clientX, y = event.clientY;
         if (frame.current !== undefined) cancelAnimationFrame(frame.current);
-        frame.current = requestAnimationFrame(() => {
+        const updateCaret = () => {
           frame.current = undefined;
           const control = controlRef.current;
-          if (!control) return;
+          if (!control || control.disabled || control.readOnly || latest.current.disabled) { clearCaret(); return; }
           capture();
           const rect = control.getBoundingClientRect();
+          if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) { clearCaret(); return; }
+          const previousLeft = control.scrollLeft, previousTop = control.scrollTop;
+          if (x < rect.left + 12) control.scrollLeft -= 12;
+          else if (x > rect.right - 12) control.scrollLeft += 12;
           if (control instanceof HTMLTextAreaElement) {
             if (y < rect.top + 12) control.scrollTop -= 12;
             if (y > rect.bottom - 12) control.scrollTop += 12;
@@ -205,7 +209,11 @@ export function useReferenceTextDrop(options: {
           const marker = caret.current ?? document.createElement("div");
           if (!caret.current) { marker.setAttribute("aria-hidden", "true"); marker.dataset.referenceCaret = "true"; document.body.append(marker); caret.current = marker; }
           Object.assign(marker.style, { position: "fixed", pointerEvents: "none", zIndex: "10000", width: "2px", background: "var(--node-neon-color, #22d3ee)", left: `${point.x}px`, top: `${point.y}px`, height: `${point.height}px` });
-        });
+          // Keep scrolling at the edge even when the pointer stops moving.
+          if (control.scrollLeft !== previousLeft || control.scrollTop !== previousTop)
+            frame.current = requestAnimationFrame(updateCaret);
+        };
+        frame.current = requestAnimationFrame(updateCaret);
       },
       onDragLeave: (event: React.DragEvent) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) clearCaret(); },
     },

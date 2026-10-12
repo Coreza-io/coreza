@@ -985,16 +985,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               value={fieldState[f.key]}
               selectOptions={selectOptions}
               loadingSelect={loadingSelect}
-              onChange={(fieldKey, nextValue) => {
-                if (
-                  isFieldRepeater &&
-                  fieldKey === "persistent" &&
-                  nextValue === true &&
-                  conditions.some(isTypedEditFieldRow)
-                )
-                  return;
-                handleChange(fieldKey, nextValue);
-              }}
+              onChange={handleChange}
               normalizeBlank
               onBatchChange={handleFieldStateBatch}
               onDrop={(fieldDef, e, currentValue) => {

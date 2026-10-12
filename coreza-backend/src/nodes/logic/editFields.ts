@@ -277,6 +277,7 @@ export function applyTypedFieldRow(
     $nodes: context.$nodes,
     expressionOutputs: context.expressionOutputs,
     $state: context.$state,
+    $vars: context.$vars,
     nodes: context.nodes,
   };
   let value: unknown;

@@ -48,7 +48,6 @@ export class ScreenerExecutor implements INodeExecutor {
         : { ...node.values, ...input };
       console.log(
         `📊 [SCREENER] Parameter resolution completed for node ${node.id}`,
-        resolvedParams,
       );
 
       const screenerService = getScreenerService(screener.toLowerCase());

@@ -36,10 +36,7 @@ export class RiskExecutor implements INodeExecutor {
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-      console.log(
-        `⚖️ Executing ${node.name} node with params:`,
-        resolvedParams,
-      );
+      console.log(`⚖️ Executing ${node.name} node:`, node.id);
       const result = RiskEngineService.evaluate(resolvedParams);
       if (!result.success) {
         const errOutput = createErrorOutput(

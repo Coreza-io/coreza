@@ -31,6 +31,8 @@ import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useAuth } from "@/contexts/AuthContext";
+import VariablesSettings from "@/components/settings/VariablesSettings";
+import { variablesUIEnabled } from "@/hooks/useVariableSnapshot";
 
 const Settings = () => {
   const { timezone, updateTimezone } = useUserPreferences();
@@ -82,12 +84,14 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className={`grid w-full ${variablesUIEnabled ? "grid-cols-5" : "grid-cols-4"}`}>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="privacy">Privacy</TabsTrigger>
+          {variablesUIEnabled && <TabsTrigger value="variables">Variables</TabsTrigger>}
         </TabsList>
+        {variablesUIEnabled && <TabsContent value="variables"><VariablesSettings /></TabsContent>}
 
         {/* General Settings */}
         <TabsContent value="general" className="space-y-6">

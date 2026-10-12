@@ -28,6 +28,13 @@ export interface NodeExecutionRequest {
   executionGeneration?: number;
   lockToken?: symbol;
 }
+const variableInvocations = new Map<symbol, { owner: string; snapshot: Promise<import("../../coreza-backend/src/variables/contract").VariableSnapshot> }>();
+export function getEditorVariableSnapshot(token: symbol | undefined, owner: string, load: () => Promise<import("../../coreza-backend/src/variables/contract").VariableSnapshot>) {
+  if (!token) return load();
+  const existing = variableInvocations.get(token);
+  if (existing) { if (existing.owner !== owner) throw new Error("Variable invocation owner changed"); return existing.snapshot; }
+  const snapshot = load(); variableInvocations.set(token, { owner, snapshot }); return snapshot;
+}
 
 export type EditorNodeAction = (
   request?: NodeExecutionRequest,
@@ -140,6 +147,7 @@ export function acquireEditorExecutionLock(
 }
 
 export function releaseEditorExecutionLock(sessionId: string, token: symbol): void {
+  variableInvocations.delete(token);
   if (executionLocks.get(sessionId) === token) {
     executionLocks.delete(sessionId);
     executionTargets.delete(sessionId);
@@ -198,6 +206,8 @@ export function captureEditorNodeActions(
 }
 
 export function clearEditorNodeActions(sessionId: string): void {
+  const token = executionLocks.get(sessionId);
+  if (token) variableInvocations.delete(token);
   actions.delete(sessionId);
   canonicalNodeIds.delete(sessionId);
   executionLocks.delete(sessionId);

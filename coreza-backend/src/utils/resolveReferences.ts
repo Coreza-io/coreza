@@ -59,13 +59,14 @@ export function resolveReferences(
   inputData: any,
   allNodeData?: Record<string, any>,
   nodes?: readonly ReferenceNode[],
+  variables?: Readonly<Record<string, unknown>>,
 ): unknown {
   if (typeof expr !== "string") {
     return expr;
   }
 
   const computedSlice = compileComputedSliceReference(expr);
-  if (computedSlice) return evaluateComputedSliceReference(computedSlice, inputData, allNodeData, nodes);
+  if (computedSlice) return evaluateComputedSliceReference(computedSlice, inputData, allNodeData, nodes, variables);
 
   const templateRegex =
     /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json)|(?:\$json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;

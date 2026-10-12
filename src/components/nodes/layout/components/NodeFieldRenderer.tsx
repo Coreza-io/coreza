@@ -6,6 +6,7 @@ import FieldValueModeSelector from "./FieldValueModeSelector";
 import React from "react";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
 import { useFieldPreview } from "@/hooks/useFieldPreview";
+import { useVariableSnapshot } from "@/hooks/useVariableSnapshot";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -119,6 +120,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
     && !field.options?.length && !!onBatchChange;
   const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
+  const variableQuery = useVariableSnapshot(supportsValueMode && valueMode === "expression");
+  const variableListId = React.useId();
   const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
     onBatchChange?.({
       ...updates,
@@ -361,6 +364,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           >
             <Input
               {...commonInputProps}
+              list={valueMode === "expression" ? variableListId : undefined}
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
               type={
                 field.type === "number"
@@ -370,6 +374,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                     : undefined
               }
             />
+            {valueMode === "expression" && <datalist id={variableListId}>{variableQuery.data?.entries.map(entry => <option key={entry.key} value={`{{ $vars.${entry.key} }}`} />)}</datalist>}
             {referenceDrop.error && <p role="status" className="text-xs text-destructive">{referenceDrop.error}</p>}
             {fieldPreview.popup}
           </div>

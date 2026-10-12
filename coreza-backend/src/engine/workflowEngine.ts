@@ -57,6 +57,8 @@ export class WorkflowEngine {
   getGraph() {
     return this.plan.graph as Readonly<typeof this.plan.graph>;
   }
+  initialize(): Promise<void> { return this.run.initialize(); }
+  get variableRevision(): string | undefined { return this.run.variableRevision; }
   getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> {
     return this.plan.nodeExecutorMap;
   }

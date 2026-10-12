@@ -42,6 +42,8 @@ import { operatorRequiresRightValue } from "@/components/nodes/layout/utils/oper
 import NodeFieldRenderer from "@/components/nodes/layout/components/NodeFieldRenderer";
 import FieldValueModeSelector from "./components/FieldValueModeSelector";
 import { useFieldPreview } from "@/hooks/useFieldPreview";
+import { useVariableSnapshot } from "@/hooks/useVariableSnapshot";
+import { referencesVariables } from "../../../../coreza-backend/src/variables/contract";
 import { FIELD_VALUE_MODES_KEY } from "../../../../coreza-backend/src/utils/fieldValueModes";
 import {
   ReferenceDropTarget,
@@ -84,6 +86,7 @@ interface EditFieldEditorProps {
     expressionOutputs: Record<string, unknown>;
     definitions: ReferenceNode[];
     hasInput: boolean;
+    variables?: Readonly<Record<string, unknown>>;
   };
   makeReference: (event: React.DragEvent) => string | null;
   canRemove: boolean;
@@ -151,6 +154,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
           $nodes: context.nodes,
           expressionOutputs: context.expressionOutputs,
           nodes: context.definitions,
+          $vars: context.variables,
         });
         const rendered =
           typeof result === "string"
@@ -372,6 +376,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   readOnly,
 }) => {
   const { getNodes } = useStableNodes();
+  const variableQuery = useVariableSnapshot(referencesVariables(fieldState));
   const executionContext = useExecutionStore();
   const executionStoreVersion = useExecutionStoreVersion();
   const { user } = useAuth();
@@ -732,6 +737,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             selectedInputData,
             allNodeData,
             allNodes,
+            variableQuery.data?.values,
           );
         }
         if (Array.isArray(value)) {
@@ -750,7 +756,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       return resolveValue(val);
     },
-    [getNodes],
+    [getNodes, variableQuery.data],
   );
 
   const computeDropInsert = useCallback(
@@ -860,8 +866,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       expressionOutputs: snapshot.nodeResults,
       definitions: snapshot.nodeIdentities,
       hasInput: input !== undefined,
+      variables: variableQuery.data?.values,
     };
-  }, [getPreviewData, getNodes, selectedInputData, executionContext]);
+  }, [getPreviewData, getNodes, selectedInputData, executionContext, variableQuery.data]);
 
   const getOverlayPreviewFor = useCallback(
     (expr: unknown) => {
@@ -872,13 +879,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       try {
         return fullePreview(
-          resolveReferences(expr, srcData, allNodeData, getNodes()),
+          resolveReferences(expr, srcData, allNodeData, getNodes(), variableQuery.data?.values),
         );
       } catch (error) {
         return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
-    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion],
+    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variableQuery.data],
   );
 
   const handleOverlayDrop = useCallback(

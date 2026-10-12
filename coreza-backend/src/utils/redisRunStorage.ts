@@ -30,6 +30,7 @@ export async function createRunInRedis(
     node_count?: number;
     edge_count?: number;
     source?: string;
+    variable_revision?: string;
   },
   executionId?: string,
 ): Promise<void> {
@@ -41,6 +42,7 @@ export async function createRunInRedis(
     status: "queued",
     started_at: new Date().toISOString(),
   };
+  if (snapshot?.variable_revision !== undefined) runData.variable_revision = snapshot.variable_revision;
 
   if (snapshot?.nodes !== undefined) {
     runData.nodes =

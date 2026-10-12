@@ -42,13 +42,21 @@ export class WorkflowRunnerManager {
       executionId,
     );
     this.runners.set(workflowId, runner);
+    try { await runner.initialize(); }
+    catch (error) {
+      if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
+      await runner.stop().catch(() => console.warn("[WorkflowRunnerManager] Startup cleanup failed"));
+      throw error;
+    }
+    if (this.runners.get(workflowId) !== runner) throw new Error("Strategy startup cancelled");
 
     runner.start().catch((error) => {
       console.error(
         `[WorkflowRunnerManager] Strategy ${workflowId} crashed:`,
         error,
       );
-      this.runners.delete(workflowId);
+      if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
+      void runner.stop().catch(() => console.warn("[WorkflowRunnerManager] Runner cleanup failed"));
     });
   }
 

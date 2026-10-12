@@ -128,6 +128,10 @@ app.get("/metrics", async (req, res) => {
 });
 
 // Routes
+import variableRoutes from "./routes/variables";
+import { variableContext } from "./middleware/variableContext";
+app.use("/variables", variableRoutes);
+app.use(variableContext);
 logger.info("Setting up routes...");
 
 app.use("/oauth", oauthRoutes);

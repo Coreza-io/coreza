@@ -320,6 +320,7 @@ export class BacktestSession {
 
   async initialize(): Promise<void> {
     if (this.phase !== "initializing") return;
+    await this.run.initialize();
     if (this.warmupMode === "workflow_replay" && this.indicatorWarmupSeed) {
       throw new Error(
         "Warm-up replay and direct indicator seeding are mutually exclusive",

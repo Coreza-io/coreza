@@ -12,6 +12,7 @@ export interface ExpressionContext {
   $nodes?: Record<string, unknown>;
   expressionOutputs?: Record<string, unknown>;
   $state?: Record<string, unknown>;
+  $vars?: Readonly<Record<string, unknown>>;
   nodes?: ReferenceNode[];
 }
 
@@ -41,6 +42,7 @@ export interface CompiledExpression {
   readonly nodeReferences: readonly string[];
   readonly features: Readonly<ExpressionFeatures>;
   readonly hasComputedSlices: boolean;
+  readonly hasVariables: boolean;
   evaluate(context: ExpressionContext, budget?: ExpressionBudget): unknown;
 }
 
@@ -72,7 +74,7 @@ interface Token {
 type Ast =
   | { kind: "literal"; value: unknown; position: number }
   | { kind: "array"; elements: Ast[]; position: number }
-  | { kind: "root"; name: "$json" | "$nodes" | "$state"; position: number }
+  | { kind: "root"; name: "$json" | "$nodes" | "$state" | "$vars"; position: number }
   | { kind: "node"; name: string; position: number }
   | { kind: "identifier"; name: string; position: number }
   | {
@@ -422,7 +424,8 @@ class Parser {
     if (
       token.value === "$json" ||
       token.value === "$nodes" ||
-      token.value === "$state"
+      token.value === "$state" ||
+      token.value === "$vars"
     )
       return this.make(
         { kind: "root", name: token.value, position: token.position },
@@ -570,7 +573,10 @@ function evaluate(node: Ast, context: ExpressionContext, budget?: ExpressionBudg
       return undefined;
     return readMember(input, node.name, strict, node.position);
   }
-  if (node.kind === "root") return strict && node.name === "$nodes" ? context.expressionOutputs ?? context.$nodes : context[node.name];
+  if (node.kind === "root") {
+    if (node.name === "$vars") throw new ExpressionError("Select a variable by name", node.position, "reference");
+    return strict && node.name === "$nodes" ? context.expressionOutputs ?? context.$nodes : context[node.name];
+  }
   if (node.kind === "node") {
     if (!strict) return lookupNode(node.name, context);
     let identity;
@@ -613,6 +619,11 @@ function evaluate(node: Ast, context: ExpressionContext, budget?: ExpressionBudg
     return selected;
   }
   if (node.kind === "member" || node.kind === "projection") {
+    if (node.kind === "member" && node.object.kind === "root" && node.object.name === "$vars") {
+      const descriptor = context.$vars && Object.getOwnPropertyDescriptor(context.$vars, node.key);
+      if (!descriptor || !("value" in descriptor)) throw new ExpressionError(`Variable unavailable: ${String(node.key)}`, node.position, "reference");
+      return descriptor.value;
+    }
     const object = evaluate(node.object, context, budget, strict);
     if (strict && node.kind === "member" && node.object.kind === "root" && node.object.name === "$nodes") {
       let identity;
@@ -778,8 +789,10 @@ export function compileExpression(text: string, options: ExpressionFeatures = {}
   const features = Object.freeze({ computedSlices: options.computedSlices === true });
   const ast = new Parser(tokenize(source), features).parse();
   let hasComputedSlices = false;
+  let hasVariables = false;
   const nodeReferences = new Set<string>();
   const visit = (node: Ast): void => {
+    if (node.kind === "root" && node.name === "$vars") hasVariables = true;
     if (node.kind === "node") nodeReferences.add(node.name);
     if (node.kind === "member" && node.object.kind === "root" && node.object.name === "$nodes") nodeReferences.add(String(node.key));
     if (node.kind === "slice") {
@@ -804,6 +817,7 @@ export function compileExpression(text: string, options: ExpressionFeatures = {}
     nodeReferences: Object.freeze([...nodeReferences]),
     features,
     hasComputedSlices,
-    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasComputedSlices ? new ExpressionBudget() : undefined)),
+    hasVariables,
+    evaluate: (context: ExpressionContext, budget?: ExpressionBudget) => evaluate(ast, context, budget ?? (hasComputedSlices || hasVariables ? new ExpressionBudget() : undefined)),
   });
 }

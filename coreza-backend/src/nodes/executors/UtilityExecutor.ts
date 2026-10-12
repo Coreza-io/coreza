@@ -85,7 +85,7 @@ export class UtilityExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    console.log("📊 Visualize node processing data:", resolvedParams);
+    console.log("📊 Visualize node execution:", node.id);
 
     const successOutput = createSuccessOutput({
       visualization: {
@@ -133,7 +133,7 @@ export class UtilityExecutor implements INodeExecutor {
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    console.log("🌐 HTTP request node execution:", resolvedParams);
+    console.log("🌐 HTTP request node execution:", node.id);
 
     // This would typically make an HTTP request using the HTTP service
     // For now, returning a placeholder response

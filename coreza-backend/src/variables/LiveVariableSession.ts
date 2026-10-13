@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { freezeVariableSnapshot, type VariableSnapshot } from "./contract";
 import { LiveVariableSafetyStop, LiveVariableState, type SettledVariables } from "./LiveVariableState";
-import { decodeCheckpoint, encodeCheckpoint, fields, liveCommand, liveKeys, liveRPC, sameVersion, version, type EncodedCheckpoint } from "./LiveVariableProtocol";
+import { decodeCheckpoint, decodeLiveRecord, encodeCheckpoint, fields, liveCommand, liveKeys, liveRPC, liveRedisClock, redisLeaseDeadline, liveDecimal, sameVersion, version, type EncodedCheckpoint } from "./LiveVariableProtocol";
 import { liveVariableResources, liveVariableOperations } from "../utils/metrics";
 
 export const liveVariablesEnabled = () => process.env.WORKFLOW_VARIABLES_ENABLED === "true" && process.env.LIVE_VARIABLE_WRITE_BEHIND_ENABLED === "true";
@@ -29,11 +29,15 @@ function register(session: LiveVariableSession, key: string): void {
 function unregister(session: LiveVariableSession, key: string): void {
   if (sessions.get(key) === session) sessions.delete(key);
   liveVariableResources.set({ kind: "scopes" }, sessions.size);
-  if (!sessions.size && scheduler) { clearInterval(scheduler); scheduler = undefined; cursor = 0; }
+  if (!sessions.size && scheduler) {
+    clearInterval(scheduler); scheduler = undefined; cursor = 0;
+    for (const kind of ["dirty_keys", "entries_budget_bytes", "max_redis_coverage_ms", "max_sql_coverage_ms"]) liveVariableResources.set({ kind }, 0);
+  }
 }
 export class LiveVariableSession {
   readonly state: LiveVariableState;
   private task?: Promise<void>;
+  private stopTask?: Promise<void>;
   private pending?: { encoded: EncodedCheckpoint; captured: SettledVariables };
   private nextPublish = 0;
   private nextRenew = 0;
@@ -52,7 +56,11 @@ export class LiveVariableSession {
 
   static async open(owner: string, workflow: string, onPause: () => void): Promise<LiveVariableSession | undefined> {
     if (!liveVariablesEnabled()) return undefined;
-    if (!(await liveRPC("eligible", owner, workflow)).eligible) return undefined;
+    const policy = await liveRPC("eligible", owner, workflow);
+    if (!policy.eligible) {
+      if (policy.owned) throw new Error("Live variable scope is owned; recovery or handoff required");
+      return undefined;
+    }
     const key = liveKeys(owner, workflow).member;
     if (scopes.has(key) || scopes.size >= 16) throw new Error("Live variable active scope limit/ownership conflict");
     // Operators attest queue durability independently of ordinary cache Redis.
@@ -61,18 +69,20 @@ export class LiveVariableSession {
     scopes.set(key, writer);
     const epoch = randomUUID();
     try {
+      const clock = await liveRedisClock();
       const started = performance.now();
       const authority = await liveRPC("claim", owner, workflow, { writer });
       const deadline = started + authority.lease_ms - 2000;
-      const remaining = () => String(Math.max(0, Math.floor(deadline - performance.now())));
-      const sealed = fields(await liveCommand(owner, workflow, authority.fence, epoch, "seal", [remaining()]));
+      const redisDeadline = redisLeaseDeadline(deadline, clock);
+      const sealed = fields(await liveCommand(owner, workflow, authority.fence, epoch, "seal", [redisDeadline]));
       const sql = authority.payload ? decodeCheckpoint(authority.payload, authority.hash, owner, workflow) : undefined;
-      const redis = sealed.payload ? decodeCheckpoint(sealed.payload, sealed.hash, owner, workflow) : undefined;
+      const redis = Object.keys(sealed).length ? decodeLiveRecord(sealed, owner, workflow) : undefined;
       let selected = sql;
       if (sql && redis) {
         const a = sql.checkpoint; const b = redis.checkpoint;
         if (a.epoch === b.epoch && a.fence === b.fence) {
           if (a.generation === b.generation && sql.hash !== redis.hash) throw new Error("Live variable recovery hash conflict");
+          if (BigInt(a.generation) > BigInt(b.generation) && !authority.fresh) throw new Error("SQL checkpoint is ahead of Redis; explicit topology repair required");
           selected = BigInt(b.generation) > BigInt(a.generation) ? redis : sql;
         } else if (sameVersion(a.parent, version(redis)) && a.generation === "0") selected = sql;
         else throw new Error("Live variable recovery lineage mismatch");
@@ -84,7 +94,7 @@ export class LiveVariableSession {
       // Admission validates the conservative budget before installing a new epoch.
       const session = new LiveVariableSession(owner, workflow, writer, base, onPause);
       await liveRPC("prepare", owner, workflow, { writer, fence: authority.fence, payload: base.payload, hash: base.hash, parent_payload: selected?.payload ?? null, parent_hash: selected?.hash ?? null });
-      await liveCommand(owner, workflow, authority.fence, epoch, "init", [remaining(), base.payload, base.hash, "0", key]);
+      await liveCommand(owner, workflow, authority.fence, epoch, "init", [redisDeadline, base.payload, base.hash, "0", key]);
       await liveRPC("activate", owner, workflow, { writer, fence: authority.fence, epoch, hash: base.hash });
       await liveCommand(owner, workflow, authority.fence, epoch, "ack", ["0", epoch, authority.fence, "0", key, base.hash, String(base.checkpoint.capturedAt)]);
       session.state.leaseDeadline = deadline;
@@ -99,12 +109,13 @@ export class LiveVariableSession {
     try { this.state.assertAdmission(); } catch (error) { this.pause(); throw error; }
   }
   private pause(): void {
+    if (this.requiresRecovery) return;
     this.requiresRecovery = true;
     if (this.state.lifecycle === "active") this.state.lifecycle = "paused";
     this.onPause();
   }
   schedule(): void {
-    if (!this.stopping) {
+    if (!this.stopping && this.state.lifecycle === "active") {
       try { this.assertAdmission(); } catch { this.pause(); }
     }
     if (this.task || this.stopping) return;
@@ -120,11 +131,19 @@ export class LiveVariableSession {
     const { epoch, fence } = this.base.checkpoint;
     if (now >= this.nextRenew && this.state.lifecycle === "active") {
       this.nextRenew = now + 5000;
-      const started = performance.now();
-      const authority = await liveRPC("renew", this.owner, this.workflow, { writer: this.writer, fence, epoch });
-      const deadline = started + authority.lease_ms - 2000;
-      await liveCommand(this.owner, this.workflow, fence, epoch, "renew", [String(Math.max(0, Math.floor(deadline - performance.now())))]);
-      this.state.leaseDeadline = deadline;
+      try {
+        const clock = await liveRedisClock();
+        const started = performance.now();
+        const authority = await liveRPC("renew", this.owner, this.workflow, { writer: this.writer, fence, epoch });
+        const deadline = started + authority.lease_ms - 2000;
+        await liveCommand(this.owner, this.workflow, fence, epoch, "renew", [redisLeaseDeadline(deadline, clock)]);
+        this.state.leaseDeadline = deadline;
+      } catch (error) {
+        if (error instanceof LiveVariableSafetyStop || /live-variable-(authority|stale-fence|sealed)/.test(String((error as Error)?.message))) throw error;
+        if ((error as any).liveBusy) this.nextRenew = performance.now() + 250;
+        // Retain the last confirmed deadline. A transient SQL heartbeat failure
+        // must not suppress an otherwise healthy Redis checkpoint until expiry.
+      }
     }
     if (now < this.nextPublish) return;
     this.nextPublish = now + 250;
@@ -149,16 +168,23 @@ export class LiveVariableSession {
   private progress(receipt: Record<string, string>): void {
     if (receipt.epoch !== this.base.checkpoint.epoch || receipt.fence !== this.base.checkpoint.fence) throw new LiveVariableSafetyStop("Live checkpoint epoch changed");
     const capturedAt = Number(receipt.sqlCapturedAt);
-    if (receipt.sqlGeneration && /^(0|[1-9][0-9]*)$/.test(receipt.sqlGeneration) && Number.isFinite(capturedAt) && capturedAt <= performance.now()) this.state.acknowledgeSQL(BigInt(receipt.sqlGeneration), capturedAt);
+    if (receipt.sqlGeneration !== undefined) {
+      if (!liveDecimal(receipt.sqlGeneration) || !/^[a-f0-9]{64}$/.test(receipt.sqlHash ?? "") || !Number.isFinite(capturedAt) || capturedAt < 0 || capturedAt > performance.now()) throw new LiveVariableSafetyStop("Live checkpoint SQL progress invalid");
+      this.state.acknowledgeSQL(BigInt(receipt.sqlGeneration), capturedAt);
+    }
   }
-  get metadata() { return { epoch: this.base.checkpoint.epoch, writerFence: this.base.checkpoint.fence, ...this.state.metadata }; }
+  get metadata() { return { epoch: this.base.checkpoint.epoch, writerFence: this.base.checkpoint.fence, recoveryRequired: this.requiresRecovery, ...this.state.metadata }; }
   get snapshot(): VariableSnapshot { return this.base.checkpoint.snapshot; }
 
-  async stop(deadline = performance.now() + 10000): Promise<void> {
-    const wasPaused = this.requiresRecovery;
+  stop(deadline = performance.now() + 10000): Promise<void> {
+    if (this.stopTask) return this.stopTask;
+    this.stopTask = this.stopOnce(deadline).catch(error => { this.stopTask = undefined; throw error; });
+    return this.stopTask;
+  }
+  private async stopOnce(deadline: number): Promise<void> {
+    this.state.quiesce();
     this.stopping = true;
     unregister(this, this.key);
-    this.state.lifecycle = "quiescing";
     try {
       if (this.task) await this.task;
       if (this.handoff) {
@@ -177,7 +203,7 @@ export class LiveVariableSession {
       const budget = (ms: number) => { if (performance.now() + ms > deadline) throw new Error("Live variable stop incomplete: deadline exceeded"); };
       budget(2000);
       const stored = fields(await liveCommand(this.owner, this.workflow, fence, epoch, "read"));
-      const encoded = decodeCheckpoint(stored.payload, stored.hash, this.owner, this.workflow);
+      const encoded = decodeLiveRecord(stored, this.owner, this.workflow);
       if (encoded.checkpoint.epoch !== epoch || encoded.checkpoint.fence !== fence || BigInt(encoded.checkpoint.generation) !== target) throw new Error("Live variable stop target mismatch");
       budget(1500);
       const sql = await liveRPC("checkpoint", this.owner, this.workflow, { payload: encoded.payload, hash: encoded.hash, priority: true, writer: this.writer, fence });
@@ -185,7 +211,7 @@ export class LiveVariableSession {
       this.state.acknowledgeSQL(target, encoded.checkpoint.capturedAt);
       budget(2000);
       await liveCommand(this.owner, this.workflow, fence, epoch, "ack", ["0", epoch, fence, target.toString(), this.key, encoded.hash, String(encoded.checkpoint.capturedAt)]);
-      if (wasPaused) throw new Error("Live variable safety stop checkpointed; recovery approval required");
+      if (this.requiresRecovery) throw new Error("Live variable safety stop checkpointed; recovery approval required");
       // Seal Redis before SQL transfer: no late publish can race the handoff.
       budget(2000);
       await liveCommand(this.owner, this.workflow, fence, epoch, "seal", ["0"]);
@@ -195,7 +221,13 @@ export class LiveVariableSession {
       this.state.lifecycle = "stopped";
     } finally {
       liveVariableOperations.inc({ operation: "stop", status: this.state.lifecycle === "stopped" ? "success" : "error" });
-      if (scopes.get(this.key) === this.writer) scopes.delete(this.key);
+      if (this.state.lifecycle === "stopped") {
+        if (scopes.get(this.key) === this.writer) scopes.delete(this.key);
+      } else {
+        // Failed drains retain both RAM capacity and background reconciliation.
+        this.stopping = false;
+        register(this, this.key);
+      }
     }
   }
   dispose(): void {

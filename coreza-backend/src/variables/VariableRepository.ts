@@ -3,6 +3,7 @@ import { freezeVariableSnapshot, validateVariable, type VariableChange, type Var
 export class VariableRepository {
   async revision(owner: string, workflowId?: string): Promise<string> {
     const { data, error } = await (supabase.rpc as any)("workflow_variables_revision", { p_owner: owner, ...(workflowId ? { p_workflow: workflowId } : {}) });
+    if (error?.code === "40001" && /^live-variable-scope-owned\b/.test(error.message ?? "")) throw Object.assign(new Error("Live variable scope is owned"), { statusCode: 409, liveOwned: true });
     if (error || typeof data !== "string" || !/^\d+$/.test(data)) throw Object.assign(new Error("Variable revision unavailable"), { statusCode: error?.code === "42501" ? 403 : 503 });
     return data;
   }

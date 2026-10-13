@@ -45,8 +45,10 @@ export class WorkflowRunnerManager {
     this.runners.set(workflowId, runner);
     try { await runner.initialize(); }
     catch (error) {
-      if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
-      await runner.stop().catch(() => console.warn("[WorkflowRunnerManager] Startup cleanup failed"));
+      try {
+        await runner.stop();
+        if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
+      } catch { console.warn("[WorkflowRunnerManager] Startup stop incomplete; runner retained for recovery"); }
       throw error;
     }
     if (this.runners.get(workflowId) !== runner) throw new Error("Strategy startup cancelled");

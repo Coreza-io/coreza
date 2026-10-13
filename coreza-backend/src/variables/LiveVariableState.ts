@@ -55,6 +55,7 @@ export class LiveVariableState {
 
   apply(changes: readonly VariableChange[]): void {
     this.assertAdmission();
+    if (changes.length > VARIABLE_LIMITS.count) throw new Error("Live variable batch count limit exceeded");
     const staged = new Map<string, Readonly<VariableEntry>>();
     const stagedSizes = new Map<string, number>();
     let bytes = this.bytes;
@@ -94,6 +95,10 @@ export class LiveVariableState {
   }
 
   beginEvent(event: string): void { this.assertAdmission(); this.event = event; this.eventStarted = performance.now(); }
+  quiesce(): void {
+    if (this.eventStarted !== undefined) throw new Error("Live variable stop incomplete: source event has not settled");
+    this.lifecycle = "quiescing";
+  }
   settle(outcome: SettledVariables["source"]["outcome"]): void {
     // Never capture a half-executed source event from a dispatcher timer.
     this.settled = { generation: this.generation, entries: Object.freeze([...this.entries.values()]), capturedAt: performance.now(), source: { event: this.event, outcome } };

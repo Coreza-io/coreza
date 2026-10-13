@@ -67,11 +67,14 @@ BEGIN
   IF p_operation='inventory' THEN
     RETURN jsonb_build_object('scopes',coalesce((SELECT jsonb_agg(x) FROM (
       SELECT owner_user_id AS owner,workflow_id AS workflow FROM workflow_live_variable_state
-      WHERE phase<>'idle' AND (p_args->>'after' IS NULL OR workflow_id>(p_args->>'after')::uuid)
-      ORDER BY workflow_id LIMIT 32) x),'[]'::jsonb));
+      WHERE phase<>'idle' AND (p_args->>'after' IS NULL OR (workflow_id,owner_user_id)>((p_args->'after'->>'workflow')::uuid,(p_args->'after'->>'owner')::uuid))
+      ORDER BY workflow_id,owner_user_id LIMIT 32) x),'[]'::jsonb));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM workflows WHERE id=p_workflow AND user_id=p_owner) THEN RAISE EXCEPTION 'live-variable-workflow-denied' USING ERRCODE='42501'; END IF;
-  IF p_operation='eligible' THEN RETURN jsonb_build_object('eligible',coalesce((SELECT eligible FROM workflow_live_variable_state WHERE owner_user_id=p_owner AND workflow_id=p_workflow),false)); END IF;
+  IF p_operation='eligible' THEN
+    SELECT * INTO s FROM workflow_live_variable_state WHERE owner_user_id=p_owner AND workflow_id=p_workflow;
+    RETURN jsonb_build_object('eligible',coalesce(s.eligible,false),'owned',FOUND AND s.phase<>'idle');
+  END IF;
   IF p_operation='source' THEN
     SELECT * INTO s FROM workflow_live_variable_state WHERE owner_user_id=p_owner AND workflow_id=p_workflow;
     RETURN jsonb_build_object('active',FOUND AND s.phase<>'idle','payload',s.payload,'hash',s.payload_hash);
@@ -117,6 +120,7 @@ BEGIN
   END IF;
   IF p_operation IN ('prepare','activate','renew') AND s.lease_until<=clock_timestamp() THEN RAISE EXCEPTION 'live-variable-lease-expired'; END IF;
   IF p_operation='renew' THEN
+    IF NOT s.eligible THEN RAISE EXCEPTION 'live-variable-ineligible'; END IF;
     IF s.phase<>'active' OR s.epoch IS DISTINCT FROM (p_args->>'epoch')::uuid THEN RAISE EXCEPTION 'live-variable-not-active'; END IF;
     UPDATE workflow_live_variable_state SET lease_until=clock_timestamp()+interval '15 seconds' WHERE owner_user_id=p_owner AND workflow_id=p_workflow;
     RETURN jsonb_build_object('lease_ms',15000);
@@ -152,9 +156,12 @@ BEGIN
     RETURN jsonb_build_object('generation',s.generation::text,'hash',s.payload_hash);
   ELSIF p_operation='handoff' THEN
     IF s.phase<>'active' OR s.epoch IS DISTINCT FROM (p_args->>'epoch')::uuid OR s.generation::text IS DISTINCT FROM p_args->>'generation' OR s.payload_hash IS DISTINCT FROM p_args->>'hash' THEN RAISE EXCEPTION 'live-variable-handoff-conflict'; END IF;
-    DELETE FROM workflow_variables WHERE owner_user_id=p_owner AND workflow_id=p_workflow;
+    DELETE FROM workflow_variables WHERE owner_user_id=p_owner AND workflow_id=p_workflow
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(s.payload::jsonb->'snapshot'->'entries') x WHERE x->>'key'=workflow_variables.key);
     INSERT INTO workflow_variables(owner_user_id,workflow_id,key,value,value_type,updated_at,updated_by)
-      SELECT p_owner,p_workflow,x->>'key',x->'value',x->>'value_type',(x->>'updated_at')::timestamptz,p_owner FROM jsonb_array_elements(s.payload::jsonb->'snapshot'->'entries') x;
+      SELECT p_owner,p_workflow,x->>'key',x->'value',x->>'value_type',(x->>'updated_at')::timestamptz,p_owner FROM jsonb_array_elements(s.payload::jsonb->'snapshot'->'entries') x
+      ON CONFLICT(owner_user_id,workflow_id,key) WHERE workflow_id IS NOT NULL
+      DO UPDATE SET value=EXCLUDED.value,value_type=EXCLUDED.value_type,updated_at=EXCLUDED.updated_at,updated_by=EXCLUDED.updated_by;
     UPDATE workflow_variable_revisions SET revision=revision+1 WHERE owner_user_id=p_owner;
     UPDATE workflow_live_variable_state SET phase='idle',writer=NULL,lease_until=NULL WHERE owner_user_id=p_owner AND workflow_id=p_workflow;
     RETURN jsonb_build_object('revision',(r+1)::text);

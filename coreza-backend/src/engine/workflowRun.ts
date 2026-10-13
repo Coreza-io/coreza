@@ -79,7 +79,7 @@ export class WorkflowRun {
     this.variableInitialization = (async () => {
       if (referencesVariables(this.plan.nodes.map(node => node.values)) || this.plan.nodes.some(isPersistentVariableEdit)) {
         const { variableSnapshots } = await import("../variables/VariableSnapshotService");
-        if (this.options.executionMode === "live") {
+        if (this.plan.executionMode === "live") {
           const { LiveVariableSession } = await import("../variables/LiveVariableSession");
           this.liveVariables = await LiveVariableSession.open(this.options.userId, this.options.workflowId, () => {
             this.variableSafetyStopped = true;
@@ -87,8 +87,8 @@ export class WorkflowRun {
           });
         }
         const snapshot = this.liveVariables?.snapshot ?? await variableSnapshots.load(this.options.userId, this.options.workflowId);
+        if (!this.liveVariables && snapshot.checkpoint && this.plan.executionMode === "live") throw new Error("Live variable scope is owned; legacy runner admission refused");
         if (this.disposed || this.options.abortSignal?.aborted) {
-          await this.liveVariables?.stop();
           throw new Error("Workflow initialization cancelled");
         }
         this.variables = snapshot;
@@ -122,7 +122,17 @@ export class WorkflowRun {
   assertVariableAdmission(): void { this.liveVariables?.assertAdmission(); }
   get variableSafetyStop(): boolean { return this.variableSafetyStopped; }
   get variableCheckpoint() { return this.liveVariables?.metadata; }
-  async drainVariables(deadline?: number): Promise<void> { await this.liveVariables?.stop(deadline); }
+  async drainVariables(deadline = performance.now() + 10000): Promise<void> {
+    if (this.variableInitialization) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([this.variableInitialization.catch(() => undefined), new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Live variable stop incomplete: initialization pending")), Math.max(0, deadline - performance.now()));
+        })]);
+      } finally { if (timer) clearTimeout(timer); }
+    }
+    await this.liveVariables?.stop(deadline);
+  }
 
   private readonly store: NodeStoreV2;
   private runtime: BaseExecutionRuntime;

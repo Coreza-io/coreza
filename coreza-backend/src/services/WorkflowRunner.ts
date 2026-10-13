@@ -41,8 +41,9 @@ export class WorkflowRunner {
   private running = false;
   private activeMessage?: Promise<void>;
   private stopTask?: Promise<void>;
+  private stopIncomplete = false;
   get runnerInstanceId(): string { return this.executionId; }
-  get requiresRecovery(): boolean { return this.engine.variableSafetyStop; }
+  get requiresRecovery(): boolean { return this.stopIncomplete || this.engine.variableSafetyStop; }
   private readonly abortController: AbortController;
   private readonly consumerName: string;
   private readonly serializedSnapshot: {
@@ -417,7 +418,7 @@ export class WorkflowRunner {
 
   async stop(): Promise<void> {
     if (this.stopTask) return this.stopTask;
-    this.stopTask = this.stopRunner().catch(error => { this.stopTask = undefined; throw error; });
+    this.stopTask = this.stopRunner().catch(error => { this.stopIncomplete = true; this.stopTask = undefined; throw error; });
     return this.stopTask;
   }
 

@@ -19,6 +19,15 @@ export class VariableSnapshotService {
     if (!variablesEnabled()) return Promise.reject(new Error("Workflow variables are disabled"));
     if (!/^[0-9a-f-]{36}$/i.test(owner)) return Promise.reject(new Error("Invalid variable owner"));
     if (workflowId !== undefined && !/^[0-9a-f-]{36}$/i.test(workflowId)) throw new Error("Save the workflow before using persistent variables");
+    if (workflowId && process.env.LIVE_VARIABLE_WRITE_BEHIND_ENABLED === "true") {
+      const { liveRPC, decodeCheckpoint } = await import("./LiveVariableProtocol");
+      const source = await liveRPC("source", owner, workflowId);
+      if (source.active) {
+        if (!source.payload) throw new Error("Live variable recovery pending");
+        const { checkpoint } = decodeCheckpoint(source.payload, source.hash, owner, workflowId);
+        return Object.freeze({ ...checkpoint.snapshot, checkpoint: Object.freeze({ epoch: checkpoint.epoch, writerFence: checkpoint.fence, sqlCheckpointGeneration: checkpoint.generation, source: "sql-checkpoint" as const }) });
+      }
+    }
     const started = performance.now();
     const revision = await this.repository.revision(owner, workflowId);
     const scope = cacheKey(owner, revision, workflowId);
@@ -55,6 +64,7 @@ export class VariableSnapshotService {
   }
   async commit(snapshot: VariableSnapshot, changes: readonly VariableChange[], token: string): Promise<VariableSnapshot> {
     if (!variablesEnabled() || !snapshot.workflowId) throw new Error("Workflow persistent variables are disabled or unscoped");
+    if (snapshot.checkpoint) throw new Error("Live variable scope is owned; stop and hand off before manual Persistent edits");
     for (const { key, value } of changes) validateVariable(key, value);
     if (new Set(changes.map(change => change.key)).size !== changes.length) throw new Error("Duplicate persistent variable name");
     if (changes.every(({ key, value }) => Object.prototype.hasOwnProperty.call(snapshot.values, key) && snapshot.values[key] === value)) return snapshot;

@@ -39,6 +39,10 @@ export class WorkflowRunner {
   private readonly streamKey: string;
   private readonly executionId: string;
   private running = false;
+  private activeMessage?: Promise<void>;
+  private stopTask?: Promise<void>;
+  get runnerInstanceId(): string { return this.executionId; }
+  get requiresRecovery(): boolean { return this.engine.variableSafetyStop; }
   private readonly abortController: AbortController;
   private readonly consumerName: string;
   private readonly serializedSnapshot: {
@@ -82,6 +86,10 @@ export class WorkflowRunner {
       this.abortController.signal,
       "live",
     );
+    this.engine.setVariableSafetyStopHandler(() => {
+      this.running = false;
+      this.abortController.abort();
+    });
 
     // Cache trigger node IDs and their downstream targets at build time
     const graph = this.engine.getGraph();
@@ -198,6 +206,14 @@ export class WorkflowRunner {
     messageId: string,
     fields: string[],
   ): Promise<void> {
+    try { this.engine.assertVariableAdmission(); }
+    catch { this.running = false; return; } // Safety stops retain the pending source event.
+    const task = this.executeMessage(messageId, fields);
+    this.activeMessage = task;
+    try { await task; } finally { if (this.activeMessage === task) this.activeMessage = undefined; }
+  }
+
+  private async executeMessage(messageId: string, fields: string[]): Promise<void> {
     // Phase 1: Extract payload — permanent failure if missing
     const rawPayload = this.extractPayload(fields);
     if (!rawPayload) {
@@ -272,6 +288,7 @@ export class WorkflowRunner {
     }
 
     // Phase 6: Ack
+    if (this.engine.variableSafetyStop) { this.running = false; return; }
     await this.ack(messageId);
   }
 
@@ -346,6 +363,7 @@ export class WorkflowRunner {
   ): Promise<void> {
     try {
       if (this.engine.variableRevision) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_revision: this.engine.variableRevision });
+      if (this.engine.variableCheckpoint) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_checkpoint: JSON.stringify(this.engine.variableCheckpoint) });
       await updateRunStatusInRedis(
         this.userId,
         runId,
@@ -363,6 +381,7 @@ export class WorkflowRunner {
   private async recordFailure(runId: string, error: unknown): Promise<void> {
     try {
       if (this.engine.variableRevision) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_revision: this.engine.variableRevision });
+      if (this.engine.variableCheckpoint) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_checkpoint: JSON.stringify(this.engine.variableCheckpoint) });
       await updateRunStatusInRedis(this.userId, runId, "failed", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
@@ -397,8 +416,25 @@ export class WorkflowRunner {
   }
 
   async stop(): Promise<void> {
+    if (this.stopTask) return this.stopTask;
+    this.stopTask = this.stopRunner().catch(error => { this.stopTask = undefined; throw error; });
+    return this.stopTask;
+  }
+
+  private async stopRunner(): Promise<void> {
+    const deadline = performance.now() + 10000;
     this.running = false;
     this.abortController.abort();
+    if (this.activeMessage) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([this.activeMessage, new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Strategy stop incomplete: active event has not settled")), 2000);
+        })]);
+      } finally { if (timer) clearTimeout(timer); }
+    }
+    // This drain deliberately does not use the execution abort signal.
+    await this.engine.drainVariables(deadline);
     this.engine.destroy();
     PortfolioManager.removeInstance(this.userId, this.executionId);
     await this.cleanupRunnerKeys();

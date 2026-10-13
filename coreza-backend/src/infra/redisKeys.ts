@@ -9,6 +9,13 @@
  */
 
 export const RedisKeys = {
+  liveVariableDirty: (bucket: number): string => `coreza:livevars:{lv:${bucket}}:dirty`,
+  liveVariableScope: (bucket: number, member: string) => ({
+    member,
+    authority: `coreza:livevars:{lv:${bucket}}:scope:${member}:authority`,
+    checkpoint: `coreza:livevars:{lv:${bucket}}:scope:${member}:checkpoint`,
+    dirty: `coreza:livevars:{lv:${bucket}}:dirty`,
+  }),
   // ── User scope ──
   userRun: (userId: string, runId: string): string =>
     `run:userId:${userId}:runId:${runId}`,

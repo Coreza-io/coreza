@@ -4,7 +4,6 @@ import { VariableRepository } from "./VariableRepository";
 import { freezeVariableSnapshot, validateVariable, overlayVariables, type VariableChange, type VariableSnapshot } from "./contract";
 import { variableSnapshotLoads, variableSnapshotLoadSeconds, variableSnapshotBytes, variableSnapshotCount } from "../utils/metrics";
 
-export const variablesEnabled = () => process.env.WORKFLOW_VARIABLES_ENABLED === "true";
 const cacheKey = (owner: string, revision: string, workflowId?: string) => `coreza:vars:v1:${createHash("sha256").update(JSON.stringify([owner, workflowId ?? "global"])).digest("hex")}:${revision}`;
 async function optionalCache<T>(operation: () => Promise<T>): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -16,7 +15,6 @@ export class VariableSnapshotService {
   private readonly pending = new Map<string, Promise<VariableSnapshot>>();
   constructor(private readonly repository = new VariableRepository()) {}
   async load(owner: string, workflowId?: string): Promise<VariableSnapshot> {
-    if (!variablesEnabled()) return Promise.reject(new Error("Workflow variables are disabled"));
     if (!/^[0-9a-f-]{36}$/i.test(owner)) return Promise.reject(new Error("Invalid variable owner"));
     if (workflowId !== undefined && !/^[0-9a-f-]{36}$/i.test(workflowId)) throw new Error("Save the workflow before using persistent variables");
     if (workflowId && process.env.LIVE_VARIABLE_WRITE_BEHIND_ENABLED === "true") {
@@ -74,7 +72,7 @@ export class VariableSnapshotService {
     return snapshot;
   }
   async commit(snapshot: VariableSnapshot, changes: readonly VariableChange[], token: string): Promise<VariableSnapshot> {
-    if (!variablesEnabled() || !snapshot.workflowId) throw new Error("Workflow persistent variables are disabled or unscoped");
+    if (!snapshot.workflowId) throw new Error("Save the workflow before using persistent variables");
     if (snapshot.checkpoint) throw new Error("Live variable scope is owned; stop and hand off before manual Persistent edits");
     for (const { key, value } of changes) validateVariable(key, value);
     if (new Set(changes.map(change => change.key)).size !== changes.length) throw new Error("Duplicate persistent variable name");

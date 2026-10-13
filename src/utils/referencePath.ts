@@ -6,7 +6,6 @@ export interface JsonReferenceDragPayload {
   pathSegments: PathSegment[];
   sourceNodeId?: string;
   value: string;
-  variableKey?: string;
 }
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -35,7 +34,6 @@ export function parseJsonReferenceDragPayload(
     const payload = value as Record<string, unknown>;
     if (
       payload.type !== "jsonReference" ||
-      (payload.variableKey !== undefined && (typeof payload.variableKey !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(payload.variableKey) || ["__proto__", "constructor", "prototype"].includes(payload.variableKey))) ||
       (payload.sourceNodeId !== undefined &&
         (typeof payload.sourceNodeId !== "string" || !payload.sourceNodeId))
     )
@@ -51,10 +49,11 @@ export function parseJsonReferenceDragPayload(
       typeof payload.sourceNodeId === "string"
         ? payload.sourceNodeId
         : undefined;
-    return {
-      ...createJsonReferenceDragPayload(pathSegments, sourceNodeId, typeof payload.value === "string" ? payload.value : ""),
-      ...(typeof payload.variableKey === "string" ? { variableKey: payload.variableKey } : {}),
-    };
+    return createJsonReferenceDragPayload(
+      pathSegments,
+      sourceNodeId,
+      typeof payload.value === "string" ? payload.value : "",
+    );
   } catch {
     return null;
   }
@@ -144,6 +143,5 @@ export function buildNodeReference(
   const id = payload.sourceNodeId ?? selectedSourceId;
   const source = nodes.find((node) => node.id === id);
   if (!source || source.id.toLowerCase().startsWith("__cluster__")) return null;
-  if (payload.variableKey) return `{{ $vars${formatPath([payload.variableKey])} }}`;
   return `{{ $(${JSON.stringify(source.id)}).json${formatPath(payload.pathSegments)} }}`;
 }

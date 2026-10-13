@@ -211,10 +211,9 @@ export class ControlFlowExecutor implements INodeExecutor {
       const staged = stagePersistentFields(fields, options);
       if (!context?.commitVariables) throw new Error("Persistent Edit Fields requires a workflow variable execution context");
       const committed = context.commitVariables(staged.changes);
-      const success = () => ({ ...leanSuccess(staged.result), meta: { persistentVariableKeys: staged.changes.map(change => change.key) } });
       if (this.isPromiseLike(committed))
-        return Promise.resolve(committed).then(success);
-      return success();
+        return Promise.resolve(committed).then(() => leanSuccess(staged.result));
+      return leanSuccess(staged.result);
     }
     return leanSuccess(applyFieldRows(fields, options));
   }

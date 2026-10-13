@@ -332,7 +332,6 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
             allNodeExecutions: data.allNodeExecutions,
           }}
           outputPanelProps={{
-            sourceNodeId: nodeId,
             data: renderProps.displayedData,
             position: "right",
             pinned: renderProps.isPinned,

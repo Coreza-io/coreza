@@ -9,7 +9,6 @@
  */
 
 import React, { useMemo } from "react";
-import { useToast } from "@/hooks/use-toast";
 import {
   createJsonReferenceDragPayload,
   formatPath,
@@ -24,7 +23,6 @@ type DraggableFieldsPanelProps = {
   sourceNodeId?: string;
   maxItems?: number;
   draggable?: boolean;
-  persistentVariableKeys?: readonly string[];
 };
 
 type Entry = { key: PathSegment; value: unknown };
@@ -51,17 +49,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   sourceNodeId,
   maxItems = 25,
   draggable = true,
-  persistentVariableKeys,
 }) => {
-  const { toast } = useToast();
-  const copyReference = async (reference: string) => {
-    try {
-      await navigator.clipboard.writeText(reference);
-      toast({ description: "Reference copied" });
-    } catch {
-      toast({ description: "Unable to copy reference", variant: "destructive" });
-    }
-  };
   const entriesToShow: Entry[] = useMemo(() => {
     if (!isObjectLike(data)) return [];
     if (Array.isArray(data)) {
@@ -94,11 +82,6 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
             : formatPath([key]).replace(/^\./, "");
         const isNestedObject = isObjectLike(value);
         const displayKey = isArray ? `[${key}]` : String(key);
-        const isPersistent = fullSegments.length === 2 && fullSegments[0] === "data"
-          && typeof key === "string" && persistentVariableKeys?.includes(key)
-          && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key)
-          && !["__proto__", "constructor", "prototype"].includes(key)
-          && ["string", "number", "boolean"].includes(typeof value);
 
         return (
           <div key={fullKey} className="flex flex-col ml-2">
@@ -154,41 +137,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   toStringValue(value)
                 )}
               </span>
-              {isPersistent && (
-                <span className="text-[10px] text-primary" title="Written to workflow variables by this execution">Persistent</span>
-              )}
             </div>
-
-            {isPersistent && sourceNodeId && (
-              <div className="flex flex-wrap gap-2 mt-1">
-                {([
-                  ["Variable reference", `{{ $vars${formatPath([key])} }}`, true],
-                  ["Node output reference", `{{ $(${JSON.stringify(sourceNodeId)}).json${formatPath(fullSegments)} }}`, false],
-                ] as const).map(([label, reference, variable]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className="nodrag text-[10px] text-primary underline underline-offset-2 cursor-grab"
-                    title={`${variable ? "Preferred: reads the current workflow variable." : "Reads this node execution's output."} Click to copy; drag to insert ${reference}`}
-                    aria-label={`Copy or drag ${label.toLowerCase()} for ${String(key)}`}
-                    draggable
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={e => { e.stopPropagation(); void copyReference(reference); }}
-                    onDragStart={e => {
-                      e.stopPropagation();
-                      e.dataTransfer.setData("application/reactflow", JSON.stringify({
-                        ...createJsonReferenceDragPayload(fullSegments, sourceNodeId, toStringValue(value)),
-                        ...(variable ? { variableKey: key } : {}),
-                      }));
-                      e.dataTransfer.setData("text/plain", reference);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {isNestedObject && (
               <div className="ml-4">
@@ -200,7 +149,6 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   sourceNodeId={sourceNodeId}
                   maxItems={maxItems}
                   draggable={draggable}
-                  persistentVariableKeys={persistentVariableKeys}
                 />
               </div>
             )}

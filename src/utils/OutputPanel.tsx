@@ -18,7 +18,6 @@ import DraggableFieldsPanel from "./DraggableFieldsPanel";
 // Props strongly typed, mirroring InputPanel
 export type OutputPanelProps = {
   data: any;
-  sourceNodeId?: string;
   isExpanded: boolean;
   position?: "left" | "right";
   /** Whether the output is currently pinned */
@@ -74,7 +73,7 @@ const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, s
   );
 };
 
-const createRenderData = (sourceNodeId?: string, persistentVariableKeys?: string[]) => {
+const createRenderData = () => {
   const renderData = (data: any, parentKey = ""): React.ReactNode => {
     if (data === undefined || (typeof data === "object" && data !== null && Object.keys(data).length === 0)) {
       return (
@@ -88,8 +87,6 @@ const createRenderData = (sourceNodeId?: string, persistentVariableKeys?: string
       return (
         <DraggableFieldsPanel
           data={data}
-          sourceNodeId={sourceNodeId}
-          persistentVariableKeys={persistentVariableKeys}
           parentKey={parentKey}
           onDragStart={() => {}}
           draggable={false}
@@ -110,7 +107,6 @@ const createRenderData = (sourceNodeId?: string, persistentVariableKeys?: string
 
 const OutputPanel: React.FC<OutputPanelProps> = ({
   data = {},
-  sourceNodeId,
   isExpanded,
   position = "right",
   pinned = false,
@@ -152,8 +148,8 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   }, [internalData]);
 
   const renderData = useMemo(() => {
-    return createRenderData(sourceNodeId, !pinned && isStandardNodeOutput(internalData) && internalData.success && internalData.status === "success" ? internalData.meta?.persistentVariableKeys : undefined);
-  }, [sourceNodeId, pinned, internalData]);
+    return createRenderData();
+  }, []);
 
   if (!isExpanded) return null;
 

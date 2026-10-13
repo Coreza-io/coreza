@@ -201,7 +201,6 @@ const InputPanel: React.FC<InputPanelProps> = ({
             <div className="mb-2">
               <DraggableFieldsPanel
                 data={outputData}
-                persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
                 onDragStart={handleDragStart ?? (() => {})}
                 sourceNodeId={selectedPrevNodeId}
               />
@@ -232,7 +231,6 @@ const InputPanel: React.FC<InputPanelProps> = ({
             <div className="mb-2">
               <DraggableFieldsPanel
                 data={outputData}
-                persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
                 onDragStart={handleDragStart ?? (() => {})}
                 sourceNodeId={resolvedPrevNodeId}
               />

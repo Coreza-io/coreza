@@ -1,188 +1,370 @@
-## SUPERCEDING DESIGN UPDATE — coalesced dirty-variable write-behind (2026-10-13)
+# Coreza live variables — coalesced RAM-first checkpoint plan
 
-**This section supersedes all per-tick event enqueue, per-mutation Redis Stream append, per-update receipt and unbounded ordered-event journal suggestions below for REPLACEABLE workflow variable state.** Treat this design as the authoritative default. Older sections remain as background for reliability evaluation only; implement according to this update when conflicts arise.
+Date: 13 October 2026  
+Status: DESIGN / IMPLEMENTATION PLAN ONLY; runtime flag remains disabled  
+Target: `Coreza-io/coreza`, branch `dev`  
+Reviewed baseline: `ca014c3595d284ae486194a41eb057aa858208db`
 
-### Core rule
+## 1. Decision and scope
 
-**Live ticks never enqueue a Redis/BullMQ job per variable change or tick.** A typed Persistent Edit Fields invocation validates all fields and synchronously publishes an immutable RAM snapshot; dirty variables are captured in a **bounded, coalescing per-workflow accumulator**. One async flush dispatcher per live strategy periodically publishes a compact latest-state checkpoint to Redis, and a separate checkpoint worker publishes the latest committed version to PostgreSQL. `$vars` reads and RAM writes remain local and network-free; the next stream tick always sees the most recent local value. Backtests retain ephemeral overlays, previews never write, and manual/cluster may retain the existing awaited SQL commit path initially.
+Use **runner-local immutable values + a bounded dirty-key map + periodic full-state Redis checkpoint + slower PostgreSQL checkpoint** for replaceable live workflow variables. Do not enqueue a mutation event, promise, Redis Stream entry, or BullMQ job for each tick. The SQL worker persists the latest coherent snapshot rather than reconstructing every intermediate assignment.
 
-### Data model: dirty map rather than queue of ticks
+This document consolidates and replaces the attached superseding update and historical plan below it. Earlier per-mutation queues, contiguous mutation-log replay, and per-tick receipt journals are not implementation requirements for replaceable state. The same applies to the earlier separate technical specification's event-outbox recommendation. Historical durability concerns remain relevant, but the chosen mechanism is a versioned checkpoint, not an ordered mutation log.
 
-- Keep `currentValues`, `localGeneration` (monotonically increasing), `lastRedisAckGeneration`, `lastSqlCheckpointGeneration`, and a dirty map keyed by variable name, storing latest validated value and last mutation generation. Keys are unique per user+workflow+writer epoch.
-- A persistent Edit batch is all-or-nothing in RAM. For changed values, increment generation once per batch, overwrite dirty-map entries by key, and allow downstream execution immediately. Repeated writes of the same scalar skip generation/flush work. Enforce existing key, type, count and snapshot-byte limits.
-- Dirty-map memory is bounded by maximum variable count and value size (e.g. existing 128 keys, 4 KB/variable, 64 KB total snapshot), not proportional to number of ticks. New generations supersede old pending values. Do not allocate one Promise, queue item, BullMQ job or Redis event per tick.
-- Keep a **single in-flight flush per workflow**, with a separate mutable dirty map for concurrently arriving changes. On flush start, capture an immutable `{epoch,generation,values/changes,baseCheckpoint}` snapshot and send it; new edits continue updating RAM and dirty state. On acknowledgment, clear only the dirty keys whose last-generation is **≤ acknowledged generation and whose value is unchanged**; never clear more recent mutations. If newer changes arrived, next flush will include them. A snapshot may include all variables (preferred with bounded 64 KB size) to make coalescing/recovery easy; verify write amplification in benchmarks.
-- Strict version fencing is essential: older delayed batches must not replace newer Redis or SQL checkpoints. Require monotonic (epoch, generation) CAS; use atomic Redis Lua/transaction or ordered single-writer fencing. SQL checkpoint uses conditional version UPSERT under scoped lock. Never rely on wall-clock timestamps for ordering.
-- Coalesce only **replaceable current-state variables**. Never coalesce position fills, order commands, audit events, once-only side effects, or event histories. Their durable event log/order safety path remains separate.
+The updated coalescing direction is appropriate. The refinements here make transport selection, acknowledgment races, bounded scheduling, byte validation, ownership, recovery and rollback concrete. Redis configuration and real throughput remain deployment checks; this review did not run application tests or measure production latency.
 
-### Two asynchronous flush cadences, not per-tick jobs
+Authoring stays Edit Fields → Persistent ON. Retrieval stays `{{ $vars.bonus }}`. Typed staging remains all-or-nothing; downstream nodes and later ticks read immediately from RAM. Persistent OFF leaves `$vars` unchanged. No parser changes, variable settings page, Get Variable node, or unrelated cluster changes.
 
-1. **RAM → Redis:** default proposed benchmark candidate 250 ms (tunable initial range 100–500 ms); one dispatcher per active live workflow; wake only when dirty, avoid overlapping flush, and batch all changed variables. Redis operation is non-blocking to live ticks; Redis acknowledgment establishes Redis-received watermark (NOT necessarily disk durable).
-2. **Redis → PostgreSQL:** checkpoint worker batches latest state every proposed 2 seconds (tunable initial range 1–5 seconds) OR at configurable dirty-size/age thresholds. Avoid triggering one SQL transaction per Redis update. Use at most one outstanding checkpoint transaction per workflow; coalesce intervening Redis snapshots and check version monotonicity.
-3. Intervals above are **hypotheses**, not measured guarantees; instrument throughput, event-loop lag, p95/p99 tick latency, oldest dirty age and recovery lag under realistic market stream load and Redis/SQL failure injection. Adaptive frequency or max-dirty-age flush may be added if tests justify it. Don't promise a flush always completes within the selected interval when backend is slow.
+Only **replaceable current-state** is eligible. Order commands, fills, position transitions, audit trails, once-only actions and event histories remain on their existing durable execution paths. V1 should keep strategies using variables as authoritative trade-critical recovery state on the synchronous path. Do not infer criticality automatically from a variable name. Eligibility is an explicit server-side strategy policy/allowlist; unknown classification means write-behind disabled.
 
-### Transport, recovery and downtime
+## 2. What was verified in Coreza `dev`
 
-- For this latest-value design, a **versioned full-state Redis checkpoint** can be more efficient than a stream of every mutation. Use a non-evictable persistence-capable Redis topology and an atomic versioned update + checkpoint notification/dirty-index mechanism for the SQL worker. If using Redis Streams, send **one coalesced snapshot per flush**, not one event per tick; it must still be bounded/retained and not rely on a cache-evictable Redis instance. Choose one approach after evaluating deployed Redis config and recovery semantics.
-- Checkpoint worker must recover missed notifications by enumerating dirty workflows/versioned Redis checkpoints, not relying solely on lossy Pub/Sub. Acknowledge SQL progress by workflow generation and reconcile on restart. Redis may be ahead of PostgreSQL; startup should read both and recover newest coherent checkpoint, rejecting missing/inconsistent epoch state.
-- **Race rule:** completion for Redis generation 20 must not remove dirty entries changed at generation 21. Completion for SQL generation 20 must not mark generation 21 durable. A slow generation-20 flush must not overwrite Redis generation 21.
-- **Loss window:** a process crash before Redis receives the latest coalesced snapshot can lose up to the unflushed dirty window; Redis crash before its own persistence can lose more. This is an explicitly approved tradeoff for noncritical runtime state. Never claim zero-data-loss or exactly-once write-ahead durability from RAM-first design.
-- **Backpressure:** dirty state is bounded by key count, but the number of workflow dispatchers, failed I/O tasks and worker checkpoint backlog also need explicit global caps, max-age budgets, exponential retries and circuit breakers. If pending state stays unpersisted too long, mark degraded/stop strategy according to documented safety policy. No silent infinite retries.
-- **Graceful stop:** stop new tick intake, flush latest dirty snapshot to Redis and (if required by SLA) wait for PostgreSQL checkpoint watermark, with bounded timeout and explicit unflushed status.
-- **High-frequency performance:** avoid JSON stringify or full-map cloning on EVERY tick; use cheap equality tests for existing scalar values and copy-on-write only for changed batches. Build serialized checkpoint payloads inside dispatcher, not per read. Confirm event-loop/cpu/heap overhead in benchmark.
-- **Multi-worker:** owner+workflow single live writer with fencing lease; if multiple live workers become necessary, design a separate consistent aggregation protocol before permitting concurrent RAM-first updates.
+The file blobs read during this review match the pinned baseline tree for the files inspected. These are code facts, not assumptions about the deployed infrastructure.
 
-### Implementation changes to existing phases
+| Component | Verified behavior | Required change |
+| --- | --- | --- |
+| `engine/workflowRun.ts` | `initialize()` loads SQL-verified variables; non-backtest commit awaits SQL before publishing; variables survive runtime bar reset | Add live-only recovery/state route; preserve other modes |
+| `engine/executionRuntime.ts` | Commit signature already supports `void` or Promise; later contexts refresh from `getVariables`; token uses event/node/invocation | Ordinary live branch can remain synchronous; do not create a new per-tick async wrapper |
+| `nodes/executors/ControlFlowExecutor.ts` | Stages typed fields first and awaits only Promise-like commits; Parallel Loop with variables is blocked | Reuse this path and guard |
+| `variables/contract.ts` | Scalars only; 128 keys, 4,096 bytes/value, 65,536 bytes/entries snapshot; `overlayVariables` calls whole-snapshot stringify/validation | Add measured incremental live accounting; keep existing contract for persisted loads and other modes |
+| `variables/VariableSnapshotService.ts` | No-op check exists; aggregate validation precedes SQL; cache is optional revision-keyed Redis | Keep legacy behavior; live checkpoints need a separate namespace and loader |
+| `variables/VariableRepository.ts` | Uses owner/workflow RPCs and expected SQL revision | Add scoped checkpoint RPC; do not pass live generation as legacy revision |
+| `services/WorkflowRunner.ts` | Sequential processing inside one runner; initializes before stream reclaim; run creation/status/ACK already await Redis | Remove variable I/O wait only; do not claim the complete tick becomes network-free |
+| Same runner | `stop()` aborts and immediately destroys engine; failures are recorded and then source event is ACKed | Add bounded variable drain before destroy and explicit safety-stop handling |
+| `services/workflowRunnerManager.ts` | Runner map is process-local and keyed by workflow; no distributed writer fence in this module | Add verified cross-process scope ownership; local map is insufficient |
+| Existing migration | Uses owner-global revision lock and stores growing JSONB `commit_receipts` | Live path must not use per-mutation legacy receipt storage |
+| `config/redis.ts` | Separate queue/cache clients; queue retry limit is unlimited and stream client permits offline buffering; cache fails fast | Add bounded checkpoint client using verified durable topology without changing BullMQ settings |
+| `AGENTS.md` | Current rule requires awaited SQL and cache-only variable infrastructure | Implementation must update that rule to explicitly permit live-only checkpoint semantics; other modes retain current rule |
 
-**Replace prior Phase 1** with a `LiveVariableState` manager: validated in-memory mutation; dirty map + generation; immutable expression-visible snapshot; bounded per-workflow state; operation metrics; no IO on mutation.
+The reviewed runner and manager do not establish a distributed writer fence. Other services or deployment controls might provide one; implementation discovery must verify this before claiming platform-wide absence. A BullMQ job lock on ordinary workflow jobs is not proof that a long-lived live runner is uniquely owned.
 
-**Replace prior Phase 2** with one lightweight scheduled, event-loop-friendly async coalescing dispatcher per workflow. Timer/wake loop only, no per-tick queue job. Atomic version-fenced Redis flush, single in-flight, generation-safe dirty clearing, retry/backoff. Proposed 250-ms default only after benchmark.
+## 3. Semantics and consistency contract
 
-**Replace prior Phase 3** with a worker that reads the latest versioned Redis checkpoint/dirty-workflow index, batches to PostgreSQL at a slower configurable interval, performs monotonic SQL writes, and acknowledges checkpoint generation. A coalesced snapshot may skip intermediate states by design.
+Scope is `(authenticated ownerId, workflowId)` with one active live writer in v1. `executionId` identifies a session but is not a durable fence. Restart creates a new explicitly linked epoch after resolving the old checkpoint. Multiple concurrent live instances for the same scope require separate namespaces and a reviewed aggregation/inheritance contract; do not permit them implicitly.
 
-**Update prior Phase 4** so schema has compact latest-state checkpoint, writer epoch/generation, and bounded metadata. Do not accumulate an ever-growing receipt JSONB or per-tick SQL log. Keep old scoped variables and migration compatibility; ensure rollback/restart chooses latest recoverable version.
+Maintain independent versions:
 
-**Update prior Phase 5** to keep the flag `LIVE_VARIABLE_WRITE_BEHIND_ENABLED` disabled by default and restrict to live execution. No UI or parser changes. Manual/cluster remain existing durable path unless separately designed.
+- `legacySqlRevision`: existing owner-global configuration revision, unchanged in meaning.
+- `epochId`: immutable session generation identity; never ordered lexicographically or by timestamp.
+- `writerFence`: SQL-assigned monotonic ownership number.
+- `localGeneration`: increment once per changed validated Edit batch within an epoch.
+- `redisAcceptedGeneration`: latest full snapshot received by Redis.
+- `sqlCheckpointGeneration`: latest full snapshot committed by SQL.
 
-**Update prior Phase 6** with load tests that intentionally generate >10,000 stream ticks/sec in a controlled synthetic fixture and show bounded dirty map size, no per-tick queue jobs, and a configured upper bound on Redis/SQL write RATE; do not assert such throughput as achieved. Verify duplicate/no-op, crashes, restart, slow Redis, SQL downtime, out-of-order completions, stop/drain and trading safety.
+Use BIGINT internally and decimal strings on wire; do not compare BIGINT decimal strings lexicographically or convert them through JavaScript/Lua floating-point numbers.
 
-### New acceptance tests — mandatory
+Within the active epoch, SQL ≤ Redis accepted ≤ RAM generation. Generation gaps are **expected** because intermediate states are coalesced: Redis can accept generation 10 and then 100. Neither worker nor recovery requires generations 11–99. A full snapshot is self-contained and must preserve whole-batch consistency. Different epochs require verified SQL lineage/fence state, not simple max-generation selection.
 
-1. 10,000 tick updates to ONE variable before first flush leave ONE dirty key, not 10,000 queued operations. Next tick reads latest value.
-2. 100 distinct dirty variables still fit bounded state and flush together; SQL checkpoint work scales with flush batches, not tick count.
-3. Mutation of key A at generation 21 during in-flight generation-20 flush survives the generation-20 ACK and persists later.
-4. Delayed Redis generation 20 cannot overwrite generation 21; delayed SQL generation 20 cannot overwrite 21.
-5. Redis down for multiple intervals: RAM continues only within bounded policy; degraded/stop threshold fires deterministically and no unbounded timer/promise accumulation.
-6. PostgreSQL slower than incoming Redis snapshots: SQL worker checkpoints latest coherent version without creating unbounded SQL tasks; bounded and monitored checkpoint lag.
-7. Crash recovery chooses latest valid Redis checkpoint over older SQL and handles Redis-loss policy; missing/old epoch fails closed.
-8. Unchanged assignments cause zero dirty updates, Redis sends or SQL writes. `false`, `0`, empty strings and negative numbers remain intact.
-9. Graceful stop flushes or returns explicit unflushed status; cancellation during active flush cannot mark a newer generation durable.
-10. Manual execution, backtests, previews and existing features remain unchanged and have no surprise async write behavior.
-11. Synthetic high-frequency input validates P95/P99 tick latency, CPU, memory growth and Redis/SQL operation counts. Acceptance thresholds must be set from measured baseline.
-12. Trade-critical state never silently depends on coalesced, unacknowledged variables for crash recovery.
+| Execution mode | Mutation semantics |
+| --- | --- |
+| Eligible live + both feature flags enabled | Immediate RAM acceptance; asynchronous checkpoint |
+| Live flag disabled or strategy ineligible | Existing awaited SQL path |
+| Manual / cluster | Existing awaited SQL transaction when scope is available |
+| Backtest | Ephemeral overlay, no production writes |
+| Preview | Read-only authorized snapshot, no writes |
 
-**Decision to record before implementation:** initial flush cadences, Redis transport (versioned checkpoint vs coalesced Stream), lease/fencing mechanism, loss window, Redis durability configuration, SQL checkpoint maximum delay, shutdown timeout, and explicit list of replaceable versus trade-critical variables.
+Concurrent manual/cluster writes to a live-owned scope must be rejected at the shared SQL write boundary, or performed only after an explicit stop/flush/handoff. Retaining their awaited commit behavior does not make competing writes safe. A manual/cluster run after live stop must read the latest transferred checkpoint. Preview must identify whether it shows SQL-checkpointed state or a read-only Redis-received snapshot; it cannot claim to see unflushed runner RAM.
 
----
+Successful live Edit means local acceptance. It does not mean SQL durability. Report epoch/local/Redis/SQL versions separately in authorized runtime metadata, without putting the variable registry into graph/run output history. Preserve `variable_revision` as the legacy revision; add explicit checkpoint metadata instead of changing its meaning.
 
-# Coreza RAM-first live variables with asynchronous Redis → PostgreSQL write-behind
+## 4. Architecture and rate model
 
-Status: DESIGN / IMPLEMENTATION PLAN ONLY. No application code modifications.
-Target: Coreza-io/coreza, branch `dev`.
-Objective: preserve mutable workflow variables across EVERY live stream tick in the same live worker without synchronous SQL/Redis I/O on the node hot path. A separate persistence worker records ordered updates in Redis and checkpoints them to PostgreSQL asynchronously. Build on current Edit Fields Persistent, workflow-scoped `$vars`, expression, Redis and Supabase infrastructure, with minimal changes.
+```mermaid
+flowchart TD
+  E["Persistent Edit: validate changed batch"] --> R["Immutable RAM values + dirty keys"]
+  R --> N["Next node / next tick reads $vars"]
+  R --> D["Rate-limited coalescing dispatcher"]
+  D --> C["Versioned Redis full checkpoint"]
+  C --> I["Durable dirty-scope index"]
+  I --> W["Separate SQL checkpoint worker"]
+  W --> S["Scoped PostgreSQL latest state"]
+  S --> A["Version-aware progress acknowledgment"]
+  A --> C
+```
 
-## A. User contract and intended semantics
+The live process needs a lightweight I/O dispatcher because a separate worker cannot read its local JavaScript memory. The SQL worker is a distinct process/role using the existing worker deployment framework. Neither requires a BullMQ job per tick or per variable.
 
-- Edit Fields → Persistent ON remains the only variable authoring/updating UI. Existing typed fieldName/dataType/value fields remain unchanged; variable retrieval remains `{{ $vars.bonus }}` in any expression field. No separate Settings Variables UI and no Get Variable node.
-- Persistent ON in **live mode**: evaluate and validate all rows together, then atomically replace the local in-memory variable snapshot synchronously (copy-on-write). Later nodes in the SAME stream event and ALL subsequent stream ticks handled by that worker read the new values directly from RAM. `resetForNextBar(true)` MUST NOT reset them. An unchanged value is a no-op.
-- Persistent OFF: ordinary Edit Fields output; no live variable registry changes.
-- Local mutation success is distinct from durable persistence success. Node success can mean accepted into RAM with a pending-durability state, not guaranteed in PostgreSQL. Do not claim it is durable until the checkpoint worker confirms it.
-- Scope: (authenticated user, workflow ID, live strategy instance/epoch) plus a monotonically increasing update sequence. Decide explicit single-writer lease/ownership before allowing mutations. No process-global $vars.
-- On live worker startup/restart: restore the newest **valid authoritative checkpoint + ordered durable Redis log/snapshot**, validate owner/workflow/epoch/revisions, then start processing ticks. A fresh execution must not silently load a stale Postgres value when newer Redis events exist.
-- Writes must not cross workflows or users. No implicit cross-worker hot propagation; enforce one active writer per workflow epoch or explicit fencing tokens.
-- Backtest: ephemeral per-session overlay, absolutely no production write-behind; preview read-only. Manual and cluster Execute: retain the CURRENT awaited SQL commit implementation initially, until a separately reviewed safe handoff exists. Avoid changing unrelated execution modes.
-- Trade-critical fields (order/position state, capital checks, risk limit enforcement) must NOT use an unacknowledged RAM-only update as an authoritative recovery source. Add configurable durable acknowledgment / fail-closed boundaries, or keep the old synchronous path for those writes. Explicitly document crash-loss tradeoff.
+Proposed starting cadences: RAM → Redis 250 ms; Redis → SQL 2 seconds. These are benchmark candidates, not latency guarantees. One timer/wake handle per active scope is sufficient; callbacks only schedule bounded work. Use a central fair scheduler if scope counts make individual timers expensive.
 
-## B. Current code baselines to reuse (revalidate HEAD before coding)
+For a continuously changing scope, these candidates imply approximately 4 logical Redis checkpoint writes/second and 0.5 SQL checkpoint transactions/second, irrespective of 100 or 10,000 local mutations/second. Reads, index operations, retries, lease renewal and progress checks add operations; count them separately. Enforce write-attempt rate limits even when dirty-size/age thresholds trigger. Do not create an immediate-flush loop on every completion while updates continue.
 
-- `coreza-backend/src/engine/workflowRun.ts`: `initialize`, runner-local `variables`, `commitVariables` currently waits for `VariableSnapshotService.commit` before publishing immutable snapshot. Replace only LIVE mutation behavior behind a flag; preserve manual/backtest flow.
-- `coreza-backend/src/engine/executionRuntime.ts`: `commitVariables` execution context, idempotency token, `getVariables` and refresh for subsequent node context. Keep synchronous memory read semantics; ensure proper invocation sequencing.
-- `coreza-backend/src/nodes/executors/ControlFlowExecutor.ts`: `stagePersistentFields` first, then await commit. Keep stage/validation; route live through synchronous memory update and a cheap bounded enqueue, preserving typed output.
-- `coreza-backend/src/nodes/logic/editFields.ts` + `coreza-backend/src/variables/contract.ts`: validate types/names/whole batch and use immutable `overlayVariables`; preserve scalar limits, zero/false/empty values, and missing-key diagnostics.
-- `coreza-backend/src/services/WorkflowRunner.ts`: long-running tick loop / Redis Stream consumption, `resetForNextBar(true)`, initialization before consumer group reclamation, stream IDs and ack. Tie persistence barrier to stop/drain and recovery.
-- `coreza-backend/src/variables/VariableSnapshotService.ts` + `VariableRepository.ts`: current SQL revision-based snapshots and cache; extend with recoverable snapshot/log checkpoint metadata; do not eliminate existing read-only cache and owner validation.
-- `coreza-backend/src/config/redis.ts` / `infra/redisKeys.ts`: separate cache vs queue connections. Investigate current Redis persistence settings and BullMQ clients before selecting reliable handoff.
-- `supabase/migrations/20261012100000_edit_field_workflow_variables.sql`: existing workflow columns, owner-global revision lock and unbounded `commit_receipts` JSONB. Prevent write-behind from multiplying this data; propose bounded journal/checkpoint schema.
-- `coreza-backend/docs/workflow-variables.md`: document new LIVE-only semantics and migration.
-- Existing tests `persistentWorkflowVariables.test.ts`, `persistentVariableRunner.test.ts`, `persistentVariableExecution.test.ts`, SQL integration suite: extend not replace.
+At the 64-KiB entries limit, four full checkpoints/second carry about 256 KiB/second/scope before envelope and protocol overhead. For 100 such scopes that is about 25 MiB/second payload, demonstrating why global scope/throughput budgets matter. Measure real snapshot sizes; begin with full snapshots and add delta complexity only if observed write amplification justifies it.
 
-## C. Architecture and durability: separate hot path from persistence
+Background I/O does not have to keep up with every assignment: it replaces the checkpoint with the latest state. It must meet checkpoint-age and resource budgets. Serialization still executes on the Node.js event loop, so async I/O alone does not guarantee tick latency. Measure event-loop lag and ensure the live loop yields for timers. Do not introduce worker threads or persistent-map dependencies before benchmarks show they are needed.
 
-### Hot path, synchronous
-1. Edit Fields stages and validates full batch.
-2. Assign a per-workflow, per-epoch monotonically increasing `seq` and deterministic update ID = (owner, workflow, epoch, seq, node/invocation, source event ID). Use a single-writer lease/fencing token.
-3. Apply the batch atomically to the in-process local snapshot and record it in a **bounded local pending-update buffer**. If buffer cannot accept update under the chosen policy, reject before publishing state or enter explicitly configured degraded mode. No unbounded JS queue.
-4. Publish snapshot to downstream nodes; continue stream tick. No synchronous PostgreSQL call and no requirement to wait for Redis acknowledgment on normal (noncritical) updates.
-5. A separate async I/O dispatcher drains buffered updates into durable Redis transport; a distinct worker persists confirmed stream updates into PostgreSQL.
+## 5. Runner-local state and mutation algorithm
 
-### Redis transport
-- Use Redis **Streams** (or existing durable BullMQ jobs with equivalent per-workflow ordering/idempotency), not just Redis Pub/Sub, ephemeral cache SET, or a naive non-acknowledged in-memory event emitter. A simple Redis cache key update is NOT equivalent to durable enqueue.
-- Keep variable persistence stream namespace separate from market-data Streams, cache keys, and BullMQ queue keys.
-- One ordered logical stream per workflow/epoch, or equivalent partitioned queue with exactly one ordered consumer per workflow and fencing. XADD receipt means Redis accepted the event, but persistence durability still depends on Redis AOF/replication configuration. State assumptions explicitly.
-- Track three watermarks: `localSeq`, `redisAcknowledgedSeq`, `postgresCommittedSeq`. Do not assume equality while asynchronous.
-- For continuous frequent updates, bounded batching/coalescing may replace intermediate values only where permitted. Preserve required event ordering and replay/checkpoint correctness. Coalesce snapshots by variable key for latest-value persistence, but never drop events needed for audit or idempotency; classify variables accordingly.
-- Async worker commits monotonic sequence updates to SQL via conditional UPSERT / single scoped transaction. Ignore duplicate/replayed events and reject older seq/epoch writes. Only acknowledge Redis stream entries after SQL checkpoint commits.
-- Checkpoint scope should be per workflow, not one user-global revision bottleneck. Use properly indexed bounded checkpoint rows and separate bounded/retained idempotency journal, not unbounded JSONB `commit_receipts`.
-- Worker-lease expiration/reassignment must fence stale writers. A second live worker must not roll variables backward.
+Proposed `LiveVariableState` contains:
 
-### Crash / flush behavior
-- **Crash before Redis accepts update:** RAM-only changes may be lost. This is inherent in the requested zero-wait design. Explicitly define an acceptable loss window and expose pending durability in metrics/status.
-- **Crash after Redis accepted but before PostgreSQL:** replay Redis log on recovery and restore latest consistent values.
-- **Crash after SQL commit but before Redis XACK:** idempotent SQL mutation and retry-safe reack.
-- **Redis outage:** buffer within strict cap for a bounded interval; once exceeded, stop/skip variable updates and fail safely (do not keep silently trading using state that cannot be recovered). Critical strategy state always fail-closed.
-- **Graceful stop:** stop accepting new ticks, drain local dispatcher, wait for acknowledged Redis + SQL checkpoint up to explicit timeout, report unsaved updates on timeout. Never claim successful flush without watermarks matching.
-- **Cold start:** retrieve PostgreSQL checkpoint and Redis durable updates; detect gaps, missing epochs, retention trimming, stale fencing and revisions. If sequence gap or Redis lost pending data, fail startup or follow explicit operator-approved loss policy. Do not blindly start with stale state.
-- **Redis eviction/persistence:** use an appropriate non-evictable Redis instance/policy for durability-sensitive Streams; cache Redis configured for eviction is NOT a durable source. Evaluate whether existing queue Redis topology and persistence policies are suitable, else introduce isolated logical connection/config only when necessary.
-- **PostgreSQL outage:** Redis backlog grows only within bounded retention; pause/stop live if backlog exceeds limits; resume checkpoint safely.
+```ts
+interface LiveVariableStateData {
+  scope: { ownerId: string; workflowId: string; epochId: string; fence: bigint };
+  values: Readonly<Record<string, VariableValue>>;
+  entriesByKey: Map<string, Readonly<VariableEntry>>;
+  entryBytesByKey: Map<string, number>;
+  entriesEncodedBytes: number;
+  localGeneration: bigint;
+  redisAcceptedGeneration: bigint;
+  sqlCheckpointGeneration: bigint;
+  eligibleGeneration: bigint; // last settled source-event snapshot
+  dirty: Map<string, { generation: bigint }>;
+  inFlight?: CapturedCheckpoint;
+  lifecycle: 'recovering' | 'active' | 'paused' | 'quiescing' | 'stopped';
+}
+```
 
-## D. Engineering implementation phases
+Dirty metadata points to current immutable values; it does not retain every prior value. Memory scales with variables/scopes plus a fixed number of captured snapshots, not tick count. A flush captures immutable entries/snapshot at one generation. Copy-on-write publication keeps earlier snapshots valid.
 
-### Phase 0: baseline and design decision
-Trace live worker ownership, Stream event ordering, Redis endpoints/config/AOF, feature flags, current SQL revisions/receipt growth, manual/cluster and backtest paths. Produce loss-window policy, overflow behavior, flush SLA, restart contract, critical-variable policy and measured baseline. No speculative code rewrite.
+Synchronous `apply(changes)`:
 
-### Phase 1: local variable state manager
-Create minimal per-runner `LiveVariableState` abstraction around existing snapshot rather than replacing parser: immutable copy-on-write values, seq, epoch, bounded pending buffer, watermark visibility, idempotent node-event IDs, lifecycle `start/stop/reset`. Preserve typed and generic `$vars` in-memory reads; no network in expression evaluator.
+1. Use existing typed field staging and validation before touching state.
+2. Check lifecycle, confirmed lease deadline, and live strategy eligibility.
+3. Compare key existence and scalar equality. `null`, `false`, `0`, negative values and empty strings are valid; absent differs from null. Repeated identical assignments allocate no generation or flush work.
+4. Validate key/type/value limits and the **proposed aggregate** using incremental byte accounting. Compute encoded bytes only for changed scalar/entry data; do not stringify the whole registry.
+5. Reject the whole batch if count/bytes/process budget fails. Existing Persistent Edit deletion semantics are not expanded.
+6. Prepare the copy-on-write values map and changed immutable entries. Increment generation once for the batch.
+7. Publish new values and update dirty metadata atomically in a non-awaiting critical section. No network, per-tick queue item, timer, persistence promise, or full-checkpoint hash.
+8. Return through the existing synchronous `void` commit branch. Downstream contexts use the runner's newest immutable values.
 
-### Phase 2: write-behind dispatcher
-Reuse existing Redis infrastructure, add one lightweight ordered async dispatcher per runner (not one Promise per node per tick). Bound queue by bytes/events, batch sends, expose backpressure, timeouts and retry with jitter. Distinguish acceptance into local buffer from confirmed Redis acknowledgment. Do NOT drop newest unpersisted state silently. Instrument age and pending bytes.
+At most 128 scalar properties are copied on a changed batch in the simple v1 implementation. This is still O(variable count) CPU per changed batch. The statement “no full-map cloning every tick” cannot mean zero copying if every tick actually changes a flat immutable map. Guarantee no cloning on reads/no-ops, no repeated full JSON serialization, and measure changed-batch copying. Consider structural sharing only if that bounded copy fails performance acceptance.
 
-### Phase 3: dedicated persistence worker
-Reuse existing worker deployment/BullMQ framework where appropriate. Build single ordered consumer per workflow+epoch with fence checks and transactional monotonic checkpoint. Implement idempotent replay, redelivery, dead-letter handling, PostgreSQL outage recovery, and bounded retention safe relative to checkpoint watermark.
+### Aggregate byte accounting
 
-### Phase 4: recovery and schema
-Add minimal migration for workflow-scoped checkpoint state, watermark/epoch, writer fence and bounded receipt/log metadata. Keep legacy SQL variables readable, existing global data isolated, and old Redis keys untouched until a deliberate migration. Backfill checkpoint from authoritative SQL at feature enablement; flip only when Redis recovery contract is verified. Avoid user-global revision contention.
+The existing 65,536-byte limit applies to the encoded **entries array**, including keys, types, timestamps, JSON escaping and separators, not merely summed raw scalar sizes. Cache each entry's encoded size at admission and maintain array overhead exactly. Validate changed entries with the same serialization form used by checkpoint encoding. Scalar-only JSON encoding is permitted for exact validation; the forbidden expensive operation is whole-snapshot encoding per tick.
 
-### Phase 5: live-only wiring
-Gate by new disabled-by-default `LIVE_VARIABLE_WRITE_BEHIND_ENABLED`. In `WorkflowRun.commitVariables`, use local state update + bounded handoff in LIVE mode; retain current synchronous SQL for manual/cluster and backtest ephemeral overlay. Runtime publishes snapshot before downstream execution; current `$vars` syntax unchanged. Stream runner stop/recovery uses watermark barriers. Never write during preview.
+The PostgreSQL migration validates JSONB text size, whose whitespace/number representation can differ from JavaScript serialization. Define a consistent authoritative size contract or a conservative admission bound and test edge cases against actual PostgreSQL/Supabase. Do not declare the current byte counters exact across both encodings without proving it. Include separate bounded envelope metadata allowance. Revalidate complete snapshots on Redis recovery and in the SQL RPC.
 
-### Phase 6: tests and rollout
-Unit + integration + chaos + load tests; deployed Redis/SQL lifecycle validation. Enable for noncritical test strategies first, then allow controlled rollout with rollback to synchronous mode only after backlog is drained and checkpoint verified. Preserve old behavior when flag is off.
+## 6. Capture, acknowledgments and dirty-age safety
 
-## E. Explicit acceptance scenarios
+Use one active dirty map with per-key generation metadata and one immutable in-flight snapshot. There is no need to clone a second dirty map or queue snapshots. New mutations overwrite key metadata while the captured snapshot remains unchanged.
 
-1. Tick 1 Edit sets `bonus=10`; following node reads 10 synchronously even when Redis/SQL latency is injected. Tick 2 reads 10, updates 20; Tick 3 reads 20. `resetForNextBar(true)` never erases 20.
-2. 10,000 `$vars` reads and 10,000 stream ticks: no SQL/Redis read calls on expression hot path; check event-loop lag and p50/p95/p99 node latency.
-3. 10,000 unchanged Edit writes: no new persistence events. Changed updates enqueue bounded messages without waiting on remote I/O.
-4. A batch with one invalid field: no RAM publication and no persistence event. `0`, `false`, negative numbers and empty strings preserve type.
-5. Redis is 2 seconds slow; live tick continues within bounded local buffer, then configured backpressure triggers predictably.
-6. Crash before enqueue: documented allowable loss only, never claim committed state. Crash after Redis XADD: recovered value is applied. SQL commit before XACK: replay is idempotent.
-7. Stop during pending updates: wait for flush within timeout or return explicit pending/unflushed status; never falsely mark fully persisted.
-8. Out-of-order dispatcher delivery, consumer replay and two competing workers never decrease persisted seq or overwrite newer epoch.
-9. Restore from SQL checkpoint plus latest Redis log after restart; detect missing sequence gaps and fail closed.
-10. PostgreSQL down while Redis works: bounded backlog, retry, alert and recovery. Redis down: bounded local buffer with deterministic stop/degradation.
-11. Backtest uses ephemeral state only; preview performs no writes; manual/cluster behavior unchanged; legacy workflows unaffected.
-12. Cross-user and cross-workflow isolation in Redis Streams, SQL RLS/RPC, worker memory and expression preview.
-13. Persistence worker crash/rebalance, duplicate delivery, BullMQ retry, and stream redelivery preserve ordering.
-14. Exactly one active writer/fence; stale worker after failover cannot checkpoint or trade with conflicting state.
-15. Staged rollout tests current and new modes; rollback drains backlog and does not load stale SQL while newer Redis updates exist.
-16. Database storage remains bounded through checkpoint/event retention. Resource metrics use no raw variable values or user identifiers.
+At flush start, synchronously capture `(scope, eligibleGeneration, last-settled immutable entries, capture time)` without an await between reading version and entries. Serialize/hash the complete captured snapshot once inside the dispatcher. Admission continues while network I/O awaits. In-event mutations remain visible immediately in RAM, but become checkpoint-eligible only when that event settles. Dirty acknowledgments clear only keys covered by this eligible generation.
 
-## F. Observability and operational criteria
-Track `local_seq`, `redis_ack_seq`, `postgres_commit_seq`, backlog events/bytes, oldest-unpersisted age, Redis append latency, Postgres batch latency, flush success/timeout, recovery replay count, stale-fence errors, duplicate suppression, dropped/lost-window warnings, live-tick p99 and event loop lag. Avoid unbounded-cardinality labels or logging values. Alert when checkpoint lag or buffer growth crosses configured thresholds.
+For acknowledgment of captured generation G:
 
-## G. Safety/accuracy constraints
-- RAM-first + zero remote I/O wait **cannot guarantee zero data loss**; explicitly expose loss window and configurable critical write barrier.
-- Redis Stream XADD acknowledgement does NOT inherently guarantee disk persistence or replica quorum; document AOF/WAIT or other durability mechanics. Enabling those guarantees in hot path increases latency.
-- Backpressure, queue acceptance and worker fencing need real operations and explicit error states, not unawaited promises. A bounded enqueue into local memory can be synchronous; **durable** enqueue is asynchronous remote I/O.
-- Don't equate n8n workflow static data with Coreza stream state: n8n saves changes on completed executions, not this Redis write-behind architecture.
-- Do not expand feature into global variable settings, unrelated cluster editors, node naming or trading engine redesign.
-- Require observable on-disk recovery, multi-process concurrency tests, staging deployment and per-trade safety reviews before production use.
+- confirm exact epoch/fence and accepted payload identity;
+- advance only the corresponding generation watermark;
+- clear a dirty key only if its current mutation generation ≤ G and its current value matches the captured value;
+- never clear a generation G+1 key, including A→B→A changes that happen to end at the old value;
+- keep newer mutations for the next scheduled flush.
 
-## H. Deliverables and approval gate
-- Focused list of files changed and migration/rollback.
-- Before/after sequence diagrams for live tick, async writer and crash recovery.
-- Red/green tests proving no synchronous I/O on live Edit mutation path, and correct replay/restart semantics.
-- Durability matrix (RAM-only, Redis-received, Redis durable, PostgreSQL checkpointed) and risk policy.
-- Measured p95/p99 latency and lag with market-stream load.
-- Explicit sign-off on loss window, backpressure and critical-trading-variable categories.
-Only then mark ready. Do not merge to main or modify runtime until this plan is approved.
+SQL generation G acknowledgment similarly cannot mark G+1 checkpointed. The local dirty map tracks **Redis-pending** state; SQL lag is tracked separately. A clean local dirty map does not mean SQL durability.
+
+Timeouts are ambiguous remote outcomes. Do not retry with a new version and claim the old operation cancelled. Retain one unresolved captured snapshot until its outcome is reconciled using idempotent CAS/readback; only then capture a newer checkpoint. A `Promise.race` timeout does not cancel an ioredis command. Disconnect/retire the dedicated client when appropriate, retain a fixed-size ambiguous receipt, and reconcile before continuing. Version guards must protect against a delayed original command.
+
+Do not reset persistence-age timers every time a hot key changes: that would conceal an outage indefinitely. Track last verified checkpoint coverage and start of the unresolved coverage interval. For Redis, the monotonic capture time of the last acknowledged full snapshot provides a conservative coverage-age bound while dirty. A new generation being acknowledged refreshes coverage to its captured time, not its acknowledgment completion time. For SQL, use trusted checkpoint progress/capture metadata with clock uncertainty accounted for, plus a no-progress timeout. Latest mutation time alone is insufficient.
+
+## 7. Chosen Redis protocol
+
+Choose **versioned full checkpoints plus a coalesced dirty-scope index** as v1 default. A Stream per flush is a fallback only if deployment constraints require it; it introduces retained payload backlog that latest-value storage avoids. Do not implement both transports initially.
+
+Use the verified non-evictable, persistence-capable queue topology, with a dedicated bounded checkpoint client. An evicting cache or expiring checkpoint is not authoritative recovery storage. Existing revision-keyed cache keys remain unchanged. Confirm Redis version, AOF, replication, Sentinel behavior, storage quotas and ACLs before enabling.
+
+Example fixed-bucket Redis Cluster layout:
+
+```text
+coreza:livevars:{lv:<bucket>}:scope:<scopeHash>:checkpoint
+coreza:livevars:{lv:<bucket>}:scope:<scopeHash>:authority
+coreza:livevars:{lv:<bucket>}:dirty
+```
+
+Hash the owner/workflow tuple into a fixed bucket and member identity. The checkpoint/authority keys and bucket dirty SET share a hash tag, allowing atomic same-slot scripts. One SET member per dirty scope; no generation-specific members or growing queue. Validate owner/workflow binding from trusted authority metadata; hashes do not replace authorization.
+
+The checkpoint holds bounded version metadata and full encoded entries plus a canonical payload hash. No TTL until explicit safe retirement/deletion. Generations/fences are decimal strings; Lua compares canonical decimal strings by length then lexical order, or uses a safe bounded representation proven not to lose precision. Never use `tonumber()` for arbitrary BIGINT versions.
+
+### Publish script
+
+Validate scope/epoch/fence, lease validity, lifecycle, schema/payload limits and existing key types before writes. Reject an old fence or different unauthorized epoch. For the same epoch:
+
+- higher generation: replace full checkpoint and mark scope dirty;
+- same generation, same hash: idempotent receipt; ensure any missing dirty marker is repaired if SQL is behind;
+- same generation, different hash: corruption; stop scope;
+- lower generation: stale result, not successful persistence of the caller's newer RAM.
+
+Order mutations to avoid false clean state if a script errors: add the dirty marker before the final checkpoint replacement after preflight; workers tolerate redundant dirty markers. Redis scripts isolate execution but do not automatically roll back earlier mutations on a runtime error. Fault-test partial effects and recovery. Same-slot atomicity does not create a SQL+Redis distributed transaction.
+
+### Worker acknowledgment script
+
+After SQL commits generation G, update trusted SQL progress monotonically. Remove the dirty-scope member only if the checkpoint still has the exact epoch and generation committed (or an explicitly verified SQL-ahead reconciliation). If Redis advanced to G+1 during SQL I/O, retain the member. This prevents generation-20 completion losing generation 21. Marker removal is compare-and-remove, never unconditional `SREM` after a stale read.
+
+Pub/Sub may wake a scheduler but is optional and never the sole delivery mechanism. Worker startup and periodic bounded `SSCAN` of bucket dirty sets recover missed notifications. Maintain fair scan cursors across pages and bounded per-scope in-flight flags; hot scopes must not starve others. After Redis failover/index corruption, reconcile checkpoint keys and SQL scope inventory in bounded pages to repair markers. Missing authoritative payloads cause the configured loss/recovery decision, not automatic deletion.
+
+Redis-received is distinct from disk durability. AOF/replication settings govern recovery guarantees; `WAIT` is replication acknowledgment, not strong consistency, and `WAITAOF` requires supported/configured deployment. If used in background, verify returned acknowledgment counts on the write connection. Expose a separate Redis-durable level only when actually confirmed.
+
+## 8. SQL worker, checkpoint schema and compatibility
+
+One outstanding SQL transaction per scope, bounded global concurrency, and at most one pending ready-scope marker. Select the latest Redis snapshot when the scope's SQL cadence is due; do not schedule a SQL job for every Redis publish. Intervening snapshots can be superseded.
+
+The worker validates complete payload scope/hash/types/limits, then calls a workflow-scoped restricted RPC. The transaction locks scope ownership and checkpoint rows in a fixed order, verifies the epoch/fence or approved sealed-epoch recovery permission, and conditionally commits a higher generation. Same version/hash is a no-op; conflicting hash fails. Generations need not be contiguous. No JSONB per-mutation receipt accumulation.
+
+Proposed additions:
+
+| Relation / fields | Purpose |
+| --- | --- |
+| `workflow_live_variable_state`: owner+workflow PK; snapshot, epoch, fence, generation, payload hash, source coverage metadata | Compact latest durable checkpoint |
+| Scoped authority/epoch fields or separate compact scope row: writer, lease, lifecycle phase, parent checkpoint, recovery transition | Single-writer ownership and resumable restart |
+| Optional bounded sealed-epoch metadata | Only if required for transition/recovery; prune after verified handoff |
+
+Reuse existing typed `workflow_variables` representation where it reduces work, but **do not checkpoint every flush through the existing owner-global revision/receipt RPC**. A compact scoped live-state row separates live generation from the legacy owner revision. RLS/restricted RPCs validate workflow ownership even for service-role calls. No direct client writes or raw values in telemetry.
+
+Prefer legacy row synchronization at explicit handoff rather than every live checkpoint. While live mode owns a workflow, read-only/manual startup routing must know the active state source. On stop or mode switch, checkpoint and transfer final values into the existing scoped `workflow_variables` under exclusive ownership, advancing legacy revision once and invalidating the scoped legacy cache. Preserve global rows and historical receipts. This adds new checkpoint infrastructure while keeping the existing authoring namespace; it is not a second authoring registry.
+
+Required backend compatibility change: reject legacy Persistent SQL commits for a live-owned scope in the shared RPC, including alternate/manual writers. Scope checks must share the authority lock. On flag rollback, existing guards remain until the live state is drained/transferred. Implementation must also update `AGENTS.md` and the workflow variables documentation to record the live-only exception.
+
+If PostgreSQL is down, Redis keeps one latest full checkpoint per scope and one dirty marker, so variable storage does not grow with ticks or outage duration. Checkpoint-age limits still pause strategies; no infinite degraded trading. Cap scopes and worker tasks to bound total memory. Database WAL/backups/storage still need ordinary capacity monitoring even with a fixed number of logical rows.
+
+## 9. Ownership, recovery and source event semantics
+
+Use SQL as durable ownership/fence authority, or reuse an existing ownership service only if it meets equivalent guarantees. One owner/workflow writer, lease renewed outside tick execution; every hot-path admission checks confirmed local lease deadline. Redis publish checks installed epoch/fence/lease. SQL commits check authority in the same transaction as update.
+
+Proposed lease 15 seconds, renewal 5 seconds, conservative 2-second stop margin. These are test candidates. Use database time for lease authority and a monotonic local deadline adjusted for request delay. Clock timestamps never decide snapshot ordering. SQL RPC must distinguish snapshot persistence by the checkpoint worker from writer admission: a stopped/expired epoch's accepted checkpoint remains recoverable under explicit recovery authority.
+
+A stale writer must stop tick/order admission, not merely fail Redis writes. Verify existing order gateway ownership enforcement. Variable fencing alone cannot prevent a paused process resuming and submitting a broker order. Until that is proved, do not enable automatic multiworker failover for these strategies.
+
+### Resumable restart protocol
+
+1. Acquire exclusive SQL recovery ownership with a higher fence. Record `RECOVERING`; ticks remain blocked.
+2. Atomically seal the previous Redis writer epoch and capture its final received full snapshot/version. Late old-writer publish commands are rejected after this boundary.
+3. Compare SQL and sealed Redis checkpoints: validate owner/workflow, lineage, schema/hash and versions. Pick the newer valid **complete** checkpoint within the authorized epoch. No mutation-log replay or generation-gap check is needed.
+4. Checkpoint the selected old-epoch state under the new recovery authority. Do not reject it merely because its producer fence is old.
+5. Create a child epoch at generation 0, referencing the recovered parent version/hash. Initialize Redis with the new fence/base snapshot.
+6. Set ACTIVE only when SQL and Redis authority agree; hydrate runner RAM before market-stream reclaim/consumption.
+
+Cross-store transitions are persisted phases with idempotent steps; there is no atomic SQL+Redis transaction. Crash after any step resumes that phase. Missing/corrupt Redis or unexpected lineage blocks startup unless explicit ordinary-state loss policy authorizes recovery from SQL. SQL ahead of Redis can be legitimate after Redis rollback; do not republish blindly without resolving topology/ownership.
+
+A dead runner's RAM-only tail can be lost and its exact generation count may be unknown. 250 ms is a flush cadence, not a guaranteed maximum loss window: timer delay, network latency and outages extend it. Record maximum permitted unresolved coverage age and Redis's separate persistence loss contract. Require production policy sign-off rather than treating design approval as an accepted loss budget.
+
+### Market events and idempotency
+
+The current SQL path has durable invocation receipts. Coalesced replaceable checkpoints intentionally do not retain every invocation. Consequently **do not claim the old per-invocation replay guarantee is preserved** for non-idempotent assignments such as `$vars.counter + 1` when source events can be reclaimed.
+
+V1 uses a settled-event publish barrier: retain one immutable last-settled snapshot and its generation/source outcome; update it when the event finishes. Capture checkpoint state from that snapshot, rather than halfway through a source event, while downstream RAM remains immediate. Distinguish successful completion from a terminal failure/cancellation and never label a partial failed event fully successful. A safety-stop failure can flush accepted state as failed/uncertain coverage for diagnosis and recovery, but cannot authorize automatic source skipping. This requires at most one additional snapshot, not an event queue. Long-running events extend the eligible checkpoint/loss window; bound event duration or keep such strategies ineligible rather than bypassing the barrier silently.
+
+Verify current event retry semantics: the inspected runner can leave run-creation failures pending, ACKs ordinary execution failures, and performs only an initial reclaim batch. Do not infer exactly-once processing or sufficient recovery from that alone. Preserve existing broker-side deduplication/reconciliation. Variable source coverage is diagnostic and a prerequisite for a reviewed replay boundary, not permission to skip pending market events that may contain uncompleted orders.
+
+For v1, strategies requiring exactly-once increments or atomic variable/order recovery remain ineligible unless the existing source cursor/order protocol proves safety. Do not add a per-tick receipt journal back into this plan to conceal the semantic difference. Any critical durable barrier is a separate reviewed path and is excluded from normal write-rate guarantees.
+
+## 10. Stop, backpressure and scheduling limits
+
+Recommended initial candidates to measure:
+
+| Control | Candidate | Enforcement |
+| --- | --- | --- |
+| Redis checkpoint cadence | 250 ms, tune 100–500 ms | Per-scope rate limiter; one unresolved publish |
+| SQL checkpoint cadence | 2 s, tune 1–5 s | Per-scope next due time; one transaction |
+| Variable bounds | Existing 128 / 4 KiB / 64 KiB entries | Admission before publication |
+| Redis unresolved coverage | Warn 1 s; pause 2 s | Never reset on new mutations |
+| SQL checkpoint lag | Warn 15 s; pause 30 s | Verified progress/coverage, not dirty key count |
+| Shutdown deadline | 10 s | Explicit local/Redis/SQL status |
+| Retry backoff | 100 ms → 5 s, jitter | Global/per-scope rate caps |
+| Global active scope/concurrency/bytes caps | Set from baseline/capacity | Reject admission/start before allocating excess work |
+
+No per-tick threshold may bypass persistence rate limits. Normal steady-state attempt count over interval T is bounded by configured cadence/token budget; retry and lifecycle attempts are separately bounded/reported. A global scheduler caps simultaneous network tasks, encoded bytes in flight, connection pool size and active dispatchers. Reuse bounded clients rather than one connection per dirty key.
+
+Redis outage leaves dirty state coalesced. On coverage/lease threshold, pause the strategy before another node/event/order can run; retain pending state and permit background reconciliation. Do not skip a failed Persistent update and silently continue. Distinguish a pause requiring recovery from an ordinary node error that the current runner would simply record and ACK. Resume only with verified ownership and current checkpoint status.
+
+Graceful stop order:
+
+1. Block new intake/admission; wait for the active event or stop it according to existing cancellation policy.
+2. Capture the final accepted target generation after the event settles; seal it against further mutation.
+3. Reconcile any in-flight publish, flush the final snapshot, and request priority SQL checkpoint within a bounded lifecycle budget.
+4. Wait for SQL through the target when required by clean-stop/rollback policy. Return explicit watermarks and timeout/unsaved state.
+5. Transfer to legacy representation when leaving live mode, then release writer ownership and destroy engine/close clients.
+
+Keep persistence drain independent of the execution abort signal; current abort-before-destroy code would otherwise cancel the work needed to save accepted state. Do not clean live checkpoint keys using broad execution-key deletion. A timeout leaves recovery metadata intact, marks stop incomplete, and never reports fully durable. Late callbacks may update only the captured epoch/version; lifecycle invalidation prevents them marking a child epoch persisted.
+
+## 11. Focused implementation phases
+
+### Phase 0 — baseline and policy
+
+Verify pinned call paths, actual source event/ownership/order behavior, Redis durability settings, checkpoint client cancellation semantics, Supabase RLS/RPC behavior, schema sizes and legacy/manual contention. Measure current changed-write/no-op/tick latency. Record eligibility, loss budget, retry/recovery boundaries and initial resource caps. No speculative engine rewrite.
+
+### Phase 1 — pure local state
+
+Add `LiveVariableState` around existing variable values, with incremental limits, copy-on-write changed batches, generations, dirty map, coverage metadata, lifecycle and capture/ack APIs. Keep `commitVariables` synchronous for ordinary eligible live writes. Test map boundedness and races before integrating I/O.
+
+### Phase 2 — checkpoint transport
+
+Add `LiveVariableDispatcher` and bounded client factory, fixed-bucket keys, fenced publish and compare-ack scripts, one in-flight snapshot, explicit ambiguity reconciliation and fair rate limits. No BullMQ per tick; no full serialization on reads.
+
+### Phase 3 — SQL worker/schema
+
+Add compact scoped checkpoint/authority state and restricted RPCs; dedicated `LiveVariableCheckpointWorker` enumerates dirty scopes, coalesces SQL writes and conditionally acknowledges progress. Bound work and recovery scans. Extend existing infrastructure rather than creating a second queueing platform.
+
+### Phase 4 — ownership and recovery
+
+Add `LiveVariableRecovery` resumable handoff; resolve source coverage/eligibility; block consumption until newest valid checkpoint is hydrated. Scope guard applies to legacy manual SQL writes too. Prove stale writer rejection across processes and existing order safety.
+
+### Phase 5 — live wiring and compatibility
+
+Both `WORKFLOW_VARIABLES_ENABLED` and new `LIVE_VARIABLE_WRITE_BEHIND_ENABLED` must allow the feature; new flag defaults false. Wire runner initialization, node context, bar reset preservation, metadata, pause and flush-before-destroy. Preserve manual/backtest/preview paths, namespace/parser/UI. Update architecture/docs rules.
+
+### Phase 6 — load/failure tests and rollout
+
+Deploy schema/read guards first, then backend with flag off. Canary ordinary replaceable strategies with explicit eligibility. Enable only after deployed failure/recovery/latency tests. Rollback pauses intake, flushes/reconciles newest checkpoint, transfers legacy rows, invalidates caches and then enables synchronous execution. Flag-off alone is not rollback; preserve schema/guards and checkpoints until recovery is complete.
+
+## 12. Expected file scope
+
+| Existing/proposed path | Responsibility |
+| --- | --- |
+| `coreza-backend/src/engine/workflowRun.ts` | Live state/recovery route, synchronous admission, lifecycle hooks |
+| `coreza-backend/src/engine/executionRuntime.ts` | Keep refreshed local values; expose coverage hooks only if needed |
+| `coreza-backend/src/nodes/executors/ControlFlowExecutor.ts` | Keep staged validation and synchronous-or-awaited dispatch |
+| `coreza-backend/src/variables/contract.ts` | Shared scalar contract; live incremental byte validation without broad parser changes |
+| New files under `coreza-backend/src/variables/` | Local state, dispatcher, recovery, checkpoint repository |
+| `coreza-backend/src/variables/VariableRepository.ts` and `VariableSnapshotService.ts` | Compatible source routing and scoped RPC access |
+| `coreza-backend/src/config/redis.ts`, `infra/redisKeys.ts` | Bounded dedicated client and same-slot checkpoint/index namespace |
+| `services/WorkflowRunner.ts`, `services/workflowRunnerManager.ts` | Lease/recovery gating, coverage/pause, drain before destruction |
+| New checkpoint worker plus worker lifecycle wiring | Coalesced SQL schedule, startup reconciliation, bounded shutdown |
+| New Supabase migration | Scoped checkpoint/authority RPCs, legacy scope guard, RLS/indexes |
+| `AGENTS.md`, `coreza-backend/docs/workflow-variables.md` | Explicit live-only semantics and operations contract |
+| Existing persistent variable tests plus new focused tests/benchmark | Preserve regression coverage; prove new protocol |
+
+## 13. Acceptance scenarios
+
+1. 10,000 updates to one variable before flush leave one dirty key. Following node/tick reads the latest value; no persistence jobs/promises are created per mutation.
+2. 100 dirty variables remain within the existing contract and publish one full checkpoint. Storage/task count scales with scopes/cadences, not ticks.
+3. No-op assignments allocate no generation, dirty metadata, Redis publish or SQL write. Reads/reset remain network-free.
+4. Invalid field/count/byte batch publishes nothing. Scalar edge cases and JSON escaped/unicode/number representations preserve validation parity with SQL.
+5. Captured generation 20 acknowledged after mutation 21 clears only covered keys; A→B→A and multirow batch races remain safe.
+6. Old Redis/SQL versions cannot replace newer state; equal version with unequal hash fails. BIGINT versions above 2^53 compare correctly in JavaScript, Redis scripts and SQL.
+7. Lost append response, timeout with command still running, late callback, connection replacement and partial Redis script failure produce bounded retry/reconciliation, not duplicate tasks.
+8. SQL commits G while Redis advances to G+1: dirty marker remains and later SQL reaches G+1. Lost notification/worker restart recovers via index scan.
+9. Continuous updates during Redis outage cannot reset dirty age; stop threshold fires deterministically. SQL outage retains one latest checkpoint/member per scope and bounded work.
+10. Two processes compete; stale fence rejected; lease expired; restart crash after every transition phase; newest valid parent checkpoint restored before ticks.
+11. Missing/corrupt Redis, missing index marker, SQL-ahead Redis rollback, invalid epoch and hash conflict fail closed or follow explicit approved ordinary-loss recovery policy.
+12. Stop during active flush drains the final settled target or returns explicit pending status; late generation completion never marks newer state durable.
+13. Manual/cluster still await SQL when free; concurrent live ownership is safely refused. Backtests produce no live writes; preview remains read-only; flag-off legacy tests pass.
+14. Source reclaim/retry tests expose non-idempotent increment behavior and order boundaries; no exactly-once trading or receipt equivalence is claimed from checkpointing.
+15. Synthetic load exceeding 10,000 mutations/ticks per second is **generated**, with measured p50/p95/p99, CPU/heap/GC/event-loop lag, fixed dirty count and bounded write-attempt rates. Do not report target throughput as achieved until measured.
+16. End-to-end real runner tests separately measure its existing run-record/status/ACK Redis calls; removing variable I/O does not promise 10,000 full workflow executions/sec.
+17. Multi-scope full-size snapshots measure payload/operations and prove fair global caps, no starvation, bounded clients and memory stabilization.
+18. Deployed Redis restart/AOF/Sentinel and actual PostgreSQL multi-connection RLS/CAS checks prove the configured recovery contract. Unit mocks/PGlite alone are insufficient.
+
+Extend the existing persistent tests rather than replace them. For performance compare synchronous SQL baseline, unchanged-write path, naive existing overlay path and new coalesced path under the same workload. Set acceptance thresholds from measured baseline and product SLO; publish actual results and remaining uncertainty. This documentation update itself requires content/diff checks, not an application test run.
+
+## 14. Observability, readiness and references
+
+Track epoch/local/Redis/SQL generations, dirty keys/bytes, coverage age, capture/publish/SQL latency, attempts/sec, payload bytes/sec, active scopes/in-flight tasks/connections, recovery outcome, stale fences, hash conflicts, no-op count, stop status, tick latency and event-loop lag. Generation difference indicates superseded mutations, not queue depth. Metrics have bounded labels; do not log values/raw user identifiers.
+
+Durability status remains: RAM accepted → Redis received → optionally Redis durability confirmed → SQL checkpointed. No zero-loss promise. Memory boundedness does not eliminate CPU, network, SQL WAL, or large-scope capacity costs.
+
+Before runtime implementation/production use, record: transport durability config, eligibility/critical policy, source replay semantics, ownership/order fencing, byte-contract compatibility, write-rate/global caps, maximum coverage ages, stop/recovery SLA and rollback handoff. The feature remains disabled until implementation, deployed validation and policy sign-off pass. Do not modify runtime or merge to main from this planning task.
+
+Repository references are pinned to the reviewed commit:
+
+- [WorkflowRun](https://github.com/Coreza-io/coreza/blob/ca014c3595d284ae486194a41eb057aa858208db/coreza-backend/src/engine/workflowRun.ts)
+- [Variable contract](https://github.com/Coreza-io/coreza/blob/ca014c3595d284ae486194a41eb057aa858208db/coreza-backend/src/variables/contract.ts)
+- [WorkflowRunner](https://github.com/Coreza-io/coreza/blob/ca014c3595d284ae486194a41eb057aa858208db/coreza-backend/src/services/WorkflowRunner.ts)
+- [Runner manager](https://github.com/Coreza-io/coreza/blob/ca014c3595d284ae486194a41eb057aa858208db/coreza-backend/src/services/workflowRunnerManager.ts)
+- [Current variable migration](https://github.com/Coreza-io/coreza/blob/ca014c3595d284ae486194a41eb057aa858208db/supabase/migrations/20261012100000_edit_field_workflow_variables.sql)
+- [Architecture rules](https://github.com/Coreza-io/coreza/blob/ca014c3595d284ae486194a41eb057aa858208db/AGENTS.md)
+
+Official Redis references informing the proposed protocol:
+
+- [Persistence](https://redis.io/docs/latest/management/persistence/)
+- [Lua script execution](https://redis.io/docs/latest/develop/programmability/eval-intro/)
+- [Redis Lua API](https://redis.io/docs/latest/develop/programmability/lua-api/)
+- [Replication and WAIT limits](https://redis.io/docs/latest/manual/replication/)
+
+No application changes, deployed tests or throughput measurements were performed for this plan revision.

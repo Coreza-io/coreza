@@ -19,8 +19,28 @@ export class VariableSnapshotService {
     if (!variablesEnabled()) return Promise.reject(new Error("Workflow variables are disabled"));
     if (!/^[0-9a-f-]{36}$/i.test(owner)) return Promise.reject(new Error("Invalid variable owner"));
     if (workflowId !== undefined && !/^[0-9a-f-]{36}$/i.test(workflowId)) throw new Error("Save the workflow before using persistent variables");
+    if (workflowId && process.env.LIVE_VARIABLE_WRITE_BEHIND_ENABLED === "true") {
+      const { liveRPC, decodeCheckpoint } = await import("./LiveVariableProtocol");
+      const source = await liveRPC("source", owner, workflowId);
+      if (source.active) {
+        if (!source.payload) throw new Error("Live variable recovery pending");
+        const { checkpoint } = decodeCheckpoint(source.payload, source.hash, owner, workflowId);
+        return Object.freeze({ ...checkpoint.snapshot, checkpoint: Object.freeze({ epoch: checkpoint.epoch, writerFence: checkpoint.fence, sqlCheckpointGeneration: checkpoint.generation, source: "sql-checkpoint" as const }) });
+      }
+    }
     const started = performance.now();
-    const revision = await this.repository.revision(owner, workflowId);
+    let revision: string;
+    try { revision = await this.repository.revision(owner, workflowId); }
+    catch (error) {
+      // Read routing survives writer-flag rollback, without probing the new RPC
+      // on ordinary flag-off scopes or serving their old legacy cache entries.
+      if (!(error as any).liveOwned || !workflowId) throw error;
+      const { liveRPC, decodeCheckpoint } = await import("./LiveVariableProtocol");
+      const source = await liveRPC("source", owner, workflowId);
+      if (!source.active || !source.payload) throw new Error("Live variable source transition pending; retry initialization");
+      const { checkpoint } = decodeCheckpoint(source.payload, source.hash, owner, workflowId);
+      return Object.freeze({ ...checkpoint.snapshot, checkpoint: Object.freeze({ epoch: checkpoint.epoch, writerFence: checkpoint.fence, sqlCheckpointGeneration: checkpoint.generation, source: "sql-checkpoint" as const }) });
+    }
     const scope = cacheKey(owner, revision, workflowId);
     const existing = this.pending.get(scope); if (existing) return existing;
     if (this.pending.size >= 128) return Promise.reject(new Error("Variable snapshot initialization busy"));
@@ -55,9 +75,15 @@ export class VariableSnapshotService {
   }
   async commit(snapshot: VariableSnapshot, changes: readonly VariableChange[], token: string): Promise<VariableSnapshot> {
     if (!variablesEnabled() || !snapshot.workflowId) throw new Error("Workflow persistent variables are disabled or unscoped");
+    if (snapshot.checkpoint) throw new Error("Live variable scope is owned; stop and hand off before manual Persistent edits");
     for (const { key, value } of changes) validateVariable(key, value);
     if (new Set(changes.map(change => change.key)).size !== changes.length) throw new Error("Duplicate persistent variable name");
-    if (changes.every(({ key, value }) => Object.prototype.hasOwnProperty.call(snapshot.values, key) && snapshot.values[key] === value)) return snapshot;
+    if (changes.every(({ key, value }) => Object.prototype.hasOwnProperty.call(snapshot.values, key) && snapshot.values[key] === value)) {
+      // A scope may have become live-owned since this legacy execution loaded.
+      // Recheck admission even for a no-op; this reads but never writes SQL.
+      await this.repository.revision(snapshot.owner, snapshot.workflowId);
+      return snapshot;
+    }
     overlayVariables(snapshot, changes); // Validate aggregate limits before any I/O.
     const committed = await this.repository.commit(snapshot.owner, snapshot.workflowId, snapshot.revision, token, changes);
     if (BigInt(committed.revision) < BigInt(snapshot.revision)) throw new Error("Variable replay would regress the run snapshot");

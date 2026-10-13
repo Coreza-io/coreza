@@ -21,9 +21,10 @@ export class WorkflowRunnerManager {
   ): Promise<void> {
     const existing = this.runners.get(workflowId);
     if (existing) {
+      if (existing.requiresRecovery) throw new Error("Strategy paused for live variable recovery; reconcile before restarting");
       // If the existing runner has the same session, no-op.
       // Otherwise stop the stale runner first so the new session takes over.
-      if (executionId && (existing as any).runnerInstanceId !== executionId) {
+      if (executionId && existing.runnerInstanceId !== executionId) {
         console.log(
           `[WorkflowRunnerManager] Replacing runner for ${workflowId}: old session → new session ${executionId}`,
         );
@@ -44,8 +45,10 @@ export class WorkflowRunnerManager {
     this.runners.set(workflowId, runner);
     try { await runner.initialize(); }
     catch (error) {
-      if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
-      await runner.stop().catch(() => console.warn("[WorkflowRunnerManager] Startup cleanup failed"));
+      try {
+        await runner.stop();
+        if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
+      } catch { console.warn("[WorkflowRunnerManager] Startup stop incomplete; runner retained for recovery"); }
       throw error;
     }
     if (this.runners.get(workflowId) !== runner) throw new Error("Strategy startup cancelled");
@@ -55,8 +58,9 @@ export class WorkflowRunnerManager {
         `[WorkflowRunnerManager] Strategy ${workflowId} crashed:`,
         error,
       );
-      if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
-      void runner.stop().catch(() => console.warn("[WorkflowRunnerManager] Runner cleanup failed"));
+      void runner.stop().then(() => {
+        if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
+      }).catch(() => console.warn("[WorkflowRunnerManager] Runner stop incomplete; recovery metadata retained"));
     });
   }
 
@@ -69,13 +73,16 @@ export class WorkflowRunnerManager {
   }
 
   isRunning(workflowId: string): boolean {
-    return this.runners.has(workflowId);
+    const runner = this.runners.get(workflowId);
+    return !!runner && !runner.requiresRecovery;
   }
 
   async stopAll(): Promise<void> {
+    const failures: unknown[] = [];
     for (const [workflowId, runner] of this.runners.entries()) {
-      await runner.stop();
-      this.runners.delete(workflowId);
+      try { await runner.stop(); this.runners.delete(workflowId); }
+      catch (error) { failures.push(error); }
     }
+    if (failures.length) throw new AggregateError(failures, "Strategy stops incomplete; recovery required");
   }
 }

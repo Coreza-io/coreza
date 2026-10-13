@@ -361,6 +361,25 @@ export function createDedicatedStreamConnection(label: string): Redis {
   return createRedisInstance("queue", `Stream (${label})`);
 }
 
+/** Durable queue topology with bounded commands; never reuse BullMQ settings. */
+export function createLiveVariableConnection(): Redis {
+  const bounded: RedisOptions = {
+    maxRetriesPerRequest: 0, enableOfflineQueue: false,
+    autoResendUnfulfilledCommands: false, commandTimeout: 1000,
+    connectTimeout: 1000, lazyConnect: true, retryStrategy: () => null,
+    sentinelRetryStrategy: () => null, family: 4,
+  };
+  const sentinel = parseSentinelConfig("REDIS_SENTINEL_MASTER_QUEUE");
+  let client: Redis;
+  if (sentinel.enabled) client = new Redis({ ...buildSentinelOptions(sentinel, bounded), ...bounded });
+  else {
+    const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolveRedisConfig("REDIS_QUEUE_URL"), "Live variables");
+    client = new Redis(redisUrl, { ...buildQueueOptions(redisUrl, hasTlsFlag), ...bounded });
+  }
+  client.on("error", () => { /* Commands report bounded failures without values. */ });
+  return client;
+}
+
 // Backward compatibility (deprecated, maps to getRedisQueue)
 export const getRedis = getRedisQueue;
 export const getRedisPubSub = getRedisQueuePubSub;

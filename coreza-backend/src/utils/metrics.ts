@@ -15,6 +15,10 @@ export const variableSnapshotLoadSeconds = new client.Histogram({ name: 'coreza_
 export const activeVariableSnapshots = new client.Gauge({ name: 'coreza_active_variable_snapshots', help: 'Pinned execution variable snapshots' });
 export const variableSnapshotBytes = new client.Histogram({ name: 'coreza_variable_snapshot_bytes', help: 'Variable snapshot size', buckets: [1024, 4096, 16384, 65536] });
 export const variableSnapshotCount = new client.Histogram({ name: 'coreza_variable_snapshot_count', help: 'Variable count per snapshot', buckets: [0, 8, 32, 64, 128] });
+export const liveVariableOperations = new client.Counter({ name: 'coreza_live_variable_operations_total', help: 'Checkpoint infrastructure attempts, separate from local mutations', labelNames: ['operation', 'status'] });
+export const liveVariableLatency = new client.Histogram({ name: 'coreza_live_variable_operation_seconds', help: 'Checkpoint infrastructure latency', labelNames: ['operation'] });
+export const liveVariablePayload = new client.Counter({ name: 'coreza_live_variable_payload_bytes_total', help: 'Attempted checkpoint payload bytes', labelNames: ['transport'] });
+export const liveVariableResources = new client.Gauge({ name: 'coreza_live_variable_resources', help: 'Bounded checkpoint resources and maximum coverage age', labelNames: ['kind'] });
 
 // Counters
 export const marketMessagesCounter = new client.Counter({

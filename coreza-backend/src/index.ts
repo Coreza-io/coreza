@@ -64,6 +64,9 @@ import {
 import { RedisBuffer } from "./infra/RedisBuffer";
 import { setupBufferFlush } from "./utils/flushRedisBuffer";
 import RunSyncService from "./workers/RunSyncService";
+import { liveVariableCheckpointWorker } from "./workers/LiveVariableCheckpointWorker";
+import { WorkflowRunnerManager } from "./services/workflowRunnerManager";
+import { closeLiveVariableConnections } from "./variables/LiveVariableProtocol";
 import streamingCleanupService from "./workers/StreamingCleanupService";
 import { workflowRecoveryService } from "./workers/WorkflowRecoveryService";
 import FillSyncWorker from "./workers/FillSyncWorker";
@@ -222,6 +225,7 @@ async function startServer() {
     // Start RunSyncService for periodic workflow_runs sync (Redis → Supabase)
     logger.info("Starting RunSyncService...");
     RunSyncService.start();
+    liveVariableCheckpointWorker.start();
     logger.info("RunSyncService started (syncing every 10s)");
 
     // Start StreamingCleanupService for stale subscription cleanup
@@ -261,6 +265,9 @@ async function startServer() {
       streamingCleanupService.stop();
 
       // Stop RunSyncService and flush remaining runs
+      await WorkflowRunnerManager.getInstance().stopAll();
+      await liveVariableCheckpointWorker.stop();
+      closeLiveVariableConnections();
       RunSyncService.stop();
       await RunSyncService.flushAll();
 

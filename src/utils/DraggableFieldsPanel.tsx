@@ -23,9 +23,10 @@ type DraggableFieldsPanelProps = {
   sourceNodeId?: string;
   maxItems?: number;
   draggable?: boolean;
+  persistentVariableKeys?: readonly string[];
 };
 
-type Entry = { key: PathSegment; value: unknown };
+type Entry = { key: PathSegment; value: unknown; variableKey?: string };
 
 const isObjectLike = (v: unknown): v is Record<string, unknown> | unknown[] =>
   v !== null && typeof v === "object";
@@ -49,6 +50,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   sourceNodeId,
   maxItems = 25,
   draggable = true,
+  persistentVariableKeys,
 }) => {
   const entriesToShow: Entry[] = useMemo(() => {
     if (!isObjectLike(data)) return [];
@@ -58,11 +60,23 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
         value: item,
       }));
     }
-    return Object.entries(data as Record<string, unknown>).map(([k, v]) => ({
-      key: k,
-      value: v,
-    }));
-  }, [data, maxItems]);
+    return Object.entries(data as Record<string, unknown>).flatMap(([key, value]): Entry[] => {
+      if (key !== "data" || pathSegments?.length || !persistentVariableKeys?.length
+        || !isObjectLike(value) || Array.isArray(value)) return [{ key, value }];
+      // Display accepted Persistent fields directly in the workflow variable namespace.
+      // The execution output itself retains its original data shape.
+      const variables: Entry[] = [];
+      const remaining: Record<string, unknown> = Object.create(null);
+      for (const [name, fieldValue] of Object.entries(value)) {
+        if (persistentVariableKeys.includes(name) && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)
+          && !["__proto__", "constructor", "prototype"].includes(name)
+          && ["string", "number", "boolean"].includes(typeof fieldValue)) {
+          variables.push({ key: `$vars.${name}`, value: fieldValue, variableKey: name });
+        } else remaining[name] = fieldValue;
+      }
+      return [...(Object.keys(remaining).length ? [{ key, value: remaining }] : []), ...variables];
+    });
+  }, [data, maxItems, pathSegments, persistentVariableKeys]);
 
   if (!isObjectLike(data)) return null;
 
@@ -73,7 +87,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
 
   return (
     <div className="flex flex-col gap-2 mb-2">
-      {entriesToShow.map(({ key, value }) => {
+      {entriesToShow.map(({ key, value, variableKey }) => {
         const fullSegments = [...(pathSegments ?? []), key];
         const fullKey = pathSegments
           ? formatPath(fullSegments).replace(/^\./, "")
@@ -82,32 +96,33 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
             : formatPath([key]).replace(/^\./, "");
         const isNestedObject = isObjectLike(value);
         const displayKey = isArray ? `[${key}]` : String(key);
+        const canDrag = draggable || Boolean(variableKey && sourceNodeId);
+        const reference = variableKey ? `{{ $vars.${variableKey} }}` : fullKey;
 
         return (
           <div key={fullKey} className="flex flex-col ml-2">
             <div className="flex items-center gap-2">
               <div
                 className={`nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs font-semibold w-fit text-primary transition-colors ${
-                  draggable
+                  canDrag
                     ? "cursor-pointer cursor-grab active:cursor-grabbing"
                     : "cursor-default"
                 }`}
-                draggable={draggable}
+                draggable={canDrag}
                 onDragStart={(e) => {
-                  if (!draggable) return;
+                  if (!canDrag) return;
                   const asString = toStringValue(value);
-                  onDragStart(e, fullKey, asString);
+                  onDragStart(e, reference, asString);
                   e.dataTransfer.setData(
                     "application/reactflow",
                     JSON.stringify(
-                      createJsonReferenceDragPayload(
-                        fullSegments,
-                        sourceNodeId,
-                        asString,
-                      ),
+                      {
+                        ...createJsonReferenceDragPayload(fullSegments, sourceNodeId, asString),
+                        ...(variableKey ? { variableKey } : {}),
+                      },
                     ),
                   );
-                  e.dataTransfer.setData("text/plain", fullKey);
+                  e.dataTransfer.setData("text/plain", reference);
                   e.dataTransfer.effectAllowed = "copy";
                 }}
                 onDragEnd={() =>
@@ -149,6 +164,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
                   sourceNodeId={sourceNodeId}
                   maxItems={maxItems}
                   draggable={draggable}
+                  persistentVariableKeys={persistentVariableKeys}
                 />
               </div>
             )}

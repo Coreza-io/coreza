@@ -30,6 +30,8 @@ export interface NodeOutputMeta {
   nodeName?: string;
   category?: string;
   cached?: boolean;
+  /** Fields accepted by this Persistent Edit Fields execution. */
+  persistentVariableKeys?: string[];
   smoothing?: string;
   series?: unknown[];
 }

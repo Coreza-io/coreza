@@ -242,6 +242,7 @@ router.post("/field", async (req, res) => {
     };
     let result: Record<string, unknown>;
     let variableSnapshot;
+    let persistentVariableKeys: string[] | undefined;
     if (persistent === true && fields.some(isTypedEditFieldRow)) {
       const staged = stagePersistentFields(fields, options);
       if (!res.locals.variableSnapshot || !req.user?.id) throw new Error("Persistent variable snapshot unavailable");
@@ -249,8 +250,9 @@ router.post("/field", async (req, res) => {
         return res.status(400).json({ error: "Persistent Edit execution requires an invocation ID" });
       variableSnapshot = await variableSnapshots.commit(res.locals.variableSnapshot, staged.changes, req.body.variableInvocationId);
       result = staged.result;
+      persistentVariableKeys = staged.changes.map(change => change.key);
     } else result = applyFieldRows(fields, options);
-    res.json({ success: true, data: result, ...(variableSnapshot ? { variableSnapshot } : {}) });
+    res.json({ success: true, data: result, ...(variableSnapshot ? { variableSnapshot, status: "success", meta: { persistentVariableKeys } } : {}) });
   } catch (error) {
     console.error("Field manipulation failed");
     res.status((error as any).statusCode ?? (error instanceof EditFieldError ? 400 : 503)).json({

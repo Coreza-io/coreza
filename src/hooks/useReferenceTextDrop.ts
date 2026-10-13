@@ -29,7 +29,10 @@ export function planReferenceTextDrop(event: React.DragEvent, reference: string,
   const control = referenceDropControl(event);
   if (!control || control.disabled || control.readOnly || owners.get(control)?.disabled()) return null;
   const owner = owners.get(control);
-  if (!typed) {
+  // Workflow variable names use the bounded identifier grammar and need no escapes.
+  const variable = /^\{\{ \$vars\.([A-Za-z_][A-Za-z0-9_]{0,63}) \}\}$/.exec(reference);
+  const isVariableReference = variable && !["__proto__", "constructor", "prototype"].includes(variable[1]);
+  if (!typed && !isVariableReference) {
     const match = /^\{\{ \$\("([^"\\]*)"\)\.json(.*) \}\}$/.exec(reference);
     const segments = match ? parseLegacyPath(match[2]) : null;
     if (!segments || segments.some(segment => typeof segment === "string" && (!segment || /["'\\{}]/.test(segment)))) {

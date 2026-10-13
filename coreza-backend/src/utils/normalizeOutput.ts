@@ -69,7 +69,7 @@ export function normalizeOutput(
       status,
       data: raw.data,
       error: raw.error,
-      meta: { ...baseMeta, cached: raw.meta?.cached },
+      meta: { ...baseMeta, cached: raw.meta?.cached, ...(raw.meta?.persistentVariableKeys ? { persistentVariableKeys: raw.meta.persistentVariableKeys } : {}) },
     };
   }
 

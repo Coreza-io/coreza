@@ -1,3 +1,70 @@
+## SUPERCEDING DESIGN UPDATE — coalesced dirty-variable write-behind (2026-10-13)
+
+**This section supersedes all per-tick event enqueue, per-mutation Redis Stream append, per-update receipt and unbounded ordered-event journal suggestions below for REPLACEABLE workflow variable state.** Treat this design as the authoritative default. Older sections remain as background for reliability evaluation only; implement according to this update when conflicts arise.
+
+### Core rule
+
+**Live ticks never enqueue a Redis/BullMQ job per variable change or tick.** A typed Persistent Edit Fields invocation validates all fields and synchronously publishes an immutable RAM snapshot; dirty variables are captured in a **bounded, coalescing per-workflow accumulator**. One async flush dispatcher per live strategy periodically publishes a compact latest-state checkpoint to Redis, and a separate checkpoint worker publishes the latest committed version to PostgreSQL. `$vars` reads and RAM writes remain local and network-free; the next stream tick always sees the most recent local value. Backtests retain ephemeral overlays, previews never write, and manual/cluster may retain the existing awaited SQL commit path initially.
+
+### Data model: dirty map rather than queue of ticks
+
+- Keep `currentValues`, `localGeneration` (monotonically increasing), `lastRedisAckGeneration`, `lastSqlCheckpointGeneration`, and a dirty map keyed by variable name, storing latest validated value and last mutation generation. Keys are unique per user+workflow+writer epoch.
+- A persistent Edit batch is all-or-nothing in RAM. For changed values, increment generation once per batch, overwrite dirty-map entries by key, and allow downstream execution immediately. Repeated writes of the same scalar skip generation/flush work. Enforce existing key, type, count and snapshot-byte limits.
+- Dirty-map memory is bounded by maximum variable count and value size (e.g. existing 128 keys, 4 KB/variable, 64 KB total snapshot), not proportional to number of ticks. New generations supersede old pending values. Do not allocate one Promise, queue item, BullMQ job or Redis event per tick.
+- Keep a **single in-flight flush per workflow**, with a separate mutable dirty map for concurrently arriving changes. On flush start, capture an immutable `{epoch,generation,values/changes,baseCheckpoint}` snapshot and send it; new edits continue updating RAM and dirty state. On acknowledgment, clear only the dirty keys whose last-generation is **≤ acknowledged generation and whose value is unchanged**; never clear more recent mutations. If newer changes arrived, next flush will include them. A snapshot may include all variables (preferred with bounded 64 KB size) to make coalescing/recovery easy; verify write amplification in benchmarks.
+- Strict version fencing is essential: older delayed batches must not replace newer Redis or SQL checkpoints. Require monotonic (epoch, generation) CAS; use atomic Redis Lua/transaction or ordered single-writer fencing. SQL checkpoint uses conditional version UPSERT under scoped lock. Never rely on wall-clock timestamps for ordering.
+- Coalesce only **replaceable current-state variables**. Never coalesce position fills, order commands, audit events, once-only side effects, or event histories. Their durable event log/order safety path remains separate.
+
+### Two asynchronous flush cadences, not per-tick jobs
+
+1. **RAM → Redis:** default proposed benchmark candidate 250 ms (tunable initial range 100–500 ms); one dispatcher per active live workflow; wake only when dirty, avoid overlapping flush, and batch all changed variables. Redis operation is non-blocking to live ticks; Redis acknowledgment establishes Redis-received watermark (NOT necessarily disk durable).
+2. **Redis → PostgreSQL:** checkpoint worker batches latest state every proposed 2 seconds (tunable initial range 1–5 seconds) OR at configurable dirty-size/age thresholds. Avoid triggering one SQL transaction per Redis update. Use at most one outstanding checkpoint transaction per workflow; coalesce intervening Redis snapshots and check version monotonicity.
+3. Intervals above are **hypotheses**, not measured guarantees; instrument throughput, event-loop lag, p95/p99 tick latency, oldest dirty age and recovery lag under realistic market stream load and Redis/SQL failure injection. Adaptive frequency or max-dirty-age flush may be added if tests justify it. Don't promise a flush always completes within the selected interval when backend is slow.
+
+### Transport, recovery and downtime
+
+- For this latest-value design, a **versioned full-state Redis checkpoint** can be more efficient than a stream of every mutation. Use a non-evictable persistence-capable Redis topology and an atomic versioned update + checkpoint notification/dirty-index mechanism for the SQL worker. If using Redis Streams, send **one coalesced snapshot per flush**, not one event per tick; it must still be bounded/retained and not rely on a cache-evictable Redis instance. Choose one approach after evaluating deployed Redis config and recovery semantics.
+- Checkpoint worker must recover missed notifications by enumerating dirty workflows/versioned Redis checkpoints, not relying solely on lossy Pub/Sub. Acknowledge SQL progress by workflow generation and reconcile on restart. Redis may be ahead of PostgreSQL; startup should read both and recover newest coherent checkpoint, rejecting missing/inconsistent epoch state.
+- **Race rule:** completion for Redis generation 20 must not remove dirty entries changed at generation 21. Completion for SQL generation 20 must not mark generation 21 durable. A slow generation-20 flush must not overwrite Redis generation 21.
+- **Loss window:** a process crash before Redis receives the latest coalesced snapshot can lose up to the unflushed dirty window; Redis crash before its own persistence can lose more. This is an explicitly approved tradeoff for noncritical runtime state. Never claim zero-data-loss or exactly-once write-ahead durability from RAM-first design.
+- **Backpressure:** dirty state is bounded by key count, but the number of workflow dispatchers, failed I/O tasks and worker checkpoint backlog also need explicit global caps, max-age budgets, exponential retries and circuit breakers. If pending state stays unpersisted too long, mark degraded/stop strategy according to documented safety policy. No silent infinite retries.
+- **Graceful stop:** stop new tick intake, flush latest dirty snapshot to Redis and (if required by SLA) wait for PostgreSQL checkpoint watermark, with bounded timeout and explicit unflushed status.
+- **High-frequency performance:** avoid JSON stringify or full-map cloning on EVERY tick; use cheap equality tests for existing scalar values and copy-on-write only for changed batches. Build serialized checkpoint payloads inside dispatcher, not per read. Confirm event-loop/cpu/heap overhead in benchmark.
+- **Multi-worker:** owner+workflow single live writer with fencing lease; if multiple live workers become necessary, design a separate consistent aggregation protocol before permitting concurrent RAM-first updates.
+
+### Implementation changes to existing phases
+
+**Replace prior Phase 1** with a `LiveVariableState` manager: validated in-memory mutation; dirty map + generation; immutable expression-visible snapshot; bounded per-workflow state; operation metrics; no IO on mutation.
+
+**Replace prior Phase 2** with one lightweight scheduled, event-loop-friendly async coalescing dispatcher per workflow. Timer/wake loop only, no per-tick queue job. Atomic version-fenced Redis flush, single in-flight, generation-safe dirty clearing, retry/backoff. Proposed 250-ms default only after benchmark.
+
+**Replace prior Phase 3** with a worker that reads the latest versioned Redis checkpoint/dirty-workflow index, batches to PostgreSQL at a slower configurable interval, performs monotonic SQL writes, and acknowledges checkpoint generation. A coalesced snapshot may skip intermediate states by design.
+
+**Update prior Phase 4** so schema has compact latest-state checkpoint, writer epoch/generation, and bounded metadata. Do not accumulate an ever-growing receipt JSONB or per-tick SQL log. Keep old scoped variables and migration compatibility; ensure rollback/restart chooses latest recoverable version.
+
+**Update prior Phase 5** to keep the flag `LIVE_VARIABLE_WRITE_BEHIND_ENABLED` disabled by default and restrict to live execution. No UI or parser changes. Manual/cluster remain existing durable path unless separately designed.
+
+**Update prior Phase 6** with load tests that intentionally generate >10,000 stream ticks/sec in a controlled synthetic fixture and show bounded dirty map size, no per-tick queue jobs, and a configured upper bound on Redis/SQL write RATE; do not assert such throughput as achieved. Verify duplicate/no-op, crashes, restart, slow Redis, SQL downtime, out-of-order completions, stop/drain and trading safety.
+
+### New acceptance tests — mandatory
+
+1. 10,000 tick updates to ONE variable before first flush leave ONE dirty key, not 10,000 queued operations. Next tick reads latest value.
+2. 100 distinct dirty variables still fit bounded state and flush together; SQL checkpoint work scales with flush batches, not tick count.
+3. Mutation of key A at generation 21 during in-flight generation-20 flush survives the generation-20 ACK and persists later.
+4. Delayed Redis generation 20 cannot overwrite generation 21; delayed SQL generation 20 cannot overwrite 21.
+5. Redis down for multiple intervals: RAM continues only within bounded policy; degraded/stop threshold fires deterministically and no unbounded timer/promise accumulation.
+6. PostgreSQL slower than incoming Redis snapshots: SQL worker checkpoints latest coherent version without creating unbounded SQL tasks; bounded and monitored checkpoint lag.
+7. Crash recovery chooses latest valid Redis checkpoint over older SQL and handles Redis-loss policy; missing/old epoch fails closed.
+8. Unchanged assignments cause zero dirty updates, Redis sends or SQL writes. `false`, `0`, empty strings and negative numbers remain intact.
+9. Graceful stop flushes or returns explicit unflushed status; cancellation during active flush cannot mark a newer generation durable.
+10. Manual execution, backtests, previews and existing features remain unchanged and have no surprise async write behavior.
+11. Synthetic high-frequency input validates P95/P99 tick latency, CPU, memory growth and Redis/SQL operation counts. Acceptance thresholds must be set from measured baseline.
+12. Trade-critical state never silently depends on coalesced, unacknowledged variables for crash recovery.
+
+**Decision to record before implementation:** initial flush cadences, Redis transport (versioned checkpoint vs coalesced Stream), lease/fencing mechanism, loss window, Redis durability configuration, SQL checkpoint maximum delay, shutdown timeout, and explicit list of replaceable versus trade-critical variables.
+
+---
+
 # Coreza RAM-first live variables with asynchronous Redis → PostgreSQL write-behind
 
 Status: DESIGN / IMPLEMENTATION PLAN ONLY. No application code modifications.

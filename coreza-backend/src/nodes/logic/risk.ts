@@ -18,7 +18,8 @@ export interface RiskInput {
   current_exposure?: string;
   day_loss?: string;
   risk_per_trade: string;          // percentage
-  stop_loss_distance: string;      // percentage
+  stop_loss_distance: string;      // percentage or absolute price distance
+  stop_loss_distance_mode?: 'percentage' | 'value'; // defaults to percentage for older workflows
   price_per_unit: string;          // absolute price
   daily_loss_limit: string;        // percentage
   max_portfolio_exposure: string;  // percentage
@@ -63,7 +64,8 @@ export class RiskEngineService {
         current_exposure:       rawExposure = '0',
         day_loss:               rawDayLoss  = '0',
         risk_per_trade:         rawRiskPct,
-        stop_loss_distance:     rawStopPct,
+        stop_loss_distance:     rawStopDistance,
+        stop_loss_distance_mode: rawStopMode = 'percentage',
         price_per_unit:         rawPrice,
         daily_loss_limit:       rawDailyPct,
         max_portfolio_exposure: rawPortPct,
@@ -81,12 +83,20 @@ export class RiskEngineService {
 
       // --- 3) Parse & convert percentages to fractions ---
       const riskPct  = toFraction(parseNum(rawRiskPct), 'risk_per_trade');
-      const stopPct  = toFraction(parseNum(rawStopPct), 'stop_loss_distance');
+      if (rawStopMode !== 'percentage' && rawStopMode !== 'value') {
+        throw new Error('stop_loss_distance_mode must be percentage or value');
+      }
+      const stopInput = parseNum(rawStopDistance);
+      if (!Number.isFinite(stopInput) || stopInput <= 0) {
+        throw new Error('stop_loss_distance must be a positive finite number');
+      }
       const dailyPct = toFraction(parseNum(rawDailyPct), 'daily_loss_limit');
       const portPct  = toFraction(parseNum(rawPortPct), 'max_portfolio_exposure');
 
       // --- 4) Compute dollar stop-loss distance ---
-      const stopDollar = pricePerUnit * stopPct;
+      const stopDollar = rawStopMode === 'value'
+        ? stopInput
+        : pricePerUnit * toFraction(stopInput, 'stop_loss_distance');
       if (stopDollar <= 0) throw new Error('stop_loss_distance must yield a positive dollar amount');
 
       // --- 5) Parse optional counters & limits ---

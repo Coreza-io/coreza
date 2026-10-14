@@ -111,9 +111,9 @@ describe("ConsolidatorExecutor", () => {
     };
     const executor = new ConsolidatorExecutor();
     const held = executor.execute(node, { candle_data: bar("2026-01-01T00:00:00Z", 1) }, context);
-    expect(held).toMatchObject({ success: true, data: { emitted: false } });
+    expect(held).toMatchObject({ success: true, data: { timeframe: "4h", emitted: false } });
     const emitted = executor.execute(node, { candle_data: bar("2026-01-01T04:00:00Z", 2) }, context);
-    expect(emitted).toMatchObject({ success: true, data: { emitted: true, bar: { open: 1 } } });
+    expect(emitted).toMatchObject({ success: true, data: { timeframe: "4h", emitted: true, bar: { open: 1 } } });
   });
 
   it("continues warm-up state from the shared data context", () => {
@@ -159,7 +159,7 @@ describe("ConsolidatorExecutor", () => {
       candle_data: bar("2026-01-01T04:00:00Z", 5),
     }, context)).toMatchObject({
       success: true,
-      data: { emitted: true, bar: { open: 1, close: 4 } },
+      data: { timeframe: "4h", emitted: true, bar: { open: 1, close: 4 } },
     });
     expect(dataContext.getDataByKey("spy:1h:4h:UTC:")).toBeDefined();
   });

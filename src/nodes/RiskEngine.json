@@ -6,10 +6,21 @@
   "category": "Risk Management",
   "description": "Manages trade risk, position sizing, exposure, and daily loss limits before trade execution",
   "color": "text-rose-600",
-  "size": { "width": 420, "height": 380 },
+  "size": {
+    "width": 420,
+    "height": 380
+  },
   "handles": [
-    { "type": "target", "position": "left", "id": "input" },
-    { "type": "source", "position": "right", "id": "output" }
+    {
+      "type": "target",
+      "position": "left",
+      "id": "input"
+    },
+    {
+      "type": "source",
+      "position": "right",
+      "id": "output"
+    }
   ],
   "action": {
     "url": "/risk/engine",
@@ -36,10 +47,27 @@
       "required": true
     },
     {
+      "key": "stop_loss_distance_mode",
+      "label": "Stop Loss Distance Mode",
+      "type": "select",
+      "default": "percentage",
+      "required": false,
+      "options": [
+        {
+          "id": "percentage",
+          "name": "Percentage (%)"
+        },
+        {
+          "id": "value",
+          "name": "Value (Price)"
+        }
+      ]
+    },
+    {
       "key": "stop_loss_distance",
-      "label": "Stop Loss Distance (Price or %)",
+      "label": "Stop Loss Distance",
       "type": "text",
-      "placeholder": "e.g., 1.5 (points or %)",
+      "placeholder": "e.g., 1.5 (% or absolute price distance)",
       "required": true
     },
     {
@@ -82,9 +110,18 @@
       "label": "If Risk Breached",
       "type": "select",
       "options": [
-        { "id": "block", "name": "Block Trade" },
-        { "id": "resize", "name": "Auto-Resize Position" },
-        { "id": "alert_only", "name": "Alert Only (Allow Trade)" }
+        {
+          "id": "block",
+          "name": "Block Trade"
+        },
+        {
+          "id": "resize",
+          "name": "Auto-Resize Position"
+        },
+        {
+          "id": "alert_only",
+          "name": "Alert Only (Allow Trade)"
+        }
       ],
       "default": "block",
       "required": true

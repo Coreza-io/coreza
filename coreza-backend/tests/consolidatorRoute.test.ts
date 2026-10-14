@@ -132,7 +132,7 @@ describe("POST /storage/consolidator", () => {
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
         success: true,
-        data: { emitted: false, bar: null },
+        data: { timeframe: "4h", emitted: false, bar: null },
         meta: { key: "SPY:1h:4h:UTC:" },
       });
       expect(response.body.data.workingBar).toBeDefined();
@@ -145,6 +145,7 @@ describe("POST /storage/consolidator", () => {
     expect(response.body).toMatchObject({
       success: true,
       data: {
+        timeframe: "4h",
         emitted: true,
         bar: { open: 1, high: 4, low: 1, close: 4, volume: 4 },
         workingBar: { open: 5 },
@@ -196,7 +197,7 @@ describe("POST /storage/consolidator", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       success: true,
-      data: { emitted: false },
+      data: { timeframe: "4h", emitted: false },
       meta: { key: "SPY:1h:4h:UTC:" },
     });
     expect(manager.hasContext(sessionId)).toBe(false);

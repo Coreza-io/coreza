@@ -5,7 +5,7 @@
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "Consolidator",
-  "description": "Aggregates source bars into left-closed/right-open higher-timeframe UTC or timezone-aligned bars. Input-driven only: a completed bar is emitted when the next bucket receives input; partial final bars are not flushed.",
+  "description": "Aggregates finalized, start-stamped, aligned fixed-duration source bars into left-closed/right-open higher-timeframe UTC or timezone-aligned bars. Emits after aggregating a source bar whose inferred end reaches the target end. If the terminal source bar is missing, the next bucket's input releases the previous observed aggregate first. Input-driven only; final bars are not flushed.",
   "color": "#6366f1",
   "size": { "width": 300, "height": 420 },
   "handles": [
@@ -22,7 +22,7 @@
     { "key": "anchor_time", "type": "text", "label": "Anchor Time", "placeholder": "09:30", "description": "Optional local HH:mm bucket anchor." }
   ],
   "output": {
-    "description": "Every successful execution propagates. Held inputs return emitted=false with workingBar; boundary inputs return emitted=true with bar (completed bucket) and workingBar (new partial bucket). Gate completed-bar-only branches with an If node checking emitted == true.",
+    "description": "Every successful execution propagates. Held or duplicate inputs return emitted=false with workingBar. Immediate completion returns emitted=true with bar and workingBar representing the same completed bucket; rollover fallback returns the previous bar and a new workingBar. Gate completed-bar-only branches with an If node checking emitted == true.",
     "fields": ["timeframe", "emitted", "bar", "workingBar"]
   }
 }

@@ -12,6 +12,7 @@ export interface ConsolidatedBar extends Bar {
 export interface ConsolidatorState {
   workingBar: ConsolidatedBar;
   lastInput: Bar;
+  lastEmittedEndTimestamp?: string;
 }
 
 export interface ConsolidationResult {
@@ -42,7 +43,7 @@ function barsEqual(left: Bar, right: Bar): boolean {
 }
 
 export class ConsolidationError extends Error {
-  constructor(readonly code: "DUPLICATE_BAR_CONFLICT" | "OUT_OF_ORDER_BAR", message: string) {
+  constructor(readonly code: "DUPLICATE_BAR_CONFLICT" | "OUT_OF_ORDER_BAR" | "CLOSED_BUCKET_BAR", message: string) {
     super(message);
     this.name = "ConsolidationError";
   }
@@ -50,6 +51,7 @@ export class ConsolidationError extends Error {
 
 export class TimeBarConsolidator {
   readonly ratio: number;
+  private readonly sourceMs: number;
   private readonly targetMs: number;
   private readonly timezone: string;
   private readonly anchorMs: number;
@@ -57,6 +59,7 @@ export class TimeBarConsolidator {
   constructor(options: TimeBarConsolidatorOptions) {
     const timeframes = validateTimeframeRatio(options.sourceTimeframe, options.targetTimeframe);
     this.ratio = timeframes.ratio;
+    this.sourceMs = timeframes.source.milliseconds;
     this.targetMs = timeframes.target.milliseconds;
     this.timezone = options.timezone?.trim() || "UTC";
     this.anchorMs = parseAnchor(options.anchorTime);
@@ -76,23 +79,37 @@ export class TimeBarConsolidator {
     }
 
     const [bucketStart, bucketEnd] = this.bucket(input.timestamp);
-    if (!previous || previous.workingBar.timestamp !== bucketStart) {
-      const workingBar: ConsolidatedBar = { ...input, timestamp: bucketStart, endTimestamp: bucketEnd };
-      return {
-        emitted: previous?.workingBar,
-        state: { workingBar, lastInput: input },
-        duplicate: false,
-      };
+    const sameBucket = previous?.workingBar.timestamp === bucketStart;
+    const previousDelivered = Boolean(previous && previous.workingBar.endTimestamp === previous.lastEmittedEndTimestamp);
+    if (sameBucket && previousDelivered) {
+      throw new ConsolidationError("CLOSED_BUCKET_BAR", `Bar ${input.timestamp} belongs to an already emitted bucket ending ${bucketEnd}`);
     }
 
-    const workingBar: ConsolidatedBar = {
+    const workingBar: ConsolidatedBar = previous && sameBucket ? {
       ...previous.workingBar,
       high: Math.max(previous.workingBar.high, input.high),
       low: Math.min(previous.workingBar.low, input.low),
       close: input.close,
       volume: previous.workingBar.volume + input.volume,
+    } : { ...input, timestamp: bucketStart, endTimestamp: bucketEnd };
+
+    let emitted: ConsolidatedBar | undefined;
+    if (previous && !sameBucket && !previousDelivered) {
+      // Preserve prior-first delivery when rollover and current completion coincide.
+      emitted = previous.workingBar;
+    } else if (new Date(input.timestamp).getTime() + this.sourceMs >= Date.parse(workingBar.endTimestamp)) {
+      // Inputs must be finalized, start-stamped candles contained in their bucket.
+      emitted = workingBar;
+    }
+    return {
+      emitted,
+      state: {
+        workingBar,
+        lastInput: input,
+        lastEmittedEndTimestamp: emitted?.endTimestamp ?? previous?.lastEmittedEndTimestamp,
+      },
+      duplicate: false,
     };
-    return { state: { workingBar, lastInput: input }, duplicate: false };
   }
 
   private bucket(timestamp: string | number): [string, string] {

@@ -23,6 +23,6 @@
   ],
   "output": {
     "description": "Every successful execution propagates. Held inputs return emitted=false with workingBar; boundary inputs return emitted=true with bar (completed bucket) and workingBar (new partial bucket). Gate completed-bar-only branches with an If node checking emitted == true.",
-    "fields": ["emitted", "bar", "workingBar"]
+    "fields": ["timeframe", "emitted", "bar", "workingBar"]
   }
 }

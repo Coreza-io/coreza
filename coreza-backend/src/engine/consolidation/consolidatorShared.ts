@@ -17,6 +17,7 @@ export interface ConsolidatorParameters {
 }
 
 export interface ConsolidatorPayload {
+  timeframe: string;
   emitted: boolean;
   bar: Bar | null;
   workingBar: Bar;
@@ -131,6 +132,7 @@ export function runConsolidatorStep(
     key,
     state: result.state,
     payload: {
+      timeframe: validateTimeframeRatio(parameters.sourceTimeframe, parameters.targetTimeframe).target.normalized,
       emitted: Boolean(result.emitted),
       bar: result.emitted ?? null,
       workingBar: result.state.workingBar,

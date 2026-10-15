@@ -9,7 +9,6 @@ import { compilePlan, runBar, CompiledPlan } from "../compiled";
 import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
 import { RedisKeys } from "../../infra/redisKeys";
-import { createWorkflowLifecycleService } from "../../workflow/lifecycleServiceInstance";
 import { toMarketBarEnvelope } from "../simBroker/marketEnvelope";
 import { seedRollingWindows } from "../rollingWindowSeed";
 import type { RollingWindowSeed } from "../rollingWindowSeed";
@@ -71,6 +70,7 @@ export class BacktestSession {
   private barsProcessed = 0;
   private currentSymbolIndex = 0;
   private stepping = false;
+  private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
   private currentMultiBarBars: Record<string, any> = Object.create(null);
@@ -835,7 +835,9 @@ export class BacktestSession {
   }
 
   async runAll(): Promise<void> {
+    if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
     if (this.status === "finished") {
+      await this.finalize();
       return;
     }
 
@@ -977,6 +979,11 @@ export class BacktestSession {
       this.stepping = false;
     }
 
+    if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
+    if (this.bars.length === 0) {
+      this.status = "finished";
+      this.phase = "finished";
+    }
     if (this.status === "finished") {
       await this.finalize();
       const elapsed = performance.now() - this.perf.totalStart;
@@ -1098,29 +1105,16 @@ export class BacktestSession {
     );
   }
 
-  private async finalize(): Promise<void> {
+  private finalize(): Promise<void> {
+    // Repeated completion calls share the same persistence operation, including failures.
+    return this.finalization ??= this.finalizeResults();
+  }
+
+  private async finalizeResults(): Promise<void> {
     let t0 = performance.now();
     try {
       const backtestExecutor = new BacktestExecutor();
-      await backtestExecutor.finalizeBacktestById(this.backtestId);
-
-      try {
-        const lifecycleService = createWorkflowLifecycleService();
-        await lifecycleService.deactivateAfterCompletion(
-          this.userId,
-          this.workflowId,
-        );
-      } catch (error) {
-        console.error(
-          `[BacktestSession] Auto-deactivate failed for workflow ${this.workflowId}:`,
-          error,
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[BacktestSession] Finalization failed for ${this.backtestId}:`,
-        error,
-      );
+      await backtestExecutor.finalizeBacktestById(this.backtestId, this.abortController.signal);
     } finally {
       this.perf.finalizeMs += performance.now() - t0;
     }

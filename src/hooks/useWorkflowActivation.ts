@@ -1,6 +1,9 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/use-toast";
+import { useEffect, useRef, useState } from "react";
+
+const pendingRequests = new Map<string, symbol>();
 
 /**
  * Shared activation/deactivation logic used by both Workflows.tsx and WorkflowEditor.tsx.
@@ -10,9 +13,18 @@ import { useToast } from "@/hooks/use-toast";
  * - Persists session in localStorage and dispatches the custom event
  * - Rolls back on failure
  */
-export function useWorkflowActivation() {
+export function useWorkflowActivation(scopeKey?: string) {
   const { session } = useAuth();
   const { toast } = useToast();
+  const [pendingWorkflowIds, setPendingWorkflowIds] = useState<Set<string>>(new Set());
+  const mounted = useRef(true);
+  const scope = `${session?.user.id ?? ""}:${scopeKey ?? ""}`;
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   /**
    * @returns the new `is_active` state on success, or `null` on failure.
@@ -21,6 +33,12 @@ export function useWorkflowActivation() {
     workflowId: string,
     currentlyActive: boolean,
   ): Promise<boolean | null> => {
+    if (pendingRequests.has(workflowId)) return null;
+    const request = Symbol(workflowId);
+    const requestScope = currentScope.current;
+    pendingRequests.set(workflowId, request);
+    setPendingWorkflowIds((ids) => new Set(ids).add(workflowId));
+    const isCurrent = () => mounted.current && currentScope.current === requestScope;
     const newStatus = !currentlyActive;
     const sessionStorageKey = `live_session_${workflowId}`;
     const priorSessionId = localStorage.getItem(sessionStorageKey);
@@ -47,6 +65,7 @@ export function useWorkflowActivation() {
       if (!healthCheck.ok) {
         throw new Error("Backend server is not responding");
       }
+      if (!isCurrent()) throw new Error("Activation session changed");
 
       // Single backend call — this handles DB update + runner lifecycle
       const res = await apiClient.put(
@@ -60,15 +79,24 @@ export function useWorkflowActivation() {
         throw new Error(errorText);
       }
 
+      const result = await res.json();
+      if (typeof result.workflow?.is_active !== "boolean") {
+        throw new Error("Backend returned an invalid workflow activation state");
+      }
+      if (!isCurrent() || localStorage.getItem(sessionStorageKey) !== (executionId ?? priorSessionId)) return null;
+      const actualStatus: boolean = result.workflow.is_active;
       toast({
         title: "Success",
-        description: `Workflow ${newStatus ? "activated" : "deactivated"} successfully`,
+        description: newStatus && !actualStatus && result.message === "Backtest completed"
+          ? "Backtest completed successfully"
+          : `Workflow ${actualStatus ? "activated" : "deactivated"} successfully`,
       });
 
-      return newStatus;
+      return actualStatus;
     } catch (error: any) {
+      const current = isCurrent() && localStorage.getItem(sessionStorageKey) === (executionId ?? priorSessionId);
       // Rollback localStorage + event on activation failure
-      if (newStatus) {
+      if (newStatus && localStorage.getItem(sessionStorageKey) === executionId) {
         if (priorSessionId) {
           localStorage.setItem(sessionStorageKey, priorSessionId);
         } else {
@@ -81,6 +109,7 @@ export function useWorkflowActivation() {
         );
       }
 
+      if (!current) return null;
       toast({
         title: "Error",
         description: `Failed to ${newStatus ? "activate" : "deactivate"} workflow: ${error.message}`,
@@ -88,8 +117,18 @@ export function useWorkflowActivation() {
       });
 
       return null;
+    } finally {
+      if (pendingRequests.get(workflowId) === request) pendingRequests.delete(workflowId);
+      if (mounted.current) setPendingWorkflowIds((ids) => {
+        const next = new Set(ids);
+        next.delete(workflowId);
+        return next;
+      });
     }
   };
 
-  return { toggleActivation };
+  return {
+    toggleActivation,
+    isActivationPending: (workflowId: string | null) => !!workflowId && pendingWorkflowIds.has(workflowId),
+  };
 }

@@ -123,6 +123,7 @@ export class BacktestExecutor implements INodeExecutor {
   readonly syncCapable = true;
   private static simBrokerCache = new Map<string, SimBroker>();
   private static backtestStartTimes = new Map<string, number>();
+  private static finalizations = new WeakMap<SimBroker, Promise<void>>();
   private cachedRunId: string | null = null;
 
   /**
@@ -260,6 +261,8 @@ export class BacktestExecutor implements INodeExecutor {
     input: NodeInput,
     context?: BacktestInitContext,
   ): Promise<NodeResult> {
+    let createdBacktestId: string | undefined;
+    let initialized = false;
     let failedOwnedNodeResults: Record<string, NodeResult> | undefined;
     let failedOwnedExecutionOrder: string[] | undefined;
     try {
@@ -339,6 +342,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       const backtestId = (backtest as { id: string }).id;
+      createdBacktestId = backtestId;
       const executionId =
         context?.runId ?? context?.workflowSessionId ?? backtestId;
       BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
@@ -407,7 +411,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const primarySymbol = symbols[0];
       const primaryBars = historicalDataBySymbol.get(primarySymbol) || [];
-      if (!Array.isArray(primaryBars) || primaryBars.length === 0) {
+      if (!Array.isArray(primaryBars) || (primaryBars.length === 0 && !context?.runId)) {
         return toNodeResult(
           createErrorOutput(`No historical bars returned for ${primarySymbol}`),
         );
@@ -588,6 +592,11 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       const isManual = !context?.runId;
+      if (!isManual && (strategyNodes.length === 0 || entryNodeIds.length === 0
+        || entryNodeIds.some((id) => !strategyNodes.some((candidate) => candidate.id === id)))) {
+        throw new Error("Backtest strategy requires valid connected entry nodes");
+      }
+      if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
       const session = BacktestSessionManager.getInstance().createSession(
         backtestId,
         workflowId,
@@ -621,12 +630,7 @@ export class BacktestExecutor implements INodeExecutor {
       await session.initialize();
 
       let ownedNodeResults: Record<string, NodeResult> | undefined;
-      if (
-        !isManual &&
-        barEvents.length > 0 &&
-        strategyNodes.length > 0 &&
-        entryNodeIds.length > 0
-      ) {
+      if (!isManual) {
         const cancelOwnedSession = () => session.cancel();
         context?.abortSignal?.addEventListener("abort", cancelOwnedSession, { once: true });
         try {
@@ -644,15 +648,6 @@ export class BacktestExecutor implements INodeExecutor {
           BacktestSessionManager.getInstance().deleteSession(backtestId);
         }
       }
-
-      // if (
-      //   barEvents.length === 0 ||
-      //   strategyNodes.length === 0 ||
-      //   entryNodeIds.length === 0
-      // ) {
-      //   await this.portfolioFinalize(simBroker, backtestId);
-      //   BacktestSessionManager.getInstance().deleteSession(backtestId);
-      // }
 
       const initResult = toNodeResult(
         createSuccessOutput({
@@ -724,6 +719,7 @@ export class BacktestExecutor implements INodeExecutor {
           ownedExecutionOrder: strategyNodes.map(({ id }) => id).filter((id) => id in ownedNodeResults),
         };
       }
+      initialized = true;
       return initResult;
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
@@ -736,6 +732,20 @@ export class BacktestExecutor implements INodeExecutor {
         };
       }
       return errorResult;
+    } finally {
+      if (context?.runId && createdBacktestId && !initialized) {
+        BacktestSessionManager.getInstance().deleteSession(createdBacktestId);
+        BacktestExecutor.cleanupBacktestResources(createdBacktestId);
+        const { error } = await (supabase.from("backtests") as any)
+          .update({
+            status: context.abortSignal?.aborted ? "cancelled" : "failed",
+            completed_at: new Date().toISOString(),
+            error_message: context.abortSignal?.aborted ? "Workflow cancelled by user" : "Backtest execution or persistence failed",
+          })
+          .eq("id", createdBacktestId).eq("user_id", context.userId)
+          .in("status", ["pending", "running"]).select("id").maybeSingle();
+        if (error) throw new Error(`Failed to record backtest failure: ${error.message}`);
+      }
     }
   }
 
@@ -1081,10 +1091,21 @@ export class BacktestExecutor implements INodeExecutor {
     }
   }
 
-  private async portfolioFinalize(
+  private portfolioFinalize(simBroker: SimBroker, backtestId: string, signal?: AbortSignal): Promise<void> {
+    let finalization = BacktestExecutor.finalizations.get(simBroker);
+    if (!finalization) {
+      finalization = this.persistPortfolio(simBroker, backtestId, signal);
+      BacktestExecutor.finalizations.set(simBroker, finalization);
+    }
+    return finalization;
+  }
+
+  private async persistPortfolio(
     simBroker: SimBroker,
     backtestId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) throw new Error("Workflow cancelled by user");
     simBroker.releaseAllReservations();
     // Calculate metrics - ALL SYNCHRONOUS (no Redis!)
     const metrics = simBroker.getMetrics();
@@ -1094,15 +1115,13 @@ export class BacktestExecutor implements INodeExecutor {
 
     // Persist to Supabase (only at the END of backtest)
     const supabaseClient = supabase;
-
-    // Update backtest status
-    await (supabaseClient as any)
-      .from("backtests")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", backtestId);
+    const { data: existing, error: lookupError } = await supabaseClient.from("backtests")
+      .select("status").eq("id", backtestId).maybeSingle();
+    if (lookupError || !existing) throw new Error("Failed to inspect backtest completion state");
+    if (existing.status === "completed") return;
+    if (existing.status === "cancelled" || existing.status === "failed") {
+      throw new Error("Backtest is no longer executable");
+    }
 
     // Insert backtest results
     const { error: resultsError } = await (supabaseClient as any)
@@ -1143,10 +1162,7 @@ export class BacktestExecutor implements INodeExecutor {
             : 0,
       });
     if (resultsError) {
-      console.error(
-        "[BacktestExecutor] Failed to insert backtest_results:",
-        resultsError,
-      );
+      throw new Error(`Failed to persist backtest results: ${resultsError.message}`);
     }
 
     // Insert trades
@@ -1173,10 +1189,7 @@ export class BacktestExecutor implements INodeExecutor {
           .insert(tradeRows);
 
         if (tradesError) {
-          console.error(
-            "[BacktestExecutor] Failed to insert backtest_trades:",
-            tradesError,
-          );
+          throw new Error(`Failed to persist backtest trades: ${tradesError.message}`);
         }
       }
     }
@@ -1208,13 +1221,19 @@ export class BacktestExecutor implements INodeExecutor {
           .from("backtest_portfolio_snapshots")
           .insert(snapshots.slice(i, i + 500));
         if (snapshotError) {
-          console.error(
-            "[BacktestExecutor] Failed to insert backtest_portfolio_snapshots batch:",
-            snapshotError,
-          );
+          throw new Error(`Failed to persist backtest snapshots: ${snapshotError.message}`);
         }
       }
     }
+
+    if (signal?.aborted) throw new Error("Workflow cancelled by user");
+    const { data: completed, error: completionError } = await (supabaseClient as any)
+      .from("backtests")
+      .update({ status: "completed", completed_at: new Date().toISOString() })
+      .eq("id", backtestId).in("status", ["pending", "running"])
+      .select("id").maybeSingle();
+    if (completionError) throw new Error(`Failed to complete backtest: ${completionError.message}`);
+    if (!completed) throw new Error("Backtest was cancelled or already finalized");
 
     const startedAtMs = BacktestExecutor.backtestStartTimes.get(backtestId);
     const elapsedTime =
@@ -1232,9 +1251,9 @@ export class BacktestExecutor implements INodeExecutor {
     );
   }
 
-  async finalizeBacktestById(backtestId: string): Promise<void> {
+  async finalizeBacktestById(backtestId: string, signal?: AbortSignal): Promise<void> {
     const simBroker = this.getSimBroker(backtestId);
-    await this.portfolioFinalize(simBroker, backtestId);
+    await this.portfolioFinalize(simBroker, backtestId, signal);
   }
   // ============== BACKTEST PORTFOLIO ==============
   private executeBacktestPortfolio(

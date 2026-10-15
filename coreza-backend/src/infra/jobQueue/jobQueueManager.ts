@@ -318,16 +318,20 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     nodes: any[],
     edges: any[],
     backtestInitNode: any,
+    abortSignal?: AbortSignal,
   ): Promise<void> {
-    await (supabase.from("workflow_runs") as any)
+    const { data: started, error: startError } = await (supabase.from("workflow_runs") as any)
       .update({
         status: "running",
         started_at: new Date().toISOString(),
       })
-      .eq("id", runId);
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId)
+      .eq("status", "queued").select("id").maybeSingle();
+    if (startError) throw new Error(`Failed to start backtest run: ${startError.message}`);
+    if (!started || abortSignal?.aborted) throw new Error("Backtest run cancelled before startup");
 
     const backtestExecutor = new BacktestExecutor();
-    const context = { userId, workflowId, runId, nodes, edges };
+    const context = { userId, workflowId, runId, nodes, edges, abortSignal };
     const input = backtestInitNode?.values || {};
 
     const result = await backtestExecutor.executeBacktestInit(

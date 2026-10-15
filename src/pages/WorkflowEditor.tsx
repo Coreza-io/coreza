@@ -118,7 +118,7 @@ import { parseNodeClusters } from "@/domain/clusters/parse";
 import { validateClusterSelection, validateClusters } from "@/domain/clusters/validate";
 import { deleteNodesFromDocument, insertNodesInDocument, pasteNodesInDocument, renameNodeInDocument, type WorkflowDocument } from "@/domain/clusters/documentCommands";
 import { resolveInsertionPosition, type InsertionIntent } from "@/domain/clusters/insertion";
-import { applyClusterExecutionVisuals, applyNodeExecutionVisuals } from "@/domain/clusters/executionVisuals";
+import { applyClusterExecutionVisuals, applyNodeExecutionVisuals, type ExecutionVisualSnapshot } from "@/domain/clusters/executionVisuals";
 import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
 import {
   ON_BAR_NODE_TYPE,
@@ -270,7 +270,6 @@ const WorkflowEditorContent = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user: authUser, session, loading: authLoading } = useAuth();
-  const { toggleActivation } = useWorkflowActivation();
   const executionStore = useExecutionStore();
   const notifyExecutionStoreUpdate = useExecutionStoreNotify();
   const stableNodes = useStableNodes();
@@ -294,6 +293,9 @@ const WorkflowEditorContent = () => {
     void workflowId;
     return crypto.randomUUID();
   }, [workflowId, importGeneration]);
+  const currentWorkflowSessionRef = useRef(workflowSessionId);
+  currentWorkflowSessionRef.current = workflowSessionId;
+  const { toggleActivation, isActivationPending } = useWorkflowActivation(workflowSessionId);
   const insertionIntentRef = useRef<InsertionIntent | null>(null);
 
   useEffect(() => () => clearEditorNodeActions(workflowSessionId), [workflowSessionId]);
@@ -309,6 +311,7 @@ const WorkflowEditorContent = () => {
     isNewWorkflow ? "My workflow 1" : "Loading...",
   );
   const [isActive, setIsActive] = useState(false);
+  const activationRevisionRef = useRef(0);
   const [clusters, setClusters] = useState<NodeCluster[]>([]);
   const [focusedClusterId, setFocusedClusterId] = useState<string | null>(null);
   const focusedClusterIdRef = useRef(focusedClusterId);
@@ -327,7 +330,15 @@ const WorkflowEditorContent = () => {
   const [loading, setLoading] = useState(false);
   const [loadingExecution, setLoadingExecution] = useState(false);
   const [isPaletteVisible, setIsPaletteVisible] = useState(true);
-  const [executingNode, setExecutingNode] = useState<string | null>(null);
+  const [executionProgress, setExecutionProgress] = useState<{
+    sessionId: string; progress: ExecutionVisualSnapshot;
+  } | null>(null);
+  const runProgress = executionProgress?.sessionId === workflowSessionId ? executionProgress.progress : null;
+  const executingNode = runProgress?.nodeId ?? null;
+  const setExecutionVisuals = useCallback((progress: ExecutionVisualSnapshot | null) => {
+    if (currentWorkflowSessionRef.current !== workflowSessionId) return;
+    setExecutionProgress(progress ? { sessionId: workflowSessionId, progress } : null);
+  }, [workflowSessionId]);
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
@@ -835,11 +846,15 @@ const WorkflowEditorContent = () => {
   const activeClusterExpanded = !!activeMember && (!CLUSTER_COLLAPSE_ENABLED ||
     focusedClusterId === activeMember.clusterId || isClusterExpanded(clusterViewState, activeMember.clusterId));
   const { nodes: displayedNodes, edges: displayedEdges } = useMemo(() =>
-    manualExecutingNodeId
-      ? applyNodeExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, manualExecutingNodeId)
+    runProgress
+      ? applyNodeExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, runProgress.nodeId,
+          true, undefined, clusterProjection.displayEdgeToCanonicalEdge, runProgress, clusters)
+      : manualExecutingNodeId && !isAutoExecuting
+      ? applyNodeExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, manualExecutingNodeId,
+          true, undefined, clusterProjection.displayEdgeToCanonicalEdge, undefined, clusters)
       : applyClusterExecutionVisuals(baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters,
       activeMember?.sessionId === workflowSessionId ? activeMember : null, activeClusterExpanded, clusterProjection.displayEdgeToCanonicalEdge),
-  [baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters, activeMember, workflowSessionId, activeClusterExpanded, manualExecutingNodeId, clusterProjection.displayEdgeToCanonicalEdge]);
+  [baseDisplayedNodes, baseDisplayedEdges, nodes, edges, clusters, activeMember, workflowSessionId, activeClusterExpanded, manualExecutingNodeId, runProgress, isAutoExecuting, clusterProjection.displayEdgeToCanonicalEdge]);
   const fitViewNodes = useMemo(
     () => CLUSTER_COLLAPSE_ENABLED ? getVisibleClusterNodes(clusterProjection) : nodes,
     [clusterProjection, nodes],
@@ -1004,21 +1019,6 @@ const WorkflowEditorContent = () => {
     else setEdges(candidate);
   }, [commitEdgeCandidate, clusterProjection, edges, setEdges]);
   commitEdgeCandidateRef.current = commitEdgeCandidate;
-
-  // Inject execution state into node data for visual feedback
-  useEffect(() => {
-    if (nodes.length === 0) return;
-
-    setNodes((currentNodes) =>
-      currentNodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          isExecuting: executingNode === node.id,
-        },
-      })),
-    );
-  }, [executingNode]);
 
   // Scope manual node execution state to this editor session.
   useEffect(() => {
@@ -1443,7 +1443,8 @@ const WorkflowEditorContent = () => {
       edges,
       setNodes,
       setEdges,
-      setExecutingNode,
+      setExecutingNode: () => undefined,
+      setExecutionVisuals,
       toast,
       executionStore,
     });
@@ -1452,10 +1453,13 @@ const WorkflowEditorContent = () => {
     edges.length,
     setNodes,
     setEdges,
-    setExecutingNode,
+    setExecutionVisuals,
+    workflowSessionId,
     toast,
     executionStore,
   ]);
+
+  useEffect(() => () => workflowExecutor?.stop(), [workflowExecutor]);
 
   const ensureBacktestExecutionReady = useCallback(async (): Promise<boolean> => {
     if (!session || !authUser) {
@@ -1669,8 +1673,11 @@ const WorkflowEditorContent = () => {
   const handleActivate = async () => {
     if (!authUser || !workflowId) return;
 
+    const activationSession = workflowSessionId;
+    activationRevisionRef.current += 1;
     const result = await toggleActivation(workflowId, isActive);
-    if (result !== null) {
+    if (result !== null && currentWorkflowSessionRef.current === activationSession) {
+      activationRevisionRef.current += 1;
       setIsActive(result);
 
       // Cleanup news subscriptions on deactivation
@@ -1696,45 +1703,48 @@ const WorkflowEditorContent = () => {
   };
 
   useEffect(() => {
-    if (!workflowId) return;
-
+    if (!workflowId || !session?.access_token) return;
+    let disposed = false;
+    let revision = 0;
+    const current = () => !disposed && currentWorkflowSessionRef.current === workflowSessionId;
+    const reconcile = async () => {
+      const requestRevision = ++revision;
+      const activationRevision = activationRevisionRef.current;
+      try {
+        const response = await apiClient.get(`/workflows/${workflowId}`, session.access_token);
+        if (!response.ok) return;
+        const result = await response.json();
+        if (current() && revision === requestRevision && activationRevision === activationRevisionRef.current
+          && typeof result.workflow?.is_active === "boolean") {
+          setIsActive(result.workflow.is_active);
+        }
+      } catch {
+        // The next reconnect or focus retries authoritative reconciliation.
+      }
+    };
+    const onFocus = () => { void reconcile(); };
+    window.addEventListener("focus", onFocus);
     const channel = supabase
       .channel(`workflow-active-${workflowId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "workflows",
-          filter: `id=eq.${workflowId}`,
-        },
-        (payload) => {
-          if (
-            typeof payload.new !== "object" ||
-            payload.new === null ||
-            !("is_active" in payload.new)
-          ) {
-            return;
-          }
-
-          const next = Boolean(payload.new.is_active);
-          setIsActive((prev) => {
-            if (prev && !next) {
-              toast({
-                title: "Workflow completed",
-                description: "Backtest finished — workflow auto-deactivated.",
-              });
-            }
-            return next;
-          });
-        },
-      )
-      .subscribe();
-
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "workflows", filter: `id=eq.${workflowId}`,
+      }, (payload) => {
+        const updated = payload.new as Record<string, unknown>;
+        if (!current() || typeof updated.is_active !== "boolean") return;
+        revision += 1;
+        setIsActive(updated.is_active);
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void reconcile();
+        else revision += 1;
+      });
     return () => {
+      disposed = true;
+      revision += 1;
+      window.removeEventListener("focus", onFocus);
       void supabase.removeChannel(channel);
     };
-  }, [workflowId, toast]);
+  }, [workflowId, workflowSessionId, session?.access_token]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -2645,7 +2655,7 @@ const WorkflowEditorContent = () => {
 
           <ActivateControl
             isActive={isActive}
-            loading={loading}
+            loading={loading || isActivationPending(workflowId)}
             onToggle={handleActivate}
           />
         </div>

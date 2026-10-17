@@ -88,6 +88,7 @@ router.post("/init", async (req: Request, res: Response) => {
           feed,
           warmup_period,
           adjustment,
+          warmup_mode,
         },
       } as any,
       {},

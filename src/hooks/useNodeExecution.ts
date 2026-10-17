@@ -330,8 +330,8 @@ export function useNodeExecution({
           targetHandle: e.targetHandle,
         }));
 
-      // For InitializeIndicators: send the full graph so backend BFS can
-      // traverse through control nodes and discover downstream indicators.
+      // Discovery needs the graph; BacktestInit replay also needs every node's
+      // raw configuration so conditions and expressions resolve against each bar.
       if (
         definition?.name === "InitializeIndicators" ||
         definition?.name === "BacktestInit"
@@ -346,6 +346,7 @@ export function useNodeExecution({
           };
 
           if (
+            definition?.name === "BacktestInit" ||
             nodeDefinition?.category === "Indicators" ||
             nodeDefinition?.name === "RollingWindow" ||
             nodeDefinition?.name === "Consolidator"

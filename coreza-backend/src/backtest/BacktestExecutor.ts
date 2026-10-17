@@ -627,14 +627,13 @@ export class BacktestExecutor implements INodeExecutor {
           : undefined,
       );
 
-      await session.initialize();
-
       let ownedNodeResults: Record<string, NodeResult> | undefined;
       if (!isManual) {
         const cancelOwnedSession = () => session.cancel();
         context?.abortSignal?.addEventListener("abort", cancelOwnedSession, { once: true });
         try {
           if (context?.abortSignal?.aborted) cancelOwnedSession();
+          await session.initialize();
           await session.runAll();
           if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
           ownedNodeResults = session.getLatestNodeSnapshots();
@@ -647,6 +646,8 @@ export class BacktestExecutor implements INodeExecutor {
           context?.abortSignal?.removeEventListener("abort", cancelOwnedSession);
           BacktestSessionManager.getInstance().deleteSession(backtestId);
         }
+      } else {
+        await session.initialize();
       }
 
       const initResult = toNodeResult(

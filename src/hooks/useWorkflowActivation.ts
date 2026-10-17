@@ -3,7 +3,8 @@ import { apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useRef, useState } from "react";
 
-const pendingRequests = new Map<string, symbol>();
+interface PendingRequest { token: symbol; activating: boolean }
+const pendingRequests = new Map<string, PendingRequest>();
 
 /**
  * Shared activation/deactivation logic used by both Workflows.tsx and WorkflowEditor.tsx.
@@ -16,7 +17,7 @@ const pendingRequests = new Map<string, symbol>();
 export function useWorkflowActivation(scopeKey?: string) {
   const { session } = useAuth();
   const { toast } = useToast();
-  const [pendingWorkflowIds, setPendingWorkflowIds] = useState<Set<string>>(new Set());
+  const [pendingWorkflows, setPendingWorkflows] = useState<Map<string, PendingRequest>>(new Map());
   const mounted = useRef(true);
   const scope = `${session?.user.id ?? ""}:${scopeKey ?? ""}`;
   const currentScope = useRef(scope);
@@ -33,30 +34,36 @@ export function useWorkflowActivation(scopeKey?: string) {
     workflowId: string,
     currentlyActive: boolean,
   ): Promise<boolean | null> => {
-    if (pendingRequests.has(workflowId)) return null;
-    const request = Symbol(workflowId);
-    const requestScope = currentScope.current;
-    pendingRequests.set(workflowId, request);
-    setPendingWorkflowIds((ids) => new Set(ids).add(workflowId));
-    const isCurrent = () => mounted.current && currentScope.current === requestScope;
     const newStatus = !currentlyActive;
+    const pending = pendingRequests.get(workflowId);
+    // Stop can supersede the synchronous activation request; duplicate actions cannot.
+    if (pending && (newStatus || !pending.activating)) return null;
+    const request = Symbol(workflowId);
+    const entry = { token: request, activating: newStatus };
+    const requestScope = currentScope.current;
+    pendingRequests.set(workflowId, entry);
+    setPendingWorkflows((requests) => new Map(requests).set(workflowId, entry));
+    const isCurrent = () => mounted.current && currentScope.current === requestScope
+      && pendingRequests.get(workflowId)?.token === request;
     const sessionStorageKey = `live_session_${workflowId}`;
-    const priorSessionId = localStorage.getItem(sessionStorageKey);
-
-    // Generate session ID only when activating
-    const executionId = newStatus ? crypto.randomUUID() : undefined;
-
-    // Optimistically set the new session so the live page resets immediately
-    if (newStatus && executionId) {
-      localStorage.setItem(sessionStorageKey, executionId);
-      window.dispatchEvent(
-        new CustomEvent("coreza-live-session-updated", {
-          detail: { workflowId, sessionId: executionId },
-        }),
-      );
-    }
+    let priorSessionId: string | null = null;
+    let executionId: string | undefined;
 
     try {
+      priorSessionId = localStorage.getItem(sessionStorageKey);
+      // Generate session ID only when activating
+      executionId = newStatus ? crypto.randomUUID() : undefined;
+
+      // Optimistically set the new session so the live page resets immediately
+      if (newStatus && executionId) {
+        localStorage.setItem(sessionStorageKey, executionId);
+        window.dispatchEvent(
+          new CustomEvent("coreza-live-session-updated", {
+            detail: { workflowId, sessionId: executionId },
+          }),
+        );
+      }
+
       // Health check
       const healthCheck = await apiClient.get(
         "/health",
@@ -94,19 +101,24 @@ export function useWorkflowActivation(scopeKey?: string) {
 
       return actualStatus;
     } catch (error: any) {
-      const current = isCurrent() && localStorage.getItem(sessionStorageKey) === (executionId ?? priorSessionId);
-      // Rollback localStorage + event on activation failure
-      if (newStatus && localStorage.getItem(sessionStorageKey) === executionId) {
-        if (priorSessionId) {
-          localStorage.setItem(sessionStorageKey, priorSessionId);
-        } else {
-          localStorage.removeItem(sessionStorageKey);
+      let current = isCurrent();
+      try {
+        current = current && localStorage.getItem(sessionStorageKey) === (executionId ?? priorSessionId);
+        // Rollback localStorage + event on activation failure
+        if (current && newStatus && executionId) {
+          if (priorSessionId) {
+            localStorage.setItem(sessionStorageKey, priorSessionId);
+          } else {
+            localStorage.removeItem(sessionStorageKey);
+          }
+          window.dispatchEvent(
+            new CustomEvent("coreza-live-session-updated", {
+              detail: { workflowId, sessionId: priorSessionId },
+            }),
+          );
         }
-        window.dispatchEvent(
-          new CustomEvent("coreza-live-session-updated", {
-            detail: { workflowId, sessionId: priorSessionId },
-          }),
-        );
+      } catch {
+        // Storage failures must still release the pending request below.
       }
 
       if (!current) return null;
@@ -118,9 +130,10 @@ export function useWorkflowActivation(scopeKey?: string) {
 
       return null;
     } finally {
-      if (pendingRequests.get(workflowId) === request) pendingRequests.delete(workflowId);
-      if (mounted.current) setPendingWorkflowIds((ids) => {
-        const next = new Set(ids);
+      if (pendingRequests.get(workflowId)?.token === request) pendingRequests.delete(workflowId);
+      if (mounted.current) setPendingWorkflows((requests) => {
+        if (requests.get(workflowId)?.token !== request) return requests;
+        const next = new Map(requests);
         next.delete(workflowId);
         return next;
       });
@@ -129,6 +142,9 @@ export function useWorkflowActivation(scopeKey?: string) {
 
   return {
     toggleActivation,
-    isActivationPending: (workflowId: string | null) => !!workflowId && pendingWorkflowIds.has(workflowId),
+    isActivationPending: (workflowId: string | null, currentlyActive = false) => {
+      const pending = workflowId ? pendingWorkflows.get(workflowId) : undefined;
+      return !!pending && (!currentlyActive || !pending.activating);
+    },
   };
 }

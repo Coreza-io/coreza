@@ -5,6 +5,7 @@ import { StreamingLifecycleAdapter } from "./StreamingLifecycleAdapter";
 import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
 import { computeCron } from "./schedulePolicy";
+import { createNodeOutcomes, type WorkflowExecutionResult } from "../engine/types";
 import {
   detectSingleTriggerOrThrow,
   type ClassifiedTrigger,
@@ -116,11 +117,12 @@ export class WorkflowLifecycleService {
         let claimed = false;
         let completed = false;
         let updated: any;
+        let result: WorkflowExecutionResult | undefined;
 
         try {
           await this.workflowRepo.claimBacktestActivation(userId, workflow.id, runId);
           claimed = true;
-          await this.backtest.startBacktest(
+          const output = await this.backtest.startBacktest(
             runId,
             workflow.id,
             userId,
@@ -128,10 +130,27 @@ export class WorkflowLifecycleService {
             workflow.edges,
             trigger.node,
           );
-          completed = await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "completed");
+          const { control, ...initOutput } = output;
+          const nodeResults = { [trigger.node.id]: initOutput, ...control?.ownedNodeResults };
+          result = {
+            success: output.success === true,
+            resultFinalized: true,
+            nodeResults,
+            executionOrder: [trigger.node.id, ...(control?.ownedExecutionOrder ?? [])],
+            nodeOutcomes: createNodeOutcomes(workflow.nodes.map((node: { id: string }) => node.id),
+              nodeResults, output.success ? "skipped" : "not-executed"),
+            ...(!output.success ? { error: {
+              code: "BACKTEST_FAILED", message: output.error ?? "Backtest execution failed", phase: "execute" as const,
+            } } : {}),
+          };
+          if (!output.success) throw new Error(result.error!.message);
+          completed = await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "success", null, result);
         } catch (error: unknown) {
           await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "failed",
-            error instanceof Error ? error.message : "Backtest initialization failed");
+            error instanceof Error ? error.message : "Backtest initialization failed",
+            result ? { ...result, success: false, error: {
+              code: "BACKTEST_FAILED", message: error instanceof Error ? error.message : "Backtest failed", phase: "execute",
+            } } : undefined);
           throw error;
         } finally {
           if (claimed) updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);

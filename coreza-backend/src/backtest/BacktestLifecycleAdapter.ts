@@ -1,4 +1,4 @@
-import { WorkflowEdge, WorkflowNode } from "../nodes/types";
+import { WorkflowEdge, WorkflowNode, type NodeResult } from "../nodes/types";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 
 export class BacktestLifecycleAdapter {
@@ -15,11 +15,11 @@ export class BacktestLifecycleAdapter {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
     triggerNode: WorkflowNode,
-  ): Promise<void> {
+  ): Promise<NodeResult> {
     const controller = new AbortController();
     BacktestLifecycleAdapter.controllers.set(runId, controller);
     try {
-      await jobQueue.startBacktest(runId, workflowId, userId, nodes, edges, triggerNode, controller.signal);
+      return await jobQueue.startBacktest(runId, workflowId, userId, nodes, edges, triggerNode, controller.signal);
     } finally {
       BacktestLifecycleAdapter.controllers.delete(runId);
     }

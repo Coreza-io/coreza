@@ -30,7 +30,7 @@ import type { NodeResult } from "../../nodes/types";
  * @param plan The pre-compiled execution plan (mutated in place — slots[] and active[])
  * @param barInput The bar event data for this bar
  */
-export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
+export async function runBar(plan: CompiledPlan, barInput: any, throwOnNodeFailure = false): Promise<void> {
   const {
     instructions, slots, active, activationCounts, satisfiedDependencyGroups,
     requiredActivationCounts, activeInputSlots, entryIndices, inputSlot, ctx,
@@ -114,6 +114,8 @@ export async function runBar(plan: CompiledPlan, barInput: any): Promise<void> {
     // Propagate activation to downstream nodes
     const activateStart = timingEnabled ? performance.now() : 0;
     if (result?.success === false) {
+      // Owned sessions must propagate failures before reporting completion.
+      if (throwOnNodeFailure) throw new Error(result.error ?? `Backtest node ${instr.node.id} failed`);
       if (timingEnabled) {
         activateMs += performance.now() - activateStart;
       }

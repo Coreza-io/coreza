@@ -2655,7 +2655,7 @@ const WorkflowEditorContent = () => {
 
           <ActivateControl
             isActive={isActive}
-            loading={loading || isActivationPending(workflowId)}
+            loading={loading || isActivationPending(workflowId, isActive)}
             onToggle={handleActivate}
           />
         </div>

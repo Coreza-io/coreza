@@ -32,6 +32,7 @@ import { WorkflowRunnerManager } from "../../services/workflowRunnerManager";
 import { BacktestSessionManager } from "../../backtest";
 import { BacktestExecutor } from "../../backtest";
 import { RedisKeys } from "../redisKeys";
+import type { NodeResult } from "../../nodes/types";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -319,7 +320,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     edges: any[],
     backtestInitNode: any,
     abortSignal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<NodeResult> {
     const { data: started, error: startError } = await (supabase.from("workflow_runs") as any)
       .update({
         status: "running",
@@ -340,9 +341,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       context,
     );
 
-    if (!result.success) {
-      throw new Error(result.error || "Backtest initialization failed");
-    }
+    return result;
   }
 
   async stopBacktest(backtestId: string): Promise<void> {

@@ -32,6 +32,7 @@ import { WorkflowRunnerManager } from "../../services/workflowRunnerManager";
 import { BacktestSessionManager } from "../../backtest";
 import { BacktestExecutor } from "../../backtest";
 import { RedisKeys } from "../redisKeys";
+import type { NodeResult } from "../../nodes/types";
 
 const redis = getRedisQueue();
 const WORKFLOW_JOB_ATTEMPTS = parseInt(
@@ -318,16 +319,20 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     nodes: any[],
     edges: any[],
     backtestInitNode: any,
-  ): Promise<void> {
-    await (supabase.from("workflow_runs") as any)
+    abortSignal?: AbortSignal,
+  ): Promise<NodeResult> {
+    const { data: started, error: startError } = await (supabase.from("workflow_runs") as any)
       .update({
         status: "running",
         started_at: new Date().toISOString(),
       })
-      .eq("id", runId);
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId)
+      .eq("status", "queued").select("id").maybeSingle();
+    if (startError) throw new Error(`Failed to start backtest run: ${startError.message}`);
+    if (!started || abortSignal?.aborted) throw new Error("Backtest run cancelled before startup");
 
     const backtestExecutor = new BacktestExecutor();
-    const context = { userId, workflowId, runId, nodes, edges };
+    const context = { userId, workflowId, runId, nodes, edges, abortSignal };
     const input = backtestInitNode?.values || {};
 
     const result = await backtestExecutor.executeBacktestInit(
@@ -336,9 +341,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       context,
     );
 
-    if (!result.success) {
-      throw new Error(result.error || "Backtest initialization failed");
-    }
+    return result;
   }
 
   async stopBacktest(backtestId: string): Promise<void> {

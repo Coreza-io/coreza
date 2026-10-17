@@ -4,6 +4,12 @@ import type { ClusterActiveMember } from "@/hooks/useClusterExecution";
 import type { NodeCluster } from "./types";
 import { getClusterEdgeKind } from "./edgeSemantics";
 
+export interface ExecutionVisualSnapshot {
+  nodeId: string;
+  edgeIds: readonly string[];
+  streamingWaiting?: boolean;
+}
+
 /** Render-only copies, always derived from the unmodified displayed graph. */
 export function applyClusterExecutionVisuals(
   nodes: Node[],
@@ -57,19 +63,33 @@ export function applyNodeExecutionVisuals(
   animateEdges = true,
   memberNodeIds?: readonly string[],
   projectedEdgeMap?: ReadonlyMap<string, string>,
+  progress?: ExecutionVisualSnapshot,
+  clusters?: readonly NodeCluster[],
 ): { nodes: Node[]; edges: Edge[] } {
   if (!nodeId || !canonicalNodes.some(({ id }) => id === nodeId))
     return { nodes, edges };
   let nodeChanged = false;
+  const hierarchy = clusters ? resolveClusterHierarchy(clusters) : null;
   const nextNodes = nodes.map((node) => {
-    if (node.id !== nodeId || node.data.isExecuting === true) return node;
+    const representative = node.type === "compactCluster" && hierarchy?.effectiveMembers
+      .get(node.data.clusterId as string)?.includes(nodeId);
+    if (node.id !== nodeId && !representative) return node;
+    if (node.data.isExecuting === true && !progress?.streamingWaiting) return node;
     nodeChanged = true;
     // Hidden runtime hosts keep all their display and interaction flags.
-    return { ...node, data: { ...node.data, isExecuting: true } };
+    return {
+      ...node,
+      data: { ...node.data, isExecuting: true, ...(progress?.streamingWaiting ? { isStreamingWaiting: true } : {}) },
+      ...(progress?.streamingWaiting ? {
+        className: [node.className, "streaming-node"].filter(Boolean).join(" "),
+        style: { ...node.style, border: "3px solid #3b82f6", backgroundColor: "#eff6ff", boxShadow: "0 0 20px rgba(59,130,246,0.4)" },
+      } : {}),
+    };
   });
   if (!animateEdges) return { nodes: nodeChanged ? nextNodes : nodes, edges };
 
   const members = memberNodeIds ? new Set(memberNodeIds) : null;
+  const selectedEdges = progress ? new Set(progress.edgeIds) : null;
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
   const incidentEdges = new Map(
     canonicalEdges
@@ -77,7 +97,7 @@ export function applyNodeExecutionVisuals(
         (edge) =>
           (!members ||
             (members.has(edge.source) && members.has(edge.target))) &&
-          (edge.source === nodeId || edge.target === nodeId) &&
+          (selectedEdges ? selectedEdges.has(edge.id) : edge.source === nodeId || edge.target === nodeId) &&
           getClusterEdgeKind(
             edge,
             nodeById.get(edge.source),

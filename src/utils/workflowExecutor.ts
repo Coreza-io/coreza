@@ -12,6 +12,7 @@ import { Node, Edge } from "@xyflow/react";
 import ExecutionContext from "./executionContext";
 import { acceptEditorExecution } from "./executionGeneration";
 import { executeEditorNode } from "@/services/editorNodeExecution";
+import type { ExecutionVisualSnapshot } from "@/domain/clusters/executionVisuals";
 import { getControlResultHandle } from "./controlResult";
 
 export interface ExecutorContext {
@@ -20,6 +21,7 @@ export interface ExecutorContext {
   setNodes: (update: (nodes: Node[]) => Node[]) => void;
   setEdges: (update: (edges: Edge[]) => Edge[]) => void;
   setExecutingNode: (nodeId: string | null) => void;
+  setExecutionVisuals?: (progress: ExecutionVisualSnapshot | null) => void;
   toast: (params: any) => void;
   executionStore: ExecutionContext;
   executeNode?: (
@@ -59,6 +61,35 @@ export class WorkflowExecutor {
   >();
   private edgePayload = new Map<string, any>();
   private executionLockToken?: symbol;
+  private visualFrame: number | null = null;
+  private pendingVisual: ExecutionVisualSnapshot | null = null;
+  private visualGeneration = 0;
+  private visualsEnabled = true;
+
+  private publishVisual(progress: ExecutionVisualSnapshot): void {
+    if (!this.visualsEnabled) return;
+    this.pendingVisual = progress;
+    if (this.visualFrame !== null) return;
+    const generation = this.visualGeneration;
+    this.visualFrame = requestAnimationFrame(() => {
+      this.visualFrame = null;
+      if (generation !== this.visualGeneration || !this.visualsEnabled) return;
+      const latest = this.pendingVisual;
+      this.pendingVisual = null;
+      if (this.context.setExecutionVisuals) this.context.setExecutionVisuals(latest);
+      else this.context.setExecutingNode(latest?.nodeId ?? null);
+    });
+  }
+
+  private clearVisuals(): void {
+    this.visualsEnabled = false;
+    this.visualGeneration += 1;
+    if (this.visualFrame !== null) cancelAnimationFrame(this.visualFrame);
+    this.visualFrame = null;
+    this.pendingVisual = null;
+    if (this.context.setExecutionVisuals) this.context.setExecutionVisuals(null);
+    else this.context.setExecutingNode(null);
+  }
 
   private async invokeNormalNode(nodeId: string): Promise<unknown> {
     const node = this.context.nodes.find((candidate) => candidate.id === nodeId);
@@ -363,116 +394,12 @@ export class WorkflowExecutor {
     await Promise.all(tasks);
   }
 
-  /**
-   * Highlight edges connected to a node, optionally specific to a target
-   */
-  private highlightEdges(nodeId: string, targetNodeId?: string): void {
-    let connected;
-    if (targetNodeId) {
-      // Highlight only the specific edge from source to target (for conditional paths)
-      connected = this.context.edges.filter(
-        (e) => e.source === nodeId && e.target === targetNodeId,
-      );
-    } else {
-      // Highlight all edges connected to the node
-      connected = this.context.edges.filter(
-        (e) => e.source === nodeId || e.target === nodeId,
-      );
-    }
-
-    this.context.setEdges((edges) =>
-      edges.map((edge) =>
-        connected.some((c) => c.id === edge.id)
-          ? {
-              ...edge,
-              animated: true,
-              className: "executing-edge",
-              style: {
-                ...edge.style,
-                stroke: "#22c55e",
-                strokeWidth: 3,
-                strokeLinecap: "round",
-                strokeLinejoin: "round",
-              },
-            }
-          : {
-              ...edge,
-              animated: false,
-              className: "",
-              style: {
-                ...edge.style,
-                stroke: undefined,
-                strokeWidth: undefined,
-              },
-            },
-      ),
+  /** Publish current progress without touching the canonical graph. */
+  private highlightEdges(nodeId: string, selectedEdges?: readonly Edge[], streamingWaiting = false): void {
+    const connected = selectedEdges ?? this.context.edges.filter(
+      (edge) => edge.source === nodeId || edge.target === nodeId,
     );
-  }
-
-  /**
-   * Highlight a node (clears previous highlights first)
-   */
-  private highlightNode(nodeId: string): void {
-    this.context.setNodes((nodes) =>
-      nodes.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              className: "executing-node",
-              style: {
-                ...n.style,
-                border: "3px solid #22c55e",
-                backgroundColor: "#f0fdf4",
-                boxShadow: "0 0 20px rgba(34,197,94,0.4)",
-              },
-            }
-          : {
-              ...n,
-              className: "",
-              style: {
-                ...n.style,
-                border: undefined,
-                backgroundColor: undefined,
-                boxShadow: undefined,
-              },
-            },
-      ),
-    );
-  }
-
-  /**
-   * Highlight a streaming node with different visual style
-   */
-  private highlightStreamingNode(nodeId: string): void {
-    this.context.setNodes((nodes) =>
-      nodes.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              className: "streaming-node",
-              data: {
-                ...n.data,
-                isStreamingWaiting: true,
-              },
-              style: {
-                ...n.style,
-                border: "3px solid #3b82f6",
-                backgroundColor: "#eff6ff",
-                boxShadow: "0 0 20px rgba(59,130,246,0.4)",
-              },
-            }
-          : {
-              ...n,
-              className: "",
-              style: {
-                ...n.style,
-                border: undefined,
-                backgroundColor: undefined,
-                boxShadow: undefined,
-              },
-            },
-      ),
-    );
+    this.publishVisual({ nodeId, edgeIds: connected.map(({ id }) => id), streamingWaiting });
   }
 
   /**
@@ -491,9 +418,7 @@ export class WorkflowExecutor {
       `🌊 [STREAMING] Starting streaming node ${nodeId}, waiting for first event (timeout: ${timeout}ms)`,
     );
 
-    this.context.setExecutingNode(nodeId);
-    this.highlightEdges(nodeId);
-    this.highlightStreamingNode(nodeId);
+    this.highlightEdges(nodeId, undefined, true);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -568,20 +493,7 @@ export class WorkflowExecutor {
 
     const result = await dataPromise;
 
-    // Clear streaming visual state
-    this.context.setNodes((nodes) =>
-      nodes.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                isStreamingWaiting: false,
-              },
-            }
-          : n,
-      ),
-    );
+    this.highlightEdges(nodeId);
 
     this.nodeStore.setNodeData(nodeId, { output: result });
     console.log(`🎉 [STREAMING] Node ${nodeId} completed with data`);
@@ -713,21 +625,23 @@ export class WorkflowExecutor {
     const defName = (node.data.definition as any)?.name;
     const fieldState = node.data.fieldState || node.data.values || {};
 
-    this.context.setExecutingNode(nodeId);
     this.highlightEdges(nodeId);
-    //this.highlightNode(nodeId);
 
-    // Default (non-Loop) node execution
-    const result: any = await Promise.race([
-      this.invokeNormalNode(nodeId),
-      new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(new Error(`Node ${nodeId} execution timed out after 30s`)),
-          30000,
-        ),
-      ),
-    ]);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let result: any;
+    try {
+      result = await Promise.race([
+        this.invokeNormalNode(nodeId),
+        new Promise((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`Node ${nodeId} execution timed out after 30s`)),
+            30000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
 
     this.nodeStore.setNodeData(nodeId, { output: result });
 
@@ -739,10 +653,12 @@ export class WorkflowExecutor {
 
   async executeNodeWithLock(nodeId: string, executedSet: Set<string>, lockToken: symbol): Promise<unknown> {
     this.executionLockToken = lockToken;
+    this.visualsEnabled = true;
     try {
       return await this.executeNode(nodeId, executedSet);
     } finally {
       this.executionLockToken = undefined;
+      this.clearVisuals();
     }
   }
 
@@ -761,6 +677,7 @@ export class WorkflowExecutor {
 
     acceptEditorExecution();
 
+    this.visualsEnabled = true;
     this.isAutoExecuting = true;
     this.executionLockToken = lockToken;
     this.preCalculateConditionalBranches(); // Refresh conditional map
@@ -925,6 +842,7 @@ export class WorkflowExecutor {
 
             // --- CHANGED HERE: treat entry as string[] not single string ---
             const targets: string[] = branchMap[handleKey] || [];
+            this.highlightEdges(id, out.filter((edge) => edge.sourceHandle === handleKey));
 
             if (targets.length > 0) {
               // 3) for each target node, find its outgoing edge and collect into next[]
@@ -941,9 +859,6 @@ export class WorkflowExecutor {
                 `🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to`,
                 targets,
               );
-
-              // 4) highlight them all
-              targets.forEach((t) => this.highlightEdges(id, t));
             } else {
               console.log(
                 `⚠️ [WORKFLOW EXECUTOR] No targets found for branch node ${id} with handle "${handleKey}"`,
@@ -1093,32 +1008,13 @@ export class WorkflowExecutor {
     } finally {
       this.executionLockToken = undefined;
       this.isAutoExecuting = false;
-      this.context.setExecutingNode(null);
-      this.context.setEdges((edges) =>
-        edges.map((e) => ({
-          ...e,
-          animated: false,
-          className: "",
-          style: { ...e.style, stroke: undefined, strokeWidth: undefined },
-        })),
-      );
-      this.context.setNodes((nodes) =>
-        nodes.map((n) => ({
-          ...n,
-          className: "",
-          style: {
-            ...n.style,
-            border: undefined,
-            backgroundColor: undefined,
-            boxShadow: undefined,
-          },
-        })),
-      );
+      this.clearVisuals();
     }
   }
 
   setAutoExecuting(val: boolean): void {
     this.isAutoExecuting = val;
+    if (!val) this.clearVisuals();
   }
 
   stop(): void {

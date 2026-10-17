@@ -5,6 +5,7 @@ import { StreamingLifecycleAdapter } from "./StreamingLifecycleAdapter";
 import { WorkflowRepository } from "./WorkflowRepository";
 import { WorkflowRunRepository } from "./WorkflowRunRepository";
 import { computeCron } from "./schedulePolicy";
+import { createNodeOutcomes, type WorkflowExecutionResult } from "../engine/types";
 import {
   detectSingleTriggerOrThrow,
   type ClassifiedTrigger,
@@ -34,7 +35,7 @@ export class WorkflowLifecycleService {
     const workflow = (await this.workflowRepo.getOwnedWorkflow(
       input.userId,
       input.workflowId,
-      "id,user_id,nodes,edges,node_clusters,revision,is_active,schedule_cron",
+      "id,user_id,nodes,edges,node_clusters,revision,is_active,schedule_cron,active_execution_id",
     )) as any;
 
     const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
@@ -51,32 +52,15 @@ export class WorkflowLifecycleService {
 
       return await this.deactivate(workflow, trigger, input.userId);
     } catch (error) {
-      await this.workflowRepo
-        .setActivationState(input.userId, input.workflowId, false, null)
+      // Backtests release only the activation claimed by their own run.
+      if (trigger.kind === "backtest") throw error;
+      await this.workflowRepo.setActivationState(input.userId, input.workflowId, false, null)
         .catch(() => undefined);
 
       const message =
         error instanceof Error ? error.message : "Unknown activation error";
       throw createError(`Activation failed: ${message}`, 502);
     }
-  }
-
-  async deactivateAfterCompletion(
-    userId: string,
-    workflowId: string,
-  ): Promise<void> {
-    const workflow = (await this.workflowRepo.getOwnedWorkflow(
-      userId,
-      workflowId,
-      "id,user_id,nodes,edges,is_active",
-    )) as any;
-
-    if (!workflow?.is_active) {
-      return;
-    }
-
-    const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
-    await this.deactivate(workflow, trigger, userId);
   }
 
   private async activate(
@@ -130,9 +114,15 @@ export class WorkflowLifecycleService {
         );
 
         const runId = (run as any).id;
+        let claimed = false;
+        let completed = false;
+        let updated: any;
+        let result: WorkflowExecutionResult | undefined;
 
         try {
-          await this.backtest.startBacktest(
+          await this.workflowRepo.claimBacktestActivation(userId, workflow.id, runId);
+          claimed = true;
+          const output = await this.backtest.startBacktest(
             runId,
             workflow.id,
             userId,
@@ -140,17 +130,35 @@ export class WorkflowLifecycleService {
             workflow.edges,
             trigger.node,
           );
-          message = "Backtest workflow activated";
+          const { control, ...initOutput } = output;
+          const nodeResults = { [trigger.node.id]: initOutput, ...control?.ownedNodeResults };
+          result = {
+            success: output.success === true,
+            resultFinalized: true,
+            nodeResults,
+            executionOrder: [trigger.node.id, ...(control?.ownedExecutionOrder ?? [])],
+            nodeOutcomes: createNodeOutcomes(workflow.nodes.map((node: { id: string }) => node.id),
+              nodeResults, output.success ? "skipped" : "not-executed"),
+            ...(!output.success ? { error: {
+              code: "BACKTEST_FAILED", message: output.error ?? "Backtest execution failed", phase: "execute" as const,
+            } } : {}),
+          };
+          if (!output.success) throw new Error(result.error!.message);
+          completed = await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "success", null, result);
         } catch (error: unknown) {
-          await this.runRepo.markRunFailed(
-            runId,
-            error instanceof Error
-              ? error.message
-              : "Backtest initialization failed",
-          );
+          await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "failed",
+            error instanceof Error ? error.message : "Backtest initialization failed",
+            result ? { ...result, success: false, error: {
+              code: "BACKTEST_FAILED", message: error instanceof Error ? error.message : "Backtest failed", phase: "execute",
+            } } : undefined);
           throw error;
+        } finally {
+          if (claimed) updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);
         }
-        break;
+        return {
+          workflow: updated,
+          next_run_at: null, message: completed ? "Backtest completed" : "Backtest cancelled",
+        };
       }
     }
 
@@ -174,6 +182,19 @@ export class WorkflowLifecycleService {
     trigger: ClassifiedTrigger,
     userId: string,
   ): Promise<ActivationResult> {
+    if (trigger.kind === "backtest") {
+      const runId = typeof workflow.active_execution_id === "string" ? workflow.active_execution_id : null;
+      if (!workflow.is_active) {
+        return { workflow, next_run_at: null, message: "Workflow deactivated" };
+      }
+      if (runId) {
+        await this.runRepo.requestCancellation(runId);
+        this.backtest.cancelRun(runId);
+        await this.runRepo.markRunCancelled(runId);
+      }
+      const updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);
+      return { workflow: updated, next_run_at: null, message: "Workflow deactivated" };
+    }
     const cancelledJobs = await this.scheduler.cancelJobs(userId, workflow.id);
 
     if (cancelledJobs > 0) {
@@ -186,9 +207,6 @@ export class WorkflowLifecycleService {
         break;
       case "streaming":
         await this.streaming.deactivateStreaming(userId, workflow.id);
-        break;
-      case "backtest":
-        await this.runRepo.cancelActiveBacktests(workflow.id);
         break;
       case "webhook":
         break;
@@ -214,7 +232,7 @@ export class WorkflowLifecycleService {
     const workflow = (await this.workflowRepo.getOwnedWorkflow(
       userId,
       workflowId,
-      "id,user_id,nodes,edges,is_active",
+      "id,user_id,nodes,edges,is_active,active_execution_id",
     )) as any;
 
     if (workflow.is_active) {

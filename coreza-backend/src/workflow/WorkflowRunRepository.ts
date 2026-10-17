@@ -1,8 +1,29 @@
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
+import type { WorkflowExecutionResult } from "../engine/types";
 
 export class WorkflowRunRepository {
+  async finishBacktestRun(
+    userId: string, workflowId: string, runId: string,
+    status: "success" | "failed", errorMessage: string | null = null,
+    result?: WorkflowExecutionResult,
+  ): Promise<boolean> {
+    const { data, error } = await (supabase.from("workflow_runs") as any)
+      .update({ status, completed_at: new Date().toISOString(), error_message: errorMessage,
+        ...(result ? { result } : {}),
+      })
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId)
+      .in("status", ["queued", "running"]).select("id").maybeSingle();
+    if (error) throw createError("Failed to finalize backtest run", 500);
+    if (data) return true;
+    const run = await this.getOwnedRun(userId, workflowId, runId);
+    if (!["cancelling", "cancelled"].includes(run.status)) {
+      throw createError("Backtest run is no longer executable", 409);
+    }
+    return false;
+  }
+
   async createRun(
     workflowId: string,
     userId: string,

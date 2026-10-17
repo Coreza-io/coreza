@@ -173,4 +173,26 @@ export class WorkflowRepository {
 
     return data;
   }
+
+  async claimBacktestActivation(userId: string, workflowId: string, runId: string) {
+    const { data, error } = await (supabase.from("workflows") as any)
+      .update({ is_active: true, active_execution_id: runId, schedule_cron: null, updated_at: new Date().toISOString() })
+      .eq("id", workflowId).eq("user_id", userId).eq("is_active", false)
+      .select().maybeSingle();
+    if (error) throw createError("Failed to claim backtest activation", 500);
+    if (!data) throw createError("Workflow is already active", 409);
+    return data;
+  }
+
+  async releaseBacktestActivation(userId: string, workflowId: string, runId: string | null) {
+    const query = (supabase.from("workflows") as any)
+      .update({ is_active: false, active_execution_id: null, schedule_cron: null, updated_at: new Date().toISOString() })
+      .eq("id", workflowId).eq("user_id", userId);
+    const { data, error } = await (runId === null
+      ? query.is("active_execution_id", null) : query.eq("active_execution_id", runId))
+      .select().maybeSingle();
+    if (error) throw createError("Failed to release backtest activation", 500);
+    // Cancellation or a newer activation may already have replaced this owner.
+    return data ?? this.getOwnedWorkflow(userId, workflowId);
+  }
 }

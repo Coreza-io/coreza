@@ -9,7 +9,6 @@ import { compilePlan, runBar, CompiledPlan } from "../compiled";
 import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
 import { RedisKeys } from "../../infra/redisKeys";
-import { createWorkflowLifecycleService } from "../../workflow/lifecycleServiceInstance";
 import { toMarketBarEnvelope } from "../simBroker/marketEnvelope";
 import { seedRollingWindows } from "../rollingWindowSeed";
 import type { RollingWindowSeed } from "../rollingWindowSeed";
@@ -71,6 +70,7 @@ export class BacktestSession {
   private barsProcessed = 0;
   private currentSymbolIndex = 0;
   private stepping = false;
+  private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
   private currentMultiBarBars: Record<string, any> = Object.create(null);
@@ -338,8 +338,10 @@ export class BacktestSession {
       // whatever the strategy run sets, and `warmup` is written below.
       const { mode, totalStart, warmup, ...strategyAccumulators } = this.perf;
       try {
-        for (const event of this.warmupEvents)
+        for (const event of this.warmupEvents) {
+          if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
           await this.executeTimestampAsync(event);
+        }
       } finally {
         const totalMs = performance.now() - startedAt;
         Object.assign(this.perf, strategyAccumulators);
@@ -590,7 +592,7 @@ export class BacktestSession {
       if (this.compiledPlan) {
         t0 = performance.now();
         this.reusableBarInput.data = symbolEvent;
-        await runBar(this.compiledPlan, this.reusableBarInput);
+        await runBar(this.compiledPlan, this.reusableBarInput, true);
         this.perf.executeLoopMs += performance.now() - t0;
       } else {
         t0 = performance.now();
@@ -598,11 +600,9 @@ export class BacktestSession {
         this.perf.resetMs += performance.now() - t0;
         this.perf.storeClearMs += this.run.lastStoreClearMs;
         t0 = performance.now();
-        void this.run
-          .executeFromEntries({ data: symbolEvent }, this.entryNodeIds)
-          .then(() => {
-            this.perf.buildResultMs += this.run.lastBuildResultMs;
-          });
+        const result = await this.run.executeFromEntries({ data: symbolEvent }, this.entryNodeIds);
+        this.perf.buildResultMs += this.run.lastBuildResultMs;
+        if (!result.success) throw new Error(result.error?.message ?? "Backtest strategy failed");
         this.perf.executeLoopMs += performance.now() - t0;
       }
 
@@ -666,7 +666,7 @@ export class BacktestSession {
 
       if (this.compiledPlan) {
         t0 = performance.now();
-        await runBar(this.compiledPlan, { data: symbolEvent });
+        await runBar(this.compiledPlan, { data: symbolEvent }, true);
         this.perf.executeLoopMs += performance.now() - t0;
       } else {
         t0 = performance.now();
@@ -674,12 +674,13 @@ export class BacktestSession {
         this.perf.resetMs += performance.now() - t0;
         this.perf.storeClearMs += this.run.lastStoreClearMs;
         t0 = performance.now();
-        await this.run.executeFromEntries(
+        const result = await this.run.executeFromEntries(
           { data: symbolEvent },
           this.entryNodeIds,
         );
         this.perf.executeLoopMs += performance.now() - t0;
         this.perf.buildResultMs += this.run.lastBuildResultMs;
+        if (!result.success) throw new Error(result.error?.message ?? "Backtest strategy failed");
       }
 
       this.perf.symbolExecutions += 1;
@@ -835,7 +836,9 @@ export class BacktestSession {
   }
 
   async runAll(): Promise<void> {
+    if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
     if (this.status === "finished") {
+      await this.finalize();
       return;
     }
 
@@ -977,6 +980,11 @@ export class BacktestSession {
       this.stepping = false;
     }
 
+    if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
+    if (this.bars.length === 0) {
+      this.status = "finished";
+      this.phase = "finished";
+    }
     if (this.status === "finished") {
       await this.finalize();
       const elapsed = performance.now() - this.perf.totalStart;
@@ -999,6 +1007,7 @@ export class BacktestSession {
   async reset(): Promise<void> {
     if (this.stepping || this.status === "running")
       throw new Error("Cannot reset a running backtest session");
+    if (this.finalization) throw new Error("Start a new backtest to reset a finalized session");
     this.currentIndex = 0;
     this.currentSymbolIndex = 0;
     this.barsProcessed = 0;
@@ -1098,29 +1107,16 @@ export class BacktestSession {
     );
   }
 
-  private async finalize(): Promise<void> {
+  private finalize(): Promise<void> {
+    // Repeated completion calls share the same persistence operation, including failures.
+    return this.finalization ??= this.finalizeResults();
+  }
+
+  private async finalizeResults(): Promise<void> {
     let t0 = performance.now();
     try {
       const backtestExecutor = new BacktestExecutor();
-      await backtestExecutor.finalizeBacktestById(this.backtestId);
-
-      try {
-        const lifecycleService = createWorkflowLifecycleService();
-        await lifecycleService.deactivateAfterCompletion(
-          this.userId,
-          this.workflowId,
-        );
-      } catch (error) {
-        console.error(
-          `[BacktestSession] Auto-deactivate failed for workflow ${this.workflowId}:`,
-          error,
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[BacktestSession] Finalization failed for ${this.backtestId}:`,
-        error,
-      );
+      await backtestExecutor.finalizeBacktestById(this.backtestId, this.abortController.signal);
     } finally {
       this.perf.finalizeMs += performance.now() - t0;
     }

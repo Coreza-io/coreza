@@ -413,11 +413,12 @@ export function useNodeExecution({
         return { nodeId: outcomeNodeId, status: "failed", error: { message: `Node ${outcomeNodeId} is outside the allowed execution scope.` } };
       }
       const executionIsCurrent = () => !signal?.aborted &&
-        (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration);
+        (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration) &&
+        (!lockToken || isEditorExecutionLocked(String(data?.workflowSessionId ?? ""), lockToken));
       if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
       // An async function alone does not yield to input/paint before building its payload.
       await new Promise<void>(resolve => setTimeout(resolve, 0));
-      if (!executionIsCurrent() || (lockToken && !isEditorExecutionLocked(String(data?.workflowSessionId ?? ""), lockToken))) {
+      if (!executionIsCurrent()) {
         return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
       }
       const storedSelectedInput = selectedInputNodeId
@@ -443,6 +444,7 @@ export function useNodeExecution({
             output: overrideOutput,
           });
           updateNodeData(nodeId, { output: overrideOutput });
+          notifyExecutionStoreUpdate();
         }
         setIsSending(false);
         return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
@@ -641,6 +643,7 @@ export function useNodeExecution({
             setLastOutput(finalOut);
             data.output = finalOut;
             updateNodeData(nodeId, { output: finalOut });
+            notifyExecutionStoreUpdate();
             return { nodeId: outcomeNodeId, status: "success", output: finalOut, selectedContinuation: "done" };
           }
 
@@ -675,6 +678,7 @@ export function useNodeExecution({
             _edgeBuf: {},
           });
 
+          notifyExecutionStoreUpdate();
           return { nodeId: outcomeNodeId, status: "success", output: uiOut, selectedContinuation: "loop" };
         }
 
@@ -798,7 +802,10 @@ export function useNodeExecution({
               const current = getNodes();
               const updated = updater([...current]);
               const next = updated.find((candidate) => candidate.id === nodeId);
-              if (next) updateNodeData(nodeId!, { ...next.data });
+              if (next) {
+                updateNodeData(nodeId!, { ...next.data });
+                notifyExecutionStoreUpdate();
+              }
             },
             setLastOutput,
             apiClient,
@@ -877,6 +884,7 @@ export function useNodeExecution({
           output: finalOutput,
         });
         updateNodeData(nodeId!, { output: finalOutput });
+        notifyExecutionStoreUpdate();
         return { nodeId: outcomeNodeId, status: "success", output: finalOutput };
       } catch (err: any) {
         if (err?.name === "AbortError" || !executionIsCurrent()) {
@@ -922,6 +930,7 @@ export function useNodeExecution({
       data,
       executionStore,
       updateNodeData,
+      notifyExecutionStoreUpdate,
       session?.access_token,
       getEdges,
     ],

@@ -208,7 +208,7 @@ function asVolume(bar: any): number {
 }
 
 function asBarTime(bar: any): string {
-  return String(bar?.time ?? bar?.t ?? "");
+  return String(bar?.time ?? bar?.t ?? bar?.timestamp ?? "");
 }
 
 type AtrSmoothing = "wilders" | "simple";

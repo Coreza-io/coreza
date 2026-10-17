@@ -9,6 +9,7 @@
  */
 
 import { Node, Edge } from "@xyflow/react";
+import { startTransition } from "react";
 import ExecutionContext from "./executionContext";
 import { acceptEditorExecution } from "./executionGeneration";
 import { executeEditorNode } from "@/services/editorNodeExecution";
@@ -76,8 +77,10 @@ export class WorkflowExecutor {
       if (generation !== this.visualGeneration || !this.visualsEnabled) return;
       const latest = this.pendingVisual;
       this.pendingVisual = null;
-      if (this.context.setExecutionVisuals) this.context.setExecutionVisuals(latest);
-      else this.context.setExecutingNode(latest?.nodeId ?? null);
+      startTransition(() => {
+        if (this.context.setExecutionVisuals) this.context.setExecutionVisuals(latest);
+        else this.context.setExecutingNode(latest?.nodeId ?? null);
+      });
     });
   }
 

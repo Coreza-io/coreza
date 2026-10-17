@@ -8,8 +8,8 @@
  * See the LICENSE file for details.
  */
 
-import { createContext, useContext, useRef, useEffect, useState } from 'react';
-import ExecutionContext from '@/utils/executionContext';
+import { createContext, useContext, useRef, useEffect, useState, useCallback, useMemo, useSyncExternalStore, startTransition } from 'react';
+import ExecutionContext, { type NodeExecutionData } from '@/utils/executionContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { StaticExecutionStoreContext } from './StaticExecutionStoreContext';
@@ -19,6 +19,15 @@ const ExecutionStoreContext = createContext<{
   version: number;
   notifyUpdate: () => void;
 } | null>(null);
+
+// Imperative readers must not subscribe to every execution-result notification.
+const ExecutionStoreAccessContext = createContext<{
+  store: ExecutionContext;
+  notifyUpdate: () => void;
+  subscribe: (listener: () => void) => () => void;
+} | null>(null);
+const EMPTY_NODE_DATA: NodeExecutionData = Object.freeze({});
+const emptySubscribe = () => () => {};
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
 const STREAM_PAUSE_DEBUG = false;
@@ -30,10 +39,24 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   const shouldReconnectRef = useRef(true);
   const { user } = useAuth();
   const [updateVersion, setUpdateVersion] = useState(0);
+  const listenersRef = useRef(new Set<() => void>());
+  const notifyUpdate = useCallback(() => {
+    startTransition(() => setUpdateVersion(v => v + 1));
+    listenersRef.current.forEach(listener => listener());
+  }, []);
   
   if (!storeRef.current) {
     storeRef.current = new ExecutionContext();
   }
+
+  const access = useMemo(() => ({
+    store: storeRef.current!,
+    notifyUpdate,
+    subscribe: (listener: () => void) => {
+      listenersRef.current.add(listener);
+      return () => { listenersRef.current.delete(listener); };
+    },
+  }), [notifyUpdate]);
 
   // WebSocket listener for streaming market data
   useEffect(() => {
@@ -112,7 +135,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     receivedAt: message.timestamp
                   }
                 });
-                setUpdateVersion(v => v + 1); // Trigger React re-render
+                notifyUpdate();
                 console.log('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
               }
             }
@@ -131,7 +154,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     endedAt: message.timestamp,
                   },
                 });
-                setUpdateVersion(v => v + 1); // Trigger React re-render
+                notifyUpdate();
               }
 
               console.warn('🪝 [ExecutionStore] Webhook error for node:', nodeId, error);
@@ -195,7 +218,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     },
                     ...(eventEntryId ? { lastStreamEntryId: eventEntryId } : {}),
                   });
-                  setUpdateVersion(v => v + 1); // Trigger React re-render
+                  notifyUpdate();
                   console.log(
                     isReplay
                       ? '🔁 [ExecutionStore] Replayed event for:'
@@ -226,7 +249,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                       receivedAt: new Date().toISOString()
                     }
                   });
-                  setUpdateVersion(v => v + 1); // Trigger React re-render
+                  notifyUpdate();
                   console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
                 } else {
                   console.log('⚠️ [ExecutionStore] Ignoring legacy streaming for non-listening node:', nodeId);
@@ -282,21 +305,21 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
         wsRef.current = null;
       }
     };
-  }, [user?.id]);
-
-  const notifyUpdate = () => setUpdateVersion(v => v + 1);
+  }, [user?.id, notifyUpdate]);
 
   return (
-    <ExecutionStoreContext.Provider value={{ store: storeRef.current, version: updateVersion, notifyUpdate }}>
-      {children}
-    </ExecutionStoreContext.Provider>
+    <ExecutionStoreAccessContext.Provider value={access}>
+      <ExecutionStoreContext.Provider value={{ store: access.store, version: updateVersion, notifyUpdate }}>
+        {children}
+      </ExecutionStoreContext.Provider>
+    </ExecutionStoreAccessContext.Provider>
   );
 };
 
 export const useExecutionStore = (): ExecutionContext => {
   // Check for static (historical view) context first - this provides isolation
   const staticCtx = useContext(StaticExecutionStoreContext);
-  const ctx = useContext(ExecutionStoreContext);
+  const ctx = useContext(ExecutionStoreAccessContext);
   if (staticCtx) return staticCtx.store;
 
   // Fall back to main editor context
@@ -318,10 +341,26 @@ export const useExecutionStoreVersion = (): number => {
 export const useExecutionStoreNotify = (): (() => void) => {
   // Check for static context first
   const staticCtx = useContext(StaticExecutionStoreContext);
-  const ctx = useContext(ExecutionStoreContext);
+  const ctx = useContext(ExecutionStoreAccessContext);
   if (staticCtx) return staticCtx.notifyUpdate;
 
   return ctx?.notifyUpdate ?? (() => {});
+};
+
+/** Subscribe only to one node; unrelated result updates retain snapshot identity. */
+export const useExecutionNodeData = (nodeId: string | null | undefined): NodeExecutionData => {
+  const staticCtx = useContext(StaticExecutionStoreContext);
+  const ctx = useContext(ExecutionStoreAccessContext);
+  const store = staticCtx?.store ?? ctx?.store;
+  const getSnapshot = useCallback(
+    () => nodeId ? store?.storeMap.get(nodeId) ?? EMPTY_NODE_DATA : EMPTY_NODE_DATA,
+    [nodeId, store],
+  );
+  return useSyncExternalStore(
+    staticCtx ? emptySubscribe : ctx?.subscribe ?? emptySubscribe,
+    getSnapshot,
+    getSnapshot,
+  );
 };
 
 export default ExecutionStoreContext;

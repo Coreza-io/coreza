@@ -314,7 +314,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   return (
     <div className={`relative ${isExpanded ? "node-expanded" : ""}`}>
       {/* Input Data Panel */}
-      <InputPanel {...mergedInputPanelProps} />
+      {isExpanded && <InputPanel {...mergedInputPanelProps} />}
 
       {/* Main Node Card */}
       <Card
@@ -683,7 +683,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       </Card>
 
       {/* Output Data Panel */}
-      <OutputPanel {...mergedOutputPanelProps} />
+      {isExpanded && <OutputPanel {...mergedOutputPanelProps} />}
 
       {/* Delete Confirmation Dialog - only in editor mode */}
       {!readOnly && (

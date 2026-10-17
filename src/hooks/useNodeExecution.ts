@@ -43,6 +43,7 @@ import { buildConsolidatorConfigFingerprint } from "../../coreza-backend/src/eng
 import {
   registerEditorNodeAction,
   executeEditorNode,
+  isEditorExecutionLocked,
   getEditorConsolidatorSeries,
   setEditorConsolidatorSeries,
   type NodeExecutionOutcome,
@@ -414,6 +415,11 @@ export function useNodeExecution({
       const executionIsCurrent = () => !signal?.aborted &&
         (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration);
       if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+      // An async function alone does not yield to input/paint before building its payload.
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      if (!executionIsCurrent() || (lockToken && !isEditorExecutionLocked(String(data?.workflowSessionId ?? ""), lockToken))) {
+        return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+      }
       const storedSelectedInput = selectedInputNodeId
         ? executionStore.getNodeData(selectedInputNodeId).output
         : undefined;
@@ -743,7 +749,7 @@ export function useNodeExecution({
           } else if (!variables) {
             console.log(
               "🚀 [BACKEND REQUEST] Payload:",
-              JSON.stringify(payload, null, 2),
+              payload,
             );
           }
           if (method === "GET" && params && !variables) {

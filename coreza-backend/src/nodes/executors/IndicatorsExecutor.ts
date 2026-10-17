@@ -128,15 +128,21 @@ export class IndicatorsExecutor implements INodeExecutor {
         }
 
         let state = stateManager.getStateSync(key);
+        // A resolved timeframe can differ from discovery's raw expression.
+        // Conditional indicators may also receive their first bar after replay.
+        if (
+          context?.executionMode === "backtest" &&
+          (!state ||
+            (context?.isWarmingUp &&
+              !isIndicatorStateCompatible(state, indicatorType, processedParams)))
+        ) {
+          const { candle_data, ...params } = processedParams;
+          state = stateManager.warmUpSync(key, indicatorType, params, barsData);
+        }
         if (
           !state ||
           !isIndicatorStateCompatible(state, indicatorType, processedParams)
         ) {
-          // Replay resolves references per bar; its concrete state key/params
-          // can differ from the raw configuration used during discovery.
-          if (context?.executionMode === "backtest" && context?.isWarmingUp) {
-            return this.executeAsync(node, input, context);
-          }
           return toNodeResult(
             createErrorOutput("Indicator state not warmed for sync execution", {
               nodeId: node.id,
@@ -147,7 +153,9 @@ export class IndicatorsExecutor implements INodeExecutor {
         }
 
         const latestBar = barsData[barsData.length - 1];
-        const latestBarTime = String(latestBar?.time ?? "");
+        const latestBarTime = String(
+          latestBar?.time ?? latestBar?.t ?? latestBar?.timestamp ?? "",
+        );
         if (latestBarTime && latestBarTime !== state.lastBarTime) {
           for (const bar of barsData) state = stateManager.updateSync(key, bar);
         }
@@ -313,7 +321,9 @@ export class IndicatorsExecutor implements INodeExecutor {
               );
             } else {
               const latestBar = barsData[barsData.length - 1];
-              const latestBarTime = String(latestBar?.time ?? "");
+              const latestBarTime = String(
+                latestBar?.time ?? latestBar?.t ?? latestBar?.timestamp ?? "",
+              );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
                 for (const bar of barsData) state = stateManager.updateSync(key, bar);
               }
@@ -336,7 +346,9 @@ export class IndicatorsExecutor implements INodeExecutor {
               );
             } else {
               const latestBar = barsData[barsData.length - 1];
-              const latestBarTime = String(latestBar?.time ?? "");
+              const latestBarTime = String(
+                latestBar?.time ?? latestBar?.t ?? latestBar?.timestamp ?? "",
+              );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
                 for (const bar of barsData) state = await stateManager.update(key, bar, true);
               }

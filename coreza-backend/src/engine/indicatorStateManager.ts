@@ -301,6 +301,28 @@ export class IndicatorStateManager {
     bars: any[],
     sync = false,
   ): Promise<IndicatorState> {
+    const state = this.buildWarmupState(indicator, params, bars);
+    if (sync) this.setStateSync(key, state);
+    else await this.setState(key, state);
+    return state;
+  }
+
+  warmUpSync(
+    key: string,
+    indicator: string,
+    params: Record<string, any>,
+    bars: any[],
+  ): IndicatorState {
+    const state = this.buildWarmupState(indicator, params, bars);
+    this.setStateSync(key, state);
+    return state;
+  }
+
+  private buildWarmupState(
+    indicator: string,
+    params: Record<string, any>,
+    bars: any[],
+  ): IndicatorState {
     const updater = this.getUpdater(indicator, params);
     const warmup = updater.warmUp(bars);
 
@@ -320,16 +342,13 @@ export class IndicatorStateManager {
       lastWarmupTs:
         bars.length > 0
           ? normalizeIndicatorTimestamp(
-              bars[bars.length - 1]?.time ?? bars[bars.length - 1]?.t,
+              bars[bars.length - 1]?.time ??
+                bars[bars.length - 1]?.t ??
+                bars[bars.length - 1]?.timestamp,
             )
           : null,
     };
 
-    if (sync) {
-      this.setStateSync(key, state);
-    } else {
-      await this.setState(key, state);
-    }
     return state;
   }
 
@@ -363,7 +382,7 @@ export class IndicatorStateManager {
   }
 
   private applyUpdate(existing: IndicatorState, bar: any): boolean {
-    const barTime = bar?.time ?? bar?.t;
+    const barTime = bar?.time ?? bar?.t ?? bar?.timestamp;
     const barTs = normalizeIndicatorTimestamp(barTime);
     const lastBarTs = normalizeIndicatorTimestamp(existing.lastBarTime);
     if (barTs !== null && lastBarTs !== null && barTs <= lastBarTs) return false;

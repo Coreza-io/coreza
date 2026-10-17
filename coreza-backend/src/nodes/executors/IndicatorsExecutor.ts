@@ -132,6 +132,11 @@ export class IndicatorsExecutor implements INodeExecutor {
           !state ||
           !isIndicatorStateCompatible(state, indicatorType, processedParams)
         ) {
+          // Replay resolves references per bar; its concrete state key/params
+          // can differ from the raw configuration used during discovery.
+          if (context?.executionMode === "backtest" && context?.isWarmingUp) {
+            return this.executeAsync(node, input, context);
+          }
           return toNodeResult(
             createErrorOutput("Indicator state not warmed for sync execution", {
               nodeId: node.id,

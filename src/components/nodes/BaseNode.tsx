@@ -22,7 +22,7 @@ import { useSemanticGraphSnapshot, useStableNodes } from "@/contexts/StableNodeC
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
-  useExecutionStoreVersion,
+  useExecutionNodeData,
   useExecutionStoreNotify,
 } from "@/contexts/ExecutionStoreContext";
 import { apiClient } from "@/lib/apiClient";
@@ -157,7 +157,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const canonicalGraph = useSemanticGraphSnapshot();
   const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
-  const storeVersion = useExecutionStoreVersion(); // Subscribe to store updates
+  const executionData = useExecutionNodeData(nodeId);
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: routeWorkflowId } = useParams();
   const workflowId = propWorkflowId ?? routeWorkflowId;
@@ -233,14 +233,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     }
   }, [resolvedPrevNodeId, selectedPrevNodeId]);
 
+  const previousExecutionData = useExecutionNodeData(resolvedPrevNodeId);
   const selectedInputData = useMemo(() => {
-    void storeVersion;
+    void previousExecutionData;
     return resolveLiveInputData(
       resolvedPrevNodeId,
       canonicalGraph.nodes,
       (sourceNodeId) => executionStore.getNodeData(sourceNodeId),
     );
-  }, [canonicalGraph.nodes, executionStore, resolvedPrevNodeId, storeVersion]);
+  }, [canonicalGraph.nodes, executionStore, resolvedPrevNodeId, previousExecutionData]);
   const selectedPrevNode = previousNodes.find(
     (node) => node.id === resolvedPrevNodeId,
   );
@@ -308,17 +309,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const isTriggerListening = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
     return nodeData?.[listeningFlagKey] === true;
-  }, [nodeId, executionStore, storeVersion, listeningFlagKey]);
+  }, [nodeId, executionStore, executionData, listeningFlagKey]);
 
   const isStreamPaused = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
     return nodeData?.isStreamPaused === true;
-  }, [nodeId, executionStore, storeVersion]);
+  }, [nodeId, executionStore, executionData]);
 
   const hasStreamCursor = useMemo(() => {
     const nodeData = nodeId ? executionStore.getNodeData(nodeId) : null;
     return typeof nodeData?.lastStreamEntryId === "string";
-  }, [nodeId, executionStore, storeVersion]);
+  }, [nodeId, executionStore, executionData]);
 
   useEffect(() => {
     if (!hasStreamCursor) {

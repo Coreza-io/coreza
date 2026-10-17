@@ -14,7 +14,7 @@ import { createWaitingNewsOutput } from "@/utils/newsStream";
 import { isNewsStreamNode } from "@/utils/brokerRegistry";
 import {
   useExecutionStore,
-  useExecutionStoreVersion,
+  useExecutionNodeData,
 } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 
@@ -43,7 +43,7 @@ export function useNodeOutput({
 }: UseNodeOutputProps): UseNodeOutputReturn {
   const nodeId = useNodeId();
   const executionStore = useExecutionStore();
-  const version = useExecutionStoreVersion();
+  const executionData = useExecutionNodeData(nodeId);
   const { updateNodeData } = useStableNodes();
   const isNews = isNewsStreamNode(definition);
 
@@ -140,7 +140,7 @@ export function useNodeOutput({
   useEffect(() => {
     if (isPinned || !nodeId) return;
 
-    // Read from execution store when version changes (WebSocket updates)
+    // Read the current node snapshot, including WebSocket updates
     const storeData = executionStore.getNodeData(nodeId);
     if (storeData && Object.prototype.hasOwnProperty.call(storeData, "output")) {
       setLastOutput(storeData.output);
@@ -158,7 +158,7 @@ export function useNodeOutput({
       setLastOutput(data.output);
     }
   }, [
-    version,
+    executionData,
     data.output,
     isNews,
     isPinned,

@@ -9,6 +9,7 @@
  */
 
 import { Node, Edge } from "@xyflow/react";
+import { startTransition } from "react";
 import ExecutionContext from "./executionContext";
 import { acceptEditorExecution } from "./executionGeneration";
 import { executeEditorNode } from "@/services/editorNodeExecution";
@@ -61,6 +62,7 @@ export class WorkflowExecutor {
   >();
   private edgePayload = new Map<string, any>();
   private executionLockToken?: symbol;
+  private executionAbortController = new AbortController();
   private visualFrame: number | null = null;
   private pendingVisual: ExecutionVisualSnapshot | null = null;
   private visualGeneration = 0;
@@ -76,8 +78,10 @@ export class WorkflowExecutor {
       if (generation !== this.visualGeneration || !this.visualsEnabled) return;
       const latest = this.pendingVisual;
       this.pendingVisual = null;
-      if (this.context.setExecutionVisuals) this.context.setExecutionVisuals(latest);
-      else this.context.setExecutingNode(latest?.nodeId ?? null);
+      startTransition(() => {
+        if (this.context.setExecutionVisuals) this.context.setExecutionVisuals(latest);
+        else this.context.setExecutingNode(latest?.nodeId ?? null);
+      });
     });
   }
 
@@ -96,7 +100,7 @@ export class WorkflowExecutor {
     const sessionId = node?.data?.workflowSessionId;
     if (typeof sessionId !== "string") throw new Error(`Node ${nodeId} has no editor session.`);
     const input = this.nodeStore.getNodeData(nodeId).input;
-    const outcome = await executeEditorNode(sessionId, nodeId, { input, lockToken: this.executionLockToken });
+    const outcome = await executeEditorNode(sessionId, nodeId, { input, lockToken: this.executionLockToken, signal: this.executionAbortController.signal });
     if (outcome.status === "failed" || outcome.status === "cancelled") {
       throw new Error(outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} did not complete.`);
     }
@@ -439,8 +443,11 @@ export class WorkflowExecutor {
     // Step 2: Wait for first real data from WebSocket
     console.log(`⏳ [STREAMING] Waiting for first data from ${nodeId}...`);
 
+    const signal = this.executionAbortController.signal;
     const dataPromise = new Promise((resolve, reject) => {
+      let waiting = true;
       const timeoutId = setTimeout(() => {
+        waiting = false;
         reject(
           new Error(
             `Streaming node ${nodeId} timed out waiting for data after ${timeout}ms`,
@@ -449,6 +456,13 @@ export class WorkflowExecutor {
       }, timeout);
 
       const checkData = () => {
+        if (!waiting) return;
+        if (signal.aborted) {
+          waiting = false;
+          clearTimeout(timeoutId);
+          reject(new Error("Workflow execution stopped"));
+          return;
+        }
         const nodeData = this.nodeStore.getNodeData(nodeId);
         const output = nodeData?.output;
 
@@ -468,6 +482,7 @@ export class WorkflowExecutor {
             `📨 [STREAMING] Node ${nodeId} received first data:`,
             output,
           );
+          waiting = false;
           resolve(output);
           return;
         }
@@ -479,6 +494,7 @@ export class WorkflowExecutor {
             `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,
             output,
           );
+          waiting = false;
           resolve(output);
           return;
         }
@@ -567,20 +583,25 @@ export class WorkflowExecutor {
   ): Set<string> {
     if (visited.has(nodeId)) return new Set();
 
-    visited.add(nodeId);
+    const outgoing = new Map<string, string[]>();
+    for (const edge of this.context.edges) {
+      const targets = outgoing.get(edge.source) ?? [];
+      targets.push(edge.target);
+      outgoing.set(edge.source, targets);
+    }
+
     const downstream = new Set<string>();
-
-    // Find all outgoing edges from this node
-    const outgoingEdges = this.context.edges.filter((e) => e.source === nodeId);
-
-    for (const edge of outgoingEdges) {
-      downstream.add(edge.target);
-      // Recursively get downstream nodes, but avoid infinite loops
-      const nestedDownstream = this.getDownstreamNodes(
-        edge.target,
-        new Set(visited),
-      );
-      nestedDownstream.forEach((id) => downstream.add(id));
+    const stack = [nodeId];
+    visited.add(nodeId);
+    // Share one visited set across branches so joins are traversed only once.
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      for (const target of outgoing.get(current) ?? []) {
+        downstream.add(target);
+        if (visited.has(target)) continue;
+        visited.add(target);
+        stack.push(target);
+      }
     }
 
     return downstream;
@@ -594,7 +615,10 @@ export class WorkflowExecutor {
     executedSet: Set<string>,
     explicitlyTriggered = false,
   ): Promise<any> {
-    if (executedSet.size === 0) acceptEditorExecution();
+    if (executedSet.size === 0) {
+      acceptEditorExecution();
+      if (this.executionAbortController.signal.aborted) this.executionAbortController = new AbortController();
+    }
     const node = this.context.nodes.find((n) => n.id === nodeId);
     if (!node) {
       console.error(`❌ [WORKFLOW EXECUTOR] Node ${nodeId} not found`);
@@ -653,6 +677,7 @@ export class WorkflowExecutor {
 
   async executeNodeWithLock(nodeId: string, executedSet: Set<string>, lockToken: symbol): Promise<unknown> {
     this.executionLockToken = lockToken;
+    this.executionAbortController = new AbortController();
     this.visualsEnabled = true;
     try {
       return await this.executeNode(nodeId, executedSet);
@@ -679,6 +704,7 @@ export class WorkflowExecutor {
 
     this.visualsEnabled = true;
     this.isAutoExecuting = true;
+    this.executionAbortController = new AbortController();
     this.executionLockToken = lockToken;
     this.preCalculateConditionalBranches(); // Refresh conditional map
     this.edgePayload.clear();
@@ -906,6 +932,10 @@ export class WorkflowExecutor {
             queue,
           );
         } catch (error) {
+          if (this.executionAbortController.signal.aborted) {
+            queue.length = 0;
+            break;
+          }
           const nodeTime = performance.now() - nodeStart;
           metrics.nodeTimings.set(id, nodeTime);
           failed.add(id);
@@ -1014,7 +1044,10 @@ export class WorkflowExecutor {
 
   setAutoExecuting(val: boolean): void {
     this.isAutoExecuting = val;
-    if (!val) this.clearVisuals();
+    if (!val) {
+      this.executionAbortController.abort();
+      this.clearVisuals();
+    }
   }
 
   stop(): void {

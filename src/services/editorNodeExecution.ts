@@ -177,8 +177,8 @@ export function getEditorExecutionTarget(sessionId: string): string {
   return target ? `${target.kind}:${target.id}` : "";
 }
 
-export function isEditorExecutionLocked(sessionId: string): boolean {
-  return executionLocks.has(sessionId);
+export function isEditorExecutionLocked(sessionId: string, token?: symbol): boolean {
+  return token === undefined ? executionLocks.has(sessionId) : executionLocks.get(sessionId) === token;
 }
 
 /** Captures the current draft-backed actions so settings cannot change midway through a coordinated run. */

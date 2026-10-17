@@ -567,20 +567,25 @@ export class WorkflowExecutor {
   ): Set<string> {
     if (visited.has(nodeId)) return new Set();
 
-    visited.add(nodeId);
+    const outgoing = new Map<string, string[]>();
+    for (const edge of this.context.edges) {
+      const targets = outgoing.get(edge.source) ?? [];
+      targets.push(edge.target);
+      outgoing.set(edge.source, targets);
+    }
+
     const downstream = new Set<string>();
-
-    // Find all outgoing edges from this node
-    const outgoingEdges = this.context.edges.filter((e) => e.source === nodeId);
-
-    for (const edge of outgoingEdges) {
-      downstream.add(edge.target);
-      // Recursively get downstream nodes, but avoid infinite loops
-      const nestedDownstream = this.getDownstreamNodes(
-        edge.target,
-        new Set(visited),
-      );
-      nestedDownstream.forEach((id) => downstream.add(id));
+    const stack = [nodeId];
+    visited.add(nodeId);
+    // Share one visited set across branches so joins are traversed only once.
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      for (const target of outgoing.get(current) ?? []) {
+        downstream.add(target);
+        if (visited.has(target)) continue;
+        visited.add(target);
+        stack.push(target);
+      }
     }
 
     return downstream;

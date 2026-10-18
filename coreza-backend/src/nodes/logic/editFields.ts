@@ -361,6 +361,19 @@ export function applyTypedFieldRow(
   }
 }
 
+/** Unwrap both standard outputs and the lean NodeResult used by backtests. */
+function extractFieldInputData(value: unknown): unknown {
+  if (
+    isPlainObject(value) &&
+    typeof value.success === "boolean" &&
+    value.status === undefined &&
+    Object.prototype.hasOwnProperty.call(value, "data")
+  ) {
+    return value.data;
+  }
+  return extractOutputData(value);
+}
+
 export function applyFieldRows(
   rows: EditFieldRow[],
   options: ApplyFieldRowsOptions,
@@ -370,9 +383,9 @@ export function applyFieldRows(
   const hasV2Rows = rows.some(isV2);
   // Carry payload fields forward without nesting the upstream output envelope.
   // Keep options.input intact for expression evaluation.
-  const inputData = extractOutputData(options.input);
+  const inputData = extractFieldInputData(options.input);
   const inputRecord = isPlainObject(inputData) ? inputData : {};
-  const legacyData = extractOutputData(options.legacyResultSeed);
+  const legacyData = extractFieldInputData(options.legacyResultSeed);
   const legacyResultSeed = isPlainObject(legacyData) ? legacyData : {};
   const result: Record<string, unknown> = Object.create(null);
   const legacyResult: Record<string, unknown> = Object.create(null);

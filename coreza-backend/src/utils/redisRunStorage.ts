@@ -91,6 +91,10 @@ export async function updateRunStatusInRedis(
   runId: string,
   status: "running" | "success" | "failed" | "cancelled",
   executionResult?: RedisRunResultUpdate,
+  metadata?: {
+    variableRevision?: string;
+    variableCheckpoint?: Readonly<Record<string, unknown>>;
+  },
 ): Promise<void> {
 
   const updates: Record<string, string> = {
@@ -105,6 +109,13 @@ export async function updateRunStatusInRedis(
     const normalized = normalizeRedisRunResultUpdate(executionResult);
     if (normalized.result !== undefined) updates.result = JSON.stringify(normalized.result);
     if (normalized.errorMessage) updates.error_message = normalized.errorMessage;
+  }
+
+  if (metadata?.variableRevision !== undefined) {
+    updates.variable_revision = metadata.variableRevision;
+  }
+  if (metadata?.variableCheckpoint !== undefined) {
+    updates.variable_checkpoint = JSON.stringify(metadata.variableCheckpoint);
   }
 
   await RedisOps.hset(RedisKeys.userRun(userId, runId), updates);

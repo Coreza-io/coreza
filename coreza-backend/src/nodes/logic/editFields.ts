@@ -8,6 +8,7 @@ import {
   isTypedEditFieldRow,
 } from "./typedEditFieldRow";
 import { pickJsonSource } from "../../utils/referenceResolution";
+import { extractOutputData } from "../../types/nodeOutput";
 
 export type EditFieldDataType =
   | "string"
@@ -367,13 +368,18 @@ export function applyFieldRows(
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   validateRows(rows, options.nodeId);
   const hasV2Rows = rows.some(isV2);
-  const inputRecord = isPlainObject(options.input) ? options.input : {};
+  // Carry payload fields forward without nesting the upstream output envelope.
+  // Keep options.input intact for expression evaluation.
+  const inputData = extractOutputData(options.input);
+  const inputRecord = isPlainObject(inputData) ? inputData : {};
+  const legacyData = extractOutputData(options.legacyResultSeed);
+  const legacyResultSeed = isPlainObject(legacyData) ? legacyData : {};
   const result: Record<string, unknown> = Object.create(null);
   const legacyResult: Record<string, unknown> = Object.create(null);
-  Object.entries(hasV2Rows ? inputRecord : options.legacyResultSeed).forEach(
+  Object.entries(hasV2Rows ? inputRecord : legacyResultSeed).forEach(
     ([key, value]) => defineResultValue(result, key, value),
   );
-  Object.entries(options.legacyResultSeed).forEach(([key, value]) =>
+  Object.entries(legacyResultSeed).forEach(([key, value]) =>
     defineResultValue(legacyResult, key, value),
   );
   const context = options.context ?? {};

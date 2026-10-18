@@ -113,7 +113,7 @@ export const getExpandedClusterFrameRect = (
   canonicalNodes: readonly Node[],
   clusters: readonly NodeCluster[] = cluster ? [cluster] : [],
   viewState: ClusterViewState = {},
-  zoom = 1,
+  _zoom = 1, // Retained for caller compatibility; frame geometry uses canvas units.
 ): FlowRect | null => {
   if (!cluster) return null;
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
@@ -146,7 +146,6 @@ export const getExpandedClusterFrameRect = (
           canonicalNodes,
           clusters,
           viewState,
-          zoom,
         )
       : leaves.length
         ? {
@@ -162,13 +161,13 @@ export const getExpandedClusterFrameRect = (
   const minY =
     Math.min(...rects.map(({ y }) => y)) -
     CLUSTER_FRAME_PADDING -
-    CLUSTER_FRAME_HEADER_HEIGHT / Math.max(zoom, 0.01);
+    CLUSTER_FRAME_HEADER_HEIGHT;
   const maxX =
     Math.max(...rects.map(({ x, width }) => x + width)) + CLUSTER_FRAME_PADDING;
   const maxY =
     Math.max(...rects.map(({ y, height }) => y + height)) +
     CLUSTER_FRAME_PADDING +
-    CLUSTER_FRAME_FOOTER_HEIGHT / Math.max(zoom, 0.01);
+    CLUSTER_FRAME_FOOTER_HEIGHT;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
 

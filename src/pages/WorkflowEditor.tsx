@@ -2753,9 +2753,10 @@ const WorkflowEditorContent = () => {
                     id={`cluster-frame-${cluster.id}`}
                     className="cluster-frame absolute rounded-xl border-2"
                     style={{
-                      transform: `translate(${frameRect.x * viewport.zoom + viewport.x}px, ${frameRect.y * viewport.zoom + viewport.y}px)`,
-                      width: frameRect.width * viewport.zoom,
-                      height: frameRect.height * viewport.zoom,
+                      transform: `translate(${frameRect.x * viewport.zoom + viewport.x}px, ${frameRect.y * viewport.zoom + viewport.y}px) scale(${viewport.zoom})`,
+                      transformOrigin: "top left",
+                      width: frameRect.width,
+                      height: frameRect.height,
                       borderColor: clusterExecution.getState(cluster.id).phase === "failed" ? "hsl(var(--destructive))" : undefined,
                     }}
                   >

@@ -7,7 +7,7 @@ import { ClusterExecutionControl } from "./ClusterExecutionControl";
 import ElectricBorderSVG from "./ElectricBorderSVG";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 
-export function CompactClusterNode({ id, data: cluster, selected, dragging }: NodeProps<CompactClusterFlowNode>): JSX.Element {
+export function CompactClusterNode({ id, data: cluster, selected, dragging, readOnly = false }: NodeProps<CompactClusterFlowNode> & { readOnly?: boolean }): JSX.Element {
   const updateNodeInternals = useUpdateNodeInternals();
   const showExecutionBorder = useResolvedTheme() === "dark"
     && (cluster.isExecuting === true || ((cluster.runState.phase === "running" || !!cluster.runState.ownerClusterId) && !!cluster.runState.currentNodeId));
@@ -62,7 +62,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
       <div className="mt-3 flex items-center justify-between text-xs text-[hsl(var(--cluster-muted))]">
         <span>{cluster.memberCount} {cluster.memberCount === 1 ? "node" : "nodes"}</span>
       </div>
-      <footer className="absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center border-t border-[hsl(var(--cluster-border))]">
+      {!readOnly && <footer className="absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center border-t border-[hsl(var(--cluster-border))]">
         <div
           data-cluster-execution-control
           className={`transition-opacity duration-150 motion-reduce:transition-none ${persistentExecutionStatus ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0 group-hover/cluster:pointer-events-auto group-hover/cluster:opacity-100 group-focus-within/cluster:pointer-events-auto group-focus-within/cluster:opacity-100"}`}
@@ -70,7 +70,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging }: No
           <ClusterExecutionControl presentation="icon" title={cluster.title} state={cluster.runState}
             onExecute={() => cluster.onExecute(cluster.clusterId)} onCancel={() => cluster.onCancel(cluster.clusterId)} />
         </div>
-      </footer>
+      </footer>}
     </article>
   );
 }

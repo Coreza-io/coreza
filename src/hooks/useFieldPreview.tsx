@@ -1,18 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import { NodePortalContainerContext } from "@/contexts/NodePortalContainerContext";
 
 // Common focus/click popup for node fields; content still uses each field's evaluator.
 export function useFieldPreview(enabled: boolean, content: ReactNode) {
+  const container = useContext(NodePortalContainerContext);
   const [isOpen, setIsOpen] = useState(false);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const activeElementRef = useRef<HTMLElement | null>(null);
 
   const open = (target: HTMLElement) => {
     if (!enabled) return;
-    activeElementRef.current = target;
-    setAnchorRect(target.getBoundingClientRect());
+    setAnchorElement(target);
     setIsOpen(true);
   };
 
@@ -20,37 +19,22 @@ export function useFieldPreview(enabled: boolean, content: ReactNode) {
     if (!enabled) setIsOpen(false);
   }, [enabled]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (cardRef.current?.contains(target) || wrapperRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-    const updatePosition = () => {
-      if (activeElementRef.current) setAnchorRect(activeElementRef.current.getBoundingClientRect());
-    };
-    updatePosition();
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [isOpen]);
-
   let popup: ReactNode = null;
-  if (enabled && isOpen && anchorRect) {
-    const availableWidth = window.innerWidth - 16;
-    const width = Math.min(Math.max(anchorRect.width, 260), availableWidth);
-    const left = Math.min(Math.max(8, anchorRect.left), availableWidth - width + 8);
-    popup = createPortal(
-      <div
-        ref={cardRef}
-        style={{ position: "fixed", top: anchorRect.top, left, width, transform: "translateY(calc(-100% - 8px))", zIndex: 50 }}
-        className="pointer-events-auto"
+  if (enabled && isOpen && anchorElement) {
+    popup = (
+      <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
+      <Popover.Anchor virtualRef={{ current: anchorElement }} />
+      <Popover.Portal container={container}>
+      <Popover.Content
+        side="top" align="start" sideOffset={8} collisionPadding={8}
+        collisionBoundary={container?.closest<HTMLElement>(".react-flow") ?? undefined}
+        style={{ width: "max(260px, var(--radix-popover-trigger-width))", maxWidth: "var(--radix-popover-content-available-width)", maxHeight: "var(--radix-popover-content-available-height)", zIndex: container ? 1100 : 50 }}
+        className="nodrag nopan nowheel pointer-events-auto overflow-y-auto outline-none"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => {
+          if (wrapperRef.current?.contains(event.target as Node)) event.preventDefault();
+        }}
       >
         <div className="rounded-lg border bg-card text-card-foreground shadow-lg overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/60">
@@ -65,8 +49,9 @@ export function useFieldPreview(enabled: boolean, content: ReactNode) {
             <span>Anything inside {"{{ }}"} is JavaScript.</span>
           </div>
         </div>
-      </div>,
-      document.body,
+      </Popover.Content>
+      </Popover.Portal>
+      </Popover.Root>
     );
   }
   return { isOpen: enabled && isOpen, open, wrapperRef, popup };

@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -18,9 +18,10 @@ import {
   MiniMap,
   Node,
   Edge,
+  type NodeProps,
 } from "@xyflow/react";
 import { format } from "date-fns";
-import { CheckCircle2, XCircle, Copy, Clock, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Copy, Clock, Loader2, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -31,11 +32,28 @@ import EdgeManager from "./EdgeManager";
 import { nodeManifest } from "@/nodes/manifest";
 import { StaticExecutionStoreProvider } from "@/contexts/StaticExecutionStoreContext";
 import { StableNodeProvider } from "@/contexts/StableNodeContext";
+import { CompactClusterNode } from "./CompactClusterNode";
+import { parseNodeClusters } from "@/domain/clusters/parse";
+import { resolveClusterHierarchy } from "@/domain/clusters/hierarchy";
+import { focusedClusterToViewState } from "@/domain/clusters/viewState";
+import { reconcileClusterProjection } from "@/domain/clusters/reconcileProjection";
+import {
+  getExpandedClusterFrameRect,
+  getVisibleClusterNodes,
+  projectClusterGraph,
+  type ClusterProjection,
+  type CompactClusterFlowNode,
+} from "@/domain/clusters/projection";
+
+const HistoryClusterNode = (props: NodeProps<CompactClusterFlowNode>) => (
+  <CompactClusterNode {...props} readOnly />
+);
 
 // Create execution-specific node types using NodeRouter for all node types
 const executionNodeTypes = Object.fromEntries([
   ...Object.keys(nodeManifest).map((key) => [key, NodeRouter]),
   ...Object.values(nodeManifest).map((def: any) => [def.name, NodeRouter]),
+  ["compactCluster", HistoryClusterNode],
 ]);
 
 // Edge types for execution view
@@ -63,6 +81,18 @@ export function ExecutionDetailView({
   loading = false,
 }: ExecutionDetailViewProps) {
   const resolvedTheme = useResolvedTheme();
+  const [clusterFocus, setClusterFocus] = useState<{ executionId: string; clusterId: string | null } | null>(null);
+  const focusedClusterId = clusterFocus?.executionId === execution.id ? clusterFocus.clusterId : null;
+  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  const openCluster = useCallback((clusterId: string | null) => {
+    setClusterFocus({ executionId: execution.id, clusterId });
+  }, [execution.id]);
+  const clusters = useMemo(() => Array.isArray(execution.nodes)
+    ? parseNodeClusters(execution.node_clusters).clusters : [], [execution.nodes, execution.node_clusters]);
+  const clusterViewState = useMemo(
+    () => focusedClusterToViewState(focusedClusterId, clusters),
+    [focusedClusterId, clusters],
+  );
 
   // Use execution's stored snapshot if available, otherwise fall back to current workflow
   // This ensures historical executions display the workflow state at execution time
@@ -70,8 +100,7 @@ export function ExecutionDetailView({
   const sourceNodes = useMemo(() => {
     const hasExecutionNodes =
       execution.nodes &&
-      Array.isArray(execution.nodes) &&
-      execution.nodes.length > 0;
+      Array.isArray(execution.nodes);
     if (hasExecutionNodes) {
       return JSON.parse(JSON.stringify(execution.nodes)) as Node[];
     }
@@ -82,8 +111,7 @@ export function ExecutionDetailView({
   const sourceEdges = useMemo(() => {
     if (
       execution.edges &&
-      Array.isArray(execution.edges) &&
-      execution.edges.length > 0
+      Array.isArray(execution.edges)
     ) {
       return JSON.parse(JSON.stringify(execution.edges)) as Edge[];
     }
@@ -193,6 +221,24 @@ export function ExecutionDetailView({
     });
   }, [sourceEdges, nodeExecutionMap]);
 
+  const hierarchy = useMemo(() => resolveClusterHierarchy(clusters), [clusters]);
+  const committedProjection = useRef<{ executionId: string; projection: ClusterProjection } | null>(null);
+  const clusterProjection = useMemo(() => reconcileClusterProjection(
+    committedProjection.current?.executionId === execution.id ? committedProjection.current.projection : null,
+    projectClusterGraph(executionNodes, executionEdges, clusters, clusterViewState, openCluster, {
+      focusedClusterId,
+      zoom: viewport.zoom,
+      draggable: false,
+    }),
+  ), [execution.id, executionNodes, executionEdges, clusters, clusterViewState, openCluster, focusedClusterId, viewport.zoom]);
+  useLayoutEffect(() => {
+    committedProjection.current = { executionId: execution.id, projection: clusterProjection };
+  }, [execution.id, clusterProjection]);
+  const fitViewOptions = useMemo(() => ({
+    padding: 0.2, maxZoom: 1, minZoom: 0.4,
+    nodes: getVisibleClusterNodes(clusterProjection),
+  }), [clusterProjection]);
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "success":
@@ -299,18 +345,20 @@ export function ExecutionDetailView({
               >
                 <ReactFlow
                   colorMode={resolvedTheme}
-                  nodes={executionNodes}
-                  edges={executionEdges}
+                  nodes={clusterProjection.nodes}
+                  edges={clusterProjection.edges}
                   nodeTypes={executionNodeTypes}
                   edgeTypes={executionEdgeTypes}
                   nodesDraggable={false}
                   nodesConnectable={false}
+                  deleteKeyCode={null}
                   elementsSelectable={true}
                   zoomOnDoubleClick={false}
                   fitView
-                  fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.4 }}
+                  fitViewOptions={fitViewOptions}
+                  onMove={(_, nextViewport) => setViewport(nextViewport)}
                   className={cn(
-                    "execution-canvas",
+                    "workflow-canvas execution-canvas",
                     loading && "opacity-50 pointer-events-none",
                   )}
                   style={{ backgroundColor: "hsl(var(--trading-grid))" }}
@@ -324,15 +372,38 @@ export function ExecutionDetailView({
                   <MiniMap
                     className="!bg-card !border-border"
                     bgColor="hsl(var(--card))"
-                    nodeColor="hsl(var(--node-neon-color, var(--primary)))"
-                    nodeStrokeColor="hsl(var(--border))"
+                    nodeColor={(node) => clusterProjection.hiddenRuntimeHostIds.has(node.id) ? "transparent" : "hsl(var(--node-neon-color, var(--primary)))"}
+                    nodeStrokeColor={(node) => clusterProjection.hiddenRuntimeHostIds.has(node.id) ? "transparent" : "hsl(var(--border))"}
+                    nodeClassName={(node) => clusterProjection.hiddenRuntimeHostIds.has(node.id) ? "hidden" : ""}
                     maskColor="hsl(var(--background) / 0.6)"
                   />
-                  <Controls className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
+                  <Controls fitViewOptions={fitViewOptions} className="!bg-card !border-border [&>button]:!bg-transparent [&>button]:!border-border hover:[&>button]:!bg-muted" />
                 </ReactFlow>
               </StaticExecutionStoreProvider>
             </StableNodeProvider>
           </ReactFlowProvider>
+          <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-label="Execution clusters">
+            {clusters.filter((cluster) => clusterViewState[cluster.id])
+              .sort((a, b) => (hierarchy.ancestors.get(a.id)?.length ?? 0) - (hierarchy.ancestors.get(b.id)?.length ?? 0))
+              .map((cluster) => {
+                const rect = getExpandedClusterFrameRect(cluster, executionNodes, clusters, clusterViewState, viewport.zoom);
+                if (!rect) return null;
+                return (
+                  <section key={cluster.id} id={`cluster-frame-${cluster.id}`} className="cluster-frame absolute rounded-xl border-2"
+                    style={{ transform: `translate(${rect.x * viewport.zoom + viewport.x}px, ${rect.y * viewport.zoom + viewport.y}px)`, width: rect.width * viewport.zoom, height: rect.height * viewport.zoom }}>
+                    <header className="cluster-frame__header pointer-events-auto flex min-h-10 items-center gap-2 rounded-t-lg px-3 py-1 text-[hsl(var(--cluster-title))]">
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={cluster.note}>{cluster.title}</span>
+                      <span className="text-xs text-muted-foreground">{hierarchy.effectiveMembers.get(cluster.id)?.length ?? 0} nodes</span>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                        aria-label={`Collapse cluster ${cluster.title}`} aria-expanded={true}
+                        aria-controls={`cluster-frame-${cluster.id}`} onClick={() => openCluster(cluster.parentClusterId ?? null)}>
+                        <ChevronUp aria-hidden="true" />
+                      </Button>
+                    </header>
+                  </section>
+                );
+              })}
+          </div>
         </div>
       </div>
     </div>

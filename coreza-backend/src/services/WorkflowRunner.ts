@@ -389,9 +389,11 @@ export class WorkflowRunner {
     executionResult?: WorkflowExecutionResult,
   ): Promise<void> {
     try {
+      // Prefer the finalized outcome over an abort received during indicator flushing.
       const cancelled = !this.engine.variableSafetyStop && (
-        executionResult?.error?.code === "CANCELLED" ||
-        this.abortController.signal.aborted
+        executionResult
+          ? executionResult.error?.code === "CANCELLED"
+          : this.abortController.signal.aborted
       );
       await updateRunStatusInRedis(
         this.userId,

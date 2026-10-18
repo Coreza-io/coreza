@@ -25,7 +25,7 @@ import { compileComputedSliceReference } from "./computedSliceReferences";
  */
 
 // Matches the same patterns as resolveReferences but used once at compile time
-const TEMPLATE_REGEX = /\{\{\s*\$\(\s*'([^']+)'\s*\)\.json\.?([^}]*)\s*\}\}/g;
+const TEMPLATE_REGEX = /\{\{\s*(?:(?:\$\(\s*(?:'([^']+)'|"([^"]+)")\s*\)\s*\.json)|(?:\$node\[\s*(?:"([^"]+)"|'([^']+)')\s*\]\s*\.json))(?:(?:\s*\.\s*)|\s*)([^}]*)\s*\}\}/g;
 
 // Detects unsupported dynamic patterns that must fall back to runtime resolution
 const UNSUPPORTED_PATTERNS = /\$parentStore|\$env|\$execution/;
@@ -58,6 +58,7 @@ function resolveNodeKeyStatic(
   nodeIdSet: Set<string>,
   nodes: WorkflowNode[],
 ): string {
+  nodeName = nodeName.trim();
   if (!nodeName) return nodeName;
   if (nodeIdSet.has(nodeName)) return nodeName;
   return resolveNodeAlias(nodeName, nodes);
@@ -87,7 +88,7 @@ function buildShapeExtractor(sample: any): (d: any) => any {
  * Format a value for mixed-string interpolation.
  */
 function formatMixedValue(val: any): string {
-  if (val === undefined) return "";
+  if (val === undefined || val === null) return "undefined";
   if (val instanceof Date) return val.toISOString();
   if (typeof val === "object" && val !== null) return JSON.stringify(val);
   return String(val);
@@ -103,7 +104,7 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
   if (!path) return (obj: any) => obj;
 
   type Segment =
-    | { type: "KEY"; key: string }
+    | { type: "KEY"; key: string; numericIndex?: number }
     | { type: "INDEX"; index: number }
     | { type: "SLICE"; start: number; end?: number };
 
@@ -111,9 +112,16 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
   if (!segmentParts || segmentParts.length === 0) return (obj: any) => obj;
 
   const segments: Segment[] = [];
+  const addKey = (key: string) => {
+    segments.push({
+      type: "KEY",
+      key,
+      ...(/^-?\d+$/.test(key) ? { numericIndex: Number(key) } : {}),
+    });
+  };
   for (const part of segmentParts) {
     if (!part.startsWith("[")) {
-      segments.push({ type: "KEY", key: part });
+      addKey(part);
       continue;
     }
 
@@ -145,6 +153,12 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
       continue;
     }
 
+    const keyMatch = part.match(/^\[(["'])[^"']+\1\]$/);
+    if (keyMatch) {
+      addKey(part.slice(2, -2));
+      continue;
+    }
+
     return null;
   }
 
@@ -152,20 +166,24 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
     let current = value;
 
     for (const segment of restSegments) {
+      if (current == null) return undefined;
       if (segment.type === "KEY") {
-        if (current == null) return undefined;
-        current = current[segment.key];
+        const index = Array.isArray(current) && segment.numericIndex !== undefined
+          ? segment.numericIndex < 0 ? current.length + segment.numericIndex : segment.numericIndex
+          : segment.key;
+        current = current[index];
+        continue;
+      }
+
+      if (segment.type === "INDEX") {
+        const index = Array.isArray(current) && segment.index < 0
+          ? current.length + segment.index
+          : segment.index;
+        current = current[index];
         continue;
       }
 
       if (!Array.isArray(current)) return undefined;
-
-      if (segment.type === "INDEX") {
-        const index =
-          segment.index >= 0 ? segment.index : current.length + segment.index;
-        current = current[index];
-        continue;
-      }
 
       current =
         segment.end === undefined
@@ -182,20 +200,24 @@ function buildPathAccessor(path: string): ((obj: any) => any) | null {
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
 
+      if (current == null) return undefined;
       if (segment.type === "KEY") {
-        if (current == null) return undefined;
-        current = current[segment.key];
+        const index = Array.isArray(current) && segment.numericIndex !== undefined
+          ? segment.numericIndex < 0 ? current.length + segment.numericIndex : segment.numericIndex
+          : segment.key;
+        current = current[index];
+        continue;
+      }
+
+      if (segment.type === "INDEX") {
+        const index = Array.isArray(current) && segment.index < 0
+          ? current.length + segment.index
+          : segment.index;
+        current = current[index];
         continue;
       }
 
       if (!Array.isArray(current)) return undefined;
-
-      if (segment.type === "INDEX") {
-        const index =
-          segment.index >= 0 ? segment.index : current.length + segment.index;
-        current = current[index];
-        continue;
-      }
 
       current =
         segment.end === undefined
@@ -247,9 +269,10 @@ function compileTemplate(
   TEMPLATE_REGEX.lastIndex = 0;
 
   while ((m = TEMPLATE_REGEX.exec(templateStr))) {
-    const [full, nodeName, rawPath] = m;
+    const [full, g1, g1b, g2, g3, rawPath] = m;
+    const nodeName = g1 || g1b || g2 || g3;
 
-    const cleanPath = (rawPath || "").trim();
+    const cleanPath = (rawPath || "").trim().replace(/^[.\s]+/, "");
 
     const pathAccessor = buildPathAccessor(cleanPath);
     if (!pathAccessor) return null;
@@ -289,7 +312,11 @@ function compileTemplate(
 
   if (isPure) {
     const acc = matches[0].accessor;
-    const accessor = (allNodeData: Record<string, any>) => acc(allNodeData);
+    const accessor = (allNodeData: Record<string, any>) => {
+      const value = acc(allNodeData);
+      if (value == null) return undefined;
+      return value instanceof Date ? value.toISOString() : value;
+    };
     return { accessor, deps };
   }
 

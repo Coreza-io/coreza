@@ -88,7 +88,11 @@ export function compilePlan(
     const cp = compiledParams.get(node.id);
     if (cp?.fallbackKeys && cp.fallbackKeys.length > 0) {
       console.log(
-        `[CompiledPlan] Ineligible: node "${node.id}" has fallback template keys: ${cp.fallbackKeys.join(", ")}`,
+        `[CompiledPlan] Ineligible: node "${node.id}" has fallback template keys: ${cp.fallbackKeys.map((key) => {
+          const value = (node as any).values?.[key];
+          const text = typeof value === "string" ? value : JSON.stringify(value);
+          return `${key}: ${text?.slice(0, 120)}`;
+        }).join(", ")}`,
       );
       return null;
     }

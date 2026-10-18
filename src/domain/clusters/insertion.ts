@@ -131,10 +131,9 @@ export function resolveInsertionPosition(args: {
       args.zoom,
     );
     if (!frame) continue;
-    const zoom = Math.max(args.zoom, 0.01);
-    const bodyTop = frame.y + CLUSTER_FRAME_HEADER_HEIGHT / zoom;
+    const bodyTop = frame.y + CLUSTER_FRAME_HEADER_HEIGHT;
     const bodyBottom =
-      frame.y + frame.height - CLUSTER_FRAME_FOOTER_HEIGHT / zoom;
+      frame.y + frame.height - CLUSTER_FRAME_FOOTER_HEIGHT;
     if (
       position.x >= frame.x &&
       position.x <= frame.x + frame.width &&

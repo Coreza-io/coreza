@@ -390,7 +390,7 @@ export function ExecutionDetailView({
                 if (!rect) return null;
                 return (
                   <section key={cluster.id} id={`cluster-frame-${cluster.id}`} className="cluster-frame absolute rounded-xl border-2"
-                    style={{ transform: `translate(${rect.x * viewport.zoom + viewport.x}px, ${rect.y * viewport.zoom + viewport.y}px)`, width: rect.width * viewport.zoom, height: rect.height * viewport.zoom }}>
+                    style={{ transform: `translate(${rect.x * viewport.zoom + viewport.x}px, ${rect.y * viewport.zoom + viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: rect.width, height: rect.height }}>
                     <header className="cluster-frame__header pointer-events-auto flex min-h-10 items-center gap-2 rounded-t-lg px-3 py-1 text-[hsl(var(--cluster-title))]">
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={cluster.note}>{cluster.title}</span>
                       <span className="text-xs text-muted-foreground">{hierarchy.effectiveMembers.get(cluster.id)?.length ?? 0} nodes</span>

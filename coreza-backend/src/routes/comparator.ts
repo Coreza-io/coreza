@@ -252,7 +252,7 @@ router.post("/field", async (req, res) => {
       result = staged.result;
       persistentVariableKeys = staged.changes.map(change => change.key);
     } else result = applyFieldRows(fields, options);
-    res.json({ success: true, data: result, ...(variableSnapshot ? { variableSnapshot, status: "success", meta: { persistentVariableKeys } } : {}) });
+    res.json({ success: true, status: "success", data: result, ...(variableSnapshot ? { variableSnapshot, meta: { persistentVariableKeys } } : {}) });
   } catch (error) {
     console.error("Field manipulation failed");
     res.status((error as any).statusCode ?? (error instanceof EditFieldError ? 400 : 503)).json({

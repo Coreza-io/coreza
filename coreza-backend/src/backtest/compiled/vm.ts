@@ -115,7 +115,11 @@ export async function runBar(plan: CompiledPlan, barInput: any, throwOnNodeFailu
     const activateStart = timingEnabled ? performance.now() : 0;
     if (result?.success === false) {
       // Owned sessions must propagate failures before reporting completion.
-      if (throwOnNodeFailure) throw new Error(result.error ?? `Backtest node ${instr.node.id} failed`);
+      if (throwOnNodeFailure) {
+        throw new Error(
+          `Backtest node ${instr.node.id} failed${result.error ? `: ${result.error}` : ""}`,
+        );
+      }
       if (timingEnabled) {
         activateMs += performance.now() - activateStart;
       }

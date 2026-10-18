@@ -346,12 +346,14 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
         | undefined;
 
       if (!window) {
+        const data = buildRollingWindowNotFoundPayload(
+          normalizedSymbol,
+          normalizedTimeframe,
+        );
         return res.status(404).json({
           success: false,
-          data: buildRollingWindowNotFoundPayload(
-            normalizedSymbol,
-            normalizedTimeframe,
-          ),
+          error: data.reason,
+          data,
           meta: {
             key: storeKey,
             timeframe: normalizedTimeframe,

@@ -456,12 +456,14 @@ export class IndicatorsExecutor implements INodeExecutor {
         | undefined;
 
       if (!window) {
+        const data = buildRollingWindowNotFoundPayload(
+          requestedSymbol,
+          requestedTimeframe,
+        );
         return {
           success: false,
-          data: buildRollingWindowNotFoundPayload(
-            requestedSymbol,
-            requestedTimeframe,
-          ),
+          error: data.reason,
+          data,
           meta: {
             key: storeKey,
             timeframe: requestedTimeframe,

@@ -9,7 +9,6 @@ import {
   updateRunStatusInRedis,
 } from "../utils/redisRunStorage";
 import { WorkflowExecutionResult } from "../engine/types";
-import { RedisOps } from "../infra/redisOps";
 import { RedisKeys } from "../infra/redisKeys";
 
 const STRATEGY_GROUP = "strategy-group";
@@ -281,8 +280,12 @@ export class WorkflowRunner {
         this.downstreamEntryIds,
       );
 
-      if (executionResult.success) await this.recordSuccess(runId, executionResult, messageId);
-      else await this.recordFailure(runId, new Error(executionResult.error?.message ?? "Workflow execution failed"));
+      if (executionResult.success) await this.recordSuccess(runId, executionResult);
+      else await this.recordFailure(
+        runId,
+        new Error(executionResult.error?.message ?? "Workflow execution failed"),
+        executionResult,
+      );
     } catch (error) {
       // Phase 5b: Record failure (execution failed — not retryable)
       await this.recordFailure(runId, error);
@@ -360,16 +363,17 @@ export class WorkflowRunner {
   private async recordSuccess(
     runId: string,
     executionResult: WorkflowExecutionResult,
-    messageId: string,
   ): Promise<void> {
     try {
-      if (this.engine.variableRevision) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_revision: this.engine.variableRevision });
-      if (this.engine.variableCheckpoint) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_checkpoint: JSON.stringify(this.engine.variableCheckpoint) });
       await updateRunStatusInRedis(
         this.userId,
         runId,
         "success",
         executionResult,
+        {
+          variableRevision: this.engine.variableRevision,
+          variableCheckpoint: this.engine.variableCheckpoint,
+        },
       );
     } catch (err) {
       console.warn(
@@ -379,13 +383,31 @@ export class WorkflowRunner {
     }
   }
 
-  private async recordFailure(runId: string, error: unknown): Promise<void> {
+  private async recordFailure(
+    runId: string,
+    error: unknown,
+    executionResult?: WorkflowExecutionResult,
+  ): Promise<void> {
     try {
-      if (this.engine.variableRevision) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_revision: this.engine.variableRevision });
-      if (this.engine.variableCheckpoint) await RedisOps.hset(RedisKeys.userRun(this.userId, runId), { variable_checkpoint: JSON.stringify(this.engine.variableCheckpoint) });
-      await updateRunStatusInRedis(this.userId, runId, "failed", {
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+      // Prefer the finalized outcome over an abort received during indicator flushing.
+      const cancelled = !this.engine.variableSafetyStop && (
+        executionResult
+          ? executionResult.error?.code === "CANCELLED"
+          : this.abortController.signal.aborted
+      );
+      await updateRunStatusInRedis(
+        this.userId,
+        runId,
+        cancelled ? "cancelled" : "failed",
+        {
+          result: executionResult,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+        {
+          variableRevision: this.engine.variableRevision,
+          variableCheckpoint: this.engine.variableCheckpoint,
+        },
+      );
     } catch (err) {
       console.warn(
         "[WorkflowRunner] recordFailure failed:",

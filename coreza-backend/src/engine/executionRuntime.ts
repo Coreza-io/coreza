@@ -480,6 +480,8 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
 
   resetForNextBar(full = false): void {
     this.resetVariableInvocations();
+    this.failed.clear();
+    this.failedNodeErrors.clear();
     this.store.clearResults();
     this.queue.clear();
     this.enqueuedKeys.clear();
@@ -553,6 +555,8 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
 
   resetForNextBar(full = false): void {
     this.resetVariableInvocations();
+    this.failed.clear();
+    this.failedNodeErrors.clear();
     const t0 = performance.now();
     this.store.clearResults();
     this.lastStoreClearMs = performance.now() - t0;

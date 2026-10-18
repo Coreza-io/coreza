@@ -378,6 +378,10 @@ export class WorkflowRun {
       }
       enqueueWork();
       await this.drainQueue();
+      // The final async node may settle after cancellation with no queued work left.
+      if (this.options.abortSignal?.aborted) {
+        throw new Error("Workflow cancelled by user");
+      }
 
       const startedAtMs = performance.now();
       const executionResult = this.buildExecutionResult();

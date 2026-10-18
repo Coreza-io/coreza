@@ -8,8 +8,9 @@
  * See the LICENSE file for details.
  */
 
-import React, { useState, useEffect, useRef, useContext } from "react";
+import React, { useState, useEffect, useRef, useContext, useCallback } from "react";
 import { ConnectionDragContext } from "@/contexts/ConnectionDragContext";
+import { NodePortalContainerContext } from "@/contexts/NodePortalContainerContext";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
 import { Handle, Position, useReactFlow } from "@xyflow/react";
@@ -168,6 +169,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   onToggleTool,
   collapsedExecutionControl,
 }) => {
+  const [portalContainer, setPortalContainer] = useState<HTMLElement>();
+  const capturePortalContainer = useCallback((element: HTMLDivElement | null) => {
+    if (element) setPortalContainer(element.closest<HTMLElement>(".react-flow__viewport") ?? undefined);
+  }, []);
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
@@ -312,7 +317,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   };
 
   return (
-    <div className={`relative ${isExpanded ? "node-expanded" : ""}`}>
+    <NodePortalContainerContext.Provider value={portalContainer}>
+    <div ref={capturePortalContainer} className={`relative ${isExpanded ? "node-expanded" : ""}`}>
       {/* Input Data Panel */}
       {isExpanded && <InputPanel {...mergedInputPanelProps} />}
 
@@ -714,6 +720,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         </AlertDialog>
       )}
     </div>
+    </NodePortalContainerContext.Provider>
   );
 };
 

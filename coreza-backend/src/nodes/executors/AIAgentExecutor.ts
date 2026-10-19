@@ -616,16 +616,23 @@ export class AIAgentExecutor implements INodeExecutor {
     // LangChain validates schemas before starting tool callbacks or entering func.
     const invoke = tool.invoke.bind(tool);
     tool.invoke = async (input, config) => {
-      try { return await invocationLogInput.run({ input: typeof input === 'object' && input && 'args' in input ? input.args : input }, () => invoke(input, config)); }
+      const started = performance.now();
+      // Match LangChain's ToolCall discriminator; ordinary schemas may have an args field.
+      const generatedInput = typeof input === 'object' && input && 'type' in input && input.type === 'tool_call'
+        ? input.args : input;
+      try { return await invocationLogInput.run({ input: generatedInput }, () => invoke(input, config)); }
       catch (error) {
         if (error instanceof ToolInputParsingException) {
           const trace = makeTrace(randomUUID());
+          trace('tool_started', { operation: configuredValues.operation, status: 'started' });
           trace('tool_validation_failed', () => ({ status: 'failed', success: false, failure: safeToolError(error) }));
           trace('generated_input', () => ({ source: 'generated', fields: toolInputFields(
-            typeof input === 'object' && input && 'args' in input ? input.args : input,
+            generatedInput,
             executorCategory === 'Broker' ? configuredValues.operation || '__broker_unknown__' : undefined) }), 'debug');
           trace('configured_input', () => ({ source: 'configured', fields: toolInputFields(configuredValues,
             executorCategory === 'Broker' ? configuredValues.operation || '__broker_unknown__' : undefined) }), 'debug');
+          trace('tool_completed', () => ({ operation: configuredValues.operation, status: 'failed',
+            success: false, requestCount: 0, durationMs: performance.now() - started }));
           const activity = context?.agentActivity as AgentActivityRecorder | undefined;
           const span = activity?.start("tool", node.id);
           if (span) activity?.end(span, context?.abortSignal?.aborted ? "cancelled" : "failed");

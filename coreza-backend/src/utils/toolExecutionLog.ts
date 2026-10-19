@@ -51,8 +51,18 @@ export function redactToolFields(value: unknown): unknown {
     if (seen.has(item)) return '[Circular]';
     seen.add(item);
     if (Array.isArray(item)) {
-      if (item.length > 8 || item.some(entry => entry !== null && typeof entry === 'object')) return `[Array: ${item.length} items]`;
-      return item.map(entry => visit(entry, depth + 1, key));
+      if (item.length > 8) return `[Array: ${item.length} items]`;
+      const entries: unknown[] = [];
+      for (let index = 0; index < item.length; index++) {
+        const descriptor = Object.getOwnPropertyDescriptor(item, String(index));
+        if (descriptor && !('value' in descriptor)) entries.push('[Accessor omitted]');
+        else {
+          const value = descriptor?.value;
+          if (value !== null && typeof value === 'object') return `[Array: ${item.length} items]`;
+          entries.push(visit(value, depth + 1, key));
+        }
+      }
+      return entries;
     }
     const keys = Object.keys(item);
     const output: Fields = Object.create(null);
@@ -70,10 +80,15 @@ export function redactToolFields(value: unknown): unknown {
 /** Transport errors often embed headers, signed URLs, request bodies and responses. */
 export function safeToolError(error: any): Fields {
   try {
+    const own = (value: any, key: string) => value && typeof value === 'object'
+      ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+    const name = own(error, 'name') ?? own(Object.getPrototypeOf(error), 'name');
+    const code = own(error, 'code');
+    const status = own(own(error, 'response'), 'status');
     return {
-      type: typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(error.name) ? error.name : 'Error',
-      code: typeof error?.code === 'string' && /^[A-Z][A-Z_0-9]{0,63}$/.test(error.code) ? error.code : undefined,
-      httpStatus: typeof error?.response?.status === 'number' ? error.response.status : undefined,
+      type: typeof name === 'string' && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(name) ? name : 'Error',
+      code: typeof code === 'string' && /^[A-Z][A-Z_0-9]{0,63}$/.test(code) ? code : undefined,
+      httpStatus: typeof status === 'number' ? status : undefined,
     };
   } catch { return { type: 'Error' }; }
 }
@@ -97,13 +112,14 @@ export function historicalRowCount(data: any, symbol?: unknown, depth = 0): numb
   if (Array.isArray(data)) {
     if (!data.length) return 0;
     const first = data[0];
-    const candle = first && (first.open ?? first.o) != null && (first.high ?? first.h) != null &&
-      (first.low ?? first.l) != null && (first.close ?? first.c) != null;
-    const tuple = Array.isArray(first) && first.length >= 6;
+    const scalar = (value: unknown) => typeof value === 'number' || typeof value === 'string';
+    const candle = first && [first.open ?? first.o, first.high ?? first.h,
+      first.low ?? first.l, first.close ?? first.c].every(scalar);
+    const tuple = Array.isArray(first) && first.length >= 6 && first.slice(0, 6).every(scalar);
     if (!candle && !tuple) return null;
     if (first?.symbol) {
       if (!symbol) return null;
-      return data.filter(row => String(row?.symbol).toUpperCase() === String(symbol).toUpperCase()).length;
+      return data.filter(row => String(row?.symbol).toUpperCase().replace(/\//g, '') === String(symbol).toUpperCase().replace(/\//g, '')).length;
     }
     return data.length;
   }
@@ -158,7 +174,15 @@ export function toolInputFields(input: any, operation?: unknown, body = false): 
 
 function requestFields(config: any, operation: unknown): Fields {
   let host: string | undefined, path: string | undefined;
-  const embeddedQuery: Fields = {};
+  const embeddedQuery: Fields = Object.create(null);
+  const queryFields = (params: URLSearchParams): Fields => {
+    const fields: Fields = Object.create(null);
+    params.forEach((value, key) => {
+      const previous = fields[key];
+      fields[key] = previous === undefined ? value : Array.isArray(previous) ? [...previous, value] : [previous, value];
+    });
+    return fields;
+  };
   try {
     const url = new URL(String(config.url), config.baseURL);
     host = url.hostname;
@@ -169,9 +193,11 @@ function requestFields(config: any, operation: unknown): Fields {
       embeddedQuery[key] = previous === undefined ? value : Array.isArray(previous) ? [...previous, value] : [previous, value];
     });
   } catch { /* Malformed or opaque URLs are omitted, never printed raw. */ }
-  const query = config.params instanceof URLSearchParams ? Object.fromEntries(config.params.entries())
+  const query = config.params instanceof URLSearchParams ? queryFields(config.params)
+    : typeof config.params === 'string' ? queryFields(new URLSearchParams(config.params))
     : config.params && typeof config.params === 'object' ? config.params : undefined;
   return { host, path, method: String(config.method || 'get').toUpperCase(), timeoutMs: config.timeout,
+    customParamsSerializer: !!config.paramsSerializer,
     urlQuery: toolInputFields(embeddedQuery, operation), query: toolInputFields(query, operation),
     body: config.data == null ? undefined : toolInputFields(config.data, operation, true) };
 }
@@ -179,25 +205,41 @@ function requestFields(config: any, operation: unknown): Fields {
 /** Wrap only the client passed to this invocation; never mutate Axios or its interceptors. */
 export function traceToolHttp(client: AxiosStatic, trace: ToolExecutionTrace, input: any): { client: AxiosStatic; requestCount: () => number } {
   let requestCount = 0;
+  const emit: ToolExecutionTrace = (...args) => {
+    try { trace(...args); } catch { /* A tracing consumer cannot affect the HTTP call. */ }
+  };
   const observe = (target: any, method: string, args: any[], invoke: () => any) => {
     const index = ++requestCount;
     const started = performance.now();
-    trace('http_request', () => ({ requestIndex: index, operation: input.operation,
+    emit('http_request', () => ({ requestIndex: index, operation: input.operation, observationStage: 'client_input',
       request: requestFields(axios.mergeConfig(target.defaults, method === 'request'
         ? typeof args[0] === 'string' ? { ...args[1], url: args[0] } : args[0] ?? {}
         : ['post', 'put', 'patch', 'postForm', 'putForm', 'patchForm'].includes(method)
           ? { ...args[2], url: args[0], data: args[1], method: method.replace('Form', '') }
           : { ...args[1], url: args[0], method }), input.operation) }), 'debug');
-    const response = (result: any, error?: any) => trace('http_response', () => ({ requestIndex: index,
-      durationMs: performance.now() - started, success: !error, httpStatus: result?.status,
-      rawRowCount: historicalOperation(input.operation) && !error ? historicalRowCount(result?.data, input.symbol) : null,
-      hasNextPage: result?.data && Object.prototype.hasOwnProperty.call(result.data, 'next_page_token') ? !!result.data.next_page_token : undefined,
-      failure: error ? safeToolError(error) : undefined }));
+    const response = (result: any, error?: any) => {
+      emit('http_effective_request', () => ({ requestIndex: index, operation: input.operation,
+        observationStage: 'response_config',
+        request: (result?.config ?? error?.config) ? requestFields(result?.config ?? error.config, input.operation) : undefined,
+        // Adapter serialization, redirects and custom transports may not expose wire details.
+        wireRequestObserved: false }), 'debug');
+      emit('http_response', () => ({ requestIndex: index,
+        durationMs: performance.now() - started, success: !error, httpStatus: result?.status ?? safeToolError(error).httpStatus,
+        rawRowCount: historicalOperation(input.operation) && !error ? historicalRowCount(result?.data, input.symbol) : null,
+        hasNextPage: result?.data && Object.prototype.hasOwnProperty.call(result.data, 'next_page_token') ? !!result.data.next_page_token : undefined,
+        failure: error ? safeToolError(error) : undefined }));
+    };
+    let pending: any;
     try {
-      const pending = invoke();
-      if (pending && typeof pending.then === 'function') void pending.then((value: any) => response(value), (error: any) => response(undefined, error));
-      return pending;
+      pending = invoke();
     } catch (error) { response(undefined, error); throw error; }
+    try {
+      if (pending && typeof pending.then === 'function') {
+        // Observe separately and return the original promise, including its cancellation behavior.
+        void Promise.resolve(pending).then((value: any) => response(value), (error: any) => response(undefined, error)).catch(() => {});
+      }
+    } catch { /* Inspecting an unusual thenable must not replace the execution result. */ }
+    return pending;
   };
   const methods = new Set(['request', 'get', 'delete', 'head', 'options', 'post', 'put', 'patch', 'postForm', 'putForm', 'patchForm']);
   const wrap = (client: any): any => new Proxy(client, {

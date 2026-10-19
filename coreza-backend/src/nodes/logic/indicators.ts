@@ -914,7 +914,7 @@ export class IndicatorService {
             let prevDate: Date | null = null;
             let value: number | null = null;
             for (const bar of bars) {
-              const date = new Date(asBarTime(bar));
+              const date = new Date(bar.time ?? bar.t ?? bar.timestamp);
               if (prevDate) {
                 const reset =
                   sessionType === "daily"
@@ -948,7 +948,7 @@ export class IndicatorService {
           },
           update: (state, bar) => {
             let { cumTPV, cumVol } = state;
-            const date = new Date(asBarTime(bar));
+            const date = new Date(bar.time ?? bar.t ?? bar.timestamp);
             const prevDate = state.prevTime ? new Date(state.prevTime) : null;
             const reset =
               prevDate && state.sessionType === "daily"
@@ -2044,7 +2044,7 @@ export class IndicatorService {
           const prevClose = Number(candles[i - 1].c ?? candles[i - 1].close);
           obv += close > prevClose ? volume : close < prevClose ? -volume : 0;
         }
-        obvValues.push({ timestamp: c.t ?? c.timestamp, obv });
+        obvValues.push({ timestamp: c.time ?? c.t ?? c.timestamp, obv });
       });
 
       return createSuccessOutput(obvValues, {
@@ -2090,9 +2090,9 @@ export class IndicatorService {
 
         const tp = (high + low + close) / 3;
         let reset = false;
-        const curr = new Date(c.t ?? c.timestamp);
+        const curr = new Date(c.time ?? c.t ?? c.timestamp);
         if (i > 0) {
-          const prev = new Date(candles[i - 1].t ?? candles[i - 1].timestamp);
+          const prev = new Date(candles[i - 1].time ?? candles[i - 1].t ?? candles[i - 1].timestamp);
           if (session_type === "daily") {
             reset = curr.getDate() !== prev.getDate();
           } else if (session_type === "weekly") {
@@ -2113,7 +2113,7 @@ export class IndicatorService {
         cumVol += volume;
         const vwap = cumVol > 0 ? cumTPV / cumVol : tp;
         vwapValues.push({
-          timestamp: c.t ?? c.timestamp,
+          timestamp: c.time ?? c.t ?? c.timestamp,
           vwap,
           sessionStart: sessionStartIdx,
         });

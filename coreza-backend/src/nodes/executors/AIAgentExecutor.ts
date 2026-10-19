@@ -29,6 +29,7 @@ import { z, ZodTypeAny } from "zod";
 import {
   processToolOutput,
   resolveDataRef,
+  ToolInvocationRefs,
 } from "../../nodes/logic/toolOutputProcessor";
 import { DataContext, DataContextManager } from "../../engine";
 import {
@@ -58,6 +59,7 @@ export class AIAgentExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
+    const started = performance.now();
     // Copy invocation identity; the workflow runtime reuses its mutable context.
     const executionId = String(context?.executionId || context?.runId || randomUUID());
     const workflowId = String(context?.workflowId || "unknown");
@@ -75,6 +77,7 @@ export class AIAgentExecutor implements INodeExecutor {
     let releaseMemory: (() => void) | undefined;
     let releaseContext: (() => void) | undefined;
     const toolLifetime: { active: number; closed: boolean; onDrained?: () => void } = { active: 0, closed: false };
+    const invocationRefs = new ToolInvocationRefs();
     const heldConversations = new Set<string>(context?.agentMemoryConversations ?? []);
     let terminal: "completed" | "failed" | "cancelled" = "failed";
     try {
@@ -222,6 +225,7 @@ export class AIAgentExecutor implements INodeExecutor {
         dataContext,
         agentActivity: activity,
         agentToolLifetime: toolLifetime,
+        invocationRefs,
         agentMemoryConversations: heldConversations,
         // Nested executors borrow this context but own their own invocation metadata.
         onAgentActivityRecorder: undefined,
@@ -253,15 +257,23 @@ export class AIAgentExecutor implements INodeExecutor {
       }
       assertAgentActive(signal);
       const modelSpans = new Map<string, string>();
+      const modelTimes = new Map<string, number>();
       const modelStart = (_model: unknown, _messages: unknown, runId: string) => {
+        if (modelTimes.size < 128 && !modelTimes.has(runId)) modelTimes.set(runId, performance.now());
         if (modelSpans.size < 128 && !modelSpans.has(runId)) modelSpans.set(runId, activity.start("model", chatModelNode.id));
       };
       const modelEnd = (_output: unknown, runId: string) => {
+        const start = modelTimes.get(runId);
+        if (start !== undefined) console.info('[AIAgent] model', { runId: executionId, nodeId: node.id, modelInvocationId: runId, durationMs: performance.now() - start });
+        modelTimes.delete(runId);
         const span = modelSpans.get(runId);
         if (span) activity.end(span, "completed");
         modelSpans.delete(runId);
       };
       const modelError = (_error: unknown, runId: string) => {
+        const start = modelTimes.get(runId);
+        if (start !== undefined) console.info('[AIAgent] model failed', { runId: executionId, nodeId: node.id, modelInvocationId: runId, durationMs: performance.now() - start });
+        modelTimes.delete(runId);
         const span = modelSpans.get(runId);
         if (span) activity.end(span, signal?.aborted ? "cancelled" : "failed");
         modelSpans.delete(runId);
@@ -278,7 +290,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const result = await agent.invoke(
         {
           messages: [
-            new SystemMessage(systemPrompt),
+            new SystemMessage(`${systemPrompt}\nHistorical market-data tools return a dataRef. Pass that exact dataRef to indicator tools in candle_data or dataRef; tool names are not storage keys. Never claim indicator confirmation from failed or not_ready tool results.`),
             ...priorMessages,
             new HumanMessage(userPrompt),
           ],
@@ -286,8 +298,8 @@ export class AIAgentExecutor implements INodeExecutor {
         {
           recursionLimit: Number(maxIterations),
           signal,
-          callbacks: context?.agentActivitySink ? [{ name: "coreza-agent-activity", handleChatModelStart: modelStart,
-            handleLLMStart: modelStart, handleLLMEnd: modelEnd, handleLLMError: modelError }] : undefined,
+          callbacks: [{ name: "coreza-agent-activity", handleChatModelStart: modelStart,
+            handleLLMStart: modelStart, handleLLMEnd: modelEnd, handleLLMError: modelError }],
         },
       );
 
@@ -299,7 +311,9 @@ export class AIAgentExecutor implements INodeExecutor {
       }
 
       assertAgentActive(signal);
+      const responseStart = performance.now();
       const agentOutput = this.getAgentOutput(result);
+      console.info('[AIAgent] final response', { runId: executionId, nodeId: node.id, durationMs: performance.now() - responseStart });
 
       if (loadedMemory && agentOutput.trim()) {
         const writeSpan = activity.start("memory", memoryNodeId, "write");
@@ -329,10 +343,13 @@ export class AIAgentExecutor implements INodeExecutor {
       toolLifetime.closed = true;
       activity.finish(terminal);
       const cleanup = () => {
+        const cleanupStart = performance.now();
         releaseMemory?.();
         // Owner disposal can be requested while a borrower is still draining.
         if (ownedContextId) dataContextManager.destroyContext(ownedContextId);
         releaseContext?.();
+        invocationRefs.clear();
+        console.info('[AIAgent] cleanup', { runId: executionId, nodeId: node.id, durationMs: performance.now() - cleanupStart, totalMs: performance.now() - started, state: terminal });
       };
       // LangGraph can abort its wait before an uncancellable tool settles.
       // Keep its DataRefs and conversation lock alive until the actual boundary ends.
@@ -418,6 +435,14 @@ export class AIAgentExecutor implements INodeExecutor {
       description: toolDescription,
       schema: toolSchema as ZodTypeAny,
       func: async (input: Record<string, any>) => {
+        const toolInvocationId = randomUUID();
+        const started = performance.now();
+        const refs = context?.invocationRefs as ToolInvocationRefs | undefined;
+        refs?.begin(toolInvocationId, toolName, node.id);
+        const trace = (phase: string, metrics: Record<string, unknown>) => console.info('[AIAgent] tool phase', {
+          runId: context?.runId || context?.executionId, agentInvocationId: context?.agentActivity?.invocationId,
+          toolInvocationId, nodeId: node.id, phase, ...metrics,
+        });
         const activity = context?.agentActivity as AgentActivityRecorder | undefined;
         const span = activity?.start("tool", node.id);
         const lifetime = context?.agentToolLifetime as { active: number; closed: boolean; onDrained?: () => void } | undefined;
@@ -445,9 +470,14 @@ export class AIAgentExecutor implements INodeExecutor {
           const resolvedConfigured = Object.fromEntries(Object.entries(configuredValues).map(([key, value]) =>
             [key, Object.prototype.hasOwnProperty.call(resolvedValues, key) ? resolvedValues[key] : value],
           ));
-          const unwrappedInput = resolveDataRef({ ...generatedInput, ...resolvedConfigured }, dataContext);
+          const referenceStart = performance.now();
+          const effectiveInput = { ...generatedInput, ...resolvedConfigured };
+          const unwrappedInput = executorCategory === 'Indicators' ? effectiveInput
+            : resolveDataRef(effectiveInput, dataContext, refs);
+          trace('resolve_input', { durationMs: performance.now() - referenceStart });
           const toolContext = {
             ...context,
+            agentDataTrace: trace,
             resolveNodeParameters: (current: WorkflowNode, currentInput: NodeInput) =>
               current.id === node.id ? { ...unwrappedInput }
                 : context?.resolveNodeParameters ? context.resolveNodeParameters(current, currentInput)
@@ -474,14 +504,22 @@ export class AIAgentExecutor implements INodeExecutor {
           // Cancellation may have arrived during asynchronous executor discovery.
           ensureActive();
           // Execute the normalized node with unwrapped input
+          const executeStart = performance.now();
           const result = await executor.execute(
             normalizedNode,
             unwrappedInput,
             toolContext,
           );
+          trace('execute', { durationMs: performance.now() - executeStart, success: result.success });
 
           if (!result.success) {
             throw new Error(result.error || "Tool execution failed");
+          }
+
+          if (executorCategory === 'Indicators' && result.data?.IsReady === false) {
+            if (span) activity?.end(span, 'completed');
+            return JSON.stringify({ success: true, status: 'not_ready', type: 'indicator', toolInvocationId,
+              summary: { observedBars: result.data.SampleCount, requiredBars: result.meta?.requiredBars }, cached: false });
           }
 
           if (process.env.LOG_LEVEL === "debug") console.debug(`✅ [AIAgent] Tool ${toolName} execution completed`);
@@ -493,12 +531,17 @@ export class AIAgentExecutor implements INodeExecutor {
             result.data,
             dataContext,
             unwrappedInput, // Pass tool input so symbol can be extracted
+            trace,
           );
+          if (processedOutput.dataRef) {
+            refs?.complete(toolInvocationId, processedOutput.dataRef, processedOutput.summary);
+            refs?.validatedBars.add(dataContext!.getDataByKey(processedOutput.dataRef));
+          }
 
           // Include output processing/serialization in the actual tool boundary.
-          const serialized = JSON.stringify(processedOutput);
+          const serialized = JSON.stringify({ ...processedOutput, toolInvocationId });
           assertAgentActive(context?.abortSignal);
-          if (span) activity?.end(span, "completed");
+          if (span) activity?.end(span, processedOutput.success === false ? "failed" : "completed");
           return serialized;
         } catch (error: any) {
           const cancelled = context?.abortSignal?.aborted || error?.name === "AbortError";
@@ -508,8 +551,10 @@ export class AIAgentExecutor implements INodeExecutor {
             `❌ [AIAgent] Tool ${toolName} execution error:`,
             error,
           );
-          return `Error executing tool ${toolName}: ${error.message}`;
+          return JSON.stringify({ success: false, type: 'tool_error', toolInvocationId,
+            error: { message: error.message || 'Tool execution failed' } });
         } finally {
+          trace('complete', { durationMs: performance.now() - started });
           if (lifetime && --lifetime.active === 0) {
             const cleanup = lifetime.onDrained;
             lifetime.onDrained = undefined;
@@ -649,7 +694,9 @@ export class AIAgentExecutor implements INodeExecutor {
         isConfiguredToolValue(node.values?.[key]) && getFieldValueMode(node.values ?? {}, key) === "fixed"
           && matches(key, allowed, true))) continue;
 
-      schemaObject[field.key] = this.fieldToZodType(field);
+      schemaObject[field.key] = field.key === 'candle_data' && node.category === 'Indicators'
+        ? this.fieldToZodType({ ...field, required: false, description: 'Canonical candles as JSON, or the exact dataRef returned by a historical tool. Optional when dataRef is supplied.' })
+        : this.fieldToZodType(field);
     }
 
     const nodeCategory = (node as any).subCategory || node.category || "";

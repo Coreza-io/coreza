@@ -792,6 +792,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return {
           insert,
           sourceId,
+          variable: Boolean(drag.variableKey),
         };
       } catch (error) {
         console.error("Drop error:", error);
@@ -805,7 +806,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     (
       e: React.DragEvent,
       currentValue: string,
-      onInsert: (insert: string, sourceId: string) => { beforeMeta?: unknown; meta?: unknown } | boolean | void,
+      onInsert: (insert: string, sourceId: string, variable: boolean) => { beforeMeta?: unknown; meta?: unknown } | boolean | void,
     ) => {
       e.preventDefault();
       e.stopPropagation();
@@ -817,7 +818,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       }
 
       const insertion = planReferenceTextDrop(e, result.insert);
-      if (insertion) { const metadata = onInsert(insertion.value, result.sourceId); if (metadata !== false) finishReferenceTextDrop(e, insertion, typeof metadata === "object" ? metadata?.meta : undefined, typeof metadata === "object" ? metadata?.beforeMeta : undefined); }
+      if (insertion) { const metadata = onInsert(insertion.value, result.sourceId, result.variable); if (metadata !== false) finishReferenceTextDrop(e, insertion, typeof metadata === "object" ? metadata?.meta : undefined, typeof metadata === "object" ? metadata?.beforeMeta : undefined); }
       document.body.classList.remove("cursor-grabbing", "select-none");
     },
     [computeDropInsert],
@@ -826,8 +827,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   // Drag helper for repeater (conditional)
   const handleRepeaterDrop = useCallback(
     (idx: number, field: string, e: React.DragEvent, currentValue: string) => {
-      handleDropWithInsert(e, currentValue, (insert, sourceId) => {
+      handleDropWithInsert(e, currentValue, (insert, sourceId, variable) => {
         if (updateCondition(idx, field, insert) === false) return false;
+        if (variable) return;
         const beforeSource = sourceMapRef.current[idx]?.[field];
         const key = rowKey(conditions[idx]);
         const restoreSource = (source: string | undefined) => () => setSourceMap(sm => {

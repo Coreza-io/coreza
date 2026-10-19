@@ -446,6 +446,10 @@ export class AIAgentExecutor implements INodeExecutor {
             [key, Object.prototype.hasOwnProperty.call(resolvedValues, key) ? resolvedValues[key] : value],
           ));
           const unwrappedInput = resolveDataRef({ ...generatedInput, ...resolvedConfigured }, dataContext);
+          if (executorCategory === "Indicators" && (toolSchema as any).shape?.candle_data
+            && !isConfiguredToolValue(unwrappedInput.candle_data)) {
+            throw new Error("Indicator candle_data is required. Supply the exact dataRef returned by a market data tool.");
+          }
           const toolContext = {
             ...context,
             resolveNodeParameters: (current: WorkflowNode, currentInput: NodeInput) =>
@@ -627,6 +631,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
   private generateSchemaFromNode(node: WorkflowNode): ZodTypeAny {
     const fields = (node as any).fields || [];
+    const isIndicator = this.getExecutorCategory(node, this.getToolDefinition(node)) === "Indicators";
     const schemaObject: Record<string, ZodTypeAny> = {};
 
     for (const field of fields) {
@@ -649,7 +654,11 @@ export class AIAgentExecutor implements INodeExecutor {
         isConfiguredToolValue(node.values?.[key]) && getFieldValueMode(node.values ?? {}, key) === "fixed"
           && matches(key, allowed, true))) continue;
 
-      schemaObject[field.key] = this.fieldToZodType(field);
+      schemaObject[field.key] = this.fieldToZodType(isIndicator && field.key === "candle_data" ? {
+        ...field,
+        required: false,
+        description: "Use the exact dataRef returned by the market data tool, or JSON candle data. Never invent a reference or candles. May be omitted when supplying dataRef instead.",
+      } : field);
     }
 
     const nodeCategory = (node as any).subCategory || node.category || "";

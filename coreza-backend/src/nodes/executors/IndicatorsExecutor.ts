@@ -360,7 +360,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       }
 
       console.log(
-        `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`,
+        `🔢 Executing ${indicatorType} indicator with ${Array.isArray(candleData) ? candleData.length : 0} candles`,
       );
 
       const calculated = await IndicatorService.calculate(

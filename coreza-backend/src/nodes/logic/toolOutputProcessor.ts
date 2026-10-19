@@ -9,6 +9,7 @@
  */
 
 import { DataContext } from '../../engine';
+import { randomUUID } from 'crypto';
 import { DataRef } from '../../engine/InMemoryStore';
 import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from '../../brokers/capabilities';
 
@@ -267,14 +268,34 @@ export function processToolOutput(
   );
 
   if (isMarketDataNode && dataContext) {
+    // Alpaca's normalized response groups candles by symbol. Store each series
+    // separately so indicators never combine prices from different instruments.
+    if (Array.isArray(output.BarSeries)) {
+      const series = output.BarSeries.map((entry: any) => processToolOutput(
+        nodeName, nodeCategory, entry, dataContext, toolInput,
+      ));
+      if (series.length === 1) return series[0];
+      return {
+        summary: { series },
+        rowCount: series.reduce((count: number, item: ProcessedToolOutput) => count + (item.rowCount ?? 0), 0),
+        cached: false,
+        type: 'market_data',
+      };
+    }
     const bars = extractBars(output);
+    if (bars?.length === 0) return {
+      summary: createMarketDataSummary(bars, output, toolInput),
+      rowCount: 0,
+      cached: false,
+      type: 'market_data',
+    };
     
     if (bars && bars.length > 0) {
       // Generate unique key for this data - try output first, then toolInput
       const symbol = output?.symbol || toolInput?.symbol || toolInput?.ticker || 'unknown';
       const timeframe = output?.timeframe || output?.interval || toolInput?.interval || toolInput?.timeframe || '1d';
       const timestamp = Date.now();
-      const key = `bars:${symbol}:${timeframe}:${timestamp}`;
+      const key = `bars:${symbol}:${timeframe}:${timestamp}:${randomUUID()}`;
 
       // Store in DataContext
       const dataRef = dataContext.setData(key, bars, {
@@ -361,43 +382,44 @@ export function resolveDataRef(
   dataContext?: DataContext
 ): any {
   if (!dataContext || !input) return input;
-
-  // Check if input has a dataRef property
-  if (typeof input.dataRef === 'string') {
-    const data = dataContext.getDataByKey(input.dataRef);
-    if (data) {
-      console.log(`🔓 [ToolProcessor] Resolved dataRef: ${input.dataRef}`);
-      // Preserve original input, add resolved data
-      return { ...input, resolvedData: data };
+  const referenceKey = (value: any): string | undefined => {
+    if (typeof value === 'string') {
+      if (value.startsWith('bars:')) return value;
+      // Text fields may contain a JSON-encoded reference descriptor.
+      if (!value.trim().startsWith('{')) return undefined;
+      try { value = JSON.parse(value); } catch { return undefined; }
     }
-    console.warn(`⚠️ [ToolProcessor] dataRef not found: ${input.dataRef}`);
-  }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    return typeof value.ref === 'string' ? value.ref
+      : typeof value.dataRef === 'string' ? value.dataRef : undefined;
+  };
+  const load = (key: string): any => {
+    const data = dataContext.getDataByKey(key);
+    if (data === undefined) throw new Error('Market data reference not found in this Agent run. Use the exact dataRef returned by the market data tool.');
+    return data;
+  };
+  const direct = referenceKey(input);
+  if (typeof input === 'string' && direct) return load(direct);
+  if (typeof input !== 'object' || Array.isArray(input)) return input;
 
-  // Check common field names that may contain dataRef strings (e.g., candle_data from LLM)
+  const resolved = { ...input };
   const dataRefFields = ['candle_data', 'candleData', 'bars', 'data', 'prices'];
   for (const field of dataRefFields) {
-    if (typeof input[field] === 'string' && input[field].startsWith('bars:')) {
-      const data = dataContext.getDataByKey(input[field]);
-      if (data) {
-        console.log(`🔓 [ToolProcessor] Resolved ${field} dataRef: ${input[field]}`);
-        // FIXED: Preserve original input structure, replace only the field with resolved data
-        // This keeps other parameters like 'window', 'period', etc. intact
-        return { ...input, [field]: data };
-      }
-      console.warn(`⚠️ [ToolProcessor] ${field} dataRef not found: ${input[field]}`);
+    const key = referenceKey(input[field]);
+    if (key) resolved[field] = load(key);
+  }
+  const key = referenceKey(input.dataRef) ?? (typeof input.dataRef === 'string' ? input.dataRef : undefined);
+  if (key) {
+    resolved.resolvedData = load(key);
+    // Keep explicitly supplied candle data authoritative; otherwise supply the
+    // field consumed by IndicatorsExecutor, not just an unused resolvedData field.
+    if (resolved.candle_data == null
+      || (typeof resolved.candle_data === 'string' && resolved.candle_data.trim() === '')
+      || (Array.isArray(resolved.candle_data) && resolved.candle_data.length === 0)) {
+      resolved.candle_data = resolved.resolvedData;
     }
   }
-
-  // Check if input itself is a dataRef string
-  if (typeof input === 'string' && input.startsWith('bars:')) {
-    const data = dataContext.getDataByKey(input);
-    if (data) {
-      console.log(`🔓 [ToolProcessor] Resolved dataRef string: ${input}`);
-      return data;
-    }
-  }
-
-  return input;
+  return resolved;
 }
 
 /**

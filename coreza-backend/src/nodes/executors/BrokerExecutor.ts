@@ -552,7 +552,7 @@ export class BrokerExecutor implements INodeExecutor {
       requestCount++;
 
       console.log(
-        `📊 [BROKER] ${broker}.${operation} page ${requestCount}: ${allData.length} total items`,
+        `📊 [BROKER] ${broker}.${operation} page ${requestCount}: ${Object.values(allData).reduce((count, items) => count + items.length, 0)} total items`,
       );
     } while (pageToken && requestCount < maxPages);
 

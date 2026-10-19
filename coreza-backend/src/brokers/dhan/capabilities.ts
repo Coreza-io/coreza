@@ -10,6 +10,16 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 export const dhanCapabilities: BrokerCapabilities = {
   id: "dhan",
   displayName: "Dhan",
+  historicalTools: {
+    get_candle: {
+      startField: 'start', endField: 'end', dateFormat: 'local-datetime',
+      timeframe: input => ['1Day', 'Day'].includes(String(input.interval)) ? '1d' : `${input.interval}m`,
+      validateInterval: input => ['1', '5', '15', '25', '60', '1Day', 'Day'].includes(String(input.interval)),
+      count: { field: 'lookback', mode: 'lookback' }, requiresRange: true,
+      maxRangeDays: input => ['1Day', 'Day'].includes(String(input.interval)) ? undefined : 90,
+      guidance: 'Use interval and start/end (YYYY-MM-DD HH:mm:ss), or positive lookback. lookback derives calendar minutes for intraday intervals and calendar days for daily bars; it does not guarantee that many trading bars. Daily candles use the historical endpoint; no pagination is configured.',
+    },
+  },
 
   nodeNames: {
     data: "Dhan",
@@ -67,3 +77,4 @@ export const dhanCapabilities: BrokerCapabilities = {
     trade: "Execute equity trades on Dhan with basic order operations.",
   },
 };
+

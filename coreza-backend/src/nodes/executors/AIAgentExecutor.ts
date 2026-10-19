@@ -15,6 +15,8 @@ import { AgentActivityRecorder, assertAgentActive } from "../../agents/activity"
 import {
   buildExecutorCategoryMap,
   isBrokerNode,
+  getBrokerByNodeName,
+  BROKER_CAPABILITIES,
 } from "../../brokers/capabilities";
 import { DynamicStructuredTool, ToolInputParsingException } from "@langchain/core/tools";
 
@@ -32,7 +34,8 @@ import {
   resolveDataRef,
   ToolInvocationRefs,
 } from "../../nodes/logic/toolOutputProcessor";
-import { DataContext, DataContextManager } from "../../engine";
+import { DataContext, DataContextManager, requiredWarmupBars } from "../../engine";
+import { AgentHistoryRecovery, HistoricalAgentTool } from '../../agents/historyRecovery';
 import {
   TOOL_DEFINITIONS,
   ToolDefinition,
@@ -230,6 +233,8 @@ export class AIAgentExecutor implements INodeExecutor {
         agentActivity: activity,
         agentToolLifetime: toolLifetime,
         invocationRefs,
+        // Recovery is confined to this agent's historical analysis, outside tick paths.
+        agentHistoryRecovery: ['live', 'backtest'].includes(context?.executionMode) ? undefined : new AgentHistoryRecovery(),
         agentMemoryConversations: heldConversations,
         // Nested executors borrow this context but own their own invocation metadata.
         onAgentActivityRecorder: undefined,
@@ -294,7 +299,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const result = await agent.invoke(
         {
           messages: [
-            new SystemMessage(`${systemPrompt}\nHistorical market-data tools return a dataRef. Pass that exact dataRef to indicator tools in candle_data or dataRef; tool names are not storage keys. Never claim indicator confirmation from failed or not_ready tool results.`),
+            new SystemMessage(`${systemPrompt}\nHistorical market-data tools return a dataRef. Pass that exact dataRef to indicator tools in candle_data or dataRef; tool names are not storage keys. For indicator analysis, use the tool's supported explicit date boundaries or documented latest-count mode, covering warm-up plus the requested analysis horizon. A limit is an upper bound, not a guarantee of recent history. Respect fixed fields and user requests for only the latest/current candle. Calendar lookbacks must allow for non-trading days and sessions; never invent missing bars. If an indicator returns not_ready with recovery.allowed, you may make the single suggested additional history call within the existing iteration budget, then recompute only dependent indicators using the exact NEW dataRef. If recovery is denied, unavailable, fails, or remains short, stop and report not_ready. Never claim indicator confirmation from failed or not_ready results.`),
             ...priorMessages,
             new HumanMessage(userPrompt),
           ],
@@ -428,12 +433,32 @@ export class AIAgentExecutor implements INodeExecutor {
     const configuredValues = Object.fromEntries(
       parameterEntries(node.values ?? {}).filter(([, value]) => isConfiguredToolValue(value)),
     );
-    const toolDescription = `${this.getToolDescription(node, definition)}${
+    let toolDescription = `${this.getToolDescription(node, definition)}${
       configuredValues.operation ? ` Configured operation: ${configuredValues.operation}.` : ""
     } Only supply the exposed, unconfigured fields. Saved node settings are fixed.`;
     const toolSchema = this.getToolSchema(node, definition);
     const dataContext = context?.dataContext as DataContext | undefined;
     const executorCategory = this.getExecutorCategory(node, definition);
+    const historyRecovery = context?.agentHistoryRecovery as AgentHistoryRecovery | undefined;
+    const broker = getBrokerByNodeName(node.name || '') ?? BROKER_CAPABILITIES[String((node as any).subCategory || '').toLowerCase()];
+    const exposed = new Set<string>(Object.keys((toolSchema as any).shape || {}));
+    const historyTools = new Map<string, HistoricalAgentTool>();
+    if (executorCategory === 'Broker') for (const [operation, capability] of Object.entries(broker?.historicalTools || {})) {
+      historyTools.set(operation, { nodeId: node.id, toolName, capability, exposed });
+      if (!configuredValues.operation || configuredValues.operation === operation) {
+        toolDescription += ` For ${operation}: ${capability.guidance} Only use fields exposed in this tool schema; saved settings remain fixed.`;
+      }
+    }
+    if (executorCategory === 'Indicators') {
+      const fields = (node as any).fields || loadNodeDefinition(node.name || '')?.fields || [];
+      const defaults = Object.fromEntries(fields.filter((field: any) => field.default !== undefined).map((field: any) => [field.key, field.default]));
+      const params = { ...defaults, ...configuredValues };
+      if (!Object.values(params).some(value => typeof value === 'string' && value.includes('{{'))) {
+        const requiredBars = requiredWarmupBars(node.name || '', params);
+        historyRecovery?.observeRequirement(requiredBars);
+        toolDescription += ` Configured warm-up lower bound: ${requiredBars} bars; supplied parameters and the actual readiness result determine the final requirement.`;
+      }
+    }
     const makeTrace = (toolInvocationId: string) => createToolExecutionTrace({
       runId: context?.runId || context?.executionId, agentInvocationId: context?.agentActivity?.invocationId,
       toolInvocationId, workflowNodeId: node.id, workflowNodeName: (node as any).displayName || node.id,
@@ -462,6 +487,7 @@ export class AIAgentExecutor implements INodeExecutor {
         let status = 'failed';
         let operation = configuredValues.operation;
         let completion: Record<string, unknown> = {};
+        let historyCoverage: ReturnType<AgentHistoryRecovery['beforeFetch']> | undefined;
         trace('tool_started', { operation, status: 'started' });
         const activity = context?.agentActivity as AgentActivityRecorder | undefined;
         const span = activity?.start("tool", node.id);
@@ -510,6 +536,10 @@ export class AIAgentExecutor implements INodeExecutor {
               referenceChangedKeys: Object.keys(unwrappedInput).filter(key => unwrappedInput[key] !== effectiveInput[key]),
             } }), 'debug');
           trace('resolve_input', { durationMs: performance.now() - referenceStart });
+          const historicalTool = historyTools.get(operation);
+          const historyInput = historicalTool && historyRecovery ? { ...unwrappedInput } : undefined;
+          if (historyInput?.assetType === 'crypto') broker?.normalizeCryptoParams?.(historyInput);
+          if (historicalTool && historyRecovery && historyInput) historyCoverage = historyRecovery.beforeFetch(historicalTool, historyInput, trace);
           const toolContext = {
             ...context,
             // A fetched historical snapshot must not consume or advance workflow live state.
@@ -560,10 +590,13 @@ export class AIAgentExecutor implements INodeExecutor {
 
           if (executorCategory === 'Indicators' && result.data?.IsReady === false) {
             status = 'not_ready';
+            const ref = unwrappedInput.dataRef || (typeof unwrappedInput.candle_data === 'string' ? unwrappedInput.candle_data : undefined);
+            const recovery = historyRecovery?.insufficient(typeof ref === 'string' ? refs?.resolve(ref) ?? ref : undefined,
+              result.data.SampleCount, result.meta?.requiredBars, trace);
             if (span) activity?.end(span, 'completed');
             return JSON.stringify({ success: true, status: 'not_ready', type: 'indicator', toolInvocationId,
               summary: { observedBars: result.data.SampleCount, requiredBars: result.meta?.requiredBars,
-                reason: result.meta?.readinessReason }, cached: false });
+                reason: result.meta?.readinessReason }, ...(recovery ? { recovery } : {}), cached: false });
           }
 
           if (process.env.LOG_LEVEL === "debug") console.debug(`✅ [AIAgent] Tool ${toolName} execution completed`);
@@ -579,12 +612,16 @@ export class AIAgentExecutor implements INodeExecutor {
             node.category || "",
             outputData,
             dataContext,
-            unwrappedInput, // Pass tool input so symbol can be extracted
+            historicalTool && historyRecovery && operation !== 'get_candle'
+              ? { ...unwrappedInput, operation: 'get_candle', timeframe: historicalTool.capability.timeframe(unwrappedInput) } : unwrappedInput,
             trace,
           );
           if (processedOutput.dataRef) {
             refs?.complete(toolInvocationId, processedOutput.dataRef, processedOutput.summary);
             refs?.validatedBars.add(dataContext!.getDataByKey(processedOutput.dataRef));
+          }
+          if (historicalTool && historyRecovery && historyCoverage && historyInput) {
+            historyRecovery.fetched(historicalTool, historyInput, processedOutput, toolInvocationId, historyCoverage, trace);
           }
 
           // Include output processing/serialization in the actual tool boundary.
@@ -597,6 +634,7 @@ export class AIAgentExecutor implements INodeExecutor {
         } catch (error: any) {
           const cancelled = context?.abortSignal?.aborted || error?.name === "AbortError";
           status = cancelled ? 'cancelled' : 'failed';
+          if (historyCoverage) historyRecovery?.failed(historyCoverage, trace, cancelled ? 'cancelled' : 'source_error_or_unavailable');
           trace('tool_error', () => ({ operation, status, failure: safeToolError(error) }));
           if (span) activity?.end(span, cancelled ? "cancelled" : "failed");
           if (cancelled) throw error;
@@ -1024,3 +1062,4 @@ export class AIAgentExecutor implements INodeExecutor {
     return JSON.stringify(result);
   }
 }
+

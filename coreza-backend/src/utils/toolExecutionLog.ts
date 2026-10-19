@@ -154,11 +154,11 @@ export function toolResultSummary(data: any, indicator = false): Fields {
 
 const bodyFields = new Set(['operation', 'symbol', 'symbols', 'interval', 'timeframe', 'start', 'end', 'startdate', 'enddate', 'fromdate', 'todate', 'limit', 'exchange', 'exchangesegment', 'assettype', 'feed', 'adjustment', 'instrument', 'securityid', 'expirycode', 'oi']);
 const tradingFields = new Set(['operation', 'symbol', 'symbols', 'side', 'type', 'ordertype', 'timeinforce', 'exchange', 'assettype']);
-const historicalOperation = (operation: unknown) => ['get_candle', 'get_history', 'get_historical_data'].includes(String(operation));
+const historicalOperation = (operation: unknown) => ['get_candle', 'get_history', 'get_historical_data', 'get_price_history'].includes(String(operation));
 
 /** Free-form bodies and trading/account inputs require an explicit safe allowlist. */
 export function toolInputFields(input: any, operation?: unknown, body = false): unknown {
-  if (!body && (operation === undefined || /^(get|fetch)_(candle|candles|bars|history|historical_data|quote|quotes|snapshot|snapshots|news|screener)$/.test(String(operation)))) return input;
+  if (!body && (operation === undefined || /^(get|fetch)_(candle|candles|bars|history|historical_data|price_history|quote|quotes|snapshot|snapshots|news|screener)$/.test(String(operation)))) return input;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return '[Body omitted]';
   const allowed = historicalOperation(operation) ? bodyFields : tradingFields;
   const output: Fields = {};
@@ -253,3 +253,4 @@ export function traceToolHttp(client: AxiosStatic, trace: ToolExecutionTrace, in
   });
   return { client: wrap(client), requestCount: () => requestCount };
 }
+

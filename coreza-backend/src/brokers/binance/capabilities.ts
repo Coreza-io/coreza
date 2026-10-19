@@ -87,6 +87,15 @@ function buildBinanceStreamName(
 export const binanceCapabilities: BrokerCapabilities = {
   id: "binance",
   displayName: "Binance",
+  historicalTools: {
+    get_candle: {
+      startField: 'startTime', endField: 'endTime', dateFormat: 'js-date',
+      timeframe: input => String(input.interval || '1h'),
+      validateInterval: input => /^(?:1s|[135]m|15m|30m|[12468]h|12h|[13]d|1w|1M)$/.test(String(input.interval || '1h')),
+      count: { field: 'limit', mode: 'latest', max: 1000 },
+      guidance: 'Use interval (default 1h). startTime/endTime are converted by JavaScript Date to epoch milliseconds. With dates omitted, limit selects recent klines; keep recovery limit <=1000 for spot/futures compatibility. No automatic kline pagination is configured.',
+    },
+  },
 
   nodeNames: {
     data: "Binance",
@@ -145,3 +154,4 @@ export const binanceCapabilities: BrokerCapabilities = {
       "Filter Binance instruments by volume, price change, and symbol patterns.",
   },
 };
+

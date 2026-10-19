@@ -57,6 +57,24 @@ export interface PlaceOrderEnrichmentConfig {
   pollDelayMs?: number;
 }
 
+/** Agent-only range semantics; transport adapters remain authoritative. */
+export interface HistoricalToolCapability {
+  startField: string;
+  endField: string;
+  startAliases?: string[];
+  endAliases?: string[];
+  dateFormat: 'iso' | 'local-datetime' | 'js-date' | 'epoch-or-date';
+  timeframe: (input: Record<string, any>) => string;
+  validateInterval?: (input: Record<string, any>) => boolean;
+  count?: { field: string; mode: 'latest' | 'lookback'; max?: number };
+  pageLimit?: { field: string; max: number; paginated?: boolean };
+  maxRangeDays?: (input: Record<string, any>) => number | undefined;
+  rangeMode?: { field: string; value: string };
+  requiresRange?: boolean;
+  broadenPeriod?: (input: Record<string, any>) => Record<string, unknown> | undefined;
+  guidance: string;
+}
+
 export interface BrokerCapabilities {
   /** Unique broker identifier, e.g. "alpaca", "binance" */
   id: string;
@@ -122,6 +140,9 @@ export interface BrokerCapabilities {
 
   /** Whether broker supports algo/conditional order APIs */
   supportsAlgoOrders?: boolean;
+
+  /** Historical read operations and their actual adapter parameter names. */
+  historicalTools?: Record<string, HistoricalToolCapability>;
 
   /** Description for AI tool definitions */
   toolDescriptions?: {
@@ -542,3 +563,4 @@ export function buildStreamNameBySource(
     ? `${sym}@${resolvedEventType}_${interval}`
     : `${sym}@${resolvedEventType}`;
 }
+

@@ -29,6 +29,15 @@ function toCanonicalCryptoSymbol(symbol: string): string {
 export const alpacaCapabilities: BrokerCapabilities = {
   id: "alpaca",
   displayName: "Alpaca",
+  historicalTools: {
+    get_candle: {
+      startField: 'start', endField: 'end', dateFormat: 'iso',
+      timeframe: input => String(input.interval || ''),
+      pageLimit: { field: 'limit', max: 10000, paginated: true },
+      validateInterval: input => /^(?:[1-9]|[1-5]\d)Min$|^(?:[1-9]|1\d|2[0-3])Hour$|^1(?:Day|Week)$|^(?:[1-9]|1[0-2])Month$/.test(String(input.interval)),
+      guidance: 'Use interval and ISO start/end boundaries for indicator history. limit is capped at 10000 per page (default 10000); sort defaults to asc. Existing token pagination may retrieve additional pages. Omitted dates do not guarantee the latest N bars.',
+    },
+  },
 
   nodeNames: {
     data: "Alpaca",
@@ -100,3 +109,4 @@ export const alpacaCapabilities: BrokerCapabilities = {
       "Screen stocks using Alpaca screener APIs (market cap, volume, sector).",
   },
 };
+

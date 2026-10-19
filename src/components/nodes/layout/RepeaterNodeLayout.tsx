@@ -989,6 +989,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       <form className="space-y-3" onSubmit={handleSubmit}>
         <NodeConfigurationTabs
+          persistent={fieldState.persistent === true}
+          onPersistentChange={definition?.name === "Edit Fields" ? (checked) => handleChange("persistent", checked) : undefined}
           incomingEdgeCount={incomingEdgeCount}
           checkDependency={Boolean(fieldState.checkDependency)}
           onDependencyCheckChange={(checked) => handleChange("checkDependency", checked)}
@@ -1000,6 +1002,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         {/* Top-level fields (non-repeater) */}
         {(definition.fields || []).map((f: any) => {
           if (f.type === "repeater") return null;
+          if (definition?.name === "Edit Fields" && f.key === "persistent") return null;
           if (isConditional && f.key === "logicalOp") return null; // Handle logicalOp after conditions for If nodes
           if (isSwitch && f.key === "enableFallback") return null; // Render fallback toggle with cases section
 
@@ -1042,9 +1045,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           );
         })}
 
-        {isFieldRepeater && fieldState.persistent && (
-          <p className="text-xs text-muted-foreground">Execute saves String, Number and Boolean fields as workflow variables. Use {"{{ $vars.name }}"} in following nodes.</p>
-        )}
         {/* --------- CONDITIONAL/FIELDS REPEATER --------- */}
         {(isConditional || isFieldRepeater || isOverlays) && repeaterField && (
           <div className="space-y-3">

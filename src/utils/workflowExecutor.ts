@@ -101,7 +101,13 @@ export class WorkflowExecutor {
     if (typeof sessionId !== "string") throw new Error(`Node ${nodeId} has no editor session.`);
     const input = this.nodeStore.getNodeData(nodeId).input;
     const outcome = await executeEditorNode(sessionId, nodeId, { input, lockToken: this.executionLockToken, signal: this.executionAbortController.signal });
-    if (outcome.status === "failed" || outcome.status === "cancelled") {
+    if (outcome.status === "cancelled") {
+      this.stop();
+      const error = new Error(outcome.reason ?? `Node ${nodeId} was cancelled.`);
+      error.name = "AbortError";
+      throw error;
+    }
+    if (outcome.status === "failed") {
       throw new Error(outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} did not complete.`);
     }
     return outcome.output;

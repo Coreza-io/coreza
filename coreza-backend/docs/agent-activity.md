@@ -35,20 +35,30 @@ Already-used or mismatched scopes are rejected; execution requests are not retri
   Overflow marks missing detail independently of workflow success.
 - Socket delivery batches every 20 ms, with terminal flush on the next event-loop
   turn. Slow sockets above 256 KB buffered output are disconnected. HTTP completion
-  reconciles missing terminal pushes. Transport loss displays incomplete activity.
+  reconciles missing terminal pushes and repairs missing span terminals even after
+  a socket completion. Transport loss closes activity as incomplete; later pushes
+  cannot revive it. Duplicate/reordered updates are compared per span.
 - The editor retains up to 64 invocation records, updates only participant/edge
   subscribers and disposes records on workflow switches. Activity never changes
   canonical data, saved graphs, undo history or ordinary final output.
+- Cancel Agent aborts the manual request and uses the owner-authorized cancellation
+  endpoint. A server cancellation stops Execute All and cluster traversal neutrally.
+  Setup/unmount cleanup uses the same controller, including when activity is disabled.
 - Cancellation reaches LangChain and adapters receiving the existing abort signal.
   An adapter may already have performed external work; cancellation does not undo
-  it. Live market-event and ACK ordering are unchanged.
+  it. LangGraph may return before an uncancellable tool settles: the invocation's
+  DataContext lease and conversation lock remain held until its actual tools drain.
+  Owner disposal defers context destruction during that lease. No new tool starts
+  after the invocation ends. Live market-event and ACK ordering are unchanged.
 
 SimpleMemory deliberately starts a v2 namespace by user, workflow/draft, memory
 node and conversation. Old unscoped in-process conversations are not imported.
 Sessions expire after 30 idle minutes, with 512 sessions, a 2 MB/session and
 32 MB/process serialized-message cap. Oversized writes fail explicitly.
 Conversation read/invoke/write ordering is serialized within this process, with
-128 active conversation queues and 16 invocations per queue. Redis/database storage
+128 active conversation queues and 16 invocations per queue. Nested Agents reject
+re-entry into a conversation already held by their parent instead of deadlocking.
+Redis/database storage
 formats, namespace and queries are unchanged; cross-worker locking and shared-table
 isolation require the separate storage review in the plan.
 

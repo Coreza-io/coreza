@@ -10,6 +10,7 @@ export function AgentActivityPanel({ sessionId, nodeId }: { sessionId: string; n
       <summary className="cursor-pointer" aria-live="polite">
         Agent activity: {activity.state}{active.length ? ` · ${active.length} active` : ""}
       </summary>
+      {activity.cancel && <button type="button" className="mt-2 rounded border border-border px-2 py-1" onClick={event => { event.stopPropagation(); activity.cancel?.(); }}>Cancel Agent</button>}
       {activity.traceGap && <p className="mt-2 text-muted-foreground">Some activity detail is unavailable.</p>}
       <ol className="mt-2 max-h-48 space-y-1 overflow-auto" aria-label="Agent operation timeline">
         {spans.map((span, index) => <li key={span.spanId} className={span.state === "failed" ? "text-destructive" : ""}>

@@ -68,6 +68,9 @@ export class AIAgentExecutor implements INodeExecutor {
     let dataContext: DataContext | undefined;
     let ownedContextId: string | undefined;
     let releaseMemory: (() => void) | undefined;
+    let releaseContext: (() => void) | undefined;
+    const toolLifetime: { active: number; closed: boolean; onDrained?: () => void } = { active: 0, closed: false };
+    const heldConversations = new Set<string>(context?.agentMemoryConversations ?? []);
     let terminal: "completed" | "failed" | "cancelled" = "failed";
     try {
       assertAgentActive(signal);
@@ -80,6 +83,7 @@ export class AIAgentExecutor implements INodeExecutor {
         ownedContextId = `agent:${activity.invocationId}`;
         dataContext = dataContextManager.getContext({ executionId: ownedContextId, workflowId, userId });
       }
+      releaseContext = dataContextManager.retainContext(dataContext);
       if (process.env.LOG_LEVEL === "debug") console.debug(
         `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (execution: ${executionId})`,
       );
@@ -212,6 +216,8 @@ export class AIAgentExecutor implements INodeExecutor {
         ...context,
         dataContext,
         agentActivity: activity,
+        agentToolLifetime: toolLifetime,
+        agentMemoryConversations: heldConversations,
         // Nested executors borrow this context but own their own invocation metadata.
         onAgentActivityRecorder: undefined,
       });
@@ -229,7 +235,10 @@ export class AIAgentExecutor implements INodeExecutor {
       }
       let priorMessages: BaseMessage[] = [];
       if (loadedMemory) {
+        if (heldConversations.has(loadedMemory.conversationKey))
+          throw new Error("Nested Agent cannot re-enter its parent's memory conversation");
         releaseMemory = await acquireMemoryConversation(loadedMemory.conversationKey, signal);
+        heldConversations.add(loadedMemory.conversationKey);
         assertAgentActive(signal);
         const readSpan = activity.start("memory", memoryNodeId, "read");
         try {
@@ -312,10 +321,18 @@ export class AIAgentExecutor implements INodeExecutor {
       );
       return toNodeResult(errOutput);
     } finally {
-      releaseMemory?.();
+      toolLifetime.closed = true;
       activity.finish(terminal);
-      // A workflow-owned (or enclosing Agent-owned) context is only borrowed.
-      if (ownedContextId) dataContextManager.destroyContext(ownedContextId);
+      const cleanup = () => {
+        releaseMemory?.();
+        // Owner disposal can be requested while a borrower is still draining.
+        if (ownedContextId) dataContextManager.destroyContext(ownedContextId);
+        releaseContext?.();
+      };
+      // LangGraph can abort its wait before an uncancellable tool settles.
+      // Keep its DataRefs and conversation lock alive until the actual boundary ends.
+      if (toolLifetime.active) toolLifetime.onDrained = cleanup;
+      else cleanup();
     }
   }
 
@@ -393,8 +410,14 @@ export class AIAgentExecutor implements INodeExecutor {
       func: async (input: Record<string, any>) => {
         const activity = context?.agentActivity as AgentActivityRecorder | undefined;
         const span = activity?.start("tool", node.id);
-        try {
+        const lifetime = context?.agentToolLifetime as { active: number; closed: boolean; onDrained?: () => void } | undefined;
+        if (lifetime) lifetime.active++;
+        const ensureActive = () => {
           assertAgentActive(context?.abortSignal);
+          if (lifetime?.closed) { const error = new Error("Agent invocation ended"); error.name = "AbortError"; throw error; }
+        };
+        try {
+          ensureActive();
           if (process.env.LOG_LEVEL === "debug") console.debug(`🔧 [AIAgent] Executing tool: ${toolName}`);
 
           // Resolve any dataRef inputs to actual data
@@ -425,6 +448,8 @@ export class AIAgentExecutor implements INodeExecutor {
             );
           }
 
+          // Cancellation may have arrived during asynchronous executor discovery.
+          ensureActive();
           // Execute the normalized node with unwrapped input
           const result = await executor.execute(
             normalizedNode,
@@ -461,6 +486,12 @@ export class AIAgentExecutor implements INodeExecutor {
             error,
           );
           return `Error executing tool ${toolName}: ${error.message}`;
+        } finally {
+          if (lifetime && --lifetime.active === 0) {
+            const cleanup = lifetime.onDrained;
+            lifetime.onDrained = undefined;
+            cleanup?.();
+          }
         }
       },
     });

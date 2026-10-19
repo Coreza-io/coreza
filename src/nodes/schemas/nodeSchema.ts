@@ -92,6 +92,8 @@ export const ConditionalOptionsSchema = z.record(
 export const DynamicOptionsSchema = z.object({
   dependsOn: z.string(),
   optionsByValue: z.record(z.string(), z.array(OptionSchema)),
+  fallbackToStatic: z.boolean().optional(),
+  preserveValidValue: z.boolean().optional(),
 });
 
 export const DynamicLabelSchema = z.object({

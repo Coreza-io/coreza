@@ -17,6 +17,7 @@ import {
   isBrokerNode,
 } from "../../brokers/capabilities";
 import { DynamicStructuredTool, ToolInputParsingException } from "@langchain/core/tools";
+import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 
 import { createAgent } from "langchain";
 import {
@@ -44,6 +45,7 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { getLLM, LLMConfig } from "../../config/llmProviders";
+import { isSolModel, resolveSolEffort } from '../../config/openAIModelCapabilities';
 import { loadMemoryFromEdges, acquireMemoryConversation } from "../logic/memoryLoader";
 import { getFieldValueMode, parameterEntries } from "../../utils/fieldValueModes";
 import { createToolExecutionTrace, safeToolError, toolInputFields, toolResultSummary } from "../../utils/toolExecutionLog";
@@ -194,15 +196,16 @@ export class AIAgentExecutor implements INodeExecutor {
         return toNodeResult(errOutput);
       }
 
-      const isSearchModel = chatModelNode.values?.isSearchModel === true;
-      const isReasoningModel = chatModelNode.values?.supportsReasoning === true;
+      const solModel = isSolModel(providerId, model);
+      const isSearchModel = !solModel && chatModelNode.values?.isSearchModel === true;
+      const isReasoningModel = solModel || chatModelNode.values?.supportsReasoning === true;
+      const tokenSetting = chatModelNode.values?.maxTokens;
 
       const llmConfig: LLMConfig = {
         apiKey,
         model,
-        maxTokens: chatModelNode.values?.maxTokens
-          ? Number(chatModelNode.values.maxTokens)
-          : undefined,
+        maxTokens: solModel ? tokenSetting == null || tokenSetting === '' ? undefined : Number(tokenSetting)
+          : tokenSetting ? Number(tokenSetting) : undefined,
         isSearchModel,
         isReasoningModel,
       };
@@ -213,7 +216,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       if (isReasoningModel) {
         llmConfig.reasoningEffort =
-          chatModelNode.values?.reasoningEffort ?? "medium";
+          solModel ? resolveSolEffort(chatModelNode.values?.reasoningEffort) : chatModelNode.values?.reasoningEffort ?? "medium";
       }
 
       const llm = getLLM(providerId, llmConfig);
@@ -266,13 +269,15 @@ export class AIAgentExecutor implements INodeExecutor {
         if (modelTimes.size < 128 && !modelTimes.has(runId)) modelTimes.set(runId, performance.now());
         if (modelSpans.size < 128 && !modelSpans.has(runId)) modelSpans.set(runId, activity.start("model", chatModelNode.id));
       };
-      const modelEnd = (_output: unknown, runId: string) => {
+      const modelEnd = (output: any, runId: string) => {
+        const responseError = solModel ? this.solResponseError(output?.generations?.flat()?.map((generation: any) => generation.message) || []) : undefined;
         const start = modelTimes.get(runId);
         if (start !== undefined) console.info('[AIAgent] model', { runId: executionId, nodeId: node.id, modelInvocationId: runId, durationMs: performance.now() - start });
         modelTimes.delete(runId);
         const span = modelSpans.get(runId);
-        if (span) activity.end(span, "completed");
+        if (span) activity.end(span, responseError ? "failed" : "completed");
         modelSpans.delete(runId);
+        if (responseError) throw responseError;
       };
       const modelError = (_error: unknown, runId: string) => {
         const start = modelTimes.get(runId);
@@ -282,6 +287,15 @@ export class AIAgentExecutor implements INodeExecutor {
         if (span) activity.end(span, signal?.aborted ? "cancelled" : "failed");
         modelSpans.delete(runId);
       };
+      const modelActivity = BaseCallbackHandler.fromMethods({ handleChatModelStart: modelStart,
+        handleLLMStart: modelStart, handleLLMEnd: modelEnd, handleLLMError: modelError });
+      modelActivity.name = 'coreza-agent-activity';
+      if (solModel) {
+        // fromMethods assigns flags after construction; explicitly await validation
+        // before the agent can dispatch tools, even with background callbacks enabled.
+        modelActivity.raiseError = true;
+        modelActivity.awaitHandlers = true;
+      }
 
       // Create agent using the new LangChain agent API
       const agent = createAgent({
@@ -302,8 +316,7 @@ export class AIAgentExecutor implements INodeExecutor {
         {
           recursionLimit: Number(maxIterations),
           signal,
-          callbacks: [{ name: "coreza-agent-activity", handleChatModelStart: modelStart,
-            handleLLMStart: modelStart, handleLLMEnd: modelEnd, handleLLMError: modelError }],
+          callbacks: [modelActivity],
         },
       );
 
@@ -316,7 +329,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       assertAgentActive(signal);
       const responseStart = performance.now();
-      const agentOutput = this.getAgentOutput(result);
+      const agentOutput = solModel ? this.getSolAgentOutput(result) : this.getAgentOutput(result);
       console.info('[AIAgent] final response', { runId: executionId, nodeId: node.id, durationMs: performance.now() - responseStart });
 
       if (loadedMemory && agentOutput.trim()) {
@@ -893,6 +906,34 @@ export class AIAgentExecutor implements INodeExecutor {
       node.category ||
       "Utility"
     );
+  }
+
+  private solResponseError(messages: any[]): Error | undefined {
+    for (const message of messages) {
+      const metadata = message?.response_metadata;
+      if (metadata?.status === 'incomplete') {
+        return new Error(metadata.incomplete_details?.reason === 'max_output_tokens'
+          ? 'GPT-6.1 Sol reached maxTokens before completing its response. Increase Max Tokens and review any completed tool activity before rerunning.'
+          : 'GPT-6.1 Sol returned an incomplete response. Review completed tool activity before rerunning.');
+      }
+      if (metadata?.status && metadata.status !== 'completed') return new Error('GPT-6.1 Sol did not complete its response');
+    }
+    return undefined;
+  }
+
+  private getSolAgentOutput(result: any): string {
+    const message = result?.messages?.at(-1);
+    const error = this.solResponseError(message ? [message] : []);
+    if (error) throw error;
+    const type = message?._getType?.() ?? message?.role ?? message?.type;
+    if (!['ai', 'assistant'].includes(type) || message?.tool_calls?.length || message?.invalid_tool_calls?.length) {
+      throw new Error('GPT-6.1 Sol did not return a final assistant response');
+    }
+    const text = typeof message.content === 'string' ? message.content : Array.isArray(message.content)
+      ? message.content.filter((block: any) => ['text', 'output_text'].includes(block?.type) && typeof block.text === 'string')
+        .map((block: any) => block.text).join('') : '';
+    if (!text.trim()) throw new Error('GPT-6.1 Sol returned no final text. Check Max Tokens or provider refusal details before rerunning.');
+    return text;
   }
 
   private getAgentOutput(result: any): string {

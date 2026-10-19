@@ -116,11 +116,24 @@ export function useNodeFieldState({
     }
   }, [data.values, data.fieldState, data.workflowSessionId]);
 
-  const commit = (updates: Record<string, any>): boolean => {
+  const commit = (updates: Record<string, any>, changedKey?: string): boolean => {
     if (!allowed()) return false;
     const canonical = getNodeById(nodeId!)?.data?.values as Record<string, any> | undefined;
     const base = canonical && canonical !== ownWrite.current ? { ...draft.current, ...canonical } : draft.current;
     const next = { ...base, ...updates };
+    if (changedKey) for (const field of definition?.fields ?? []) {
+      if (field.dynamicOptions?.dependsOn !== changedKey) continue;
+      const options = field.dynamicOptions.optionsByValue?.[next[changedKey]] ??
+        (field.dynamicOptions.fallbackToStatic ? field.options : undefined);
+      if (!options?.length) continue;
+      if (field.dynamicOptions.preserveValidValue) {
+        const values = options.map((option: any) => option.value ?? option.id);
+        next[field.key] = values.includes(base[field.key]) ? base[field.key]
+          : values.includes(field.default) ? field.default : values[0];
+      } else {
+        next[field.key] = options[0].value;
+      }
+    }
     if (!updateNodeData(nodeId!, { values: next, fieldState: next })) return false;
     ownWrite.current = next; draft.current = next; setFieldState(next);
     return true;
@@ -128,12 +141,7 @@ export function useNodeFieldState({
 
   const handleChange = useCallback((key: string, value: any) => {
     const updates: Record<string, any> = { [key]: typeof value === "string" && value.trim() === "" ? null : value };
-    for (const field of definition?.fields ?? []) {
-      if (field.dynamicOptions?.dependsOn !== key) continue;
-      const options = field.dynamicOptions.optionsByValue?.[value];
-      if (options?.length) updates[field.key] = options[0].value;
-    }
-    return commit(updates);
+    return commit(updates, key);
   }, [nodeId, updateNodeData, definition?.fields, readOnly, data?.workflowSessionId]);
 
   const handleFieldStateBatch = useCallback((updates: Record<string, any>) => commit(updates),

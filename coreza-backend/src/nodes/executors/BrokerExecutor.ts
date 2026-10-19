@@ -10,6 +10,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
+import { historicalRowCount, safeToolError, toolInputFields, traceToolHttp, ToolExecutionTrace } from "../../utils/toolExecutionLog";
 import {
   getBrokerConfig,
   BrokerOperation,
@@ -56,6 +57,7 @@ export class BrokerExecutor implements INodeExecutor {
     let operation = "";
     let broker = "";
     let fetchStart: number | undefined;
+    let requestCount = () => 0;
 
     let preRegisteredClientOrderId: string | null = null;
     try {
@@ -108,6 +110,11 @@ export class BrokerExecutor implements INodeExecutor {
       ) {
         brokerCap.normalizeCryptoParams(resolvedParams);
       }
+      context?.agentDataTrace?.('broker_parameters', () => ({ broker, operation,
+        fields: toolInputFields(resolvedParams, operation) }), 'debug');
+      const transport = context?.agentDataTrace ? traceToolHttp(axios, context.agentDataTrace, resolvedParams) : undefined;
+      const request = transport?.client ?? axios;
+      if (transport) requestCount = transport.requestCount;
 
       isOrderOperation =
         operation === "place_order" || operation === "close_position";
@@ -211,7 +218,7 @@ export class BrokerExecutor implements INodeExecutor {
           creds: workingCreds,
           baseUrl,
           headers,
-          request: axios,
+          request,
         });
       } else {
         const path =
@@ -243,16 +250,18 @@ export class BrokerExecutor implements INodeExecutor {
               clientOrderId: preRegisteredClientOrderId || "",
             });
           } catch (err) {
-            console.warn("Failed to pre-save order-owner mapping", err);
+            console.warn("Failed to pre-save order-owner mapping", safeToolError(err));
           }
         }
 
-        console.log(`📤 [BROKER] Executing ${broker}.${operation} → ${url}`);
+        console.log(`📤 [BROKER] Executing ${broker}.${operation}`);
 
         // Check if pagination is enabled and requested
         const autoPaginate = resolvedParams.auto_paginate !== false; // Default true
         const maxPages = Number(resolvedParams.max_pages) || 100;
         const pagination = op.pagination;
+        context?.agentDataTrace?.('broker_options', () => ({ broker, operation,
+          effectiveOptions: { auto_paginate: autoPaginate, max_pages: maxPages, paginationEnabled: !!pagination?.enabled } }), 'debug');
 
         if (pagination?.enabled && autoPaginate) {
           // Execute with automatic pagination
@@ -268,10 +277,11 @@ export class BrokerExecutor implements INodeExecutor {
             broker,
             operation,
             context?.agentDataTrace,
+            request,
           );
         } else {
           // Single request (no pagination or disabled)
-          const response = await axios({
+          const response = await request({
             method: op.method,
             url,
             headers: body
@@ -288,7 +298,8 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
-      context?.agentDataTrace?.('broker_fetch', { durationMs: performance.now() - fetchStart, operation });
+      context?.agentDataTrace?.('broker_fetch', () => ({ durationMs: performance.now() - fetchStart!, broker, operation,
+        requestCount: requestCount(), transformedRowCount: operation === 'get_candle' ? historicalRowCount(data, resolvedParams.symbol) : null }));
       fetchStart = undefined;
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
@@ -300,6 +311,7 @@ export class BrokerExecutor implements INodeExecutor {
           baseUrl,
           headers,
           workingCreds,
+          request,
         });
       }
 
@@ -325,7 +337,7 @@ export class BrokerExecutor implements INodeExecutor {
             ...ids,
           });
         } catch (err) {
-          console.warn("Failed to save order-owner mapping", err);
+          console.warn("Failed to save order-owner mapping", safeToolError(err));
         }
       }
 
@@ -346,7 +358,7 @@ export class BrokerExecutor implements INodeExecutor {
       if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
         durationMs: performance.now() - fetchStart, operation, success: false,
       });
-      console.error(`❌ [BROKER] Execution failed:`, error);
+      console.error(`❌ [BROKER] Execution failed:`, safeToolError(error));
       let enrichedError =
         typeof error === "object" &&
         error !== null &&
@@ -396,7 +408,7 @@ export class BrokerExecutor implements INodeExecutor {
         } catch (cleanupErr) {
           console.warn(
             "Failed to cleanup pre-saved order-owner mapping",
-            cleanupErr,
+            safeToolError(cleanupErr),
           );
         }
       }
@@ -425,6 +437,7 @@ export class BrokerExecutor implements INodeExecutor {
     baseUrl: string;
     headers: Record<string, string>;
     workingCreds: unknown;
+    request?: typeof axios;
   }): Promise<unknown> {
     const enrichment = getPlaceOrderEnrichment(input.broker);
     if (!enrichment) return input.data;
@@ -464,7 +477,7 @@ export class BrokerExecutor implements INodeExecutor {
           ? await op.makeBody(params, input.workingCreds)
           : undefined;
 
-        const response = await axios({
+        const response = await (input.request ?? axios)({
           method: op.method,
           url,
           headers: body
@@ -489,7 +502,7 @@ export class BrokerExecutor implements INodeExecutor {
     if (!enriched && lastError) {
       console.warn(
         `⚠️ [BROKER] Failed to enrich ${input.broker}.place_order response`,
-        lastError,
+        safeToolError(lastError),
       );
     }
 
@@ -507,7 +520,8 @@ export class BrokerExecutor implements INodeExecutor {
     maxPages: number,
     broker: string,
     operation: string,
-    trace?: (phase: string, metrics: Record<string, unknown>) => void,
+    trace?: ToolExecutionTrace,
+    request: typeof axios = axios,
   ): Promise<any> {
     type RequestParams = Record<string, any>;
     let allData: Record<string, any[]> = {};
@@ -527,7 +541,10 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       const pageStart = performance.now();
-      const response = await axios({
+      trace?.('broker_page_request', () => ({ page: requestCount + 1, request: {
+        query: toolInputFields(pageParams, operation), body: toolInputFields(body, operation, true),
+      } }), 'debug');
+      const response = await request({
         method: op.method,
         url: baseUrl,
         headers: body
@@ -536,7 +553,7 @@ export class BrokerExecutor implements INodeExecutor {
         params: pageParams,
         data: body,
         timeout: 30000,
-      }).finally(() => trace?.('broker_page', { durationMs: performance.now() - pageStart, page: requestCount + 1 }));
+      });
 
       // Extract data from response
       const responseData = response.data;
@@ -561,9 +578,9 @@ export class BrokerExecutor implements INodeExecutor {
       pageToken = responseData[pagination.tokenField] || null;
       requestCount++;
 
-      console.log(
-        `📊 [BROKER] ${broker}.${operation} page ${requestCount}: ${allData.length} total items`,
-      );
+      trace?.('broker_page', () => ({ page: requestCount, durationMs: performance.now() - pageStart,
+        rawRowCount: operation === 'get_candle' ? historicalRowCount(responseData, resolvedParams.symbol) : null,
+        hasNextPage: !!pageToken }));
     } while (pageToken && requestCount < maxPages);
 
     // Build merged response for transformResult

@@ -1,5 +1,5 @@
 import type { HistoricalToolCapability } from '../brokers/capabilities';
-import type { ProcessedToolOutput } from '../nodes/logic/toolOutputProcessor';
+import type { ProcessedToolOutput, ToolInvocationRefs } from '../nodes/logic/toolOutputProcessor';
 import type { ToolExecutionTrace } from '../utils/toolExecutionLog';
 import { sameMarketSymbol, sameMarketTimeframe } from '../marketData/normalizeCandles';
 import { parseTimeframe } from '../utils/timeframe';
@@ -10,14 +10,17 @@ export interface HistoricalAgentTool {
   toolName: string;
   capability: HistoricalToolCapability;
   exposed: Set<string>;
+  schemaFields?: Set<string>;
 }
 interface Coverage {
+  sourceIdentity: string;
   symbol: string;
   timeframe: string;
   assetType?: string;
   attempts: number;
   requiredBars: number;
   pending: boolean;
+  inFlight: boolean;
   stopped?: string;
   latestRef?: string;
 }
@@ -29,6 +32,11 @@ interface Snapshot {
 }
 const present = (value: unknown) => value !== undefined && value !== null && value !== '';
 const DAY = 86_400_000;
+// These scalar fields distinguish datasets, not request windows. Never compare or
+// replace DataRefs across brokers, spot/futures, feeds, adjustments or sessions.
+const marketIdentityFields = ['assetType', 'asset_type', 'marketType', 'market_type', 'environment',
+  'exchange', 'exchangeSegment', 'exchange_segment', 'instrument', 'expiryCode', 'expiry_code',
+  'contractType', 'contract_type', 'feed', 'adjustment', 'currency', 'needExtendedHoursData', 'session_type', 'sessionType'];
 const bounds = (input: Input, cap: HistoricalToolCapability) => ({
   start: [cap.startField, ...(cap.startAliases || [])].map(key => input[key]).find(present),
   end: [cap.endField, ...(cap.endAliases || [])].map(key => input[key]).find(present),
@@ -100,24 +108,55 @@ export class AgentHistoryRecovery {
     if (Number.isFinite(requiredBars)) this.configuredRequirement = Math.max(this.configuredRequirement, requiredBars);
   }
 
+  reference(input: Input, refs?: ToolInvocationRefs): string | undefined {
+    if (typeof input.dataRef === 'string') return refs?.resolve(input.dataRef) ?? input.dataRef;
+    // Match the reference forms already accepted by resolveDataRef, without walking bars.
+    for (const field of ['candle_data', 'candleData', 'bars', 'data', 'prices']) {
+      let value = input[field];
+      if (typeof value === 'string' && value.trimStart().startsWith('{')) {
+        try { value = JSON.parse(value); } catch { continue; }
+      }
+      const ref = value && typeof value === 'object' && typeof value.dataRef === 'string' ? value.dataRef
+        : typeof value === 'string' && value.trim() && !/^\s*[\[{]/.test(value) &&
+          (field === 'candle_data' || field === 'candleData' || value.startsWith('bars:') || refs?.hasAlias(value)) ? value : undefined;
+      if (ref !== undefined) return refs?.resolve(ref) ?? ref;
+    }
+    return undefined;
+  }
+
   beforeFetch(tool: HistoricalAgentTool, input: Input, trace: ToolExecutionTrace): Coverage {
     validate(input, tool.capability);
     const symbol = String(input.symbol || input.ticker || '').trim();
     const timeframe = tool.capability.timeframe(input);
     const assetType = input.assetType || input.asset_type;
-    let coverage = this.coverages.find(item => sameMarketSymbol(item.symbol, symbol, assetType) && sameMarketTimeframe(item.timeframe, timeframe));
+    const sourceIdentity = JSON.stringify([tool.nodeId, tool.toolName, input.operation, ...marketIdentityFields.map(key => {
+      const value = input[key];
+      return ['string', 'number', 'boolean'].includes(typeof value) ? value : null;
+    })]);
+    let coverage = this.coverages.find(item => item.sourceIdentity === sourceIdentity &&
+      sameMarketSymbol(item.symbol, symbol, assetType) && sameMarketTimeframe(item.timeframe, timeframe));
     if (!coverage) {
-      coverage = { symbol, timeframe, assetType, attempts: 0, requiredBars: this.configuredRequirement, pending: false };
+      coverage = { sourceIdentity, symbol, timeframe, assetType, attempts: 0, requiredBars: this.configuredRequirement, pending: false, inFlight: false };
       this.coverages.push(coverage);
     }
-    if (coverage.pending || coverage.stopped || coverage.attempts >= 1) {
+    if (coverage.inFlight) {
+      trace('history_recovery_stopped', { symbol, timeframe, reason: 'fetch_in_progress' });
+      throw new Error('Historical fetch already in progress for this symbol/timeframe; use its returned dataRef instead of starting another fetch');
+    }
+    // Every fetch after the first snapshot consumes the single additional-fetch budget,
+    // even if the model asks again before evaluating an indicator's readiness.
+    if (coverage.latestRef || coverage.pending || coverage.stopped || coverage.attempts >= 1) {
       if (coverage.stopped || coverage.attempts >= 1) {
         trace('history_recovery_stopped', { symbol, timeframe, reason: coverage.stopped || 'budget_exhausted', attempt: coverage.attempts });
-        throw new Error('Historical recovery stopped: one additional fetch per symbol/timeframe is allowed. Report unavailable indicators honestly.');
+        throw new Error('Historical recovery stopped: one additional fetch per source/market/symbol/timeframe is allowed. Report unavailable indicators honestly.');
       }
       const previous = coverage.latestRef ? this.snapshots.get(coverage.latestRef) : undefined;
       if (previous) {
         const currentRange = bounds(input, tool.capability), previousRange = bounds(previous.input, previous.tool.capability);
+        if (present(previousRange.end) && (!present(currentRange.end) ||
+            dateValue(currentRange.end, tool.capability.dateFormat) !== dateValue(previousRange.end, previous.tool.capability.dateFormat))) {
+          throw new Error('Historical recovery must retain the original explicit end boundary');
+        }
         const widerRange = present(currentRange.start) && (!present(previousRange.start) ||
           dateValue(currentRange.start, tool.capability.dateFormat) < dateValue(previousRange.start, previous.tool.capability.dateFormat));
         const count = tool.capability.count;
@@ -133,6 +172,7 @@ export class AgentHistoryRecovery {
       coverage.stopped = 'recovery_in_progress';
       trace('history_recovery_decision', { symbol, timeframe, allowed: true, attempt: coverage.attempts, reason: 'agent_requested_recovery' });
     }
+    coverage.inFlight = true;
     const cap = tool.capability;
     if (!present(bounds(input, cap).start) && !(cap.count?.mode === 'latest') && !cap.broadenPeriod && coverage.requiredBars > 1) {
       trace('history_coverage_uncertain', { symbol, timeframe, reason: 'omitted_start_does_not_guarantee_warmup', requiredBars: coverage.requiredBars });
@@ -141,6 +181,7 @@ export class AgentHistoryRecovery {
   }
 
   fetched(tool: HistoricalAgentTool, input: Input, output: ProcessedToolOutput, invocationId: string, coverage: Coverage, trace: ToolExecutionTrace): void {
+    coverage.inFlight = false;
     const cap = tool.capability;
     const { start, end } = bounds(input, cap);
     trace('history_coverage', { sourceToolInvocationId: invocationId, symbol: coverage.symbol, timeframe: coverage.timeframe,
@@ -160,6 +201,7 @@ export class AgentHistoryRecovery {
   }
 
   failed(coverage: Coverage, trace: ToolExecutionTrace, reason = 'source_error_or_unavailable'): void {
+    coverage.inFlight = false;
     coverage.stopped = reason;
     coverage.pending = false;
     trace('history_recovery_stopped', { symbol: coverage.symbol, timeframe: coverage.timeframe, reason, attempt: coverage.attempts });
@@ -169,7 +211,6 @@ export class AgentHistoryRecovery {
     const snapshot = dataRef ? this.snapshots.get(dataRef) : undefined;
     const base = { dataRef, receivedBars: observedBars, requiredBars };
     const deny = (reason: string, extra: Input = {}) => {
-      if (snapshot) { snapshot.coverage.stopped = reason; snapshot.coverage.pending = false; }
       trace('history_recovery_stopped', { ...base, reason, ...extra });
       return { ...base, allowed: false, reason, ...extra, instruction: 'Stop fetching history and report not_ready; never interpret unavailable values as signals.' };
     };
@@ -196,7 +237,7 @@ export class AgentHistoryRecovery {
     const cap = tool.capability;
     const target = Math.ceil(coverage.requiredBars * 1.5) + 2;
     const previous = bounds(input, cap);
-    const generated = Object.fromEntries(Object.entries(input).filter(([key]) => tool.exposed.has(key)));
+    const generated = Object.fromEntries(Object.entries(input).filter(([key]) => (tool.schemaFields ?? tool.exposed).has(key)));
     const count = cap.count;
     if (count?.mode === 'latest' && !present(previous.start) && !present(previous.end) && tool.exposed.has(count.field)) {
       const limit = Math.min(count.max ?? Infinity, Math.max(target, Number(input[count.field] || 0) * 2));
@@ -208,7 +249,9 @@ export class AgentHistoryRecovery {
       // Calendar buffer only, not a trading-calendar promise. Keep the original end anchor.
       const end = present(previous.end) ? dateValue(previous.end, cap.dateFormat) : Date.now();
       if (!present(previous.end) && !tool.exposed.has(cap.endField)) return undefined;
-      const window = Math.max(7 * DAY, target * milliseconds * 3);
+      // Intraday equity sessions occupy only part of a calendar day, with weekends
+      // and closures as well. This remains a conservative heuristic, not a calendar.
+      const window = Math.max(7 * DAY, target * milliseconds * (milliseconds < DAY ? 8 : 3));
       const oldStart = present(previous.start) ? dateValue(previous.start, cap.dateFormat) : end;
       const maxDays = cap.maxRangeDays?.(input);
       const start = Math.max(maxDays ? end - maxDays * DAY : 0, Math.min(end - window, oldStart - window));
@@ -225,7 +268,12 @@ export class AgentHistoryRecovery {
       return { mode: 'explicit_range', input: next };
     }
     if (count?.mode === 'lookback' && tool.exposed.has(count.field) && !present(previous.start) && !present(previous.end)) {
-      return { mode: 'calendar_lookback', input: { ...generated, [count.field]: String(Math.max(target * 3, Number(input[count.field] || 0) * 2)) } };
+      if (!milliseconds) return undefined;
+      const maxDays = cap.maxRangeDays?.(input);
+      const lookback = Math.min(maxDays ? Math.floor(maxDays * DAY / milliseconds) : Infinity,
+        Math.max(target * (milliseconds < DAY ? 8 : 3), Number(input[count.field] || 0) * 2));
+      if (lookback <= Number(input[count.field] || 0) || lookback < coverage.requiredBars) return undefined;
+      return { mode: 'calendar_lookback', input: { ...generated, [count.field]: String(lookback) } };
     }
     const period = cap.broadenPeriod?.(input);
     if (period && !present(previous.start) && !present(previous.end) && Object.keys(period).every(key => tool.exposed.has(key))) {

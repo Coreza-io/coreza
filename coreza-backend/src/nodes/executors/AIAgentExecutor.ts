@@ -444,7 +444,13 @@ export class AIAgentExecutor implements INodeExecutor {
     const exposed = new Set<string>(Object.keys((toolSchema as any).shape || {}));
     const historyTools = new Map<string, HistoricalAgentTool>();
     if (executorCategory === 'Broker') for (const [operation, capability] of Object.entries(broker?.historicalTools || {})) {
-      historyTools.set(operation, { nodeId: node.id, toolName, capability, exposed });
+      const writable = new Set(exposed);
+      // Legacy date aliases can fix a boundary even when its canonical field is exposed.
+      for (const keys of [[capability.startField, ...(capability.startAliases || [])],
+        [capability.endField, ...(capability.endAliases || [])]]) {
+        if (keys.some(key => isConfiguredToolValue(configuredValues[key]))) keys.forEach(key => writable.delete(key));
+      }
+      historyTools.set(operation, { nodeId: node.id, toolName, capability, exposed: writable, schemaFields: exposed });
       if (!configuredValues.operation || configuredValues.operation === operation) {
         toolDescription += ` For ${operation}: ${capability.guidance} Only use fields exposed in this tool schema; saved settings remain fixed.`;
       }
@@ -456,7 +462,7 @@ export class AIAgentExecutor implements INodeExecutor {
       if (!Object.values(params).some(value => typeof value === 'string' && value.includes('{{'))) {
         const requiredBars = requiredWarmupBars(node.name || '', params);
         historyRecovery?.observeRequirement(requiredBars);
-        toolDescription += ` Configured warm-up lower bound: ${requiredBars} bars; supplied parameters and the actual readiness result determine the final requirement.`;
+        toolDescription += ` Warm-up estimate using saved/default parameters: ${requiredBars} bars; supplied parameters and the actual readiness result determine the final requirement.`;
       }
     }
     const makeTrace = (toolInvocationId: string) => createToolExecutionTrace({
@@ -590,8 +596,8 @@ export class AIAgentExecutor implements INodeExecutor {
 
           if (executorCategory === 'Indicators' && result.data?.IsReady === false) {
             status = 'not_ready';
-            const ref = unwrappedInput.dataRef || (typeof unwrappedInput.candle_data === 'string' ? unwrappedInput.candle_data : undefined);
-            const recovery = historyRecovery?.insufficient(typeof ref === 'string' ? refs?.resolve(ref) ?? ref : undefined,
+            const ref = historyRecovery?.reference(unwrappedInput, refs);
+            const recovery = historyRecovery?.insufficient(ref,
               result.data.SampleCount, result.meta?.requiredBars, trace);
             if (span) activity?.end(span, 'completed');
             return JSON.stringify({ success: true, status: 'not_ready', type: 'indicator', toolInvocationId,

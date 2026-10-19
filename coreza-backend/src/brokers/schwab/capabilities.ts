@@ -9,7 +9,7 @@ export const schwabCapabilities: BrokerCapabilities = {
       startField: 'start_date', endField: 'end_date', dateFormat: 'epoch-or-date',
       startAliases: ['startDate', 'start'], endAliases: ['endDate', 'end'],
       timeframe: input => String(input.interval || '1d'),
-      validateInterval: input => /^(?:1|5|10|15|30)(?:m|min)$|^1(?:d|day|w|week|mo|month)$/.test(String(input.interval || '1d').trim().toLowerCase()),
+      validateInterval: input => /^0*(?:1|5|10|15|30)\s*(?:m|min)$|^0*1\s*(?:d|day|w|week|mo|month)$/.test(String(input.interval || '1d').trim().toLowerCase()),
       guidance: 'Use interval (default 1d). start_date/end_date accept ISO dates or numeric epochs (seconds or milliseconds); the adapter converts to milliseconds. Without dates the adapter uses a rolling period, not a bar-count limit. No pagination is configured.',
     },
     get_price_history: {

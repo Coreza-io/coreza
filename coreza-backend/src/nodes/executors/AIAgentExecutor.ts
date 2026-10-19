@@ -43,6 +43,7 @@ import {
 } from "../../utils/normalizeOutput";
 import { getLLM, LLMConfig } from "../../config/llmProviders";
 import { loadMemoryFromEdges, acquireMemoryConversation } from "../logic/memoryLoader";
+import { getFieldValueMode, parameterEntries } from "../../utils/fieldValueModes";
 
 const isConfiguredToolValue = (value: unknown): boolean => value !== undefined && value !== null
   && (typeof value !== "string" || value.trim() !== "")
@@ -403,7 +404,7 @@ export class AIAgentExecutor implements INodeExecutor {
   ): DynamicStructuredTool {
     const definition = this.getToolDefinition(node);
     const configuredValues = Object.fromEntries(
-      Object.entries(node.values ?? {}).filter(([, value]) => isConfiguredToolValue(value)),
+      parameterEntries(node.values ?? {}).filter(([, value]) => isConfiguredToolValue(value)),
     );
     const toolDescription = `${this.getToolDescription(node, definition)}${
       configuredValues.operation ? ` Configured operation: ${configuredValues.operation}.` : ""
@@ -435,7 +436,23 @@ export class AIAgentExecutor implements INodeExecutor {
           if (generatedInput !== input) delete generatedInput.input;
           // Apply the same authoritative values to both executor inputs. Blank saved
           // fields must not erase generated arguments; configured fields always win.
-          const unwrappedInput = resolveDataRef({ ...generatedInput, ...configuredValues }, dataContext);
+          const suppliedInput = { ...generatedInput, ...configuredValues };
+          // Workflow resolvers may use a precompiled snapshot of this tool node.
+          // Resolve saved expressions there, but copy back only configured keys:
+          // its original blank values must not replace generated arguments.
+          const resolvedValues = context?.resolveNodeParameters
+            ? context.resolveNodeParameters(node, suppliedInput) : configuredValues;
+          const resolvedConfigured = Object.fromEntries(Object.entries(configuredValues).map(([key, value]) =>
+            [key, Object.prototype.hasOwnProperty.call(resolvedValues, key) ? resolvedValues[key] : value],
+          ));
+          const unwrappedInput = resolveDataRef({ ...generatedInput, ...resolvedConfigured }, dataContext);
+          const toolContext = {
+            ...context,
+            resolveNodeParameters: (current: WorkflowNode, currentInput: NodeInput) =>
+              current.id === node.id ? { ...unwrappedInput }
+                : context?.resolveNodeParameters ? context.resolveNodeParameters(current, currentInput)
+                : { ...current.values, ...currentInput },
+          };
 
           // Normalize node name for underlying executor (strip "Tool" suffix)
           const normalizedNode = {
@@ -460,7 +477,7 @@ export class AIAgentExecutor implements INodeExecutor {
           const result = await executor.execute(
             normalizedNode,
             unwrappedInput,
-            context,
+            toolContext,
           );
 
           if (!result.success) {
@@ -626,9 +643,11 @@ export class AIAgentExecutor implements INodeExecutor {
         return Array.isArray(current) ? current.some(value => allowed.includes(value)) : allowed.includes(current);
       };
       if (Object.entries(field.displayOptions?.show ?? {}).some(([key, allowed]) =>
-        isConfiguredToolValue(node.values?.[key]) && !matches(key, allowed))) continue;
+        isConfiguredToolValue(node.values?.[key]) && getFieldValueMode(node.values ?? {}, key) === "fixed"
+          && !matches(key, allowed))) continue;
       if (Object.entries(field.displayOptions?.hide ?? {}).some(([key, allowed]) =>
-        isConfiguredToolValue(node.values?.[key]) && matches(key, allowed, true))) continue;
+        isConfiguredToolValue(node.values?.[key]) && getFieldValueMode(node.values ?? {}, key) === "fixed"
+          && matches(key, allowed, true))) continue;
 
       schemaObject[field.key] = this.fieldToZodType(field);
     }

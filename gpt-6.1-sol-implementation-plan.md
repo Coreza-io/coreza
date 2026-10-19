@@ -1,6 +1,7 @@
 # GPT-6.1 Sol integration plan
 
 Status: planning only; no runtime implementation.
+Revision: reviewed against n8n OpenAI Chat Model source on 20 October 2026 (India time).
 Target: `Coreza-io/coreza`, `dev` branch only.
 Reviewed baseline: `3f7a98232ff26a5ea1b75c9c03986faf7f06d9a1`.
 Model in supplied screenshot: **GPT-6.1 Sol**.
@@ -43,6 +44,69 @@ The root lock entry for openai is 4.104.0 while @langchain/openai declares a ^6.
 
 No guarantee currently exists in the reviewed field-state hook that option metadata such as supportsReasoning is copied into persisted values. Backend behavior must not depend on the editor having opened or on a client-provided capability boolean.
 
+
+## 3A. n8n source review and decisions
+
+Reviewed n8n master at commit `7a334e3b1545c236bebd5c878da5a62444aecc72`. These findings describe the inspected source, not a verified n8n Cloud deployment or a successful GPT-6.1 Sol API run.
+
+### What n8n actually does
+
+| Concern | Observed n8n implementation | Decision for Coreza |
+| --- | --- | --- |
+| New model discovery | `methods/loadModels.ts` delegates to shared `listOpenAiModels`, which calls authenticated GET /models, filters unsupported families, sorts, and returns IDs. Node versions >=1.2 also offer direct model-ID entry. | Separate model discovery from capabilities. Exact Sol option remains the minimal delivery; add credential-backed discovery as the bounded follow-up below. |
+| API choice | Chat Model v1.3 exposes `responsesApiEnabled` with UI default true; runtime reads a false fallback for omitted values, and only explicitly sets `fields.useResponsesApi = true` when enabled. Source notes LangChain may otherwise auto-route. | Make Sol's required Responses route explicit. Do not assume false/unset always forces Chat Completions, or change defaults for all legacy Coreza models. |
+| Request mapping | `prepareAdditionalResponsesParams` writes `reasoning: { effort }`; the non-Responses branch writes `reasoning_effort`. Both use the same ChatOpenAI class. | Use a small endpoint-aware factory branch and the existing createAgent loop, rather than a separate Sol executor. |
+| Reasoning controls | Inspected UI matches o1/o3+ and gpt-5 patterns, and offers only low/medium/high; ModelOptions also lists only these three. GPT-6 is not in that visibility regex. | Do not copy this incomplete capability UI. Coreza must explicitly expose Sol's documented five efforts and reject none/minimal. |
+| New-model readiness | The shared model discovery filter would admit `gpt-6.1-sol` if returned by the account's /models endpoint; the inspected Chat Model code has no Sol-specific capability entry. | Listing a model is not proof its parameters or agent tool loop work. Keep request-level and multi-turn acceptance checks. |
+| Message handling | With Responses enabled, supplyData returns the ChatOpenAI object directly; the legacy branch applies an empty-tool-content normalizer. | Preserve native Responses message/tool metadata inside the agent loop; normalize only the final user-facing text. Do not reconstruct intermediate messages into plain text. |
+| Built-in tools | Provider-hosted web/file/code tools are formatted separately and attached to model metadata for the agent. | Coreza broker/EMA/RSI nodes remain local function tools. Responses support does not require adding OpenAI hosted tools. |
+| SDK version | Catalog pins @langchain/openai 1.4.4, @langchain/core 1.2.8, langchain 1.2.30 and openai 6.46.0. | n8n's property usage is a concrete reference, but does not prove Coreza's older locked adapter supports it identically. Upgrade only if a compatibility check requires it. |
+| Local SDK patch | n8n's @langchain/openai 1.4.4 patch covers empty Chat Completions choices and DeepSeek reasoning content, not Sol Responses support. | Do not copy n8n's patch or dependency versions wholesale. |
+
+**Conclusion:** n8n supplies a reusable discovery/transport pattern, but this review does not establish dedicated, complete GPT-6.1 Sol support. The initial Responses requirement is confirmed; the revised implementation should be a small factory/configuration change with model-specific validation, without an agent-engine rewrite.
+
+### Concrete transport shape to verify
+
+n8n's source demonstrates this pattern (Coreza must confirm against its resolved adapter):
+
+```ts
+new ChatOpenAI({
+  apiKey,
+  model: "gpt-6.1-sol",
+  useResponsesApi: true,
+  modelKwargs: { reasoning: { effort: resolvedEffort } },
+  // Existing token limit goes through the adapter's verified Responses mapping.
+});
+```
+
+Use either a supported typed reasoning property or the verified nested modelKwargs mapping, not both. Do not also emit legacy reasoning_effort. Keep model/endpoint/effort authority outside arbitrary client overrides.
+
+### Bounded follow-up: dynamic discovery like n8n
+
+This is a separate small enhancement after the Sol request/tool acceptance checks pass; it is not required to prove this model works.
+
+- Extend the authenticated model routes (for example, GET `/models/openaichatmodel/models?credential_id=...`) to retrieve credentials server-side for the authenticated owner and call the fixed official OpenAI /v1/models endpoint.
+- Return model IDs/labels only, with searchable results and conservative family filtering. Never send an API key to the browser or accept a browser-supplied arbitrary base URL.
+- Reuse the existing dependent-API select infrastructure. Retain the saved model ID even if listing fails or temporarily omits it; never switch a workflow automatically.
+- Retain curated options as a usable fallback with an explicit discovery-error state. Avoid a network fetch on every keystroke or tick; any cache must be short-lived and isolated by user and credential, and cleared when credentials change.
+- Keep discovery separate from a narrow shared capability map. /models supplies IDs, not complete endpoint/effort/temperature/tool capabilities. Do not infer that every discovered gpt-* model supports tools or accepts GPT-6.1 Sol's settings.
+- A direct-ID option may be added only with existing validation/error behavior. An unknown ID must not automatically inherit Sol capabilities.
+- Test account isolation, credential changes, empty/failed lists, saved IDs, filtering, and absence of provider calls on the workflow hot path.
+
+### Source references
+
+Pinned source links for repeatable review:
+- [OpenAI Chat Model node, supplyData and properties](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOpenAi/LmChatOpenAi.node.ts)
+- [Responses parameter mapping](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOpenAi/common.ts)
+- [Model option types](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOpenAi/types.ts)
+- [Model picker loader](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOpenAi/methods/loadModels.ts)
+- [Shared OpenAI discovery and filtering](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/ai-utilities/src/model-discovery/providers/openai.ts)
+- [Responses helper tests](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/nodes-langchain/nodes/llms/LMChatOpenAi/test/common.test.ts)
+- [Legacy message wrapper](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/packages/%40n8n/nodes-langchain/utils/chatModelMessageWrapper.ts)
+- [Dependency catalog](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/pnpm-workspace.yaml)
+- [n8n adapter patch](https://github.com/n8n-io/n8n/blob/7a334e3b1545c236bebd5c878da5a62444aecc72/patches/%40langchain__openai%401.4.4.patch)
+- [n8n OpenAI Chat Model documentation](https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/)
+
 ## 4. Implementation sequence
 
 ### Step A — Prove SDK compatibility before exposing the model
@@ -50,8 +114,8 @@ No guarantee currently exists in the reviewed field-state hook that option metad
 1. Install from the existing backend lockfile in the implementation checkout.
 2. Inspect the resolved @langchain/openai constructor/types and its resolved OpenAI SDK.
 3. Verify the supported way to force Responses, configure reasoning, limit output tokens, and disable provider response storage where supported.
-4. Prefer the existing ChatOpenAI adapter and createAgent integration. A flag such as useResponsesApi may be available; confirm its name and request behavior rather than assuming it.
-5. Capture a mocked outgoing request for one model invocation and one complete tool round trip.
+4. Prefer the existing ChatOpenAI adapter and createAgent integration. n8n explicitly uses useResponsesApi: true; verify that property and its request behavior in Coreza's resolved adapter. Start with the small transport shape in section 3A.
+5. Capture a mocked outgoing request for one model invocation and one complete tool round trip. Test both invoke and stream paths where Coreza actually uses them; the inspected n8n source does not itself prove these paths work for Sol.
 6. Require the actual request to target `/v1/responses`, use `model: "gpt-6.1-sol"`, and serialize `reasoning: { effort: "medium" }`.
 7. Verify tool call IDs, tool result IDs, reasoning items, and continuation messages survive a second model turn.
 
@@ -59,7 +123,7 @@ If the locked adapter cannot meet these requirements, make the smallest compatib
 
 ### Step B — Resolve capabilities from model identity
 
-Add a narrow capability resolver used by the factory/agent configuration boundary. Prefer using the existing OpenAI model option definition as the source if its deployment loading is reliable; otherwise add one small shared model-capability module, without designing a broad provider framework.
+Add a narrow capability resolver used by the factory/agent configuration boundary. Prefer one small shared model-capability module consumable by backend and UI; the current static option definition can supply it only if its production loading is reliable. Keep capability facts independent of provider-discovered IDs, and avoid designing a broad provider framework.
 
 For Sol, resolve:
 - reasoning enabled;
@@ -107,7 +171,7 @@ Do not use provider previous_response_id or shared remote conversations to repla
 
 ### Step E — Preserve output, memory, activity, and failure behavior
 
-Validate getAgentOutput against real/mocked Responses message shapes. Return final assistant text, not serialized reasoning blocks or function-call metadata. Patch extraction only if a compatibility test exposes a gap; avoid broad output refactoring.
+Validate getAgentOutput against real/mocked Responses message shapes. Return final assistant text, not serialized reasoning blocks or function-call metadata. Patch extraction only if a compatibility test exposes a gap; avoid broad output refactoring. As in n8n's Responses branch, leave intermediate model messages intact so reasoning items, response metadata, and tool call associations survive continuation.
 
 Keep:
 - connected DynamicStructuredTool executors and their dataRef handoffs;
@@ -141,7 +205,7 @@ A stronger model must not be claimed to fix the historical-data/indicator issue 
 
 ## 6. Delivery and rollback
 
-Implement in small commits: request/capability boundary, picker/effort state, then compatibility tests. Gate completion on a working tool round trip, not merely seeing the model in the dropdown.
+Implement in small commits: request/capability boundary, picker/effort state, then compatibility tests. Track dynamic model discovery separately after the core Sol acceptance criteria pass. Gate completion on a working tool round trip, not merely seeing the model in the dropdown.
 
 Roll out as an optional picker choice. Existing workflows keep their selections. Deploy compatible backend request handling before users can save newly authored Sol configurations.
 

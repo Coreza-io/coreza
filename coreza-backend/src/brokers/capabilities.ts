@@ -243,8 +243,8 @@ export function buildNodeNameToSourceMap(): Record<string, string> {
 export function buildExecutorCategoryMap(): Record<string, string> {
   const map: Record<string, string> = {};
   for (const cap of Object.values(BROKER_CAPABILITIES)) {
-    // Data nodes → "Market" (for broker-direct market data)
-    map[cap.nodeNames.data] = "Market";
+    // Broker data and account operations use the registered Broker executor.
+    map[cap.nodeNames.data] = "Broker";
     // Trade nodes → "Broker"
     if (cap.nodeNames.trade) map[cap.nodeNames.trade] = "Broker";
     // Screener nodes → "Screener"

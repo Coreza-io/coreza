@@ -55,6 +55,7 @@ export class BrokerExecutor implements INodeExecutor {
     const workflowId = context?.workflowId ?? "manual";
     let operation = "";
     let broker = "";
+    let fetchStart: number | undefined;
 
     let preRegisteredClientOrderId: string | null = null;
     try {
@@ -201,6 +202,7 @@ export class BrokerExecutor implements INodeExecutor {
       const headers = await config.makeAuthHeaders(workingCreds);
 
       let data: any;
+      fetchStart = performance.now();
 
       if (op.execute) {
         console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
@@ -265,6 +267,7 @@ export class BrokerExecutor implements INodeExecutor {
             maxPages,
             broker,
             operation,
+            context?.agentDataTrace,
           );
         } else {
           // Single request (no pagination or disabled)
@@ -285,6 +288,8 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
+      context?.agentDataTrace?.('broker_fetch', { durationMs: performance.now() - fetchStart, operation });
+      fetchStart = undefined;
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
       if (operation === "place_order") {
@@ -338,6 +343,9 @@ export class BrokerExecutor implements INodeExecutor {
       const normalized = createSuccessOutput(data);
       return toNodeResult(normalized);
     } catch (error) {
+      if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
+        durationMs: performance.now() - fetchStart, operation, success: false,
+      });
       console.error(`❌ [BROKER] Execution failed:`, error);
       let enrichedError =
         typeof error === "object" &&
@@ -499,6 +507,7 @@ export class BrokerExecutor implements INodeExecutor {
     maxPages: number,
     broker: string,
     operation: string,
+    trace?: (phase: string, metrics: Record<string, unknown>) => void,
   ): Promise<any> {
     type RequestParams = Record<string, any>;
     let allData: Record<string, any[]> = {};
@@ -517,6 +526,7 @@ export class BrokerExecutor implements INodeExecutor {
         await this.delay(RATE_LIMIT_DELAY_MS);
       }
 
+      const pageStart = performance.now();
       const response = await axios({
         method: op.method,
         url: baseUrl,
@@ -526,7 +536,7 @@ export class BrokerExecutor implements INodeExecutor {
         params: pageParams,
         data: body,
         timeout: 30000,
-      });
+      }).finally(() => trace?.('broker_page', { durationMs: performance.now() - pageStart, page: requestCount + 1 }));
 
       // Extract data from response
       const responseData = response.data;

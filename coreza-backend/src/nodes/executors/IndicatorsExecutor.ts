@@ -10,7 +10,8 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService, toIndicatorOutput } from "../../nodes/logic/indicators";
-import { extractPrices } from "../../nodes/logic/toolOutputProcessor";
+import { extractPrices, resolveDataRef } from "../../nodes/logic/toolOutputProcessor";
+import { normalizeCandles, candleTimestamp, sameMarketSymbol } from "../../marketData/normalizeCandles";
 import { DataContext, DataContextManager } from "../../engine/DataContext";
 import {
   normalizeOutput,
@@ -45,6 +46,15 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
+  private indicatorType(node: WorkflowNode): string {
+    const type = String(node.name || node.node_type || '').trim().toLowerCase();
+    return ({ bb: 'bollinger bands', bollinger: 'bollinger bands', stoch: 'stochastic' } as Record<string, string>)[type] ?? type;
+  }
+
+  private isPriceIndicator(type: string): boolean {
+    return ['ema', 'rsi', 'macd', 'sma', 'bollinger bands'].includes(type);
+  }
+
   private getIndicatorCacheKey(
     nodeId: string,
     symbol: string,
@@ -58,6 +68,17 @@ export class IndicatorsExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): NodeResult | Promise<NodeResult> {
+    try { return this.executeResolved(node, input, context); }
+    catch (error) {
+      return toNodeResult(createErrorOutput(error, { nodeId: node.id, nodeName: node.name, category: this.category }));
+    }
+  }
+
+  private executeResolved(
+    node: WorkflowNode,
+    input: NodeInput,
+    context?: any,
+  ): NodeResult | Promise<NodeResult> {
     const runId = context?.runId;
     if (runId && runId !== this.cachedRunId) {
       this.indicatorKeyCache.clear();
@@ -66,7 +87,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       this.cachedRunId = runId;
     }
 
-    const indicatorType = (node.name || node.node_type)?.toLowerCase();
+    const indicatorType = this.indicatorType(node);
     if (indicatorType === "initializeindicators") {
       return this.executeAsync(node, input, context);
     }
@@ -78,22 +99,20 @@ export class IndicatorsExecutor implements INodeExecutor {
       return this.executeRollingWindowNode(node, resolvedParams, context);
     }
 
+    if (!context?.dataContext || !context?.indicatorStateManager) {
+      return this.executeAsync(node, input, context);
+    }
+
     const resolvedParams = context?.resolveNodeParameters
       ? context.resolveNodeParameters(node, input)
       : { ...node.values, ...input };
 
-    const processedParams = { ...resolvedParams };
-    const rawCandle = resolvedParams.candle_data;
-    const candleData = Array.isArray(rawCandle)
-      ? rawCandle
-      : rawCandle && typeof rawCandle === "object"
-        ? [rawCandle]
-        : JSON.parse(rawCandle || "[]");
-
+    const processedParams = this.resolveIndicatorInput(resolvedParams, indicatorType, context);
+    const candleData = processedParams.candle_data;
     const dataContext = context?.dataContext as DataContext | undefined;
-    if (dataContext && candleData) {
-      const barsData = Array.isArray(candleData) ? candleData : [candleData];
-      processedParams.candle_data = barsData;
+    if (dataContext && this.canUseState(processedParams)) {
+      const stateStart = performance.now();
+      const barsData = candleData;
 
       const stateManager = context?.indicatorStateManager as
         | IndicatorStateManager
@@ -137,6 +156,7 @@ export class IndicatorsExecutor implements INodeExecutor {
               !isIndicatorStateCompatible(state, indicatorType, processedParams)))
         ) {
           const { candle_data, ...params } = processedParams;
+          this.validateDirectCandles(barsData, indicatorType, processedParams);
           state = stateManager.warmUpSync(key, indicatorType, params, barsData);
         }
         if (
@@ -157,10 +177,12 @@ export class IndicatorsExecutor implements INodeExecutor {
           latestBar?.time ?? latestBar?.t ?? latestBar?.timestamp ?? "",
         );
         if (latestBarTime && latestBarTime !== state.lastBarTime) {
-          for (const bar of barsData) state = stateManager.updateSync(key, bar);
+          const newBars = this.newBars(barsData, state.lastBarTime);
+          this.validateDirectCandles(newBars, indicatorType, processedParams);
+          for (const bar of newBars) state = stateManager.updateSync(key, bar);
         }
 
-        return this.getCachedIndicatorResult(indicatorType, state);
+        return this.getCachedIndicatorResult(indicatorType, state, context, stateStart);
       }
     }
 
@@ -181,7 +203,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         this.rollingWindowResults.clear();
         this.cachedRunId = runId;
       }
-      const indicatorType = (node.name || node.node_type)?.toLowerCase();
+      const indicatorType = this.indicatorType(node);
 
       // Delegate to InitializeIndicatorsExecutor
       if (indicatorType === "initializeindicators") {
@@ -205,53 +227,12 @@ export class IndicatorsExecutor implements INodeExecutor {
       // Get DataContext if available (from AI Agent execution)
       const dataContext = context?.dataContext as DataContext | undefined;
 
-      // Resolve dataRef to actual data if present
-      const processedParams = { ...resolvedParams };
+      const processedParams = this.resolveIndicatorInput(resolvedParams, indicatorType, context);
+      const candleData = processedParams.candle_data;
 
-      const rawCandle = resolvedParams.candle_data;
-      const candleData = Array.isArray(rawCandle)
-        ? rawCandle
-        : rawCandle && typeof rawCandle === "object"
-          ? [rawCandle]
-          : JSON.parse(rawCandle || "[]");
-
-      // Check for dataRef in multiple possible locations (dataRef field or candle_data field from LLM)
-      // const dataRefValue = resolvedParams.dataRef ||
-      //   (typeof resolvedParams.candle_data === 'string' && resolvedParams.candle_data.startsWith('bars:')
-      //     ? resolvedParams.candle_data
-      //     : null);
-
-      if (dataContext && candleData) {
-        if (context?.executionMode !== "backtest") {
-          console.log(
-            `[Indicators] Resolving dataRef: ${Array.isArray(candleData) ? `${candleData.length} bars` : typeof candleData}`,
-          );
-        }
-        //const barsData = dataContext.getDataByKey(candleData);
-        const barsData = Array.isArray(candleData) ? candleData : [candleData];
-
-        // Extract close prices from bars for indicator calculation
-        // const closePrices = extractPrices(barsData, "close");
-
-        // Set fields that IndicatorService expects
-        processedParams.candle_data = barsData; // For ADX, Stoch, VWAP, OBV, Ichimoku
-        // processedParams.prices = closePrices; // For RSI, EMA, SMA, MACD, BB
-
-        // // Keep existing fields for compatibility
-        // processedParams.data = closePrices;
-        // processedParams.values = closePrices;
-        // processedParams.bars = barsData;
-        // processedParams.open = extractPrices(barsData, "open");
-        // processedParams.high = extractPrices(barsData, "high");
-        // processedParams.low = extractPrices(barsData, "low");
-        // processedParams.close = closePrices;
-        // processedParams.volume = barsData.map(
-        //   (bar) => bar.volume || bar.v || bar.vol || 0,
-        // );
-
-        // console.log(
-        //   `📊 [Indicators] Resolved ${closePrices.length} data points from dataRef`,
-        // );
+      if (dataContext && this.canUseState(processedParams)) {
+        const stateStart = performance.now();
+        const barsData = candleData;
 
         const stateManager = context?.indicatorStateManager as
           | IndicatorStateManager
@@ -262,15 +243,6 @@ export class IndicatorsExecutor implements INodeExecutor {
         const symbol = String(processedParams.symbol || "");
         const timeframe = String(processedParams.timeframe || "");
 
-        // Fallback for legacy workflows where symbol/timeframe fields are not set explicitly.
-        // if ((!symbol || !timeframe) && barsData) {
-        //   const parts = barsData.split(":");
-        //   if (parts.length >= 4) {
-        //     if (!symbol) symbol = parts[1];
-        //     if (!timeframe) timeframe = parts[2];
-        //   }
-        // }
-
         if (
           stateManager &&
           userId &&
@@ -280,8 +252,6 @@ export class IndicatorsExecutor implements INodeExecutor {
           timeframe &&
           barsData.length > 0
         ) {
-          // const indicatorParams =
-          //   this.extractIndicatorParams(processedParams);
           const cacheKey = this.getIndicatorCacheKey(
             node.id,
             symbol,
@@ -312,6 +282,7 @@ export class IndicatorsExecutor implements INodeExecutor {
               state = null;
             }
             if (!state) {
+              this.validateDirectCandles(barsData, indicatorType, processedParams);
               state = await stateManager.warmUp(
                 key,
                 indicatorType,
@@ -325,7 +296,9 @@ export class IndicatorsExecutor implements INodeExecutor {
                 latestBar?.time ?? latestBar?.t ?? latestBar?.timestamp ?? "",
               );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                for (const bar of barsData) state = stateManager.updateSync(key, bar);
+                const newBars = this.newBars(barsData, state.lastBarTime);
+                this.validateDirectCandles(newBars, indicatorType, processedParams);
+                for (const bar of newBars) state = stateManager.updateSync(key, bar);
               }
             }
           } else {
@@ -337,6 +310,7 @@ export class IndicatorsExecutor implements INodeExecutor {
               state = null;
             }
             if (!state) {
+              this.validateDirectCandles(barsData, indicatorType, processedParams);
               state = await stateManager.warmUp(
                 key,
                 indicatorType,
@@ -350,38 +324,53 @@ export class IndicatorsExecutor implements INodeExecutor {
                 latestBar?.time ?? latestBar?.t ?? latestBar?.timestamp ?? "",
               );
               if (latestBarTime && latestBarTime !== state.lastBarTime) {
-                for (const bar of barsData) state = await stateManager.update(key, bar, true);
+                const newBars = this.newBars(barsData, state.lastBarTime);
+                this.validateDirectCandles(newBars, indicatorType, processedParams);
+                for (const bar of newBars) state = await stateManager.update(key, bar, true);
               }
             }
           }
 
-          return this.getCachedIndicatorResult(indicatorType, state);
+          return this.getCachedIndicatorResult(indicatorType, state, context, stateStart);
         }
       }
 
-      console.log(
-        `🔢 Executing ${indicatorType} indicator with ${processedParams.data?.length || 0} data points`,
-      );
-
+      // The service already derives close prices from candles. Map only a configured
+      // alternative source, and preserve explicitly supplied prices.
+      const priceField = processedParams.price_field ?? processedParams.priceField ?? processedParams.source ?? 'close';
+      if (this.isPriceIndicator(indicatorType) && processedParams.prices == null && priceField !== 'close') {
+        if (!['open', 'high', 'low'].includes(priceField)) throw new Error('Unsupported indicator price field');
+        processedParams.prices = extractPrices(candleData, priceField);
+      }
+      const observedBars = this.isPriceIndicator(indicatorType) && processedParams.prices != null
+        ? (typeof processedParams.prices === 'string' ? JSON.parse(processedParams.prices) : processedParams.prices).length
+        : candleData.length;
+      const requiredBars = requiredWarmupBars(indicatorType, processedParams);
+      const computeStart = performance.now();
       const calculated = await IndicatorService.calculate(
         indicatorType,
         processedParams,
       );
-      const result =
-        calculated.success && Array.isArray(calculated.data)
-          ? {
-              ...calculated,
-              data: toIndicatorOutput(indicatorType, {
-                currentValue: calculated.data.at(-1),
-                previousValue: calculated.data.at(-2),
-                observedBars: candleData.length || calculated.data.length,
-                isReady:
-                  (candleData.length || calculated.data.length) >=
-                  requiredWarmupBars(indicatorType, processedParams),
-              }),
-              meta: { ...calculated.meta, series: calculated.data },
-            }
-          : calculated;
+      context?.agentDataTrace?.('indicator_compute', { durationMs: performance.now() - computeStart,
+        observedBars, requiredBars, isReady: observedBars >= requiredBars, success: calculated.success });
+      if (calculated.success && Array.isArray(calculated.data) && !calculated.data.length && observedBars >= requiredBars) {
+        throw new Error('Indicator calculation returned no values');
+      }
+      if (calculated.success && Array.isArray(calculated.data) && calculated.data.length &&
+          !this.finiteIndicatorValue(calculated.data.at(-1))) throw new Error('Indicator calculation returned an invalid value');
+      const series = Array.isArray(calculated.data) ? calculated.data : undefined;
+      const hasVolume = indicatorType !== 'vwap' || !series ||
+        candleData.some((bar: any, index: number) => index >= (series.at(-1)?.sessionStart ?? 0) && Number(bar.volume ?? bar.v) > 0);
+      const result = calculated.success && Array.isArray(calculated.data)
+        ? {
+            ...calculated,
+            data: toIndicatorOutput(indicatorType, {
+              currentValue: calculated.data.at(-1), previousValue: calculated.data.at(-2),
+              observedBars, isReady: observedBars >= requiredBars && calculated.data.length > 0 && hasVolume,
+            }),
+            meta: { ...calculated.meta, series: calculated.data, requiredBars },
+          }
+        : calculated;
 
       const normalized = normalizeOutput(result, {
         nodeId: node.id,
@@ -389,7 +378,8 @@ export class IndicatorsExecutor implements INodeExecutor {
         category: this.category,
         startTime,
       });
-      return toNodeResult(normalized);
+      return { ...toNodeResult(normalized), meta: { ...normalized.meta, requiredBars,
+        ...(!hasVolume ? { readinessReason: 'VWAP requires positive volume in the current session' } : {}) } };
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error
@@ -406,6 +396,111 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       return toNodeResult(errOutput);
     }
+  }
+
+  private canUseState(params: Record<string, any>): boolean {
+    return params.prices == null &&
+      (params.price_field ?? params.priceField ?? params.source ?? 'close') === 'close';
+  }
+
+  private resolveIndicatorInput(params: Record<string, any>, indicatorType: string, context?: any): Record<string, any> {
+    const started = performance.now();
+    const resolved = resolveDataRef(params, context?.dataContext, context?.invocationRefs);
+    let raw = resolved.candle_data ?? resolved.resolvedData;
+    if (typeof raw === 'string') {
+      raw = JSON.parse(raw);
+      if (raw && typeof raw === 'object' && typeof raw.dataRef === 'string') {
+        return this.resolveIndicatorInput({ ...resolved, dataRef: raw.dataRef }, indicatorType, context);
+      }
+    }
+    const priceIndicator = this.isPriceIndicator(indicatorType);
+    if (resolved.prices != null && priceIndicator) {
+      const prices = typeof resolved.prices === 'string' ? JSON.parse(resolved.prices) : resolved.prices;
+      if (!Array.isArray(prices) || !prices.length || prices.some(item => {
+        const value = item && typeof item === 'object' ? item.close ?? item.c : item;
+        return (typeof value !== 'number' && typeof value !== 'string') ||
+          (typeof value === 'string' && !value.trim()) || !Number.isFinite(Number(value));
+      })) {
+        throw new Error('Indicator prices must be a non-empty numeric array');
+      }
+      return { ...resolved, prices, candle_data: [] };
+    }
+    const bars = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : null;
+    if (!bars || !bars.length) throw new Error('Indicator requires non-empty candle data or prices');
+    // Existing numeric candle_data is a supported input to price indicators.
+    if (priceIndicator && ['number', 'string'].includes(typeof bars[0])) {
+      if (bars.some(bar => !['number', 'string'].includes(typeof bar) || String(bar).trim() === '' || !Number.isFinite(Number(bar)))) {
+        throw new Error('Indicator prices must be numeric');
+      }
+      return { ...resolved, prices: bars, candle_data: [] };
+    }
+    let candles;
+    if (resolved.resolvedData === bars) {
+      candles = bars; // References point to the already normalized historical series.
+    } else if (context?.indicatorStateManager && this.canUseState(resolved) &&
+        typeof bars[0]?.time === 'number' && typeof bars[0]?.close === 'number') {
+      // Upstream live/backtest bars are canonical; incremental updaters validate
+      // newly accepted bars. Avoid normalizing/copying a full rolling window.
+      this.validateDirectCandles([bars[bars.length - 1]], indicatorType, resolved);
+      candles = bars;
+    } else {
+      this.validateDirectCandles(bars, indicatorType, resolved);
+      const first = bars[0];
+      const complete = (first.open ?? first.o) != null && (first.high ?? first.h) != null &&
+        (first.low ?? first.l) != null && (first.close ?? first.c) != null && (first.volume ?? first.v) != null &&
+        (first.time ?? first.timestamp ?? first.t ?? first.date) != null;
+      candles = complete ? normalizeCandles(bars) : bars;
+    }
+    context?.agentDataTrace?.('resolve_candles', { durationMs: performance.now() - started, rowCount: candles.length });
+    return { ...resolved, candle_data: candles };
+  }
+
+  private validateDirectCandles(bars: any[], indicatorType: string, params: Record<string, any>): void {
+    // Preserve existing direct indicator contracts (e.g. ATR needs H/L/C only).
+    const priceField = params.price_field ?? params.priceField ?? params.source ?? 'close';
+    const fields = this.isPriceIndicator(indicatorType)
+      ? [priceField] : indicatorType === 'ichimoku' ? ['high', 'low']
+      : indicatorType === 'obv' ? ['close', 'volume']
+      : ['volumeoscillator', 'volume-oscillator'].includes(indicatorType) ? ['volume']
+      : indicatorType === 'vwap' ? ['high', 'low', 'close', 'volume'] : ['high', 'low', 'close'];
+    for (const bar of bars) {
+      if (!bar || typeof bar !== 'object' || 'dataRef' in bar) throw new Error('Expected indicator candle data');
+      for (const field of fields) {
+        const value = bar[field] ?? bar[field[0]];
+        if ((typeof value !== 'number' && typeof value !== 'string') ||
+            (typeof value === 'string' && !value.trim()) || !Number.isFinite(Number(value))) throw new Error(`Missing or invalid candle ${field}`);
+      }
+      if (bar.symbol && params.symbol && !sameMarketSymbol(bar.symbol, params.symbol, params.asset_type ?? params.assetType)) {
+        throw new Error('Candle symbol does not match indicator input');
+      }
+      const high = Number(bar.high ?? bar.h), low = Number(bar.low ?? bar.l), close = Number(bar.close ?? bar.c);
+      if (Number.isFinite(high) && Number.isFinite(low) && (high < low || (Number.isFinite(close) && (close > high || close < low)))) {
+        throw new Error('Invalid candle OHLC range');
+      }
+      if (Number(bar.volume ?? bar.v) < 0) throw new Error('Invalid candle volume');
+      const time = bar.time ?? bar.t ?? bar.timestamp;
+      if (time != null || indicatorType === 'vwap') candleTimestamp(time, bar.time != null ? 'milliseconds' : 'auto');
+    }
+  }
+
+  private finiteIndicatorValue(value: any): boolean {
+    if (typeof value === 'number') return Number.isFinite(value);
+    if (!value || typeof value !== 'object') return false;
+    return Object.values(value).every(item => typeof item === 'string' || this.finiteIndicatorValue(item));
+  }
+
+  private newBars(bars: any[], lastBarTime: string): any[] {
+    const last = Number.isFinite(Number(lastBarTime)) ? Number(lastBarTime) : Date.parse(lastBarTime);
+    let start = bars.length;
+    while (start > 0) {
+      const bar = bars[start - 1];
+      const raw = bar.time ?? bar.t ?? bar.timestamp;
+      const time = Number.isFinite(Number(raw)) ? Number(raw) : Date.parse(raw);
+      if (!Number.isFinite(time) || !Number.isFinite(last)) return bars;
+      if (time <= last) break;
+      start--;
+    }
+    return start === 0 ? bars : bars.slice(start);
   }
 
   private executeRollingWindowNode(
@@ -601,8 +696,19 @@ export class IndicatorsExecutor implements INodeExecutor {
 
   private getCachedIndicatorResult(
     indicatorType: string,
-    state: Parameters<typeof toIndicatorOutput>[1],
+    state: Parameters<typeof toIndicatorOutput>[1] & { requiredWarmupBars?: number },
+    context?: any,
+    stateStart?: number,
   ): NodeResult {
-    return { success: true, data: toIndicatorOutput(indicatorType, state) };
+    if (state.isReady && !this.finiteIndicatorValue(state.currentValue)) {
+      return toNodeResult(createErrorOutput('Indicator state contains an invalid value'));
+    }
+    const hasVolume = indicatorType !== 'vwap' || Number(state.internalState?.cumVol) > 0;
+    context?.agentDataTrace?.('indicator_readiness', { observedBars: state.observedBars,
+      requiredBars: state.requiredWarmupBars, isReady: state.isReady,
+      durationMs: stateStart === undefined ? undefined : performance.now() - stateStart });
+    return { success: true, data: toIndicatorOutput(indicatorType, { ...state, isReady: state.isReady && hasVolume }),
+      meta: { requiredBars: state.requiredWarmupBars,
+        ...(!hasVolume ? { readinessReason: 'VWAP requires positive volume in the current session' } : {}) } };
   }
 }

@@ -7,6 +7,7 @@ import type {
   BrokerOperationExecuteContext,
 } from "../types";
 import { toBarSeries } from "../types";
+import { candleTimestamp } from "../../marketData/normalizeCandles";
 
 export interface DhanBar {
   time: number;
@@ -395,12 +396,7 @@ export function buildDhanModifyOrder(
 }
 
 export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
-  const open = raw.open || [];
-  const high = raw.high || [];
-  const low = raw.low || [];
-  const close = raw.close || [];
-  const volume = raw.volume || [];
-  const ts = raw.timestamp || [];
+  const { open, high, low, close, volume, timestamp: ts } = raw;
 
   let candles: any[] = [];
 
@@ -412,6 +408,9 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
     Array.isArray(volume) &&
     Array.isArray(ts)
   ) {
+    if ([high, low, close, volume, ts].some(column => column.length !== open.length)) {
+      throw new Error('Dhan candle columns have different lengths');
+    }
     for (let i = 0; i < open.length; ++i) {
       candles.push({
         t: ts[i],
@@ -424,17 +423,19 @@ export function transformDhanCandles(raw: any, input: any): BarSeriesOutput {
     }
   } else if (Array.isArray(raw.data)) {
     candles = raw.data.map((bar: any) => ({
-      t: bar.timestamp || bar.t || bar.T,
-      o: bar.open || bar.o || bar.O,
-      h: bar.high || bar.h || bar.H,
-      l: bar.low || bar.l || bar.L,
-      c: bar.close || bar.c || bar.C,
-      v: bar.volume || bar.v || bar.V,
+      t: bar.timestamp ?? bar.t ?? bar.T,
+      o: bar.open ?? bar.o ?? bar.O,
+      h: bar.high ?? bar.h ?? bar.H,
+      l: bar.low ?? bar.l ?? bar.L,
+      c: bar.close ?? bar.c ?? bar.C,
+      v: bar.volume ?? bar.v ?? bar.V,
     }));
+  } else {
+    throw new Error('Unsupported Dhan historical candle payload');
   }
 
   const dhanBars: DhanBar[] = candles.map((c) => ({
-    time: typeof c.t === "string" ? Date.parse(c.t) : c.t,
+    time: candleTimestamp(c.t),
     open: c.o,
     high: c.h,
     low: c.l,

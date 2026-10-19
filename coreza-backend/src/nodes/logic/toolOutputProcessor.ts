@@ -9,7 +9,8 @@
  */
 
 import { DataContext } from '../../engine';
-import { DataRef } from '../../engine/InMemoryStore';
+import { randomUUID } from 'crypto';
+import { extractHistoricalCandles, normalizeCandles, sameMarketSymbol, sameMarketTimeframe } from '../../marketData/normalizeCandles';
 import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from '../../brokers/capabilities';
 
 /**
@@ -17,6 +18,8 @@ import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from 
  * Contains either a dataRef for large data or the summary directly
  */
 export interface ProcessedToolOutput {
+  success?: boolean;
+  status?: 'not_ready' | 'no_data';
   /** Reference to data stored in InMemoryStore (for large datasets) */
   dataRef?: string;
   /** Summary data safe for AI consumption */
@@ -34,6 +37,7 @@ export interface ProcessedToolOutput {
  */
 export interface MarketDataSummary {
   symbol: string;
+  assetType?: string;
   timeframe?: string;
   source?: string;
   rows: number;
@@ -107,21 +111,64 @@ const TRADE_NODES = [
 /**
  * Extract bars array from various output formats
  */
-function extractBars(output: any): any[] | null {
-  if (!output) return null;
-  
-  // Direct array
-  if (Array.isArray(output)) return output;
-  
-  // Common property names for bars
-  const barsProps = ['bars', 'data', 'candles', 'ohlcv', 'prices', 'quotes'];
-  for (const prop of barsProps) {
-    if (Array.isArray(output[prop])) {
-      return output[prop];
+export type MarketDataTrace = (phase: string, metrics: Record<string, unknown>) => void;
+
+/** Owned by one agent invocation, including failed and in-flight tool calls. */
+export class ToolInvocationRefs {
+  private aliases = new Map<string, Set<string>>();
+  private outputs = new Map<string, string>();
+  private metadata = new Map<string, { symbol?: string; timeframe?: string; assetType?: string }>();
+  readonly validatedBars = new WeakSet<any[]>();
+
+  hasAlias(ref: string): boolean { return this.aliases.has(ref); }
+
+  begin(invocationId: string, ...aliases: string[]): void {
+    for (const alias of [invocationId, ...aliases]) {
+      const calls = this.aliases.get(alias) ?? new Set<string>();
+      calls.add(invocationId);
+      this.aliases.set(alias, calls);
     }
   }
-  
-  return null;
+
+  complete(invocationId: string, dataRef: string, metadata?: { symbol?: string; timeframe?: string; assetType?: string }): void {
+    this.outputs.set(invocationId, dataRef);
+    if (metadata) this.metadata.set(dataRef, metadata);
+  }
+
+  assertMatches(ref: string, input: any): void {
+    const metadata = this.metadata.get(this.resolve(ref));
+    if (metadata?.symbol && input.symbol && !sameMarketSymbol(metadata.symbol, input.symbol, metadata.assetType)) {
+      throw new Error('Market-data reference symbol does not match the indicator input');
+    }
+    if (metadata?.timeframe && (input.timeframe || input.interval) && !sameMarketTimeframe(metadata.timeframe, input.timeframe || input.interval)) {
+      throw new Error('Market-data reference timeframe does not match the indicator input');
+    }
+  }
+
+  clear(): void { this.aliases.clear(); this.outputs.clear(); this.metadata.clear(); }
+
+  resolve(ref: string): string {
+    const calls = this.aliases.get(ref);
+    if (!calls) return ref;
+    if (calls.size !== 1) throw new Error('Ambiguous tool reference; pass the exact returned dataRef');
+    const key = this.outputs.get(calls.values().next().value!);
+    if (!key) throw new Error('Tool invocation has no historical dataRef');
+    return key;
+  }
+}
+
+export function resolveMarketDataRef(ref: string, dataContext?: DataContext, refs?: ToolInvocationRefs): any[] {
+  const key = refs?.resolve(ref) ?? ref;
+  const bars = key.startsWith('bars:') ? dataContext?.getDataByKey(key) : undefined;
+  const valid = Array.isArray(bars) && bars.length > 0 && (refs?.validatedBars.has(bars) ||
+    bars.every((bar, index) => bar && ['time', 'open', 'high', 'low', 'close', 'volume'].every(field => Number.isFinite(bar[field])) &&
+      bar.high >= Math.max(bar.open, bar.close, bar.low) && bar.low <= Math.min(bar.open, bar.close) &&
+      bar.volume >= 0 && (index === 0 || bar.time >= bars[index - 1].time)));
+  if (!valid) {
+    throw new Error('Market-data reference unavailable or invalid; fetch historical candles and pass the returned dataRef');
+  }
+  if (refs && !refs.validatedBars.has(bars) && Object.isFrozen(bars) && bars.every(bar => Object.isFrozen(bar))) refs.validatedBars.add(bars);
+  return bars;
 }
 
 /**
@@ -140,12 +187,12 @@ function createMarketDataSummary(bars: any[], output: any, toolInput?: any): Mar
   
   // Normalize bar format (handle different property names)
   const normalizeBar = (bar: any) => ({
-    date: bar.date || bar.timestamp || bar.t || bar.time || '',
-    open: bar.open || bar.o || 0,
-    high: bar.high || bar.h || 0,
-    low: bar.low || bar.l || 0,
-    close: bar.close || bar.c || 0,
-    volume: bar.volume || bar.v || bar.vol || 0,
+    date: new Date(bar.time).toISOString(),
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
   });
 
   const first = normalizeBar(firstBar);
@@ -159,7 +206,7 @@ function createMarketDataSummary(bars: any[], output: any, toolInput?: any): Mar
 
   // Calculate average volume
   const totalVolume = bars.reduce((sum, bar) => {
-    return sum + (bar.volume || bar.v || bar.vol || 0);
+    return sum + bar.volume;
   }, 0);
   const avgVolume = bars.length > 0 ? Math.round(totalVolume / bars.length) : 0;
 
@@ -167,8 +214,8 @@ function createMarketDataSummary(bars: any[], output: any, toolInput?: any): Mar
   let high52Week = last.high;
   let low52Week = last.low;
   bars.forEach(bar => {
-    const h = bar.high || bar.h || 0;
-    const l = bar.low || bar.l || 0;
+    const h = bar.high;
+    const l = bar.low;
     if (h > high52Week) high52Week = h;
     if (l < low52Week) low52Week = l;
   });
@@ -251,10 +298,11 @@ export function processToolOutput(
   nodeCategory: string,
   output: any,
   dataContext?: DataContext,
-  toolInput?: any
+  toolInput?: any,
+  trace?: MarketDataTrace,
 ): ProcessedToolOutput {
   // If no output, return empty
-  if (output === null || output === undefined) {
+  if ((output === null || output === undefined) && !['get_candle', 'get_history', 'get_historical_data'].includes(toolInput?.operation)) {
     return {
       summary: null,
       cached: false,
@@ -266,28 +314,46 @@ export function processToolOutput(
     n => nodeName === n || nodeCategory === n
   );
 
-  if (isMarketDataNode && dataContext) {
-    const bars = extractBars(output);
+  const isHistorical = ((isMarketDataNode || nodeCategory === 'Broker') && toolInput?.operation === 'get_candle') ||
+    (isMarketDataNode && (['get_history', 'get_historical_data'].includes(toolInput?.operation) ||
+      (!toolInput?.operation && Array.isArray(output?.BarSeries))));
+  if (isHistorical) {
+    const normalizeStart = performance.now();
+    const series = extractHistoricalCandles(output, {
+      symbol: toolInput?.symbol || toolInput?.ticker,
+      timeframe: toolInput?.timeframe || toolInput?.interval,
+      assetType: toolInput?.asset_type || toolInput?.assetType,
+    });
+    const bars = normalizeCandles(series.bars);
+    // Validated reference caches are safe only while their canonical series is immutable.
+    bars.forEach(bar => Object.freeze(bar));
+    Object.freeze(bars);
+    trace?.('normalize', { durationMs: performance.now() - normalizeStart, rowCount: bars.length });
+    if (!bars.length) return { success: false, status: 'no_data', type: 'market_data', rowCount: 0,
+      cached: false, summary: { message: 'No historical candles returned' } };
+    if (!dataContext) throw new Error('Historical candles require a run-scoped DataContext');
     
     if (bars && bars.length > 0) {
       // Generate unique key for this data - try output first, then toolInput
-      const symbol = output?.symbol || toolInput?.symbol || toolInput?.ticker || 'unknown';
-      const timeframe = output?.timeframe || output?.interval || toolInput?.interval || toolInput?.timeframe || '1d';
-      const timestamp = Date.now();
-      const key = `bars:${symbol}:${timeframe}:${timestamp}`;
+      const symbol = series.symbol || output?.symbol || toolInput?.symbol || toolInput?.ticker || 'unknown';
+      const timeframe = series.timeframe || output?.timeframe || output?.interval || toolInput?.interval || toolInput?.timeframe || 'unknown';
+      const key = `bars:${symbol}:${timeframe}:${randomUUID()}`;
 
       // Store in DataContext
+      const storeStart = performance.now();
       const dataRef = dataContext.setData(key, bars, {
         symbol,
         timeframe,
         source: nodeName,
         rowCount: bars.length,
+        operation: toolInput?.operation,
+        assetType: toolInput?.asset_type || toolInput?.assetType,
       });
+      trace?.('store', { durationMs: performance.now() - storeStart, rowCount: bars.length, dataRef: dataRef.ref });
 
       // Create summary for AI
-      const summary = createMarketDataSummary(bars, output, toolInput);
-
-      console.log(`🔗 [ToolProcessor] Stored ${bars.length} bars for ${symbol} as ${key}`);
+      const summary = { ...createMarketDataSummary(bars, { symbol, timeframe, source: nodeName }, toolInput),
+        assetType: toolInput?.asset_type || toolInput?.assetType };
 
       return {
         dataRef: dataRef.ref,
@@ -295,12 +361,13 @@ export function processToolOutput(
         rowCount: bars.length,
         cached: false,
         type: 'market_data',
+        success: true,
       };
     }
   }
 
   // Check if this is an indicator node
-  const isIndicatorNode = INDICATOR_NODES.some(
+  const isIndicatorNode = nodeCategory === 'Indicators' || INDICATOR_NODES.some(
     n => nodeName === n || nodeCategory === n
   );
 
@@ -358,46 +425,49 @@ export function processToolOutput(
  */
 export function resolveDataRef(
   input: any,
-  dataContext?: DataContext
+  dataContext?: DataContext,
+  refs?: ToolInvocationRefs,
 ): any {
-  if (!dataContext || !input) return input;
+  if (!input) return input;
 
-  // Check if input has a dataRef property
+  if (typeof input === 'string') return resolveMarketDataRef(input, dataContext, refs);
+  let resolved = input;
+  let selectedKey: string | undefined;
+  const read = (ref: string) => {
+    refs?.assertMatches(ref, input);
+    const key = refs?.resolve(ref) ?? ref;
+    if (selectedKey && key !== selectedKey) throw new Error('Conflicting market-data references in indicator input');
+    const metadata = dataContext?.getStore().getDataRef(key)?.meta;
+    if (metadata?.symbol && input.symbol && !sameMarketSymbol(metadata.symbol, input.symbol, metadata.assetType)) {
+      throw new Error('Market-data reference symbol does not match the indicator input');
+    }
+    if (metadata?.timeframe && (input.timeframe || input.interval) && !sameMarketTimeframe(metadata.timeframe, input.timeframe || input.interval)) {
+      throw new Error('Market-data reference timeframe does not match the indicator input');
+    }
+    selectedKey = key;
+    return resolveMarketDataRef(key, dataContext, refs);
+  };
   if (typeof input.dataRef === 'string') {
-    const data = dataContext.getDataByKey(input.dataRef);
-    if (data) {
-      console.log(`🔓 [ToolProcessor] Resolved dataRef: ${input.dataRef}`);
-      // Preserve original input, add resolved data
-      return { ...input, resolvedData: data };
-    }
-    console.warn(`⚠️ [ToolProcessor] dataRef not found: ${input.dataRef}`);
+    const data = read(input.dataRef);
+    resolved = { ...resolved, candle_data: data, resolvedData: data };
   }
-
-  // Check common field names that may contain dataRef strings (e.g., candle_data from LLM)
-  const dataRefFields = ['candle_data', 'candleData', 'bars', 'data', 'prices'];
-  for (const field of dataRefFields) {
-    if (typeof input[field] === 'string' && input[field].startsWith('bars:')) {
-      const data = dataContext.getDataByKey(input[field]);
-      if (data) {
-        console.log(`🔓 [ToolProcessor] Resolved ${field} dataRef: ${input[field]}`);
-        // FIXED: Preserve original input structure, replace only the field with resolved data
-        // This keeps other parameters like 'window', 'period', etc. intact
-        return { ...input, [field]: data };
-      }
-      console.warn(`⚠️ [ToolProcessor] ${field} dataRef not found: ${input[field]}`);
+  for (const field of ['candle_data', 'candleData', 'bars', 'data', 'prices']) {
+    let value = input[field];
+    if (typeof value === 'string' && value.trimStart().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed?.dataRef === 'string') value = parsed;
+      } catch { /* The input parser reports malformed JSON; this step only identifies references. */ }
+    }
+    const ref = typeof value === 'string' && value.trim() && !/^[\s]*[\[{]/.test(value) &&
+      (field === 'candle_data' || field === 'candleData' || value.startsWith('bars:') || refs?.hasAlias(value))
+      ? value : value && typeof value === 'object' && typeof value.dataRef === 'string' ? value.dataRef : undefined;
+    if (ref !== undefined) {
+      const data = read(ref);
+      resolved = { ...resolved, [field]: data, resolvedData: data };
     }
   }
-
-  // Check if input itself is a dataRef string
-  if (typeof input === 'string' && input.startsWith('bars:')) {
-    const data = dataContext.getDataByKey(input);
-    if (data) {
-      console.log(`🔓 [ToolProcessor] Resolved dataRef string: ${input}`);
-      return data;
-    }
-  }
-
-  return input;
+  return resolved;
 }
 
 /**
@@ -425,8 +495,9 @@ export function extractPrices(
     
     const props = fieldMap[priceField] || ['close', 'c'];
     for (const prop of props) {
-      if (typeof bar[prop] === 'number') return bar[prop];
+      const value = bar[prop];
+      if ((typeof value === 'number' || (typeof value === 'string' && value.trim())) && Number.isFinite(Number(value))) return Number(value);
     }
-    return 0;
+    throw new Error(`Missing or invalid candle ${priceField}`);
   });
 }

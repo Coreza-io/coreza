@@ -10,7 +10,7 @@
 
 import { DataContext } from '../../engine';
 import { randomUUID } from 'crypto';
-import { extractHistoricalCandles, normalizeCandles } from '../../marketData/normalizeCandles';
+import { extractHistoricalCandles, normalizeCandles, sameMarketSymbol, sameMarketTimeframe } from '../../marketData/normalizeCandles';
 import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from '../../brokers/capabilities';
 
 /**
@@ -37,6 +37,7 @@ export interface ProcessedToolOutput {
  */
 export interface MarketDataSummary {
   symbol: string;
+  assetType?: string;
   timeframe?: string;
   source?: string;
   rows: number;
@@ -116,7 +117,7 @@ export type MarketDataTrace = (phase: string, metrics: Record<string, unknown>) 
 export class ToolInvocationRefs {
   private aliases = new Map<string, Set<string>>();
   private outputs = new Map<string, string>();
-  private metadata = new Map<string, { symbol?: string; timeframe?: string }>();
+  private metadata = new Map<string, { symbol?: string; timeframe?: string; assetType?: string }>();
   readonly validatedBars = new WeakSet<any[]>();
 
   hasAlias(ref: string): boolean { return this.aliases.has(ref); }
@@ -129,17 +130,17 @@ export class ToolInvocationRefs {
     }
   }
 
-  complete(invocationId: string, dataRef: string, metadata?: { symbol?: string; timeframe?: string }): void {
+  complete(invocationId: string, dataRef: string, metadata?: { symbol?: string; timeframe?: string; assetType?: string }): void {
     this.outputs.set(invocationId, dataRef);
     if (metadata) this.metadata.set(dataRef, metadata);
   }
 
   assertMatches(ref: string, input: any): void {
     const metadata = this.metadata.get(this.resolve(ref));
-    if (metadata?.symbol && input.symbol && String(metadata.symbol).toUpperCase() !== String(input.symbol).toUpperCase()) {
+    if (metadata?.symbol && input.symbol && !sameMarketSymbol(metadata.symbol, input.symbol, metadata.assetType)) {
       throw new Error('Market-data reference symbol does not match the indicator input');
     }
-    if (metadata?.timeframe && input.timeframe && String(metadata.timeframe).toLowerCase() !== String(input.timeframe).toLowerCase()) {
+    if (metadata?.timeframe && (input.timeframe || input.interval) && !sameMarketTimeframe(metadata.timeframe, input.timeframe || input.interval)) {
       throw new Error('Market-data reference timeframe does not match the indicator input');
     }
   }
@@ -166,7 +167,7 @@ export function resolveMarketDataRef(ref: string, dataContext?: DataContext, ref
   if (!valid) {
     throw new Error('Market-data reference unavailable or invalid; fetch historical candles and pass the returned dataRef');
   }
-  refs?.validatedBars.add(bars);
+  if (refs && !refs.validatedBars.has(bars) && Object.isFrozen(bars) && bars.every(bar => Object.isFrozen(bar))) refs.validatedBars.add(bars);
   return bars;
 }
 
@@ -301,7 +302,7 @@ export function processToolOutput(
   trace?: MarketDataTrace,
 ): ProcessedToolOutput {
   // If no output, return empty
-  if ((output === null || output === undefined) && toolInput?.operation !== 'get_candle') {
+  if ((output === null || output === undefined) && !['get_candle', 'get_history', 'get_historical_data'].includes(toolInput?.operation)) {
     return {
       summary: null,
       cached: false,
@@ -313,7 +314,7 @@ export function processToolOutput(
     n => nodeName === n || nodeCategory === n
   );
 
-  const isHistorical = toolInput?.operation === 'get_candle' ||
+  const isHistorical = ((isMarketDataNode || nodeCategory === 'Broker') && toolInput?.operation === 'get_candle') ||
     (isMarketDataNode && (['get_history', 'get_historical_data'].includes(toolInput?.operation) ||
       (!toolInput?.operation && Array.isArray(output?.BarSeries))));
   if (isHistorical) {
@@ -321,8 +322,12 @@ export function processToolOutput(
     const series = extractHistoricalCandles(output, {
       symbol: toolInput?.symbol || toolInput?.ticker,
       timeframe: toolInput?.timeframe || toolInput?.interval,
+      assetType: toolInput?.asset_type || toolInput?.assetType,
     });
     const bars = normalizeCandles(series.bars);
+    // Validated reference caches are safe only while their canonical series is immutable.
+    bars.forEach(bar => Object.freeze(bar));
+    Object.freeze(bars);
     trace?.('normalize', { durationMs: performance.now() - normalizeStart, rowCount: bars.length });
     if (!bars.length) return { success: false, status: 'no_data', type: 'market_data', rowCount: 0,
       cached: false, summary: { message: 'No historical candles returned' } };
@@ -342,11 +347,13 @@ export function processToolOutput(
         source: nodeName,
         rowCount: bars.length,
         operation: toolInput?.operation,
+        assetType: toolInput?.asset_type || toolInput?.assetType,
       });
       trace?.('store', { durationMs: performance.now() - storeStart, rowCount: bars.length, dataRef: dataRef.ref });
 
       // Create summary for AI
-      const summary = createMarketDataSummary(bars, { symbol, timeframe, source: nodeName }, toolInput);
+      const summary = { ...createMarketDataSummary(bars, { symbol, timeframe, source: nodeName }, toolInput),
+        assetType: toolInput?.asset_type || toolInput?.assetType };
 
       return {
         dataRef: dataRef.ref,
@@ -423,36 +430,44 @@ export function resolveDataRef(
 ): any {
   if (!input) return input;
 
-  // Check if input has a dataRef property
+  if (typeof input === 'string') return resolveMarketDataRef(input, dataContext, refs);
+  let resolved = input;
+  let selectedKey: string | undefined;
+  const read = (ref: string) => {
+    refs?.assertMatches(ref, input);
+    const key = refs?.resolve(ref) ?? ref;
+    if (selectedKey && key !== selectedKey) throw new Error('Conflicting market-data references in indicator input');
+    const metadata = dataContext?.getStore().getDataRef(key)?.meta;
+    if (metadata?.symbol && input.symbol && !sameMarketSymbol(metadata.symbol, input.symbol, metadata.assetType)) {
+      throw new Error('Market-data reference symbol does not match the indicator input');
+    }
+    if (metadata?.timeframe && (input.timeframe || input.interval) && !sameMarketTimeframe(metadata.timeframe, input.timeframe || input.interval)) {
+      throw new Error('Market-data reference timeframe does not match the indicator input');
+    }
+    selectedKey = key;
+    return resolveMarketDataRef(key, dataContext, refs);
+  };
   if (typeof input.dataRef === 'string') {
-    refs?.assertMatches(input.dataRef, input);
-    const data = resolveMarketDataRef(input.dataRef, dataContext, refs);
-    return { ...input, candle_data: data, resolvedData: data };
+    const data = read(input.dataRef);
+    resolved = { ...resolved, candle_data: data, resolvedData: data };
   }
-
-  // Check common field names that may contain dataRef strings (e.g., candle_data from LLM)
-  const dataRefFields = ['candle_data', 'candleData', 'bars', 'data', 'prices'];
-  for (const field of dataRefFields) {
-    const value = input[field];
-    if (typeof value === 'string' && value.trim() && !/^[\s]*[\[{]/.test(value) &&
-        (field === 'candle_data' || field === 'candleData' || value.startsWith('bars:') || refs?.hasAlias(value))) {
-      refs?.assertMatches(value, input);
-      const data = resolveMarketDataRef(value, dataContext, refs);
-      return { ...input, [field]: data, resolvedData: data };
+  for (const field of ['candle_data', 'candleData', 'bars', 'data', 'prices']) {
+    let value = input[field];
+    if (typeof value === 'string' && value.trimStart().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed?.dataRef === 'string') value = parsed;
+      } catch { /* The input parser reports malformed JSON; this step only identifies references. */ }
     }
-    if (value && typeof value === 'object' && typeof value.dataRef === 'string') {
-      refs?.assertMatches(value.dataRef, input);
-      const data = resolveMarketDataRef(value.dataRef, dataContext, refs);
-      return { ...input, [field]: data, resolvedData: data };
+    const ref = typeof value === 'string' && value.trim() && !/^[\s]*[\[{]/.test(value) &&
+      (field === 'candle_data' || field === 'candleData' || value.startsWith('bars:') || refs?.hasAlias(value))
+      ? value : value && typeof value === 'object' && typeof value.dataRef === 'string' ? value.dataRef : undefined;
+    if (ref !== undefined) {
+      const data = read(ref);
+      resolved = { ...resolved, [field]: data, resolvedData: data };
     }
   }
-
-  // Check if input itself is a dataRef string
-  if (typeof input === 'string' && input.startsWith('bars:')) {
-    return resolveMarketDataRef(input, dataContext, refs);
-  }
-
-  return input;
+  return resolved;
 }
 
 /**
@@ -480,7 +495,8 @@ export function extractPrices(
     
     const props = fieldMap[priceField] || ['close', 'c'];
     for (const prop of props) {
-      if (typeof bar[prop] === 'number' && Number.isFinite(bar[prop])) return bar[prop];
+      const value = bar[prop];
+      if ((typeof value === 'number' || (typeof value === 'string' && value.trim())) && Number.isFinite(Number(value))) return Number(value);
     }
     throw new Error(`Missing or invalid candle ${priceField}`);
   });

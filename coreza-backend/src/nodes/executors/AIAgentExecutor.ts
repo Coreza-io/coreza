@@ -223,6 +223,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const tools = await this.createToolsFromEdges(node, edges, allNodes, {
         ...context,
         dataContext,
+        executionId,
         agentActivity: activity,
         agentToolLifetime: toolLifetime,
         invocationRefs,
@@ -477,6 +478,10 @@ export class AIAgentExecutor implements INodeExecutor {
           trace('resolve_input', { durationMs: performance.now() - referenceStart });
           const toolContext = {
             ...context,
+            // A fetched historical snapshot must not consume or advance workflow live state.
+            indicatorStateManager: executorCategory === 'Indicators' &&
+              !['initializeindicators', 'rollingwindow'].includes(String(node.name).toLowerCase())
+              ? undefined : context?.indicatorStateManager,
             agentDataTrace: trace,
             resolveNodeParameters: (current: WorkflowNode, currentInput: NodeInput) =>
               current.id === node.id ? { ...unwrappedInput }
@@ -510,6 +515,7 @@ export class AIAgentExecutor implements INodeExecutor {
             unwrappedInput,
             toolContext,
           );
+          ensureActive();
           trace('execute', { durationMs: performance.now() - executeStart, success: result.success });
 
           if (!result.success) {
@@ -519,16 +525,22 @@ export class AIAgentExecutor implements INodeExecutor {
           if (executorCategory === 'Indicators' && result.data?.IsReady === false) {
             if (span) activity?.end(span, 'completed');
             return JSON.stringify({ success: true, status: 'not_ready', type: 'indicator', toolInvocationId,
-              summary: { observedBars: result.data.SampleCount, requiredBars: result.meta?.requiredBars }, cached: false });
+              summary: { observedBars: result.data.SampleCount, requiredBars: result.meta?.requiredBars,
+                reason: result.meta?.readinessReason }, cached: false });
           }
 
           if (process.env.LOG_LEVEL === "debug") console.debug(`✅ [AIAgent] Tool ${toolName} execution completed`);
 
+          // Workflow outputs retain their legacy placeholders; the LLM must not
+          // interpret an unavailable previous sample as a real zero/crossover.
+          const outputData = executorCategory === 'Indicators' && result.data?.IsReady === true &&
+            (result.meta?.series?.length === 1 || result.data.SampleCount <= result.meta?.requiredBars)
+            ? { ...result.data, Previous: null, previousValue: null } : result.data;
           // Process output through dataRef pattern (use normalized name for matching)
           const processedOutput = processToolOutput(
             normalizedNode.name || node.category || "",
             node.category || "",
-            result.data,
+            outputData,
             dataContext,
             unwrappedInput, // Pass tool input so symbol can be extracted
             trace,

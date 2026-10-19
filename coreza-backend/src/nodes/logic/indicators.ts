@@ -1911,6 +1911,10 @@ export class IndicatorService {
         period,
         smoothing,
       }).warmUp(candles);
+      if ((warmed.acceptedCount ?? 0) >= period &&
+          (typeof warmed.value !== 'number' || !Number.isFinite(warmed.value))) {
+        throw createError('ATR calculation returned an invalid value', 400);
+      }
       return {
         ...createSuccessOutput(
           toIndicatorOutput("atr", {

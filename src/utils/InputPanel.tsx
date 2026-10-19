@@ -9,7 +9,10 @@ import { nodeDisplayName } from "@/domain/nodeNaming";
  * See the LICENSE file for details.
  */
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { useVariableSnapshot } from "@/hooks/useVariableSnapshot";
 import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
@@ -29,6 +32,7 @@ const owns = (value: unknown, key: PropertyKey): value is Record<PropertyKey, un
   typeof value === "object" && value !== null && Object.prototype.hasOwnProperty.call(value, key);
 
 type InputPanelProps = {
+  workflowId?: string;
   nodeId?: string;
   nodes: Node<any>[];
   edges: any[];
@@ -50,6 +54,7 @@ type InputPanelProps = {
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({
+  workflowId,
   nodeId,
   nodes: initialNodes,
   edges: initialEdges,
@@ -67,6 +72,9 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const canonicalGraph = useOptionalSemanticGraphSnapshot(!readOnly);
   const executionStoreVersion = useExecutionStoreVersion();
   const { timezone: userTimezone } = useUserPreferences();
+  const [activeTab, setActiveTab] = useState("previous");
+  const [search, setSearch] = useState("");
+  const variableQuery = useVariableSnapshot(isExpanded && activeTab === "variables" && !readOnly, workflowId);
 
   if (!readOnly && !canonicalGraph) {
     throw new Error("Live InputPanel must be used within StableNodeProvider");
@@ -77,10 +85,28 @@ const InputPanel: React.FC<InputPanelProps> = ({
   // Upstream nodes with fresh data
   const previousNodes = useMemo(() => {
     if (!nodeId) return [];
-    return readOnly
+    const upstream = readOnly
       ? getAllUpstreamNodes(nodeId, initialEdges, initialNodes)
       : canonicalGraph?.getUpstreamNodes(nodeId) ?? [];
-  }, [canonicalGraph, initialEdges, initialNodes, nodeId, readOnly]);
+    // Order by graph distance, independent of projected cluster/member array order.
+    const incoming = new Map<string, string[]>();
+    for (const edge of edges) {
+      const sources = incoming.get(edge.target) ?? [];
+      sources.push(edge.source);
+      incoming.set(edge.target, sources);
+    }
+    const order = new Map([[nodeId, 0]]);
+    const queue = [nodeId];
+    for (let i = 0; i < queue.length; i++) {
+      for (const source of incoming.get(queue[i]) ?? []) {
+        if (order.has(source)) continue;
+        order.set(source, order.size);
+        queue.push(source);
+      }
+    }
+    return [...upstream].filter(node => node.id !== nodeId).sort((a, b) =>
+      (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity));
+  }, [canonicalGraph, edges, initialEdges, initialNodes, nodeId, readOnly]);
 
   // Prefer a direct 'done' edge source when connected (Loop aggregated output)
   const preferredPrevId = useMemo(() => {
@@ -150,6 +176,15 @@ const InputPanel: React.FC<InputPanelProps> = ({
     selectedPrevNodeId,
   ]);
 
+  const nodeOptions = readOnly
+    ? (allNodeExecutions ?? []).map(exec => ({ id: exec.nodeId, label: exec.nodeName || exec.nodeId }))
+    : previousNodes.map(node => ({ id: node.id, label: nodeDisplayName(node) }));
+  const query = search.trim().toLowerCase();
+  const matchingNodes = nodeOptions.filter(node =>
+    node.label.toLowerCase().includes(query) || node.id.toLowerCase().includes(query));
+  const selectedId = readOnly ? selectedPrevNodeId : resolvedPrevNodeId;
+  const selectedOption = nodeOptions.find(node => node.id === selectedId);
+
   if (!isExpanded) return null;
 
   return (
@@ -171,79 +206,75 @@ const InputPanel: React.FC<InputPanelProps> = ({
           {userTimezone}
         </div>
       </div>
-      <div className="p-3 h-[calc(100%-42px)] overflow-auto">
-        {readOnly ? (
-          // In readOnly mode, show dropdown with all executed nodes
-          <>
-            {allNodeExecutions &&
-              allNodeExecutions.length > 0 &&
-              setSelectedPrevNodeId && (
-                <div className="mb-3">
-                  <label className="block text-xs font-semibold mb-2 text-muted-foreground">
-                    Previous Node:
-                  </label>
-                  <select
-                    aria-label="Select executed node"
-                    title="Select executed node"
-                    className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                    value={selectedPrevNodeId || ""}
-                    onChange={(e) => setSelectedPrevNodeId(e.target.value)}
-                  >
-                    <option value="">Select node...</option>
-                    {allNodeExecutions.map((exec) => (
-                      <option key={exec.nodeId} value={exec.nodeId}>
-                        {exec.nodeName || exec.nodeId}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="nodrag nopan p-3 h-[calc(100%-42px)] overflow-auto">
+        <TabsList aria-label="Input data source" className="grid w-full grid-cols-2 mb-3">
+          <TabsTrigger value="previous">Previous Node</TabsTrigger>
+          <TabsTrigger value="variables">Variables</TabsTrigger>
+        </TabsList>
+        <TabsContent value="previous">
+          {nodeOptions.length > 0 && setSelectedPrevNodeId && (
+            <div className="mb-3 space-y-2">
+              <Input
+                type="search"
+                aria-label="Search previous nodes"
+                placeholder="Search nodes..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-8 text-xs"
+              />
+              <select
+                aria-label={readOnly ? "Select executed node" : "Select previous node"}
+                className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                value={selectedId || ""}
+                onChange={e => setSelectedPrevNodeId(e.target.value)}
+              >
+                <option value="">Select node...</option>
+                {selectedOption && !matchingNodes.some(node => node.id === selectedId) && (
+                  <option value={selectedOption.id} hidden>{selectedOption.label}</option>
+                )}
+                {matchingNodes.map(node => (
+                  <option key={node.id} value={node.id}>{node.label}</option>
+                ))}
+              </select>
+              {matchingNodes.length === 0 && (
+                <p className="text-xs text-muted-foreground">No matching nodes.</p>
               )}
-            <div className="mb-2">
-              <DraggableFieldsPanel
-                data={outputData}
-                persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
-                onDragStart={handleDragStart ?? (() => {})}
-                sourceNodeId={selectedPrevNodeId}
-              />
             </div>
-          </>
-        ) : previousNodes.length > 0 ? (
-          <>
-            {setSelectedPrevNodeId &&
-            typeof setSelectedPrevNodeId === "function" ? (
-              <div className="mb-3">
-                <label className="block text-xs font-semibold mb-2 text-muted-foreground">
-                  Previous Node:
-                </label>
-                <select
-                  className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  value={resolvedPrevNodeId || ""}
-                  onChange={(e) => setSelectedPrevNodeId(e.target.value)}
-                >
-                  <option value="">Select node...</option>
-                  {previousNodes.map((node: Node<any>) => (
-                    <option key={node.id} value={node.id}>
-                      {nodeDisplayName(node)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-            <div className="mb-2">
-              <DraggableFieldsPanel
-                data={outputData}
-                persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
-                onDragStart={handleDragStart ?? (() => {})}
-                sourceNodeId={resolvedPrevNodeId}
-              />
+          )}
+          {readOnly || previousNodes.length > 0 ? (
+            <DraggableFieldsPanel
+              data={outputData}
+              persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
+              onDragStart={handleDragStart ?? (() => {})}
+              sourceNodeId={selectedId}
+            />
+          ) : (
+            <div className="text-sm text-muted-foreground italic text-center py-8">
+              No previous node connected.
             </div>
-          </>
-        ) : (
-          <div className="text-sm text-muted-foreground italic text-center py-8">
-            No previous node connected.
-          </div>
-        )}
-      </div>
+          )}
+        </TabsContent>
+        <TabsContent value="variables">
+          {readOnly ? (
+            <p className="text-xs text-muted-foreground">Workflow variables are not included in execution history.</p>
+          ) : !workflowId ? (
+            <p className="text-xs text-muted-foreground">Save the workflow to view its variables.</p>
+          ) : variableQuery.isLoading ? (
+            <p className="text-xs text-muted-foreground">Loading variables...</p>
+          ) : variableQuery.isError ? (
+            <p role="alert" className="text-xs text-destructive">Unable to load workflow variables.</p>
+          ) : variableQuery.data?.entries.length ? (
+            <DraggableFieldsPanel
+              data={variableQuery.data.values}
+              variableNamespace
+              sourceNodeId={nodeId}
+              onDragStart={handleDragStart ?? (() => {})}
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground">No workflow variables saved yet. Execute a Persistent Edit Fields node to create them.</p>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

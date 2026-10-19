@@ -24,6 +24,7 @@ type DraggableFieldsPanelProps = {
   maxItems?: number;
   draggable?: boolean;
   persistentVariableKeys?: readonly string[];
+  variableNamespace?: boolean;
 };
 
 type Entry = { key: PathSegment; value: unknown; variableKey?: string };
@@ -51,6 +52,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
   maxItems = 25,
   draggable = true,
   persistentVariableKeys,
+  variableNamespace = false,
 }) => {
   const entriesToShow: Entry[] = useMemo(() => {
     if (!isObjectLike(data)) return [];
@@ -61,6 +63,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
       }));
     }
     return Object.entries(data as Record<string, unknown>).flatMap(([key, value]): Entry[] => {
+      if (variableNamespace) return [{ key: `$vars.${key}`, value, variableKey: key }];
       if (key !== "data" || pathSegments?.length || !persistentVariableKeys?.length
         || !isObjectLike(value) || Array.isArray(value)) return [{ key, value }];
       // Display accepted Persistent fields directly in the workflow variable namespace.
@@ -76,7 +79,7 @@ const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
       }
       return [...(Object.keys(remaining).length ? [{ key, value: remaining }] : []), ...variables];
     });
-  }, [data, maxItems, pathSegments, persistentVariableKeys]);
+  }, [data, maxItems, pathSegments, persistentVariableKeys, variableNamespace]);
 
   if (!isObjectLike(data)) return null;
 

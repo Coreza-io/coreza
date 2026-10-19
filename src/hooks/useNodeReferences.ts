@@ -94,6 +94,10 @@ export function useNodeReferences({
         const insertion = planReferenceTextDrop(e, insert);
         if (!insertion) return;
         if ((setter as (value: string) => boolean | void)(insertion.value) === false) return;
+        if (data.variableKey) {
+          finishReferenceTextDrop(e, insertion);
+          return;
+        }
         const beforeSource = sourceMapRef.current[fieldKey];
         const restoreSource = (source: string | undefined) => () => setSourceMap(sm => {
           const next = { ...sm }; if (source === undefined) delete next[fieldKey]; else next[fieldKey] = source; return next;

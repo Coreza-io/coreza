@@ -77,4 +77,3 @@ export const dhanCapabilities: BrokerCapabilities = {
     trade: "Execute equity trades on Dhan with basic order operations.",
   },
 };
-

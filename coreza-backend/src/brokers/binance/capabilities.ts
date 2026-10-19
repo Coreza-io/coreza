@@ -154,4 +154,3 @@ export const binanceCapabilities: BrokerCapabilities = {
       "Filter Binance instruments by volume, price change, and symbol patterns.",
   },
 };
-

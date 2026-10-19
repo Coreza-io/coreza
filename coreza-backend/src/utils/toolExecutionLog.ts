@@ -253,4 +253,3 @@ export function traceToolHttp(client: AxiosStatic, trace: ToolExecutionTrace, in
   });
   return { client: wrap(client), requestCount: () => requestCount };
 }
-

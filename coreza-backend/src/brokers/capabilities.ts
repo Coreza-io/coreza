@@ -563,4 +563,3 @@ export function buildStreamNameBySource(
     ? `${sym}@${resolvedEventType}_${interval}`
     : `${sym}@${resolvedEventType}`;
 }
-

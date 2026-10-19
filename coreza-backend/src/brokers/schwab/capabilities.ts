@@ -63,4 +63,3 @@ export const schwabCapabilities: BrokerCapabilities = {
       "Run Charles Schwab screeners to discover equities meeting criteria.",
   },
 };
-

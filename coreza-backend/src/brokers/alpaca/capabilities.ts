@@ -109,4 +109,3 @@ export const alpacaCapabilities: BrokerCapabilities = {
       "Screen stocks using Alpaca screener APIs (market cap, volume, sector).",
   },
 };
-

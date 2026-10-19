@@ -40,6 +40,11 @@
       "default": "gpt-5.4-mini",
       "options": [
         {
+          "label": "GPT-6.1 Sol",
+          "value": "gpt-6.1-sol",
+          "supportsReasoning": true
+        },
+        {
           "label": "GPT-5.5",
           "value": "gpt-5.5",
           "supportsReasoning": true
@@ -105,10 +110,25 @@
         { "id": "high", "name": "High" },
         { "id": "xhigh", "name": "Extra High" }
       ],
-      "description": "Reasoning effort for GPT-5 family models. Use low for speed, medium as default, high/xhigh for complex analysis.",
+      "dynamicOptions": {
+        "dependsOn": "model",
+        "fallbackToStatic": true,
+        "preserveValidValue": true,
+        "optionsByValue": {
+          "gpt-6.1-sol": [
+            { "id": "low", "name": "Low" },
+            { "id": "medium", "name": "Medium" },
+            { "id": "high", "name": "High" },
+            { "id": "xhigh", "name": "Extra High" },
+            { "id": "max", "name": "Max" }
+          ]
+        }
+      },
+      "description": "Reasoning effort for supported models. Medium is the default. Higher effort can increase latency and token use; GPT-6.1 Sol also supports max.",
       "displayOptions": {
         "show": {
           "model": [
+            "gpt-6.1-sol",
             "gpt-5.5",
             "gpt-5.4",
             "gpt-5.4-mini",

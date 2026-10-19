@@ -550,7 +550,8 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         ) {
           const parentValue = fieldState[field.dynamicOptions.dependsOn];
           displayOptions =
-            field.dynamicOptions.optionsByValue[parentValue] || [];
+            field.dynamicOptions.optionsByValue[parentValue] ??
+            (field.dynamicOptions.fallbackToStatic ? field.options || [] : []);
         } else if (field.dependsOn && field.conditionalOptions) {
           const parentValue = fieldState[field.dependsOn];
           displayOptions = field.conditionalOptions[parentValue] || [];

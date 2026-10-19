@@ -11,6 +11,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { isSolModel, resolveSolEffort, SOL_MAX_OUTPUT_TOKENS } from './openAIModelCapabilities';
 
 export type ReasoningEffort =
   | "none"
@@ -18,7 +19,8 @@ export type ReasoningEffort =
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max";
 
 export interface LLMConfig {
   apiKey: string;
@@ -32,7 +34,7 @@ export interface LLMConfig {
   isSearchModel?: boolean;
   isReasoningModel?: boolean;
 
-  // Already normalized before reaching this factory
+  // The factory also validates model-specific capabilities for headless callers.
   reasoningEffort?: ReasoningEffort;
 
   // Extra provider-specific params
@@ -45,6 +47,9 @@ function buildOpenAIModelKwargs(config: LLMConfig): Record<string, unknown> {
   const kwargs: Record<string, unknown> = {
     ...(config.modelKwargs ?? {}),
   };
+  if (kwargs.reasoning_effort === 'max' || (kwargs.reasoning as { effort?: unknown } | undefined)?.effort === 'max') {
+    throw new Error('The max reasoning effort is only configured for gpt-6.1-sol');
+  }
 
   if (config.isSearchModel) {
     kwargs.web_search_options = {};
@@ -63,6 +68,33 @@ function buildOpenAIModelKwargs(config: LLMConfig): Record<string, unknown> {
  */
 export const LLM_FACTORIES: Record<string, LLMFactory> = {
   openai: (config) => {
+    if (isSolModel('openai', config.model)) {
+      const effort = resolveSolEffort(config.reasoningEffort);
+      if (config.maxTokens !== undefined && (!Number.isSafeInteger(config.maxTokens) || config.maxTokens <= 0 || config.maxTokens > SOL_MAX_OUTPUT_TOKENS)) {
+        throw new Error(`gpt-6.1-sol maxTokens must be a positive integer no greater than ${SOL_MAX_OUTPUT_TOKENS}`);
+      }
+      const reserved = ['model', 'modelName', 'useResponsesApi', 'reasoning', 'reasoning_effort',
+        'temperature', 'top_p', 'max_tokens', 'max_completion_tokens', 'max_output_tokens',
+        'store', 'include', 'previous_response_id', 'conversation', 'service_tier', 'background',
+        'input', 'messages', 'tools', 'tool_choice', 'functions', 'function_call', 'web_search_options', 'stream'];
+      if (reserved.some(key => Object.prototype.hasOwnProperty.call(config.modelKwargs ?? {}, key))) {
+        throw new Error('gpt-6.1-sol endpoint, reasoning, sampling, token, tool and conversation settings cannot be overridden through modelKwargs');
+      }
+      return new ChatOpenAI({
+        apiKey: config.apiKey,
+        modelName: config.model,
+        useResponsesApi: true,
+        // Preserve optional Zod tool arguments rather than Responses strict normalization.
+        supportsStrictToolCalling: false,
+        maxTokens: config.maxTokens,
+        // The locked adapter only recognizes o*/gpt-5 in its typed reasoning path.
+        // Responses spreads these kwargs unchanged, including the nested effort.
+        modelKwargs: { ...config.modelKwargs, reasoning: { effort }, store: false,
+          include: ['reasoning.encrypted_content'] },
+        // Keep native reasoning/tool items for local replay; zdrEnabled strips them.
+      });
+    }
+    if (config.reasoningEffort === 'max') throw new Error('The max reasoning effort is only configured for gpt-6.1-sol');
     const {
       apiKey,
       model,
@@ -110,6 +142,10 @@ export function getLLM(provider: string, config: LLMConfig): BaseChatModel {
 
   if (!factory) {
     throw new Error(`Unknown LLM provider: ${provider}`);
+  }
+
+  if (config.reasoningEffort === 'max' && !isSolModel(provider, config.model)) {
+    throw new Error('The max reasoning effort is only configured for gpt-6.1-sol');
   }
 
   return factory(config);

@@ -58,7 +58,9 @@ export async function startManualAgentActivity(payload: Record<string, any>, tok
       participants: new Set([payload.node_id, ...binding.support_nodes.map((node: any) => node.id)]) });
     signal?.addEventListener("abort", cancel, { once: true });
     const api = new URL(import.meta.env.VITE_BACKEND_URL || "http://localhost:8000");
-    const wsUrl = import.meta.env.VITE_WS_URL || `${api.protocol === "https:" ? "wss:" : "ws:"}//${api.hostname}:${import.meta.env.VITE_WS_PORT || (api.port === "8000" || !api.port ? "8080" : api.port)}`;
+    // Use the backend's dedicated WebSocket port, not the editor/HTTP port.
+    const wsUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_BACKEND_WS_URL
+      || `${api.protocol === "https:" ? "wss:" : "ws:"}//${api.hostname}:${import.meta.env.VITE_WS_PORT || "8081"}`;
     socket = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`);
     await new Promise<void>(resolve => {
       const timer = setTimeout(() => { unavailable(); resolve(); }, 1000);

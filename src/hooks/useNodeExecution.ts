@@ -49,6 +49,7 @@ import {
   setEditorConsolidatorSeries,
   type NodeExecutionOutcome,
 } from "@/services/editorNodeExecution";
+import { startManualAgentActivity } from "@/services/agentActivity";
 import { getEditorExecutionGeneration } from "@/utils/executionGeneration";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -107,10 +108,15 @@ export function useNodeExecution({
 
   // AbortController ref for polling cleanup on unmount
   const pollingAbortRef = useRef<AbortController | null>(null);
+  const activeAgentRef = useRef<Awaited<ReturnType<typeof startManualAgentActivity>>>();
+  const activeAgentAbortRef = useRef<AbortController>();
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
+      activeAgentAbortRef.current?.abort();
+      activeAgentRef.current?.cancel();
+      activeAgentRef.current?.finish(undefined, "incomplete");
       if (pollingAbortRef.current) {
         pollingAbortRef.current.abort();
         pollingAbortRef.current = null;
@@ -417,7 +423,9 @@ export function useNodeExecution({
       if (allowedNodeIds && !allowedNodeIds.has(outcomeNodeId)) {
         return { nodeId: outcomeNodeId, status: "failed", error: { message: `Node ${outcomeNodeId} is outside the allowed execution scope.` } };
       }
-      const executionIsCurrent = () => !signal?.aborted &&
+      let agentController: AbortController | undefined;
+      const abortAgent = () => agentController?.abort();
+      const executionIsCurrent = () => !signal?.aborted && !agentController?.signal.aborted &&
         (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration) &&
         (!lockToken || isEditorExecutionLocked(String(data?.workflowSessionId ?? ""), lockToken));
       if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
@@ -460,7 +468,6 @@ export function useNodeExecution({
           "🎯 [NODE EXECUTION] Starting execution for node:",
           definition?.name || "Unknown",
         );
-        console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
       }
 
       // Validate required fields using payload inclusion rules.
@@ -487,7 +494,7 @@ export function useNodeExecution({
 
       setError("");
       setIsSending(true);
-
+      let agentActivity: Awaited<ReturnType<typeof startManualAgentActivity>>;
       try {
         if (!userId) {
           throw new Error("No authenticated user found");
@@ -505,7 +512,7 @@ export function useNodeExecution({
           variables = await getEditorVariableSnapshot(lockToken, userId, () => loadVariableSnapshot(userId, session?.access_token, workflowId), workflowId);
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during variable initialization" };
         }
-        const payload = buildPayload(fieldState, effectiveInput, variables);
+        let payload = buildPayload(fieldState, effectiveInput, variables);
         let consolidatorSeriesSignature: string | undefined;
         payload.node_id = nodeId;
         payload.nodeName = definition.name;
@@ -729,6 +736,19 @@ export function useNodeExecution({
             fullUrl += `?${params.toString()}`;
           }
 
+          if (definition?.name === "AIAgent" && session?.access_token) {
+            // Freeze the same JSON payload that will be sent before awaiting telemetry.
+            payload = JSON.parse(JSON.stringify(payload));
+            agentController = new AbortController();
+            activeAgentAbortRef.current = agentController;
+            signal?.addEventListener("abort", abortAgent, { once: true });
+            if (signal?.aborted) agentController.abort();
+            try { agentActivity = await startManualAgentActivity(payload, session.access_token,
+              agentController.signal, executionIsCurrent, abortAgent); }
+            catch { /* optional observer setup cannot fail the action */ }
+            activeAgentRef.current = agentActivity;
+            if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during Agent activity setup" };
+          }
           const fetchOptions: RequestInit = {
             method,
             headers: {
@@ -756,11 +776,6 @@ export function useNodeExecution({
                 operationId: payload.operationId,
                 seriesAction: payload.seriesAction,
               });
-            } else if (!variables) {
-              console.log(
-                "🚀 [BACKEND REQUEST] Payload:",
-                payload,
-              );
             }
             if (method === "GET" && params && !variables) {
               console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
@@ -770,9 +785,17 @@ export function useNodeExecution({
           const res = await apiClient.request(fullUrl, {
             ...fetchOptions,
             token: session?.access_token,
-            signal,
+            signal: agentController?.signal ?? signal,
           });
           const { variableSnapshot: committedVariables, ...responseData } = await res.json();
+          const activitySummary = definition?.name === "AIAgent" ? responseData.agentActivity : undefined;
+          if (definition?.name === "AIAgent") delete responseData.agentActivity;
+          if (definition?.name === "AIAgent" && responseData.code === "CANCELLED") {
+            agentActivity?.finish(activitySummary, "cancelled");
+            return { nodeId: outcomeNodeId, status: "cancelled", reason: "Agent execution was cancelled." };
+          }
+          agentActivity?.finish(activitySummary, !executionIsCurrent() ? "cancelled"
+            : res.ok && responseData.success !== false && responseData.status !== "error" ? "completed" : "failed");
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
           if (res.ok && committedVariables) {
             const committed = freezeVariableSnapshot(committedVariables, userId, workflowId);
@@ -894,6 +917,7 @@ export function useNodeExecution({
         notifyExecutionStoreUpdate();
         return { nodeId: outcomeNodeId, status: "success", output: finalOutput };
       } catch (err: any) {
+        agentActivity?.finish(undefined, !executionIsCurrent() ? "cancelled" : "incomplete");
         if (err?.name === "AbortError" || !executionIsCurrent()) {
           return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution was cancelled." };
         }
@@ -918,6 +942,10 @@ export function useNodeExecution({
         }
         return publishFailure(message, executionIsCurrent, code);
       } finally {
+        agentActivity?.finish(undefined, !executionIsCurrent() ? "cancelled" : "incomplete");
+        if (activeAgentRef.current === agentActivity) activeAgentRef.current = undefined;
+        if (activeAgentAbortRef.current === agentController) activeAgentAbortRef.current = undefined;
+        signal?.removeEventListener("abort", abortAgent);
         setIsSending(false);
       }
     },

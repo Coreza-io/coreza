@@ -10,6 +10,8 @@
 
 import React, { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import BaseNode from "./BaseNode";
+import { useAgentParticipantActive } from "@/stores/agentActivityStore";
+import { AgentActivityPanel } from "./AgentActivityPanel";
 import NodeWrapper from "@/utils/NodeWrapper";
 import BasicNodeLayout from "./layout/BasicNodeLayout";
 import RepeaterNodeLayout from "./layout/RepeaterNodeLayout";
@@ -39,6 +41,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
   const executionStore = useExecutionStore();
 
   const definition = data.definition;
+  const agentActivityActive = useAgentParticipantActive(data.readOnly ? "" : String(data.workflowSessionId ?? ""), [nodeId ?? ""]);
 
   // Tool mode toggle: read from fieldState first, then persisted values
   const isTool = data.fieldState?.__isTool ?? data.values?.__isTool ?? false;
@@ -314,6 +317,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
         const nodes = getNodes();
         const edges = getEdges();
         return (
+        <>
+        {agentActivityActive && <span role="status" className="pointer-events-none absolute -top-7 left-0 rounded bg-cyan-600 px-2 py-1 text-xs text-white motion-safe:animate-pulse">Agent operation running</span>}
         <NodeWrapper
           nodeId={nodeId}
           nodes={nodes}
@@ -402,18 +407,20 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           startEditing={renderProps.startEditing}
           finishEditing={renderProps.finishEditing}
           setEditingName={renderProps.setEditingName}
-          isExecuting={data.isExecuting}
+          isExecuting={data.isExecuting || agentActivityActive}
           hasExecutionError={!!renderProps.error && !renderProps.isSending}
           isTool={isTool}
           onToggleTool={canToggleTool ? handleToggleTool : undefined}
           collapsedExecutionControl={renderProps.collapsedExecutionControl}
         >
+          {!data.readOnly && definition.name === "AIAgent" && <AgentActivityPanel sessionId={String(data.workflowSessionId ?? "")} nodeId={nodeId ?? ""} />}
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />
           ) : (
             <BasicNodeLayout {...renderProps} />
           )}
         </NodeWrapper>
+        </>
         );
       }}
     </BaseNode>

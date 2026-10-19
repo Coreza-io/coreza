@@ -9,6 +9,7 @@
  */
 
 import React, { useState } from "react";
+import { useAgentParticipantActive } from "@/stores/agentActivityStore";
 import {
   ConnectionLineComponentProps,
   EdgeProps,
@@ -592,6 +593,13 @@ const calculateSmartPath = (
   return { path, midX, midY };
 };
 
+const useAgentEdgeActive = (id: string, source: string, target: string, data: any): boolean => {
+  const canonicalSource = typeof data?.canonicalSource === "string" ? data.canonicalSource : source;
+  const canonicalTarget = typeof data?.canonicalTarget === "string" ? data.canonicalTarget : target;
+  const session = useStore((state: ReactFlowState) => String(state.nodeLookup.get(canonicalTarget)?.data?.workflowSessionId ?? ""));
+  return useAgentParticipantActive(session, [canonicalSource, canonicalTarget], id);
+};
+
 export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   id,
   source,
@@ -611,6 +619,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   className,
 }) => {
   const [hovered, setHovered] = useState(false);
+  const agentActive = useAgentEdgeActive(id, source, target, data);
   const computedControls = controls.length > 0 ? controls : buildControls(data);
   const isSelfLoop = source === target;
   const sourceTheme = useSourceNodeTheme(source);
@@ -744,12 +753,12 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           "react-flow__edge-path",
           "plug-edge__cord",
           className || "",
-          animated ? "plug-edge__cord--animated" : "",
+          animated || agentActive ? "plug-edge__cord--animated" : "",
         ]
           .filter(Boolean)
           .join(" ")}
-        stroke={cordColor}
-        strokeWidth={strokeWidth}
+        stroke={agentActive ? "#0891b2" : cordColor}
+        strokeWidth={agentActive ? 3 : strokeWidth}
         markerEnd={markerEnd}
         fill="none"
         style={{
@@ -975,6 +984,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   selfLoopConfig,
 }) => {
   const nodes = useEndpointBounds(source, target);
+  const agentActive = useAgentEdgeActive(id, source, target, data);
   // Detect self-loop (when source connects to target on same node)
   const isSelfLoop = source === target;
 
@@ -1081,6 +1091,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
         d={pathD}
         style={{
           ...style,
+          ...(agentActive ? { stroke: "#0891b2", strokeWidth: 3, strokeDasharray: "6 4" } : {}),
           strokeLinecap: "round",
           strokeLinejoin: "round",
           pointerEvents: "none",

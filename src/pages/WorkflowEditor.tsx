@@ -1,3 +1,4 @@
+import { clearAgentActivity } from "@/stores/agentActivityStore";
 import { resetReferenceTextHistory } from "@/hooks/useReferenceTextDrop";
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
 import { resolveClusterHierarchy } from '@/domain/clusters/hierarchy';
@@ -299,7 +300,10 @@ const WorkflowEditorContent = () => {
   const { toggleActivation, isActivationPending } = useWorkflowActivation(workflowSessionId);
   const insertionIntentRef = useRef<InsertionIntent | null>(null);
 
-  useEffect(() => () => clearEditorNodeActions(workflowSessionId), [workflowSessionId]);
+  useEffect(() => () => {
+    clearEditorNodeActions(workflowSessionId);
+    clearAgentActivity(workflowSessionId);
+  }, [workflowSessionId]);
 
   // CRITICAL FIX: Sync workflowId with URL parameter changes
   useEffect(() => {

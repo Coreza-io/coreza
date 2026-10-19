@@ -279,6 +279,8 @@ export class DataContext {
 export class DataContextManager {
   private static instance: DataContextManager;
   private contexts = new Map<string, DataContext>();
+  private leases = new Map<string, number>();
+  private retiring = new Set<string>();
 
   private constructor() {
     // Cleanup stale contexts every 5 minutes
@@ -298,6 +300,9 @@ export class DataContextManager {
   getContext(config: DataContextConfig): DataContext {
     const existing = this.contexts.get(config.executionId);
     if (existing) {
+      if (this.retiring.has(config.executionId)) throw new Error("DataContext is still draining");
+      if (existing.getUserId() !== config.userId || existing.getWorkflowId() !== config.workflowId)
+        throw new Error("DataContext ownership mismatch");
       return existing;
     }
 
@@ -310,7 +315,26 @@ export class DataContextManager {
    * Get an existing DataContext without creating one.
    */
   getExistingContext(executionId: string): DataContext | undefined {
-    return this.contexts.get(executionId);
+    return this.retiring.has(executionId) ? undefined : this.contexts.get(executionId);
+  }
+
+  /** A borrower keeps data alive if its owner finishes before an async tool does. */
+  retainContext(context: DataContext): () => void {
+    const id = context.getExecutionId();
+    if (this.contexts.get(id) !== context || this.retiring.has(id))
+      throw new Error("DataContext is no longer available");
+    this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this.leases.get(id) ?? 1) - 1;
+      if (remaining > 0) this.leases.set(id, remaining);
+      else {
+        this.leases.delete(id);
+        if (this.retiring.has(id)) this.destroyContext(id);
+      }
+    };
   }
 
   /**
@@ -318,10 +342,11 @@ export class DataContextManager {
    */
   destroyContext(executionId: string): void {
     const context = this.contexts.get(executionId);
-    if (context) {
-      context.destroy();
-      this.contexts.delete(executionId);
-    }
+    if (!context) return;
+    if (this.leases.has(executionId)) { this.retiring.add(executionId); return; }
+    context.destroy();
+    this.contexts.delete(executionId);
+    this.retiring.delete(executionId);
   }
 
   /**

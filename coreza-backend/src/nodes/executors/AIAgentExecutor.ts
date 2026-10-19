@@ -44,6 +44,10 @@ import {
 import { getLLM, LLMConfig } from "../../config/llmProviders";
 import { loadMemoryFromEdges, acquireMemoryConversation } from "../logic/memoryLoader";
 
+const isConfiguredToolValue = (value: unknown): boolean => value !== undefined && value !== null
+  && (typeof value !== "string" || value.trim() !== "")
+  && (!Array.isArray(value) || value.length > 0);
+
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
   private readonly brokerCategories = buildExecutorCategoryMap();
@@ -398,7 +402,12 @@ export class AIAgentExecutor implements INodeExecutor {
     toolName = this.getToolName(node),
   ): DynamicStructuredTool {
     const definition = this.getToolDefinition(node);
-    const toolDescription = this.getToolDescription(node, definition);
+    const configuredValues = Object.fromEntries(
+      Object.entries(node.values ?? {}).filter(([, value]) => isConfiguredToolValue(value)),
+    );
+    const toolDescription = `${this.getToolDescription(node, definition)}${
+      configuredValues.operation ? ` Configured operation: ${configuredValues.operation}.` : ""
+    } Only supply the exposed, unconfigured fields. Saved node settings are fixed.`;
     const toolSchema = this.getToolSchema(node, definition);
     const dataContext = context?.dataContext as DataContext | undefined;
     const executorCategory = this.getExecutorCategory(node, definition);
@@ -420,22 +429,19 @@ export class AIAgentExecutor implements INodeExecutor {
           ensureActive();
           if (process.env.LOG_LEVEL === "debug") console.debug(`🔧 [AIAgent] Executing tool: ${toolName}`);
 
-          // Resolve any dataRef inputs to actual data
-          const resolvedInput = resolveDataRef(input, dataContext);
-
           // Unwrap nested input if agent sends { input: { ... } } wrapper
-          const unwrappedInput =
-            resolvedInput.input &&
-            typeof resolvedInput.input === "object" &&
-            !Array.isArray(resolvedInput.input)
-              ? { ...resolvedInput, ...resolvedInput.input }
-              : resolvedInput;
+          const generatedInput = input.input && typeof input.input === "object" && !Array.isArray(input.input)
+            ? { ...input, ...input.input } : input;
+          if (generatedInput !== input) delete generatedInput.input;
+          // Apply the same authoritative values to both executor inputs. Blank saved
+          // fields must not erase generated arguments; configured fields always win.
+          const unwrappedInput = resolveDataRef({ ...generatedInput, ...configuredValues }, dataContext);
 
           // Normalize node name for underlying executor (strip "Tool" suffix)
           const normalizedNode = {
             ...node,
             name: node.name,
-            values: { ...node.values, ...unwrappedInput },
+            values: { ...unwrappedInput },
           };
 
           // Get the executor for this node category
@@ -556,12 +562,13 @@ export class AIAgentExecutor implements INodeExecutor {
     let zodType: ZodTypeAny;
 
     switch (field.type) {
-      case "number":
-        zodType = z.coerce.number();
-        if (field.default !== undefined) {
-          zodType = zodType.default(Number(field.default));
-        }
+      case "number": {
+        let numberType = z.coerce.number();
+        if (typeof field.min === "number") numberType = numberType.min(field.min);
+        if (typeof field.max === "number") numberType = numberType.max(field.max);
+        zodType = numberType;
         break;
+      }
       case "select": {
         const options = field.options?.map((o: any) => o.id || o.value) || [];
         if (options.length > 0) {
@@ -569,34 +576,33 @@ export class AIAgentExecutor implements INodeExecutor {
         } else {
           zodType = z.string();
         }
-        if (field.default !== undefined) {
-          zodType = zodType.default(field.default);
-        }
         break;
       }
       case "checkbox":
         zodType = z.boolean();
-        if (field.default !== undefined) {
-          zodType = zodType.default(Boolean(field.default));
-        }
         break;
       case "text":
       case "password":
       case "textarea":
       default:
         zodType = z.string();
-        if (field.default !== undefined) {
-          zodType = zodType.default(String(field.default));
-        }
+        if (field.required) zodType = z.string().trim().min(1);
     }
 
-    const desc = field.description || field.placeholder || field.label;
+    const desc = [field.label, field.description, field.placeholder].filter(Boolean).join(". ");
     if (desc) {
       zodType = zodType.describe(desc);
     }
 
     if (!field.required) {
       zodType = zodType.optional();
+    }
+    // Apply defaults after optional(), so omitted optional fields receive them.
+    if (field.default !== undefined) {
+      const defaultValue = field.type === "number" ? Number(field.default)
+        : field.type === "checkbox" ? field.default === true || field.default === "true"
+        : field.type === "select" ? field.default : String(field.default);
+      zodType = zodType.default(defaultValue);
     }
 
     return zodType;
@@ -609,6 +615,20 @@ export class AIAgentExecutor implements INodeExecutor {
     for (const field of fields) {
       if (field.type === "hidden") continue;
       if (field.key === "credential_id") continue;
+      if (isConfiguredToolValue(node.values?.[field.key])) continue;
+      // A configured operation/asset type also fixes which dependent fields apply.
+      const matches = (key: string, raw: any, hide = false): boolean => {
+        const allowed = Array.isArray(raw) ? raw : [raw];
+        const current = node.values?.[key];
+        if (hide) return allowed.some(value => String(current) === String(
+          value && typeof value === "object" ? value.id || value.value : value,
+        ));
+        return Array.isArray(current) ? current.some(value => allowed.includes(value)) : allowed.includes(current);
+      };
+      if (Object.entries(field.displayOptions?.show ?? {}).some(([key, allowed]) =>
+        isConfiguredToolValue(node.values?.[key]) && !matches(key, allowed))) continue;
+      if (Object.entries(field.displayOptions?.hide ?? {}).some(([key, allowed]) =>
+        isConfiguredToolValue(node.values?.[key]) && matches(key, allowed, true))) continue;
 
       schemaObject[field.key] = this.fieldToZodType(field);
     }
@@ -616,7 +636,7 @@ export class AIAgentExecutor implements INodeExecutor {
     const nodeCategory = (node as any).subCategory || node.category || "";
     const nodeName = node.name || "";
 
-    if (
+    if (!isConfiguredToolValue(node.values?.dataRef) && (
       nodeCategory.includes("Indicator") ||
       nodeCategory.includes("Market") ||
       nodeCategory.includes("Broker") ||
@@ -624,7 +644,7 @@ export class AIAgentExecutor implements INodeExecutor {
       nodeName.includes("Finance") ||
       nodeName.includes("Polygon") ||
       nodeName.includes("FinnHub")
-    ) {
+    )) {
       schemaObject["dataRef"] = z
         .string()
         .optional()
@@ -675,6 +695,11 @@ export class AIAgentExecutor implements INodeExecutor {
     }
 
     if (definition && definition.schema) {
+      if (definition.schema instanceof z.ZodObject) {
+        const fixed = Object.fromEntries(Object.entries(node.values ?? {})
+          .filter(([, value]) => isConfiguredToolValue(value)).map(([key]) => [key, true]));
+        return definition.schema.omit(fixed);
+      }
       return definition.schema;
     }
 

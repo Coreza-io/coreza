@@ -10,6 +10,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { randomUUID } from "crypto";
+import { AsyncLocalStorage } from 'async_hooks';
 import { AgentActivityRecorder, assertAgentActive } from "../../agents/activity";
 import {
   buildExecutorCategoryMap,
@@ -45,6 +46,8 @@ import {
 import { getLLM, LLMConfig } from "../../config/llmProviders";
 import { loadMemoryFromEdges, acquireMemoryConversation } from "../logic/memoryLoader";
 import { getFieldValueMode, parameterEntries } from "../../utils/fieldValueModes";
+import { createToolExecutionTrace, safeToolError, toolInputFields, toolResultSummary } from "../../utils/toolExecutionLog";
+import type { ToolExecutionTrace } from "../../utils/toolExecutionLog";
 
 const isConfiguredToolValue = (value: unknown): boolean => value !== undefined && value !== null
   && (typeof value !== "string" || value.trim() !== "")
@@ -335,7 +338,8 @@ export class AIAgentExecutor implements INodeExecutor {
         terminal = "cancelled";
         throw error;
       }
-      console.error("❌ [AIAgent] Agent execution error:", error);
+      createToolExecutionTrace({ runId: executionId, agentInvocationId: activity.invocationId, workflowNodeId: node.id })
+        ('agent_error', () => ({ status: 'failed', failure: safeToolError(error) }));
       const errOutput = createErrorOutput(
         error.message || "AI Agent execution failed",
       );
@@ -430,6 +434,15 @@ export class AIAgentExecutor implements INodeExecutor {
     const toolSchema = this.getToolSchema(node, definition);
     const dataContext = context?.dataContext as DataContext | undefined;
     const executorCategory = this.getExecutorCategory(node, definition);
+    const makeTrace = (toolInvocationId: string) => createToolExecutionTrace({
+      runId: context?.runId || context?.executionId, agentInvocationId: context?.agentActivity?.invocationId,
+      toolInvocationId, workflowNodeId: node.id, workflowNodeName: (node as any).displayName || node.id,
+      toolName, executorCategory,
+    });
+    // Observe pre-schema arguments without changing schemas, arguments or model-facing results.
+    const invocationLogInput = new AsyncLocalStorage<{ input: unknown }>();
+    const unwrapLogInput = (raw: any) => raw?.input && typeof raw.input === 'object' && !Array.isArray(raw.input)
+      ? Object.fromEntries(Object.entries({ ...raw, ...raw.input }).filter(([key]) => key !== 'input')) : raw;
 
     const tool = new DynamicStructuredTool<any, any, string>({
       name: toolName,
@@ -440,10 +453,16 @@ export class AIAgentExecutor implements INodeExecutor {
         const started = performance.now();
         const refs = context?.invocationRefs as ToolInvocationRefs | undefined;
         refs?.begin(toolInvocationId, toolName, node.id);
-        const trace = (phase: string, metrics: Record<string, unknown>) => console.info('[AIAgent] tool phase', {
-          runId: context?.runId || context?.executionId, agentInvocationId: context?.agentActivity?.invocationId,
-          toolInvocationId, nodeId: node.id, phase, ...metrics,
-        });
+        const emitTrace = makeTrace(toolInvocationId);
+        let requestCount = 0;
+        const trace: ToolExecutionTrace = (phase, fields, level) => {
+          if (phase === 'http_request') requestCount++;
+          emitTrace(phase, fields, level);
+        };
+        let status = 'failed';
+        let operation = configuredValues.operation;
+        let completion: Record<string, unknown> = {};
+        trace('tool_started', { operation, status: 'started' });
         const activity = context?.agentActivity as AgentActivityRecorder | undefined;
         const span = activity?.start("tool", node.id);
         const lifetime = context?.agentToolLifetime as { active: number; closed: boolean; onDrained?: () => void } | undefined;
@@ -460,6 +479,13 @@ export class AIAgentExecutor implements INodeExecutor {
           const generatedInput = input.input && typeof input.input === "object" && !Array.isArray(input.input)
             ? { ...input, ...input.input } : input;
           if (generatedInput !== input) delete generatedInput.input;
+          trace('generated_input', () => ({ source: invocationLogInput.getStore() ? 'generated' : 'validated',
+            fields: toolInputFields(unwrapLogInput(invocationLogInput.getStore()?.input ?? generatedInput),
+            executorCategory === 'Broker' ? operation || generatedInput.operation || '__broker_unknown__' : undefined) }), 'debug');
+          trace('validated_input', () => ({ source: 'schema', fields: toolInputFields(generatedInput,
+            executorCategory === 'Broker' ? operation || generatedInput.operation || '__broker_unknown__' : undefined) }), 'debug');
+          trace('configured_input', () => ({ source: 'configured', fields: toolInputFields(configuredValues,
+            executorCategory === 'Broker' ? operation || generatedInput.operation || '__broker_unknown__' : undefined) }), 'debug');
           // Apply the same authoritative values to both executor inputs. Blank saved
           // fields must not erase generated arguments; configured fields always win.
           const suppliedInput = { ...generatedInput, ...configuredValues };
@@ -475,6 +501,14 @@ export class AIAgentExecutor implements INodeExecutor {
           const effectiveInput = { ...generatedInput, ...resolvedConfigured };
           const unwrappedInput = executorCategory === 'Indicators' ? effectiveInput
             : resolveDataRef(effectiveInput, dataContext, refs);
+          operation = unwrappedInput.operation;
+          trace('effective_input', () => ({ operation, source: 'effective',
+            fields: toolInputFields(unwrappedInput, executorCategory === 'Broker' ? operation || '__broker_unknown__' : undefined),
+            resolution: {
+              overriddenValidatedKeys: Object.keys(configuredValues).filter(key => Object.prototype.hasOwnProperty.call(generatedInput, key)),
+              expressionChangedKeys: Object.keys(resolvedConfigured).filter(key => resolvedConfigured[key] !== configuredValues[key]),
+              referenceChangedKeys: Object.keys(unwrappedInput).filter(key => unwrappedInput[key] !== effectiveInput[key]),
+            } }), 'debug');
           trace('resolve_input', { durationMs: performance.now() - referenceStart });
           const toolContext = {
             ...context,
@@ -517,12 +551,15 @@ export class AIAgentExecutor implements INodeExecutor {
           );
           ensureActive();
           trace('execute', { durationMs: performance.now() - executeStart, success: result.success });
+          trace('executor_result', () => ({ operation, success: result.success,
+            result: toolResultSummary(result.data, executorCategory === 'Indicators') }));
 
           if (!result.success) {
             throw new Error(result.error || "Tool execution failed");
           }
 
           if (executorCategory === 'Indicators' && result.data?.IsReady === false) {
+            status = 'not_ready';
             if (span) activity?.end(span, 'completed');
             return JSON.stringify({ success: true, status: 'not_ready', type: 'indicator', toolInvocationId,
               summary: { observedBars: result.data.SampleCount, requiredBars: result.meta?.requiredBars,
@@ -553,20 +590,21 @@ export class AIAgentExecutor implements INodeExecutor {
           // Include output processing/serialization in the actual tool boundary.
           const serialized = JSON.stringify({ ...processedOutput, toolInvocationId });
           assertAgentActive(context?.abortSignal);
+          status = processedOutput.success === false ? processedOutput.status || 'failed' : 'success';
+          completion = { dataRef: processedOutput.dataRef, rowCount: processedOutput.rowCount, resultType: processedOutput.type };
           if (span) activity?.end(span, processedOutput.success === false ? "failed" : "completed");
           return serialized;
         } catch (error: any) {
           const cancelled = context?.abortSignal?.aborted || error?.name === "AbortError";
+          status = cancelled ? 'cancelled' : 'failed';
+          trace('tool_error', () => ({ operation, status, failure: safeToolError(error) }));
           if (span) activity?.end(span, cancelled ? "cancelled" : "failed");
           if (cancelled) throw error;
-          console.error(
-            `❌ [AIAgent] Tool ${toolName} execution error:`,
-            error,
-          );
           return JSON.stringify({ success: false, type: 'tool_error', toolInvocationId,
             error: { message: error.message || 'Tool execution failed' } });
         } finally {
-          trace('complete', { durationMs: performance.now() - started });
+          trace('tool_completed', () => ({ ...completion, operation, status,
+            success: status === 'success' || status === 'not_ready', requestCount, durationMs: performance.now() - started }));
           if (lifetime && --lifetime.active === 0) {
             const cleanup = lifetime.onDrained;
             lifetime.onDrained = undefined;
@@ -578,9 +616,16 @@ export class AIAgentExecutor implements INodeExecutor {
     // LangChain validates schemas before starting tool callbacks or entering func.
     const invoke = tool.invoke.bind(tool);
     tool.invoke = async (input, config) => {
-      try { return await invoke(input, config); }
+      try { return await invocationLogInput.run({ input: typeof input === 'object' && input && 'args' in input ? input.args : input }, () => invoke(input, config)); }
       catch (error) {
         if (error instanceof ToolInputParsingException) {
+          const trace = makeTrace(randomUUID());
+          trace('tool_validation_failed', () => ({ status: 'failed', success: false, failure: safeToolError(error) }));
+          trace('generated_input', () => ({ source: 'generated', fields: toolInputFields(
+            typeof input === 'object' && input && 'args' in input ? input.args : input,
+            executorCategory === 'Broker' ? configuredValues.operation || '__broker_unknown__' : undefined) }), 'debug');
+          trace('configured_input', () => ({ source: 'configured', fields: toolInputFields(configuredValues,
+            executorCategory === 'Broker' ? configuredValues.operation || '__broker_unknown__' : undefined) }), 'debug');
           const activity = context?.agentActivity as AgentActivityRecorder | undefined;
           const span = activity?.start("tool", node.id);
           if (span) activity?.end(span, context?.abortSignal?.aborted ? "cancelled" : "failed");

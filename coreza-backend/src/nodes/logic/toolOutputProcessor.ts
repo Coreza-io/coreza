@@ -12,6 +12,7 @@ import { DataContext } from '../../engine';
 import { randomUUID } from 'crypto';
 import { extractHistoricalCandles, normalizeCandles, sameMarketSymbol, sameMarketTimeframe } from '../../marketData/normalizeCandles';
 import { getMarketDataNodeNames, getScreenerNodeNames, getTradeNodeNames } from '../../brokers/capabilities';
+import type { ToolExecutionTrace } from '../../utils/toolExecutionLog';
 
 /**
  * Processed output that's safe for AI agents
@@ -111,7 +112,7 @@ const TRADE_NODES = [
 /**
  * Extract bars array from various output formats
  */
-export type MarketDataTrace = (phase: string, metrics: Record<string, unknown>) => void;
+export type MarketDataTrace = ToolExecutionTrace;
 
 /** Owned by one agent invocation, including failed and in-flight tool calls. */
 export class ToolInvocationRefs {
@@ -328,7 +329,9 @@ export function processToolOutput(
     // Validated reference caches are safe only while their canonical series is immutable.
     bars.forEach(bar => Object.freeze(bar));
     Object.freeze(bars);
-    trace?.('normalize', { durationMs: performance.now() - normalizeStart, rowCount: bars.length });
+    trace?.('normalize', { durationMs: performance.now() - normalizeStart, normalizedRowCount: bars.length,
+      symbol: series.symbol || toolInput?.symbol, timeframe: series.timeframe || toolInput?.timeframe || toolInput?.interval,
+      firstTimestamp: bars[0]?.time, lastTimestamp: bars[bars.length - 1]?.time });
     if (!bars.length) return { success: false, status: 'no_data', type: 'market_data', rowCount: 0,
       cached: false, summary: { message: 'No historical candles returned' } };
     if (!dataContext) throw new Error('Historical candles require a run-scoped DataContext');
@@ -349,7 +352,8 @@ export function processToolOutput(
         operation: toolInput?.operation,
         assetType: toolInput?.asset_type || toolInput?.assetType,
       });
-      trace?.('store', { durationMs: performance.now() - storeStart, rowCount: bars.length, dataRef: dataRef.ref });
+      trace?.('store', { durationMs: performance.now() - storeStart, storedRowCount: bars.length,
+        symbol, timeframe, dataRef: dataRef.ref });
 
       // Create summary for AI
       const summary = { ...createMarketDataSummary(bars, { symbol, timeframe, source: nodeName }, toolInput),

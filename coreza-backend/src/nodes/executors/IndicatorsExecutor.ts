@@ -12,6 +12,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { IndicatorService, toIndicatorOutput } from "../../nodes/logic/indicators";
 import { extractPrices, resolveDataRef } from "../../nodes/logic/toolOutputProcessor";
 import { normalizeCandles, candleTimestamp, sameMarketSymbol } from "../../marketData/normalizeCandles";
+import { safeToolError, toolInputFields, toolResultSummary } from "../../utils/toolExecutionLog";
 import { DataContext, DataContextManager } from "../../engine/DataContext";
 import {
   normalizeOutput,
@@ -351,8 +352,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         indicatorType,
         processedParams,
       );
-      context?.agentDataTrace?.('indicator_compute', { durationMs: performance.now() - computeStart,
-        observedBars, requiredBars, isReady: observedBars >= requiredBars, success: calculated.success });
+      const computeDuration = performance.now() - computeStart;
       if (calculated.success && Array.isArray(calculated.data) && !calculated.data.length && observedBars >= requiredBars) {
         throw new Error('Indicator calculation returned no values');
       }
@@ -372,6 +372,8 @@ export class IndicatorsExecutor implements INodeExecutor {
           }
         : calculated;
 
+      context?.agentDataTrace?.('indicator_compute', () => ({ durationMs: computeDuration, inputRowCount: observedBars,
+        observedBars, requiredBars, success: calculated.success, result: toolResultSummary(result.data, true) }));
       const normalized = normalizeOutput(result, {
         nodeId: node.id,
         nodeName: node.name,
@@ -381,6 +383,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       return { ...toNodeResult(normalized), meta: { ...normalized.meta, requiredBars,
         ...(!hasVolume ? { readinessReason: 'VWAP requires positive volume in the current session' } : {}) } };
     } catch (error) {
+      context?.agentDataTrace?.('indicator_error', () => ({ failure: safeToolError(error), success: false }));
       const errOutput = createErrorOutput(
         error instanceof Error
           ? error
@@ -405,6 +408,16 @@ export class IndicatorsExecutor implements INodeExecutor {
 
   private resolveIndicatorInput(params: Record<string, any>, indicatorType: string, context?: any): Record<string, any> {
     const started = performance.now();
+    const logInput = (values: Record<string, any>) => {
+      context?.agentDataTrace?.('resolve_candles', () => ({ durationMs: performance.now() - started,
+        inputRowCount: values.candle_data?.length || values.prices?.length || 0,
+        symbol: values.symbol, timeframe: values.timeframe, dataRef: params.dataRef ||
+          (typeof params.candle_data === 'string' && params.candle_data.startsWith('bars:') ? params.candle_data : undefined),
+        firstTimestamp: values.candle_data?.[0]?.time,
+        lastTimestamp: values.candle_data?.[values.candle_data.length - 1]?.time }));
+      context?.agentDataTrace?.('indicator_input', () => ({ indicatorType, fields: toolInputFields(values) }), 'debug');
+      return values;
+    };
     const resolved = resolveDataRef(params, context?.dataContext, context?.invocationRefs);
     let raw = resolved.candle_data ?? resolved.resolvedData;
     if (typeof raw === 'string') {
@@ -423,7 +436,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       })) {
         throw new Error('Indicator prices must be a non-empty numeric array');
       }
-      return { ...resolved, prices, candle_data: [] };
+      return logInput({ ...resolved, prices, candle_data: [] });
     }
     const bars = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : null;
     if (!bars || !bars.length) throw new Error('Indicator requires non-empty candle data or prices');
@@ -432,7 +445,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       if (bars.some(bar => !['number', 'string'].includes(typeof bar) || String(bar).trim() === '' || !Number.isFinite(Number(bar)))) {
         throw new Error('Indicator prices must be numeric');
       }
-      return { ...resolved, prices: bars, candle_data: [] };
+      return logInput({ ...resolved, prices: bars, candle_data: [] });
     }
     let candles;
     if (resolved.resolvedData === bars) {
@@ -451,8 +464,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         (first.time ?? first.timestamp ?? first.t ?? first.date) != null;
       candles = complete ? normalizeCandles(bars) : bars;
     }
-    context?.agentDataTrace?.('resolve_candles', { durationMs: performance.now() - started, rowCount: candles.length });
-    return { ...resolved, candle_data: candles };
+    return logInput({ ...resolved, candle_data: candles });
   }
 
   private validateDirectCandles(bars: any[], indicatorType: string, params: Record<string, any>): void {
@@ -705,7 +717,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     }
     const hasVolume = indicatorType !== 'vwap' || Number(state.internalState?.cumVol) > 0;
     context?.agentDataTrace?.('indicator_readiness', { observedBars: state.observedBars,
-      requiredBars: state.requiredWarmupBars, isReady: state.isReady,
+      requiredBars: state.requiredWarmupBars, isReady: state.isReady && hasVolume,
       durationMs: stateStart === undefined ? undefined : performance.now() - stateStart });
     return { success: true, data: toIndicatorOutput(indicatorType, { ...state, isReady: state.isReady && hasVolume }),
       meta: { requiredBars: state.requiredWarmupBars,

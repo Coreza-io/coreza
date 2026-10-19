@@ -5,6 +5,8 @@ import { Switch } from "@/components/ui/switch";
 
 interface Props {
   children: ReactNode;
+  persistent?: boolean;
+  onPersistentChange?: (checked: boolean) => void;
   incomingEdgeCount: number;
   checkDependency: boolean;
   onDependencyCheckChange: (checked: boolean) => void;
@@ -14,7 +16,8 @@ interface Props {
   readOnly?: boolean;
 }
 
-export function NodeConfigurationTabs({ children, incomingEdgeCount, checkDependency, onDependencyCheckChange, continueOnError, onContinueOnErrorChange, continueOnErrorDisabled, readOnly }: Props) {
+export function NodeConfigurationTabs({ children, persistent, onPersistentChange, incomingEdgeCount, checkDependency, onDependencyCheckChange, continueOnError, onContinueOnErrorChange, continueOnErrorDisabled, readOnly }: Props) {
+  const persistentId = useId();
   const dependencyId = useId();
   const continueId = useId();
 
@@ -29,6 +32,19 @@ export function NodeConfigurationTabs({ children, incomingEdgeCount, checkDepend
         {children}
       </TabsContent>
       <TabsContent value="settings" forceMount className="space-y-3 data-[state=inactive]:hidden">
+        {onPersistentChange ? (
+          <>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <Label htmlFor={persistentId} className="text-xs text-muted-foreground cursor-pointer">
+                Persistent
+              </Label>
+              <Switch id={persistentId} checked={Boolean(persistent)} onCheckedChange={onPersistentChange} disabled={readOnly} />
+            </div>
+            {persistent && (
+              <p className="text-xs text-muted-foreground">Execute saves String, Number and Boolean fields as workflow variables. Use {"{{ $vars.name }}"} in following nodes.</p>
+            )}
+          </>
+        ) : null}
         {incomingEdgeCount >= 2 ? (
           <div className="flex items-center justify-between gap-3 pt-1">
             <Label htmlFor={dependencyId} className="text-xs text-muted-foreground cursor-pointer">

@@ -436,7 +436,7 @@ export function useNodeExecution({
       // Pinned / manually edited output wins: skip the request entirely and
       // report the pinned value as this node's output.
       if (overrideOutput !== null && overrideOutput !== undefined) {
-        console.log(
+        if (import.meta.env.DEV) console.log(
           "📌 [NODE EXECUTION] Pinned output active — skipping execution for node:",
           definition?.name || "Unknown",
         );
@@ -455,12 +455,13 @@ export function useNodeExecution({
         return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
       }
 
-      // Log the start of execution
-      console.log(
-        "🎯 [NODE EXECUTION] Starting execution for node:",
-        definition?.name || "Unknown",
-      );
-      console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
+      if (import.meta.env.DEV) {
+        console.log(
+          "🎯 [NODE EXECUTION] Starting execution for node:",
+          definition?.name || "Unknown",
+        );
+        console.log("🎯 [NODE EXECUTION] Current field state:", fieldState);
+      }
 
       // Validate required fields using payload inclusion rules.
       // Tabs are UI-only groupings, so hidden tab fields still validate when relevant.
@@ -743,26 +744,27 @@ export function useNodeExecution({
             ];
           }
 
-          // Log the payload and request details
-          console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
-          console.log("🚀 [BACKEND REQUEST] Method:", method);
-          if (definition?.name === "Consolidator") {
-            console.log("🚀 [CONSOLIDATOR REQUEST]", {
-              contextMode: payload.contextMode,
-              workflowId: payload.workflowId,
-              workflowSessionId: payload.workflowSessionId,
-              nodeId: payload.nodeId,
-              operationId: payload.operationId,
-              seriesAction: payload.seriesAction,
-            });
-          } else if (!variables) {
-            console.log(
-              "🚀 [BACKEND REQUEST] Payload:",
-              payload,
-            );
-          }
-          if (method === "GET" && params && !variables) {
-            console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
+          if (import.meta.env.DEV) {
+            console.log("🚀 [BACKEND REQUEST] Sending to:", fullUrl);
+            console.log("🚀 [BACKEND REQUEST] Method:", method);
+            if (definition?.name === "Consolidator") {
+              console.log("🚀 [CONSOLIDATOR REQUEST]", {
+                contextMode: payload.contextMode,
+                workflowId: payload.workflowId,
+                workflowSessionId: payload.workflowSessionId,
+                nodeId: payload.nodeId,
+                operationId: payload.operationId,
+                seriesAction: payload.seriesAction,
+              });
+            } else if (!variables) {
+              console.log(
+                "🚀 [BACKEND REQUEST] Payload:",
+                payload,
+              );
+            }
+            if (method === "GET" && params && !variables) {
+              console.log("🚀 [BACKEND REQUEST] GET params:", params.toString());
+            }
           }
 
           const res = await apiClient.request(fullUrl, {
@@ -820,7 +822,7 @@ export function useNodeExecution({
 
           // Handle webhook listening mode - unified with streaming pattern
           if (isWebhookListening) {
-            console.log(`✅ [Webhook Listening] Response:`, responseData);
+            if (import.meta.env.DEV) console.log(`✅ [Webhook Listening] Response:`, responseData);
 
             const handler = createListeningHandler(
               buildWebhookListeningConfig({
@@ -839,7 +841,7 @@ export function useNodeExecution({
             };
           } else if (isStreamingTrigger) {
             // Streaming trigger - handle listening state and recovery polling
-            console.log(`✅ [Streaming Trigger] Response:`, responseData);
+            if (import.meta.env.DEV) console.log(`✅ [Streaming Trigger] Response:`, responseData);
             const handler = createListeningHandler(
               buildStreamingTriggerListeningConfig({
                 definition,

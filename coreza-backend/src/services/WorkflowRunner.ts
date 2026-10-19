@@ -27,6 +27,9 @@ interface StreamEventEnvelope {
 interface StreamMessageWithSequence {
   messageId: string;
   fields: string[];
+  payload:
+    | { status: "valid"; envelope: StreamEventEnvelope }
+    | { status: "missing" | "invalid" };
   seq: number;
   orderingDomain: string;
   index: number;
@@ -151,7 +154,7 @@ export class WorkflowRunner {
 
       for (const item of parsed) {
         if (!this.running) break;
-        await this.processMessage(item.messageId, item.fields);
+        await this.processMessage(item);
       }
     } catch (err) {
       // XAUTOCLAIM may not be supported on older Redis; log and continue
@@ -196,36 +199,31 @@ export class WorkflowRunner {
 
         for (const item of parsed) {
           if (!this.running) break;
-          await this.processMessage(item.messageId, item.fields);
+          await this.processMessage(item);
         }
       }
     }
   }
 
   private async processMessage(
-    messageId: string,
-    fields: string[],
+    message: StreamMessageWithSequence,
   ): Promise<void> {
     try { this.engine.assertVariableAdmission(); }
     catch { this.running = false; return; } // Safety stops retain the pending source event.
-    const task = this.executeMessage(messageId, fields);
+    const task = this.executeMessage(message);
     this.activeMessage = task;
     try { await task; } finally { if (this.activeMessage === task) this.activeMessage = undefined; }
   }
 
-  private async executeMessage(messageId: string, fields: string[]): Promise<void> {
-    // Phase 1: Extract payload — permanent failure if missing
-    const rawPayload = this.extractPayload(fields);
-    if (!rawPayload) {
+  private async executeMessage({ messageId, payload }: StreamMessageWithSequence): Promise<void> {
+    // Phase 1: Missing payload — permanent failure
+    if (payload.status === "missing") {
       await this.ack(messageId);
       return;
     }
 
-    // Phase 2: Parse envelope — permanent failure if invalid JSON
-    let envelope: StreamEventEnvelope;
-    try {
-      envelope = this.parseEnvelope(rawPayload);
-    } catch {
+    // Phase 2: Invalid JSON — discard only after the admission check
+    if (payload.status !== "valid") {
       console.warn(
         "[WorkflowRunner] Invalid JSON, discarding message:",
         messageId,
@@ -233,6 +231,7 @@ export class WorkflowRunner {
       await this.ack(messageId);
       return;
     }
+    const envelope = payload.envelope;
 
     // Phase 3: Create run record — transient failure, do NOT ack
     const runId = randomUUID();
@@ -306,10 +305,12 @@ export class WorkflowRunner {
       const rawPayload = this.extractPayload(fields);
       let seq = 0;
       let orderingDomain = "unknown";
+      let payload: StreamMessageWithSequence["payload"] = { status: "missing" };
 
       if (rawPayload) {
         try {
           const parsedEnvelope = this.parseEnvelope(rawPayload);
+          payload = { status: "valid", envelope: parsedEnvelope };
           if (
             parsedEnvelope.data &&
             typeof parsedEnvelope.data === "object" &&
@@ -328,12 +329,13 @@ export class WorkflowRunner {
             orderingDomain = typeof value === "string" ? value : "unknown";
           }
         } catch {
+          payload = { status: "invalid" };
           seq = 0;
           orderingDomain = "unknown";
         }
       }
 
-      return { messageId, fields, seq, orderingDomain, index };
+      return { messageId, fields, payload, seq, orderingDomain, index };
     });
 
     parsed.sort((a, b) => {

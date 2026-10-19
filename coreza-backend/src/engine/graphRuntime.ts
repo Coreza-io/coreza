@@ -2,6 +2,12 @@ import { NodeResult, WorkflowEdge, WorkflowNode } from "../nodes/types";
 
 type BranchOriginInfo = { ifNodeId: string; handle: string; edgeId: string };
 
+interface DependencyDescriptor {
+  readonly requiredCount: number;
+  readonly independentEdgeIds: readonly string[];
+  readonly branchGroups: readonly (readonly string[])[];
+}
+
 export class GraphRuntime {
   readonly nodeById = new Map<string, WorkflowNode>();
   readonly subNodeIds = new Set<string>();
@@ -9,6 +15,7 @@ export class GraphRuntime {
   readonly outgoingEdgesBySource = new Map<string, WorkflowEdge[]>();
   readonly branchOrigins = new Map<string, Map<string, BranchOriginInfo>>();
   readonly requiredEdgeCounts = new Map<string, number>();
+  readonly dependenciesByTarget: ReadonlyMap<string, DependencyDescriptor>;
   readonly entryNodeIds: readonly string[];
 
   constructor(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
@@ -40,6 +47,35 @@ export class GraphRuntime {
       .map((n) => n.id);
 
     this.buildBranchOrigins(edges);
+    this.dependenciesByTarget = this.buildDependencies();
+  }
+
+  private buildDependencies(): ReadonlyMap<string, DependencyDescriptor> {
+    const descriptors = new Map<string, DependencyDescriptor>();
+    for (const nodeId of this.nodeById.keys()) {
+      const origins = this.branchOrigins.get(nodeId);
+      const independent: string[] = [];
+      const branchGroups = new Map<string, string[]>();
+      let requiredCount = 0;
+      for (const edge of this.getIncomingEdges(nodeId)) {
+        if (this.isSubNode(edge.source)) continue;
+        requiredCount++;
+        const origin = origins?.get(edge.id);
+        if (!origin) {
+          independent.push(edge.id);
+          continue;
+        }
+        const group = branchGroups.get(origin.ifNodeId) ?? [];
+        group.push(edge.id);
+        branchGroups.set(origin.ifNodeId, group);
+      }
+      descriptors.set(nodeId, Object.freeze({
+        requiredCount,
+        independentEdgeIds: Object.freeze(independent),
+        branchGroups: Object.freeze([...branchGroups.values()].map(group => Object.freeze(group))),
+      }));
+    }
+    return descriptors;
   }
 
   private validate(nodes: WorkflowNode[], edges: WorkflowEdge[]): void {

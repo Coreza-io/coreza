@@ -449,30 +449,12 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 
   areDependenciesSatisfied(nodeId: string): boolean {
-    const required = this.graph
-      .getIncomingEdges(nodeId)
-      .filter((e) => !this.graph.isSubNode(e.source));
-    if (required.length === 0) return false;
+    const dependencies = this.graph.dependenciesByTarget.get(nodeId);
+    if (!dependencies?.requiredCount) return false;
 
-    const branchOrigins = this.graph.branchOrigins.get(nodeId);
-    if (!branchOrigins?.size) return required.every((edge) => this.edgePayload.has(edge.id));
-
-    const branchGroups = new Map<string, WorkflowEdge[]>();
-    const independent: WorkflowEdge[] = [];
-    for (const edge of required) {
-      const origin = branchOrigins.get(edge.id);
-      if (!origin) {
-        independent.push(edge);
-        continue;
-      }
-      const group = branchGroups.get(origin.ifNodeId) ?? [];
-      group.push(edge);
-      branchGroups.set(origin.ifNodeId, group);
-    }
-
-    return independent.every((edge) => this.edgePayload.has(edge.id)) &&
-      [...branchGroups.values()].every((group) =>
-        group.some((edge) => this.edgePayload.has(edge.id)));
+    return dependencies.independentEdgeIds.every(id => this.edgePayload.has(id)) &&
+      dependencies.branchGroups.every(group =>
+        group.some(id => this.edgePayload.has(id)));
   }
 
   override executeOnce(item: QueueItem): void | Promise<void> {

@@ -782,7 +782,7 @@ export function useNodeExecution({
           if (!executionIsCurrent()) {
             return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
           }
-          if (!res.ok || responseData.status === "error")
+          if (!res.ok || responseData.success === false || responseData.status === "error")
             throw new Error(JSON.stringify(responseData) || "Action failed");
           if (consolidatorSeriesSignature) {
             setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId, consolidatorSeriesSignature);

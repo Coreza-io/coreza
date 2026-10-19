@@ -135,7 +135,7 @@ export const getVisibleValues = (
   }
 
   // Preserve system-level keys not in definition.fields
-  const systemKeys = ["checkDependency", "logicalOps", "__isTool"];
+  const systemKeys = ["checkDependency", "logicalOps", "__isTool", "__continueOnError"];
   for (const key of systemKeys) {
     if (values[key] !== undefined) {
       result[key] = values[key];

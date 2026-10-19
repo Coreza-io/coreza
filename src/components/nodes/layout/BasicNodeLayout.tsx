@@ -4,8 +4,7 @@
  */
 
 import React, { memo } from "react";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import { NodeConfigurationTabs } from "./components/NodeConfigurationTabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
@@ -115,6 +114,15 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
+        <NodeConfigurationTabs
+          incomingEdgeCount={incomingEdgeCount}
+          checkDependency={Boolean(fieldState.checkDependency)}
+          onDependencyCheckChange={(checked) => handleChange("checkDependency", checked)}
+          continueOnError={fieldState.__continueOnError === true}
+          onContinueOnErrorChange={(checked) => handleChange("__continueOnError", checked)}
+          continueOnErrorDisabled={definition?.name === "Edit Fields" && fieldState.persistent === true}
+          readOnly={readOnly}
+        >
         {(() => {
           const fields = (definition.fields || []) as any[];
           const groups: Array<{ type: "row" | "single"; fields: any[] }> = [];
@@ -179,24 +187,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           );
         })()}
 
-        {!readOnly && incomingEdgeCount >= 2 && (
-          <div className="flex items-center justify-between pt-1">
-            <Label
-              htmlFor="check-dependency"
-              className="text-xs text-muted-foreground cursor-pointer"
-            >
-              Skip dependency check
-            </Label>
-            <Switch
-              id="check-dependency"
-              checked={Boolean(fieldState.checkDependency)}
-              onCheckedChange={(checked) =>
-                handleChange("checkDependency", checked)
-              }
-              disabled={readOnly}
-            />
-          </div>
-        )}
+        </NodeConfigurationTabs>
 
         {expandedExecutionControl}
 

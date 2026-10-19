@@ -67,6 +67,8 @@ export function compilePlan(
   },
 ): CompiledPlan | null {
   const nodes = [...graph.nodeById.values()];
+  // The dynamic runtime owns per-node error continuation and its routing.
+  if (nodes.some(node => node.values?.__continueOnError === true)) return null;
 
   for (const node of nodes) {
     if (INELIGIBLE_NODE_NAMES.has(node.name ?? "")) {

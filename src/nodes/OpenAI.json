@@ -21,10 +21,11 @@
       "key": "apiKey",
       "label": "OpenAI API Key",
       "type": "password",
-      "placeholder": "sk-..."
+      "placeholder": "sk-...",
+      "required": true
     }
   ],
-  "authAction": { "url": "/openai/auth", "method": "POST" },
+  "authAction": { "url": "/models/openai/auth", "method": "POST" },
   "action": { "url": "/openai/chat", "method": "POST" },
   "fields": [
     {

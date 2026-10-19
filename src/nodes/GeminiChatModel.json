@@ -19,10 +19,11 @@
       "key": "apiKey",
       "label": "Google AI API Key",
       "type": "password",
-      "placeholder": "AI..."
+      "placeholder": "AI...",
+      "required": true
     }
   ],
-  "authAction": { "url": "/gemini/auth", "method": "POST" },
+  "authAction": { "url": "/models/geminichatmodel/auth", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

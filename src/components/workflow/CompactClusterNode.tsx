@@ -1,3 +1,4 @@
+import { useAgentParticipantActive } from "@/stores/agentActivityStore";
 import { useEffect } from "react";
 import { Handle, Position, type NodeProps, useUpdateNodeInternals } from "@xyflow/react";
 import { ChevronDown, Network } from "lucide-react";
@@ -9,8 +10,9 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 
 export function CompactClusterNode({ id, data: cluster, selected, dragging, readOnly = false }: NodeProps<CompactClusterFlowNode> & { readOnly?: boolean }): JSX.Element {
   const updateNodeInternals = useUpdateNodeInternals();
+  const agentActive = useAgentParticipantActive(readOnly ? "" : cluster.workflowSessionId ?? "", cluster.agentActivityMemberIds ?? []);
   const showExecutionBorder = useResolvedTheme() === "dark"
-    && (cluster.isExecuting === true || ((cluster.runState.phase === "running" || !!cluster.runState.ownerClusterId) && !!cluster.runState.currentNodeId));
+    && (agentActive || cluster.isExecuting === true || ((cluster.runState.phase === "running" || !!cluster.runState.ownerClusterId) && !!cluster.runState.currentNodeId));
   const expand = (): void => cluster.onExpand(cluster.clusterId);
   const persistentExecutionStatus = cluster.runState.phase !== "idle"
     && cluster.runState.phase !== "completed"
@@ -60,6 +62,7 @@ export function CompactClusterNode({ id, data: cluster, selected, dragging, read
         </Button>
       </div>
       <div className="mt-3 flex items-center justify-between text-xs text-[hsl(var(--cluster-muted))]">
+        {agentActive && <span role="status" className="text-cyan-600 motion-safe:animate-pulse">Agent operation running</span>}
         <span>{cluster.memberCount} {cluster.memberCount === 1 ? "node" : "nodes"}</span>
       </div>
       {!readOnly && <footer className="absolute inset-x-0 bottom-0 flex h-[52px] items-center justify-center border-t border-[hsl(var(--cluster-border))]">

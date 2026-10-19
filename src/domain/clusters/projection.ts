@@ -26,6 +26,8 @@ export interface CompactClusterNodeData extends Record<string, unknown> {
   title: string;
   note?: string;
   memberCount: number;
+  agentActivityMemberIds?: readonly string[];
+  workflowSessionId?: string;
   runState: ClusterRunState;
   incomingHandleIds: string[];
   outgoingHandleIds: string[];
@@ -314,6 +316,8 @@ export function projectClusterGraph(
         title: cluster.title,
         note: cluster.note,
         memberCount: members.length,
+        agentActivityMemberIds: members.map(member => member.id),
+        workflowSessionId: String(members[0]?.data?.workflowSessionId ?? ""),
         runState: options.getRunState?.(cluster.id) ?? { phase: "idle" },
         incomingHandleIds: incomingHandles.get(cluster.id) ?? [],
         outgoingHandleIds: outgoingHandles.get(cluster.id) ?? [],

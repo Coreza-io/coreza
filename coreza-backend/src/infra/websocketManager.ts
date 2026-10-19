@@ -9,6 +9,7 @@
  */
 
 import WebSocket from "ws";
+import { subscribeActivity, activitySnapshot } from "../agents/manualActivity";
 import { IncomingMessage } from "http";
 import { URL } from "url";
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
@@ -36,6 +37,7 @@ interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
   sessionId?: string;
   isAlive?: boolean;
+  agentActivityUnsubscribe?: () => void;
 }
 
 interface WebSocketMessage {
@@ -420,6 +422,26 @@ export class WebSocketManager {
           this.handleWorkflowSubscription(ws, message.payload);
           break;
 
+        case "subscribe_agent_activity": {
+          try {
+            const scopeId = message.payload?.scopeId;
+            if (typeof scopeId !== "string" || scopeId.length > 128) throw new Error("Invalid scope");
+            ws.agentActivityUnsubscribe?.();
+            const send = (payload: unknown) => {
+              if (ws.readyState !== WebSocket.OPEN) return;
+              if (ws.bufferedAmount > 256 * 1024) { ws.close(1013, "Agent activity consumer too slow"); return; }
+              this.sendMessage(ws, { type: "agent_activity", payload: { scopeId, ...(payload as object) } });
+            };
+            ws.agentActivityUnsubscribe = subscribeActivity(ws.userId!, scopeId, send);
+            // Snapshot and subscription share one event-loop turn: no cursor/live race.
+            this.sendMessage(ws, { type: "agent_activity_subscribed",
+              payload: { scopeId, ...activitySnapshot(ws.userId!, scopeId) } });
+          } catch {
+            this.sendMessage(ws, { type: "agent_activity_unavailable", payload: { scopeId: message.payload?.scopeId } });
+          }
+          break;
+        }
+
         case "workflow_action":
           this.handleWorkflowAction(ws, message.payload);
           break;
@@ -527,6 +549,8 @@ export class WebSocketManager {
   }
 
   private handleDisconnection(ws: AuthenticatedWebSocket): void {
+    ws.agentActivityUnsubscribe?.();
+    ws.agentActivityUnsubscribe = undefined;
     if (ws.userId && ws.sessionId) {
       console.log(
         `👋 User ${ws.userId} disconnected (session: ${ws.sessionId})`,

@@ -14,7 +14,56 @@ import { getUserRedisConnection } from "../../services/storage/helpers/redisConn
 import CredentialManager from "../../utils/credentialManager";
 import { NodeInput, WorkflowEdge, WorkflowNode } from "../types";
 
-const simpleMemoryStore = new Map<string, BaseMessage[]>();
+// v2 deliberately does not import legacy unscoped process-local conversations.
+const simpleMemoryStore = new Map<string, { messages: BaseMessage[]; accessed: number; bytes: number }>();
+const SIMPLE_SESSION_TTL = 30 * 60_000;
+const MAX_SIMPLE_SESSIONS = 512;
+const conversations = new Map<string, { tail: Promise<void>; pending: number }>();
+
+/** Process-local read/invoke/write ordering, with bounded, cancellable waiters. */
+export async function acquireMemoryConversation(key: string, signal?: AbortSignal): Promise<() => void> {
+  if (signal?.aborted) { const error = new Error("Agent cancelled"); error.name = "AbortError"; throw error; }
+  const previous = conversations.get(key);
+  if ((!previous && conversations.size >= 128) || (previous?.pending ?? 0) >= 16)
+    throw new Error("Memory conversation capacity reached");
+  let unlock!: () => void;
+  const ready = previous?.tail ?? Promise.resolve();
+  const own = new Promise<void>(resolve => { unlock = resolve; });
+  const entry = { tail: ready.then(() => own), pending: (previous?.pending ?? 0) + 1 };
+  conversations.set(key, entry);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    unlock();
+    const current = conversations.get(key);
+    if (current) current.pending--;
+    if (current === entry && current.pending === 0) conversations.delete(key);
+  };
+  let onAbort: (() => void) | undefined;
+  try {
+    await Promise.race([ready, new Promise<never>((_, reject) => {
+      onAbort = () => { const error = new Error("Agent cancelled"); error.name = "AbortError"; reject(error); };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+    })]);
+    return release;
+  } catch (error) {
+    // Do not let an aborted waiter allow a later invocation past its predecessor.
+    void ready.then(release);
+    throw error;
+  } finally { if (onAbort) signal?.removeEventListener("abort", onAbort); }
+}
+
+function readSimpleSession(key: string): BaseMessage[] {
+  const now = Date.now();
+  for (const [id, entry] of simpleMemoryStore) if (now - entry.accessed > SIMPLE_SESSION_TTL) simpleMemoryStore.delete(id);
+  const entry = simpleMemoryStore.get(key);
+  if (!entry) return [];
+  simpleMemoryStore.delete(key);
+  simpleMemoryStore.set(key, { ...entry, accessed: now });
+  return entry.messages;
+}
 
 class SimpleMemoryHistory extends BaseListChatMessageHistory {
   lc_namespace = ["coreza", "memory", "simple"];
@@ -25,12 +74,24 @@ class SimpleMemoryHistory extends BaseListChatMessageHistory {
     super();
   }
   async getMessages(): Promise<BaseMessage[]> {
-    return [...(simpleMemoryStore.get(this.sessionId) ?? [])];
+    return [...readSimpleSession(this.sessionId)];
   }
   async addMessage(message: BaseMessage): Promise<void> {
-    const existing = simpleMemoryStore.get(this.sessionId) ?? [];
-    const next = [...existing, message].slice(-this.limit);
-    simpleMemoryStore.set(this.sessionId, next);
+    await this.addMessages([message]);
+  }
+  async addMessages(messages: BaseMessage[]): Promise<void> {
+    const next = [...readSimpleSession(this.sessionId), ...messages].slice(-this.limit);
+    const bytes = Buffer.byteLength(JSON.stringify(mapChatMessagesToStoredMessages(next)));
+    if (bytes > 2 * 1024 * 1024) throw new Error("SimpleMemory conversation exceeds 2 MB");
+    // Stage the full pair before publication; retain chronological append order.
+    simpleMemoryStore.delete(this.sessionId);
+    simpleMemoryStore.set(this.sessionId, { messages: next, accessed: Date.now(), bytes });
+    let total = [...simpleMemoryStore.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+    while (simpleMemoryStore.size > MAX_SIMPLE_SESSIONS || total > 32 * 1024 * 1024) {
+      const oldest = simpleMemoryStore.keys().next().value!;
+      total -= simpleMemoryStore.get(oldest)!.bytes;
+      simpleMemoryStore.delete(oldest);
+    }
   }
   async clear(): Promise<void> {
     simpleMemoryStore.delete(this.sessionId);
@@ -101,6 +162,7 @@ export type LoadedMemory = {
   history: BaseChatMessageHistory;
   sessionId: string;
   windowMessages: number;
+  conversationKey: string;
 } | null;
 
 export async function loadMemoryFromEdges(
@@ -136,19 +198,23 @@ export async function loadMemoryFromEdges(
   }
 
   const contextWindowLength = Number(values.contextWindowLength ?? 5);
-  const windowMessages = Math.max(1, contextWindowLength) * 2;
+  if (!Number.isFinite(contextWindowLength) || contextWindowLength < 1 || contextWindowLength > 500)
+    throw new Error("Memory context window must be between 1 and 500");
+  const windowMessages = Math.floor(contextWindowLength) * 2;
+  const userId = String(context.userId ?? "").trim();
+  const workflowId = String(context.workflowId ?? "").trim();
+  if (!userId || !workflowId) throw new Error("Memory requires userId and workflowId");
+  const conversationKey = JSON.stringify(["v2", userId, workflowId, memoryNode.id, sessionId]);
 
   if (memoryNode.name === "SimpleMemory") {
     return {
-      history: new SimpleMemoryHistory(sessionId, windowMessages),
+      history: new SimpleMemoryHistory(conversationKey, windowMessages),
       sessionId,
       windowMessages,
+      conversationKey,
     };
   }
 
-  const userId = String(context.userId ?? "").trim();
-  const workflowId =
-    String(context.workflowId ?? "unknown").trim() || "unknown";
   const scopedRedisSessionId = `coreza_chat_history:userId:${userId}:workflowId:${workflowId}:sessionId:${sessionId}`;
   const credentialId = String(values.credential_id ?? "").trim();
   if (!userId || !credentialId) {
@@ -187,6 +253,7 @@ export async function loadMemoryFromEdges(
       }),
       sessionId,
       windowMessages,
+      conversationKey: JSON.stringify(["redis", userId, credentialId, scopedRedisSessionId]),
     };
   }
 
@@ -211,6 +278,7 @@ export async function loadMemoryFromEdges(
       history: new SupabaseChatMessageHistory(client, tableName, sessionId),
       sessionId,
       windowMessages,
+      conversationKey: JSON.stringify(["postgres", userId, credentialId, tableName, sessionId]),
     };
   }
 

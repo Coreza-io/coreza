@@ -9,11 +9,13 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { randomUUID } from "crypto";
+import { AgentActivityRecorder, assertAgentActive } from "../../agents/activity";
 import {
   buildExecutorCategoryMap,
   isBrokerNode,
 } from "../../brokers/capabilities";
-import { DynamicStructuredTool } from "@langchain/core/tools";
+import { DynamicStructuredTool, ToolInputParsingException } from "@langchain/core/tools";
 
 import { createAgent } from "langchain";
 import {
@@ -40,35 +42,45 @@ import {
   toNodeResult,
 } from "../../utils/normalizeOutput";
 import { getLLM, LLMConfig } from "../../config/llmProviders";
-import { loadMemoryFromEdges } from "../logic/memoryLoader";
+import { loadMemoryFromEdges, acquireMemoryConversation } from "../logic/memoryLoader";
 
 export class AIAgentExecutor implements INodeExecutor {
   readonly category = "AIAgent";
+  private readonly brokerCategories = buildExecutorCategoryMap();
 
   async execute(
     node: WorkflowNode,
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
-    const startTime = Date.now();
-
-    // Create DataContext for this agent execution
-    const executionId =
-      context?.executionId ||
-      context?.runId ||
-      `agent-${node.id}-${Date.now()}`;
-    const workflowId = context?.workflowId || "unknown";
-    const userId = context?.userId || "unknown";
-
+    // Copy invocation identity; the workflow runtime reuses its mutable context.
+    const executionId = String(context?.executionId || context?.runId || randomUUID());
+    const workflowId = String(context?.workflowId || "unknown");
+    const userId = String(context?.userId || "unknown");
+    const signal: AbortSignal | undefined = context?.abortSignal;
+    const activity = new AgentActivityRecorder({
+      workflowId, workflowExecutionId: executionId, workflowRunId: context?.runId,
+      agentNodeId: node.id, clientInvocationId: context?.clientInvocationId,
+    }, context?.agentActivitySink);
+    try { context?.onAgentActivityRecorder?.(activity); } catch { /* observer only */ }
+    activity.start("agent", node.id);
     const dataContextManager = DataContextManager.getInstance();
-    const dataContext = dataContextManager.getContext({
-      executionId,
-      workflowId,
-      userId,
-    });
-
+    let dataContext: DataContext | undefined;
+    let ownedContextId: string | undefined;
+    let releaseMemory: (() => void) | undefined;
+    let terminal: "completed" | "failed" | "cancelled" = "failed";
     try {
-      console.log(
+      assertAgentActive(signal);
+      const borrowed = context?.dataContext as DataContext | undefined;
+      if (borrowed) {
+        if (borrowed.getUserId() !== userId || borrowed.getWorkflowId() !== workflowId)
+          throw new Error("Agent DataContext ownership mismatch");
+        dataContext = borrowed;
+      } else {
+        ownedContextId = `agent:${activity.invocationId}`;
+        dataContext = dataContextManager.getContext({ executionId: ownedContextId, workflowId, userId });
+      }
+      if (process.env.LOG_LEVEL === "debug") console.debug(
         `🤖 [AIAgent] Starting AI Agent execution for node ${node.id} (execution: ${executionId})`,
       );
 
@@ -120,7 +132,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const providerId = chatModelNode.provider;
       const serviceType = chatModelNode.name?.toLowerCase?.();
 
-      console.log(
+      if (process.env.LOG_LEVEL === "debug") console.debug(
         `🔌 [AIAgent] Using LLM provider: ${providerId} (service: ${serviceType})`,
       );
 
@@ -191,7 +203,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       const llm = getLLM(providerId, llmConfig);
 
-      console.log(
+      if (process.env.LOG_LEVEL === "debug") console.debug(
         `🤖 [AIAgent] Created ${providerId} LLM with model: ${model}`,
       );
 
@@ -199,24 +211,47 @@ export class AIAgentExecutor implements INodeExecutor {
       const tools = await this.createToolsFromEdges(node, edges, allNodes, {
         ...context,
         dataContext,
+        agentActivity: activity,
+        // Nested executors borrow this context but own their own invocation metadata.
+        onAgentActivityRecorder: undefined,
       });
 
-      console.log(`🛠️  [AIAgent] Created ${tools.length} tools`);
-      const loadedMemory = await loadMemoryFromEdges(
-        node,
-        edges,
-        allNodes,
-        {
-          ...context,
-          dataContext,
-        },
-        input,
-      );
-      const priorMessages: BaseMessage[] = loadedMemory
-        ? (await loadedMemory.history.getMessages()).slice(
-            -loadedMemory.windowMessages,
-          )
-        : [];
+      if (process.env.LOG_LEVEL === "debug") console.debug(`🛠️  [AIAgent] Created ${tools.length} tools`);
+      const memoryNodeId = edges.find((edge: any) => edge.target === node.id && edge.targetHandle === "memory")?.source;
+      const prepareSpan = memoryNodeId ? activity.start("memory", memoryNodeId, "prepare") : undefined;
+      let loadedMemory;
+      try {
+        loadedMemory = await loadMemoryFromEdges(node, edges, allNodes, { ...context, dataContext }, input);
+        if (prepareSpan) activity.end(prepareSpan, "completed");
+      } catch (error) {
+        if (prepareSpan) activity.end(prepareSpan, signal?.aborted ? "cancelled" : "failed");
+        throw error;
+      }
+      let priorMessages: BaseMessage[] = [];
+      if (loadedMemory) {
+        releaseMemory = await acquireMemoryConversation(loadedMemory.conversationKey, signal);
+        assertAgentActive(signal);
+        const readSpan = activity.start("memory", memoryNodeId, "read");
+        try {
+          priorMessages = (await loadedMemory.history.getMessages()).slice(-loadedMemory.windowMessages);
+          activity.end(readSpan, "completed");
+        } catch (error) { activity.end(readSpan, signal?.aborted ? "cancelled" : "failed"); throw error; }
+      }
+      assertAgentActive(signal);
+      const modelSpans = new Map<string, string>();
+      const modelStart = (_model: unknown, _messages: unknown, runId: string) => {
+        if (modelSpans.size < 128 && !modelSpans.has(runId)) modelSpans.set(runId, activity.start("model", chatModelNode.id));
+      };
+      const modelEnd = (_output: unknown, runId: string) => {
+        const span = modelSpans.get(runId);
+        if (span) activity.end(span, "completed");
+        modelSpans.delete(runId);
+      };
+      const modelError = (_error: unknown, runId: string) => {
+        const span = modelSpans.get(runId);
+        if (span) activity.end(span, signal?.aborted ? "cancelled" : "failed");
+        modelSpans.delete(runId);
+      };
 
       // Create agent using the new LangChain agent API
       const agent = createAgent({
@@ -225,7 +260,7 @@ export class AIAgentExecutor implements INodeExecutor {
       });
 
       // Execute agent
-      console.log(`🚀 [AIAgent] Executing agent for node ${node.id}`);
+      if (process.env.LOG_LEVEL === "debug") console.debug(`🚀 [AIAgent] Executing agent for node ${node.id}`);
       const result = await agent.invoke(
         {
           messages: [
@@ -236,41 +271,51 @@ export class AIAgentExecutor implements INodeExecutor {
         },
         {
           recursionLimit: Number(maxIterations),
+          signal,
+          callbacks: context?.agentActivitySink ? [{ name: "coreza-agent-activity", handleChatModelStart: modelStart,
+            handleLLMStart: modelStart, handleLLMEnd: modelEnd, handleLLMError: modelError }] : undefined,
         },
       );
 
-      console.log(`✅ [AIAgent] Agent execution completed`);
+      if (process.env.LOG_LEVEL === "debug") console.debug(`✅ [AIAgent] Agent execution completed`);
 
-      // Log memory stats
-      const stats = dataContext.getStats();
-      console.log(
-        `📊 [AIAgent] Memory used: ${stats.entryCount} entries, ${(
-          stats.totalSizeBytes /
-          1024 /
-          1024
-        ).toFixed(2)}MB`,
-      );
+      if (process.env.LOG_LEVEL === "debug") {
+        const stats = dataContext.getStats();
+        console.debug(`📊 [AIAgent] Memory used: ${stats.entryCount} entries, ${(stats.totalSizeBytes / 1024 / 1024).toFixed(2)}MB`);
+      }
 
+      assertAgentActive(signal);
       const agentOutput = this.getAgentOutput(result);
 
       if (loadedMemory && agentOutput.trim()) {
-        await loadedMemory.history.addMessages([
-          new HumanMessage(String(userPrompt)),
-          new AIMessage(agentOutput),
-        ]);
+        const writeSpan = activity.start("memory", memoryNodeId, "write");
+        try {
+          await loadedMemory.history.addMessages([
+            new HumanMessage(String(userPrompt)), new AIMessage(agentOutput),
+          ]);
+          activity.end(writeSpan, "completed");
+        } catch (error) { activity.end(writeSpan, signal?.aborted ? "cancelled" : "failed"); throw error; }
       }
 
+      assertAgentActive(signal);
+      terminal = "completed";
       const successOutput = createSuccessOutput(agentOutput);
       return toNodeResult(successOutput);
     } catch (error: any) {
+      if (signal?.aborted || error?.name === "AbortError") {
+        terminal = "cancelled";
+        throw error;
+      }
       console.error("❌ [AIAgent] Agent execution error:", error);
       const errOutput = createErrorOutput(
         error.message || "AI Agent execution failed",
       );
       return toNodeResult(errOutput);
     } finally {
-      // Cleanup DataContext after agent execution
-      dataContextManager.destroyContext(executionId);
+      releaseMemory?.();
+      activity.finish(terminal);
+      // A workflow-owned (or enclosing Agent-owned) context is only borrowed.
+      if (ownedContextId) dataContextManager.destroyContext(ownedContextId);
     }
   }
 
@@ -291,13 +336,17 @@ export class AIAgentExecutor implements INodeExecutor {
     );
 
     if (toolEdges.length === 0) {
-      console.log("⚠️  [AIAgent] No tool nodes connected");
+      if (process.env.LOG_LEVEL === "debug") console.debug("⚠️  [AIAgent] No tool nodes connected");
       return tools;
     }
 
-    console.log(`🔍 [AIAgent] Found ${toolEdges.length} tool connections`);
+    if (process.env.LOG_LEVEL === "debug") console.debug(`🔍 [AIAgent] Found ${toolEdges.length} tool connections`);
 
+    const usedNames = new Set<string>();
+    const attachedIds = new Set<string>();
     for (const toolEdge of toolEdges) {
+      if (attachedIds.has(toolEdge.source)) continue;
+      attachedIds.add(toolEdge.source);
       const toolNode = allNodes.find(
         (n: WorkflowNode) => n.id === toolEdge.source,
       );
@@ -308,9 +357,14 @@ export class AIAgentExecutor implements INodeExecutor {
 
       // Create tool wrapper for this node
       const isToggled = (toolNode as any).__isTool === true;
-      const tool = this.createToolFromNode(toolNode, context);
+      const baseName = this.getToolName(toolNode).slice(0, 54) || "tool";
+      let toolName = baseName;
+      let suffix = 2;
+      while (usedNames.has(toolName)) toolName = `${baseName}_${suffix++}`;
+      usedNames.add(toolName);
+      const tool = this.createToolFromNode(toolNode, context, toolName);
       tools.push(tool);
-      console.log(
+      if (process.env.LOG_LEVEL === "debug") console.debug(
         `✅ [AIAgent] Added tool: ${tool.name}${isToggled ? " (toggled)" : ""}`,
       );
     }
@@ -324,21 +378,24 @@ export class AIAgentExecutor implements INodeExecutor {
   private createToolFromNode(
     node: WorkflowNode,
     context?: any,
+    toolName = this.getToolName(node),
   ): DynamicStructuredTool {
-    const toolName = this.getToolName(node);
     const definition = this.getToolDefinition(node);
     const toolDescription = this.getToolDescription(node, definition);
     const toolSchema = this.getToolSchema(node, definition);
     const dataContext = context?.dataContext as DataContext | undefined;
     const executorCategory = this.getExecutorCategory(node, definition);
 
-    return new DynamicStructuredTool<any, any, string>({
+    const tool = new DynamicStructuredTool<any, any, string>({
       name: toolName,
       description: toolDescription,
       schema: toolSchema as ZodTypeAny,
       func: async (input: Record<string, any>) => {
+        const activity = context?.agentActivity as AgentActivityRecorder | undefined;
+        const span = activity?.start("tool", node.id);
         try {
-          console.log(`🔧 [AIAgent] Executing tool: ${toolName}`);
+          assertAgentActive(context?.abortSignal);
+          if (process.env.LOG_LEVEL === "debug") console.debug(`🔧 [AIAgent] Executing tool: ${toolName}`);
 
           // Resolve any dataRef inputs to actual data
           const resolvedInput = resolveDataRef(input, dataContext);
@@ -379,7 +436,7 @@ export class AIAgentExecutor implements INodeExecutor {
             throw new Error(result.error || "Tool execution failed");
           }
 
-          console.log(`✅ [AIAgent] Tool ${toolName} execution completed`);
+          if (process.env.LOG_LEVEL === "debug") console.debug(`✅ [AIAgent] Tool ${toolName} execution completed`);
 
           // Process output through dataRef pattern (use normalized name for matching)
           const processedOutput = processToolOutput(
@@ -390,9 +447,15 @@ export class AIAgentExecutor implements INodeExecutor {
             unwrappedInput, // Pass tool input so symbol can be extracted
           );
 
-          // Return processed output (dataRef + summary, not raw data)
-          return JSON.stringify(processedOutput);
+          // Include output processing/serialization in the actual tool boundary.
+          const serialized = JSON.stringify(processedOutput);
+          assertAgentActive(context?.abortSignal);
+          if (span) activity?.end(span, "completed");
+          return serialized;
         } catch (error: any) {
+          const cancelled = context?.abortSignal?.aborted || error?.name === "AbortError";
+          if (span) activity?.end(span, cancelled ? "cancelled" : "failed");
+          if (cancelled) throw error;
           console.error(
             `❌ [AIAgent] Tool ${toolName} execution error:`,
             error,
@@ -401,6 +464,20 @@ export class AIAgentExecutor implements INodeExecutor {
         }
       },
     });
+    // LangChain validates schemas before starting tool callbacks or entering func.
+    const invoke = tool.invoke.bind(tool);
+    tool.invoke = async (input, config) => {
+      try { return await invoke(input, config); }
+      catch (error) {
+        if (error instanceof ToolInputParsingException) {
+          const activity = context?.agentActivity as AgentActivityRecorder | undefined;
+          const span = activity?.start("tool", node.id);
+          if (span) activity?.end(span, context?.abortSignal?.aborted ? "cancelled" : "failed");
+        }
+        throw error;
+      }
+    };
+    return tool;
   }
 
   /**
@@ -542,7 +619,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       if (nodeDefinition?.fields && nodeDefinition.fields.length > 0) {
         nodeFields = nodeDefinition.fields;
-        console.log(
+        if (process.env.LOG_LEVEL === "debug") console.debug(
           `📋 [AIAgent] Loaded ${nodeFields.length} fields from ${nodeDefinition.name} JSON definition`,
         );
       }
@@ -557,7 +634,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       // Log schema keys for debugging
       if (schema && typeof schema === "object" && "shape" in schema) {
-        console.log(
+        if (process.env.LOG_LEVEL === "debug") console.debug(
           `📋 [AIAgent] Tool ${node.name} schema keys:`,
           Object.keys((schema as any).shape || {}),
         );
@@ -587,7 +664,7 @@ export class AIAgentExecutor implements INodeExecutor {
     const nodeName = node.name || node.category || "node";
 
     // Build broker-related categories from registry (config-driven)
-    const brokerCategories = buildExecutorCategoryMap();
+    const brokerCategories = this.brokerCategories;
 
     const executorCategoryMap: Record<string, string> = {
       // Market data providers (non-broker)

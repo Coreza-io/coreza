@@ -444,7 +444,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
           if (!executor) {
             throw new Error(
-              `No executor found for node category: ${node.category}`,
+              `No executor found for node category: ${executorCategory}`,
             );
           }
 

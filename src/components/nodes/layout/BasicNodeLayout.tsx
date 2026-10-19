@@ -118,6 +118,9 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
           incomingEdgeCount={incomingEdgeCount}
           checkDependency={Boolean(fieldState.checkDependency)}
           onDependencyCheckChange={(checked) => handleChange("checkDependency", checked)}
+          continueOnError={fieldState.__continueOnError === true}
+          onContinueOnErrorChange={(checked) => handleChange("__continueOnError", checked)}
+          continueOnErrorDisabled={definition?.name === "Edit Fields" && fieldState.persistent === true}
           readOnly={readOnly}
         >
         {(() => {

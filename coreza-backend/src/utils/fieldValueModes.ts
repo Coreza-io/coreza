@@ -16,5 +16,5 @@ export function isFixedField(values: Record<string, any>, key: string): boolean 
 }
 
 export function parameterEntries(values: Record<string, any>): [string, any][] {
-  return Object.entries(values).filter(([key]) => key !== FIELD_VALUE_MODES_KEY);
+  return Object.entries(values).filter(([key]) => key !== FIELD_VALUE_MODES_KEY && key !== "__continueOnError");
 }

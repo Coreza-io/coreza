@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { isPersistentVariableEdit } from "../variables/contract";
+import { canContinueNodeError, continuedNodeError } from "../nodes/errorContinuation";
 import { performance } from "perf_hooks";
 import { resolveCategory } from "../nodes/categoryMap";
 import { getNodeExecutor } from "../nodes/registry";
@@ -272,17 +273,28 @@ export abstract class BaseExecutionRuntime {
       this.routeEdge(edge, result, meta);
   }
 
-  protected handleError(nodeId: string, error: unknown): void {
-    const errorMessage = (error as Error).message || "Unknown error";
+  protected handleError(nodeId: string, error: unknown, meta?: IterMeta): void {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const node = this.graph.nodeById.get(nodeId);
+    const name = node?.name ?? node?.type;
+    const values = node?.values ?? {};
+    const continued = !this.options.abortSignal?.aborted && !!node && !isPersistentVariableEdit(node) && canContinueNodeError(name, values);
+    const continuation = continued ? continuedNodeError(name, values, errorMessage) : undefined;
     this.executionOrder.push(nodeId);
-    this.failed.add(nodeId);
+    if (!continued) this.failed.add(nodeId);
     this.failedNodeErrors.set(nodeId, errorMessage);
-    this.store.setNodeError(nodeId, error);
-    this.store.setNodeResult(nodeId, {
+    this.store.setNodeError(nodeId, error instanceof Error ? error : new Error(errorMessage));
+    this.store.setNodeResult(nodeId, continuation ?? {
       success: false,
       data: null,
       error: errorMessage,
     });
+    if (continuation) {
+      const outgoing = name === "Loop" ? this.graph.doneEdges(nodeId)
+        : this.graph.getOutgoingEdges(nodeId).filter(edge => !continuation.result || edge.sourceHandle === continuation.result);
+      for (const edge of outgoing) this.routeEdge(edge, continuation, meta);
+      return;
+    }
     if (this.options.mode === "fail-fast" || isPersistentVariableEdit(this.graph.nodeById.get(nodeId))) throw error;
   }
 
@@ -328,7 +340,7 @@ export abstract class BaseExecutionRuntime {
               item.meta,
             ),
           )
-          .catch((error) => this.handleError(node.id, error));
+          .catch((error) => this.handleError(node.id, error, item.meta));
       }
 
       this.routeNodeResult(
@@ -338,7 +350,7 @@ export abstract class BaseExecutionRuntime {
         item.meta,
       );
     } catch (error) {
-      this.handleError(node.id, error);
+      this.handleError(node.id, error, item.meta);
     }
   }
 

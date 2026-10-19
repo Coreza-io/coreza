@@ -8,11 +8,15 @@ interface Props {
   incomingEdgeCount: number;
   checkDependency: boolean;
   onDependencyCheckChange: (checked: boolean) => void;
+  continueOnError: boolean;
+  onContinueOnErrorChange: (checked: boolean) => void;
+  continueOnErrorDisabled?: boolean;
   readOnly?: boolean;
 }
 
-export function NodeConfigurationTabs({ children, incomingEdgeCount, checkDependency, onDependencyCheckChange, readOnly }: Props) {
+export function NodeConfigurationTabs({ children, incomingEdgeCount, checkDependency, onDependencyCheckChange, continueOnError, onContinueOnErrorChange, continueOnErrorDisabled, readOnly }: Props) {
   const dependencyId = useId();
+  const continueId = useId();
 
   return (
     <Tabs defaultValue="parameters" className="nodrag nopan w-full">
@@ -32,9 +36,16 @@ export function NodeConfigurationTabs({ children, incomingEdgeCount, checkDepend
             </Label>
             <Switch id={dependencyId} checked={checkDependency} onCheckedChange={onDependencyCheckChange} disabled={readOnly} />
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">No additional settings for this node.</p>
-        )}
+        ) : null}
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <Label htmlFor={continueId} className="text-xs text-muted-foreground cursor-pointer">
+            Continue on Error
+          </Label>
+          <Switch id={continueId} checked={continueOnError && !continueOnErrorDisabled} onCheckedChange={onContinueOnErrorChange} disabled={readOnly || continueOnErrorDisabled} />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {continueOnErrorDisabled ? "Persistent variable errors must stop execution." : "Pass error details to the next node instead of stopping execution."}
+        </p>
       </TabsContent>
     </Tabs>
   );

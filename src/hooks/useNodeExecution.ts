@@ -2,6 +2,7 @@ import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../corez
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { prepareExpressionTransport } from "../../coreza-backend/src/nodes/logic/expressionTransport";
 import { resolveNodeIdentity } from "@/utils/referenceResolution";
+import { canContinueNodeError, continuedNodeError } from "../../coreza-backend/src/nodes/errorContinuation";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -387,7 +388,9 @@ export function useNodeExecution({
     if (overrideOutput !== null && overrideOutput !== undefined) {
       return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
     }
-    const output = {
+    const continued = canContinueNodeError(definition?.name, fieldState);
+    const continuation = continued ? continuedNodeError(definition?.name, fieldState, message, code) : undefined;
+    const output = continuation ? { ...continuation, timestamp: new Date().toISOString() } : {
       success: false,
       status: "error",
       error: message,
@@ -397,12 +400,14 @@ export function useNodeExecution({
     setError(message);
     setLastOutput(output);
     if (nodeId) {
-      executionStore.setNodeData(nodeId, { output });
+      executionStore.setNodeData(nodeId, { output, ...(continued && definition?.name === "Loop" ? { done: true, aggregated: output } : {}) });
       updateNodeData(nodeId, { output });
       notifyExecutionStoreUpdate();
     }
-    return { nodeId: outcomeNodeId, status: "failed", error: { message, ...(code !== undefined ? { code } : {}) }, output };
-  }, [nodeId, overrideOutput, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
+    return { nodeId: outcomeNodeId, status: continued ? "success" : "failed", error: { message, ...(code !== undefined ? { code } : {}) }, output,
+      ...(continuation?.result ? { selectedContinuation: continuation.result } : {}),
+    };
+  }, [nodeId, overrideOutput, definition?.name, fieldState, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
 
   // Main execution handler
   const executeAction = useCallback(

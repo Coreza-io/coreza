@@ -242,7 +242,7 @@ export class WorkflowExecutor {
       this.conditionalMap.set(edge.source, entry);
     });
 
-    console.log(
+    if (import.meta.env.DEV) console.log(
       `🗺️ [WORKFLOW EXECUTOR] Built conditional map for ${this.conditionalMap.size} branching nodes:`,
       Array.from(this.conditionalMap.entries()),
     );
@@ -314,12 +314,12 @@ export class WorkflowExecutor {
     startNodeId: string,
     completedNodes: Set<string>,
   ): Promise<void> {
-    console.log(`🎯 Starting conditional chain from: ${startNodeId}`);
+    if (import.meta.env.DEV) console.log(`🎯 Starting conditional chain from: ${startNodeId}`);
 
     return new Promise<void>((resolve) => {
       void this.invokeNormalNode(startNodeId).then(
           async (result) => {
-            console.log(`✅ Node ${startNodeId} succeeded with result`, result);
+            if (import.meta.env.DEV) console.log(`✅ Node ${startNodeId} succeeded with result`, result);
             completedNodes.add(startNodeId);
             const currentNode = this.context.nodes.find(
               (n) => n.id === startNodeId,
@@ -367,7 +367,7 @@ export class WorkflowExecutor {
       return;
     }
 
-    console.log(
+    if (import.meta.env.DEV) console.log(
       `🔀 Branch node ${nodeId} → handle "${handleKey}" → ${targets}`,
     );
     // Execute all targets for this branch
@@ -391,7 +391,7 @@ export class WorkflowExecutor {
     });
 
     const tasks = downstream.map((e) => {
-      console.log(`🔄 Triggering downstream: ${e.target}`);
+      if (import.meta.env.DEV) console.log(`🔄 Triggering downstream: ${e.target}`);
       return this.executeConditionalChain(e.target, completedNodes);
     });
 
@@ -418,7 +418,7 @@ export class WorkflowExecutor {
     const definition = node?.data?.definition as any;
     const timeout = definition?.streamingConfig?.timeout || 30000;
 
-    console.log(
+    if (import.meta.env.DEV) console.log(
       `🌊 [STREAMING] Starting streaming node ${nodeId}, waiting for first event (timeout: ${timeout}ms)`,
     );
 
@@ -431,7 +431,7 @@ export class WorkflowExecutor {
 
     try {
       await subscribePromise;
-      console.log(`✅ [STREAMING] Node ${nodeId} subscription successful`);
+      if (import.meta.env.DEV) console.log(`✅ [STREAMING] Node ${nodeId} subscription successful`);
     } catch (error) {
       console.error(
         `❌ [STREAMING] Node ${nodeId} subscription failed:`,
@@ -441,7 +441,7 @@ export class WorkflowExecutor {
     }
 
     // Step 2: Wait for first real data from WebSocket
-    console.log(`⏳ [STREAMING] Waiting for first data from ${nodeId}...`);
+    if (import.meta.env.DEV) console.log(`⏳ [STREAMING] Waiting for first data from ${nodeId}...`);
 
     const signal = this.executionAbortController.signal;
     const dataPromise = new Promise((resolve, reject) => {
@@ -478,7 +478,7 @@ export class WorkflowExecutor {
             output.dailyBar)
         ) {
           clearTimeout(timeoutId);
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `📨 [STREAMING] Node ${nodeId} received first data:`,
             output,
           );
@@ -490,7 +490,7 @@ export class WorkflowExecutor {
         // Check for webhook data (TelegramTrigger, WebhookTrigger, etc.)
         if (output?.webhookPayload) {
           clearTimeout(timeoutId);
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,
             output,
           );
@@ -512,7 +512,7 @@ export class WorkflowExecutor {
     this.highlightEdges(nodeId);
 
     this.nodeStore.setNodeData(nodeId, { output: result });
-    console.log(`🎉 [STREAMING] Node ${nodeId} completed with data`);
+    if (import.meta.env.DEV) console.log(`🎉 [STREAMING] Node ${nodeId} completed with data`);
 
     return result;
   }
@@ -533,7 +533,7 @@ export class WorkflowExecutor {
     const isFeedbackEdge = this.isNodeDownstreamOfLoop(sourceNodeId, loopId);
 
     if (!isFeedbackEdge) {
-      console.log(
+      if (import.meta.env.DEV) console.log(
         `🚫 [LOOP AGGREGATION] Skipping trigger edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} - not a feedback edge`,
       );
       return;
@@ -544,7 +544,7 @@ export class WorkflowExecutor {
     buf[edge.id] = result;
     this.nodeStore.setNodeData(loopId, { ...loopData, _edgeBuf: buf });
 
-    console.log(
+    if (import.meta.env.DEV) console.log(
       `🔄 [LOOP AGGREGATION] Edge ${edge.id} from ${sourceNodeId} to Loop ${loopId} aggregated feedback result:`,
       result,
     );
@@ -628,7 +628,7 @@ export class WorkflowExecutor {
     // Pinned / manually edited output wins — use it instead of executing
     const pinnedOutput = (node.data as any)?.pinnedOutput;
     if (pinnedOutput !== undefined && pinnedOutput !== null) {
-      console.log(
+      if (import.meta.env.DEV) console.log(
         `📌 [WORKFLOW EXECUTOR] Using pinned output for node ${nodeId}`,
       );
       this.nodeStore.setNodeData(nodeId, { output: pinnedOutput });
@@ -637,7 +637,7 @@ export class WorkflowExecutor {
 
     // Check if this is a streaming node
     if (this.isStreamingNode(nodeId)) {
-      console.log(`🌊 [WORKFLOW EXECUTOR] Detected streaming node: ${nodeId}`);
+      if (import.meta.env.DEV) console.log(`🌊 [WORKFLOW EXECUTOR] Detected streaming node: ${nodeId}`);
       return this.executeStreamingNode(
         nodeId,
         executedSet,
@@ -691,7 +691,7 @@ export class WorkflowExecutor {
    * Execute all nodes using optimized FIFO queue with cycle detection and retry limits
    */
   async executeAllNodes(lockToken?: symbol): Promise<void> {
-    console.log(
+    if (import.meta.env.DEV) console.log(
       "🚀 [WORKFLOW EXECUTOR] Starting optimized FIFO queue‑based workflow execution",
     );
 
@@ -733,7 +733,7 @@ export class WorkflowExecutor {
       .map((n) => n.id);
     const queue: string[] = [...roots];
 
-    console.log(
+    if (import.meta.env.DEV) console.log(
       `🎯 [WORKFLOW EXECUTOR] Found ${roots.length} root nodes:`,
       roots,
     );
@@ -779,7 +779,7 @@ export class WorkflowExecutor {
         //   continue;
         // }
 
-        console.log(`⚡ [WORKFLOW EXECUTOR] Executing node: ${id}`);
+        if (import.meta.env.DEV) console.log(`⚡ [WORKFLOW EXECUTOR] Executing node: ${id}`);
         const nodeStart = performance.now();
 
         try {
@@ -812,7 +812,7 @@ export class WorkflowExecutor {
 
           executed.add(id);
           metrics.completedNodes.add(id);
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `✅ [WORKFLOW EXECUTOR] Node ${id} completed in ${nodeTime.toFixed(
               2,
             )}ms`,
@@ -833,7 +833,7 @@ export class WorkflowExecutor {
             );
           }
 
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `🔍 [WORKFLOW EXECUTOR] Node ${id} has ${out.length} outgoing edges:`,
             out.map((e) => `${e.source} → ${e.target}`),
           );
@@ -844,24 +844,24 @@ export class WorkflowExecutor {
           let conditionalTargetId: string | undefined;
 
           const isBranchNode = this.conditionalMap.has(id);
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `🔍 [WORKFLOW EXECUTOR] Node ${id} is branch node: ${isBranchNode}, conditionalMap has:`,
             Array.from(this.conditionalMap.keys()),
           );
 
           if (isBranchNode) {
-            console.log(
+            if (import.meta.env.DEV) console.log(
               `🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`,
             );
 
             const handleKey = this.getBranchHandleKey(result);
-            console.log(
+            if (import.meta.env.DEV) console.log(
               `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`,
             );
 
             // 2) pull back an array of targets (might be undefined)
             const branchMap = this.conditionalMap.get(id) || {};
-            console.log(
+            if (import.meta.env.DEV) console.log(
               `🗺️ [WORKFLOW EXECUTOR] Branch map for ${id}:`,
               branchMap,
             );
@@ -881,28 +881,28 @@ export class WorkflowExecutor {
               isConditionalExecution = true;
               conditionalTargetId = targets.join(","); // or pick the first if you need a single string
 
-              console.log(
+              if (import.meta.env.DEV) console.log(
                 `🔀 [WORKFLOW EXECUTOR] Branch node ${id} taking "${handleKey}" path to`,
                 targets,
               );
             } else {
-              console.log(
+              if (import.meta.env.DEV) console.log(
                 `⚠️ [WORKFLOW EXECUTOR] No targets found for branch node ${id} with handle "${handleKey}"`,
               );
             }
           } else {
-            console.log(
+            if (import.meta.env.DEV) console.log(
               `📋 [WORKFLOW EXECUTOR] Processing as regular node: ${id}, setting next = out (${out.length} edges)`,
             );
             next = out;
-            console.log(
+            if (import.meta.env.DEV) console.log(
               `➡️ [WORKFLOW EXECUTOR] Non-branch node ${id} will queue ${next.length} downstream nodes:`,
               next.map((e) => e.target),
             );
           }
 
           // Deliver payloads, record them, and enqueue when dependencies are satisfied
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `📝 [WORKFLOW EXECUTOR] About to deliver ${next.length} edges from node ${id}`,
           );
           for (const e of next) {
@@ -927,7 +927,7 @@ export class WorkflowExecutor {
           }
 
           this.clearIncomingEdgePayloads(id);
-          console.log(
+          if (import.meta.env.DEV) console.log(
             `📋 [WORKFLOW EXECUTOR] Current queue after processing ${id}:`,
             queue,
           );
@@ -1008,7 +1008,7 @@ export class WorkflowExecutor {
         const avgTime =
           Array.from(metrics.nodeTimings.values()).reduce((a, b) => a + b, 0) /
           metrics.nodeTimings.size;
-        console.log(
+        if (import.meta.env.DEV) console.log(
           `⏱️ [WORKFLOW EXECUTOR] Average node execution time: ${avgTime.toFixed(
             2,
           )}ms`,

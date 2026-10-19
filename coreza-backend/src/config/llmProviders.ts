@@ -84,6 +84,8 @@ export const LLM_FACTORIES: Record<string, LLMFactory> = {
         apiKey: config.apiKey,
         modelName: config.model,
         useResponsesApi: true,
+        // Preserve optional Zod tool arguments rather than Responses strict normalization.
+        supportsStrictToolCalling: false,
         maxTokens: config.maxTokens,
         // The locked adapter only recognizes o*/gpt-5 in its typed reasoning path.
         // Responses spreads these kwargs unchanged, including the nested effort.

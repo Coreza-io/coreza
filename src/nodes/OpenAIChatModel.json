@@ -23,7 +23,7 @@
       "required": true
     }
   ],
-  "authAction": { "url": "/openai/chat-model/auth", "method": "POST" },
+  "authAction": { "url": "/models/openaichatmodel/auth", "method": "POST" },
   "fields": [
     {
       "key": "credential_id",

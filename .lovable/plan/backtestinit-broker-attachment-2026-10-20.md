@@ -10,7 +10,9 @@ Status: implementation plan only; no application code changes.
 
 Remove the editable Broker/Data Provider selection from BacktestInit. Give BacktestInit one bottom target connector labelled **Broker**, using the same attachment interaction and visual treatment as AI Agent's Chat Model/Tool inputs. Connect an existing Alpaca, Schwab, Binance, or Dhan node to that connector.
 
-The attachment supplies the broker identity and saved credential reference. BacktestInit still owns symbols, start/end dates, interval, asset type, feed, adjustment, warm-up, capital, fill, slippage, and commission settings. This preserves existing historical-data and simulation semantics while removing duplicate provider/credential configuration.
+The attachment supplies the complete historical-data configuration: provider, credentials, symbols, start/end dates, interval, asset type, feed, adjustment, and other supported provider options. BacktestInit contains only backtest name, initial capital, warm-up settings, and simulation model settings. Symbols, dates, interval, and provider controls must not remain duplicated or hidden as authoritative values in BacktestInit.
+
+Here “model” means the existing fill, slippage, and commission model settings, including their required values; “warm-up” includes warmup_period and warmup_mode. These stay as the existing controls/groups; no new AI model selector is introduced.
 
 The connected broker is a configuration dependency. BacktestInit requests historical candles through the existing HistoricalDataService; attaching it must never execute its selected account/order operation. Simulated orders continue through SimBroker.
 
@@ -21,12 +23,12 @@ This interprets “same as agent with tools” as the same editor attachment pat
 | Area | Current behavior | Consequence |
 | --- | --- | --- |
 | src/nodes/BacktestInit.json | Has only the right output handle; provider is values.broker; credential_id depends on broker | Add a required bottom attachment and remove editable provider/credential fields |
-| BacktestInit fields | asset_type, interval, feed, adjustment have rules depending on broker | Removing broker without a derived provider context would hide fields or empty interval options |
+| BacktestInit fields | asset_type, interval, feed, adjustment have rules depending on broker | Remove these historical-data fields from BacktestInit and use the attached broker's existing controls and validation |
 | src/components/nodes/NodeRouter.tsx | __isTool swaps a main node's handles for a top source handle named tool | Reuse the interaction/rendering approach, with a distinct broker attachment role |
 | src/nodes/AIAgent.json and AIAgentExecutor.ts | AI dependencies connect source node to parent targetHandle; tools are invoked by the parent | New edge direction must also be broker → BacktestInit |
 | src/hooks/useNodeExecution.ts | BacktestInit receives the full nodes/edges snapshot, but serialization omits some definition metadata and does not normalize tool roles in that full-graph branch | Standardize the metadata needed to resolve broker/support roles in manual execution |
 | src/domain/workflowDocument.ts | Persists definition handles; getVisibleValues filters configured fields | Persist effective attachment handles/role; do not lose legacy broker credentials during save |
-| src/utils/fieldVisibility.ts | Preserves a fixed list of system keys including __isTool | Explicitly preserve the new role and provider-dependent values |
+| src/utils/fieldVisibility.ts | Preserves a fixed list of system keys including __isTool | Preserve the new role and the attached broker's historical configuration |
 | coreza-backend/src/engine/graphRuntime.ts | Entry nodes require zero incoming edges; dependency counts only skip sub-node sources | A broker attachment can prevent BacktestInit from starting even if the source is a support node |
 | BacktestExecutor.extractStrategySubgraph | Walks downstream outgoing edges only | Keep main-path traversal separate from incoming support dependency closure |
 | InitializeIndicatorsExecutor.discoverWarmupNodes | Walks outgoing edges without attachment classification | Warm-up discovery must stay on strategy flow |
@@ -100,19 +102,24 @@ Rules:
 | --- | --- |
 | Provider identity | Trusted node definition/registered node-name mapping |
 | credential_id | Attached broker node |
-| Symbols and dates | BacktestInit |
-| Interval and asset_type | BacktestInit |
-| Feed and adjustment | BacktestInit |
-| Warm-up and simulation settings | BacktestInit |
-| Broker operation, order fields, account queries | Not used by the broker attachment |
+| Symbols and dates | Attached broker node |
+| Interval and asset type | Attached broker node |
+| Feed, adjustment, and supported historical options | Attached broker node |
+| Backtest name and initial capital | BacktestInit |
+| Warm-up period and mode | BacktestInit |
+| Fill, slippage, commission models and values | BacktestInit |
+| Historical operation | Attached broker's historical operation, normalized through the existing adapter |
+| Order/account operations | Invalid for backtest attachment execution |
 
-In broker attachment mode, show the credential selector and a short explanation that BacktestInit controls the historical request. Hide operation/order/account fields and disable the node's standalone execute control. Preserve existing normal/tool-mode configuration so switching roles does not destroy it.
+In broker attachment mode, reuse the broker node's existing historical operation form: credentials, symbol, interval, dates, asset type, and provider-specific historical options. For example, Alpaca already has get_candle with symbol/crypto_base/crypto_quote, interval, start, end, feed, adjustment, currency, and sort. Keep this form as the single editing surface. Disable standalone execute while attached; BacktestInit owns fetching, warm-up, and session creation.
 
-Do not require get_candle, symbol, date, order quantity, or accountHash just to configure an attachment. Provider-specific fields genuinely required for historical requests should be declared in provider metadata and normalized explicitly; never forward the entire broker node values object.
+Only historical operations are valid in this role. Restrict the operation selector to registered historical operations or show the existing historical operation as fixed. Normalize Schwab get_price_history through its existing get_candle adapter; preserve equivalent frequency/date options. If a node previously had place_order selected, entering attachment mode must not execute or silently reinterpret it: require a valid historical configuration and retain the prior normal/tool-mode settings without losing them.
+
+Validate the historical fields required by the selected provider/operation before execution. Do not require unrelated order quantity or account-only fields. Declare field mappings and supported options in provider metadata/adapters; never forward the entire values object to a broker API.
 
 Resolve the attached credential as server-owned configuration. BacktestInit values or incoming payload data must not override it. Backend maps the canonical node type to a registered provider and verifies credential ownership/service through existing credential access. Do not trust client-supplied category, broker, or subCategory as authorization.
 
-Keep any derived broker identifier used for UI conditions transient. It must not reintroduce an independently editable provider field or shadow credential in BacktestInit.
+All historical values resolve from the attached broker's captured configuration. New-format BacktestInit payloads must not override them through old broker, credential_id, symbols, start_date, end_date, interval, asset_type, feed, or adjustment fields. Any normalized configuration retained by the backend belongs to the immutable run/session, not to editable BacktestInit values.
 
 ## 5. Frontend implementation
 
@@ -131,13 +138,18 @@ Extend src/nodes/schemas/nodeSchema.ts as needed for supported handle labels/req
 
 ### B. BacktestInit fields
 
-Remove the visible broker and credential_id controls. Retain the historical and simulation fields listed above.
+Retain only these editable settings:
 
-Derive provider-sensitive options from the connected broker using a narrow canonical-store selector. Feed a derived field-evaluation context into visibility, conditional options, and required-field validation. Do not mutate saved values merely to render provider conditions.
+- name: Backtest Name.
+- initial_capital: Initial Capital.
+- warmup_period and warmup_mode: Warm-up settings.
+- fill_model, slippage_model/slippage_value, commission_model/commission_value: Simulation model settings.
 
-Cover field rendering, payload construction, persistence filtering, previews, and server validation consistently. An interval valid for Alpaca may be invalid for Binance. On reconnect, retain valid values and clearly flag invalid ones; do not silently pick a different interval or asset type.
+Remove broker, credential_id, symbols, start_date, end_date, asset_type, interval, feed, and adjustment from BacktestInit. Do not add a description field or a hidden second copy of historical configuration.
 
-With no attachment, keep user-entered historical settings intact and show “Connect a broker to configure provider options.” Missing connection blocks execution, not save.
+Keep the one bottom Broker attachment and the existing main output. An optional read-only attachment label can identify the connected node; it must not become another configuration form. Provider-sensitive fields and validation stay on the broker's existing form. No derived provider field context is needed in BacktestInit.
+
+With no attachment, show “Connect a broker and configure historical data on that node.” Missing connection blocks execution, not save. Reconnecting changes the historical configuration to that of the newly attached broker; it does not copy old BacktestInit data over the new broker.
 
 ### C. Connection transactions
 
@@ -157,7 +169,7 @@ Make manual BacktestInit, Run All, activation/backtest lifecycle, cluster execut
 
 Update the full BacktestInit serialization branch in useNodeExecution, not only support_nodes for AI Agent. Check editor execution services and the canonical serializer for alternate paths.
 
-Preserve __attachmentRole through getVisibleValues. Persist provider-dependent BacktestInit fields using the connected provider context rather than treating a deleted values.broker as absent and filtering those fields away. Do not persist secrets, generated handles from cluster projections, execution highlights, or a second authoritative provider selection.
+Preserve __attachmentRole through getVisibleValues and serialize the broker's historical-operation fields using its effective operation/field visibility. The attached broker stores credentials and all historical options; BacktestInit stores only its retained settings. Run migration before removed legacy fields can be filtered away. Do not persist secrets, generated handles from cluster projections, execution highlights, or a second historical configuration in BacktestInit.
 
 ## 6. Backend implementation
 
@@ -170,10 +182,18 @@ type ResolvedBacktestBroker = {
   brokerNodeId: string;
   provider: string;
   credentialId: string;
+  symbols: string[];
+  interval: string;
+  start: string;
+  end: string;
+  assetType?: string;
+  feed?: string;
+  adjustment?: string;
+  providerOptions?: Record<string, unknown>; // validated historical allowlist only
 };
 ```
 
-Expand optional provider settings only when the existing historical request supports them.
+Normalize the broker's native historical fields into this request, retaining supported provider-specific options. Proposed names describe the internal request contract, not new fields to add to every broker form. Reuse existing adapters and extend the request narrowly where the service currently drops a supported broker option.
 
 The resolver must:
 
@@ -182,9 +202,11 @@ The resolver must:
 3. Resolve the source and its effective source handle.
 4. Validate a recognized provider node and backtest broker role.
 5. Verify registered get_candle support.
-6. Resolve its configured credential reference with the current execution snapshot and existing parameter resolver where supported.
-7. Reject unresolved references and mismatched credentials with a node-specific error.
-8. Return configuration without invoking the broker node's action.
+6. Resolve the attached broker's credential and historical parameters with the current execution snapshot and existing parameter resolver.
+7. Normalize provider field names: symbol/symbols and crypto pair fields; start/end, start_date/end_date, or startTime/endTime; interval versus supported frequency fields; assetType/marketType versus asset_type. Put mappings beside provider adapters rather than hardcoding them throughout BacktestExecutor.
+8. Validate the historical operation, requested range, symbols, interval, provider options, unresolved references, and credential ownership/service.
+9. Preserve existing date/timezone/range boundary semantics. Resolve relative/lookback dates once per initialization using the broker's existing date-mode logic, so main and warm-up requests share one anchor.
+10. Return configuration without executing arbitrary broker node actions.
 
 Use the same helper from BacktestExecutor for direct /backtest/init and server-owned execution. No duplicated provider switch in routes or frontend. For new-format requests, attachment errors never fall back to params.broker.
 
@@ -192,9 +214,13 @@ Use the same helper from BacktestExecutor for direct /backtest/init and server-o
 
 Resolve attachment, validate historical settings/capabilities, and validate workflow ownership before inserting a running backtest or creating SimBroker state.
 
-Replace direct params.broker/params.credential_id reads with the resolved attachment. Keep existing symbol parsing, date behavior, candle normalization, multi-symbol handling, cancellation, and output contract.
+Replace all historical reads from BacktestInit params with the resolved attached broker configuration, including provider, credential, symbols, dates, interval, asset type, feed, and adjustment. The backtest record's start_date/end_date and session metadata must come from this same normalized configuration. Keep candle normalization, cancellation, and downstream output contracts.
 
-Both strategy fetchRange and warm-up fetchPreviousBars use the exact same resolved provider and credential, with the same BacktestInit asset/feed/adjustment configuration. Resolve once per initialization, not per symbol or bar.
+Preserve multi-symbol backtests: normalize the broker's symbol/symbols field into the existing per-symbol request list. If a broker form currently restricts input to one symbol, extend only that historical-operation input to support the existing backtest symbol-list behavior with explicit validation. Do not add Symbols back to BacktestInit.
+
+Both strategy fetchRange and warm-up fetchPreviousBars use the same resolved broker configuration. Warm-up starts strictly before the broker's resolved start date, uses BacktestInit's warmup_period/mode, and keeps the broker's symbol, interval, asset, feed, adjustment, and supported request options. Resolve configuration once per initialization, not per symbol or bar.
+
+Honor the requested backtest date range rather than accidentally truncating the simulation to the broker UI's optional limit or one page. Keep existing pagination/full-range behavior, with warm-up counts controlled by BacktestInit. Validate or normalize sort consistently; do not treat a saved page_token as the beginning of the historical range. Define these request-control rules in the historical adapter and cover them with tests.
 
 Keep HistoricalDataService → BrokerExecutor → registered get_candle adapters. Avoid a new HTTP round trip to execute the attached card or fetch an already-rendered node output. Do not use cached output as the historical-data source.
 
@@ -223,7 +249,7 @@ This closure is bounded by the captured graph and cycle/endpoint validation. Do 
 
 Extend backend node-definition metadata only as required for provider/role resolution. Use trusted loaded definitions/runtime registries to validate submitted node identities.
 
-Apply the same attachment/cardinality rules at save/import and execution boundaries. Server validators must understand dynamic effective handles, rather than comparing a rendered broker source handle with the original main output handle.
+Apply the same endpoint, role, and maximum-one attachment rules at save/import and execution boundaries. Save/import may retain an incomplete graph with no broker; execution requires exactly one. Server validators must understand dynamic effective handles, rather than comparing a rendered broker source handle with the original main output handle.
 
 Preserve existing cluster rules, including attachment boundaries, disconnected saved members, canonical identity, and hierarchy guards. No database schema change is expected for a role inside node values and a normal edge; verify existing request/schema allowlists before implementation.
 
@@ -234,10 +260,10 @@ Removing the old fields can otherwise erase credentials and provider-dependent s
 For a legacy BacktestInit with values.broker and no broker attachment:
 
 1. Preserve all original values while detecting its format.
-2. For a supported broker, create a dedicated broker attachment node with the same credential reference.
+2. For a supported broker, create a dedicated broker attachment node and move its credential, symbols, dates, interval, asset type, feed, and adjustment into the provider's native historical fields. Select its valid historical operation. Map names through the same provider adapter used at runtime.
 3. Allocate its identity/display name through src/domain/nodeNaming.ts against the complete canonical inventory.
 4. Connect it to the broker target with fresh canonical edge identity; keep BacktestInit's existing id and output edges.
-5. Preserve every historical and simulation value exactly, including provider-native interval strings.
+5. Preserve effective historical requests exactly, including provider-native interval strings, date boundaries, multi-symbol lists, and crypto symbol conventions. Keep only name, initial capital, warm-up, and model settings on BacktestInit after successful migration; remove old historical fields only after equivalent broker values have been validated. Retain the original candidate on migration failure.
 6. If BacktestInit is clustered, create the attachment in the same direct cluster ownership using document commands and normal layout/insertion rules.
 7. Commit the migration as one reviewable document/history transaction. Do not automatically write the database just because the editor loads.
 8. Re-running migration is idempotent; it must not create duplicate nodes or edges.
@@ -256,7 +282,8 @@ Examples:
 - “Backtest Init already has a broker. Reconnect or remove the existing connection.”
 - “The attached node does not support historical candles.”
 - “Choose a credential on Alpaca1.”
-- “Interval 1Day is not valid for the attached Binance provider.”
+- “Interval 1Day on Binance1 is not valid for its historical operation.”
+- “Configure a historical operation, symbol, interval, and date range on Alpaca1.”
 - “The attached broker node no longer exists.”
 
 Detailed errors go to Output Data under existing guarded error publication rules. The BacktestInit execution indicator owns initialization; the attachment may show a dependency activity state while its history request is active, if this fits existing activity events.
@@ -267,13 +294,13 @@ Log a bounded broker-resolution/history summary with BacktestInit id, broker nod
 
 | File/area | Planned work |
 | --- | --- |
-| src/nodes/BacktestInit.json | Broker target; remove provider/credential controls; preserve historical settings |
+| src/nodes/BacktestInit.json | Broker target; retain only name, initial capital, warm-up, and model settings |
 | src/nodes/schemas/nodeSchema.ts | Metadata support required for effective handles/provider resolution |
 | src/components/nodes/NodeRouter.tsx | Backtest broker role; top handle; attachment card/execute behavior |
-| Node layout and field rendering | Role-sensitive configuration and derived provider field context |
+| Broker node definitions, adapters, and field rendering | Reuse historical forms; normalize native symbols/dates/interval/options; role-sensitive operation validation |
 | src/pages/WorkflowEditor.tsx | Canonical connect/reconnect validation and migration transaction |
-| src/domain/workflowDocument.ts | Persist effective role/handles and context-aware field values |
-| src/utils/fieldVisibility.ts | Preserve role and provider-dependent values |
+| src/domain/workflowDocument.ts | Persist effective role/handles and broker-owned historical values |
+| src/utils/fieldVisibility.ts | Preserve role and broker historical fields; avoid legacy data loss |
 | src/domain/clusters/edgeSemantics.ts | Recognize effective broker attachment handles |
 | src/hooks/useNodeExecution.ts | Full graph serialization and manual execution context |
 | src/utils/workflowExecutor.ts | Main-edge dependency/start logic; attachment exclusion |
@@ -281,7 +308,8 @@ Log a bounded broker-resolution/history summary with BacktestInit id, broker nod
 | coreza-backend/src/nodes/nodeDefinitions.ts | Trusted provider/effective handle metadata |
 | New focused attachment helpers | Resolve/validate one broker; canonical/main graph classification |
 | coreza-backend/src/backtest/BacktestExecutor.ts | Preflight resolver, shared history configuration, strategy/support closure |
-| coreza-backend/src/routes/backtest.ts | Preserve graph context and explicit legacy/new request handling |
+| coreza-backend/src/routes/backtest.ts | Pass retained init settings and graph; legacy/new normalization; remove new-format reliance on flat historical params |
+| coreza-backend/src/marketData/HistoricalDataService.ts and provider adapters | Carry complete normalized broker historical options consistently into main/warm-up requests |
 | coreza-backend/src/engine/graphRuntime.ts and workflowPlan.ts | Scheduling semantics and full dependency context |
 | InitializeIndicatorsExecutor.ts | Main-path warm-up discovery |
 | BacktestSession.ts / compiled compiler | Verify no dependency execution or lost agent attachments |
@@ -300,13 +328,17 @@ These are scoped change points, not a requirement to rewrite every listed module
 | Binance spot/futures and Dhan | Existing normalization/request behavior preserved; unsupported combinations fail clearly |
 | Missing/two/dangling/non-broker attachments | Deterministic validation error before run resources are created |
 | Duplicate connection and reconnect | Exactly one persisted canonical edge; one undoable change |
-| Broker selected operation is place_order | No order call is made by attachment initialization or replay |
+| Broker selected operation is place_order | Reject invalid historical attachment configuration; no order call is made |
 | Manual BacktestInit → OnBar | Init succeeds with incoming attachment; stepping uses same session |
 | Execute All and lifecycle activation | BacktestInit starts; broker does not execute as root or on every bar |
 | Cluster Execute | Normal action path retained; canonical broker dependency is available |
 | Interpreted and compiled backtests | Same strategy results; attachment not an opcode or scheduling dependency |
 | Warm-up disabled/seed/replay | Same boundaries, bars, provider settings, and readiness as baseline |
-| Multiple symbols | Same credential/provider snapshot for all symbol requests |
+| Multiple symbols configured on broker | Normalize list and preserve per-symbol requests with the same credential/provider snapshot |
+| Broker fields edited or reconnected | Next run uses that broker's symbols/dates/interval/options; no stale BacktestInit override |
+| Broker expression/lookback dates | Resolve once from the captured context; main and warm-up share boundaries |
+| Broker limit/sort/page options | Full requested range and chronological simulation preserved; no silent truncation |
+| BacktestInit form/payload | Only name, initial capital, warm-up and simulation model settings; one Broker connector |
 | AI Agent in strategy with tools/model/memory | Incoming support closure retained and invoked only by the agent |
 | AI Agent outside backtest | Existing tool mode, parameter logging, activity highlights, and routing unchanged |
 | Save/reload/export/import/copy/paste/undo | Role, effective handles, credential reference, and dependent fields survive |
@@ -326,12 +358,12 @@ Since this deliverable is a plan, these implementation checks have not been exec
 
 1. Define role, effective handles, provider lookup, and edge validation; add contract fixtures.
 2. Implement backend resolver/preflight and graph scheduling/context separation with legacy normalization.
-3. Add frontend broker role/card, BacktestInit handle, derived field context, and consistent serialization.
+3. Add frontend broker role/card with its existing historical form, reduce BacktestInit to the retained fields, and update serialization.
 4. Add migration and update the example template.
 5. Complete parity, agent regression, cluster, persistence, and execution-path validation.
 6. Ship backend compatibility before frontend authoring/removal of the old selector.
 
-Complete when a user can attach exactly one supported broker to BacktestInit, select credentials on that broker, and obtain the same backtest behavior through manual, Run All, cluster, and lifecycle paths. Provider dependencies must never execute as ordinary workflow nodes or place live orders merely because they were attached.
+Complete when BacktestInit contains only name, initial capital, warm-up, and simulation model settings; a user configures all historical data on exactly one attached broker; and manual, Run All, cluster, and lifecycle execution use that broker's configuration consistently. Provider dependencies must never execute as ordinary workflow nodes or place live orders merely because they were attached.
 
 ## Source references
 

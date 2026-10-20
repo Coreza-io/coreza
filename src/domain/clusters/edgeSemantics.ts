@@ -1,3 +1,4 @@
+import { effectiveHandles } from '../nodeRoles';
 import type { Edge, Node } from '@xyflow/react';
 import type { SemanticEdgeKind } from './validate';
 
@@ -16,7 +17,7 @@ interface ClusterNodeDefinition {
 const getDefinition = (node: Node | undefined): ClusterNodeDefinition | undefined => {
   const definition = node?.data?.definition;
   return typeof definition === 'object' && definition !== null
-    ? definition as ClusterNodeDefinition
+    ? { ...definition as ClusterNodeDefinition, handles: effectiveHandles(definition, node?.data?.values as Record<string, unknown>) }
     : undefined;
 };
 

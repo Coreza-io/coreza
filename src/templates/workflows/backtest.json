@@ -206,16 +206,8 @@
         "y": 350.25203735265035
       },
       "values": {
-        "feed": "sip",
         "name": null,
-        "broker": "alpaca",
-        "symbols": "BKSY",
-        "end_date": "2025-06-01",
-        "interval": "1Min",
-        "asset_type": "stock",
         "fill_model": "immediate",
-        "start_date": "2025-01-01",
-        "credential_id": "My Alpaca3",
         "warmup_period": "200",
         "slippage_model": "percentage",
         "slippage_value": "0.001",
@@ -274,6 +266,27 @@
         "checkDependency": true,
         "limit_price": null,
         "stop_price": null
+      }
+    },
+    {
+      "id": "AlpacaHistory",
+      "type": "Alpaca",
+      "category": "Broker",
+      "position": {
+        "x": 856.4123769248936,
+        "y": 830.2520373526504
+      },
+      "values": {
+        "__attachmentRole": "backtestBroker",
+        "operation": "get_candle",
+        "credential_id": "My Alpaca3",
+        "symbol": "BKSY",
+        "start": "2025-01-01",
+        "end": "2025-06-01",
+        "interval": "1Min",
+        "assetType": "stock",
+        "feed": "sip",
+        "adjustment": "raw"
       }
     }
   ],
@@ -340,6 +353,13 @@
       "target": "Buy",
       "sourceHandle": "true",
       "targetHandle": "input"
+    },
+    {
+      "id": "edge_backtest_broker",
+      "source": "AlpacaHistory",
+      "sourceHandle": "broker",
+      "target": "BacktestInit",
+      "targetHandle": "broker"
     }
   ],
   "isActive": false

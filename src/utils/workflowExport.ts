@@ -1,3 +1,4 @@
+import { validateBrokerAttachments } from "@/domain/nodeRoles";
 import { allocateNodeName } from "@/domain/nodeNaming";
 import { mapNodeReferences, remapNodeReferenceMap } from "@/utils/remapNodeReferences";
 import { resolveNodeIdentity, withUniqueInstanceAliases } from "@/utils/referenceResolution";
@@ -153,6 +154,7 @@ export async function importWorkflow(file: File): Promise<{
   const validationNodes: Node[] = normalizedNodes.map((node) => ({
     ...node, data: { values: node.values, definition: nodeManifest[node.type as keyof typeof nodeManifest] },
   }));
+  validateBrokerAttachments(validationNodes, importedEdges);
   const validation = validateClusters(validationNodes, importedEdges, parsedClusters.clusters);
   if (!validation.valid) throw new Error(validation.violations[0].message);
   // Validate references before allocating public names could hide ambiguity.

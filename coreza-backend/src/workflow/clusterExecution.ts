@@ -1,3 +1,4 @@
+import { isSupportNode } from "./nodeRoles";
 import { resolveClusterHierarchy } from './clusterHierarchy';
 import { createHash } from "crypto";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
@@ -220,8 +221,8 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
     else boundaryOutputEdges.push(edge);
   }
 
-  const attachmentNodeIds = members.filter((id) => nodeById.get(id)?.node_type === "sub").sort();
-  const executableNodeIds = members.filter((id) => nodeById.get(id)?.node_type !== "sub").sort();
+  const attachmentNodeIds = members.filter((id) => isSupportNode(nodeById.get(id))).sort();
+  const executableNodeIds = members.filter((id) => !isSupportNode(nodeById.get(id))).sort();
   if (executableNodeIds.length === 0) throw new ClusterPreflightError("empty_executable_scope", { clusterId });
   const unsupportedNodeIds = executableNodeIds.filter((id) => {
     const node = nodeById.get(id);

@@ -1,3 +1,4 @@
+import { effectiveHandles, validateBrokerAttachments } from './nodeRoles';
 import type { Edge, Node } from '@xyflow/react';
 import type { NodeCluster } from '@/domain/clusters/types';
 import { normalizeClusters } from '@/domain/clusters/validate';
@@ -45,6 +46,7 @@ export function serializeWorkflowContent(
   edges: readonly Edge[],
   clusters: readonly NodeCluster[],
 ): EditableWorkflowContent {
+  validateBrokerAttachments(nodes, edges);
   const serializedNodes = nodes.map((node) => {
     const definition = node.data.definition as Record<string, unknown> | undefined;
     const pinnedOutput = safePinnedOutput(node.data.pinnedOutput);
@@ -62,7 +64,7 @@ export function serializeWorkflowContent(
       values: getVisibleValues(definition, (node.data.values as Record<string, unknown>) ?? {}),
       executionMode: definition?.executionMode,
       streamingConfig: definition?.streamingConfig,
-      handles: definition?.handles,
+      handles: effectiveHandles(definition, (node.data.values as Record<string, unknown>) ?? {}),
       ...(pinnedOutput !== undefined ? { pinnedOutput } : {}),
     };
   });

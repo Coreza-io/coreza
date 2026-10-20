@@ -1,3 +1,4 @@
+import { effectiveHandles, isBacktestBroker, isSupportNode } from "@/domain/nodeRoles";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { prepareExpressionTransport } from "../../coreza-backend/src/nodes/logic/expressionTransport";
@@ -349,8 +350,13 @@ export function useNodeExecution({
           const serializedNode: Record<string, any> = {
             id: n.id,
             name: nodeDefinition?.name,
-            node_type: nodeDefinition?.node_type,
+            node_type: isSupportNode(n) ? "sub" : nodeDefinition?.node_type,
+            subCategory: nodeDefinition?.subCategory,
+            provider: nodeDefinition?.provider,
+            handles: effectiveHandles(nodeDefinition, n.data?.values as any),
             category: nodeDefinition?.category,
+            pinnedOutput: n.data?.pinnedOutput,
+            __isTool: (n.data?.values as any)?.__isTool === true,
           };
 
           if (
@@ -359,7 +365,7 @@ export function useNodeExecution({
             nodeDefinition?.name === "RollingWindow" ||
             nodeDefinition?.name === "Consolidator"
           ) {
-            serializedNode.values = n.data?.values || {};
+            serializedNode.values = isBacktestBroker(n) ? resolveDeep(n.data?.values || {}, {}, allNodeData, false, variableSnapshot?.values) : n.data?.values || {};
           }
 
           return serializedNode;
@@ -420,6 +426,7 @@ export function useNodeExecution({
     async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number, allowedNodeIds?: ReadonlySet<string>, lockToken?: symbol): Promise<NodeExecutionOutcome> => {
       if (e) e.preventDefault();
       const outcomeNodeId = nodeId ?? "unknown";
+      if (isBacktestBroker(getNodes().find(n => n.id === nodeId))) return publishFailure('Execute Backtest Init to fetch this broker’s historical data.', () => true);
       if (allowedNodeIds && !allowedNodeIds.has(outcomeNodeId)) {
         return { nodeId: outcomeNodeId, status: "failed", error: { message: `Node ${outcomeNodeId} is outside the allowed execution scope.` } };
       }

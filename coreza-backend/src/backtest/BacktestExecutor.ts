@@ -52,6 +52,8 @@ import {
   historicalBarTimestamp,
 } from "../marketData/HistoricalDataService";
 import type { HistoricalBar } from "../marketData/HistoricalDataService";
+import { resolveBacktestBrokerAttachment } from "./resolveBrokerAttachment";
+import { isAttachmentEdge, isSupportNode } from "../workflow/nodeRoles";
 import { parseWarmupPeriod } from "../utils/warmupPeriod";
 import {
   alignMultiSymbolBars as alignBars,
@@ -81,8 +83,9 @@ function extractStrategySubgraph(
   allNodes: WorkflowNode[],
   allEdges: WorkflowEdge[],
 ): { nodes: WorkflowNode[]; edges: WorkflowEdge[]; entryNodeIds: string[] } {
+  const mainEdges = allEdges.filter(e => !isAttachmentEdge(e, allNodes));
   // Identify entry nodes: nodes directly downstream of BacktestInit
-  const entryNodeIds = allEdges
+  const entryNodeIds = mainEdges
     .filter((edge) => edge.source === backtestNodeId)
     .map((edge) => edge.target);
 
@@ -100,7 +103,7 @@ function extractStrategySubgraph(
     if (node) nodes.push(node);
 
     // Only include edges BETWEEN strategy nodes (not from BacktestInit)
-    const outgoing = allEdges.filter((edge) => edge.source === nodeId);
+    const outgoing = mainEdges.filter((edge) => edge.source === nodeId);
     edges.push(...outgoing);
     for (const edge of outgoing) {
       if (!visited.has(edge.target)) queue.push(edge.target);
@@ -112,6 +115,17 @@ function extractStrategySubgraph(
     visited.has(id),
   );
 
+  const dependencyQueue = [...visited];
+  while (dependencyQueue.length) {
+    const target = dependencyQueue.shift()!;
+    for (const edge of allEdges.filter(e => e.target === target && isAttachmentEdge(e, allNodes))) {
+      edges.push(edge);
+      if (visited.has(edge.source)) continue;
+      const source = allNodes.find(n => n.id === edge.source);
+      if (!source || !isSupportNode(source)) continue;
+      visited.add(source.id); nodes.push(source); dependencyQueue.push(source.id);
+    }
+  }
   return { nodes, edges, entryNodeIds: uniqueEntryNodeIds };
 }
 
@@ -314,6 +328,12 @@ export class BacktestExecutor implements INodeExecutor {
         );
       }
 
+      const resolvedBroker = await resolveBacktestBrokerAttachment(node, context?.nodes || [node], context?.edges || [], context || {});
+      const { provider: broker, credentialId, symbols: capturedSymbols, interval, start: startDate, end: endDate, assetType, feed, adjustment, providerOptions } = resolvedBroker;
+      const symbols = [...capturedSymbols];
+      const symbol = symbols[0];
+      console.log('[BacktestExecutor] Historical broker resolved', { initNodeId: node.id, brokerNodeId: resolvedBroker.brokerNodeId, provider: broker, symbols: symbols.slice(0, 10), symbolCount: symbols.length, interval, startDate, endDate });
+
       const { data: backtest, error: insertError } = await supabaseClient
         .from("backtests")
         .insert({
@@ -326,8 +346,8 @@ export class BacktestExecutor implements INodeExecutor {
           commission_rate: config.commissionValue,
           slippage_rate: config.slippageValue,
           start_date:
-            params.start_date || new Date().toISOString().split("T")[0],
-          end_date: params.end_date || new Date().toISOString().split("T")[0],
+            startDate,
+          end_date: endDate,
           started_at: new Date().toISOString(),
         } as any)
         .select("id")
@@ -349,32 +369,6 @@ export class BacktestExecutor implements INodeExecutor {
       const simBroker = this.getSimBroker(backtestId, config);
       simBroker.initializePortfolio();
 
-      const broker = String(params.broker || "").toLowerCase();
-      const credentialId = params.credential_id;
-      const symbol = params.symbol;
-      const symbols = this.parseSymbols(params.symbols, params.symbol);
-      const interval = params.interval;
-      const startDate =
-        params.start_date || new Date().toISOString().split("T")[0];
-      const endDate = params.end_date || new Date().toISOString().split("T")[0];
-      const assetType = params.asset_type;
-      const feed = params.feed;
-      const adjustment = params.adjustment;
-
-      if (!broker || symbols.length === 0 || !interval) {
-        return toNodeResult(
-          createErrorOutput(
-            "broker, symbol/symbols, and interval are required",
-          ),
-        );
-      }
-
-      if (broker !== "yahoo_finance" && !credentialId) {
-        return toNodeResult(
-          createErrorOutput("credential_id is required for selected broker"),
-        );
-      }
-
       const configuredWarmupBars = parseWarmupPeriod(params.warmup_period);
       let warmupMode: WarmupMode =
         params.warmup_mode === "workflow_replay" ? "workflow_replay" : "seed";
@@ -395,6 +389,7 @@ export class BacktestExecutor implements INodeExecutor {
                   feed,
                   adjustment,
                   credentialId,
+                  providerOptions,
                 },
                 context,
               ),
@@ -488,6 +483,7 @@ export class BacktestExecutor implements INodeExecutor {
                   feed,
                   adjustment,
                   credentialId,
+                  providerOptions,
                 },
                 context,
               ),
@@ -657,8 +653,8 @@ export class BacktestExecutor implements INodeExecutor {
           mode: isManual ? "manual" : "batch",
           total_bars: barEvents.length,
           initial_capital: config.initialCapital,
-          start_date: params.start_date,
-          end_date: params.end_date,
+          start_date: startDate,
+          end_date: endDate,
           symbol: primarySymbol,
           symbols,
           interval,
@@ -734,16 +730,16 @@ export class BacktestExecutor implements INodeExecutor {
       }
       return errorResult;
     } finally {
-      if (context?.runId && createdBacktestId && !initialized) {
+      if (createdBacktestId && !initialized) {
         BacktestSessionManager.getInstance().deleteSession(createdBacktestId);
         BacktestExecutor.cleanupBacktestResources(createdBacktestId);
         const { error } = await (supabase.from("backtests") as any)
           .update({
-            status: context.abortSignal?.aborted ? "cancelled" : "failed",
+            status: context?.abortSignal?.aborted ? "cancelled" : "failed",
             completed_at: new Date().toISOString(),
-            error_message: context.abortSignal?.aborted ? "Workflow cancelled by user" : "Backtest execution or persistence failed",
+            error_message: context?.abortSignal?.aborted ? "Workflow cancelled by user" : "Backtest execution or persistence failed",
           })
-          .eq("id", createdBacktestId).eq("user_id", context.userId)
+          .eq("id", createdBacktestId).eq("user_id", context?.userId)
           .in("status", ["pending", "running"]).select("id").maybeSingle();
         if (error) throw new Error(`Failed to record backtest failure: ${error.message}`);
       }

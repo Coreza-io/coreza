@@ -5,6 +5,8 @@ export const HandleSchema = z.object({
   position: z.enum(["left", "right", "top", "bottom"]),
   id: z.string().min(1),
   connectionKind: z.enum(["main", "attachment"]).optional(),
+  label: z.string().optional(),
+  required: z.boolean().optional(),
 });
 
 export const ValueMapSchema = z.object({
@@ -203,6 +205,7 @@ export const NodeConfigSchema = z
     parentNode: z.string().optional(),
     type: z.string().optional(),
     provider: z.string().optional(),
+    broker: z.string().optional(),
     streamingConfig: StreamingConfigSchema.optional(),
     listeningConfig: ListeningConfigSchema.optional(),
 

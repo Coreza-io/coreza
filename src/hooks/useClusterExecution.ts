@@ -1,3 +1,4 @@
+import { isSupportNode } from "@/domain/nodeRoles";
 import { compileEditTemplate } from "../../coreza-backend/src/nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
@@ -93,7 +94,7 @@ export function buildClusterExecutionPlan(
   const memberSet = new Set(members);
   const executable = members.filter((id) => {
     const definition = nodeById.get(id)?.data?.definition as NodeConfig | undefined;
-    return definition ? resolveManualExecution(definition).available : false;
+    return definition && !isSupportNode(nodeById.get(id)) ? resolveManualExecution(definition).available : false;
   });
   const executableSet = new Set(executable);
   const dependencies = new Map(executable.map((id) => [id, new Set<string>()]));

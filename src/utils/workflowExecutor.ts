@@ -1,3 +1,4 @@
+import { isSupportNode, isAttachmentEdge } from "@/domain/nodeRoles";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -113,8 +114,10 @@ export class WorkflowExecutor {
     return outcome.output;
   }
 
+  private get mainEdges() { return this.context.edges.filter(e => !isAttachmentEdge(e, this.context.nodes)); }
+
   private getIncomingEdges = (targetId: string) =>
-    this.context.edges.filter((e) => e.target === targetId);
+    this.mainEdges.filter((e) => e.target === targetId);
 
   private markEdgePayload(edgeId: string, payload: any) {
     this.edgePayload.set(edgeId, payload);
@@ -139,9 +142,7 @@ export class WorkflowExecutor {
 
   private isSubNode(id: string) {
     const n = this.context.nodes.find((x) => x.id === id);
-    const nodeType = (n?.data?.definition as any)?.node_type;
-    const isTool = (n?.data as any)?.values?.__isTool === true;
-    return nodeType === "sub" || isTool;
+    return isSupportNode(n);
   }
 
   private isStreamingNode(nodeId: string): boolean {
@@ -232,7 +233,7 @@ export class WorkflowExecutor {
     this.branchOrigins.clear();
 
     // Build a map: nodeId → { handle1: [targetA, targetB], handle2: [targetC], … }
-    this.context.edges.forEach((edge) => {
+    this.mainEdges.forEach((edge) => {
       const sourceNode = this.context.nodes.find((n) => n.id === edge.source);
       const nodeType = (sourceNode?.data?.definition as any)?.name;
       const isBranchingNode = ["If", "Switch"].includes(nodeType);
@@ -268,7 +269,7 @@ export class WorkflowExecutor {
           if (visited.has(current)) continue;
           visited.add(current);
 
-          for (const out of this.context.edges) {
+          for (const out of this.mainEdges) {
             if (out.source === current) stack.push(out.target);
           }
         }
@@ -389,7 +390,7 @@ export class WorkflowExecutor {
     nodeId: string,
     completedNodes: Set<string>,
   ): Promise<void> {
-    const downstream = this.context.edges.filter((e) => {
+    const downstream = this.mainEdges.filter((e) => {
       if (e.source !== nodeId) return false;
       // Exclude edges from any branching node (not just If)
       const isBranchNode = this.conditionalMap.has(e.source);
@@ -406,7 +407,7 @@ export class WorkflowExecutor {
 
   /** Publish current progress without touching the canonical graph. */
   private highlightEdges(nodeId: string, selectedEdges?: readonly Edge[], streamingWaiting = false): void {
-    const connected = selectedEdges ?? this.context.edges.filter(
+    const connected = selectedEdges ?? this.mainEdges.filter(
       (edge) => edge.source === nodeId || edge.target === nodeId,
     );
     this.publishVisual({ nodeId, edgeIds: connected.map(({ id }) => id), streamingWaiting });
@@ -590,7 +591,7 @@ export class WorkflowExecutor {
     if (visited.has(nodeId)) return new Set();
 
     const outgoing = new Map<string, string[]>();
-    for (const edge of this.context.edges) {
+    for (const edge of this.mainEdges) {
       const targets = outgoing.get(edge.source) ?? [];
       targets.push(edge.target);
       outgoing.set(edge.source, targets);
@@ -719,7 +720,7 @@ export class WorkflowExecutor {
     const metrics: ExecutionMetrics = {
       startTime: performance.now(),
       nodeTimings: new Map(),
-      totalNodes: this.context.nodes.length,
+      totalNodes: this.context.nodes.filter(n => !isSupportNode(n)).length,
       failedNodes: new Set(),
       completedNodes: new Set(),
     };
@@ -734,7 +735,7 @@ export class WorkflowExecutor {
         (n) =>
           ((n.data.definition as any)?.node_type === "trigger" ||
             (n.data.definition as any)?.node_type === "backtest") &&
-          !this.context.edges.some((e) => e.target === n.id),
+          !this.mainEdges.some((e) => e.target === n.id),
       )
       .map((n) => n.id);
     const queue: string[] = [...roots];
@@ -760,7 +761,7 @@ export class WorkflowExecutor {
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.context.nodes.find((n) => n.id === id);
 
-        // const inc = this.context.edges.filter((e) => e.target === id);
+        // const inc = this.mainEdges.filter((e) => e.target === id);
         // const missing =
         //   (node.data.definition as any)?.node_type == "trigger" ||
         //   (node.data.definition as any)?.node_type == "backtest" ||
@@ -800,7 +801,7 @@ export class WorkflowExecutor {
             const nodeData = this.nodeStore.getNodeData(node.id);
             const isFinalBatch = nodeData.done;
             if (isFinalBatch) {
-              const doneEdges = this.context.edges.filter(
+              const doneEdges = this.mainEdges.filter(
                 (e) => e.source === node.id && e.sourceHandle === "done",
               );
               doneEdges.forEach((e) => {
@@ -829,7 +830,7 @@ export class WorkflowExecutor {
           // Add delay between node executions to make highlighting visible
           await new Promise((resolve) => setTimeout(resolve, 50));
 
-          let out = this.context.edges.filter((e) => e.source === id);
+          let out = this.mainEdges.filter((e) => e.source === id);
           if (node.type === "Loop") {
             const loopState = this.nodeStore.getNodeData(id);
             out = out.filter((e) =>

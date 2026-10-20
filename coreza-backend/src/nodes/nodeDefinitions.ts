@@ -29,6 +29,8 @@ export interface NodeDefinition {
   description?: string;
   node_type?: string;
   category?: string;
+  broker?: string;
+  provider?: string;
   icon?: string;
   fields?: NodeField[];
   handles?: any[];

@@ -124,6 +124,9 @@ export const getVisibleValues = (
 ): Record<string, any> => {
   if (!definition?.fields || !values) return values || {};
 
+  // Keep unsupported legacy history intact until an explicit migration succeeds.
+  if (definition.name === "BacktestInit" && values.broker) return { ...values };
+
   const result: Record<string, any> = {};
 
   for (const field of definition.fields) {
@@ -135,12 +138,13 @@ export const getVisibleValues = (
   }
 
   // Preserve system-level keys not in definition.fields
-  const systemKeys = ["checkDependency", "logicalOps", "__isTool", "__continueOnError"];
+  const systemKeys = ["checkDependency", "logicalOps", "__isTool", "__attachmentRole", "__normalBrokerValues", "__continueOnError"];
   for (const key of systemKeys) {
     if (values[key] !== undefined) {
       result[key] = values[key];
     }
   }
 
+  if (values.__attachmentRole === 'backtestBroker' && values.symbol !== undefined) result.symbol = values.symbol;
   return result;
 };

@@ -1,3 +1,5 @@
+import { effectiveHandles, validateBrokerAttachments } from "./nodeRoles";
+import { loadNodeDefinition } from "../nodes/nodeDefinitions";
 import { resolveClusterHierarchy } from './clusterHierarchy';
 import { createError } from "../middleware/errorHandler";
 
@@ -45,7 +47,8 @@ function invalid(code: string): never {
 }
 
 function handleKind(node: PersistedNode, handleId: unknown, type: "source" | "target"): "main" | "attachment" | undefined {
-  const handles = Array.isArray(node.handles) ? node.handles as PersistedHandle[] : [];
+  const trusted = typeof node.name === 'string' && ['Alpaca','Schwab','Binance','Dhan','BacktestInit'].includes(node.name) ? loadNodeDefinition(node.name) : undefined;
+  const handles = trusted ? effectiveHandles(trusted, node.values as Record<string, any>) : Array.isArray(node.handles) ? node.handles as PersistedHandle[] : [];
   // Legacy rows predate persisted handle definitions. Preserve their known
   // main/sub-node semantics until they are rewritten by the canonical serializer.
   if (handles.length === 0) return node.node_type === "sub" ? "attachment" : "main";
@@ -81,6 +84,8 @@ export function validateNodeClusterDocument(document: ClusterDocument, options: 
         !nodeById.has(edge.source) || !nodeById.has(edge.target)) invalid("invalid-edge-endpoint");
   }
 
+  try { validateBrokerAttachments(document.nodes, document.edges); }
+  catch (error) { invalid(error instanceof Error ? error.message : 'invalid-broker-attachment'); }
   const hierarchy = resolveClusterHierarchy(document.node_clusters, nodeById.keys());
   if (hierarchy.diagnostics.length) invalid(hierarchy.diagnostics[0].code);
   const clusterIds = new Set<string>();

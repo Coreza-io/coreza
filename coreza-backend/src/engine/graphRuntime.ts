@@ -1,3 +1,4 @@
+import { isSupportNode, isAttachmentEdge, validateBrokerAttachments } from "../workflow/nodeRoles";
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../nodes/types";
 
 type BranchOriginInfo = { ifNodeId: string; handle: string; edgeId: string };
@@ -20,10 +21,12 @@ export class GraphRuntime {
 
   constructor(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.validate(nodes, edges);
+    validateBrokerAttachments(nodes, edges);
+    edges = edges.filter(e => !isAttachmentEdge(e, nodes));
 
     for (const node of nodes) {
       this.nodeById.set(node.id, node);
-      if ((node as any)?.node_type === "sub") this.subNodeIds.add(node.id);
+      if (isSupportNode(node)) this.subNodeIds.add(node.id);
     }
 
     for (const edge of edges) {
@@ -109,6 +112,7 @@ export class GraphRuntime {
     const inDegree = new Map<string, number>();
 
     for (const nodeId of this.nodeById.keys()) {
+      if (this.isSubNode(nodeId)) continue;
       inDegree.set(nodeId, this.getIncomingEdges(nodeId).length);
     }
 

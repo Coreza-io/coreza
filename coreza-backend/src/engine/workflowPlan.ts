@@ -38,6 +38,7 @@ export class WorkflowPlan {
 
     const executorMap = new Map<string, INodeExecutor>();
     for (const node of nodes) {
+      if (graph.isSubNode(node.id)) continue;
       const exec = getNodeExecutor(resolveCategory(node));
       if (exec) executorMap.set(node.id, exec);
     }

@@ -8,6 +8,8 @@
  * See the LICENSE file for details.
  */
 
+import { BACKTEST_PROVIDERS, effectiveHandles, isBacktestBroker } from "@/domain/nodeRoles";
+import { toast } from "@/hooks/use-toast";
 import React, { memo, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import BaseNode from "./BaseNode";
 import { useAgentParticipantActive } from "@/stores/agentActivityStore";
@@ -27,8 +29,6 @@ interface NodeRouterProps {
   workflowId?: string | null;
 }
 
-// Tool handle used when node is toggled to tool mode
-const TOOL_HANDLE = [{ type: "source" as const, position: "top" as const, id: "tool" }];
 // Categories ineligible for tool toggle
 const TOOL_INELIGIBLE_CATEGORIES = new Set([
   "Trigger", "Backtest", "AIAgent", "ChatModel", "LLM",
@@ -40,7 +40,34 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
   const { getNodes, getEdges, updateNodeData } = useStableNodes();
   const executionStore = useExecutionStore();
 
-  const definition = data.definition;
+  const brokerMode = isBacktestBroker({data});
+  const definition = useMemo(() => brokerMode ? {
+    ...data.definition,
+    fields: data.definition.fields.map((field: any) => field.key === 'operation' ? {
+      ...field, options: field.options?.filter((o: any) => o.id === 'get_candle' || o.id === 'get_price_history'),
+      description: 'Choose a historical operation. Backtest Init owns execution.',
+    } : field.key === 'symbol' && data.definition.name === 'Alpaca' ? {
+      ...field, label: 'Symbols (comma-separated)', required: false,
+      displayOptions: {show: {operation: ['get_candle']}},
+    } : (field.key === 'crypto_base' || field.key === 'crypto_quote') ? {...field, required: false} : field).filter((field: any) => {
+      const operations = field.displayOptions?.show?.operation;
+      return !Array.isArray(operations) || operations.some((op: string) => op === 'get_candle' || op === 'get_price_history');
+    }),
+  } : data.definition, [data.definition, brokerMode]);
+  const changeRole = (broker: boolean) => {
+    if (!nodeId || data.readOnly) return;
+    const inventory = getNodes();
+    const canonical = inventory.find(n => n.id === nodeId);
+    if (!canonical) return;
+    if (getEdges().some(e => e.source === nodeId || e.target === nodeId)) {
+      toast({title: 'Disconnect existing edges before changing roles.', variant: 'destructive'}); return;
+    }
+    const current = canonical.data.values as any;
+    const values = broker
+      ? {...current, __normalBrokerValues: {...current}, __attachmentRole: 'backtestBroker', __isTool: false}
+      : {...(current.__normalBrokerValues || current), __normalBrokerValues: undefined, __attachmentRole: undefined};
+    updateNodeData(nodeId, {values, fieldState: values});
+  };
   const agentActivityActive = useAgentParticipantActive(data.readOnly ? "" : String(data.workflowSessionId ?? ""), [nodeId ?? ""]);
 
   // Tool mode toggle: read from fieldState first, then persisted values
@@ -54,11 +81,14 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
     if (!nodeId) return;
     const canonical = getNodes().find((node) => node.id === nodeId);
     if (!canonical) return;
+    if (brokerMode || getEdges().some(e => e.source === nodeId || e.target === nodeId)) {
+      toast({title: 'Disconnect existing edges before changing roles.', variant: 'destructive'}); return;
+    }
     updateNodeData(nodeId, {
       values: { ...((canonical.data as any).values || {}), __isTool: !isTool },
       fieldState: { ...((canonical.data as any).fieldState || {}), __isTool: !isTool },
     });
-  }, [getNodes, isTool, nodeId, updateNodeData]);
+  }, [getNodes, getEdges, isTool, brokerMode, nodeId, updateNodeData]);
 
   const fallbackEnabled = useMemo(() => {
     if (definition.name !== "Switch") return false;
@@ -138,7 +168,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
   // Memoize dynamic handles - swap to tool handle when isTool is active
   const dynamicHandles = useMemo(() => {
     // Tool mode: only expose the top "tool" source handle
-    if (isTool) return TOOL_HANDLE;
+    if (brokerMode || isTool) return effectiveHandles(definition, {...data.values, __isTool: isTool});
 
     if (definition.name !== "Switch") {
       return definition.handles || [];
@@ -220,6 +250,8 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
     return handles;
   }, [
     isTool,
+    brokerMode,
+    data.values,
     definition.name,
     definition.handles,
     definition.fields,
@@ -307,7 +339,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
 
   return (
     <BaseNode
-      data={data}
+      data={brokerMode ? {...data, definition} : data}
       selected={selected}
       readOnly={data.readOnly}
       workflowId={workflowId ?? undefined}
@@ -391,7 +423,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           minHeight={dynamicSize.height}
           collapsedSize={definition.collapsedSize}
           handles={dynamicHandles}
-          nodeType={definition.node_type}
+          nodeType={brokerMode ? "sub" : definition.node_type}
           electricBorder={true}
           electricColor="cyan"
           neonColor={renderProps.neonColor}
@@ -409,11 +441,13 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           setEditingName={renderProps.setEditingName}
           isExecuting={data.isExecuting || agentActivityActive}
           hasExecutionError={!!renderProps.error && !renderProps.isSending}
-          isTool={isTool}
-          onToggleTool={canToggleTool ? handleToggleTool : undefined}
+          isTool={isTool || brokerMode}
+          onToggleTool={canToggleTool && !brokerMode ? handleToggleTool : undefined}
           collapsedExecutionControl={renderProps.collapsedExecutionControl}
         >
           {!data.readOnly && definition.name === "AIAgent" && <AgentActivityPanel sessionId={String(data.workflowSessionId ?? "")} nodeId={nodeId ?? ""} />}
+          {BACKTEST_PROVIDERS[definition.name] && !data.readOnly && <button type="button" className="nodrag mx-4 my-2 text-xs underline" onClick={() => changeRole(!brokerMode)}>{brokerMode ? 'Backtest Broker · Return to normal mode' : 'Use as Backtest Broker'}</button>}
+          {definition.name === 'BacktestInit' && <p className="mx-4 my-2 text-xs text-muted-foreground">Connect a broker and configure historical data on that node.</p>}
           {layoutType === "repeater" ? (
             <RepeaterNodeLayout {...renderProps} />
           ) : (

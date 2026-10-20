@@ -1,3 +1,4 @@
+import { isAttachmentEdge } from "../../workflow/nodeRoles";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -56,6 +57,7 @@ export function discoverWarmupNodes(
   allNodes: WorkflowNode[],
   allEdges: WorkflowEdge[],
 ): DiscoveredWarmupNode[] {
+  allEdges = allEdges.filter(e => !isAttachmentEdge(e, allNodes));
   const warmupNodes: DiscoveredWarmupNode[] = [];
   const visited = new Set<string>();
   const queue = allEdges

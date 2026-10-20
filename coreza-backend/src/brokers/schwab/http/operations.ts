@@ -255,7 +255,7 @@ export const schwabOperations: Record<string, BrokerOperation> = {
   get_price_history: {
     method: 'get',
     path: '/pricehistory',
-    makeParams: makePriceHistoryParams,
+    makeParams: (input: PriceHistoryInput) => makePriceHistoryParams(input.interval ? {...input, ...schwabFrequency(input.interval)} : input),
     transformResult: (raw: any) => ({
       symbol: raw.symbol,
       candles: raw.candles || [],

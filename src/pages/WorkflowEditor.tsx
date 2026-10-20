@@ -1,3 +1,5 @@
+import { migrateBacktestBrokers } from "@/domain/migrateBacktestBrokers";
+import { validateBrokerAttachments } from "@/domain/nodeRoles";
 import { clearAgentActivity } from "@/stores/agentActivityStore";
 import { resetReferenceTextHistory } from "@/hooks/useReferenceTextDrop";
 import { recoverClusterDocument } from '@/domain/clusters/recovery';
@@ -498,6 +500,10 @@ const WorkflowEditorContent = () => {
   useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
     const fields = "values" in patch || "fieldState" in patch;
     if (fields && (!canMutateDocument() || !nodesRef.current.some(node => node.id === nodeId))) return false;
+    if (fields) {
+      try { validateBrokerAttachments(nodesRef.current.map(node => node.id === nodeId ? {...node, data: {...node.data, ...patch}} : node), canonicalEdgesRef.current); }
+      catch (error) { toast({title: 'Invalid broker attachment', description: error instanceof Error ? error.message : String(error), variant: 'destructive'}); return false; }
+    }
     const publish = () => setNodes((current) => {
       if (fields && !canMutateDocument()) return current;
       return current.map((node) => node.id === nodeId
@@ -625,6 +631,7 @@ const WorkflowEditorContent = () => {
     const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes)));
     const nextEdges = cloneEdges(document.edges);
     const nextClusters = document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] }));
+    validateBrokerAttachments(nextNodes, nextEdges);
     syncEditorNodeActionIds(workflowSessionId, nextNodes);
     nodesRef.current = nextNodes;
     canonicalEdgesRef.current = nextEdges;
@@ -976,6 +983,8 @@ const WorkflowEditorContent = () => {
 
   const commitEdgeCandidate = useCallback((candidateEdges: Edge[]) => {
     if (!canMutateDocument({allowConnectionDrag:true})) return;
+    try { validateBrokerAttachments(nodesRef.current, candidateEdges); }
+    catch (error) { toast({title: 'Invalid broker attachment', description: error instanceof Error ? error.message : String(error), variant: 'destructive'}); return; }
     const currentInvalid = new Set(validateClusters(nodes, edges, clusters).violations.flatMap(
       ({ clusterId }) => clusterId ? [clusterId] : [],
     ));
@@ -2571,6 +2580,16 @@ const WorkflowEditorContent = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {nodes.some(n => (n.data.definition as any)?.name === 'BacktestInit' && (n.data.values as any)?.broker) && <Button variant="outline" size="sm" onClick={() => {
+            if (!canMutateDocument()) return;
+            try {
+              const candidate = migrateBacktestBrokers({nodes: nodesRef.current, edges: canonicalEdgesRef.current, clusters});
+              const validation = validateClusters(candidate.nodes, candidate.edges, candidate.clusters);
+              if (validation.violations.length) throw new Error('Repair cluster validation before migrating brokers.');
+              saveHistorySnapshot(); restoreDocument(candidate);
+              toast({title: 'Backtest brokers migrated', description: 'Review the broker nodes, then save the workflow.'});
+            } catch (error) { toast({title: 'Backtest migration needs repair', description: error instanceof Error ? error.message : String(error), variant: 'destructive'}); }
+          }}>Migrate backtest brokers</Button>}
           <input
             type="file"
             accept=".json"

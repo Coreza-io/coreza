@@ -8,6 +8,7 @@
  * See the LICENSE file for details.
  */
 
+import { historicalRequestInput } from "../brokers/historicalConfiguration";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import type { Bar } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
@@ -18,6 +19,7 @@ export interface HistoricalDataContext {
   workflowId?: string;
   runId?: string;
   workflowSessionId?: string;
+  abortSignal?: AbortSignal;
 }
 
 interface HistoricalRequestBase {
@@ -28,6 +30,7 @@ interface HistoricalRequestBase {
   feed?: string;
   adjustment?: string;
   credentialId?: string;
+  providerOptions?: Readonly<Record<string, unknown>>;
 }
 
 export interface HistoricalRangeRequest extends HistoricalRequestBase {
@@ -91,18 +94,7 @@ export class HistoricalDataService {
       ? request.start.toISOString()
       : request.start;
     const end = request.end instanceof Date ? request.end.toISOString() : request.end;
-    const input: NodeInput = {
-      operation: "get_candle",
-      symbol: request.symbol,
-      interval: request.interval,
-      start,
-      end,
-      asset_type: request.assetType,
-      feed: request.feed,
-      adjustment: request.adjustment,
-      credential_id: request.credentialId,
-      limit: "50000",
-    };
+    const input: NodeInput = historicalRequestInput({ ...request, start, end });
     const node: WorkflowNode = {
       id: `broker:${request.provider}:get_candle:${request.symbol}`,
       name: request.provider,
@@ -111,18 +103,29 @@ export class HistoricalDataService {
       subCategory: request.provider,
       values: input,
     };
-    const result = await this.brokerExecutor.execute(node, input, {
-      userId: context.userId,
-      workflowId: context.workflowId || "backtest-init",
-      runId: context.runId || context.workflowSessionId || `backtest-${Date.now()}`,
-    });
-    if (!result.success) {
-      throw new Error(
-        `Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${input.start}..${input.end}): ${result.error}`,
-      );
+    const allBars: HistoricalBar[] = [];
+    let cursor = new Date(start).getTime();
+    const boundary = new Date(end).getTime();
+    for (let page = 0; page < 10000; page++) {
+      if (context.abortSignal?.aborted) throw new Error('Historical data request cancelled.');
+      const pageInput = request.provider === 'binance' ? {...input, startTime: new Date(cursor).toISOString()} : input;
+      const result = await this.brokerExecutor.execute({...node, values: pageInput}, pageInput, {
+        userId: context.userId,
+        workflowId: context.workflowId || 'backtest-init',
+        runId: context.runId || context.workflowSessionId || `backtest-${Date.now()}`,
+      });
+      if (!result.success) throw new Error(`Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${start}..${end}): ${result.error}`);
+      if (result.data?.pagination_complete === false) throw new Error('Historical range exceeded the provider pagination limit. Narrow the date range.');
+      const raw = result.data?.BarSeries?.[0]?.bars;
+      const bars = normalizeHistoricalBars(Array.isArray(raw) ? raw : []);
+      allBars.push(...bars);
+      if (request.provider !== 'binance' || bars.length < 1000) return normalizeHistoricalBars(allBars);
+      const next = historicalBarTimestamp(bars[bars.length - 1]) + 1;
+      if (next <= cursor) throw new Error('Historical pagination did not advance.');
+      if (next >= boundary) return normalizeHistoricalBars(allBars);
+      cursor = next;
     }
-    const bars = result.data?.BarSeries?.[0]?.bars;
-    return normalizeHistoricalBars(Array.isArray(bars) ? bars : []);
+    throw new Error('Historical range exceeded the pagination limit. Narrow the date range.');
   }
 
   async fetchPreviousBars(

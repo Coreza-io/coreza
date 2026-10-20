@@ -66,7 +66,7 @@ export function compilePlan(
     storeSetState: (nodeId: string, key: string, value: any) => void;
   },
 ): CompiledPlan | null {
-  const nodes = [...graph.nodeById.values()];
+  const nodes = [...graph.nodeById.values()].filter(n => !graph.isSubNode(n.id));
   // The dynamic runtime owns per-node error continuation and its routing.
   if (nodes.some(node => node.values?.__continueOnError === true)) return null;
 

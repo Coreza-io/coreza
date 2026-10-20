@@ -568,7 +568,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       : executionHook.error
         ? "failed"
         : "idle";
-  const canExecuteManually = !readOnly && resolveManualExecution(definition).available;
+  const canExecuteManually = !readOnly && fieldState?.__attachmentRole !== "backtestBroker" && resolveManualExecution(definition).available;
   const createExecutionControl = (presentation: "icon" | "labelled") => canExecuteManually ? (
     <ExecutionControl
       targetKind="node"

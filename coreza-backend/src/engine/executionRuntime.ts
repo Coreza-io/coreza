@@ -301,7 +301,7 @@ export abstract class BaseExecutionRuntime {
   executeOnce(item: QueueItem): void | Promise<void> {
     this.assertNodeAllowed(item.nodeId, "execute");
     const node = this.graph.nodeById.get(item.nodeId);
-    if (!node) return;
+    if (!node || this.graph.isSubNode(node.id)) return;
 
     try {
       if (this.options.abortSignal?.aborted)

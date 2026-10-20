@@ -8,6 +8,7 @@
  * See the LICENSE file for details.
  */
 
+import { isBacktestBroker } from "../../workflow/nodeRoles";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import { historicalRowCount, safeToolError, toolInputFields, traceToolHttp, ToolExecutionTrace } from "../../utils/toolExecutionLog";
@@ -48,6 +49,7 @@ export class BrokerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
+    if (isBacktestBroker(node)) return {success: false, error: 'Execute Backtest Init to fetch this broker’s historical data.'};
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
     let isOrderOperation = false;

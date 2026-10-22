@@ -167,7 +167,7 @@ export function ExecutionDetailView({
           allNodeExecutions: nodeExecutions,
           historyNodes: Array.isArray(execution.nodes) ? hydratedNodes : undefined,
           // Missing historical topology must not select sources from today's editor graph.
-          historyEdges: Array.isArray(execution.edges) ? sourceEdges : [],
+          historyEdges: Array.isArray(execution.edges) ? sourceEdges : undefined,
           // Display name from execution or original
           label: node.data?.displayName || (node.data?.definition as any)?.name,
         },

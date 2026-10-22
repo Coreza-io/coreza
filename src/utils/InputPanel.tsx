@@ -186,7 +186,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
           )}
           {readOnly && nodeOptions.length === 0 ? (
             <div className="text-sm text-muted-foreground italic text-center py-8">
-              {historyNodes ? "No previous node connected." : "The workflow snapshot is unavailable for this run."}
+              {historyNodes && historyEdges ? "No previous node connected." : "The workflow snapshot is unavailable for this run."}
             </div>
           ) : readOnly && !owns(selectedExecution, "output") ? (
             <div className="text-sm text-muted-foreground italic text-center py-8">

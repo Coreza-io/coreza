@@ -28,6 +28,7 @@ interface UseNodeReferencesProps {
   readOnly?: boolean;
   fieldState: Record<string, any>;
   previousNodes: readonly SemanticNode[];
+  referenceNodes?: readonly SemanticNode[];
   selectedPrevNodeId: string;
   selectedPrevNode: SemanticNode | undefined;
 }
@@ -53,6 +54,7 @@ export function useNodeReferences({
   readOnly = false,
   fieldState,
   previousNodes,
+  referenceNodes = previousNodes,
   selectedPrevNodeId,
   selectedPrevNode,
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
@@ -125,8 +127,9 @@ export function useNodeReferences({
       const srcNode =
         previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
 
+      const nodes = readOnly ? referenceNodes : getNodes();
       const { allNodeData, getSourceData } = buildPreviewData(
-        readOnly ? previousNodes : getNodes(),
+        nodes,
         executionStore,
         getNodes,
         readOnly,
@@ -139,7 +142,6 @@ export function useNodeReferences({
         if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
         if (referencesVariables(expr) && !workflowId) return "Save the workflow to preview variables";
         if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? "Variable snapshot unavailable" : "Loading variables…";
-        const nodes = getNodes();
         const resolved = resolveReferences(expr, srcData, allNodeData, nodes, variableQuery.data?.values);
 
         // For very large arrays, use quick summarized preview to avoid performance issues
@@ -161,6 +163,7 @@ export function useNodeReferences({
       sourceMap,
       selectedPrevNodeId,
       previousNodes,
+      referenceNodes,
       selectedPrevNode,
       executionStore,
       getNodes,

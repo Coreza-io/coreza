@@ -75,6 +75,7 @@ export interface BaseNodeRenderProps {
   selectOptions: Record<string, any[]>;
   showAuth: boolean;
   previousNodes: readonly SemanticNode[];
+  referenceNodes?: readonly SemanticNode[];
   selectedPrevNodeId: string;
   selectedInputData: any;
   incomingEdgeCount: number;
@@ -192,19 +193,24 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     );
   }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
 
-  // Share topology rules; historical values still come only from this run's results.
-  const previousNodes = useMemo<readonly SemanticNode[]>(() => {
-    const upstream = getPreviousNodes<SemanticNode>(
-      nodeId ?? undefined,
-      readOnly ? data.historyNodes ?? [] : canonicalGraph.nodes,
-      readOnly ? data.historyEdges ?? [] : canonicalGraph.edges,
-    );
-    if (!readOnly) return upstream;
+  // Named references use the complete inventory; dropdown options use only upstream topology.
+  const referenceNodes = useMemo<readonly SemanticNode[]>(() => {
+    if (!readOnly) return canonicalGraph.nodes;
     const recorded = new Map<string, unknown>((data.allNodeExecutions ?? []).map(
       (execution: { nodeId: string; output?: unknown }): [string, unknown] => [execution.nodeId, execution.output],
     ));
-    return upstream.map(node => ({ ...node, data: { ...node.data, output: recorded.get(node.id) } }));
-  }, [canonicalGraph, nodeId, readOnly, data.historyNodes, data.historyEdges, data.allNodeExecutions]);
+    return (data.historyNodes ?? []).map((node: SemanticNode) => ({
+      ...node, data: { ...node.data, output: recorded.get(node.id) },
+    }));
+  }, [canonicalGraph.nodes, readOnly, data.historyNodes, data.allNodeExecutions]);
+  const previousNodes = useMemo(
+    () => getPreviousNodes(
+      nodeId ?? undefined,
+      referenceNodes,
+      readOnly ? data.historyEdges ?? [] : canonicalGraph.edges,
+    ),
+    [nodeId, referenceNodes, readOnly, data.historyEdges, canonicalGraph.edges],
+  );
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;
@@ -303,6 +309,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     readOnly,
     fieldState: fieldStateHook.fieldState,
     previousNodes,
+    referenceNodes,
     selectedPrevNodeId: resolvedPrevNodeId ?? "",
     selectedPrevNode,
   });
@@ -602,6 +609,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     selectOptions: credentialsHook.selectOptions,
     showAuth,
     previousNodes,
+    referenceNodes,
     selectedPrevNodeId: readOnly ? resolvedPrevNodeId ?? "" : selectedPrevNodeId,
     selectedInputData,
     incomingEdgeCount,

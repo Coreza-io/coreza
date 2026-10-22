@@ -391,6 +391,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   fetchDependentOptions,
   referenceStyle,
   previousNodes,
+  referenceNodes = previousNodes,
   selectedPrevNodeId,
   selectedInputData,
   incomingEdgeCount,
@@ -755,7 +756,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
           if (readOnly && referencesVariables(value)) {
             throw new Error("Workflow variables are not included in execution history.");
           }
-          const allNodes = getNodes();
+          const allNodes = readOnly ? referenceNodes : getNodes();
           return resolveReferences(
             value,
             selectedInputData,
@@ -780,7 +781,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       return resolveValue(val);
     },
-    [getNodes, variableQuery.data, readOnly],
+    [getNodes, variableQuery.data, readOnly, referenceNodes],
   );
 
   const computeDropInsert = useCallback(
@@ -878,14 +879,17 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   );
 
   const getPreviewData = useCallback(
-    () => buildPreviewData(previousNodes, executionContext, getNodes, readOnly),
-    [previousNodes, executionContext, getNodes, executionStoreVersion, readOnly],
+    () => buildPreviewData(readOnly ? referenceNodes : previousNodes, executionContext, getNodes, readOnly),
+    [previousNodes, referenceNodes, executionContext, getNodes, executionStoreVersion, readOnly],
   );
 
   const getEditExpressionContext = useCallback(() => {
-    const { allNodeData, getSourceData } = getPreviewData();
+    const { allNodeData } = getPreviewData();
     const input = selectedInputData;
-    const snapshot = snapshotTypedExpressionContext(getNodes(), id => executionContext.getNodeData(id).output);
+    const snapshot = snapshotTypedExpressionContext(
+      readOnly ? referenceNodes : getNodes(),
+      id => readOnly ? allNodeData[id] : executionContext.getNodeData(id).output,
+    );
     return {
       input,
       nodes: allNodeData,
@@ -894,7 +898,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       hasInput: input !== undefined,
       variables: readOnly ? undefined : variableQuery.data?.values,
     };
-  }, [getPreviewData, getNodes, selectedInputData, executionContext, variableQuery.data, readOnly]);
+  }, [getPreviewData, getNodes, selectedInputData, executionContext, variableQuery.data, readOnly, referenceNodes]);
 
   const getOverlayPreviewFor = useCallback(
     (expr: unknown) => {
@@ -906,13 +910,13 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       try {
         if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
         return fullePreview(
-          resolveReferences(expr, srcData, allNodeData, getNodes(), variableQuery.data?.values),
+          resolveReferences(expr, srcData, allNodeData, readOnly ? referenceNodes : getNodes(), variableQuery.data?.values),
         );
       } catch (error) {
         return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
-    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variableQuery.data, readOnly],
+    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variableQuery.data, readOnly, referenceNodes],
   );
 
   const handleOverlayDrop = useCallback(
@@ -933,10 +937,10 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     const { allNodeData, getSourceData } = getPreviewData();
     return {
       allNodeData,
-      nodes: getNodes(),
+      nodes: readOnly ? referenceNodes : getNodes(),
       sourceData: getSourceData(selectedPrevNodeId),
     };
-  }, [getPreviewData, getNodes, selectedPrevNodeId, executionStoreVersion]);
+  }, [getPreviewData, getNodes, selectedPrevNodeId, executionStoreVersion, readOnly, referenceNodes]);
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {

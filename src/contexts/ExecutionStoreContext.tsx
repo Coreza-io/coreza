@@ -10,6 +10,8 @@
 
 import { createContext, useContext, useRef, useEffect, useState, useCallback, useMemo, useSyncExternalStore, startTransition } from 'react';
 import ExecutionContext, { type NodeExecutionData } from '@/utils/executionContext';
+import { useStableNodes } from './StableNodeContext';
+import { resolveListeningFlagKey } from '@/components/nodes/listeningStop';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { StaticExecutionStoreContext } from './StaticExecutionStoreContext';
@@ -38,6 +40,7 @@ const debugLog = (...args: unknown[]) => {
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();
   const { user, session: authSession } = useAuth();
+  const { getNodeById, updateNodeData } = useStableNodes();
   const [updateVersion, setUpdateVersion] = useState(0);
   const listenersRef = useRef(new Set<() => void>());
   const notifyUpdate = useCallback(() => {
@@ -58,6 +61,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
       return () => { listenersRef.current.delete(listener); };
     },
   }), [notifyUpdate]);
+
+  const publishSocketUpdate = useCallback((nodeId: string, patch: Partial<NodeExecutionData>) => {
+    if (!getNodeById(nodeId)) return;
+    storeRef.current!.setNodeData(nodeId, patch);
+    updateNodeData(nodeId, patch);
+    notifyUpdate();
+  }, [getNodeById, updateNodeData, notifyUpdate]);
 
   // WebSocket listener for streaming market data
   useEffect(() => {
@@ -133,18 +143,25 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
             debugLog('📨 [ExecutionStore] Received WebSocket message:', message);
 
+            const webhookIsCurrent = (nodeId: string): boolean => {
+              const node = getNodeById(nodeId);
+              if (!node) return false;
+              const runtime = storeRef.current!.getNodeData(nodeId);
+              const flag = resolveListeningFlagKey(node.data.definition as Parameters<typeof resolveListeningFlagKey>[0]);
+              return runtime[flag] === true && (!message.workflowId || runtime.testListenWorkflowId === message.workflowId);
+            };
+
             // Handle webhook events (manual run mode)
             if (message.type === 'webhook_event' && message.payload) {
               const { nodeId, payload } = message;
 
-              if (nodeId && storeRef.current) {
-                storeRef.current.setNodeData(nodeId, {
+              if (nodeId && webhookIsCurrent(nodeId)) {
+                publishSocketUpdate(nodeId, {
                   output: {
                     webhookPayload: payload,
                     receivedAt: message.timestamp
                   }
                 });
-                notifyUpdate();
                 debugLog('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
               }
             }
@@ -153,8 +170,8 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
             if (message.type === 'webhook_error' && message.nodeId) {
               const { nodeId, error } = message;
 
-              if (storeRef.current) {
-                storeRef.current.setNodeData(nodeId, {
+              if (webhookIsCurrent(nodeId)) {
+                publishSocketUpdate(nodeId, {
                   isListening: false,
                   isTestListening: false,
                   output: {
@@ -163,7 +180,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     endedAt: message.timestamp,
                   },
                 });
-                notifyUpdate();
               }
 
               console.warn('🪝 [ExecutionStore] Webhook error for node:', nodeId, error);
@@ -219,7 +235,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     debugLog('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
                     return;
                   }
-                  storeRef.current.setNodeData(nodeId, {
+                  publishSocketUpdate(nodeId, {
                     output: {
                       status: 'streaming',
                       data,
@@ -227,7 +243,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     },
                     ...(eventEntryId ? { lastStreamEntryId: eventEntryId } : {}),
                   });
-                  notifyUpdate();
                   debugLog(
                     isReplay
                       ? '🔁 [ExecutionStore] Replayed event for:'
@@ -250,7 +265,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
                 if (existingData?.isTestListening) {
-                  storeRef.current.setNodeData(nodeId, {
+                  publishSocketUpdate(nodeId, {
                     output: {
                       status: 'streaming',
                       data,
@@ -258,7 +273,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                       receivedAt: new Date().toISOString()
                     }
                   });
-                  notifyUpdate();
                   debugLog('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
                 } else {
                   debugLog('⚠️ [ExecutionStore] Ignoring legacy streaming for non-listening node:', nodeId);
@@ -310,7 +324,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
         socket = null;
       }
     };
-  }, [user?.id, authSession?.access_token, notifyUpdate]);
+  }, [user?.id, authSession?.access_token, getNodeById, publishSocketUpdate]);
 
   return (
     <ExecutionStoreAccessContext.Provider value={access}>

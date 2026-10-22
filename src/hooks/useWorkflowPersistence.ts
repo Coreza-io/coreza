@@ -52,7 +52,7 @@ export interface NodeReductionCheck {
 
 export const useWorkflowPersistence = ({ projectId, workflowId: documentId }: WorkflowPersistenceOptions) => {
   const { user: authUser, session } = useAuth();
-  const scope = useMemo(() => ({}), [authUser?.id, projectId, documentId]);
+  const scope = useMemo(() => ({}), [authUser?.id, documentId]);
   const currentScope = useRef<object | null>(scope);
   currentScope.current = scope;
   useEffect(() => {
@@ -171,6 +171,7 @@ export const useWorkflowPersistence = ({ projectId, workflowId: documentId }: Wo
         // Block empty saves for existing workflows
         if (workflowId && !opts.isNew) {
           const shouldBlock = await shouldBlockEmptySave(workflowId, nodes.length);
+          if (currentScope.current !== scope) return { success: false };
           if (shouldBlock) {
             toast({
               title: 'Save Blocked',

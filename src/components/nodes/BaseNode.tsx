@@ -29,6 +29,7 @@ import {
 } from "@/contexts/ExecutionStoreContext";
 import { apiClient } from "@/lib/apiClient";
 // Custom hooks
+import { isFieldVisible } from "@/utils/fieldVisibility";
 import { useNodeFieldState } from "@/hooks/useNodeFieldState";
 import { useNodeRenaming } from "@/hooks/useNodeRenaming";
 import { useNodeReferences } from "@/hooks/useNodeReferences";
@@ -160,7 +161,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const expanded = useNodeExpanded(nodeId ?? undefined);
   const runtimeHost = useStore(useCallback(state => !!nodeId && state.nodeLookup.get(nodeId)?.style?.visibility === "hidden", [nodeId]));
   const configurationVisible = expanded && !runtimeHost;
-  const { updateNodeData } = useStableNodes();
+  const { updateNodeData, getNodeById } = useStableNodes();
   const canonicalGraph = useTopologyGraphSnapshot(!readOnly);
   const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
@@ -174,6 +175,16 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     () => workflowSessionId ? getEditorExecutionTarget(workflowSessionId) : "",
   );
   const replaySessionRef = useRef(0);
+  const controlScope = `${workflowSessionId}:${workflowId ?? ""}:${nodeId ?? ""}`;
+  const controlScopeRef = useRef(controlScope); controlScopeRef.current = controlScope;
+  const controlsMounted = useRef(true);
+  useEffect(() => {
+    controlsMounted.current = true;
+    return () => { controlsMounted.current = false; replaySessionRef.current += 1; };
+  }, [controlScope]);
+  const controlsAreCurrent = useCallback(() => controlsMounted.current && controlScopeRef.current === controlScope
+    && !readOnly && !!nodeId && getNodeById(nodeId)?.data.workflowSessionId === workflowSessionId,
+  [controlScope, readOnly, nodeId, workflowSessionId, getNodeById]);
 
   const definition = data.definition;
   const { visualCategory, nodeTheme, neonColor, nodeSurfaceGradient } =
@@ -321,6 +332,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     selectedPrevNodeId: resolvedPrevNodeId ?? "",
     selectedPrevNode,
     enabled: configurationVisible,
+    previewValues: Object.fromEntries((definition?.fields ?? []).filter((field: any) => field.type !== "hidden" && isFieldVisible(field, fieldStateHook.fieldState))
+      .map((field: any) => [field.key, fieldStateHook.fieldState[field.key]])),
   });
 
   // Get auth context for API calls
@@ -356,7 +369,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   // Handle stop listening - calls the node definition's stop endpoint
   const handleStopListening = useCallback(async () => {
-    if (!workflowId || !nodeId || readOnly) return;
+    if (!workflowId || !nodeId || !controlsAreCurrent()) return;
 
     try {
       const stopAction = resolveStopAction(definition);
@@ -376,6 +389,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         token: session?.access_token,
       });
 
+      if (!controlsAreCurrent()) return;
       if (response.ok) {
         // Update node state to remove listening status
         const stoppedOutput = {
@@ -394,7 +408,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         console.log(`✅ [BaseNode] Test listener stopped successfully`);
       }
     } catch (error) {
-      console.error("Failed to stop test listener:", error);
+      if (controlsAreCurrent()) console.error("Failed to stop test listener:", error);
     }
   }, [
     workflowId,
@@ -407,11 +421,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     executionStore,
     updateNodeData,
     notifyStoreUpdate,
+    controlsAreCurrent,
   ]);
 
   // Toggle pause/resume for streaming
   const handleTogglePause = useCallback(async () => {
-    if (!nodeId || readOnly) return;
+    if (!nodeId || !controlsAreCurrent()) return;
     const current = executionStore.getNodeData(nodeId);
     const wasUserPaused =
       current.isStreamPaused === true && current.isStreamStepping !== true;
@@ -435,7 +450,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
           const maxReplayPasses = 5;
 
           for (let i = 0; i < maxReplayPasses && replayCursor; i += 1) {
-            if (replaySessionRef.current !== replaySessionId) {
+            if (!controlsAreCurrent() || replaySessionRef.current !== replaySessionId) {
               break;
             }
 
@@ -454,13 +469,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
               session?.access_token,
             );
 
-            if (!replayResponse.ok) {
+            if (!controlsAreCurrent() || replaySessionRef.current !== replaySessionId || !replayResponse.ok) {
               break;
             }
 
             const replayBody = await replayResponse
               .json()
               .catch(() => ({ replayed: 0, lastEntryId: null }));
+            if (!controlsAreCurrent() || replaySessionRef.current !== replaySessionId) break;
             const replayed =
               typeof replayBody?.replayed === "number"
                 ? replayBody.replayed
@@ -497,11 +513,12 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     notifyStoreUpdate,
     workflowId,
     session?.access_token,
+    controlsAreCurrent,
   ]);
 
   const handleStepStream = useCallback(
     async (mode: "next" | "prev") => {
-      if (!nodeId || readOnly) return;
+      if (!nodeId || !controlsAreCurrent()) return;
       const current = executionStore.getNodeData(nodeId);
       if (!current.lastStreamEntryId) return;
       const activeWorkflowId = current.testListenWorkflowId || workflowId;
@@ -519,6 +536,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         notifyStoreUpdate();
       }
 
+      const stepSession = ++replaySessionRef.current;
       const stepResponse = await apiClient.post(
         "/stream/replay",
         {
@@ -530,13 +548,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
         session?.access_token,
       );
 
-      if (!stepResponse.ok) {
+      if (!controlsAreCurrent() || replaySessionRef.current !== stepSession || !stepResponse.ok) {
         return;
       }
 
       const stepBody = await stepResponse
         .json()
         .catch(() => ({ replayed: 0, hasMore: false }));
+      if (!controlsAreCurrent() || replaySessionRef.current !== stepSession) return;
       const replayed =
         typeof stepBody?.replayed === "number" ? stepBody.replayed : 0;
       const hasDirectionalMore =
@@ -573,6 +592,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       notifyStoreUpdate,
       workflowId,
       session?.access_token,
+      controlsAreCurrent,
     ],
   );
 

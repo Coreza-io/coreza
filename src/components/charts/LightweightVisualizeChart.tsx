@@ -377,15 +377,15 @@ const LightweightVisualizeChart: React.FC<{
       if (!activePriceIds.has(id)) {
         removeOverlayHandles(priceChart, seriesList);
         registryRef.current.price.delete(id);
-        overlayShapes.current.delete(id);
+        overlayShapes.current.delete(`price:${id}`);
       }
     }
     priceOverlays.forEach((overlay: VisualizeOverlay) => {
       const existing = registryRef.current.price.get(overlay.id);
       const shape = overlayShape(overlay);
-      if (existing && overlayShapes.current.get(overlay.id) === shape) { updateOverlayData(overlay, existing); return; }
+      if (existing && overlayShapes.current.get(`price:${overlay.id}`) === shape) { updateOverlayData(overlay, existing); return; }
       if (existing) removeOverlayHandles(priceChart, existing);
-      overlayShapes.current.set(overlay.id, shape);
+      overlayShapes.current.set(`price:${overlay.id}`, shape);
       const firstCandle = viewModel.candles[0];
       const lastCandle = viewModel.candles[viewModel.candles.length - 1];
       const priceAnchorRange =
@@ -413,7 +413,7 @@ const LightweightVisualizeChart: React.FC<{
         if (panel) {
           removeOverlayHandles(panel.chart, panel.handles);
           registryRef.current.panels.delete(id);
-          overlayShapes.current.delete(id);
+          overlayShapes.current.delete(`panel:${id}`);
         }
         const crosshair = crosshairSubscriptionsRef.current.get(id);
         if (crosshair) { crosshair.chart.unsubscribeCrosshairMove(crosshair.handler); crosshairSubscriptionsRef.current.delete(id); }
@@ -443,9 +443,9 @@ const LightweightVisualizeChart: React.FC<{
 
       const existing = registryRef.current.panels.get(overlay.id);
       const shape = overlayShape(overlay);
-      if (existing && overlayShapes.current.get(overlay.id) === shape) { updateOverlayData(overlay, existing.handles); return; }
+      if (existing && overlayShapes.current.get(`panel:${overlay.id}`) === shape) { updateOverlayData(overlay, existing.handles); return; }
       if (existing) removeOverlayHandles(existing.chart, existing.handles);
-      overlayShapes.current.set(overlay.id, shape);
+      overlayShapes.current.set(`panel:${overlay.id}`, shape);
       registryRef.current.panels.set(
         overlay.id,
         {
@@ -512,6 +512,9 @@ const LightweightVisualizeChart: React.FC<{
         panelChartsRef.current.get(overlay.id)?.chart.timeScale().fitContent();
       });
     }
+    // A newly created pane starts at the current price range too.
+    const visibleRange = priceChart.timeScale().getVisibleLogicalRange();
+    if (visibleRange) panelChartsRef.current.forEach(({ chart }) => chart.timeScale().setVisibleLogicalRange(visibleRange));
     previousAutoFit.current = viewModel.options.autoFit;
   }, [chartReady, viewModel, panelOverlays, priceLegendOverlays, priceOverlays]);
 

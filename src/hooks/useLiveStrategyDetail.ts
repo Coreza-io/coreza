@@ -96,6 +96,27 @@ const mapSnapshotToPortfolioSnapshot = (
   daily_return: undefined,
 });
 
+const mergeSnapshots = (existing: any[], incoming: any[]): any[] => {
+  const byId = new Map(existing.map(row => [row.id, row]));
+  incoming.forEach(row => byId.set(row.id, row));
+  return [...byId.values()].sort((a, b) => String(a.snapshot_at).localeCompare(String(b.snapshot_at)) || String(a.id).localeCompare(String(b.id)));
+};
+
+const mapNormalizedSnapshots = (raw: any[], workflowId: string, normalized: ReturnType<typeof normalizeLiveEquitySnapshots>): PortfolioSnapshot[] => {
+  const equityByTimestamp = new Map(normalized.normalizedSnapshots.map(row => [row.ts, row.equity]));
+  const rows = raw.filter(row => row.snapshot_at).map(row => {
+    const snapshot = mapSnapshotToPortfolioSnapshot(row, workflowId);
+    const equity = equityByTimestamp.get(Date.parse(row.snapshot_at));
+    if (equity !== undefined) snapshot.total_value = equity;
+    return snapshot;
+  });
+  for (let index = 1; index < rows.length; index++) {
+    const previous = rows[index - 1];
+    rows[index].daily_return = previous.total_value > 0 ? (rows[index].total_value - previous.total_value) / previous.total_value * 100 : undefined;
+  }
+  return rows;
+};
+
 /**
  * Returns live strategy detail data shaped identically to useBacktestResults
  * for seamless UI reuse (EquityCurveChart, TradesTable, PerformanceMetricsCard).
@@ -121,6 +142,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const performLoad = useCallback(async (isCurrent: () => boolean) => {
     if (!isCurrent()) return;
     const generation = sessionGeneration.current;
+    const snapshotsAtStart = latestRawSnapshotsRef.current;
     if (!enabled || !user || !workflowId) {
       setBacktest(null);
       setMetrics(null);
@@ -181,6 +203,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         localStorage.setItem(`live_session_${workflowId}`, dbSessionRunId);
       }
 
+      if (activeSessionRunIdRef.current !== sessionRunId) {
+        latestRawSnapshotsRef.current = [];
+        latestTradeMetricInputRef.current = [];
+        latestPortfolioSummaryRef.current = undefined;
+        setTrades([]); setRawFills([]); setSnapshots([]); setMetrics(null);
+      }
       activeSessionRunIdRef.current = sessionRunId;
 
       // No session means no scoped live data; return empty state to prevent cross-session mixing.
@@ -235,7 +263,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       const matchedTradeFills = rawFillsAll.filter(
         (f: any) => !f.algo_id,
       );
-      const filteredSnapshots = snapshotsData ?? [];
+      // Retain accepted inserts that arrived after this full read started.
+      const initialIds = new Set(snapshotsAtStart.map(row => row.id));
+      const receivedDuringLoad = latestRawSnapshotsRef.current.filter(row => row.execution_id === sessionRunId && !initialIds.has(row.id));
+      const filteredSnapshots = mergeSnapshots(snapshotsData ?? [], receivedDuringLoad);
       const closedTrades = (liveTradesData ?? []) as any[];
       const firstSnapshot = filteredSnapshots[0] as any | undefined;
       const lastSnapshot = filteredSnapshots[filteredSnapshots.length - 1] as any | undefined;
@@ -263,35 +294,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       );
       setTrades(mappedTrades);
 
-      // Map snapshots
-      if (filteredSnapshots.length > 0) {
-        const normalizedByTimestamp = new Map(
-          normalizedData.normalizedSnapshots.map((s) => [s.ts, s.equity]),
-        );
-        const mapped: PortfolioSnapshot[] = filteredSnapshots
-          .filter((snapshot: any) => snapshot.snapshot_at)
-          .map((snapshot: any) => {
-            const mappedSnapshot = mapSnapshotToPortfolioSnapshot(
-              snapshot,
-              workflowId,
-            );
-            const ts = Date.parse(snapshot.snapshot_at);
-            const normalizedTotal = normalizedByTimestamp.get(ts);
-            if (normalizedTotal !== undefined) mappedSnapshot.total_value = normalizedTotal;
-            return mappedSnapshot;
-          });
-        for (let i = 1; i < mapped.length; i += 1) {
-          const prev = mapped[i - 1];
-          const current = mapped[i];
-          current.daily_return =
-            prev.total_value > 0
-              ? ((current.total_value - prev.total_value) / prev.total_value) * 100
-              : undefined;
-        }
-        setSnapshots(mapped);
-      } else {
-        setSnapshots([]);
-      }
+      setSnapshots(mapNormalizedSnapshots(filteredSnapshots, workflowId, normalizedData));
 
       // Compute metrics from closed trades + snapshots
       const tradeMetricInput = closedTrades.map((t: any) => ({
@@ -332,6 +335,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
     latestRawSnapshotsRef.current = [];
     latestTradeMetricInputRef.current = [];
     latestPortfolioSummaryRef.current = undefined;
+    setBacktest(null); setMetrics(null); setTrades([]); setRawFills([]); setSnapshots([]); setError(null);
     if (!enabled) {
       setBacktest(null);
       setMetrics(null);
@@ -361,7 +365,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           event: "*",
           schema: "public",
           table: "workflow_runs",
-          filter: `workflow_id.eq.${workflowId}`,
+          filter: `workflow_id=eq.${workflowId}`,
         },
         () => {
           if (disposed || currentScopeKey.current !== scopeKey) return;
@@ -387,13 +391,18 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           void loadData();
         },
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "live_fills", filter: `workflow_id=eq.${workflowId}` }, payload => {
+        if (disposed || currentScopeKey.current !== scopeKey) return;
+        const row = (payload.eventType === "DELETE" ? payload.old : payload.new) as any;
+        if (row.user_id === user.id && row.execution_id === activeSessionRunIdRef.current) void loadData();
+      })
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "cash_snapshots",
-          filter: `and(user_id.eq.${user.id},workflow_id.eq.${workflowId})`,
+          filter: `workflow_id=eq.${workflowId}`,
         },
         (payload) => {
           if (disposed || currentScopeKey.current !== scopeKey) return;
@@ -406,39 +415,16 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           if (newSnapshot.execution_id !== activeSessionRunIdRef.current)
             return;
 
-          setSnapshots((prev) => {
-            const updatedRawSnapshots = [...latestRawSnapshotsRef.current, newSnapshot];
-            const normalizedData = normalizeLiveEquitySnapshots(updatedRawSnapshots as any[], latestPortfolioSummaryRef.current);
-            const nextSnapshot = mapSnapshotToPortfolioSnapshot(newSnapshot, workflowId);
-            const normalized = normalizedData.normalizedSnapshots[normalizedData.normalizedSnapshots.length - 1];
-            if (normalized) nextSnapshot.total_value = normalized.equity;
-            const previous = prev[prev.length - 1];
-            if (previous && previous.total_value > 0) {
-              nextSnapshot.daily_return =
-                ((nextSnapshot.total_value - previous.total_value) /
-                previous.total_value) * 100;
-            }
-            return [...prev, nextSnapshot];
-          });
-
-          // Recompute metrics with the new snapshot appended
-          const updatedRawSnapshots = [
-            ...latestRawSnapshotsRef.current,
-            newSnapshot,
-          ];
+          const updatedRawSnapshots = mergeSnapshots(latestRawSnapshotsRef.current, [newSnapshot]);
+          const lastSnapshot = updatedRawSnapshots[updatedRawSnapshots.length - 1];
+          if (latestPortfolioSummaryRef.current) latestPortfolioSummaryRef.current = {
+            ...latestPortfolioSummaryRef.current,
+            total_equity: toFiniteNumber(lastSnapshot?.equity) ?? toFiniteNumber(lastSnapshot?.total_value_usdt),
+            realized_pnl: toFiniteNumber(lastSnapshot?.realized_pnl),
+          };
+          const normalized = normalizeLiveEquitySnapshots(updatedRawSnapshots, latestPortfolioSummaryRef.current);
           latestRawSnapshotsRef.current = updatedRawSnapshots;
-
-          // Update portfolio summary with latest snapshot equity
-          const latestEquity =
-            toFiniteNumber(newSnapshot.equity) ??
-            toFiniteNumber(newSnapshot.total_value_usdt);
-          if (latestPortfolioSummaryRef.current) {
-            latestPortfolioSummaryRef.current = {
-              ...latestPortfolioSummaryRef.current,
-              total_equity: latestEquity,
-              realized_pnl: toFiniteNumber(newSnapshot.realized_pnl),
-            };
-          }
+          setSnapshots(mapNormalizedSnapshots(updatedRawSnapshots, workflowId, normalized));
 
           setMetrics(
             buildLiveMetrics(
@@ -470,7 +456,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           event: "UPDATE",
           schema: "public",
           table: "workflows",
-          filter: `id.eq.${workflowId}`,
+          filter: `id=eq.${workflowId}`,
         },
         (payload) => {
           if (disposed || currentScopeKey.current !== scopeKey) return;
@@ -514,7 +500,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         sessionId: string | null;
       }>;
 
-      if (customEvent.detail?.workflowId !== workflowId) return;
+      if (currentScopeKey.current !== scopeKey || customEvent.detail?.workflowId !== workflowId) return;
 
       sessionGeneration.current += 1;
       latestRawSnapshotsRef.current = []; latestTradeMetricInputRef.current = []; latestPortfolioSummaryRef.current = undefined;

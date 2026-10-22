@@ -341,8 +341,13 @@ export function updateOverlayData(overlay: VisualizeOverlay, handles: OverlayHan
     if (handles.series[0]) reconcileSeriesData(handles.series[0], toLineData(overlay.data));
     return;
   }
-  if (overlay.kind === "multi") overlay.channels.forEach(channel => points.set(channel.label, channel.data));
-  else if (overlay.kind === "bands") {
+  if (overlay.kind === "multi") {
+    // Channel labels are presentation, not unique data identities.
+    overlay.channels.forEach((channel, index) => {
+      if (handles.series[index]) reconcileSeriesData(handles.series[index], toLineData(channel.data));
+    });
+    return;
+  } else if (overlay.kind === "bands") {
     points.set("upper", overlay.upper); points.set("lower", overlay.lower);
     if (overlay.middle) points.set("middle", overlay.middle);
   } else {

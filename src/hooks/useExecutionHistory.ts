@@ -231,18 +231,24 @@ export function useExecutionHistory(
   const isCurrent = useCallback(() => currentScope.current === scope, [scope]);
 
   const loadDetail = useCallback((runId: string, force = false): Promise<void> => {
-    if (!scope.enabled || !scope.owner || !scope.workflowId) return Promise.resolve();
+    if (!isCurrent() || !scope.enabled || !scope.owner || !scope.workflowId) return Promise.resolve();
     if (detailFlight.current?.id === runId) { detailFlight.current.queued ||= force; return detailFlight.current.promise; }
     const cached = details.current.get(runId);
     if (cached && !force) { setDetailLoading(false); publishSelectedExecution(cached); return Promise.resolve(); }
     const request = ++detailRequest.current;
-    setDetailLoading(true);
+    setDetailLoading(true); setError(null);
     const promise = (async () => {
       try {
         const { data, error: queryError } = await supabase.from("workflow_runs").select("*").eq("workflow_id", scope.workflowId!).eq("id", runId).single();
         if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
         if (queryError) throw queryError;
         const next = data as ExecutionRun;
+        if (!matchesExecutionFilters(next, normalizedFilters)) {
+          details.current.delete(runId);
+          setExecutions(previous => previous.filter(run => run.id !== runId));
+          selection.current = null; setSelectedExecutionId(null); publishSelectedExecution(null);
+          return;
+        }
         const previous = details.current.get(runId);
         const detail = previous && sameExecution(previous, next) ? previous : next;
         details.current.delete(runId);
@@ -261,20 +267,24 @@ export function useExecutionHistory(
     })();
     detailFlight.current = { id: runId, promise, queued: false };
     return promise;
-  }, [scope, isCurrent]);
+  }, [scope, isCurrent, normalizedFilters]);
 
   const setSelectedExecution = useCallback((run: ExecutionSummary | null) => {
+    if (!isCurrent()) return Promise.resolve();
+    if (run && selection.current === run.id && detailFlight.current?.id === run.id) return detailFlight.current.promise;
     selection.current = run?.id ?? null;
     setSelectedExecutionId(run?.id ?? null);
     detailRequest.current += 1;
     detailFlight.current = null;
     if (!run) { publishSelectedExecution(null); setDetailLoading(false); return Promise.resolve(); }
     publishSelectedExecution(details.current.get(run.id) ?? null);
-    return loadDetail(run.id);
-  }, [loadDetail]);
+    // Selection is an explicit refresh boundary, even for cached terminal runs.
+    return loadDetail(run.id, true);
+  }, [loadDetail, isCurrent]);
 
   const fetchExecutions = useCallback(async (manual = false) => {
-    if (!enabled || !workflowId || !scope.owner || firstFlight.current) return;
+    if (!isCurrent() || !enabled || !workflowId || !scope.owner || firstFlight.current) return;
+    if (manual) { pageFlight.current = null; setLoadingMore(false); }
     const flight = {}; firstFlight.current = flight;
     setLoading(true); setError(null);
     try {
@@ -283,8 +293,21 @@ export function useExecutionHistory(
       if (!isCurrent() || firstFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
-      setExecutions(previous => mergeSummaries(previous, rows));
-      if (!cursor.current) { cursor.current = rows[rows.length - 1] ?? null; setHasMore(rows.length === PAGE_SIZE); }
+      if (manual || !cursor.current || rows.length < PAGE_SIZE) {
+        setExecutions(mergeSummaries([], rows));
+        cursor.current = rows[rows.length - 1] ?? null;
+        setHasMore(rows.length === PAGE_SIZE);
+      } else {
+        setExecutions(previous => {
+          // A first-page load is authoritative for its covered time range.
+          // Keep older pages; retain the oldest window so the cursor's boundary
+          // cannot disappear when a realtime row or a new first page arrives.
+          const boundary = rows[rows.length - 1];
+          const retained = boundary ? previous.filter(run => run.started_at < boundary.started_at
+            || (run.started_at === boundary.started_at && run.id < boundary.id)) : [];
+          return mergeSummaries(retained, rows).slice(-MAX_CACHED_EXECUTIONS);
+        });
+      }
       const selectedId = selection.current;
       const selectedSummary = rows.find(row => row.id === selectedId);
       const selectedDetail = selectedId ? details.current.get(selectedId) : undefined;
@@ -292,14 +315,14 @@ export function useExecutionHistory(
         await loadDetail(selectedId, true);
       }
     } catch (err) {
-      if (isCurrent()) setError(err instanceof Error ? err.message : "Failed to fetch executions");
+      if (isCurrent() && firstFlight.current === flight) setError(err instanceof Error ? err.message : "Failed to fetch executions");
     } finally {
       if (isCurrent() && firstFlight.current === flight) { firstFlight.current = null; setLoading(false); }
     }
   }, [enabled, workflowId, scope.owner, normalizedFilters, isCurrent, loadDetail]);
 
   const loadMore = useCallback(async () => {
-    if (!enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || !cursor.current) return;
+    if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;
     const flight = {}; pageFlight.current = flight;
     const after = cursor.current;
     setLoadingMore(true);
@@ -315,7 +338,7 @@ export function useExecutionHistory(
       setExecutions(previous => mergeSummaries(previous, rows).slice(-MAX_CACHED_EXECUTIONS));
       setHasMore(rows.length === PAGE_SIZE);
     } catch (err) {
-      if (isCurrent()) setError(err instanceof Error ? err.message : "Failed to load more executions");
+      if (isCurrent() && pageFlight.current === flight) setError(err instanceof Error ? err.message : "Failed to load more executions");
     } finally {
       if (isCurrent() && pageFlight.current === flight) { pageFlight.current = null; setLoadingMore(false); }
     }
@@ -332,8 +355,9 @@ export function useExecutionHistory(
     }
     setLoading(false); setLoadingMore(false); setDetailLoading(false);
     void fetchExecutions();
+    if (enabled && selection.current) void loadDetail(selection.current, true);
     return () => { if (currentScope.current === scope) currentScope.current = null; };
-  }, [scope, dataScope, fetchExecutions]);
+  }, [scope, dataScope, fetchExecutions, enabled, loadDetail]);
 
   useEffect(() => {
     if (!enabled || !workflowId || !scope.owner) return;
@@ -352,7 +376,7 @@ export function useExecutionHistory(
       }
       // Retain only summary fields from full realtime payloads.
       const summary = toSummary(payload.new as ExecutionRun);
-      if (matchesExecutionFilters(summary, normalizedFilters)) setExecutions(previous => mergeSummaries(previous, [summary]).slice(0, MAX_CACHED_EXECUTIONS));
+      if (matchesExecutionFilters(summary, normalizedFilters)) setExecutions(previous => mergeSummaries(previous, [summary]).slice(-MAX_CACHED_EXECUTIONS));
       else {
         setExecutions(previous => previous.filter(run => run.id !== id));
         if (selection.current === id) void setSelectedExecution(null);

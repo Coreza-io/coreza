@@ -11,6 +11,7 @@
 import { useCallback, useRef } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { isFieldVisible } from "@/utils/fieldVisibility";
 import { apiClient } from "@/lib/apiClient";
 
 interface UseNodeCredentialsProps {
@@ -36,8 +37,8 @@ const EMPTY_OPTIONS: any[] = [];
 export function useNodeCredentials({ definition, fieldState, workflowId, workflowSessionId, enabled = true }: UseNodeCredentialsProps) {
   const { user, session, loading } = useAuth();
   const client = useQueryClient();
-  const token = useRef(session?.access_token);
-  token.current = session?.access_token;
+  const authRef = useRef({ owner: user?.id, token: session?.access_token });
+  authRef.current = { owner: user?.id, token: session?.access_token };
   const owner = user?.id;
   const resources: OptionResource[] = [];
   const selectOptions: Record<string, any[]> = {};
@@ -47,19 +48,20 @@ export function useNodeCredentials({ definition, fieldState, workflowId, workflo
     if (field.options) selectOptions[field.key] = field.options;
     const parent = field.dependsOn ? fieldState[field.dependsOn] : undefined;
     const service = String(parent || definition?.subCategory || definition?.parentNode || definition?.name || "").toLowerCase();
-    const base = { fieldKey: field.key, kind: field.optionsSource, available: true };
+    const visible = isFieldVisible(field, fieldState);
+    const base = { fieldKey: field.key, kind: field.optionsSource, available: visible };
     if (field.optionsSource === "credentialsApi") {
       resources.push({ ...base, key: ["node-options", owner, "credentials", service],
         url: service ? `/credentials/list?service_type=${encodeURIComponent(service)}` : "/credentials/list" });
     } else if (field.optionsSource === "storeWorkflowsApi") {
       resources.push({ ...base, key: ["node-options", owner, "store-workflows"], url: `/storage/store/workflows?user_id=${encodeURIComponent(owner ?? "")}` });
     } else if (field.optionsSource === "storeVariablesApi") {
-      resources.push({ ...base, available: !!parent, key: ["node-options", owner, "store-variables", parent ?? null],
+      resources.push({ ...base, available: visible && !!parent, key: ["node-options", owner, "store-variables", parent ?? null],
         url: `/storage/store/variables?user_id=${encodeURIComponent(owner ?? "")}&workflowId=${encodeURIComponent(parent ?? "")}` });
     } else if (field.optionsSource === "dependentApi") {
       const body = { nodeName: definition.name, category: definition.category, subCategory: definition.subCategory,
         user_id: owner, credential_id: parent, workflowId, workflowSessionId };
-      resources.push({ ...base, available: !!parent && !!field.optionsApiUrl,
+      resources.push({ ...base, available: visible && !!parent && !!field.optionsApiUrl,
         key: ["node-options", owner, "dependent", field.optionsApiUrl, body], url: field.optionsApiUrl, body });
     }
   }
@@ -71,8 +73,9 @@ export function useNodeCredentials({ definition, fieldState, workflowId, workflo
     gcTime: 5 * 60_000,
     retry: false,
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      if (authRef.current.owner !== owner || !authRef.current.token) throw new Error("Option request owner changed");
       const response = await apiClient.request(resource.url, {
-        method: resource.body ? "POST" : "GET", token: token.current, signal,
+        method: resource.body ? "POST" : "GET", token: authRef.current.token, signal,
         ...(resource.body ? { body: JSON.stringify(resource.body) } : {}),
       });
       if (!response.ok) throw new Error(`Could not load options (${response.status})`);
@@ -95,7 +98,7 @@ export function useNodeCredentials({ definition, fieldState, workflowId, workflo
   });
   const fetchCredentials = useCallback((_fieldKey: string) => {
     // Explicit credential creation/update invalidates all service lists and their accounts for this owner.
-    void client.invalidateQueries({ queryKey: ["node-options", owner] });
+    void client.invalidateQueries({ queryKey: ["node-options", owner] }, { cancelRefetch: false });
   }, [client, owner]);
   // Dependency changes are owned by the keyed queries above, including changes from restored documents.
   const fetchDependentOptions = useCallback((_field: any, _parent: string) => {}, []);

@@ -109,32 +109,28 @@ export class ExecutionContext {
   }
 
   setNodeData(id: string, data: Partial<NodeExecutionData>): void {
+    const previous = this.store.get(id);
+    const patch = this.pinnedOutputs.has(id) && Object.prototype.hasOwnProperty.call(data, "output")
+      ? { ...data, output: this.pinnedOutputs.get(id) } : data;
+    if (previous && Object.keys(patch).every(key => Object.prototype.hasOwnProperty.call(previous, key)
+      && Object.is((previous as Record<string, unknown>)[key], (patch as Record<string, unknown>)[key]))) return;
+    this.store.set(id, { ...previous, ...patch });
     this.dirtyNodes.add(id);
-    const prev = this.store.get(id) ?? {};
-    if (this.pinnedOutputs.has(id) && Object.prototype.hasOwnProperty.call(data, 'output')) {
-      const { output: _ignoredOutput, ...nonOutputData } = data;
-      this.store.set(id, {
-        ...prev,
-        ...nonOutputData,
-        output: this.pinnedOutputs.get(id),
-      });
-      return;
-    }
-    this.store.set(id, { ...prev, ...data });
   }
 
-  setPinned(id: string, value: unknown | null): void {
-    if (value === null && !this.pinnedOutputs.has(id)) return;
-    if (value !== null && this.pinnedOutputs.has(id) && Object.is(this.pinnedOutputs.get(id), value)) return;
+  setPinned(id: string, value: unknown | null): boolean {
+    if (value === null && !this.pinnedOutputs.has(id)) return false;
+    if (value !== null && this.pinnedOutputs.has(id) && Object.is(this.pinnedOutputs.get(id), value)) return false;
     this.dirtyNodes.add(id);
     if (value === null) {
       this.pinnedOutputs.delete(id);
-      return;
+      return true;
     }
 
     this.pinnedOutputs.set(id, value);
     const prev = this.store.get(id) ?? {};
     this.store.set(id, { ...prev, output: value });
+    return true;
   }
 
   canRenameNode(oldId: string, newId: string): boolean {

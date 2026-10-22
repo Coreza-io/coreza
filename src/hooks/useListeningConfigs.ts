@@ -32,10 +32,12 @@ export const buildWebhookListeningConfig = ({
   definition,
   fieldState,
   nodeId,
+  workflowId,
 }: {
   definition: NodeDefinition;
   fieldState: Record<string, any>;
   nodeId: string;
+  workflowId?: string;
 }): ListeningConfig => {
   const listeningConfig = definition?.listeningConfig ?? {};
   const listeningFlag = listeningConfig.listeningFlag ?? "isListening";
@@ -53,6 +55,7 @@ export const buildWebhookListeningConfig = ({
       nodeId,
       provider,
     }),
+    buildListeningNodeData: () => ({ testListenWorkflowId: workflowId, testListenNodeId: nodeId }),
     isDataReceived: (nodeData) => Boolean(nodeData?.output?.[waitField]),
     shouldStop: (nodeData) => nodeData?.[listeningFlag] === false,
     buildSuccessOutput: (nodeData) => nodeData.output,

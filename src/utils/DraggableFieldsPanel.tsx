@@ -30,7 +30,7 @@ const stringify = (value: unknown): string => {
 };
 
 /** One lazy tree owns a global render budget, including every expanded branch. */
-const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = "", pathSegments = [], sourceNodeId, maxItems = 25, draggable = true, persistentVariableKeys, variableNamespace = false }) => {
+const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = "", pathSegments, sourceNodeId, maxItems = 25, draggable = true, persistentVariableKeys, variableNamespace = false }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, number>>({});
   if (!objectLike(data)) return null;
@@ -48,7 +48,8 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
     const pageSize = Math.max(1, Math.min(maxItems, 200));
     const keys: PathSegment[] = Array.isArray(source) ? [] : Object.keys(source);
     const length = Array.isArray(source) ? source.length : keys.length;
-    const start = Math.min(page * pageSize, Math.max(0, Math.ceil(length / pageSize) - 1) * pageSize);
+    const currentPage = Math.min(page, Math.max(0, Math.ceil(length / pageSize) - 1));
+    const start = currentPage * pageSize;
     const entries: Entry[] = [];
     for (let index = start; index < Math.min(length, start + pageSize); index++) {
       const key = Array.isArray(source) ? index : keys[index];
@@ -69,7 +70,7 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
         budget.entries -= 1;
         const fullSegments = [...segments, key];
         const path = JSON.stringify(fullSegments);
-        const fullKey = `${parentKey}${formatPath(fullSegments)}`.replace(/^\./, "");
+        const fullKey = (pathSegments ? formatPath(fullSegments) : `${parentKey}${formatPath(fullSegments)}`).replace(/^\./, "");
         const nested = objectLike(value);
         const reference = variableKey ? `{{ $vars.${variableKey} }}` : fullKey;
         const canDrag = draggable || Boolean(variableKey && sourceNodeId);
@@ -93,13 +94,13 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
         </div>;
       })}
       {length > pageSize && <div className="ml-2 flex items-center gap-2 text-xs">
-        <button type="button" className="nodrag underline" disabled={start === 0} onClick={() => setPages(previous => ({ ...previous, [branch]: Math.max(0, page - 1) }))}>Previous</button>
+        <button type="button" className="nodrag underline" disabled={start === 0} onClick={() => setPages(previous => ({ ...previous, [branch]: Math.max(0, currentPage - 1) }))}>Previous</button>
         <span>{start + 1}–{Math.min(length, start + pageSize)} of {length}</span>
-        <button type="button" className="nodrag underline" disabled={start + pageSize >= length} onClick={() => setPages(previous => ({ ...previous, [branch]: page + 1 }))}>Next</button>
+        <button type="button" className="nodrag underline" disabled={start + pageSize >= length} onClick={() => setPages(previous => ({ ...previous, [branch]: currentPage + 1 }))}>Next</button>
       </div>}
     </div>;
   };
-  const tree = renderBranch(data, pathSegments, 0);
+  const tree = renderBranch(data, pathSegments ?? [], 0);
   return <>{tree}{(budget.entries <= 0 || budget.characters <= 0) && <p role="status" className="text-xs text-muted-foreground">Display limit reached. Collapse a branch to inspect more, or export the complete output.</p>}</>;
 };
 export default React.memo(DraggableFieldsPanel);

@@ -27,6 +27,7 @@ interface UseNodeReferencesProps {
   workflowId?: string;
   readOnly?: boolean;
   enabled?: boolean;
+  previewValues?: Record<string, unknown>;
   fieldState: Record<string, any>;
   previousNodes: readonly SemanticNode[];
   referenceNodes?: readonly SemanticNode[];
@@ -54,6 +55,7 @@ export function useNodeReferences({
   workflowId,
   readOnly = false,
   enabled = true,
+  previewValues,
   fieldState,
   previousNodes,
   referenceNodes = previousNodes,
@@ -63,7 +65,7 @@ export function useNodeReferences({
   const { getNodes, getSnapshot } = useStableNodes();
   const previewContext = useRef<{ nodes: readonly SemanticNode[]; version: number; value: ReturnType<typeof buildPreviewData> } | null>(null);
   const executionStore = useExecutionStore();
-  const variableQuery = useVariableSnapshot(enabled && !readOnly && referencesVariables(fieldState), workflowId);
+  const variableQuery = useVariableSnapshot(enabled && !readOnly && referencesVariables(previewValues ?? fieldState), workflowId);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;

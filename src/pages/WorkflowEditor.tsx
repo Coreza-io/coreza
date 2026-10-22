@@ -290,6 +290,7 @@ const WorkflowEditorContent = () => {
   const [workflowId, setWorkflowId] = useState<string | null>(() =>
     isNewWorkflow ? crypto.randomUUID() : (id ?? null),
   );
+  const workflowLoadKey = `${authUser?.id ?? ""}:${workflowId ?? ""}`;
   const [hasLoadedWorkflowId, setHasLoadedWorkflowId] = useState<string | null>(
     null,
   );
@@ -478,6 +479,9 @@ const WorkflowEditorContent = () => {
   useLayoutEffect(() => {
     historyRef.current = { past: [], future: [] };
     clipboardRef.current = null;
+    setIsAutoExecuting(false);
+    setShowSaveConfirmDialog(false);
+    setPendingSaveData(null);
     executionStore.dispose();
     notifyExecutionStoreUpdate();
     return () => {
@@ -502,14 +506,14 @@ const WorkflowEditorContent = () => {
     if (retired) notifyExecutionStoreUpdate();
   }, [nodes, executionStore, notifyExecutionStoreUpdate]);
   const canMutateDocument = useWorkflowMutationGuard({
-    workflowSessionId, loading: loading || persistLoading,
+    workflowSessionId, loading: loading || persistLoading || hasLoadedWorkflowId !== workflowLoadKey,
     hasInvalidMetadata: invalidClusterEntries.length > 0,
     clusterMove: clusterMoveRef, nodeDrag: activeNodeDragRef,
     selectionDrag: selectionDragRef, connectionDrag: connectionDragRef,
   });
 
   useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
-    const fields = "values" in patch || "fieldState" in patch;
+    const fields = "values" in patch || "fieldState" in patch || "pinnedOutput" in patch;
     if (fields && (!canMutateDocument() || !nodesRef.current.some(node => node.id === nodeId))) return false;
     const publish = () => setNodes((current) => {
       if (fields && !canMutateDocument()) return current;
@@ -644,7 +648,19 @@ const WorkflowEditorContent = () => {
 
   const restoreDocument = useCallback((document: WorkflowDocument) => {
     resetReferenceTextHistory();
-    const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(cloneNodes(document.nodes)));
+    const liveNodes = new Map(nodesRef.current.map(node => [node.id, node]));
+    const nextNodes = stampNodesWithWorkflowSession(repairProjectedClusterNodes(document.nodes.map(node => {
+      // Undo stores editable state only. Reconcile it with today's runtime,
+      // including results whose canonical transition has not committed yet.
+      const runtime: Record<string, unknown> = {};
+      for (const source of [liveNodes.get(node.id)?.data, node.data, executionStore.storeMap.get(node.id)]) {
+        for (const [key, value] of Object.entries(source ?? {})) if (RUNTIME_NODE_DATA_KEYS.has(key)) runtime[key] = value;
+      }
+      const data = { ...node.data, ...runtime };
+      if (node.data.pinnedOutput != null) data.output = node.data.pinnedOutput;
+      return { ...node, data };
+    })));
+
     const nextEdges = cloneEdges(document.edges);
     const nextClusters = document.clusters.map((cluster) => ({ ...cluster, memberNodeIds: [...cluster.memberNodeIds] }));
     syncEditorNodeActionIds(workflowSessionId, nextNodes);
@@ -657,7 +673,7 @@ const WorkflowEditorContent = () => {
     setNodes(nextNodes);
     setEdges(nextEdges);
     setClusters(nextClusters);
-  }, [cloneEdges, cloneNodes, setEdges, setNodes, stampNodesWithWorkflowSession, workflowSessionId]);
+  }, [cloneEdges, executionStore, setEdges, setNodes, stampNodesWithWorkflowSession, workflowSessionId]);
 
   const commitClusterMetadata = useCallback((patch: Partial<Pick<NodeCluster, "title" | "note">>, intent: ClusterMetadataEditIntent): boolean => {
     if (intent.workflowSessionId !== workflowSessionId || !canMutateDocument()) return false;
@@ -1123,9 +1139,8 @@ const WorkflowEditorContent = () => {
       fallbackSymbols: string[] = [],
       updateNodeState: boolean = true,
     ) => {
-      if (!authUser) {
-        return;
-      }
+      const cleanupSession = workflowSessionId;
+      if (!authUser || currentWorkflowSessionRef.current !== cleanupSession) return;
 
       const storeData = executionStore.getNodeData(nodeId) as any;
       const storedSymbols = Array.isArray(storeData?.output?.symbols)
@@ -1151,6 +1166,7 @@ const WorkflowEditorContent = () => {
         }
       }
 
+      if (!updateNodeState || currentWorkflowSessionRef.current !== cleanupSession || !nodesRef.current.some(node => node.id === nodeId)) return;
       const waitingOutput = createWaitingNewsOutput({
         nodeId,
         symbols: [],
@@ -1166,8 +1182,9 @@ const WorkflowEditorContent = () => {
           ),
         );
       }
+      notifyExecutionStoreUpdate();
     },
-    [authUser?.id, executionStore, setNodes],
+    [authUser?.id, workflowSessionId, session?.access_token, executionStore, setNodes, notifyExecutionStoreUpdate],
   );
 
   const onCompactDragStart = useCallback((_: React.MouseEvent, node: Node) => {
@@ -1208,6 +1225,7 @@ const WorkflowEditorContent = () => {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      if (changes.some(change => change.type === "remove") && !canMutateDocument()) return;
       const canonicalNodeIds = new Set(nodes.map(({ id }) => id));
       for (const change of changes) {
         const clusterId = "id" in change ? clusterProjection.displayNodeToCluster.get(change.id) : undefined;
@@ -1249,7 +1267,6 @@ const WorkflowEditorContent = () => {
 
       if (removedNodeIds.length) {
         removedNodeIds.forEach((id) => {
-          executionStore.retireNode(id);
           const removedNode = nodes.find((node) => node.id === id);
           const nodeDef = removedNode?.data?.definition as any;
           if (isNewsStreamNode(nodeDef)) {
@@ -1277,7 +1294,7 @@ const WorkflowEditorContent = () => {
       }
       if (canonicalChanges.length > 0) applyNodeChanges(canonicalChanges);
     },
-    [applyNodeChanges, cleanupNewsSubscription, clusterProjection.displayNodeToCluster, clusterProjection.visibleNodeIds, clusters, deleteNodeIds, effectiveMembers, executionStore, nodes, setNodes, workflowSessionId],
+    [canMutateDocument, applyNodeChanges, cleanupNewsSubscription, clusterProjection.displayNodeToCluster, clusterProjection.visibleNodeIds, clusters, deleteNodeIds, effectiveMembers, executionStore, nodes, setNodes, workflowSessionId],
   );
 
   const handleNodeOutputMessage = useCallback(
@@ -1294,9 +1311,9 @@ const WorkflowEditorContent = () => {
         rawPayload.payload ||
         rawPayload;
 
-      if (!nodeId || !newsData) {
-        return;
-      }
+      if (!nodeId || !newsData || currentWorkflowSessionRef.current !== workflowSessionId
+        || !nodesRef.current.some(node => node.id === nodeId)
+        || (rawPayload.workflowId && rawPayload.workflowId !== workflowId)) return;
 
       const receivedAt =
         rawPayload.receivedAt || timestamp || new Date().toISOString();
@@ -1319,8 +1336,9 @@ const WorkflowEditorContent = () => {
             : node,
         ),
       );
+      notifyExecutionStoreUpdate();
     },
-    [executionStore, setNodes],
+    [executionStore, setNodes, workflowSessionId, workflowId, notifyExecutionStoreUpdate],
   );
 
   useEffect(() => {
@@ -1403,7 +1421,7 @@ const WorkflowEditorContent = () => {
           }
 
           if (message.type === "node_output") {
-            messageHandlerRef.current(message.payload, message.timestamp);
+            messageHandlerRef.current({ ...message.payload, workflowId: message.payload?.workflowId ?? message.workflowId }, message.timestamp);
           } else if (
             message.type === "alpaca_news" ||
             message.type === "news_stream"
@@ -1412,6 +1430,7 @@ const WorkflowEditorContent = () => {
             messageHandlerRef.current(
               {
                 nodeId: payload.nodeId || payload.node_id,
+                workflowId: payload.workflowId ?? message.workflowId,
                 data: payload.news ?? payload,
                 symbols:
                   payload.news?.symbols ??
@@ -1625,7 +1644,7 @@ const WorkflowEditorContent = () => {
   // Accept the graph/actions only after preparation, while holding this session's lock.
   const executeAcceptedRun = useCallback(async (nodeId?: string) => {
     const acceptedSession = currentWorkflowSessionRef.current;
-    if (acceptedSession !== workflowSessionId) return;
+    if (acceptedSession !== workflowSessionId || loading || persistLoading || hasLoadedWorkflowId !== workflowLoadKey || !canMutateDocument()) return;
     const lockToken = acquireEditorExecutionLock(acceptedSession);
     if (!lockToken) {
       toast({ title: "Execution already active", description: "Stop the current run before executing again." });
@@ -1664,16 +1683,17 @@ const WorkflowEditorContent = () => {
       if (currentWorkflowSessionRef.current === acceptedSession) setIsAutoExecuting(false);
       releaseEditorExecutionLock(acceptedSession, lockToken);
     }
-  }, [workflowSessionId, createAcceptedExecutor, ensureBacktestExecutionReady, hasBacktestInitNode]);
+  }, [workflowSessionId, createAcceptedExecutor, ensureBacktestExecutionReady, hasBacktestInitNode, loading, persistLoading, hasLoadedWorkflowId, workflowLoadKey, canMutateDocument]);
 
   useEffect(() => {
     if (!pendingExecution) return;
     if (pendingExecution.generation !== preparationRef.current) { setPendingExecution(null); return; }
-    if (loading || persistLoading || hasLoadedWorkflowId !== pendingExecution.workflowId) return;
-    if (workflowId !== pendingExecution.workflowId || nodes.some(node => node.data.workflowSessionId !== workflowSessionId)) return;
+    if (loading || persistLoading || hasLoadedWorkflowId !== workflowLoadKey) return;
+    if (workflowId !== pendingExecution.workflowId) { setPendingExecution(null); return; }
+    if (nodes.some(node => node.data.workflowSessionId !== workflowSessionId)) return;
     setPendingExecution(null);
     void executeAcceptedRun(pendingExecution.nodeId);
-  }, [pendingExecution, workflowId, workflowSessionId, nodes, executeAcceptedRun, loading, persistLoading, hasLoadedWorkflowId]);
+  }, [pendingExecution, workflowId, workflowSessionId, nodes, executeAcceptedRun, loading, persistLoading, hasLoadedWorkflowId, workflowLoadKey]);
 
   const executeAllNodes = useCallback(() => executeAcceptedRun(), [executeAcceptedRun]);
   const handleStopExecution = useCallback(() => {
@@ -1692,6 +1712,8 @@ const WorkflowEditorContent = () => {
 
   // Save workflow via persistence hook
   const handleSaveWorkflow = async (skipConfirmation: boolean = false) => {
+    const saveSession = workflowSessionId;
+    if (currentWorkflowSessionRef.current !== saveSession) return;
     finishClusterMove(false);
     if (invalidClusterEntries.length > 0) {
       toast({
@@ -1711,7 +1733,7 @@ const WorkflowEditorContent = () => {
     }
 
     // CRITICAL: Prevent saving while loading to avoid race condition
-    if (loading) {
+    if (loading || persistLoading || hasLoadedWorkflowId !== workflowLoadKey) {
       toast({
         title: "Please wait",
         description: "Workflow is still loading...",
@@ -1726,6 +1748,7 @@ const WorkflowEditorContent = () => {
         workflowId,
         nodes.length,
       );
+      if (currentWorkflowSessionRef.current !== saveSession) return;
       if (shouldWarn) {
         setPendingSaveData({ currentCount, newCount: nodes.length });
         setShowSaveConfirmDialog(true);
@@ -1739,6 +1762,7 @@ const WorkflowEditorContent = () => {
       clusters,
     });
 
+    if (currentWorkflowSessionRef.current !== saveSession) return;
     if (result.success && isFirstSave && result.newId) {
       hasPersistedRef.current = true;
       setWorkflowId(result.newId);
@@ -2065,7 +2089,7 @@ const WorkflowEditorContent = () => {
     }
 
     // Prevent reloading if we've already loaded this workflow
-    if (hasLoadedWorkflowId && workflowId === hasLoadedWorkflowId) {
+    if (hasLoadedWorkflowId && workflowLoadKey === hasLoadedWorkflowId) {
       //console.log("🚫 Skipping reload - workflow already loaded");
       return;
     }
@@ -2099,10 +2123,14 @@ const WorkflowEditorContent = () => {
         }
         setNodes(stampNodesWithWorkflowSession(repairProjectedClusterNodes(template.nodes)));
         setEdges(template.edges);
+        setClusters([]);
+        setInvalidClusterEntries([]);
+        setFocusedClusterId(null);
+        setSelectedClusterIds(new Set());
         setIsActive(false);
         setLoading(false);
-        setHasLoadedWorkflowId("new");
-      } else if (workflowId && workflowId !== hasLoadedWorkflowId) {
+        setHasLoadedWorkflowId(workflowLoadKey);
+      } else if (workflowId && workflowLoadKey !== hasLoadedWorkflowId) {
         // Load existing workflow via persistence hook
         setLoading(true);
         const loaded = await persistLoadWorkflow(workflowId, removeEdge, { signal: controller.signal, isCurrent: canPublish });
@@ -2114,7 +2142,7 @@ const WorkflowEditorContent = () => {
           setEdges(loaded.edges);
           setClusters(loaded.clusters);
           setInvalidClusterEntries(loaded.invalidClusterEntries);
-          setHasLoadedWorkflowId(workflowId);
+          setHasLoadedWorkflowId(workflowLoadKey);
         } else {
           navigate("/dashboard/workflows");
         }
@@ -2132,6 +2160,7 @@ const WorkflowEditorContent = () => {
     navigate,
     isNewWorkflow,
     workflowId,
+    workflowLoadKey,
     hasLoadedWorkflowId,
     stampNodesWithWorkflowSession,
   ]); // Added hasLoadedWorkflowId to prevent unnecessary reloads
@@ -2893,7 +2922,7 @@ const WorkflowEditorContent = () => {
             </ConnectionDragContext.Provider>
             <div className="pointer-events-auto absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
               <ExecuteAllControl
-                isExecuting={isAutoExecuting}
+                isExecuting={isAutoExecuting || pendingExecution !== null}
                 disabled={loading || nodes.length === 0 || clusterExecution.isExecutionActive}
                 onExecute={executeAllNodes}
                 onStop={handleStopExecution}

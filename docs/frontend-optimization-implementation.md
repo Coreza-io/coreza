@@ -22,9 +22,22 @@ The unused `WorkflowCanvas`, `WorkflowHeader`, `useWorkflowExecution`, and `Node
 
 - Document undo retains at most 50 past command entries. Document snapshots omit runtime inputs/outputs/progress while retaining editable values, pins, identity and hierarchy. Position deltas remain separate entries. Undo and clipboard clear on session replacement. Clipboard alias inventories contain identity/definition metadata instead of all workflow results.
 - Session disposal drops registered pins and runtime data; Clear Runtime retains pins. Deleted identities retire runtime keys. Old execution locks/actions are invalidated before session disposal.
-- History retains at most three full details. Summary pagination retains a 200-row window; its cursor is independent of eviction. Hidden history pauses network activity while retaining the current selection/cache in the same data scope. Owner/workflow/filter changes clear the scope.
+- History retains at most three full details. Summary pagination retains a 200-row window; its cursor is independent of eviction. Hidden history pauses network activity while retaining the current selection/cache in the same data scope. Reopening refreshes the selected detail; explicit list refresh resets pagination to the newest page. When the 200-row limit is reached, pagination and realtime merges retain the older window at the cursor boundary; refresh returns to the newest rows. Owner/workflow/filter changes clear the scope.
 - JSON trees lazily expand and page objects/arrays, with a shared 200-entry, 12-level, 20,000-character display budget. Strings display at most 2,000 characters per entry. Source data and reference paths remain unchanged. Output export deliberately serializes the complete value; object URLs are revoked. Edit eligibility is checked through bounded traversal before serialization.
 - Chart series retain compatible overlay handles. Compatible ordered append/current-point changes use `update`; older corrections, backfills, reorder/truncation or incompatible shapes replace data. Prefix validation still scans data and retains private flat snapshots; this is not an O(1) streaming claim. Initial fit and explicit auto-fit toggles do not continually overwrite the user's chosen range. Changed level-price configurations may still recreate their handles.
+
+## PR #849 source-review corrections
+
+A subsequent source review found correctness gaps and updated this PR:
+
+- Structural command/undo restoration preserves current runtime fields without retaining them in undo snapshots. Pin synchronization handles external unpin and no-op writes, publishes once per edit, and respects mutation locks.
+- Document readiness includes owner identity. Saves and prepared runs wait for hydration, new templates clear prior cluster state, and Stop remains available while a saved run waits for its replacement session.
+- Listener replacement aborts the old owner before staging new flags. Polling, recovery requests, delayed flag resets, stream controls and news callbacks reject obsolete sessions/deleted nodes. Clear Runtime terminates pending polling without recreating cleared state. Listener and socket publications mirror changed runtime fields to canonical nodes, then explicitly notify once; full configuration patches cannot accidentally trip execution locks.
+- History refresh resets pagination authoritatively; bounded windows retain their cursor boundary. Selection refreshes cached terminal details, resumes after hidden intervals, rejects rows that left the filters, and coalesces repeated selection during a detail request.
+- Shared loader ownership survives effect teardown/restart without reviving old requests. Supporting pages reset old scope state and surface query failures. Supabase realtime filters use the supported syntax; live snapshots are deduplicated, ordered and reconciled with full reads without mixing sessions.
+- Hidden conditional options/previews no longer activate requests. Chart overlay shapes are scoped to their pane, multi-series updates preserve duplicate-label channels, and new panes inherit the current visible range. JSON paging clamps after data shrinks and retains explicit reference paths.
+
+These corrections were reviewed in source only. No tests, type check, lint, build, browser exercise, profiling or remote runtime execution was performed. `git diff --check` checks whitespace only and does not establish runtime correctness.
 
 ## Remaining plan gates and follow-ups
 

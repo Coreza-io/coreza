@@ -38,6 +38,9 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
     : localOutput?.session === sessionId ? localOutput.value : fallback;
   void executionData;
   const displayedData = isPinned ? pinnedOutput : unpinned;
+  useEffect(() => {
+    if (localOutput && (localOutput.session !== sessionId || (!runtime && data.output === undefined))) setLocalOutput(null);
+  }, [sessionId, executionData, data.output, runtime, localOutput]);
 
   const syncPinnedOutput = useCallback((value: unknown | null) => {
     if (!nodeId || data.readOnly) return;
@@ -47,10 +50,10 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
   }, [nodeId, data.readOnly, store, notify, updateNodeData]);
 
   useEffect(() => {
-    if (!nodeId || data.readOnly || pinnedOutput === null) return;
-    store.setPinned(nodeId, pinnedOutput);
-    notify();
-    return () => { store.setPinned(nodeId, null); };
+    if (!nodeId || data.readOnly) return;
+    // Canonical identity/session disposal owns pin retirement. Effect cleanup
+    // must not unpin a replacement host or duplicate an already published edit.
+    if (store.setPinned(nodeId, pinnedOutput)) notify();
   }, [nodeId, sessionId, pinnedOutput, data.readOnly, store, notify]);
 
   const handlePanelSave = useCallback((value: unknown) => { setLastOutput(value); syncPinnedOutput(value); }, [setLastOutput, syncPinnedOutput]);

@@ -153,9 +153,11 @@ export const useBacktestResults = (id?: string, enabled = true) => {
         ]);
 
       if (!isCurrent()) return;
-      if (metricsResult.status === "fulfilled" && metricsResult.value.data) {
-        setMetrics(metricsResult.value.data as BacktestResultMetrics);
+      for (const result of [metricsResult, tradesResult, snapshotsResult]) {
+        if (result.status === "rejected") throw result.reason;
+        if (result.value.error) throw result.value.error;
       }
+      setMetrics(metricsResult.status === "fulfilled" ? metricsResult.value.data as BacktestResultMetrics | null : null);
 
       setTrades(
         tradesResult.status === "fulfilled"
@@ -178,6 +180,7 @@ export const useBacktestResults = (id?: string, enabled = true) => {
   const loadData = useScopedLoader(`${user?.id ?? ""}:${id ?? ""}:${enabled}`, performLoad);
 
   useEffect(() => {
+    setBacktest(null); setMetrics(null); setTrades([]); setSnapshots([]); setError(null);
     if (!enabled) {
       setBacktest(null);
       setMetrics(null);

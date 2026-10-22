@@ -165,12 +165,13 @@ export function ExecutionDetailView({
           executionInput: nodeExec?.input,
           // Pass all node executions for dropdown in input panel
           allNodeExecutions: nodeExecutions,
+          historyEdges: sourceEdges,
           // Display name from execution or original
           label: node.data?.displayName || (node.data?.definition as any)?.name,
         },
       };
     });
-  }, [hydratedNodes, nodeExecutionMap, nodeExecutions]);
+  }, [hydratedNodes, nodeExecutionMap, nodeExecutions, sourceEdges]);
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {

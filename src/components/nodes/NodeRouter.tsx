@@ -336,6 +336,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
             executionStore,
             executionInput: data.executionInput,
             allNodeExecutions: data.allNodeExecutions,
+            historyEdges: data.historyEdges,
           }}
           outputPanelProps={{
             sourceNodeId: nodeId,

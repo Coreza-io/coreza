@@ -224,13 +224,13 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   const resolvedPrevNodeId = useMemo(
     () => readOnly
-      ? resolveHistoricalNodeId(selectedPrevNodeId, data.allNodeExecutions ?? [])
+      ? resolveHistoricalNodeId(selectedPrevNodeId, data.allNodeExecutions ?? [], nodeId ?? undefined, data.historyEdges)
       : resolvePreviousNodeId(
         selectedPrevNodeId,
         previousNodes,
         preferredPrevNodeId,
       ),
-    [preferredPrevNodeId, previousNodes, selectedPrevNodeId, readOnly, data.allNodeExecutions],
+    [preferredPrevNodeId, previousNodes, selectedPrevNodeId, readOnly, data.allNodeExecutions, nodeId, data.historyEdges],
   );
 
   // Historical selection is owned by InputPanel's executed-node options.

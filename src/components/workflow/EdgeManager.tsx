@@ -38,15 +38,8 @@ export interface EdgeControl {
   onClick?: (e: React.MouseEvent) => void;
 }
 
-export interface SelfLoopConfig {
-  offsetX?: number;
-  offsetY?: number;
-  direction?: "top" | "right" | "bottom" | "left";
-}
-
 export interface InteractiveEdgeProps extends EdgeProps {
   controls?: EdgeControl[];
-  selfLoopConfig?: SelfLoopConfig;
   className?: string;
 }
 
@@ -62,7 +55,7 @@ const buildControls = (data: any, canDelete: boolean): EdgeControl[] => {
   }
   if (canDelete) {
     controls.push({
-      icon: <Trash2 size={14} />,
+      icon: <Trash2 size={12} />,
       label: "Delete connection",
       action: "delete",
     });
@@ -106,7 +99,7 @@ const EdgeToolbar = ({
   return (
     <EdgeLabelRenderer>
       <div
-        className="edge-toolbar nodrag nopan absolute flex gap-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
+        className="edge-toolbar nodrag nopan absolute flex gap-1 rounded-md border bg-popover p-0.5 text-popover-foreground shadow-lg"
         style={{
           transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
           pointerEvents: "all",
@@ -135,7 +128,7 @@ const EdgeToolbar = ({
                 ? "edge-delete-button"
                 : undefined
             }
-            className="flex h-8 w-8 items-center justify-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="flex h-6 w-6 items-center justify-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             onClick={(event) => {
               event.stopPropagation();
               if (!editing.enabled || !editing.canEdit()) {
@@ -718,7 +711,6 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   markerEnd,
   data,
   controls = [],
-  selfLoopConfig,
   animated,
   className,
 }) => {
@@ -729,37 +721,11 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
     .filter(control => control.action !== "delete" || canDelete);
   const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, !endpointExpanded && editing.enabled && computedControls.length > 0, editing.canEdit, editing.sessionId);
   const agentActive = useAgentEdgeActive(id, source, target, data);
-  const isSelfLoop = source === target;
   const sourceTheme = useSourceNodeTheme(source);
   const nodes = useEndpointBounds(source, target);
   const isDarkMode = useResolvedTheme() === "dark";
 
   if (endpointExpanded) return null;
-
-  if (isSelfLoop) {
-    return (
-      <InteractiveEdge
-        id={id}
-        source={source}
-        target={target}
-        sourceX={sourceX - 25}
-        sourceY={sourceY}
-        targetX={targetX + 25}
-        targetY={targetY}
-        sourcePosition={sourcePosition}
-        targetPosition={targetPosition}
-        style={{
-          stroke: isDarkMode ? sourceTheme.edgeColor : "#9ca3af",
-          strokeWidth: EDGE_STROKE_WIDTH,
-          ...style,
-        }}
-        markerEnd={markerEnd}
-        data={data}
-        controls={computedControls}
-        selfLoopConfig={selfLoopConfig}
-      />
-    );
-  }
 
   const customStyle: React.CSSProperties = { ...(style || {}) };
   const strokeValue = customStyle.stroke;
@@ -1053,95 +1019,22 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   markerEnd,
   data,
   controls = [],
-  selfLoopConfig,
 }) => {
   const nodes = useEndpointBounds(source, target);
   const agentActive = useAgentEdgeActive(id, source, target, data);
-  // Detect self-loop (when source connects to target on same node)
-  const isSelfLoop = source === target;
-
-  // Default self-loop configuration
-  const defaultSelfLoopConfig: SelfLoopConfig = {
-    offsetX: 40,
-    offsetY: 80,
-    direction: "right",
-  };
-
-  const loopConfig = { ...defaultSelfLoopConfig, ...selfLoopConfig };
   const endpointExpanded = useEdgeEndpointsExpanded(source, target);
-
-  let pathD: string;
-  let midX: number;
-  let midY: number;
-  if (isSelfLoop) {
-    // Create self-loop path based on direction
-    const { offsetX = 40, offsetY = 80, direction = "right" } = loopConfig;
-
-    switch (direction) {
-      case "top":
-        pathD = [
-          `M ${sourceX},${sourceY}`,
-          `V ${sourceY - offsetY}`,
-          `H ${sourceX + offsetX}`,
-          `V ${targetY}`,
-          `H ${targetX}`,
-        ].join(" ");
-        midX = sourceX + offsetX / 2;
-        midY = sourceY - offsetY;
-        break;
-      case "bottom":
-        pathD = [
-          `M ${sourceX},${sourceY}`,
-          `V ${sourceY + offsetY}`,
-          `H ${sourceX + offsetX}`,
-          `V ${targetY}`,
-          `H ${targetX}`,
-        ].join(" ");
-        midX = sourceX + offsetX / 2;
-        midY = sourceY + offsetY;
-        break;
-      case "left":
-        pathD = [
-          `M ${sourceX},${sourceY}`,
-          `H ${sourceX - offsetX}`,
-          `V ${sourceY + offsetY}`,
-          `H ${targetX}`,
-          `V ${targetY}`,
-        ].join(" ");
-        midX = sourceX - offsetX;
-        midY = sourceY + offsetY / 2;
-        break;
-      case "right":
-      default:
-        pathD = [
-          `M ${sourceX},${sourceY}`,
-          `H ${sourceX + offsetX}`,
-          `V ${sourceY + offsetY}`,
-          `H ${targetX - offsetX}`,
-          `V ${targetY}`,
-          `H ${targetX}`,
-        ].join(" ");
-        midX = sourceX + offsetX;
-        midY = sourceY + offsetY / 2;
-        break;
-    }
-  } else {
-    // Regular edge path - use smart path calculation to route around nodes
-    const result = calculateSmartPath(
-      sourceX,
-      sourceY,
-      targetX,
-      targetY,
-      sourcePosition,
-      targetPosition,
-      nodes,
-      source,
-      target,
-    );
-    pathD = result.path;
-    midX = result.midX;
-    midY = result.midY;
-  }
+  // Self-loops and return connections share bounds-aware routing and corner radius.
+  const { path: pathD, midX, midY } = calculateSmartPath(
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    nodes,
+    source,
+    target,
+  );
 
   const editing = useContext(EdgeEditingContext);
   const canDelete = editing.deletableEdgeIds.has(id);
@@ -1221,12 +1114,6 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
   return (
     <InteractiveEdge
       {...props}
-      selfLoopConfig={{
-        offsetX: (data?.offsetX as number) || 40,
-        offsetY: (data?.offsetY as number) || 80,
-        direction:
-          (data?.direction as "top" | "right" | "bottom" | "left") || "right",
-      }}
       style={{
         stroke: isDarkMode
           ? (data?.loopColor as string) || "#6366f1"
@@ -1261,7 +1148,6 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
   return (
     <InteractiveEdge
       {...props}
-      selfLoopConfig={{ offsetX: 20, offsetY: 80, direction: "right" }}
       style={{
         stroke: isDarkMode ? "#22c55e" : "#9ca3af",
         strokeWidth: EDGE_STROKE_WIDTH,

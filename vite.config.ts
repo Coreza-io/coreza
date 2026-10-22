@@ -6,6 +6,18 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { NodeConfigSchema } from "./src/nodes/schemas/nodeSchema";
 
+// Bundle fallback SVG text without importing files from Vite's public directory.
+const iconsDirectory = path.resolve(__dirname, "public/assets/icons");
+const bundledNodeIcons = Object.fromEntries(
+  fs.readdirSync(iconsDirectory)
+    .filter((file) => file.endsWith(".svg"))
+    .sort()
+    .map((file) => [
+      `/assets/icons/${file}`,
+      fs.readFileSync(path.join(iconsDirectory, file), "utf-8"),
+    ]),
+);
+
 function nodeValidatorPlugin(): Plugin {
   return {
     name: "node-validator",
@@ -29,6 +41,9 @@ function nodeValidatorPlugin(): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  define: {
+    __BUNDLED_NODE_ICONS__: JSON.stringify(bundledNodeIcons),
+  },
   server: {
     host: "::",
     port: 8080,

@@ -466,11 +466,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   width: 24,
                   height: 24,
                   transform: handleTransform,
-                  // Keep handle geometry available without bleeding into Output Data.
-                  visibility: isExpanded && !isInputHandle ? "hidden" : undefined,
-                  pointerEvents: isExpanded && !isInputHandle ? "none" : undefined,
+                  // Keep handle geometry available without bleeding into the input/output panels.
+                  visibility: isExpanded ? "hidden" : undefined,
+                  pointerEvents: isExpanded ? "none" : undefined,
                 }}
-                isConnectable={!(isExpanded && !isInputHandle)}
+                isConnectable={!isExpanded}
                 className={handleClass}
               >
                 {handleIcon}

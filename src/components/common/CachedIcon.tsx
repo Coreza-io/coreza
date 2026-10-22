@@ -9,6 +9,7 @@
  */
 
 import React, { memo } from 'react';
+import { getBundledNodeIcon } from '@/utils/bundledNodeIcons';
 
 // Icon cache to store loaded images
 const iconCache = new Map<string, HTMLImageElement>();
@@ -22,11 +23,20 @@ const preloadIcon = (src: string): Promise<void> => {
     }
 
     const img = new Image();
+    let triedFallback = false;
     img.onload = () => {
       iconCache.set(src, img);
       resolve();
     };
-    img.onerror = reject;
+    img.onerror = () => {
+      const fallback = getBundledNodeIcon(src);
+      if (!fallback || triedFallback) {
+        reject(new Error(`Unable to load icon: ${src}`));
+        return;
+      }
+      triedFallback = true;
+      img.src = fallback;
+    };
     img.src = src;
   });
 };
@@ -40,18 +50,22 @@ interface CachedIconProps {
 
 // Memoized icon component that prevents re-renders
 const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallback }) => {
-  const [isLoaded, setIsLoaded] = React.useState(iconCache.has(src));
-  const [hasError, setHasError] = React.useState(false);
+  const [loadState, setLoadState] = React.useState<{
+    src: string;
+    status: 'loading' | 'loaded' | 'error';
+  }>({ src, status: iconCache.has(src) ? 'loaded' : 'loading' });
+  const status = iconCache.has(src) ? 'loaded' : loadState.src === src ? loadState.status : 'loading';
 
   React.useEffect(() => {
-    if (!iconCache.has(src)) {
-      preloadIcon(src)
-        .then(() => setIsLoaded(true))
-        .catch(() => setHasError(true));
-    }
+    let active = true;
+    setLoadState({ src, status: iconCache.has(src) ? 'loaded' : 'loading' });
+    preloadIcon(src)
+      .then(() => { if (active) setLoadState({ src, status: 'loaded' }); })
+      .catch(() => { if (active) setLoadState({ src, status: 'error' }); });
+    return () => { active = false; };
   }, [src]);
 
-  if (hasError) {
+  if (status === 'error') {
     return fallback || (
       <div className={`${className} bg-muted rounded flex items-center justify-center`}>
         <span className="text-xs">?</span>
@@ -59,7 +73,7 @@ const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallb
     );
   }
 
-  if (!isLoaded) {
+  if (status === 'loading') {
     return (
       <div className={`${className} bg-muted rounded animate-pulse`}>
         {/* Loading placeholder */}
@@ -69,7 +83,7 @@ const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallb
 
   return (
     <img
-      src={src}
+      src={iconCache.get(src)?.src ?? src}
       alt={alt}
       className={className}
       loading="eager"

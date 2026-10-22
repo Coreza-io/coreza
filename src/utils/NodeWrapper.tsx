@@ -25,6 +25,7 @@ import {
   ConnectedSwitchIcon,
 } from "@/components/workflow/EdgeManager";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
+import { useNodeExpansion } from "@/hooks/useNodeExpansion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -174,6 +175,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     if (element) setPortalContainer(element.closest<HTMLElement>(".react-flow__viewport") ?? undefined);
   }, []);
   const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
+  useNodeExpansion(nodeId, isExpanded);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const prevStreamDataReceived = useRef(streamDataReceived);
@@ -464,7 +466,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   width: 24,
                   height: 24,
                   transform: handleTransform,
+                  // Keep handle geometry available without bleeding into Output Data.
+                  visibility: isExpanded && !isInputHandle ? "hidden" : undefined,
+                  pointerEvents: isExpanded && !isInputHandle ? "none" : undefined,
                 }}
+                isConnectable={!(isExpanded && !isInputHandle)}
                 className={handleClass}
               >
                 {handleIcon}

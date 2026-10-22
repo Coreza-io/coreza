@@ -174,9 +174,9 @@ const InputPanel: React.FC<InputPanelProps> = ({
         </div>}
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="nodrag nopan p-3 h-[calc(100%-42px)] overflow-auto">
-        <TabsList aria-label="Input data source" className="grid w-full grid-cols-2 mb-3">
-          <TabsTrigger value="previous">Previous Node</TabsTrigger>
-          <TabsTrigger value="variables">Variables</TabsTrigger>
+        <TabsList aria-label="Input data source" className="mb-3 h-9 w-fit justify-start gap-4 rounded-none border-b border-border bg-transparent p-0">
+          <TabsTrigger value="previous" className="rounded-none border-b-2 border-transparent px-1 py-2 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none">Previous Node</TabsTrigger>
+          <TabsTrigger value="variables" className="rounded-none border-b-2 border-transparent px-1 py-2 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none">Variables</TabsTrigger>
         </TabsList>
         <TabsContent value="previous">
           {nodeOptions.length > 0 && setSelectedPrevNodeId && (

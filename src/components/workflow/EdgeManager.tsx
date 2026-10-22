@@ -10,6 +10,7 @@
 
 import React, { useContext } from "react";
 import { useEdgeToolbarHover } from "@/hooks/useEdgeToolbarHover";
+import { useSourceNodeExpanded } from "@/hooks/useNodeExpansion";
 import { useAgentParticipantActive } from "@/stores/agentActivityStore";
 import {
   ConnectionLineComponentProps,
@@ -722,21 +723,18 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   className,
 }) => {
   const editing = useContext(EdgeEditingContext);
+  const sourceExpanded = useSourceNodeExpanded(source);
   const canDelete = editing.deletableEdgeIds.has(id);
-  const computedControls = (
-    controls.length > 0 ? controls : buildControls(data, canDelete)
-  ).filter((control) => control.action !== "delete" || canDelete);
-  const hover = useEdgeToolbarHover(
-    `${editing.sessionId}:${id}`,
-    editing.enabled && computedControls.length > 0,
-    editing.canEdit,
-    editing.sessionId,
-  );
+  const computedControls = (controls.length > 0 ? controls : buildControls(data, canDelete))
+    .filter(control => control.action !== "delete" || canDelete);
+  const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, !sourceExpanded && editing.enabled && computedControls.length > 0, editing.canEdit, editing.sessionId);
   const agentActive = useAgentEdgeActive(id, source, target, data);
   const isSelfLoop = source === target;
   const sourceTheme = useSourceNodeTheme(source);
   const nodes = useEndpointBounds(source, target);
   const isDarkMode = useResolvedTheme() === "dark";
+
+  if (sourceExpanded) return null;
 
   if (isSelfLoop) {
     return (
@@ -1070,6 +1068,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   };
 
   const loopConfig = { ...defaultSelfLoopConfig, ...selfLoopConfig };
+  const sourceExpanded = useSourceNodeExpanded(source);
 
   let pathD: string;
   let midX: number;
@@ -1146,15 +1145,11 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
 
   const editing = useContext(EdgeEditingContext);
   const canDelete = editing.deletableEdgeIds.has(id);
-  const computedControls = (
-    controls.length > 0 ? controls : buildControls(data, canDelete)
-  ).filter((control) => control.action !== "delete" || canDelete);
-  const hover = useEdgeToolbarHover(
-    `${editing.sessionId}:${id}`,
-    editing.enabled && computedControls.length > 0,
-    editing.canEdit,
-    editing.sessionId,
-  );
+  const computedControls = (controls.length > 0 ? controls : buildControls(data, canDelete))
+    .filter(control => control.action !== "delete" || canDelete);
+  const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, !sourceExpanded && editing.enabled && computedControls.length > 0, editing.canEdit, editing.sessionId);
+
+  if (sourceExpanded) return null;
 
   return (
     <g onMouseEnter={hover.onEdgeEnter} onMouseLeave={hover.onEdgeLeave}>

@@ -40,6 +40,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { nodeManifest } from "@/nodes/manifest";
 import { getNodeIcon } from "@/utils/nodeSchemaHelpers";
+import CachedIcon from "@/components/common/CachedIcon";
 
 const getIconComponent = (iconName: string) => {
   const icons = {
@@ -202,12 +203,10 @@ export function NodePalette({ onNodeClick }: NodePaletteProps) {
                                     const iconPath = getNodeIcon(node);
                                     if (iconPath?.startsWith("/assets/")) {
                                       return (
-                                        <img
+                                        <CachedIcon
                                           src={iconPath}
                                           alt={node.name}
                                           className="h-4 w-4"
-                                          loading="eager"
-                                          style={{ imageRendering: "auto" }}
                                         />
                                       );
                                     } else {

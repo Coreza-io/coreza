@@ -113,7 +113,7 @@ export const addOverlaySeries = (
       lineWidth: 2,
       ...OVERLAY_SERIES_STYLE,
     });
-    series.setData(toLineData(overlay.data));
+    reconcileSeriesData(series, toLineData(overlay.data));
     handles.series.push(series);
     handles.channels.push({
       key: overlay.id,
@@ -137,7 +137,7 @@ export const addOverlaySeries = (
               lineStyle: channel.dashed ? LINE_STYLE_DASHED : undefined,
               ...OVERLAY_SERIES_STYLE,
             });
-      series.setData(toLineData(channel.data));
+      reconcileSeriesData(series, toLineData(channel.data));
       handles.series.push(series);
       handles.channels.push({
         key: channel.label,
@@ -167,7 +167,7 @@ export const addOverlaySeries = (
       lineWidth: 1,
       ...OVERLAY_SERIES_STYLE,
     });
-    upper.setData(toLineData(overlay.upper));
+    reconcileSeriesData(upper, toLineData(overlay.upper));
     handles.series.push(upper);
     handles.channels.push({
       key: "upper",
@@ -182,7 +182,7 @@ export const addOverlaySeries = (
         lineStyle: LINE_STYLE_DASHED,
         ...OVERLAY_SERIES_STYLE,
       });
-      middle.setData(toLineData(overlay.middle));
+      reconcileSeriesData(middle, toLineData(overlay.middle));
       handles.series.push(middle);
       handles.channels.push({
         key: "middle",
@@ -196,7 +196,7 @@ export const addOverlaySeries = (
       lineWidth: 1,
       ...OVERLAY_SERIES_STYLE,
     });
-    lower.setData(toLineData(overlay.lower));
+    reconcileSeriesData(lower, toLineData(overlay.lower));
     handles.series.push(lower);
     handles.channels.push({
       key: "lower",
@@ -277,7 +277,7 @@ export const addOverlaySeries = (
       lineWidth: 1,
       ...OVERLAY_SERIES_STYLE,
     });
-    supportSeries.setData(toLineData(overlay.supportSeries));
+    reconcileSeriesData(supportSeries, toLineData(overlay.supportSeries));
     handles.series.push(supportSeries);
     handles.channels.push({
       key: "support",
@@ -292,7 +292,7 @@ export const addOverlaySeries = (
       lineWidth: 1,
       ...OVERLAY_SERIES_STYLE,
     });
-    resistanceSeries.setData(toLineData(overlay.resistanceSeries));
+    reconcileSeriesData(resistanceSeries, toLineData(overlay.resistanceSeries));
     handles.series.push(resistanceSeries);
     handles.channels.push({
       key: "resistance",
@@ -306,3 +306,58 @@ export const addOverlaySeries = (
   }
   return handles;
 };
+
+// Keep private flat snapshots so in-place source corrections cannot fool append detection.
+const seriesData = new WeakMap<object, readonly Record<string, unknown>[]>();
+export function reconcileSeriesData<T extends { time: Time }>(series: { setData: (data: T[]) => void; update: (data: T) => void }, next: T[]): void {
+  const previous = seriesData.get(series);
+  const samePoint = (a: Record<string, unknown>, b: object) => {
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.is(a[key], (b as Record<string, unknown>)[key]));
+  };
+  const ordered = next.every((point, index) => typeof point.time === "number" && (index === 0 || Number(point.time) > Number(next[index - 1].time)));
+  const compatible = ordered && previous?.length && next.length >= previous.length
+    && previous.slice(0, -1).every((point, index) => samePoint(point, next[index]))
+    && previous[previous.length - 1].time === next[previous.length - 1].time;
+  if (compatible && previous) {
+    const lastIndex = previous.length - 1;
+    if (!samePoint(previous[lastIndex], next[lastIndex])) series.update(next[lastIndex]);
+    for (let index = previous.length; index < next.length; index++) series.update(next[index]);
+  } else series.setData(next);
+  seriesData.set(series, next.map(point => ({ ...point })));
+}
+
+/** Retain compatible series; style/channel changes intentionally recreate their handles. */
+export function overlayShape(overlay: VisualizeOverlay): string {
+  if (overlay.kind === "line" || overlay.kind === "panel") return JSON.stringify([overlay.kind, overlay.color]);
+  if (overlay.kind === "multi") return JSON.stringify([overlay.kind, overlay.pane, overlay.channels.map(({ label, color, style, dashed }) => ({ label, color, style, dashed })), overlay.referenceLines]);
+  if (overlay.kind === "bands") return JSON.stringify([overlay.kind, overlay.color, !!overlay.middle]);
+  return JSON.stringify([overlay.kind, overlay.supports, overlay.resistances, overlay.pivot, overlay.currentClose, !!overlay.supportSeries, !!overlay.resistanceSeries]);
+}
+
+export function updateOverlayData(overlay: VisualizeOverlay, handles: OverlayHandles): void {
+  const points = new Map<string, SeriesPoint[]>();
+  if (overlay.kind === "line" || overlay.kind === "panel") {
+    if (handles.series[0]) reconcileSeriesData(handles.series[0], toLineData(overlay.data));
+    return;
+  }
+  if (overlay.kind === "multi") {
+    // Channel labels are presentation, not unique data identities.
+    overlay.channels.forEach((channel, index) => {
+      if (handles.series[index]) reconcileSeriesData(handles.series[index], toLineData(channel.data));
+    });
+    return;
+  } else if (overlay.kind === "bands") {
+    points.set("upper", overlay.upper); points.set("lower", overlay.lower);
+    if (overlay.middle) points.set("middle", overlay.middle);
+  } else {
+    if (overlay.supportSeries) points.set("support", overlay.supportSeries);
+    if (overlay.resistanceSeries) points.set("resistance", overlay.resistanceSeries);
+  }
+  handles.channels.forEach(channel => {
+    const data = points.get(channel.key);
+    if (data && handles.series.includes(channel.series as ISeriesApi<"Line" | "Histogram", Time>)) {
+      reconcileSeriesData(channel.series as ISeriesApi<"Line" | "Histogram", Time>, toLineData(data));
+    }
+  });
+}

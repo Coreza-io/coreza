@@ -34,6 +34,10 @@ interface StableNodeContextValue {
   getSnapshot: () => CanonicalGraphSnapshot;
   subscribeSemantic: (listener: () => void) => () => void;
   getSemanticSnapshot: () => SemanticGraphSnapshot;
+  getConfigurationSnapshot: () => SemanticGraphSnapshot;
+  subscribeConfiguration: (listener: () => void) => () => void;
+  getTopologySnapshot: () => SemanticGraphSnapshot;
+  subscribeTopology: (listener: () => void) => () => void;
   updateNodeData: (id: string, patch: Record<string, unknown>) => boolean;
   registerNodeDataUpdater: (updater: (id: string, patch: Record<string, unknown>) => boolean | void) => () => void;
   renameNode: (request: RenameNodeRequest) => Promise<RenameNodeResult>;
@@ -68,9 +72,7 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
       ? canonicalStore.getSnapshot().edges
       : reactFlow.getEdges())],
     getNodeById: (id: string) =>
-      (canonicalPublishedRef.current
-        ? canonicalStore.getSnapshot().nodes
-        : reactFlow.getNodes()).find(n => n.id === id),
+      canonicalPublishedRef.current ? canonicalStore.getNodeById(id) : reactFlow.getNode(id),
     setCanonicalDocument: (nodes: readonly Node[], edges: readonly Edge[], sessionId?: string) => {
       canonicalPublishedRef.current = true;
       if (sessionId) syncEditorNodeActionIds(sessionId, nodes);
@@ -80,6 +82,10 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
     getSnapshot: canonicalStore.getSnapshot,
     subscribeSemantic: canonicalStore.subscribeSemantic,
     getSemanticSnapshot: canonicalStore.getSemanticSnapshot,
+    getConfigurationSnapshot: canonicalStore.getConfigurationSnapshot,
+    subscribeConfiguration: canonicalStore.subscribeConfiguration,
+    getTopologySnapshot: canonicalStore.getTopologySnapshot,
+    subscribeTopology: canonicalStore.subscribeTopology,
     updateNodeData: (id: string, patch: Record<string, unknown>) => {
       if (!nodeDataUpdaterRef.current) return false;
       return nodeDataUpdaterRef.current(id, patch) !== false;
@@ -178,3 +184,35 @@ const OPTIONAL_EMPTY_SEMANTIC_GRAPH: SemanticGraphSnapshot = Object.freeze({
   edges: Object.freeze([]),
   getUpstreamNodes: () => Object.freeze([]),
 });
+
+/** Configuration inventories retain identity across result and geometry publications. */
+export function useConfigurationGraphSnapshot(enabled = true): SemanticGraphSnapshot {
+  const context = useStableNodes();
+  const subscribe = useCallback((listener: () => void) => enabled ? context.subscribeConfiguration(listener) : () => undefined, [context, enabled]);
+  const getSnapshot = useCallback(() => enabled ? context.getConfigurationSnapshot() : OPTIONAL_EMPTY_SEMANTIC_GRAPH, [context, enabled]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useOptionalConfigurationGraphSnapshot(enabled = true): SemanticGraphSnapshot | null {
+  const context = useContext(StableNodeContext);
+  const subscribe = useCallback((listener: () => void) => enabled && context ? context.subscribeConfiguration(listener) : () => undefined, [context, enabled]);
+  const getSnapshot = useCallback(() => enabled && context ? context.getConfigurationSnapshot() : OPTIONAL_EMPTY_SEMANTIC_GRAPH, [context, enabled]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return enabled && context ? snapshot : null;
+}
+
+/** Topology inventories retain identity across result and geometry publications. */
+export function useTopologyGraphSnapshot(enabled = true): SemanticGraphSnapshot {
+  const context = useStableNodes();
+  const subscribe = useCallback((listener: () => void) => enabled ? context.subscribeTopology(listener) : () => undefined, [context, enabled]);
+  const getSnapshot = useCallback(() => enabled ? context.getTopologySnapshot() : OPTIONAL_EMPTY_SEMANTIC_GRAPH, [context, enabled]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useOptionalTopologyGraphSnapshot(enabled = true): SemanticGraphSnapshot | null {
+  const context = useContext(StableNodeContext);
+  const subscribe = useCallback((listener: () => void) => enabled && context ? context.subscribeTopology(listener) : () => undefined, [context, enabled]);
+  const getSnapshot = useCallback(() => enabled && context ? context.getTopologySnapshot() : OPTIONAL_EMPTY_SEMANTIC_GRAPH, [context, enabled]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return enabled && context ? snapshot : null;
+}

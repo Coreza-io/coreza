@@ -19,7 +19,7 @@ import { useNodeId } from "@xyflow/react";
 import { IconRegistry } from "@/components/icons/NodeIcons";
 import CachedIcon from "@/components/common/CachedIcon";
 import { useExecutionStore } from "@/contexts/ExecutionStoreContext";
-import { useStableNodes } from "@/contexts/StableNodeContext";
+import { useStableNodes, useTopologyGraphSnapshot } from "@/contexts/StableNodeContext";
 
 interface NodeRouterProps {
   data: any;
@@ -37,7 +37,8 @@ const TOOL_INELIGIBLE_CATEGORIES = new Set([
 
 const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) => {
   const nodeId = useNodeId();
-  const { getNodes, getEdges, updateNodeData } = useStableNodes();
+  const graph = useTopologyGraphSnapshot(!data.readOnly);
+  const { getNodes, updateNodeData } = useStableNodes();
   const executionStore = useExecutionStore();
 
   const definition = data.definition;
@@ -314,13 +315,14 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
     >
       {(renderProps) => {
         // Read nodes/edges imperatively for NodeWrapper - avoids re-render on drag
-        const nodes = getNodes();
-        const edges = getEdges();
+        const nodes = data.readOnly ? data.historyNodes ?? [] : graph.nodes;
+        const edges = data.readOnly ? data.historyEdges ?? [] : graph.edges;
         return (
         <>
         {agentActivityActive && <span role="status" className="pointer-events-none absolute -top-7 left-0 rounded bg-cyan-600 px-2 py-1 text-xs text-white motion-safe:animate-pulse">Agent operation running</span>}
         <NodeWrapper
           nodeId={nodeId}
+          scopeKey={data.readOnly ? data.executionRunId : data.workflowSessionId}
           nodes={nodes}
           edges={edges}
           selected={selected}

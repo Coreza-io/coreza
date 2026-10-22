@@ -98,7 +98,7 @@ export function useNodeExecution({
 }: UseNodeExecutionProps): UseNodeExecutionReturn {
   const nodeId = useNodeId();
   const variableQueryClient = useQueryClient();
-  const { getNodes, getEdges, updateNodeData } = useStableNodes();
+  const { getNodes, getEdges, getNodeById, updateNodeData } = useStableNodes();
   const { user, session } = useAuth();
   const executionStore = useExecutionStore();
   const notifyExecutionStoreUpdate = useExecutionStoreNotify();
@@ -113,9 +113,14 @@ export function useNodeExecution({
   const activeAgentRef = useRef<Awaited<ReturnType<typeof startManualAgentActivity>>>();
   const activeAgentAbortRef = useRef<AbortController>();
 
-  // Cleanup polling on unmount
+  const actionScope = `${user?.id ?? ""}:${data?.workflowSessionId ?? ""}:${nodeId ?? ""}`;
+  const scopeRef = useRef(actionScope); scopeRef.current = actionScope;
+  const mountedRef = useRef(true);
+  // A reused node ID still belongs to a new document session.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       activeAgentAbortRef.current?.abort();
       activeAgentRef.current?.cancel();
       activeAgentRef.current?.finish(undefined, "incomplete");
@@ -124,7 +129,7 @@ export function useNodeExecution({
         pollingAbortRef.current = null;
       }
     };
-  }, []);
+  }, [actionScope]);
 
   const userId = user?.id;
 
@@ -430,7 +435,9 @@ export function useNodeExecution({
       }
       let agentController: AbortController | undefined;
       const abortAgent = () => agentController?.abort();
-      const executionIsCurrent = () => !readOnlyRef.current && !signal?.aborted && !agentController?.signal.aborted &&
+      const sessionIsCurrent = () => mountedRef.current && scopeRef.current === actionScope && !readOnlyRef.current
+        && getNodeById(outcomeNodeId)?.data?.workflowSessionId === data?.workflowSessionId;
+      const executionIsCurrent = () => sessionIsCurrent() && !signal?.aborted && !agentController?.signal.aborted &&
         (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration) &&
         (!lockToken || isEditorExecutionLocked(String(data?.workflowSessionId ?? ""), lockToken));
       if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
@@ -833,12 +840,16 @@ export function useNodeExecution({
           const listeningDeps = {
             nodeId: nodeId!,
             executionStore,
+            isCurrent: sessionIsCurrent,
+            signal,
             setNodes: (updater) => {
-              const current = getNodes();
-              const updated = updater([...current]);
-              const next = updated.find((candidate) => candidate.id === nodeId);
+              if (!sessionIsCurrent()) return;
+              const current = getNodeById(nodeId!);
+              if (!current) return;
+              const next = updater([current]).find(candidate => candidate.id === nodeId);
               if (next) {
-                updateNodeData(nodeId!, { ...next.data });
+                const patch = Object.fromEntries(Object.entries(next.data).filter(([key, value]) => !Object.is(current.data[key], value)));
+                if (Object.keys(patch).length) updateNodeData(nodeId!, patch);
                 notifyExecutionStoreUpdate();
               }
             },
@@ -857,6 +868,7 @@ export function useNodeExecution({
                 definition,
                 fieldState,
                 nodeId: nodeId!,
+                workflowId,
               }),
               listeningDeps,
             );
@@ -951,7 +963,7 @@ export function useNodeExecution({
         if (activeAgentRef.current === agentActivity) activeAgentRef.current = undefined;
         if (activeAgentAbortRef.current === agentController) activeAgentAbortRef.current = undefined;
         signal?.removeEventListener("abort", abortAgent);
-        setIsSending(false);
+        if (sessionIsCurrent()) setIsSending(false);
       }
     },
     [
@@ -973,6 +985,8 @@ export function useNodeExecution({
       notifyExecutionStoreUpdate,
       session?.access_token,
       getEdges,
+      getNodeById,
+      actionScope,
     ],
   );
 

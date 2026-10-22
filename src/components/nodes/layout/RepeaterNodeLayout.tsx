@@ -35,7 +35,7 @@ import type { BaseNodeRenderProps } from "../BaseNode";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
-  useExecutionStoreVersion,
+
 } from "@/contexts/ExecutionStoreContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { fullePreview } from "@/utils/preview";
@@ -52,6 +52,7 @@ import {
   referenceDropEventHandlers,
 } from "@/components/nodes/layout/components/ReferenceDropTarget";
 import LayoutAuthModal from "@/components/nodes/layout/components/LayoutAuthModal";
+import { useReferenceVersions } from "@/hooks/useReferenceVersions";
 import VisualizeNodePreview from "@/components/nodes/visualize/VisualizeNodePreview";
 import {
   compileEditTemplate,
@@ -398,10 +399,11 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   incomingEdgeCount,
   readOnly,
 }) => {
-  const { getNodes } = useStableNodes();
+  const { getNodes, getSnapshot } = useStableNodes();
+  const previewCache = useRef<{ nodes: Parameters<typeof buildPreviewData>[0]; version: number; value: ReturnType<typeof buildPreviewData> } | null>(null);
   const variableQuery = useVariableSnapshot(!readOnly && (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression"))), workflowId);
   const executionContext = useExecutionStore();
-  const executionStoreVersion = useExecutionStoreVersion();
+  const executionStoreVersion = useReferenceVersions(fieldState, selectedPrevNodeId, referenceNodes);
   const { user } = useAuth();
 
   // =========== DETERMINE REPEATER TYPE ===========
@@ -880,8 +882,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   );
 
   const getPreviewData = useCallback(
-    () => buildPreviewData(readOnly ? referenceNodes : previousNodes, executionContext, getNodes, readOnly),
-    [previousNodes, referenceNodes, executionContext, getNodes, executionStoreVersion, readOnly],
+    () => {
+      const nodes = readOnly ? referenceNodes : getSnapshot().nodes;
+      if (!previewCache.current || previewCache.current.nodes !== nodes || previewCache.current.version !== executionContext.version) {
+        previewCache.current = { nodes, version: executionContext.version, value: buildPreviewData(nodes, executionContext, getNodes, readOnly) };
+      }
+      return previewCache.current.value;
+    },
+    [referenceNodes, executionContext, getNodes, getSnapshot, executionStoreVersion, readOnly],
   );
 
   const getEditExpressionContext = useCallback(() => {
@@ -935,13 +943,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   );
 
   const visualizePreviewContext = useMemo(() => {
+    if (definition?.name !== "Visualize") return { allNodeData: {}, nodes: referenceNodes, sourceData: undefined };
     const { allNodeData, getSourceData } = getPreviewData();
     return {
       allNodeData,
       nodes: readOnly ? referenceNodes : getNodes(),
       sourceData: getSourceData(selectedPrevNodeId),
     };
-  }, [getPreviewData, getNodes, selectedPrevNodeId, executionStoreVersion, readOnly, referenceNodes]);
+  }, [definition?.name, getPreviewData, getNodes, selectedPrevNodeId, executionStoreVersion, readOnly, referenceNodes]);
 
   const getPreviewFor = useCallback(
     (idx: number, field: "left" | "right", expr: any) => {

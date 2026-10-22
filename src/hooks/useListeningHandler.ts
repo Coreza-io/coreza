@@ -44,19 +44,16 @@ export interface ListeningHandlerDeps {
   apiClient: typeof apiClient;
   accessToken?: string;
   abortRef: MutableRefObject<AbortController | null>;
+  isCurrent?: () => boolean;
+  signal?: AbortSignal;
 }
 
 const sleepWithAbort = (ms: number, signal: AbortSignal): Promise<void> =>
-  new Promise((resolve) => {
-    const timeoutId = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timeoutId);
-        resolve();
-      },
-      { once: true },
-    );
+  new Promise(resolve => {
+    if (signal.aborted) { resolve(); return; }
+    const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); resolve(); };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
   });
 
 export function createListeningHandler<TOutput = any>(
@@ -85,9 +82,17 @@ export function createListeningHandler<TOutput = any>(
     apiClient: api,
     accessToken,
     abortRef,
+    isCurrent = () => true,
+    signal: runSignal,
   } = deps;
+  let ownedController: AbortController | undefined;
+  let receivedTimer: ReturnType<typeof setTimeout> | undefined;
+  let published = false;
+  const canPublish = () => isCurrent() && (!ownedController || abortRef.current === ownedController)
+    && (!published || Object.prototype.hasOwnProperty.call(executionStore.storeMap.get(nodeId) ?? {}, listeningFlag));
 
   const setNodeOutput = (output: TOutput, patch: Record<string, any>) => {
+    if (!canPublish()) return;
     setLastOutput(output);
     executionStore.setNodeData(nodeId, { output, ...patch });
     setNodes((nds) =>
@@ -107,6 +112,7 @@ export function createListeningHandler<TOutput = any>(
   };
 
   const updateNodeData = (patch: Record<string, any>) => {
+    if (!canPublish()) return;
     executionStore.setNodeData(nodeId, patch);
     setNodes((nds) =>
       nds.map((n) =>
@@ -121,11 +127,12 @@ export function createListeningHandler<TOutput = any>(
   };
 
   const abort = () => {
-    abortRef.current?.abort();
+    if (receivedTimer !== undefined) clearTimeout(receivedTimer);
+    ownedController?.abort();
   };
 
   const start = async (responseData: any): Promise<TOutput> => {
-    if (!nodeId) {
+    if (!nodeId || !isCurrent() || runSignal?.aborted) {
       const missingOutput =
         buildErrorOutput?.(new Error("Missing node ID")) ??
         buildTimeoutOutput();
@@ -137,6 +144,11 @@ export function createListeningHandler<TOutput = any>(
       ? buildListeningNodeData(responseData)
       : {};
 
+    // Finish the previous listener before publishing the replacement flags.
+    abortRef.current?.abort();
+    const abortController = new AbortController();
+    ownedController = abortController;
+    abortRef.current = abortController;
     setNodeOutput(listeningOutput, {
       [listeningFlag]: true,
       isStreamPaused: false,
@@ -144,10 +156,7 @@ export function createListeningHandler<TOutput = any>(
       ...listeningNodeData,
     });
 
-    abortRef.current?.abort();
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-
+    published = true;
     const startTime = Date.now();
     let resolved = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -161,10 +170,11 @@ export function createListeningHandler<TOutput = any>(
         if (resolved) return;
         resolved = true;
         if (intervalId) clearInterval(intervalId);
+        runSignal?.removeEventListener("abort", abortForRun);
         abortController.abort();
         setNodeOutput(output, flags);
         if (receivedFlag && !options?.suppressReceivedFlag) {
-          setTimeout(clearReceivedFlag, 700);
+          receivedTimer = setTimeout(clearReceivedFlag, 700);
         }
         resolve(output);
       };
@@ -179,6 +189,7 @@ export function createListeningHandler<TOutput = any>(
         if (resolved) return;
         resolved = true;
         if (intervalId) clearInterval(intervalId);
+        runSignal?.removeEventListener("abort", abortForRun);
         updateNodeData({
           [listeningFlag]: false,
           ...(receivedFlag ? { [receivedFlag]: false } : {}),
@@ -187,11 +198,14 @@ export function createListeningHandler<TOutput = any>(
         resolve((currentOutput ?? listeningOutput) as TOutput);
       };
 
+      const abortForRun = () => abortController.abort();
+      runSignal?.addEventListener("abort", abortForRun, { once: true });
       abortController.signal.addEventListener("abort", handleAbort, {
         once: true,
       });
 
       intervalId = setInterval(() => {
+        if (!canPublish()) { abortController.abort(); return; }
         if (abortController.signal.aborted) {
           if (intervalId) clearInterval(intervalId);
           return;
@@ -233,9 +247,11 @@ export function createListeningHandler<TOutput = any>(
         const runRecoveryPolling = async () => {
           while (!resolved && !abortController.signal.aborted) {
             try {
-              const response = await api.get(endpoint, accessToken);
+              const response = await api.request(endpoint, { method: "GET", token: accessToken, signal: abortController.signal });
+              if (resolved || abortController.signal.aborted || !canPublish()) { abortController.abort(); return; }
               if (response.ok) {
                 const result = await response.json();
+                if (resolved || abortController.signal.aborted || !canPublish()) { abortController.abort(); return; }
                 const processed = processResult(result);
                 if (processed.done) {
                   const output =
@@ -254,6 +270,7 @@ export function createListeningHandler<TOutput = any>(
                 }
               }
             } catch (pollError) {
+              if (resolved || abortController.signal.aborted || !canPublish()) return;
               console.warn("[Listening Handler] Recovery poll error:", pollError);
             }
 

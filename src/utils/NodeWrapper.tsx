@@ -13,7 +13,7 @@ import { ConnectionDragContext } from "@/contexts/ConnectionDragContext";
 import { NodePortalContainerContext } from "@/contexts/NodePortalContainerContext";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
-import { Handle, Position, useReactFlow } from "@xyflow/react";
+import { Handle, Position, useReactFlow, useStore } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,9 +81,10 @@ interface HandleConfig {
 
 interface NodeWrapperProps {
   nodeId: string | undefined;
-  nodes: any[];
-  edges: any[];
+  nodes: readonly any[];
+  edges: readonly any[];
   selected?: boolean;
+  scopeKey?: string;
   inputPanelProps?: any; // props for InputPanel
   outputPanelProps?: any; // props for OutputPanel
   icon?: React.ReactNode;
@@ -130,6 +131,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   nodes,
   edges,
   selected,
+  scopeKey,
   inputPanelProps = {},
   outputPanelProps = {},
   icon,
@@ -174,8 +176,11 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   const capturePortalContainer = useCallback((element: HTMLDivElement | null) => {
     if (element) setPortalContainer(element.closest<HTMLElement>(".react-flow__viewport") ?? undefined);
   }, []);
-  const [isExpanded, setIsExpanded] = useState(false); // Start collapsed by default
-  useNodeExpansion(nodeId, isExpanded);
+  const [isExpanded, setIsExpanded] = useState(false);
+  useEffect(() => setIsExpanded(false), [scopeKey, nodeId]); // Start collapsed by default
+  const runtimeHost = useStore(useCallback(state => !!nodeId && state.nodeLookup.get(nodeId)?.style?.visibility === "hidden", [nodeId]));
+  const presentationExpanded = isExpanded && !runtimeHost;
+  useNodeExpansion(nodeId, presentationExpanded);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const prevStreamDataReceived = useRef(streamDataReceived);
@@ -245,12 +250,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     nodeId,
     nodes,
     edges,
-    isExpanded,
+    isExpanded: presentationExpanded,
     readOnly,
     ...inputPanelProps,
   };
   const mergedOutputPanelProps = {
-    isExpanded,
+    isExpanded: presentationExpanded,
     readOnly,
     ...outputPanelProps,
   };
@@ -284,9 +289,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     "--node-glow-color"?: string;
     "--node-title-color"?: string;
   } = {
-    width: isExpanded ? minWidth : collapsedWidth,
-    minHeight: isExpanded ? minHeight : collapsedHeight,
-    height: isExpanded ? "auto" : collapsedHeight,
+    width: presentationExpanded ? minWidth : collapsedWidth,
+    minHeight: presentationExpanded ? minHeight : collapsedHeight,
+    height: presentationExpanded ? "auto" : collapsedHeight,
     overflow:
       shouldShowHandlesOutside || (electricBorder && isExecuting && isDarkMode)
         ? "visible"
@@ -320,9 +325,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   return (
     <NodePortalContainerContext.Provider value={portalContainer}>
-    <div ref={capturePortalContainer} className={`relative ${isExpanded ? "node-expanded" : ""}`}>
+    <div ref={capturePortalContainer} className={`relative ${presentationExpanded ? "node-expanded" : ""}`}>
       {/* Input Data Panel */}
-      {isExpanded && <InputPanel {...mergedInputPanelProps} />}
+      {presentationExpanded && <InputPanel key={`${scopeKey ?? ""}:${nodeId}`} {...mergedInputPanelProps} />}
 
       {/* Main Node Card */}
       <Card
@@ -330,7 +335,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         className={`
           relative transition-[background-color,border-color,box-shadow] duration-300 ease-in-out
           ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}
-          ${isExpanded ? "" : "cursor-pointer group/node"}
+          ${presentationExpanded ? "" : "cursor-pointer group/node"}
           ${nodeShapeClass}
           ${isFlashing ? "animate-stream-data-flash" : ""}
           ${
@@ -381,9 +386,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
           </>
         )}
         {/* Electric Border SVG Overlay */}
-        {!isExpanded && electricBorder && isExecuting && isDarkMode && (
+        {!presentationExpanded && electricBorder && isExecuting && isDarkMode && (
           <ElectricBorderSVG
-            isExpanded={isExpanded}
+            isExpanded={presentationExpanded}
             color={
               neonColor
             }
@@ -467,10 +472,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   height: 24,
                   transform: handleTransform,
                   // Keep handle geometry available without bleeding into the input/output panels.
-                  visibility: isExpanded ? "hidden" : undefined,
-                  pointerEvents: isExpanded ? "none" : undefined,
+                  visibility: presentationExpanded ? "hidden" : undefined,
+                  pointerEvents: presentationExpanded ? "none" : undefined,
                 }}
-                isConnectable={!isExpanded}
+                isConnectable={!presentationExpanded}
                 className={handleClass}
               >
                 {handleIcon}
@@ -489,7 +494,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         })}
 
         {/* Collapsed View */}
-        {!isExpanded && (
+        {!presentationExpanded && (
           <div
             className={`select-none relative group h-full ${
               isWideCollapsedLayout
@@ -664,7 +669,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         )}
 
         {/* Expanded View */}
-        {isExpanded && (
+        {presentationExpanded && (
           <CardContent className="space-y-3 p-4 relative" style={{ zIndex: 2 }}>
             <div className="absolute top-2 right-2 z-10 flex gap-1">
               {/* <Button
@@ -695,7 +700,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       </Card>
 
       {/* Output Data Panel */}
-      {isExpanded && <OutputPanel {...mergedOutputPanelProps} />}
+      {presentationExpanded && <OutputPanel key={`${scopeKey ?? ""}:${nodeId}`} {...mergedOutputPanelProps} />}
 
       {/* Delete Confirmation Dialog - only in editor mode */}
       {!readOnly && (

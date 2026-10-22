@@ -4,6 +4,8 @@ import { buildNodeReference, parseJsonReferenceDragPayload } from "@/utils/refer
 import { FIELD_VALUE_MODES_KEY, getFieldValueMode, type FieldValueMode } from "../../../../../coreza-backend/src/utils/fieldValueModes";
 import FieldValueModeSelector from "./FieldValueModeSelector";
 import React from "react";
+import { useExecutionSourceVersions } from "@/contexts/ExecutionStoreContext";
+import { resolveNodeIdentity } from "@/utils/referenceResolution";
 import { referenceDropEventHandlers } from "./ReferenceDropTarget";
 import { useFieldPreview } from "@/hooks/useFieldPreview";
 import { useVariableSnapshot } from "@/hooks/useVariableSnapshot";
@@ -44,6 +46,29 @@ interface NodeFieldRendererProps {
   userId?: string;
   readOnly?: boolean;
   selectedSourceNodeId?: string;
+}
+
+const REFERENCE_NODES = /(?:\$node\s*\[\s*["']([^"']+)["']\s*\]|\$\(\s*["']([^"']+)["']\s*\))/g;
+function OpenFieldPreview({ value, fieldKey, sourceId, getPreview }: { value: string; fieldKey: string; sourceId?: string; getPreview: (key: string) => string | null }) {
+  const { getNodes } = useStableNodes();
+  const ids = React.useMemo(() => {
+    const ids = new Set(sourceId ? [sourceId] : []);
+    const inventory = getNodes();
+    try {
+      for (const match of value.matchAll(REFERENCE_NODES)) {
+        const node = resolveNodeIdentity(match[1] ?? match[2], inventory);
+        if (!node) return null;
+        ids.add(node.id);
+      }
+      const remaining = value.replace(REFERENCE_NODES, "");
+      return /\$node|\$nodes|\$\(/.test(remaining) ? null : [...ids];
+    } catch { return null; }
+  }, [value, sourceId, getNodes]);
+  const version = useExecutionSourceVersions(ids);
+  const [settledValue, setSettledValue] = React.useState(value);
+  React.useEffect(() => { const timer = setTimeout(() => setSettledValue(value), 250); return () => clearTimeout(timer); }, [value]);
+  const result = React.useMemo(() => value === settledValue ? getPreview(fieldKey) : "Updating preview…", [value, settledValue, getPreview, fieldKey, version]);
+  return <>{result === "" ? '\"\"' : result}</>;
 }
 
 const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
@@ -120,7 +145,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
     && !field.options?.length && !!onBatchChange;
   const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
-  const variableQuery = useVariableSnapshot(!readOnly && supportsValueMode && valueMode === "expression", workflowId);
+  const variableQuery = useVariableSnapshot(shouldRender && !readOnly && supportsValueMode && valueMode === "expression", workflowId);
   const variableListId = React.useId();
   const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
     onBatchChange?.({
@@ -130,11 +155,9 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const isReference =
     (!supportsValueMode || valueMode === "expression") &&
     typeof fieldValue === "string" && fieldValue.includes("{{");
-  const referencePreview =
-    isReference && getPreview ? getPreview(field.key) : null;
   const fieldPreview = useFieldPreview(
-    isReference && referencePreview !== null,
-    referencePreview === "" ? '""' : referencePreview,
+    shouldRender && isReference && !!getPreview,
+    () => getPreview ? <OpenFieldPreview value={String(fieldValue)} fieldKey={field.key} sourceId={selectedSourceNodeId} getPreview={getPreview} /> : null,
   );
   const multiselectValueMapDeps = React.useMemo(() => {
     if (field.type !== "multiselect") return "";

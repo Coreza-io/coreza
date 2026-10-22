@@ -26,6 +26,8 @@ import {
 interface UseNodeReferencesProps {
   workflowId?: string;
   readOnly?: boolean;
+  enabled?: boolean;
+  previewValues?: Record<string, unknown>;
   fieldState: Record<string, any>;
   previousNodes: readonly SemanticNode[];
   referenceNodes?: readonly SemanticNode[];
@@ -52,15 +54,18 @@ interface UseNodeReferencesReturn {
 export function useNodeReferences({
   workflowId,
   readOnly = false,
+  enabled = true,
+  previewValues,
   fieldState,
   previousNodes,
   referenceNodes = previousNodes,
   selectedPrevNodeId,
   selectedPrevNode,
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
-  const { getNodes } = useStableNodes();
+  const { getNodes, getSnapshot } = useStableNodes();
+  const previewContext = useRef<{ nodes: readonly SemanticNode[]; version: number; value: ReturnType<typeof buildPreviewData> } | null>(null);
   const executionStore = useExecutionStore();
-  const variableQuery = useVariableSnapshot(!readOnly && referencesVariables(fieldState), workflowId);
+  const variableQuery = useVariableSnapshot(enabled && !readOnly && referencesVariables(previewValues ?? fieldState), workflowId);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
@@ -127,13 +132,11 @@ export function useNodeReferences({
       const srcNode =
         previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
 
-      const nodes = readOnly ? referenceNodes : getNodes();
-      const { allNodeData, getSourceData } = buildPreviewData(
-        nodes,
-        executionStore,
-        getNodes,
-        readOnly,
-      );
+      const nodes = readOnly ? referenceNodes : getSnapshot().nodes;
+      if (!previewContext.current || previewContext.current.nodes !== nodes || previewContext.current.version !== executionStore.version) {
+        previewContext.current = { nodes, version: executionStore.version, value: buildPreviewData(nodes, executionStore, getNodes, readOnly) };
+      }
+      const { allNodeData, getSourceData } = previewContext.current.value;
 
       const srcData = srcNode ? getSourceData(srcId) : {};
 
@@ -167,6 +170,7 @@ export function useNodeReferences({
       selectedPrevNode,
       executionStore,
       getNodes,
+      getSnapshot,
     ],
   );
 

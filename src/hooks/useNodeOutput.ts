@@ -8,171 +8,55 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNodeId } from "@xyflow/react";
 import { createWaitingNewsOutput } from "@/utils/newsStream";
 import { isNewsStreamNode } from "@/utils/brokerRegistry";
-import {
-  useExecutionStore,
-  useExecutionNodeData,
-} from "@/contexts/ExecutionStoreContext";
+import { useExecutionStore, useExecutionNodeData, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 
-interface UseNodeOutputProps {
-  data: any;
-  definition: any;
-}
+interface UseNodeOutputProps { data: any; definition: any; enabled?: boolean; }
+const owns = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
-interface UseNodeOutputReturn {
-  displayedData: any;
-  isPinned: boolean;
-  pinnedOutput: any | null;
-  handlePanelSave: (newData: any) => void;
-  handlePanelPinToggle: () => void;
-  setLastOutput: (output: any) => void;
-}
-
-/**
- * Custom hook to manage node output display and pinning
- * Handles output updates, pinning, and special cases like news stream nodes
- */
-
-export function useNodeOutput({
-  data,
-  definition,
-}: UseNodeOutputProps): UseNodeOutputReturn {
+export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutputProps) {
   const nodeId = useNodeId();
-  const executionStore = useExecutionStore();
-  const executionData = useExecutionNodeData(nodeId);
+  const store = useExecutionStore();
+  const notify = useExecutionStoreNotify();
+  const executionData = useExecutionNodeData(enabled ? nodeId : null);
   const { updateNodeData } = useStableNodes();
-  const isNews = isNewsStreamNode(definition);
+  // Immediate accepted local publication remains separate from authoritative runtime/props.
+  const [localOutput, setLocalOutput] = useState<{ session: unknown; value: unknown } | null>(null);
+  const sessionId = data.workflowSessionId;
+  const setLastOutput = useCallback((value: unknown) => setLocalOutput({ session: sessionId, value }), [sessionId]);
+  const fallback = useMemo(() => isNewsStreamNode(definition) ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined }) : { status: "pending" }, [definition, nodeId]);
+  const pinnedOutput = data.readOnly ? null : data.pinnedOutput ?? null;
+  const isPinned = pinnedOutput !== null;
+  const runtime = nodeId ? store.storeMap.get(nodeId) : undefined;
+  // Explicit null/falsy output remains distinct from a missing output property.
+  const unpinned = runtime && owns(runtime, "output") ? runtime.output
+    : owns(data, "output") ? (!data.readOnly && ["listening", "streaming"].includes(data.output?.status) ? fallback : data.output)
+    : localOutput?.session === sessionId ? localOutput.value : fallback;
+  void executionData;
+  const displayedData = isPinned ? pinnedOutput : unpinned;
+  useEffect(() => {
+    if (localOutput && (localOutput.session !== sessionId || (!runtime && data.output === undefined))) setLocalOutput(null);
+  }, [sessionId, executionData, data.output, runtime, localOutput]);
 
-  const [lastOutput, setLastOutput] = useState<any>(() => {
-    // In execution view (readOnly), data.output contains the actual execution result
-    if (data.output !== undefined && data.output !== null) {
-      // Don't restore stale "listening" or "streaming" states from previous sessions
-      const status = data.output?.status;
-      if (
-        data.pinnedOutput == null &&
-        (status === 'listening' || status === 'streaming')
-      ) {
-        return { status: "pending" };
-      }
-      return data.output;
-    }
-    // Default behavior for editor mode
-    if (isNews) {
-      return createWaitingNewsOutput({ nodeId: nodeId ?? undefined });
-    }
-    return { status: "pending" };
-  });
-  const [overrideOutput, setOverrideOutput] = useState<any | null>(
-    data.pinnedOutput ?? null,
-  );
-
-  /**
-   * Propagate a pinned value everywhere consumers read node output from:
-   * node data (for the workflow executor), the execution store (for
-   * downstream input panels) and React Flow node data.
-   */
-  const syncPinnedOutput = useCallback(
-    (value: any | null) => {
-      data.pinnedOutput = value ?? undefined;
-      if (value !== null) {
-        data.output = value;
-      }
-
-      if (!nodeId) return;
-
-      executionStore.setPinned(nodeId, value);
-
-      updateNodeData(nodeId, {
-        pinnedOutput: value ?? undefined,
-        ...(value !== null ? { output: value } : {}),
-      });
-    },
-    [data, nodeId, executionStore, updateNodeData],
-  );
+  const syncPinnedOutput = useCallback((value: unknown | null) => {
+    if (!nodeId || data.readOnly) return;
+    if (!updateNodeData(nodeId, { pinnedOutput: value ?? undefined, ...(value !== null ? { output: value } : {}) })) return;
+    store.setPinned(nodeId, value);
+    notify();
+  }, [nodeId, data.readOnly, store, notify, updateNodeData]);
 
   useEffect(() => {
-    if (!nodeId || data.pinnedOutput == null) return;
+    if (!nodeId || data.readOnly) return;
+    // Canonical identity/session disposal owns pin retirement. Effect cleanup
+    // must not unpin a replacement host or duplicate an already published edit.
+    if (store.setPinned(nodeId, pinnedOutput)) notify();
+  }, [nodeId, sessionId, pinnedOutput, data.readOnly, store, notify]);
 
-    executionStore.setPinned(nodeId, data.pinnedOutput);
-    return () => executionStore.setPinned(nodeId, null);
-  }, [data.pinnedOutput, executionStore, nodeId]);
-
-  // Save output data (pins it)
-  const handlePanelSave = useCallback(
-    (newData: any) => {
-      setOverrideOutput(newData);
-      setLastOutput(newData);
-      syncPinnedOutput(newData);
-    },
-    [syncPinnedOutput]
-  );
-
-  // Toggle output pinning
-  const handlePanelPinToggle = useCallback(() => {
-    if (overrideOutput == null) {
-      setOverrideOutput(lastOutput);
-      syncPinnedOutput(lastOutput);
-    } else {
-      setOverrideOutput(null);
-      syncPinnedOutput(null);
-      const storeOutput = nodeId
-        ? executionStore.getNodeData(nodeId)?.output
-        : undefined;
-      setLastOutput(storeOutput ?? data.output ?? {});
-    }
-  }, [
-    overrideOutput,
-    lastOutput,
-    data,
-    nodeId,
-    executionStore,
-    syncPinnedOutput,
-  ]);
-
-  const displayedData = overrideOutput !== null ? overrideOutput : lastOutput;
-  const isPinned = overrideOutput !== null;
-
-  // Sync output from data when not pinned
-  useEffect(() => {
-    if (isPinned || !nodeId) return;
-
-    // Read the current node snapshot, including WebSocket updates
-    const storeData = executionStore.getNodeData(nodeId);
-    if (storeData && Object.prototype.hasOwnProperty.call(storeData, "output")) {
-      setLastOutput(storeData.output);
-      return;
-    }
-
-    // Fallback to data.output for non-streaming updates
-    if (isNews) {
-      if (Object.prototype.hasOwnProperty.call(data, "output")) {
-        setLastOutput(data.output);
-      } else if (lastOutput?.status !== "waiting") {
-        setLastOutput(createWaitingNewsOutput({ nodeId }));
-      }
-    } else if (Object.prototype.hasOwnProperty.call(data, "output")) {
-      setLastOutput(data.output);
-    }
-  }, [
-    executionData,
-    data.output,
-    isNews,
-    isPinned,
-    lastOutput?.status,
-    nodeId,
-    executionStore,
-  ]);
-
-  return {
-    displayedData,
-    isPinned,
-    pinnedOutput: overrideOutput,
-    handlePanelSave,
-    handlePanelPinToggle,
-    setLastOutput,
-  };
+  const handlePanelSave = useCallback((value: unknown) => { setLastOutput(value); syncPinnedOutput(value); }, [setLastOutput, syncPinnedOutput]);
+  const handlePanelPinToggle = useCallback(() => syncPinnedOutput(isPinned ? null : displayedData), [isPinned, displayedData, syncPinnedOutput]);
+  return { displayedData, isPinned, pinnedOutput, handlePanelSave, handlePanelPinToggle, setLastOutput };
 }

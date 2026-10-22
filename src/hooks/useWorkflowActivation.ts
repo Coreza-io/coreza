@@ -1,6 +1,6 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/hooks/use-toast";
 import { useEffect, useRef, useState } from "react";
 
 interface PendingRequest { token: symbol; activating: boolean }
@@ -16,7 +16,6 @@ const pendingRequests = new Map<string, PendingRequest>();
  */
 export function useWorkflowActivation(scopeKey?: string) {
   const { session } = useAuth();
-  const { toast } = useToast();
   const [pendingWorkflows, setPendingWorkflows] = useState<Map<string, PendingRequest>>(new Map());
   const mounted = useRef(true);
   const scope = `${session?.user.id ?? ""}:${scopeKey ?? ""}`;

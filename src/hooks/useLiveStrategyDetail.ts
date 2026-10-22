@@ -1,3 +1,4 @@
+import { useScopedLoader } from "./useScopedLoader";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -95,6 +96,27 @@ const mapSnapshotToPortfolioSnapshot = (
   daily_return: undefined,
 });
 
+const mergeSnapshots = (existing: any[], incoming: any[]): any[] => {
+  const byId = new Map(existing.map(row => [row.id, row]));
+  incoming.forEach(row => byId.set(row.id, row));
+  return [...byId.values()].sort((a, b) => String(a.snapshot_at).localeCompare(String(b.snapshot_at)) || String(a.id).localeCompare(String(b.id)));
+};
+
+const mapNormalizedSnapshots = (raw: any[], workflowId: string, normalized: ReturnType<typeof normalizeLiveEquitySnapshots>): PortfolioSnapshot[] => {
+  const equityByTimestamp = new Map(normalized.normalizedSnapshots.map(row => [row.ts, row.equity]));
+  const rows = raw.filter(row => row.snapshot_at).map(row => {
+    const snapshot = mapSnapshotToPortfolioSnapshot(row, workflowId);
+    const equity = equityByTimestamp.get(Date.parse(row.snapshot_at));
+    if (equity !== undefined) snapshot.total_value = equity;
+    return snapshot;
+  });
+  for (let index = 1; index < rows.length; index++) {
+    const previous = rows[index - 1];
+    rows[index].daily_return = previous.total_value > 0 ? (rows[index].total_value - previous.total_value) / previous.total_value * 100 : undefined;
+  }
+  return rows;
+};
+
 /**
  * Returns live strategy detail data shaped identically to useBacktestResults
  * for seamless UI reuse (EquityCurveChart, TradesTable, PerformanceMetricsCard).
@@ -114,7 +136,13 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
+  const scopeKey = `${user?.id ?? ""}:${workflowId ?? ""}:${enabled}`;
+  const currentScopeKey = useRef(scopeKey); currentScopeKey.current = scopeKey;
+  const sessionGeneration = useRef(0);
+  const performLoad = useCallback(async (isCurrent: () => boolean) => {
+    if (!isCurrent()) return;
+    const generation = sessionGeneration.current;
+    const snapshotsAtStart = latestRawSnapshotsRef.current;
     if (!enabled || !user || !workflowId) {
       setBacktest(null);
       setMetrics(null);
@@ -137,6 +165,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         .eq("id", workflowId)
         .single();
 
+      if (!isCurrent() || generation !== sessionGeneration.current) return;
       if (wfErr) throw wfErr;
 
       setBacktest({
@@ -174,6 +203,12 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         localStorage.setItem(`live_session_${workflowId}`, dbSessionRunId);
       }
 
+      if (activeSessionRunIdRef.current !== sessionRunId) {
+        latestRawSnapshotsRef.current = [];
+        latestTradeMetricInputRef.current = [];
+        latestPortfolioSummaryRef.current = undefined;
+        setTrades([]); setRawFills([]); setSnapshots([]); setMetrics(null);
+      }
       activeSessionRunIdRef.current = sessionRunId;
 
       // No session means no scoped live data; return empty state to prevent cross-session mixing.
@@ -218,6 +253,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         { data: snapshotsData, error: snapshotsErr },
       ] = await Promise.all([tradesQuery, fillsQuery, snapshotsQuery]);
 
+      if (!isCurrent() || generation !== sessionGeneration.current || activeSessionRunIdRef.current !== sessionRunId) return;
       if (liveTradesErr) throw liveTradesErr;
       if (fillsErr) throw fillsErr;
       if (snapshotsErr) throw snapshotsErr;
@@ -227,7 +263,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       const matchedTradeFills = rawFillsAll.filter(
         (f: any) => !f.algo_id,
       );
-      const filteredSnapshots = snapshotsData ?? [];
+      // Retain accepted inserts that arrived after this full read started.
+      const initialIds = new Set(snapshotsAtStart.map(row => row.id));
+      const receivedDuringLoad = latestRawSnapshotsRef.current.filter(row => row.execution_id === sessionRunId && !initialIds.has(row.id));
+      const filteredSnapshots = mergeSnapshots(snapshotsData ?? [], receivedDuringLoad);
       const closedTrades = (liveTradesData ?? []) as any[];
       const firstSnapshot = filteredSnapshots[0] as any | undefined;
       const lastSnapshot = filteredSnapshots[filteredSnapshots.length - 1] as any | undefined;
@@ -255,35 +294,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       );
       setTrades(mappedTrades);
 
-      // Map snapshots
-      if (filteredSnapshots.length > 0) {
-        const normalizedByTimestamp = new Map(
-          normalizedData.normalizedSnapshots.map((s) => [s.ts, s.equity]),
-        );
-        const mapped: PortfolioSnapshot[] = filteredSnapshots
-          .filter((snapshot: any) => snapshot.snapshot_at)
-          .map((snapshot: any) => {
-            const mappedSnapshot = mapSnapshotToPortfolioSnapshot(
-              snapshot,
-              workflowId,
-            );
-            const ts = Date.parse(snapshot.snapshot_at);
-            const normalizedTotal = normalizedByTimestamp.get(ts);
-            if (normalizedTotal !== undefined) mappedSnapshot.total_value = normalizedTotal;
-            return mappedSnapshot;
-          });
-        for (let i = 1; i < mapped.length; i += 1) {
-          const prev = mapped[i - 1];
-          const current = mapped[i];
-          current.daily_return =
-            prev.total_value > 0
-              ? ((current.total_value - prev.total_value) / prev.total_value) * 100
-              : undefined;
-        }
-        setSnapshots(mapped);
-      } else {
-        setSnapshots([]);
-      }
+      setSnapshots(mapNormalizedSnapshots(filteredSnapshots, workflowId, normalizedData));
 
       // Compute metrics from closed trades + snapshots
       const tradeMetricInput = closedTrades.map((t: any) => ({
@@ -309,14 +320,22 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         ) as BacktestResultMetrics,
       );
     } catch (err: any) {
+      if (!isCurrent() || generation !== sessionGeneration.current) return;
       console.error("Error loading live strategy detail", err);
       setError(err.message || "Failed to load live strategy");
     } finally {
-      setLoading(false);
+      if (isCurrent() && generation === sessionGeneration.current) setLoading(false);
     }
-  }, [enabled, user, workflowId]);
+  }, [enabled, user?.id, workflowId]);
+  const loadData = useScopedLoader(`${user?.id ?? ""}:${workflowId ?? ""}:${enabled}`, performLoad);
 
   useEffect(() => {
+    activeSessionRunIdRef.current = null;
+    pendingSessionRunIdRef.current = null;
+    latestRawSnapshotsRef.current = [];
+    latestTradeMetricInputRef.current = [];
+    latestPortfolioSummaryRef.current = undefined;
+    setBacktest(null); setMetrics(null); setTrades([]); setRawFills([]); setSnapshots([]); setError(null);
     if (!enabled) {
       setBacktest(null);
       setMetrics(null);
@@ -337,6 +356,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
   useEffect(() => {
     if (!enabled || !user || !workflowId) return;
 
+    let disposed = false;
     const channel = supabase
       .channel(`live-detail-${workflowId}`)
       .on(
@@ -345,9 +365,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           event: "*",
           schema: "public",
           table: "workflow_runs",
-          filter: `workflow_id.eq.${workflowId}`,
+          filter: `workflow_id=eq.${workflowId}`,
         },
         () => {
+          if (disposed || currentScopeKey.current !== scopeKey) return;
           void loadData();
         },
       )
@@ -359,6 +380,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           table: "live_trades",
         },
         (payload) => {
+          if (disposed || currentScopeKey.current !== scopeKey) return;
           const newTrade = payload.new as any;
           if (newTrade.user_id !== user.id || newTrade.workflow_id !== workflowId)
             return;
@@ -369,15 +391,21 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           void loadData();
         },
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "live_fills", filter: `workflow_id=eq.${workflowId}` }, payload => {
+        if (disposed || currentScopeKey.current !== scopeKey) return;
+        const row = (payload.eventType === "DELETE" ? payload.old : payload.new) as any;
+        if (row.user_id === user.id && row.execution_id === activeSessionRunIdRef.current) void loadData();
+      })
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "cash_snapshots",
-          filter: `and(user_id.eq.${user.id},workflow_id.eq.${workflowId})`,
+          filter: `workflow_id=eq.${workflowId}`,
         },
         (payload) => {
+          if (disposed || currentScopeKey.current !== scopeKey) return;
           const newSnapshot = payload.new as any;
           if (
             newSnapshot.user_id !== user.id ||
@@ -387,39 +415,16 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           if (newSnapshot.execution_id !== activeSessionRunIdRef.current)
             return;
 
-          setSnapshots((prev) => {
-            const updatedRawSnapshots = [...latestRawSnapshotsRef.current, newSnapshot];
-            const normalizedData = normalizeLiveEquitySnapshots(updatedRawSnapshots as any[], latestPortfolioSummaryRef.current);
-            const nextSnapshot = mapSnapshotToPortfolioSnapshot(newSnapshot, workflowId);
-            const normalized = normalizedData.normalizedSnapshots[normalizedData.normalizedSnapshots.length - 1];
-            if (normalized) nextSnapshot.total_value = normalized.equity;
-            const previous = prev[prev.length - 1];
-            if (previous && previous.total_value > 0) {
-              nextSnapshot.daily_return =
-                ((nextSnapshot.total_value - previous.total_value) /
-                previous.total_value) * 100;
-            }
-            return [...prev, nextSnapshot];
-          });
-
-          // Recompute metrics with the new snapshot appended
-          const updatedRawSnapshots = [
-            ...latestRawSnapshotsRef.current,
-            newSnapshot,
-          ];
+          const updatedRawSnapshots = mergeSnapshots(latestRawSnapshotsRef.current, [newSnapshot]);
+          const lastSnapshot = updatedRawSnapshots[updatedRawSnapshots.length - 1];
+          if (latestPortfolioSummaryRef.current) latestPortfolioSummaryRef.current = {
+            ...latestPortfolioSummaryRef.current,
+            total_equity: toFiniteNumber(lastSnapshot?.equity) ?? toFiniteNumber(lastSnapshot?.total_value_usdt),
+            realized_pnl: toFiniteNumber(lastSnapshot?.realized_pnl),
+          };
+          const normalized = normalizeLiveEquitySnapshots(updatedRawSnapshots, latestPortfolioSummaryRef.current);
           latestRawSnapshotsRef.current = updatedRawSnapshots;
-
-          // Update portfolio summary with latest snapshot equity
-          const latestEquity =
-            toFiniteNumber(newSnapshot.equity) ??
-            toFiniteNumber(newSnapshot.total_value_usdt);
-          if (latestPortfolioSummaryRef.current) {
-            latestPortfolioSummaryRef.current = {
-              ...latestPortfolioSummaryRef.current,
-              total_equity: latestEquity,
-              realized_pnl: toFiniteNumber(newSnapshot.realized_pnl),
-            };
-          }
+          setSnapshots(mapNormalizedSnapshots(updatedRawSnapshots, workflowId, normalized));
 
           setMetrics(
             buildLiveMetrics(
@@ -433,14 +438,16 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       .subscribe();
 
     return () => {
+      disposed = true;
       channel.unsubscribe();
     };
-  }, [enabled, loadData, user, workflowId]);
+  }, [enabled, loadData, user?.id, workflowId]);
 
   // Realtime: listen to workflows table for active_execution_id / is_active changes
   useEffect(() => {
     if (!enabled || !user || !workflowId) return;
 
+    let disposed = false;
     const channel = supabase
       .channel(`live-workflow-session-${workflowId}`)
       .on(
@@ -449,15 +456,18 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
           event: "UPDATE",
           schema: "public",
           table: "workflows",
-          filter: `id.eq.${workflowId}`,
+          filter: `id=eq.${workflowId}`,
         },
         (payload) => {
+          if (disposed || currentScopeKey.current !== scopeKey) return;
           const updated = payload.new as any;
           const newSessionId: string | null = updated.active_execution_id ?? null;
           const currentSessionId = activeSessionRunIdRef.current;
 
           // If session changed, reset immediately and refetch
           if (newSessionId !== currentSessionId) {
+            sessionGeneration.current += 1;
+            latestRawSnapshotsRef.current = []; latestTradeMetricInputRef.current = []; latestPortfolioSummaryRef.current = undefined;
             activeSessionRunIdRef.current = newSessionId;
             pendingSessionRunIdRef.current = null;
             if (newSessionId) {
@@ -476,9 +486,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
       .subscribe();
 
     return () => {
+      disposed = true;
       channel.unsubscribe();
     };
-  }, [enabled, user, workflowId, loadData]);
+  }, [enabled, user?.id, workflowId, loadData]);
 
   useEffect(() => {
     if (!enabled || !workflowId) return;
@@ -489,8 +500,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true) => {
         sessionId: string | null;
       }>;
 
-      if (customEvent.detail?.workflowId !== workflowId) return;
+      if (currentScopeKey.current !== scopeKey || customEvent.detail?.workflowId !== workflowId) return;
 
+      sessionGeneration.current += 1;
+      latestRawSnapshotsRef.current = []; latestTradeMetricInputRef.current = []; latestPortfolioSummaryRef.current = undefined;
       pendingSessionRunIdRef.current = customEvent.detail.sessionId;
       activeSessionRunIdRef.current = customEvent.detail.sessionId;
       setTrades([]);

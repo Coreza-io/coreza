@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ExecutionRun } from "@/hooks/useExecutionHistory";
+import { ExecutionSummary } from "@/hooks/useExecutionHistory";
 import {
   Select,
   SelectContent,
@@ -40,14 +40,15 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
-  selectedExecution: ExecutionRun | null;
-  onSelectExecution: (execution: ExecutionRun) => void;
+  selectedExecution: ExecutionSummary | null;
+  selectedExecutionId?: string | null;
+  onSelectExecution: (execution: ExecutionSummary) => void;
   autoRefresh: boolean;
   onAutoRefreshChange: (value: boolean) => void;
   onRefresh: () => void;
-  executions: ExecutionRun[];
+  executions: ExecutionSummary[];
   loading: boolean;
-  getDuration: (execution: ExecutionRun) => string;
+  getDuration: (execution: ExecutionSummary) => string;
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -65,6 +66,7 @@ interface ExecutionHistoryPanelProps {
 export function ExecutionHistoryPanel({
   workflowId,
   selectedExecution,
+  selectedExecutionId,
   onSelectExecution,
   autoRefresh,
   onAutoRefreshChange,
@@ -145,7 +147,7 @@ export function ExecutionHistoryPanel({
     }
   };
 
-  const renderExecutionRow = (execution: ExecutionRun) => (
+  const renderExecutionRow = (execution: ExecutionSummary) => (
     <button
       key={execution.id}
       onClick={() => onSelectExecution(execution)}
@@ -153,7 +155,7 @@ export function ExecutionHistoryPanel({
         "w-full text-left p-3 mb-1 transition-colors border-l-4",
         "hover:bg-muted/50",
         getStatusAccent(execution.status),
-        selectedExecution?.id === execution.id && "bg-muted",
+        (selectedExecutionId ?? selectedExecution?.id) === execution.id && "bg-muted",
       )}
       aria-label={`Execution from ${format(new Date(execution.started_at), "MMM d, HH:mm:ss")}`}
     >

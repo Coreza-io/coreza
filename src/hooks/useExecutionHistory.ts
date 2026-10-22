@@ -8,12 +8,15 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { normalizePersistedNodeResult } from "@/utils/persistedNodeResult";
 
 const PAGE_SIZE = 20;
-const MAX_CACHED_EXECUTIONS = PAGE_SIZE * 2;
+const MAX_CACHED_EXECUTIONS = 200;
+const SUMMARY_COLUMNS = "id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count";
+export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters">;
 
 export type ExecutionStatus =
   | "all"
@@ -112,7 +115,7 @@ function toExclusiveDateTo(date: Date): Date {
 }
 
 function matchesExecutionFilters(
-  execution: ExecutionRun,
+  execution: ExecutionSummary,
   filters: ExecutionFilters,
 ): boolean {
   if (
@@ -145,7 +148,7 @@ function matchesExecutionFilters(
 function applyFiltersToQuery(workflowId: string, filters: ExecutionFilters) {
   let query = supabase
     .from("workflow_runs")
-    .select("*")
+    .select(SUMMARY_COLUMNS)
     .eq("workflow_id", workflowId);
 
   if (filters.status && filters.status !== "all") {
@@ -166,35 +169,20 @@ function applyFiltersToQuery(workflowId: string, filters: ExecutionFilters) {
   return query;
 }
 
-function dedupeById(executions: ExecutionRun[]): ExecutionRun[] {
-  const seen = new Set<string>();
-  const result: ExecutionRun[] = [];
+const toSummary = (run: ExecutionSummary): ExecutionSummary => ({
+  id: run.id, workflow_id: run.workflow_id, status: run.status, started_at: run.started_at,
+  completed_at: run.completed_at, error_message: run.error_message, initiated_by: run.initiated_by,
+  node_count: run.node_count, edge_count: run.edge_count,
+});
 
-  for (const execution of executions) {
-    if (seen.has(execution.id)) {
-      continue;
-    }
-    seen.add(execution.id);
-    result.push(execution);
+function mergeSummaries(current: ExecutionSummary[], incoming: ExecutionSummary[]): ExecutionSummary[] {
+  const byId = new Map(current.map(run => [run.id, run]));
+  for (const run of incoming) {
+    const previous = byId.get(run.id);
+    const next = toSummary(run);
+    byId.set(run.id, previous && Object.keys(next).every(key => previous[key as keyof ExecutionSummary] === next[key as keyof ExecutionSummary]) ? previous : next);
   }
-
-  return result;
-}
-
-function upsertExecution(
-  current: ExecutionRun[],
-  next: ExecutionRun,
-  maxItems = MAX_CACHED_EXECUTIONS,
-): ExecutionRun[] {
-  const filtered = current.filter((item) => item.id !== next.id);
-  return [next, ...filtered].slice(0, maxItems);
-}
-
-function removeExecutionById(
-  current: ExecutionRun[],
-  executionId: string,
-): ExecutionRun[] {
-  return current.filter((item) => item.id !== executionId);
+  return [...byId.values()].sort((a, b) => b.started_at.localeCompare(a.started_at) || b.id.localeCompare(a.id));
 }
 
 function getItemCount(data: unknown): number {
@@ -212,277 +200,203 @@ function getItemCount(data: unknown): number {
 export function useExecutionHistory(
   workflowId: string | null,
   filters: ExecutionFilters = {},
+  enabled = true,
 ) {
-  const [executions, setExecutions] = useState<ExecutionRun[]>([]);
+  const { user } = useAuth();
+  const [executions, setExecutions] = useState<ExecutionSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [selectedExecution, setSelectedExecution] =
-    useState<ExecutionRun | null>(null);
+  const [selectedExecution, publishSelectedExecution] = useState<ExecutionRun | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const status = filters.status;
+  const dateFrom = filters.dateFrom?.getTime();
+  const dateTo = filters.dateTo?.getTime();
+  const dataScope = useMemo(() => ({}), [user?.id, workflowId, status, dateFrom, dateTo]);
+  const previousDataScope = useRef<object | null>(null);
+  const scope = useMemo(() => ({ owner: user?.id, workflowId, status, dateFrom, dateTo, enabled }), [user?.id, workflowId, status, dateFrom, dateTo, enabled]);
+  const currentScope = useRef<typeof scope | null>(scope);
+  currentScope.current = scope;
+  const selection = useRef<string | null>(null);
+  const detailRequest = useRef(0);
+  const details = useRef(new Map<string, ExecutionRun>());
+  const cursor = useRef<{ started_at: string; id: string } | null>(null);
+  const firstFlight = useRef<object | null>(null);
+  const pageFlight = useRef<object | null>(null);
+  const detailFlight = useRef<{ id: string; promise: Promise<void>; queued: boolean } | null>(null);
+  const normalizedFilters = useMemo(() => ({ status, dateFrom: dateFrom === undefined ? undefined : new Date(dateFrom), dateTo: dateTo === undefined ? undefined : new Date(dateTo) }), [status, dateFrom, dateTo]);
+  const isCurrent = useCallback(() => currentScope.current === scope, [scope]);
 
-  const isMountedRef = useRef(false);
-  const fetchRequestIdRef = useRef(0);
-  const loadMoreRequestIdRef = useRef(0);
-  const selectedExecutionIdRef = useRef<string | null>(null);
-
-  const statusFilter = filters.status;
-  const dateFromFilter = filters.dateFrom;
-  const dateToFilter = filters.dateTo;
-
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    selectedExecutionIdRef.current = selectedExecution?.id ?? null;
-  }, [selectedExecution]);
-
-  const matchesFilters = useCallback(
-    (execution: ExecutionRun) =>
-      matchesExecutionFilters(execution, {
-        status: statusFilter,
-        dateFrom: dateFromFilter,
-        dateTo: dateToFilter,
-      }),
-    [statusFilter, dateFromFilter, dateToFilter],
-  );
-
-  const fetchExecutions = useCallback(async () => {
-    if (!workflowId) {
-      if (isMountedRef.current) {
-        setExecutions([]);
-        setHasMore(false);
-        setSelectedExecution(null);
-        setError(null);
+  const loadDetail = useCallback((runId: string, force = false): Promise<void> => {
+    if (!isCurrent() || !scope.enabled || !scope.owner || !scope.workflowId) return Promise.resolve();
+    if (detailFlight.current?.id === runId) { detailFlight.current.queued ||= force; return detailFlight.current.promise; }
+    const cached = details.current.get(runId);
+    if (cached && !force) { setDetailLoading(false); publishSelectedExecution(cached); return Promise.resolve(); }
+    const request = ++detailRequest.current;
+    setDetailLoading(true); setError(null);
+    const promise = (async () => {
+      try {
+        const { data, error: queryError } = await supabase.from("workflow_runs").select("*").eq("workflow_id", scope.workflowId!).eq("id", runId).single();
+        if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
+        if (queryError) throw queryError;
+        const next = data as ExecutionRun;
+        if (!matchesExecutionFilters(next, normalizedFilters)) {
+          details.current.delete(runId);
+          setExecutions(previous => previous.filter(run => run.id !== runId));
+          selection.current = null; setSelectedExecutionId(null); publishSelectedExecution(null);
+          return;
+        }
+        const previous = details.current.get(runId);
+        const detail = previous && sameExecution(previous, next) ? previous : next;
+        details.current.delete(runId);
+        details.current.set(runId, detail);
+        while (details.current.size > 3) details.current.delete(details.current.keys().next().value!);
+        publishSelectedExecution(detail);
+      } catch (err) {
+        if (isCurrent() && request === detailRequest.current) setError(err instanceof Error ? err.message : "Failed to load execution detail");
+      } finally {
+        if (isCurrent() && request === detailRequest.current) {
+          const queued = detailFlight.current?.queued;
+          setDetailLoading(false); detailFlight.current = null;
+          if (queued && selection.current === runId) void loadDetail(runId, true);
+        }
       }
-      return;
-    }
+    })();
+    detailFlight.current = { id: runId, promise, queued: false };
+    return promise;
+  }, [scope, isCurrent, normalizedFilters]);
 
-    const requestId = ++fetchRequestIdRef.current;
+  const setSelectedExecution = useCallback((run: ExecutionSummary | null) => {
+    if (!isCurrent()) return Promise.resolve();
+    if (run && selection.current === run.id && detailFlight.current?.id === run.id) return detailFlight.current.promise;
+    selection.current = run?.id ?? null;
+    setSelectedExecutionId(run?.id ?? null);
+    detailRequest.current += 1;
+    detailFlight.current = null;
+    if (!run) { publishSelectedExecution(null); setDetailLoading(false); return Promise.resolve(); }
+    publishSelectedExecution(details.current.get(run.id) ?? null);
+    // Selection is an explicit refresh boundary, even for cached terminal runs.
+    return loadDetail(run.id, true);
+  }, [loadDetail, isCurrent]);
 
-    if (isMountedRef.current) {
-      setLoading(true);
-      setError(null);
-    }
-
+  const fetchExecutions = useCallback(async (manual = false) => {
+    if (!isCurrent() || !enabled || !workflowId || !scope.owner || firstFlight.current) return;
+    if (manual) { pageFlight.current = null; setLoadingMore(false); }
+    const flight = {}; firstFlight.current = flight;
+    setLoading(true); setError(null);
     try {
-      const query = applyFiltersToQuery(workflowId, {
-        status: statusFilter,
-        dateFrom: dateFromFilter,
-        dateTo: dateToFilter,
-      });
-
-      const { data, error: queryError } = await query
-        .order("started_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(PAGE_SIZE);
-
-      if (queryError) {
-        throw queryError;
+      const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
+        .order("started_at", { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+      if (!isCurrent() || firstFlight.current !== flight) return;
+      if (queryError) throw queryError;
+      const rows = (data ?? []) as unknown as ExecutionSummary[];
+      if (manual || !cursor.current || rows.length < PAGE_SIZE) {
+        setExecutions(mergeSummaries([], rows));
+        cursor.current = rows[rows.length - 1] ?? null;
+        setHasMore(rows.length === PAGE_SIZE);
+      } else {
+        setExecutions(previous => {
+          // A first-page load is authoritative for its covered time range.
+          // Keep older pages; retain the oldest window so the cursor's boundary
+          // cannot disappear when a realtime row or a new first page arrives.
+          const boundary = rows[rows.length - 1];
+          const retained = boundary ? previous.filter(run => run.started_at < boundary.started_at
+            || (run.started_at === boundary.started_at && run.id < boundary.id)) : [];
+          return mergeSummaries(retained, rows).slice(-MAX_CACHED_EXECUTIONS);
+        });
       }
-
-      if (!isMountedRef.current || requestId !== fetchRequestIdRef.current) {
-        return;
+      const selectedId = selection.current;
+      const selectedSummary = rows.find(row => row.id === selectedId);
+      const selectedDetail = selectedId ? details.current.get(selectedId) : undefined;
+      if (selectedId && (manual || (selectedDetail && ["pending", "queued", "running"].includes(selectedDetail.status)) || (selectedSummary && selectedDetail && selectedSummary.status !== selectedDetail.status))) {
+        await loadDetail(selectedId, true);
       }
-
-      const results = dedupeById((data as ExecutionRun[]) ?? []);
-      setExecutions(results);
-      setHasMore(results.length === PAGE_SIZE);
-
-      setSelectedExecution((prev) => {
-        if (!prev) {
-          return null;
-        }
-
-        const updatedSelected = results.find((item) => item.id === prev.id);
-        if (updatedSelected) {
-          return sameExecution(prev, updatedSelected) ? prev : updatedSelected;
-        }
-
-        return matchesExecutionFilters(prev, {
-          status: statusFilter,
-          dateFrom: dateFromFilter,
-          dateTo: dateToFilter,
-        })
-          ? prev
-          : null;
-      });
-
-      setError(null);
     } catch (err) {
-      if (!isMountedRef.current || requestId !== fetchRequestIdRef.current) {
-        return;
-      }
-
-      console.error("Failed to fetch executions:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch executions",
-      );
+      if (isCurrent() && firstFlight.current === flight) setError(err instanceof Error ? err.message : "Failed to fetch executions");
     } finally {
-      if (isMountedRef.current && requestId === fetchRequestIdRef.current) {
-        setLoading(false);
-      }
+      if (isCurrent() && firstFlight.current === flight) { firstFlight.current = null; setLoading(false); }
     }
-  }, [workflowId, statusFilter, dateFromFilter, dateToFilter]);
+  }, [enabled, workflowId, scope.owner, normalizedFilters, isCurrent, loadDetail]);
 
   const loadMore = useCallback(async () => {
-    if (!workflowId || !hasMore || loadingMore) {
-      return;
-    }
-
-    const requestId = ++loadMoreRequestIdRef.current;
-
-    if (isMountedRef.current) {
-      setLoadingMore(true);
-      setError(null);
-    }
-
+    if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;
+    const flight = {}; pageFlight.current = flight;
+    const after = cursor.current;
+    setLoadingMore(true);
     try {
-      const query = applyFiltersToQuery(workflowId, {
-        status: statusFilter,
-        dateFrom: dateFromFilter,
-        dateTo: dateToFilter,
-      });
-
-      const { data, error: queryError } = await query
-        .order("started_at", { ascending: false })
-        .order("id", { ascending: false })
-        .range(executions.length, executions.length + PAGE_SIZE - 1);
-
-      if (queryError) {
-        throw queryError;
-      }
-
-      if (!isMountedRef.current || requestId !== loadMoreRequestIdRef.current) {
-        return;
-      }
-
-      const nextPage = (data as ExecutionRun[]) ?? [];
-
-      setExecutions((prev) => dedupeById([...prev, ...nextPage]));
-      setHasMore(nextPage.length === PAGE_SIZE);
+      const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
+        .or(`started_at.lt.${after.started_at},and(started_at.eq.${after.started_at},id.lt.${after.id})`)
+        .order("started_at", { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+      if (!isCurrent() || pageFlight.current !== flight) return;
+      if (queryError) throw queryError;
+      const rows = (data ?? []) as unknown as ExecutionSummary[];
+      // Cursor is independent of retained rows; old pages cannot skip/repeat after eviction.
+      if (rows.length) cursor.current = rows[rows.length - 1]!;
+      setExecutions(previous => mergeSummaries(previous, rows).slice(-MAX_CACHED_EXECUTIONS));
+      setHasMore(rows.length === PAGE_SIZE);
     } catch (err) {
-      if (!isMountedRef.current || requestId !== loadMoreRequestIdRef.current) {
+      if (isCurrent() && pageFlight.current === flight) setError(err instanceof Error ? err.message : "Failed to load more executions");
+    } finally {
+      if (isCurrent() && pageFlight.current === flight) { pageFlight.current = null; setLoadingMore(false); }
+    }
+  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, isCurrent]);
+
+  useEffect(() => {
+    currentScope.current = scope;
+    detailRequest.current += 1;
+    firstFlight.current = pageFlight.current = null; detailFlight.current = null;
+    if (previousDataScope.current !== dataScope) {
+      previousDataScope.current = dataScope;
+      selection.current = null; setSelectedExecutionId(null); details.current.clear(); cursor.current = null;
+      setExecutions([]); publishSelectedExecution(null); setHasMore(false); setError(null);
+    }
+    setLoading(false); setLoadingMore(false); setDetailLoading(false);
+    void fetchExecutions();
+    if (enabled && selection.current) void loadDetail(selection.current, true);
+    return () => { if (currentScope.current === scope) currentScope.current = null; };
+  }, [scope, dataScope, fetchExecutions, enabled, loadDetail]);
+
+  useEffect(() => {
+    if (!enabled || !workflowId || !scope.owner) return;
+    let disposed = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const channel = supabase.channel(`workflow-runs-${scope.owner}-${workflowId}`).on("postgres_changes", {
+      event: "*", schema: "public", table: "workflow_runs", filter: `workflow_id=eq.${workflowId}`,
+    }, payload => {
+      if (disposed || !isCurrent()) return;
+      const id = String((payload.eventType === "DELETE" ? payload.old : payload.new)?.id ?? "");
+      if (payload.eventType === "DELETE") {
+        details.current.delete(id);
+        setExecutions(previous => previous.filter(run => run.id !== id));
+        if (selection.current === id) void setSelectedExecution(null);
         return;
       }
-
-      console.error("Failed to load more executions:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load more executions",
-      );
-    } finally {
-      if (isMountedRef.current && requestId === loadMoreRequestIdRef.current) {
-        setLoadingMore(false);
+      // Retain only summary fields from full realtime payloads.
+      const summary = toSummary(payload.new as ExecutionRun);
+      if (matchesExecutionFilters(summary, normalizedFilters)) setExecutions(previous => mergeSummaries(previous, [summary]).slice(-MAX_CACHED_EXECUTIONS));
+      else {
+        setExecutions(previous => previous.filter(run => run.id !== id));
+        if (selection.current === id) void setSelectedExecution(null);
       }
-    }
-  }, [
-    workflowId,
-    hasMore,
-    loadingMore,
-    executions.length,
-    statusFilter,
-    dateFromFilter,
-    dateToFilter,
-  ]);
+      if (selection.current !== id) details.current.delete(id);
+      if (selection.current === id && !refreshTimer) refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        if (!disposed && isCurrent() && selection.current) void loadDetail(selection.current, true);
+      }, 100);
+    }).subscribe();
+    return () => { disposed = true; if (refreshTimer) clearTimeout(refreshTimer); void supabase.removeChannel(channel); };
+  }, [enabled, workflowId, scope.owner, isCurrent, normalizedFilters, loadDetail, setSelectedExecution]);
 
   useEffect(() => {
-    void fetchExecutions();
-  }, [fetchExecutions]);
+    if (!enabled || !autoRefresh || !workflowId) return;
+    const interval = window.setInterval(() => { if (!document.hidden) void fetchExecutions(); }, 5000);
+    return () => window.clearInterval(interval);
+  }, [enabled, autoRefresh, workflowId, fetchExecutions]);
 
-  useEffect(() => {
-    if (!workflowId) {
-      return;
-    }
-
-    const channel = supabase
-      .channel(`workflow-runs-${workflowId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "workflow_runs",
-          filter: `workflow_id=eq.${workflowId}`,
-        },
-        (payload) => {
-          if (!isMountedRef.current) {
-            return;
-          }
-
-          if (payload.eventType === "DELETE") {
-            const deletedId = String(
-              (payload.old as { id?: string } | null)?.id ?? "",
-            );
-
-            if (!deletedId) {
-              return;
-            }
-
-            setExecutions((prev) => removeExecutionById(prev, deletedId));
-
-            if (selectedExecutionIdRef.current === deletedId) {
-              setSelectedExecution(null);
-            }
-
-            return;
-          }
-
-          const execution = payload.new as ExecutionRun | null;
-          if (!execution) {
-            return;
-          }
-
-          if (!matchesFilters(execution)) {
-            setExecutions((prev) => removeExecutionById(prev, execution.id));
-
-            if (selectedExecutionIdRef.current === execution.id) {
-              setSelectedExecution(null);
-            }
-
-            return;
-          }
-
-          setExecutions((prev) => upsertExecution(prev, execution));
-
-          if (selectedExecutionIdRef.current === execution.id) {
-            setSelectedExecution(prev => prev && sameExecution(prev, execution) ? prev : execution);
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [workflowId, matchesFilters]);
-
-  useEffect(() => {
-    if (!autoRefresh || !workflowId) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      void fetchExecutions();
-    }, 5000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [autoRefresh, workflowId, fetchExecutions]);
-
-  useEffect(() => {
-    if (selectedExecution && !matchesFilters(selectedExecution)) {
-      setSelectedExecution(null);
-    }
-  }, [selectedExecution, matchesFilters]);
-
-  const getDuration = useCallback((execution: ExecutionRun): string => {
+  const getDuration = useCallback((execution: ExecutionSummary): string => {
     if (!execution.completed_at || !execution.started_at) {
       return "—";
     }
@@ -568,10 +482,12 @@ export function useExecutionHistory(
     hasMore,
     loadMore,
     selectedExecution,
+    selectedExecutionId,
     setSelectedExecution,
     autoRefresh,
     setAutoRefresh,
-    refresh: fetchExecutions,
+    detailLoading,
+    refresh: () => fetchExecutions(true),
     getDuration,
     getNodeExecutions,
     error,

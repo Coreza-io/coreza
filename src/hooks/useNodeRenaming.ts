@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNodeId } from "@xyflow/react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/hooks/use-toast";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 
 interface UseNodeRenamingProps {
@@ -39,7 +39,6 @@ export function useNodeRenaming({
 }: UseNodeRenamingProps): UseNodeRenamingReturn {
   const nodeId = useNodeId();
   const { renameNode } = useStableNodes();
-  const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingName, setEditingName] = useState("");

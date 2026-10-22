@@ -51,6 +51,7 @@ export function summarizePreview(
         return formatDateWithTimezone(value, timezone);
       }
 
+      if (value.length > 10_000) return value.slice(0, maxLength) + "…";
       let parsed;
       try {
         parsed = JSON.parse(value);
@@ -69,8 +70,7 @@ export function summarizePreview(
       const arr = value.slice(0, maxArrayItems);
       const preview = arr.map((item) =>
         typeof item === "object"
-          ? JSON.stringify(item).slice(0, 30) +
-            (JSON.stringify(item).length > 30 ? "..." : "")
+          ? fullePreview(item, 2, 1).slice(0, 60)
           : String(item),
       );
       return `[${preview.join(", ")}${
@@ -123,74 +123,59 @@ export function summarizePreview(
   }
 }
 
-// Truncate large data structures for preview to avoid performance issues
-function truncateForPreview(obj: any, maxItems: number, depth: number): any {
-  if (depth <= 0) return "[Object]";
-
-  if (Array.isArray(obj)) {
-    if (obj.length > maxItems) {
-      const truncated = obj
-        .slice(0, maxItems)
-        .map((item) =>
-          typeof item === "object" && item !== null
-            ? truncateForPreview(item, maxItems, depth - 1)
-            : item,
-        );
-      return truncated;
+// Bounds apply to the entire preview, rather than independently to every nested array.
+export function fullePreview(value: unknown, maxItems = 5, maxDepth = 3): string {
+  let entries = 200;
+  let characters = 10_000;
+  const visit = (item: unknown, depth: number): unknown => {
+    if (--entries < 0 || characters <= 0) return "…";
+    if (typeof item === "string") {
+      const limit = Math.min(characters, 2000);
+      characters -= Math.min(item.length, limit);
+      return item.length > limit ? `${item.slice(0, limit)}…` : item;
     }
-    return obj.map((item) =>
-      typeof item === "object" && item !== null
-        ? truncateForPreview(item, maxItems, depth - 1)
-        : item,
-    );
-  }
-
-  if (typeof obj === "object" && obj !== null) {
-    const result: any = {};
-    for (const [key, value] of Object.entries(obj)) {
-      result[key] =
-        typeof value === "object" && value !== null
-          ? truncateForPreview(value, maxItems, depth - 1)
-          : value;
+    if (item === null || typeof item !== "object") return item;
+    if (depth <= 0) return Array.isArray(item) ? `[${item.length} items]` : "{…}";
+    if (Array.isArray(item)) {
+      const result = item.slice(0, Math.min(maxItems, entries)).map(value => visit(value, depth - 1));
+      if (item.length > result.length) result.push(`… ${item.length - result.length} more items`);
+      return result;
+    }
+    const result: Record<string, unknown> = Object.create(null);
+    let count = 0;
+    for (const key in item) {
+      if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
+      if (count++ >= maxItems || entries <= 0 || characters <= 0) { result["…"] = "More fields"; break; }
+      const displayKey = key.slice(0, 200);
+      characters -= displayKey.length;
+      result[displayKey] = visit((item as Record<string, unknown>)[key], depth - 1);
     }
     return result;
-  }
-
-  return obj;
+  };
+  if (value === undefined) return "undefined";
+  const bounded = visit(value, maxDepth);
+  return typeof bounded === "string" ? bounded : JSON.stringify(bounded, null, 2) ?? String(bounded);
 }
 
-// Format preview with smart truncation for large arrays
-export function fullePreview(value: any, maxItems = 5, maxDepth = 3): string {
-  try {
-    if (value === null) return "null";
-    if (value === undefined) return "undefined";
-
-    if (typeof value === "string") {
-      return value;
+/** Conservative edit eligibility check; never stringify an oversized payload first. */
+export function canEditJson(value: unknown, maxCharacters = 100_000): boolean {
+  let remaining = maxCharacters;
+  let entries = 10_000;
+  const active = new Set<object>();
+  const visit = (item: unknown, depth: number): boolean => {
+    if (--entries < 0 || depth > 64 || remaining <= 0) return false;
+    if (typeof item === "string") { remaining -= item.length * 6 + 2; return remaining > 0; }
+    remaining -= 32;
+    if (!item || typeof item !== "object") return remaining > 0;
+    if (active.has(item)) return false;
+    active.add(item);
+    for (const key in item) {
+      if (!Object.prototype.hasOwnProperty.call(item, key)) continue;
+      remaining -= key.length * 6 + depth * 2 + 8;
+      if (!visit((item as Record<string, unknown>)[key], depth + 1)) return false;
     }
-
-    // For large arrays, truncate and show summary
-    if (Array.isArray(value) && value.length > maxItems) {
-      const totalItems = value.length;
-      const truncated = truncateForPreview(
-        value.slice(0, maxItems),
-        maxItems,
-        maxDepth,
-      );
-      const previewJson = JSON.stringify(truncated, null, 2);
-      // Remove closing bracket and add indicator
-      return `${previewJson.slice(0, -1)},\n  // ... and ${(totalItems - maxItems).toLocaleString()} more items\n]`;
-    }
-
-    // For objects, truncate any large nested arrays
-    if (typeof value === "object" && value !== null) {
-      const truncated = truncateForPreview(value, maxItems, maxDepth);
-      return JSON.stringify(truncated, null, 2);
-    }
-
-    return JSON.stringify(value, null, 2);
-  } catch (error) {
-    console.error("❌ Preview formatting error:", error);
-    return String(value);
-  }
+    active.delete(item);
+    return remaining > 0;
+  };
+  return visit(value, 0);
 }

@@ -25,6 +25,7 @@ import {
 
 interface UseNodeReferencesProps {
   workflowId?: string;
+  readOnly?: boolean;
   fieldState: Record<string, any>;
   previousNodes: readonly SemanticNode[];
   selectedPrevNodeId: string;
@@ -49,6 +50,7 @@ interface UseNodeReferencesReturn {
  */
 export function useNodeReferences({
   workflowId,
+  readOnly = false,
   fieldState,
   previousNodes,
   selectedPrevNodeId,
@@ -56,7 +58,7 @@ export function useNodeReferences({
 }: UseNodeReferencesProps): UseNodeReferencesReturn {
   const { getNodes } = useStableNodes();
   const executionStore = useExecutionStore();
-  const variableQuery = useVariableSnapshot(referencesVariables(fieldState), workflowId);
+  const variableQuery = useVariableSnapshot(!readOnly && referencesVariables(fieldState), workflowId);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
@@ -124,15 +126,17 @@ export function useNodeReferences({
         previousNodes.find((n) => n.id === srcId) || selectedPrevNode;
 
       const { allNodeData, getSourceData } = buildPreviewData(
-        getNodes(),
+        readOnly ? previousNodes : getNodes(),
         executionStore,
         getNodes,
+        readOnly,
       );
 
       const srcData = srcNode ? getSourceData(srcId) : {};
 
       try {
         // Read nodes imperatively for reference resolution - avoids subscription re-renders
+        if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
         if (referencesVariables(expr) && !workflowId) return "Save the workflow to preview variables";
         if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? "Variable snapshot unavailable" : "Loading variables…";
         const nodes = getNodes();
@@ -151,6 +155,7 @@ export function useNodeReferences({
     [
       fieldState,
       workflowId,
+      readOnly,
       variableQuery.data,
       variableQuery.error,
       sourceMap,

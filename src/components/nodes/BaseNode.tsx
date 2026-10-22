@@ -303,6 +303,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // References (drag-drop and previews)
   const referencesHook = useNodeReferences({
     workflowId,
+    readOnly,
     fieldState: fieldStateHook.fieldState,
     previousNodes,
     selectedPrevNodeId: resolvedPrevNodeId ?? "",

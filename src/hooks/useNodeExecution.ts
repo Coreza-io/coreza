@@ -103,6 +103,8 @@ export function useNodeExecution({
   const executionStore = useExecutionStore();
   const notifyExecutionStoreUpdate = useExecutionStoreNotify();
 
+  const readOnlyRef = useRef(Boolean(data?.readOnly));
+  readOnlyRef.current = Boolean(data?.readOnly);
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
 
@@ -420,12 +422,15 @@ export function useNodeExecution({
     async (e?: React.FormEvent, inputOverride?: any, signal?: AbortSignal, executionGeneration?: number, allowedNodeIds?: ReadonlySet<string>, lockToken?: symbol): Promise<NodeExecutionOutcome> => {
       if (e) e.preventDefault();
       const outcomeNodeId = nodeId ?? "unknown";
+      if (readOnlyRef.current) {
+        return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution history is read-only." };
+      }
       if (allowedNodeIds && !allowedNodeIds.has(outcomeNodeId)) {
         return { nodeId: outcomeNodeId, status: "failed", error: { message: `Node ${outcomeNodeId} is outside the allowed execution scope.` } };
       }
       let agentController: AbortController | undefined;
       const abortAgent = () => agentController?.abort();
-      const executionIsCurrent = () => !signal?.aborted && !agentController?.signal.aborted &&
+      const executionIsCurrent = () => !readOnlyRef.current && !signal?.aborted && !agentController?.signal.aborted &&
         (executionGeneration === undefined || getEditorExecutionGeneration() === executionGeneration) &&
         (!lockToken || isEditorExecutionLocked(String(data?.workflowSessionId ?? ""), lockToken));
       if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
@@ -973,15 +978,18 @@ export function useNodeExecution({
 
   useEffect(() => {
     const sessionId = data?.workflowSessionId;
-    if (!sessionId || !nodeId) return;
+    if (data?.readOnly || !sessionId || !nodeId) return;
     return registerEditorNodeAction(sessionId, nodeId, ({ input, signal, executionGeneration, allowedNodeIds, lockToken } = {}) => {
       if (signal?.aborted) return Promise.resolve({ nodeId, status: "cancelled", reason: "Execution was cancelled." });
       return executeAction(undefined, input, signal, executionGeneration, allowedNodeIds, lockToken);
     });
-  }, [data?.workflowSessionId, executeAction, nodeId]);
+  }, [data?.workflowSessionId, data?.readOnly, executeAction, nodeId]);
 
   const handleSubmit = useCallback(async (e?: React.FormEvent, inputOverride?: any) => {
     e?.preventDefault();
+    if (readOnlyRef.current) {
+      return { nodeId: nodeId ?? "unknown", status: "cancelled", reason: "Execution history is read-only." } as NodeExecutionOutcome;
+    }
     const sessionId = data?.workflowSessionId;
     if (!sessionId || !nodeId) {
       return { nodeId: nodeId ?? "unknown", status: "failed", error: { message: "Node execution is not available." } } as NodeExecutionOutcome;

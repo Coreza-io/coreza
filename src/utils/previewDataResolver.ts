@@ -19,9 +19,20 @@ interface PreviewDataResult {
 export function buildPreviewData(
   previousNodes: readonly SemanticNode[],
   executionStore: ExecutionContext,
-  getNodes: () => readonly SemanticNode[]
+  getNodes: () => readonly SemanticNode[],
+  recordedOnly = false,
 ): PreviewDataResult {
-  const allNodeData: Record<string, any> = {};
+  const allNodeData: Record<string, any> = Object.create(null);
+
+  // History availability comes only from recorded results, never saved/pinned node data.
+  if (recordedOnly) {
+    previousNodes.forEach(node => {
+      if (Object.prototype.hasOwnProperty.call(node.data, "output")) {
+        allNodeData[node.id] = node.data.output;
+      }
+    });
+    return { allNodeData, getSourceData: sourceId => allNodeData[sourceId] };
+  }
 
   previousNodes.forEach((prevNode) => {
     const displayName = prevNode.id;

@@ -176,7 +176,7 @@ const toBounds = (state: ReactFlowState, id: string): EndpointBounds | null => {
   if (!node) return null;
   return {
     id,
-    position: { x: node.position.x, y: node.position.y },
+    position: { ...node.internals.positionAbsolute },
     measured: { width: node.measured?.width, height: node.measured?.height },
     width: node.width,
     height: node.height,
@@ -438,10 +438,10 @@ const calculateSmartPath = (
     targetNode?.measured?.height || targetNode?.height || defaultNodeHeight;
 
   // Get actual node positions for routing calculations
-  const sourceNodeY = sourceNode?.position?.y || sourceY - sourceHeight / 2;
-  const targetNodeY = targetNode?.position?.y || targetY - targetHeight / 2;
-  const sourceNodeX = sourceNode?.position?.x || sourceX - sourceWidth / 2;
-  const targetNodeX = targetNode?.position?.x || targetX - targetWidth / 2;
+  const sourceNodeY = sourceNode?.position?.y ?? sourceY - sourceHeight / 2;
+  const targetNodeY = targetNode?.position?.y ?? targetY - targetHeight / 2;
+  const sourceNodeX = sourceNode?.position?.x ?? sourceX - sourceWidth / 2;
+  const targetNodeX = targetNode?.position?.x ?? targetX - targetWidth / 2;
 
   // Handle Right → Left connections (most common case with backward routing)
   if (sourcePosition === Position.Right && targetPosition === Position.Left) {

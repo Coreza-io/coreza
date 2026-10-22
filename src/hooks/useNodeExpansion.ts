@@ -15,7 +15,8 @@ const getState = (canvas: object): ExpansionState => {
 };
 
 export const useNodeExpansion = (nodeId: string | undefined, expanded: boolean) => {
-  const state = getState(useStoreApi());
+  // The API wrapper is unique per hook caller; getState identifies the shared store.
+  const state = getState(useStoreApi().getState);
   useEffect(() => {
     if (!nodeId || !expanded) return;
     state.nodes.add(nodeId);
@@ -28,7 +29,7 @@ export const useNodeExpansion = (nodeId: string | undefined, expanded: boolean) 
 };
 
 export const useSourceNodeExpanded = (nodeId: string): boolean => {
-  const state = getState(useStoreApi());
+  const state = getState(useStoreApi().getState);
   return useSyncExternalStore(
     listener => {
       state.listeners.add(listener);

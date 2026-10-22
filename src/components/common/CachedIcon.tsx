@@ -50,20 +50,22 @@ interface CachedIconProps {
 
 // Memoized icon component that prevents re-renders
 const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallback }) => {
-  const [isLoaded, setIsLoaded] = React.useState(iconCache.has(src));
-  const [hasError, setHasError] = React.useState(false);
+  const [loadState, setLoadState] = React.useState<{
+    src: string;
+    status: 'loading' | 'loaded' | 'error';
+  }>({ src, status: iconCache.has(src) ? 'loaded' : 'loading' });
+  const status = iconCache.has(src) ? 'loaded' : loadState.src === src ? loadState.status : 'loading';
 
   React.useEffect(() => {
     let active = true;
-    setHasError(false);
-    setIsLoaded(iconCache.has(src));
+    setLoadState({ src, status: iconCache.has(src) ? 'loaded' : 'loading' });
     preloadIcon(src)
-      .then(() => { if (active) setIsLoaded(true); })
-      .catch(() => { if (active) setHasError(true); });
+      .then(() => { if (active) setLoadState({ src, status: 'loaded' }); })
+      .catch(() => { if (active) setLoadState({ src, status: 'error' }); });
     return () => { active = false; };
   }, [src]);
 
-  if (hasError) {
+  if (status === 'error') {
     return fallback || (
       <div className={`${className} bg-muted rounded flex items-center justify-center`}>
         <span className="text-xs">?</span>
@@ -71,7 +73,7 @@ const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallb
     );
   }
 
-  if (!isLoaded) {
+  if (status === 'loading') {
     return (
       <div className={`${className} bg-muted rounded animate-pulse`}>
         {/* Loading placeholder */}

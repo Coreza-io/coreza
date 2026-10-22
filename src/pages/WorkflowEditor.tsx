@@ -78,7 +78,7 @@ import {
 import { exportWorkflow, importWorkflow } from "@/utils/workflowExport";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
-import EdgeManager from "@/components/workflow/EdgeManager";
+import EdgeManager, { EdgeEditingContext } from "@/components/workflow/EdgeManager";
 import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -854,6 +854,33 @@ const WorkflowEditorContent = () => {
   );
   const manualExecutingNodeId = manualExecutionTarget.startsWith("node:")
     ? manualExecutionTarget.slice("node:".length) : null;
+  const removeEdge = useCallback((edgeId: string) => {
+    if (!canMutateDocument()) return;
+    const committed = committedProjectionRef.current;
+    const canonicalId = committed?.sessionId === workflowSessionId
+      ? committed.projection.displayEdgeToCanonicalEdge.get(edgeId) ?? edgeId
+      : edgeId;
+    const current = canonicalEdgesRef.current;
+    if (!current.some(edge => edge.id === canonicalId && edge.deletable !== false)) return;
+    commitEdgeCandidateRef.current(current.filter(edge => edge.id !== canonicalId));
+  }, [canMutateDocument, workflowSessionId]);
+
+  const deletableEdgeIds = useMemo(() => {
+    const ids = new Set(edges.filter(edge => edge.deletable !== false).map(edge => edge.id));
+    for (const [displayId, canonicalId] of clusterProjection.displayEdgeToCanonicalEdge) {
+      if (ids.has(canonicalId)) ids.add(displayId);
+    }
+    return ids;
+  }, [edges, clusterProjection.displayEdgeToCanonicalEdge]);
+  // Drag refs are checked at hover/click time; a finished drag need not trigger a render.
+  const edgeEditingEnabled = !loading && !persistLoading && invalidClusterEntries.length === 0 && !manualExecutionTarget;
+  const edgeEditing = useMemo(() => ({
+    sessionId: workflowSessionId,
+    enabled: edgeEditingEnabled,
+    canEdit: canMutateDocument,
+    deletableEdgeIds,
+    removeEdge,
+  }), [workflowSessionId, edgeEditingEnabled, canMutateDocument, deletableEdgeIds, removeEdge]);
   const baseDisplayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const baseDisplayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
   const activeMember = clusterExecution.activeMember;
@@ -982,19 +1009,23 @@ const WorkflowEditorContent = () => {
 
   const commitEdgeCandidate = useCallback((candidateEdges: Edge[]) => {
     if (!canMutateDocument({allowConnectionDrag:true})) return;
-    const currentInvalid = new Set(validateClusters(nodes, edges, clusters).violations.flatMap(
+    const currentNodes = nodesRef.current;
+    const currentEdges = canonicalEdgesRef.current;
+    const currentClusters = clustersRef.current;
+    if (candidateEdges.length === currentEdges.length && candidateEdges.every((edge, index) => edge === currentEdges[index])) return;
+    const currentInvalid = new Set(validateClusters(currentNodes, currentEdges, currentClusters).violations.flatMap(
       ({ clusterId }) => clusterId ? [clusterId] : [],
     ));
-    const candidateValidation = validateClusters(nodes, candidateEdges, clusters);
+    const candidateValidation = validateClusters(currentNodes, candidateEdges, currentClusters);
     const newlyInvalidIds = new Set(candidateValidation.violations.flatMap(
       ({ clusterId }) => clusterId && !currentInvalid.has(clusterId) ? [clusterId] : [],
     ));
     if (newlyInvalidIds.size === 0) {
       saveHistorySnapshot();
+      canonicalEdgesRef.current = candidateEdges;
       setEdges(candidateEdges);
       return;
     }
-    const affected = clusters.filter(({ id }) => newlyInvalidIds.has(id));
     const firstViolation = candidateValidation.violations.find(({ clusterId }) => clusterId && newlyInvalidIds.has(clusterId));
     toast({
       title: "Connection would invalidate a cluster",
@@ -1004,9 +1035,9 @@ const WorkflowEditorContent = () => {
         <ToastAction
           altText="Dissolve affected clusters and apply connection change"
           onClick={() => {
-            if (!canMutateDocument() || clustersRef.current !== clusters || canonicalEdgesRef.current !== edges) return;
+            if (!canMutateDocument() || nodesRef.current !== currentNodes || clustersRef.current !== currentClusters || canonicalEdgesRef.current !== currentEdges) return;
             try {
-              const result = mutateDocument({nodes:nodesRef.current, edges:canonicalEdgesRef.current, clusters:clustersRef.current}, candidate=>{candidate.edges=candidateEdges;});
+              const result = mutateDocument({nodes:currentNodes, edges:currentEdges, clusters:currentClusters}, candidate=>{candidate.edges=candidateEdges;});
               saveHistorySnapshot(); restoreDocument(result.document);
               toast({title:'Clusters dissolved', description:result.dissolvedClusters.map(c=>c.title).join(', ')});
             } catch (error) { toast({title:'Cannot apply connection', description:String(error)}); }
@@ -1016,22 +1047,35 @@ const WorkflowEditorContent = () => {
         </ToastAction>
       ),
     });
-  }, [clusters, edges, nodes, saveHistorySnapshot, restoreDocument, setEdges, toast, canMutateDocument]);
+  }, [saveHistorySnapshot, restoreDocument, setEdges, toast, canMutateDocument]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    const structural = changes.some(({ type }) => type === "add" || type === "remove" || type === "replace");
+    if (changes.some(change => change.type === "remove") && !canMutateDocument()) return;
+    const currentEdges = canonicalEdgesRef.current;
     const canonicalChanges = changes.flatMap((change): EdgeChange[] => {
-      if (change.type !== 'add' && change.type !== 'replace') return [change];
-      const connection = resolveProjectedConnection(change.item, clusterProjection, nodesRef.current, canonicalEdgesRef.current);
+      if (change.type === "remove" || change.type === "select") {
+        const id = clusterProjection.displayEdgeToCanonicalEdge.get(change.id) ?? change.id;
+        return currentEdges.some(edge => edge.id === id && (change.type !== "remove" || edge.deletable !== false))
+          ? [{...change, id}] : [];
+      }
+      if (change.type !== "add" && change.type !== "replace") return [change];
+      const connection = resolveProjectedConnection(change.item, clusterProjection, nodesRef.current, currentEdges);
       if (!connection) return [];
-      const existing = canonicalEdgesRef.current.find(edge=>edge.id === change.item.id);
-      const item = existing ? {...existing, ...connection} : {id:change.item.id, type:change.item.type, ...connection};
-      return [{...change, item}];
+      const id = change.type === "replace"
+        ? clusterProjection.displayEdgeToCanonicalEdge.get(change.id) ?? change.id
+        : change.item.id;
+      const existing = currentEdges.find(edge => edge.id === id);
+      const item = existing ? {...existing, ...connection} : {id, type:change.item.type, ...connection};
+      return [change.type === "replace" ? {...change, id, item} : {...change, item}];
     });
-    const candidate = applyEdgeChanges(canonicalChanges, edges);
-    if (structural) commitEdgeCandidate(candidate);
-    else setEdges(candidate);
-  }, [commitEdgeCandidate, clusterProjection, edges, setEdges]);
+    if (!canonicalChanges.length) return;
+    const candidate = applyEdgeChanges(canonicalChanges, currentEdges);
+    if (canonicalChanges.some(({type}) => type === "add" || type === "remove" || type === "replace")) commitEdgeCandidate(candidate);
+    else {
+      canonicalEdgesRef.current = candidate;
+      setEdges(candidate);
+    }
+  }, [commitEdgeCandidate, clusterProjection, setEdges, canMutateDocument]);
   commitEdgeCandidateRef.current = commitEdgeCandidate;
 
   // Scope manual node execution state to this editor session.
@@ -1266,13 +1310,6 @@ const WorkflowEditorContent = () => {
     messageHandlerRef.current = handleNodeOutputMessage;
   }, [handleNodeOutputMessage]);
 
-  const removeEdge = useCallback(
-    (edgeId: string) => commitEdgeCandidateRef.current(
-      canonicalEdgesRef.current.filter((edge) => edge.id !== edgeId),
-    ),
-    [],
-  );
-
   // Handle "+" click on Loop node to add a new downstream node
   const handleAddNode = useCallback(
     (loopNodeId: string) => {
@@ -1307,9 +1344,9 @@ const WorkflowEditorContent = () => {
 
   const handleRemoveLoop = useCallback(
     (loopNodeId: string) => {
-      commitEdgeCandidate(edges.filter((edge) => edge.source !== loopNodeId && edge.target !== loopNodeId));
+      commitEdgeCandidate(canonicalEdgesRef.current.filter((edge) => edge.source !== loopNodeId && edge.target !== loopNodeId));
     },
-    [commitEdgeCandidate, edges],
+    [commitEdgeCandidate],
   );
 
   useEffect(() => {
@@ -1436,9 +1473,9 @@ const WorkflowEditorContent = () => {
         type: "removable",
         data: { onRemoveEdge: () => removeEdge(id) },
       };
-      commitEdgeCandidate(addEdge(newEdge, edges));
+      commitEdgeCandidate(addEdge(newEdge, canonicalEdgesRef.current));
     },
-    [commitEdgeCandidate, clusterProjection, edges, removeEdge],
+    [commitEdgeCandidate, clusterProjection, removeEdge],
   );
 
   const onReconnect = useCallback((displayedEdge: Edge, connection: Connection) => {
@@ -2693,6 +2730,7 @@ const WorkflowEditorContent = () => {
           {/* ReactFlow Canvas */}
           <div ref={canvasContainerRef} className="relative flex-1 bg-trading-grid">
             <ConnectionDragContext.Provider value={dragSource}>
+              <EdgeEditingContext.Provider value={edgeEditing}>
               <ReactFlow
                 nodes={displayedNodes}
                 edges={displayedEdges}
@@ -2751,6 +2789,7 @@ const WorkflowEditorContent = () => {
                   onFitView={() => { void rf.fitView(fitViewOptions); }}
                 />
               </ReactFlow>
+              </EdgeEditingContext.Provider>
             </ConnectionDragContext.Provider>
             <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-label="Workflow clusters">
               {clusters.filter((cluster) => !CLUSTER_COLLAPSE_ENABLED || clusterViewState[cluster.id]).sort((a,b)=>(resolveClusterHierarchy(clusters).ancestors.get(a.id)?.length ?? 0) - (resolveClusterHierarchy(clusters).ancestors.get(b.id)?.length ?? 0)).map((cluster) => {

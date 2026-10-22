@@ -28,14 +28,14 @@ export const useNodeExpansion = (nodeId: string | undefined, expanded: boolean) 
   }, [state, nodeId, expanded]);
 };
 
-export const useSourceNodeExpanded = (nodeId: string): boolean => {
+export const useEdgeEndpointsExpanded = (source: string, target: string): boolean => {
   const state = getState(useStoreApi().getState);
   return useSyncExternalStore(
     listener => {
       state.listeners.add(listener);
       return () => { state.listeners.delete(listener); };
     },
-    () => state.nodes.has(nodeId),
+    () => state.nodes.has(source) || state.nodes.has(target),
     () => false,
   );
 };

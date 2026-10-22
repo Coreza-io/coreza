@@ -861,17 +861,26 @@ const WorkflowEditorContent = () => {
       ? committed.projection.displayEdgeToCanonicalEdge.get(edgeId) ?? edgeId
       : edgeId;
     const current = canonicalEdgesRef.current;
-    if (!current.some(edge => edge.id === canonicalId)) return;
+    if (!current.some(edge => edge.id === canonicalId && edge.deletable !== false)) return;
     commitEdgeCandidateRef.current(current.filter(edge => edge.id !== canonicalId));
   }, [canMutateDocument, workflowSessionId]);
 
-  const edgeEditingEnabled = canMutateDocument();
+  const deletableEdgeIds = useMemo(() => {
+    const ids = new Set(edges.filter(edge => edge.deletable !== false).map(edge => edge.id));
+    for (const [displayId, canonicalId] of clusterProjection.displayEdgeToCanonicalEdge) {
+      if (ids.has(canonicalId)) ids.add(displayId);
+    }
+    return ids;
+  }, [edges, clusterProjection.displayEdgeToCanonicalEdge]);
+  // Drag refs are checked at hover/click time; a finished drag need not trigger a render.
+  const edgeEditingEnabled = !loading && !persistLoading && invalidClusterEntries.length === 0 && !manualExecutionTarget;
   const edgeEditing = useMemo(() => ({
     sessionId: workflowSessionId,
     enabled: edgeEditingEnabled,
     canEdit: canMutateDocument,
+    deletableEdgeIds,
     removeEdge,
-  }), [workflowSessionId, edgeEditingEnabled, canMutateDocument, removeEdge]);
+  }), [workflowSessionId, edgeEditingEnabled, canMutateDocument, deletableEdgeIds, removeEdge]);
   const baseDisplayedNodes = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.nodes : nodes;
   const baseDisplayedEdges = CLUSTER_COLLAPSE_ENABLED ? clusterProjection.edges : edges;
   const activeMember = clusterExecution.activeMember;
@@ -1046,7 +1055,8 @@ const WorkflowEditorContent = () => {
     const canonicalChanges = changes.flatMap((change): EdgeChange[] => {
       if (change.type === "remove" || change.type === "select") {
         const id = clusterProjection.displayEdgeToCanonicalEdge.get(change.id) ?? change.id;
-        return currentEdges.some(edge => edge.id === id) ? [{...change, id}] : [];
+        return currentEdges.some(edge => edge.id === id && (change.type !== "remove" || edge.deletable !== false))
+          ? [{...change, id}] : [];
       }
       if (change.type !== "add" && change.type !== "replace") return [change];
       const connection = resolveProjectedConnection(change.item, clusterProjection, nodesRef.current, currentEdges);

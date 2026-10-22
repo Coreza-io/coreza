@@ -31,7 +31,7 @@ export interface EdgeControl {
   icon: React.ReactNode;
   label?: string;
   action?: "delete";
-  onClick: (e: React.MouseEvent) => void;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 export interface SelfLoopConfig {
@@ -46,8 +46,8 @@ export interface InteractiveEdgeProps extends EdgeProps {
   className?: string;
 }
 
-// Build edge controls based on available callbacks
-const buildControls = (data?: any): EdgeControl[] => {
+// Delete availability is editor-owned; template/JSON edges need no stored callback.
+const buildControls = (data: any, canDelete: boolean): EdgeControl[] => {
   const controls: EdgeControl[] = [];
   if (data?.onAddEdge) {
     controls.push({
@@ -56,12 +56,11 @@ const buildControls = (data?: any): EdgeControl[] => {
       onClick: data.onAddEdge,
     });
   }
-  if (data?.onRemoveEdge) {
+  if (canDelete) {
     controls.push({
       icon: <Trash2 size={14} />,
       label: "Delete connection",
       action: "delete",
-      onClick: data.onRemoveEdge,
     });
   }
   return controls;
@@ -80,6 +79,7 @@ export const EdgeEditingContext = React.createContext({
   sessionId: "",
   enabled: false,
   canEdit: () => false,
+  deletableEdgeIds: new Set<string>(),
   removeEdge: (_edgeId: string) => {},
 });
 
@@ -99,6 +99,10 @@ const EdgeToolbar = ({ edgeId, x, y, controls, hover }: {
         onMouseEnter={hover.onToolbarEnter} onMouseLeave={hover.onToolbarLeave}
         onFocusCapture={hover.onFocus} onBlurCapture={hover.onBlur}
         onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
+        onKeyDown={event => {
+          event.stopPropagation();
+          if (event.key === "Escape") hover.close();
+        }}
         role="group" aria-label="Connection controls">
         {controls.map((control, index) => (
           <button key={index} type="button" aria-label={control.label ?? "Connection action"}
@@ -108,7 +112,7 @@ const EdgeToolbar = ({ edgeId, x, y, controls, hover }: {
               event.stopPropagation();
               if (!editing.enabled || !editing.canEdit()) { hover.close(); return; }
               if (control.action === "delete") editing.removeEdge(edgeId);
-              else control.onClick(event);
+              else control.onClick?.(event);
               hover.close();
             }}>
             {control.icon}
@@ -657,7 +661,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   className,
 }) => {
   const editing = useContext(EdgeEditingContext);
-  const computedControls = controls.length > 0 ? controls : buildControls(data);
+  const canDelete = editing.deletableEdgeIds.has(id);
+  const computedControls = (controls.length > 0 ? controls : buildControls(data, canDelete))
+    .filter(control => control.action !== "delete" || canDelete);
   const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, editing.enabled && computedControls.length > 0, editing.canEdit, editing.sessionId);
   const agentActive = useAgentEdgeActive(id, source, target, data);
   const isSelfLoop = source === target;
@@ -694,10 +700,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
 
   const categoryCordColor = sourceTheme.edgeColor ?? "#22d3ee";
   const defaultCordColor = isDarkMode ? categoryCordColor : "#9ca3af";
-  const cordColor =
-    isDarkMode && typeof strokeValue === "string"
-      ? strokeValue
-      : defaultCordColor;
+  const cordColor = typeof strokeValue === "string" ? strokeValue : defaultCordColor;
   const strokeWidth = readStrokeWidth(strokeWidthValue);
 
   const extensionDistance = -25;
@@ -777,8 +780,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         d={edgePath}
         stroke="transparent"
         strokeWidth={EDGE_INTERACTION_WIDTH}
+        className="react-flow__edge-interaction"
         fill="none"
-        style={{ pointerEvents: "stroke" }}
+        style={{ pointerEvents: "stroke", strokeDasharray: "none", animation: "none" }}
       />
       <path
         id={id}
@@ -797,6 +801,9 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         fill="none"
         style={{
           ...customStyle,
+          // Inline styles outrank React Flow's edge-path CSS presentation rules.
+          stroke: agentActive ? "#0891b2" : cordColor,
+          strokeWidth: agentActive ? Math.max(EDGE_STROKE_WIDTH, strokeWidth) : strokeWidth,
           strokeLinecap: "round",
           strokeLinejoin: "round",
           pointerEvents: "none",
@@ -1052,7 +1059,10 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
   }
 
   const editing = useContext(EdgeEditingContext);
-  const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, editing.enabled && controls.length > 0, editing.canEdit, editing.sessionId);
+  const canDelete = editing.deletableEdgeIds.has(id);
+  const computedControls = (controls.length > 0 ? controls : buildControls(data, canDelete))
+    .filter(control => control.action !== "delete" || canDelete);
+  const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, editing.enabled && computedControls.length > 0, editing.canEdit, editing.sessionId);
 
   return (
     <g
@@ -1064,8 +1074,9 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
         d={pathD}
         stroke="transparent"
         strokeWidth={EDGE_INTERACTION_WIDTH}
+        className="react-flow__edge-interaction"
         fill="none"
-        style={{ pointerEvents: "stroke" }}
+        style={{ pointerEvents: "stroke", strokeDasharray: "none", animation: "none" }}
       />
       <path
         id={id}
@@ -1089,7 +1100,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           </textPath>
         </text>
       )}
-      <EdgeToolbar edgeId={id} x={midX} y={midY} controls={controls} hover={hover} />
+      <EdgeToolbar edgeId={id} x={midX} y={midY} controls={computedControls} hover={hover} />
     </g>
   );
 };
@@ -1103,8 +1114,6 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
   if (source !== target) {
     return <DefaultEdge {...props} />;
   }
-
-  const controls = buildControls(data);
 
   return (
     <InteractiveEdge
@@ -1125,7 +1134,6 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
         ...props.style,
       }}
       markerEnd={MarkerType.ArrowClosed}
-      controls={controls}
       data={data}
     />
   );
@@ -1134,11 +1142,9 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
 // Default edge for regular connections
 export const DefaultEdge: React.FC<EdgeProps> = (props) => {
   const { data } = props;
-  const controls = buildControls(data);
   return (
     <PlugEdge
       {...props}
-      controls={controls}
       data={data}
       style={{ strokeWidth: EDGE_STROKE_WIDTH, ...props.style }}
     />
@@ -1149,7 +1155,6 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
 export const LoopEdge: React.FC<EdgeProps> = (props) => {
   const { data } = props;
   const isDarkMode = useResolvedTheme() === "dark";
-  const controls = buildControls(data);
 
   return (
     <InteractiveEdge
@@ -1157,7 +1162,6 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
       selfLoopConfig={{ offsetX: 20, offsetY: 80, direction: "right" }}
       style={{ stroke: isDarkMode ? "#22c55e" : "#9ca3af", strokeWidth: EDGE_STROKE_WIDTH, ...props.style }}
       markerEnd={MarkerType.ArrowClosed}
-      controls={controls}
       data={data}
     />
   );

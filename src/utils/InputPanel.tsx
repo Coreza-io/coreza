@@ -11,7 +11,7 @@ import { nodeDisplayName } from "@/domain/nodeNaming";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
+import NodeInputSelector from "./NodeInputSelector";
 import { useVariableSnapshot } from "@/hooks/useVariableSnapshot";
 import type { Node } from "@xyflow/react";
 import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
@@ -19,7 +19,7 @@ import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
 import { useOptionalSemanticGraphSnapshot } from "@/contexts/StableNodeContext";
-import { resolveHistoricalNodeId, resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
+import { getUpstreamDistances, resolveHistoricalNodeId, resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
 
 type NodeExecutionLog = {
   nodeId: string;
@@ -53,6 +53,7 @@ type InputPanelProps = {
   executionInput?: any;
   // All node executions for dropdown in readOnly mode
   allNodeExecutions?: NodeExecutionLog[];
+  historyEdges?: readonly { source: string; target: string }[];
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({
@@ -69,13 +70,13 @@ const InputPanel: React.FC<InputPanelProps> = ({
   readOnly = false,
   executionInput,
   allNodeExecutions,
+  historyEdges,
 }) => {
   // History is intentionally isolated from the live canonical document.
   const canonicalGraph = useOptionalSemanticGraphSnapshot(!readOnly);
   const executionStoreVersion = useExecutionStoreVersion();
   const { timezone: userTimezone } = useUserPreferences();
   const [activeTab, setActiveTab] = useState("previous");
-  const [search, setSearch] = useState("");
   const variableQuery = useVariableSnapshot(isExpanded && activeTab === "variables" && !readOnly, workflowId);
 
   if (!readOnly && !canonicalGraph) {
@@ -84,31 +85,18 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const nodes = readOnly ? initialNodes : canonicalGraph?.nodes ?? initialNodes;
   const edges = readOnly ? initialEdges : canonicalGraph?.edges ?? initialEdges;
 
-  // Upstream nodes with fresh data
+  const distances = useMemo(
+    () => getUpstreamDistances(nodeId, readOnly ? historyEdges ?? [] : edges),
+    [nodeId, readOnly, historyEdges, initialEdges, edges],
+  );
   const previousNodes = useMemo(() => {
     if (!nodeId) return [];
     const upstream = readOnly
       ? getAllUpstreamNodes(nodeId, initialEdges, initialNodes)
       : canonicalGraph?.getUpstreamNodes(nodeId) ?? [];
-    // Order by graph distance, independent of projected cluster/member array order.
-    const incoming = new Map<string, string[]>();
-    for (const edge of edges) {
-      const sources = incoming.get(edge.target) ?? [];
-      sources.push(edge.source);
-      incoming.set(edge.target, sources);
-    }
-    const order = new Map([[nodeId, 0]]);
-    const queue = [nodeId];
-    for (let i = 0; i < queue.length; i++) {
-      for (const source of incoming.get(queue[i]) ?? []) {
-        if (order.has(source)) continue;
-        order.set(source, order.size);
-        queue.push(source);
-      }
-    }
     return [...upstream].filter(node => node.id !== nodeId).sort((a, b) =>
-      (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity));
-  }, [canonicalGraph, edges, initialEdges, initialNodes, nodeId, readOnly]);
+      (distances.get(a.id) ?? Infinity) - (distances.get(b.id) ?? Infinity));
+  }, [canonicalGraph, distances, initialEdges, initialNodes, nodeId, readOnly]);
 
   // Prefer a direct 'done' edge source when connected (Loop aggregated output)
   const preferredPrevId = useMemo(() => {
@@ -137,7 +125,9 @@ const InputPanel: React.FC<InputPanelProps> = ({
     setSelectedPrevNodeId,
   ]);
 
-  const historicalNodeId = resolveHistoricalNodeId(selectedPrevNodeId, allNodeExecutions ?? []);
+  const historicalNodeId = readOnly
+    ? resolveHistoricalNodeId(selectedPrevNodeId, allNodeExecutions ?? [], nodeId, historyEdges)
+    : undefined;
   const selectedExecution = allNodeExecutions?.find(exec => exec.nodeId === historicalNodeId);
   const historicalTimestamp = selectedExecution?.completedAt ?? selectedExecution?.startedAt;
   const timestamp = readOnly
@@ -172,14 +162,12 @@ const InputPanel: React.FC<InputPanelProps> = ({
     selectedExecution,
   ]);
 
-  const nodeOptions = readOnly
+  const nodeOptions = (readOnly
     ? (allNodeExecutions ?? []).map(exec => ({ id: exec.nodeId, label: exec.nodeName || exec.nodeId }))
-    : previousNodes.map(node => ({ id: node.id, label: nodeDisplayName(node) }));
-  const query = search.trim().toLowerCase();
-  const matchingNodes = nodeOptions.filter(node =>
-    node.label.toLowerCase().includes(query) || node.id.toLowerCase().includes(query));
+    : previousNodes.map(node => ({ id: node.id, label: nodeDisplayName(node) })))
+    .map(node => ({ ...node, distance: distances.get(node.id) }))
+    .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
   const selectedId = readOnly ? historicalNodeId : resolvedPrevNodeId;
-  const selectedOption = nodeOptions.find(node => node.id === selectedId);
 
   if (!isExpanded) return null;
 
@@ -209,32 +197,8 @@ const InputPanel: React.FC<InputPanelProps> = ({
         </TabsList>
         <TabsContent value="previous">
           {nodeOptions.length > 0 && setSelectedPrevNodeId && (
-            <div className="mb-3 space-y-2">
-              <Input
-                type="search"
-                aria-label="Search previous nodes"
-                placeholder="Search nodes..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="h-8 text-xs"
-              />
-              <select
-                aria-label={readOnly ? "Select executed node" : "Select previous node"}
-                className="w-full border border-border p-2 rounded-md text-xs bg-background text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                value={selectedId || ""}
-                onChange={e => setSelectedPrevNodeId(e.target.value)}
-              >
-                <option value="">Select node...</option>
-                {selectedOption && !matchingNodes.some(node => node.id === selectedId) && (
-                  <option value={selectedOption.id} hidden>{selectedOption.label}</option>
-                )}
-                {matchingNodes.map(node => (
-                  <option key={node.id} value={node.id}>{node.label}</option>
-                ))}
-              </select>
-              {matchingNodes.length === 0 && (
-                <p className="text-xs text-muted-foreground">No matching nodes.</p>
-              )}
+            <div className="mb-3">
+              <NodeInputSelector options={nodeOptions} value={selectedId} onChange={setSelectedPrevNodeId} />
             </div>
           )}
           {readOnly && nodeOptions.length === 0 ? (

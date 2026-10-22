@@ -42,7 +42,7 @@ import {
 } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 import {
-  resolveHistoricalNodeId,
+  getPreviousNodes,
   resolveLiveInputData,
   resolvePreviousNodeId,
 } from "@/utils/inputPanelSelection";
@@ -192,17 +192,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     );
   }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
 
-  // History previews use the run's executed outputs, independently of editor topology.
+  // Share topology rules; historical values still come only from this run's results.
   const previousNodes = useMemo<readonly SemanticNode[]>(() => {
-    if (readOnly) {
-      return (data.allNodeExecutions ?? []).map((execution: { nodeId: string; output?: unknown }) => ({
-        id: execution.nodeId,
-        data: { output: execution.output },
-      }));
-    }
-    if (!nodeId) return [];
-    return canonicalGraph.getUpstreamNodes(nodeId).filter(node => node.id !== nodeId);
-  }, [canonicalGraph, nodeId, readOnly, data.allNodeExecutions]);
+    const upstream = getPreviousNodes<SemanticNode>(
+      nodeId ?? undefined,
+      readOnly ? data.historyNodes ?? [] : canonicalGraph.nodes,
+      readOnly ? data.historyEdges ?? [] : canonicalGraph.edges,
+    );
+    if (!readOnly) return upstream;
+    const recorded = new Map<string, unknown>((data.allNodeExecutions ?? []).map(
+      (execution: { nodeId: string; output?: unknown }): [string, unknown] => [execution.nodeId, execution.output],
+    ));
+    return upstream.map(node => ({ ...node, data: { ...node.data, output: recorded.get(node.id) } }));
+  }, [canonicalGraph, nodeId, readOnly, data.historyNodes, data.historyEdges, data.allNodeExecutions]);
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;
@@ -217,23 +219,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   const preferredPrevNodeId = useMemo(() => {
     if (!nodeId) return undefined;
-    return canonicalGraph.edges.find(
-      (edge) => edge.target === nodeId && edge.sourceHandle === "done",
+    const edges = readOnly ? data.historyEdges ?? [] : canonicalGraph.edges;
+    return edges.find(
+      (edge: { target: string; sourceHandle?: string | null }) => edge.target === nodeId && edge.sourceHandle === "done",
     )?.source;
-  }, [canonicalGraph.edges, nodeId]);
+  }, [canonicalGraph.edges, nodeId, readOnly, data.historyEdges]);
 
   const resolvedPrevNodeId = useMemo(
-    () => readOnly
-      ? resolveHistoricalNodeId(selectedPrevNodeId, data.allNodeExecutions ?? [], nodeId ?? undefined, data.historyEdges)
-      : resolvePreviousNodeId(
-        selectedPrevNodeId,
-        previousNodes,
-        preferredPrevNodeId,
-      ),
-    [preferredPrevNodeId, previousNodes, selectedPrevNodeId, readOnly, data.allNodeExecutions, nodeId, data.historyEdges],
+    () => resolvePreviousNodeId(selectedPrevNodeId, previousNodes, preferredPrevNodeId),
+    [preferredPrevNodeId, previousNodes, selectedPrevNodeId],
   );
 
-  // Historical selection is owned by InputPanel's executed-node options.
+  // InputPanel owns historical selection against the saved graph's upstream nodes.
   useEffect(() => {
     if (readOnly) return;
     const nextId = resolvedPrevNodeId ?? "";

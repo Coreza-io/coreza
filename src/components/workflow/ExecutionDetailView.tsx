@@ -163,8 +163,9 @@ export function ExecutionDetailView({
           output: nodeExec?.output,
           // Use execution input for input panel
           executionInput: nodeExec?.input,
-          // Pass all node executions for dropdown in input panel
+          // Options use saved topology; values use only this run's recorded executions.
           allNodeExecutions: nodeExecutions,
+          historyNodes: Array.isArray(execution.nodes) ? hydratedNodes : undefined,
           // Missing historical topology must not select sources from today's editor graph.
           historyEdges: Array.isArray(execution.edges) ? sourceEdges : [],
           // Display name from execution or original
@@ -172,7 +173,7 @@ export function ExecutionDetailView({
         },
       };
     });
-  }, [hydratedNodes, nodeExecutionMap, nodeExecutions, sourceEdges, execution.edges]);
+  }, [hydratedNodes, nodeExecutionMap, nodeExecutions, sourceEdges, execution.edges, execution.nodes]);
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {

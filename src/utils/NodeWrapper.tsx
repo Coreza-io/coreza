@@ -327,7 +327,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
     <NodePortalContainerContext.Provider value={portalContainer}>
     <div ref={capturePortalContainer} className={`relative ${presentationExpanded ? "node-expanded" : ""}`}>
       {/* Input Data Panel */}
-      {presentationExpanded && <InputPanel key={`${scopeKey ?? ""}:${nodeId}`} {...mergedInputPanelProps} />}
+      {presentationExpanded && <InputPanel key={`input:${scopeKey ?? ""}:${nodeId}`} {...mergedInputPanelProps} />}
 
       {/* Main Node Card */}
       <Card
@@ -470,6 +470,8 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
                   ...style,
                   width: 24,
                   height: 24,
+                  background: "transparent",
+                  border: "none",
                   transform: handleTransform,
                   // Keep handle geometry available without bleeding into the input/output panels.
                   visibility: presentationExpanded ? "hidden" : undefined,
@@ -700,7 +702,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
       </Card>
 
       {/* Output Data Panel */}
-      {presentationExpanded && <OutputPanel key={`${scopeKey ?? ""}:${nodeId}`} {...mergedOutputPanelProps} />}
+      {presentationExpanded && <OutputPanel key={`output:${scopeKey ?? ""}:${nodeId}`} {...mergedOutputPanelProps} />}
 
       {/* Delete Confirmation Dialog - only in editor mode */}
       {!readOnly && (

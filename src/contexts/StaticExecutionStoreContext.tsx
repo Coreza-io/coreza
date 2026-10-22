@@ -15,7 +15,7 @@
  * - Pre-populated with historical execution data from props
  */
 
-import { createContext, useContext, useRef, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useRef, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import ExecutionContext from '@/utils/executionContext';
 
 interface StaticExecutionStoreContextValue {
@@ -33,6 +33,8 @@ interface NodeExecutionData {
   status?: string;
 }
 
+const EMPTY_EXECUTIONS: NodeExecutionData[] = [];
+
 interface StaticExecutionStoreProviderProps {
   children: ReactNode;
   nodeExecutions?: NodeExecutionData[];
@@ -40,13 +42,21 @@ interface StaticExecutionStoreProviderProps {
 
 export const StaticExecutionStoreProvider = ({ 
   children, 
-  nodeExecutions = [] 
+  nodeExecutions = EMPTY_EXECUTIONS 
 }: StaticExecutionStoreProviderProps) => {
   const storeRef = useRef<ExecutionContext>(new ExecutionContext());
   const [version, setVersion] = useState(0);
+  const previousExecutions = useRef<NodeExecutionData[] | null>(null);
   
   // Pre-populate store with historical execution data
   useEffect(() => {
+    const previous = previousExecutions.current;
+    if (previous?.length === nodeExecutions.length && previous.every((exec, index) => {
+      const next = nodeExecutions[index];
+      return exec.nodeId === next.nodeId && exec.output === next.output && exec.input === next.input;
+    })) return;
+    previousExecutions.current = nodeExecutions;
+    // ExecutionContext has no per-write subscribers; publish once after replacement.
     storeRef.current.clear();
     nodeExecutions.forEach(exec => {
       storeRef.current.setNodeData(exec.nodeId, {
@@ -57,14 +67,11 @@ export const StaticExecutionStoreProvider = ({
     setVersion(v => v + 1);
   }, [nodeExecutions]);
   
-  const notifyUpdate = () => setVersion(v => v + 1);
+  const notifyUpdate = useCallback(() => setVersion(v => v + 1), []);
+  const value = useMemo(() => ({ store: storeRef.current, version, notifyUpdate }), [version, notifyUpdate]);
   
   return (
-    <StaticExecutionStoreContext.Provider value={{ 
-      store: storeRef.current, 
-      version, 
-      notifyUpdate 
-    }}>
+    <StaticExecutionStoreContext.Provider value={value}>
       {children}
     </StaticExecutionStoreContext.Provider>
   );

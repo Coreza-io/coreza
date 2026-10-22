@@ -17,6 +17,15 @@ export function resolvePreviousNodeId(
   return previousNodes[0]?.id;
 }
 
+export function resolveHistoricalNodeId(
+  selectedId: string | undefined,
+  executions: readonly { nodeId: string }[],
+): string | undefined {
+  return executions.some(({ nodeId }) => nodeId === selectedId)
+    ? selectedId
+    : executions[0]?.nodeId;
+}
+
 export function resolveLiveInputData(
   selectedId: string | undefined,
   nodes: readonly InputNode[],

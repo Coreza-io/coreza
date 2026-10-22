@@ -94,29 +94,17 @@ export function ExecutionDetailView({
     [focusedClusterId, clusters],
   );
 
-  // Use execution's stored snapshot if available, otherwise fall back to current workflow
-  // This ensures historical executions display the workflow state at execution time
-  // Deep clone nodes to prevent mutation of original editor nodes
-  const sourceNodes = useMemo(() => {
-    const hasExecutionNodes =
-      execution.nodes &&
-      Array.isArray(execution.nodes);
-    if (hasExecutionNodes) {
-      return JSON.parse(JSON.stringify(execution.nodes)) as Node[];
-    }
-    return JSON.parse(JSON.stringify(nodes)) as Node[];
-  }, [execution.nodes, nodes]);
-
-  // Deep clone edges to prevent mutation
-  const sourceEdges = useMemo(() => {
-    if (
-      execution.edges &&
-      Array.isArray(execution.edges)
-    ) {
-      return JSON.parse(JSON.stringify(execution.edges)) as Edge[];
-    }
-    return JSON.parse(JSON.stringify(edges)) as Edge[];
-  }, [execution.edges, edges]);
+  // Depend on the chosen snapshot, so live editor changes do not re-clone history.
+  const snapshotNodes = Array.isArray(execution.nodes) ? execution.nodes : nodes;
+  const snapshotEdges = Array.isArray(execution.edges) ? execution.edges : edges;
+  const sourceNodes = useMemo(
+    () => JSON.parse(JSON.stringify(snapshotNodes)) as Node[],
+    [snapshotNodes],
+  );
+  const sourceEdges = useMemo(
+    () => JSON.parse(JSON.stringify(snapshotEdges)) as Edge[],
+    [snapshotEdges],
+  );
 
   // Get node execution data by nodeId
   const nodeExecutionMap = useMemo(() => {
@@ -336,12 +324,7 @@ export function ExecutionDetailView({
           <ReactFlowProvider key={execution.id}>
             <StableNodeProvider>
               <StaticExecutionStoreProvider
-                nodeExecutions={nodeExecutions.map((exec) => ({
-                  nodeId: exec.nodeId,
-                  output: exec.output,
-                  input: exec.input,
-                  status: exec.status,
-                }))}
+                nodeExecutions={nodeExecutions}
               >
                 <ReactFlow
                   colorMode={resolvedTheme}

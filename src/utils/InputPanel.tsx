@@ -19,13 +19,15 @@ import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
 import { useOptionalSemanticGraphSnapshot } from "@/contexts/StableNodeContext";
-import { resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
+import { resolveHistoricalNodeId, resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
 
 type NodeExecutionLog = {
   nodeId: string;
   nodeName: string;
   output?: any;
   input?: any;
+  completedAt?: string;
+  startedAt?: string;
 };
 
 const owns = (value: unknown, key: PropertyKey): value is Record<PropertyKey, unknown> =>
@@ -135,30 +137,25 @@ const InputPanel: React.FC<InputPanelProps> = ({
     setSelectedPrevNodeId,
   ]);
 
-  // Set default selection in readOnly mode
-  useEffect(() => {
-    if (!readOnly || !allNodeExecutions || selectedPrevNodeId) return;
-    if (typeof setSelectedPrevNodeId !== "function") return;
+  const historicalNodeId = resolveHistoricalNodeId(selectedPrevNodeId, allNodeExecutions ?? []);
+  const selectedExecution = allNodeExecutions?.find(exec => exec.nodeId === historicalNodeId);
+  const historicalTimestamp = selectedExecution?.completedAt ?? selectedExecution?.startedAt;
+  const timestamp = readOnly
+    ? historicalTimestamp ? new Date(historicalTimestamp) : undefined
+    : new Date();
 
-    // Select the first executed node by default
-    if (allNodeExecutions.length > 0) {
-      setSelectedPrevNodeId(allNodeExecutions[0].nodeId);
+  useEffect(() => {
+    if (readOnly && setSelectedPrevNodeId && selectedPrevNodeId !== (historicalNodeId ?? "")) {
+      setSelectedPrevNodeId(historicalNodeId ?? "");
     }
-  }, [readOnly, allNodeExecutions, selectedPrevNodeId, setSelectedPrevNodeId]);
+  }, [readOnly, historicalNodeId, selectedPrevNodeId, setSelectedPrevNodeId]);
 
   // Get outputData - use executionInput directly in readOnly mode
   const outputData = useMemo(() => {
     void executionStoreVersion;
-    // In readOnly mode with allNodeExecutions, use selected node's output
-    if (readOnly && allNodeExecutions && selectedPrevNodeId) {
-      const selectedExec = allNodeExecutions.find(
-        (e) => e.nodeId === selectedPrevNodeId,
-      );
-      return owns(selectedExec, "output") ? selectedExec.output : {};
-    }
-    // Fallback to executionInput if no selection
-    if (readOnly && executionInput !== undefined) {
-      return executionInput;
+    if (readOnly) {
+      if (selectedExecution) return owns(selectedExecution, "output") ? selectedExecution.output : {};
+      return executionInput !== undefined ? executionInput : {};
     }
     return resolveLiveInputData(
       resolvedPrevNodeId,
@@ -172,8 +169,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
     executionStoreVersion,
     readOnly,
     executionInput,
-    allNodeExecutions,
-    selectedPrevNodeId,
+    selectedExecution,
   ]);
 
   const nodeOptions = readOnly
@@ -182,7 +178,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const query = search.trim().toLowerCase();
   const matchingNodes = nodeOptions.filter(node =>
     node.label.toLowerCase().includes(query) || node.id.toLowerCase().includes(query));
-  const selectedId = readOnly ? selectedPrevNodeId : resolvedPrevNodeId;
+  const selectedId = readOnly ? historicalNodeId : resolvedPrevNodeId;
   const selectedOption = nodeOptions.find(node => node.id === selectedId);
 
   if (!isExpanded) return null;
@@ -198,13 +194,13 @@ const InputPanel: React.FC<InputPanelProps> = ({
         <div className="font-semibold text-foreground text-sm tracking-tight">
           Input Data
         </div>
-        <div className="text-xs text-muted-foreground">
-          {new Date().toLocaleTimeString("en-US", {
+        {timestamp && Number.isFinite(timestamp.getTime()) && <div className="text-xs text-muted-foreground">
+          {timestamp.toLocaleTimeString("en-US", {
             timeZone: userTimezone,
             hour12: false,
           })}{" "}
           {userTimezone}
-        </div>
+        </div>}
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="nodrag nopan p-3 h-[calc(100%-42px)] overflow-auto">
         <TabsList aria-label="Input data source" className="grid w-full grid-cols-2 mb-3">
@@ -241,7 +237,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
               )}
             </div>
           )}
-          {readOnly || previousNodes.length > 0 ? (
+          {readOnly && nodeOptions.length === 0 ? (
+            <div className="text-sm text-muted-foreground italic text-center py-8">
+              No node execution details available for this run.
+            </div>
+          ) : readOnly || previousNodes.length > 0 ? (
             <DraggableFieldsPanel
               data={outputData}
               persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}

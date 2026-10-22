@@ -18,7 +18,7 @@ import {
 } from "../../brokers";
 import CredentialManager from "../../utils/credentialManager";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
-import { isBrokerAuthError } from "../../utils/brokerAuthError";
+import { formatBrokerAuthenticationFailure, isBrokerAuthError } from "../../utils/brokerAuthError";
 import {
   cacheOrderIntent,
   generateIdempotencyKey,
@@ -56,6 +56,10 @@ export class BrokerExecutor implements INodeExecutor {
     const workflowId = context?.workflowId ?? "manual";
     let operation = "";
     let broker = "";
+    let apiKeyRequest = false;
+    let credentialLabel: string | undefined;
+    let requestHost: string | undefined;
+    let requestEnvironment: string | undefined;
     let fetchStart: number | undefined;
     let requestCount = () => 0;
 
@@ -187,6 +191,9 @@ export class BrokerExecutor implements INodeExecutor {
         };
       }
 
+      // credential_id is the saved name: CredentialManager resolves it with eq("name", ...),
+      // including on cache hits. Its returned payload contains no display-label field.
+      credentialLabel = typeof credential_id === "string" ? credential_id : undefined;
       const creds = credentials.client_json;
 
       // Handle OAuth token refresh if needed
@@ -207,6 +214,14 @@ export class BrokerExecutor implements INodeExecutor {
           : config.baseUrl;
 
       const headers = await config.makeAuthHeaders(workingCreds);
+
+      apiKeyRequest = config.authType === "api_key";
+      requestHost = new URL(baseUrl).hostname;
+      if (broker === "alpaca") {
+        requestEnvironment = requestHost === "paper-api.alpaca.markets"
+          ? "Paper Trading"
+          : requestHost === "api.alpaca.markets" ? "Live Trading" : undefined;
+      }
 
       let data: any;
       fetchStart = performance.now();
@@ -379,6 +394,17 @@ export class BrokerExecutor implements INodeExecutor {
             `${message} (hint: Conditional order types must use algoOrder endpoint)`,
           );
         }
+      }
+
+      if (apiKeyRequest && axios.isAxiosError(error) && error.response?.status === 401 && !isBrokerAuthError(error)) {
+        enrichedError = formatBrokerAuthenticationFailure({
+          provider: broker,
+          nodeName: node.displayName || node.data?.displayName || node.id || node.name || "Broker",
+          operation,
+          credentialLabel,
+          environment: requestEnvironment,
+          requestHost,
+        });
       }
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {

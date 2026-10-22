@@ -201,7 +201,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       }));
     }
     if (!nodeId) return [];
-    return canonicalGraph.getUpstreamNodes(nodeId);
+    return canonicalGraph.getUpstreamNodes(nodeId).filter(node => node.id !== nodeId);
   }, [canonicalGraph, nodeId, readOnly, data.allNodeExecutions]);
 
   const incomingEdgeCount = useMemo(() => {

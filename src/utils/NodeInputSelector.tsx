@@ -27,13 +27,12 @@ export default function NodeInputSelector({ options, value, onChange }: {
   };
 
   return (
-    <Command shouldFilter={false} className="nodrag nopan h-auto overflow-visible bg-transparent">
+    <Command label="Input node" shouldFilter={false} className="nodrag nopan h-auto overflow-visible bg-transparent">
       <Popover.Root open={open} onOpenChange={changeOpen}>
         <Popover.Anchor asChild>
           <div ref={anchor} className="flex h-9 items-center rounded-md border border-input bg-background focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
-            <CommandPrimitive.Input
+            <CommandPrimitive.Input asChild
               ref={input}
-              aria-expanded={open}
               aria-label="Select or search input nodes"
               value={open ? search : selected?.label ?? ""}
               onValueChange={next => { setOpen(true); setSearch(next); }}
@@ -47,6 +46,7 @@ export default function NodeInputSelector({ options, value, onChange }: {
                 }
               }}
               onKeyDown={event => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (!open && !event.ctrlKey && !event.metaKey && !event.altKey &&
                   (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete")) {
                   event.preventDefault();
@@ -65,9 +65,15 @@ export default function NodeInputSelector({ options, value, onChange }: {
               }}
               placeholder={open ? "Search nodes..." : "Select node..."}
               className="min-w-0 flex-1 bg-transparent px-2 py-1 text-xs text-foreground outline-none placeholder:text-muted-foreground"
-            />
+            >
+              {/* cmdk fixes aria-expanded to true; the slotted input owns the actual state. */}
+              <input aria-expanded={open} />
+            </CommandPrimitive.Input>
             <button type="button" aria-label={open ? "Close node options" : "Show node options"}
               aria-expanded={open} onMouseDown={event => event.preventDefault()}
+              onKeyDown={event => {
+                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+              }}
               onClick={() => changeOpen(!open)} className="shrink-0 p-2 text-muted-foreground">
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
             </button>

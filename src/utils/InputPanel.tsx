@@ -86,7 +86,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const edges = readOnly ? initialEdges : canonicalGraph?.edges ?? initialEdges;
 
   const distances = useMemo(
-    () => getUpstreamDistances(nodeId, readOnly ? historyEdges ?? initialEdges : edges),
+    () => getUpstreamDistances(nodeId, readOnly ? historyEdges ?? [] : edges),
     [nodeId, readOnly, historyEdges, initialEdges, edges],
   );
   const previousNodes = useMemo(() => {
@@ -126,7 +126,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   ]);
 
   const historicalNodeId = readOnly
-    ? resolveHistoricalNodeId(selectedPrevNodeId, allNodeExecutions ?? [], nodeId, historyEdges ?? initialEdges)
+    ? resolveHistoricalNodeId(selectedPrevNodeId, allNodeExecutions ?? [], nodeId, historyEdges)
     : undefined;
   const selectedExecution = allNodeExecutions?.find(exec => exec.nodeId === historicalNodeId);
   const historicalTimestamp = selectedExecution?.completedAt ?? selectedExecution?.startedAt;

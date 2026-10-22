@@ -42,6 +42,7 @@ import {
 } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 import {
+  resolveHistoricalNodeId,
   resolveLiveInputData,
   resolvePreviousNodeId,
 } from "@/utils/inputPanelSelection";
@@ -191,11 +192,17 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     );
   }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
 
-  // Canonical topology changes include same-count reconnects and workflow replacement.
-  const previousNodes = useMemo(() => {
+  // History previews use the run's executed outputs, independently of editor topology.
+  const previousNodes = useMemo<readonly SemanticNode[]>(() => {
+    if (readOnly) {
+      return (data.allNodeExecutions ?? []).map((execution: { nodeId: string; output?: unknown }) => ({
+        id: execution.nodeId,
+        data: { output: execution.output },
+      }));
+    }
     if (!nodeId) return [];
     return canonicalGraph.getUpstreamNodes(nodeId);
-  }, [canonicalGraph, nodeId]);
+  }, [canonicalGraph, nodeId, readOnly, data.allNodeExecutions]);
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;
@@ -216,13 +223,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   }, [canonicalGraph.edges, nodeId]);
 
   const resolvedPrevNodeId = useMemo(
-    () =>
-      resolvePreviousNodeId(
+    () => readOnly
+      ? resolveHistoricalNodeId(selectedPrevNodeId, data.allNodeExecutions ?? [])
+      : resolvePreviousNodeId(
         selectedPrevNodeId,
         previousNodes,
         preferredPrevNodeId,
       ),
-    [preferredPrevNodeId, previousNodes, selectedPrevNodeId],
+    [preferredPrevNodeId, previousNodes, selectedPrevNodeId, readOnly, data.allNodeExecutions],
   );
 
   // Historical selection is owned by InputPanel's executed-node options.
@@ -237,12 +245,15 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const previousExecutionData = useExecutionNodeData(resolvedPrevNodeId);
   const selectedInputData = useMemo(() => {
     void previousExecutionData;
+    if (readOnly) {
+      return previousNodes.find(node => node.id === resolvedPrevNodeId)?.data.output;
+    }
     return resolveLiveInputData(
       resolvedPrevNodeId,
       canonicalGraph.nodes,
       (sourceNodeId) => executionStore.getNodeData(sourceNodeId),
     );
-  }, [canonicalGraph.nodes, executionStore, resolvedPrevNodeId, previousExecutionData]);
+  }, [canonicalGraph.nodes, executionStore, resolvedPrevNodeId, previousExecutionData, readOnly, previousNodes]);
   const selectedPrevNode = previousNodes.find(
     (node) => node.id === resolvedPrevNodeId,
   );
@@ -593,7 +604,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     selectOptions: credentialsHook.selectOptions,
     showAuth,
     previousNodes,
-    selectedPrevNodeId,
+    selectedPrevNodeId: readOnly ? resolvedPrevNodeId ?? "" : selectedPrevNodeId,
     selectedInputData,
     incomingEdgeCount,
     displayedData: outputHook.displayedData,

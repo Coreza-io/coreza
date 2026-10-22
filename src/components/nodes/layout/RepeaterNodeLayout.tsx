@@ -230,7 +230,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             className={editorClass}
             value={String(row.fieldName ?? "")}
             onChange={(e) => update(index, "fieldName", e.target.value)}
-            disabled={disabled}
+            readOnly={disabled}
           />
         </div>
         <div className="w-32">
@@ -308,7 +308,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLTextAreaElement | null>}
               onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
-              disabled={disabled}
+              readOnly={disabled}
             />
           ) : (
             <input
@@ -320,7 +320,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
               onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
-              disabled={disabled}
+              readOnly={disabled}
             />
           )}
         </ReferenceDropTarget>

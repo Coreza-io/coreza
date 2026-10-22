@@ -267,7 +267,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     onFocus: handleInputFocus,
     onDragEnter: referenceDropEventHandlers.onDragEnter,
     onDrop: handleDropWrapper,
-    disabled: readOnly,
+    readOnly,
   };
 
   if (!shouldRender) return null;

@@ -8,11 +8,13 @@
  * See the LICENSE file for details.
  */
 
-import React, { useState } from "react";
+import React, { useContext } from "react";
+import { useEdgeToolbarHover } from "@/hooks/useEdgeToolbarHover";
 import { useAgentParticipantActive } from "@/stores/agentActivityStore";
 import {
   ConnectionLineComponentProps,
   EdgeProps,
+  EdgeLabelRenderer,
   getSmoothStepPath,
   getBezierPath,
   MarkerType,
@@ -27,6 +29,8 @@ import { useResolvedTheme } from "@/hooks/useResolvedTheme";
 
 export interface EdgeControl {
   icon: React.ReactNode;
+  label?: string;
+  action?: "delete";
   onClick: (e: React.MouseEvent) => void;
 }
 
@@ -47,19 +51,73 @@ const buildControls = (data?: any): EdgeControl[] => {
   const controls: EdgeControl[] = [];
   if (data?.onAddEdge) {
     controls.push({
-      icon: <Plus size={12} color="#22c55e" />,
+      icon: <Plus size={14} />,
+      label: "Add connection",
       onClick: data.onAddEdge,
     });
   }
   if (data?.onRemoveEdge) {
     controls.push({
-      icon: <Trash2 size={12} color="#e11d48" />,
+      icon: <Trash2 size={14} />,
+      label: "Delete connection",
+      action: "delete",
       onClick: data.onRemoveEdge,
     });
   }
   return controls;
 };
 
+
+const EDGE_STROKE_WIDTH = 3;
+const EDGE_INTERACTION_WIDTH = 40;
+const readStrokeWidth = (value?: React.CSSProperties["strokeWidth"]): number => {
+  const width = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(width) ? width : EDGE_STROKE_WIDTH;
+};
+
+// History has no editing provider, even when an old snapshot contains callbacks.
+export const EdgeEditingContext = React.createContext({
+  sessionId: "",
+  enabled: false,
+  canEdit: () => false,
+  removeEdge: (_edgeId: string) => {},
+});
+
+const EdgeToolbar = ({ edgeId, x, y, controls, hover }: {
+  edgeId: string;
+  x: number;
+  y: number;
+  controls: EdgeControl[];
+  hover: ReturnType<typeof useEdgeToolbarHover>;
+}) => {
+  const editing = useContext(EdgeEditingContext);
+  if (!hover.visible) return null;
+  return (
+    <EdgeLabelRenderer>
+      <div className="edge-toolbar nodrag nopan absolute flex gap-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
+        style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`, pointerEvents: "all", zIndex: 1100 }}
+        onMouseEnter={hover.onToolbarEnter} onMouseLeave={hover.onToolbarLeave}
+        onFocusCapture={hover.onFocus} onBlurCapture={hover.onBlur}
+        onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
+        role="group" aria-label="Connection controls">
+        {controls.map((control, index) => (
+          <button key={index} type="button" aria-label={control.label ?? "Connection action"}
+            data-testid={control.label === "Delete connection" ? "edge-delete-button" : undefined}
+            className="flex h-8 w-8 items-center justify-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            onClick={event => {
+              event.stopPropagation();
+              if (!editing.enabled || !editing.canEdit()) { hover.close(); return; }
+              if (control.action === "delete") editing.removeEdge(edgeId);
+              else control.onClick(event);
+              hover.close();
+            }}>
+            {control.icon}
+          </button>
+        ))}
+      </div>
+    </EdgeLabelRenderer>
+  );
+};
 
 /** Narrow subscription: only the source node's visual category. */
 const useSourceNodeTheme = (nodeId: string | undefined) => {
@@ -385,18 +443,14 @@ const calculateSmartPath = (
       return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth curve
-      const path = getBezierPath({
+      const [path, midX, midY] = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
         targetX,
         targetY,
         targetPosition,
-      })[0];
-
-      // Use simple average for forward connections
-      const midX = (sourceX + targetX) / 2;
-      const midY = (sourceY + targetY) / 2;
+      });
 
       return { path, midX, midY };
     }
@@ -443,18 +497,14 @@ const calculateSmartPath = (
       return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth curve
-      const path = getBezierPath({
+      const [path, midX, midY] = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
         targetX,
         targetY,
         targetPosition,
-      })[0];
-
-      // Use simple average for forward connections
-      const midX = (sourceX + targetX) / 2;
-      const midY = (sourceY + targetY) / 2;
+      });
 
       return { path, midX, midY };
     }
@@ -501,18 +551,14 @@ const calculateSmartPath = (
       return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth curve
-      const path = getBezierPath({
+      const [path, midX, midY] = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
         targetX,
         targetY,
         targetPosition,
-      })[0];
-
-      // Use simple average for forward connections
-      const midX = (sourceX + targetX) / 2;
-      const midY = (sourceY + targetY) / 2;
+      });
 
       return { path, midX, midY };
     }
@@ -559,36 +605,28 @@ const calculateSmartPath = (
       return { path, midX, midY };
     } else {
       // Simple forward connection - use bezier for smooth curve
-      const path = getBezierPath({
+      const [path, midX, midY] = getBezierPath({
         sourceX,
         sourceY,
         sourcePosition,
         targetX,
         targetY,
         targetPosition,
-      })[0];
-
-      // Use simple average for forward connections
-      const midX = (sourceX + targetX) / 2;
-      const midY = (sourceY + targetY) / 2;
+      });
 
       return { path, midX, midY };
     }
   }
 
   // Default fallback - use bezier for smooth curves
-  const path = getBezierPath({
+  const [path, midX, midY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-  })[0];
-
-  // Use simple average for default case
-  const midX = (sourceX + targetX) / 2;
-  const midY = (sourceY + targetY) / 2;
+  });
 
   return { path, midX, midY };
 };
@@ -618,9 +656,10 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
   animated,
   className,
 }) => {
-  const [hovered, setHovered] = useState(false);
-  const agentActive = useAgentEdgeActive(id, source, target, data);
+  const editing = useContext(EdgeEditingContext);
   const computedControls = controls.length > 0 ? controls : buildControls(data);
+  const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, editing.enabled && computedControls.length > 0, editing.canEdit, editing.sessionId);
+  const agentActive = useAgentEdgeActive(id, source, target, data);
   const isSelfLoop = source === target;
   const sourceTheme = useSourceNodeTheme(source);
   const nodes = useEndpointBounds(source, target);
@@ -638,7 +677,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
         targetY={targetY}
         sourcePosition={sourcePosition}
         targetPosition={targetPosition}
-        style={{ ...style, stroke: isDarkMode ? sourceTheme.edgeColor : "#9ca3af", strokeWidth: 2 }}
+        style={{ stroke: isDarkMode ? sourceTheme.edgeColor : "#9ca3af", strokeWidth: EDGE_STROKE_WIDTH, ...style }}
         markerEnd={markerEnd}
         data={data}
         controls={computedControls}
@@ -659,12 +698,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
     isDarkMode && typeof strokeValue === "string"
       ? strokeValue
       : defaultCordColor;
-  const strokeWidth =
-    typeof strokeWidthValue === "number"
-      ? strokeWidthValue
-      : strokeWidthValue
-        ? Number.parseFloat(String(strokeWidthValue)) || 2
-        : 2;
+  const strokeWidth = readStrokeWidth(strokeWidthValue);
 
   const extensionDistance = -25;
   const topHandleVisualOffset = 35;
@@ -734,15 +768,15 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
 
   return (
     <g
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={hover.onEdgeEnter}
+      onMouseLeave={hover.onEdgeLeave}
       className="plug-edge p-2"
     >
       {/* Invisible wider path for better hover detection */}
       <path
         d={edgePath}
         stroke="transparent"
-        strokeWidth={3}
+        strokeWidth={EDGE_INTERACTION_WIDTH}
         fill="none"
         style={{ pointerEvents: "stroke" }}
       />
@@ -758,7 +792,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           .filter(Boolean)
           .join(" ")}
         stroke={agentActive ? "#0891b2" : cordColor}
-        strokeWidth={agentActive ? 3 : strokeWidth}
+        strokeWidth={agentActive ? Math.max(EDGE_STROKE_WIDTH, strokeWidth) : strokeWidth}
         markerEnd={markerEnd}
         fill="none"
         style={{
@@ -789,55 +823,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           </textPath>
         </text>
       )}
-      {computedControls.length > 0 && hovered && (
-        <foreignObject
-          x={midX - 30}
-          y={midY - 15}
-          width={60}
-          height={30}
-          style={{ pointerEvents: "all", overflow: "visible" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: "6px",
-              justifyContent: "center",
-              alignItems: "center",
-              height: "100%",
-            }}
-          >
-            {computedControls.map((ctrl, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={ctrl.onClick}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  padding: "10px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#f3f4f6";
-                  e.currentTarget.style.transform = "scale(1.1)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#fff";
-                  e.currentTarget.style.transform = "scale(1)";
-                }}
-              >
-                {ctrl.icon}
-              </button>
-            ))}
-          </div>
-        </foreignObject>
-      )}
+      <EdgeToolbar edgeId={id} x={midX} y={midY} controls={computedControls} hover={hover} />
     </g>
   );
 };
@@ -899,12 +885,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
           ? sourceTheme.edgeColor
           : "#9ca3af";
 
-  const strokeWidth =
-    typeof style.strokeWidth === "number"
-      ? style.strokeWidth
-      : style.strokeWidth
-        ? Number.parseFloat(String(style.strokeWidth)) || 2
-        : 2;
+  const strokeWidth = readStrokeWidth(style.strokeWidth);
 
   const cordColor = connectionStatus === "invalid" ? "#ef4444" : baseStroke;
   const fromType = fromHandle?.type ?? "source";
@@ -1070,18 +1051,19 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
     midY = result.midY;
   }
 
-  const [hovered, setHovered] = useState(false);
+  const editing = useContext(EdgeEditingContext);
+  const hover = useEdgeToolbarHover(`${editing.sessionId}:${id}`, editing.enabled && controls.length > 0, editing.canEdit, editing.sessionId);
 
   return (
     <g
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={hover.onEdgeEnter}
+      onMouseLeave={hover.onEdgeLeave}
     >
       {/* Invisible wider path for better hover detection */}
       <path
         d={pathD}
         stroke="transparent"
-        strokeWidth={1}
+        strokeWidth={EDGE_INTERACTION_WIDTH}
         fill="none"
         style={{ pointerEvents: "stroke" }}
       />
@@ -1089,9 +1071,11 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
         id={id}
         className="react-flow__edge-path"
         d={pathD}
+        fill="none"
         style={{
+          strokeWidth: EDGE_STROKE_WIDTH,
           ...style,
-          ...(agentActive ? { stroke: "#0891b2", strokeWidth: 3, strokeDasharray: "6 4" } : {}),
+          ...(agentActive ? { stroke: "#0891b2", strokeWidth: Math.max(EDGE_STROKE_WIDTH, readStrokeWidth(style?.strokeWidth)), strokeDasharray: "6 4" } : {}),
           strokeLinecap: "round",
           strokeLinejoin: "round",
           pointerEvents: "none",
@@ -1105,55 +1089,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           </textPath>
         </text>
       )}
-      {controls.length > 0 && hovered && (
-        <foreignObject
-          x={midX - 30}
-          y={midY - 15}
-          width={60}
-          height={30}
-          style={{ pointerEvents: "all", overflow: "visible" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: "6px",
-              justifyContent: "center",
-              alignItems: "center",
-              height: "100%",
-            }}
-          >
-            {controls.map((ctrl, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={ctrl.onClick}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  padding: "10px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#f3f4f6";
-                  e.currentTarget.style.transform = "scale(1.1)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#fff";
-                  e.currentTarget.style.transform = "scale(1)";
-                }}
-              >
-                {ctrl.icon}
-              </button>
-            ))}
-          </div>
-        </foreignObject>
-      )}
+      <EdgeToolbar edgeId={id} x={midX} y={midY} controls={controls} hover={hover} />
     </g>
   );
 };
@@ -1184,12 +1120,13 @@ export const SelfLoopEdge: React.FC<EdgeProps> = (props) => {
           isDarkMode
             ? (data?.loopColor as string) || "#6366f1"
             : "#9ca3af",
-        strokeWidth: 2,
+        strokeWidth: EDGE_STROKE_WIDTH,
         strokeDasharray: "5,5",
+        ...props.style,
       }}
       markerEnd={MarkerType.ArrowClosed}
       controls={controls}
-      data={{ label: data?.label }}
+      data={data}
     />
   );
 };
@@ -1203,7 +1140,7 @@ export const DefaultEdge: React.FC<EdgeProps> = (props) => {
       {...props}
       controls={controls}
       data={data}
-      style={{ strokeWidth: 3, ...props.style }}
+      style={{ strokeWidth: EDGE_STROKE_WIDTH, ...props.style }}
     />
   );
 };
@@ -1218,10 +1155,10 @@ export const LoopEdge: React.FC<EdgeProps> = (props) => {
     <InteractiveEdge
       {...props}
       selfLoopConfig={{ offsetX: 20, offsetY: 80, direction: "right" }}
-      style={{ stroke: isDarkMode ? "#22c55e" : "#9ca3af", strokeWidth: 3 }}
+      style={{ stroke: isDarkMode ? "#22c55e" : "#9ca3af", strokeWidth: EDGE_STROKE_WIDTH, ...props.style }}
       markerEnd={MarkerType.ArrowClosed}
       controls={controls}
-      data={{ label: data?.label }}
+      data={data}
     />
   );
 };

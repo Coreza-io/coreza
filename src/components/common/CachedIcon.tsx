@@ -9,6 +9,7 @@
  */
 
 import React, { memo } from 'react';
+import { getBundledNodeIcon } from '@/utils/bundledNodeIcons';
 
 // Icon cache to store loaded images
 const iconCache = new Map<string, HTMLImageElement>();
@@ -22,11 +23,20 @@ const preloadIcon = (src: string): Promise<void> => {
     }
 
     const img = new Image();
+    let triedFallback = false;
     img.onload = () => {
       iconCache.set(src, img);
       resolve();
     };
-    img.onerror = reject;
+    img.onerror = () => {
+      const fallback = getBundledNodeIcon(src);
+      if (!fallback || triedFallback) {
+        reject(new Error(`Unable to load icon: ${src}`));
+        return;
+      }
+      triedFallback = true;
+      img.src = fallback;
+    };
     img.src = src;
   });
 };
@@ -44,11 +54,13 @@ const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallb
   const [hasError, setHasError] = React.useState(false);
 
   React.useEffect(() => {
-    if (!iconCache.has(src)) {
-      preloadIcon(src)
-        .then(() => setIsLoaded(true))
-        .catch(() => setHasError(true));
-    }
+    let active = true;
+    setHasError(false);
+    setIsLoaded(iconCache.has(src));
+    preloadIcon(src)
+      .then(() => { if (active) setIsLoaded(true); })
+      .catch(() => { if (active) setHasError(true); });
+    return () => { active = false; };
   }, [src]);
 
   if (hasError) {
@@ -69,7 +81,7 @@ const CachedIcon: React.FC<CachedIconProps> = memo(({ src, alt, className, fallb
 
   return (
     <img
-      src={src}
+      src={iconCache.get(src)?.src ?? src}
       alt={alt}
       className={className}
       loading="eager"

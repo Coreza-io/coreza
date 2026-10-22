@@ -20,6 +20,7 @@ import React, {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
+import CachedIcon from "@/components/common/CachedIcon";
 import { NodeConfigurationTabs } from "./components/NodeConfigurationTabs";
 import { Label } from "@/components/ui/label";
 import {
@@ -990,7 +991,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       <div className="mb-4">
         <div className="flex items-center gap-2">
           {definition?.icon && (
-            <img src={definition.icon} alt="icon" className="w-6 h-6" />
+            <CachedIcon src={definition.icon} alt="icon" className="w-6 h-6" />
           )}
           <h2 className="font-semibold text-base text-foreground flex-1">
             {definition?.label || definition?.name || "Node"}

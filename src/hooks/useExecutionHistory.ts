@@ -79,6 +79,27 @@ export interface ExecutionRun {
   edge_count: number | null;
 }
 
+// Compare only the selected run on refresh, with a bounded traversal of persisted JSON.
+// If the budget is exceeded, accept the fresh record so real updates are never hidden.
+function sameExecution(previous: ExecutionRun, next: ExecutionRun): boolean {
+  let remaining = 20000;
+  const equal = (a: unknown, b: unknown, depth = 0): boolean => {
+    if (--remaining < 0 || depth > 64) return false;
+    if (Object.is(a, b)) return true;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every(key => Object.prototype.hasOwnProperty.call(b, key) &&
+      equal((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], depth + 1));
+  };
+  const fields: (keyof ExecutionRun)[] = [
+    "id", "workflow_id", "status", "started_at", "completed_at", "error_message",
+    "result", "initiated_by", "nodes", "edges", "node_clusters", "node_count", "edge_count",
+  ];
+  return fields.every(field => equal(previous[field], next[field]));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -281,7 +302,7 @@ export function useExecutionHistory(
 
         const updatedSelected = results.find((item) => item.id === prev.id);
         if (updatedSelected) {
-          return updatedSelected;
+          return sameExecution(prev, updatedSelected) ? prev : updatedSelected;
         }
 
         return matchesExecutionFilters(prev, {
@@ -430,7 +451,7 @@ export function useExecutionHistory(
           setExecutions((prev) => upsertExecution(prev, execution));
 
           if (selectedExecutionIdRef.current === execution.id) {
-            setSelectedExecution(execution);
+            setSelectedExecution(prev => prev && sameExecution(prev, execution) ? prev : execution);
           }
         },
       )

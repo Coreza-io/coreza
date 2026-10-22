@@ -225,13 +225,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     [preferredPrevNodeId, previousNodes, selectedPrevNodeId],
   );
 
-  // Repair deleted or projected selections from the canonical topology.
+  // Historical selection is owned by InputPanel's executed-node options.
   useEffect(() => {
+    if (readOnly) return;
     const nextId = resolvedPrevNodeId ?? "";
     if (nextId !== selectedPrevNodeId) {
       setSelectedPrevNodeId(nextId);
     }
-  }, [resolvedPrevNodeId, selectedPrevNodeId]);
+  }, [readOnly, resolvedPrevNodeId, selectedPrevNodeId]);
 
   const previousExecutionData = useExecutionNodeData(resolvedPrevNodeId);
   const selectedInputData = useMemo(() => {

@@ -82,3 +82,26 @@ export function isOAuthReconnectError(error: unknown): boolean {
     searchable.includes("refresh token")
   );
 }
+
+/** Format only allowlisted context; never include the broker response or request config. */
+export function formatBrokerAuthenticationFailure(context: {
+  provider: string;
+  nodeName: string;
+  operation: string;
+  credentialLabel?: string;
+  environment?: string;
+  requestHost?: string;
+}): string {
+  const provider = context.provider
+    ? context.provider[0].toUpperCase() + context.provider.slice(1)
+    : "Broker";
+  return [
+    `${provider} authentication failed (401) in node "${context.nodeName}"` +
+      (context.operation ? ` during operation "${context.operation}".` : "."),
+    context.credentialLabel ? `Selected credential: "${context.credentialLabel}".` : "",
+    context.environment ? `Environment: ${context.environment}.` : "",
+    context.requestHost ? `Broker host: ${context.requestHost}.` : "",
+    "Check that this is the intended credential and that its API key and secret are valid" +
+      (context.environment ? ` for ${context.environment}.` : " for this broker endpoint."),
+  ].filter(Boolean).join(" ");
+}

@@ -408,6 +408,12 @@ const WorkflowEditorContent = () => {
     error: executionsError,
   } = useExecutionHistory(workflowId, executionFilters);
 
+  const selectedNodeExecutions = useMemo(
+    () => selectedExecution ? getNodeExecutions(selectedExecution) : [],
+    [getNodeExecutions, selectedExecution?.id, selectedExecution?.result,
+      selectedExecution?.started_at, selectedExecution?.completed_at],
+  );
+
   const executionLoadingTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -2886,7 +2892,7 @@ const WorkflowEditorContent = () => {
               execution={selectedExecution}
               nodes={nodes}
               edges={edges}
-              nodeExecutions={getNodeExecutions(selectedExecution)}
+              nodeExecutions={selectedNodeExecutions}
               loading={loadingExecution}
               onCopyToEditor={() => setShowRestoreConfirm(true)}
             />

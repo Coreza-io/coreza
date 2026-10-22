@@ -17,8 +17,8 @@ import type { Node } from "@xyflow/react";
 import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
-import { useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
-import { useOptionalSemanticGraphSnapshot } from "@/contexts/StableNodeContext";
+import { useExecutionNodeData } from "@/contexts/ExecutionStoreContext";
+import { useOptionalTopologyGraphSnapshot } from "@/contexts/StableNodeContext";
 import { getPreviousNodes, getUpstreamDistances, resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
 
 type NodeExecutionLog = {
@@ -36,8 +36,8 @@ const owns = (value: unknown, key: PropertyKey): value is Record<PropertyKey, un
 type InputPanelProps = {
   workflowId?: string;
   nodeId?: string;
-  nodes: Node<any>[];
-  edges: any[];
+  nodes: readonly SemanticNode[];
+  edges: readonly any[];
   isExpanded: boolean;
   handleDragStart?: (
     e: React.DragEvent,
@@ -74,8 +74,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   historyEdges,
 }) => {
   // History is intentionally isolated from the live canonical document.
-  const canonicalGraph = useOptionalSemanticGraphSnapshot(!readOnly);
-  const executionStoreVersion = useExecutionStoreVersion();
+  const canonicalGraph = useOptionalTopologyGraphSnapshot(!readOnly);
   const { timezone: userTimezone } = useUserPreferences();
   const [activeTab, setActiveTab] = useState("previous");
   const variableQuery = useVariableSnapshot(isExpanded && activeTab === "variables" && !readOnly, workflowId);
@@ -119,6 +118,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
     setSelectedPrevNodeId,
   ]);
 
+  const selectedSourceData = useExecutionNodeData(!readOnly && isExpanded ? resolvedPrevNodeId : null);
   const selectedExecution = allNodeExecutions?.find(exec => exec.nodeId === resolvedPrevNodeId);
   const historicalTimestamp = selectedExecution?.completedAt ?? selectedExecution?.startedAt;
   const timestamp = readOnly
@@ -127,7 +127,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
 
   // Selecting an unexecuted historical branch must never fall back to editor data.
   const outputData = useMemo(() => {
-    void executionStoreVersion;
+    void selectedSourceData;
     if (readOnly) {
       return owns(selectedExecution, "output") ? selectedExecution.output : undefined;
     }
@@ -140,7 +140,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
     resolvedPrevNodeId,
     nodes,
     executionStore,
-    executionStoreVersion,
+    selectedSourceData,
     readOnly,
     selectedExecution,
   ]);

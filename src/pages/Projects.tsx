@@ -80,7 +80,7 @@ const Projects = () => {
       // Fetch projects with workflow counts
       const { data: projectsData, error: projectsError } = await supabase
         .from("projects")
-        .select("*")
+        .select("*, workflows(count)")
         .eq("user_id", authUser.id)
         .order("created_at", { ascending: false });
 
@@ -94,20 +94,9 @@ const Projects = () => {
         return;
       }
 
-      // Fetch workflow counts for each project
-      const projectsWithCounts = await Promise.all(
-        (projectsData || []).map(async (project) => {
-          const { count } = await supabase
-            .from("workflows")
-            .select("*", { count: "exact", head: true })
-            .eq("project_id", project.id);
-          
-          return {
-            ...project,
-            workflow_count: count || 0
-          };
-        })
-      );
+      const projectsWithCounts = (projectsData ?? []).map(({ workflows, ...project }) => ({
+        ...project, workflow_count: workflows?.[0]?.count ?? 0,
+      }));
 
       setProjects(projectsWithCounts);
     } catch (error) {

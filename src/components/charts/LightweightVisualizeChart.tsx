@@ -16,6 +16,9 @@ import type {
 } from "./chartTypes";
 import {
   addOverlaySeries,
+  reconcileSeriesData,
+  overlayShape,
+  updateOverlayData,
   toVolumeData,
   type OverlayHandles,
 } from "./lightweightSeriesBuilder";
@@ -113,6 +116,9 @@ const LightweightVisualizeChart: React.FC<{
   const [legendState, setLegendState] = useState<LegendState>({});
   const [hoveredOhlc, setHoveredOhlc] = useState<OhlcValues | null>(null);
   const [chartReady, setChartReady] = useState(false);
+  const overlayShapes = useRef(new Map<string, string>());
+  const didFit = useRef(false);
+  const previousAutoFit = useRef(false);
   const cleanupSyncRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const node = rootRef.current;
@@ -252,6 +258,7 @@ const LightweightVisualizeChart: React.FC<{
   // Initialize the price chart once the container has a non-zero width.
   // Retries via rAF until the container is measured (handles React Flow expand transitions).
   useEffect(() => {
+    didFit.current = false; previousAutoFit.current = false; overlayShapes.current.clear();
     let cancelled = false;
     let rafId: number | null = null;
 
@@ -356,24 +363,29 @@ const LightweightVisualizeChart: React.FC<{
     const volumeSeries = volumeSeriesRef.current;
     if (!priceChart || !candleSeries || !volumeSeries) return;
 
-    candleSeries.setData(
+    reconcileSeriesData(candleSeries,
       viewModel.candles.map((candle: CorezaCandle) => ({
         ...candle,
         time: toChartTime(candle.time),
       })),
     );
-    volumeSeries.setData(toVolumeData(viewModel.candles));
+    reconcileSeriesData(volumeSeries, toVolumeData(viewModel.candles));
+    volumeSeries.applyOptions({ visible: viewModel.options.showVolume });
 
     const activePriceIds = new Set(priceOverlays.map((overlay) => overlay.id));
     for (const [id, seriesList] of registryRef.current.price.entries()) {
       if (!activePriceIds.has(id)) {
         removeOverlayHandles(priceChart, seriesList);
         registryRef.current.price.delete(id);
+        overlayShapes.current.delete(id);
       }
     }
     priceOverlays.forEach((overlay: VisualizeOverlay) => {
       const existing = registryRef.current.price.get(overlay.id);
+      const shape = overlayShape(overlay);
+      if (existing && overlayShapes.current.get(overlay.id) === shape) { updateOverlayData(overlay, existing); return; }
       if (existing) removeOverlayHandles(priceChart, existing);
+      overlayShapes.current.set(overlay.id, shape);
       const firstCandle = viewModel.candles[0];
       const lastCandle = viewModel.candles[viewModel.candles.length - 1];
       const priceAnchorRange =
@@ -401,7 +413,11 @@ const LightweightVisualizeChart: React.FC<{
         if (panel) {
           removeOverlayHandles(panel.chart, panel.handles);
           registryRef.current.panels.delete(id);
+          overlayShapes.current.delete(id);
         }
+        const crosshair = crosshairSubscriptionsRef.current.get(id);
+        if (crosshair) { crosshair.chart.unsubscribeCrosshairMove(crosshair.handler); crosshairSubscriptionsRef.current.delete(id); }
+        resizeObserverRef.current?.unobserve(panelEntry.container);
         try {
           panelEntry.chart.remove();
         } catch {
@@ -426,7 +442,10 @@ const LightweightVisualizeChart: React.FC<{
       }
 
       const existing = registryRef.current.panels.get(overlay.id);
+      const shape = overlayShape(overlay);
+      if (existing && overlayShapes.current.get(overlay.id) === shape) { updateOverlayData(overlay, existing.handles); return; }
       if (existing) removeOverlayHandles(existing.chart, existing.handles);
+      overlayShapes.current.set(overlay.id, shape);
       registryRef.current.panels.set(
         overlay.id,
         {
@@ -486,12 +505,14 @@ const LightweightVisualizeChart: React.FC<{
         .filter((chart): chart is IChartApi => Boolean(chart)),
     ]);
 
-    if (viewModel.options.autoFit) {
+    if ((!didFit.current || (!previousAutoFit.current && viewModel.options.autoFit)) && viewModel.candles.length) {
+      didFit.current = true;
       priceChart.timeScale().fitContent();
       panelOverlays.forEach((overlay) => {
         panelChartsRef.current.get(overlay.id)?.chart.timeScale().fitContent();
       });
     }
+    previousAutoFit.current = viewModel.options.autoFit;
   }, [chartReady, viewModel, panelOverlays, priceLegendOverlays, priceOverlays]);
 
   return (

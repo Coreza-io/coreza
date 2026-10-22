@@ -15,7 +15,7 @@
  * - Pre-populated with historical execution data from props
  */
 
-import { createContext, useContext, useRef, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { createContext, useContext, useRef, useState, useLayoutEffect, useCallback, useMemo, ReactNode } from 'react';
 import ExecutionContext from '@/utils/executionContext';
 
 interface StaticExecutionStoreContextValue {
@@ -44,12 +44,13 @@ export const StaticExecutionStoreProvider = ({
   children, 
   nodeExecutions = EMPTY_EXECUTIONS 
 }: StaticExecutionStoreProviderProps) => {
-  const storeRef = useRef<ExecutionContext>(new ExecutionContext());
+  const storeRef = useRef<ExecutionContext>();
+  if (!storeRef.current) storeRef.current = new ExecutionContext();
   const [version, setVersion] = useState(0);
   const previousExecutions = useRef<NodeExecutionData[] | null>(null);
   
   // Pre-populate store with historical execution data
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previous = previousExecutions.current;
     if (previous?.length === nodeExecutions.length && previous.every((exec, index) => {
       const next = nodeExecutions[index];
@@ -57,13 +58,14 @@ export const StaticExecutionStoreProvider = ({
     })) return;
     previousExecutions.current = nodeExecutions;
     // ExecutionContext has no per-write subscribers; publish once after replacement.
-    storeRef.current.clear();
+    storeRef.current.dispose();
     nodeExecutions.forEach(exec => {
       storeRef.current.setNodeData(exec.nodeId, {
         output: exec.output,
         input: exec.input,
       });
     });
+    storeRef.current.flushNotifications();
     setVersion(v => v + 1);
   }, [nodeExecutions]);
   

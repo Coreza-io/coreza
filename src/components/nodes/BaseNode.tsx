@@ -16,13 +16,15 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { useNodeId, useReactFlow } from "@xyflow/react";
+import { useNodeExpanded } from "@/hooks/useNodeExpansion";
+import { useNodeId, useReactFlow, useStore } from "@xyflow/react";
 import { useParams } from "react-router-dom";
-import { useSemanticGraphSnapshot, useStableNodes } from "@/contexts/StableNodeContext";
+import { useTopologyGraphSnapshot, useStableNodes } from "@/contexts/StableNodeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useExecutionStore,
   useExecutionNodeData,
+  useExecutionNodeStatus,
   useExecutionStoreNotify,
 } from "@/contexts/ExecutionStoreContext";
 import { apiClient } from "@/lib/apiClient";
@@ -155,11 +157,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   children,
 }) => {
   const nodeId = useNodeId();
+  const expanded = useNodeExpanded(nodeId ?? undefined);
+  const runtimeHost = useStore(useCallback(state => !!nodeId && state.nodeLookup.get(nodeId)?.style?.visibility === "hidden", [nodeId]));
+  const configurationVisible = expanded && !runtimeHost;
   const { updateNodeData } = useStableNodes();
-  const canonicalGraph = useSemanticGraphSnapshot();
+  const canonicalGraph = useTopologyGraphSnapshot(!readOnly);
   const { setNodes } = useReactFlow();
   const executionStore = useExecutionStore();
-  const executionData = useExecutionNodeData(nodeId);
+  const executionData = useExecutionNodeStatus(nodeId, resolveListeningFlagKey(data.definition));
   const notifyStoreUpdate = useExecutionStoreNotify(); // Trigger re-render on manual updates
   const { id: routeWorkflowId } = useParams();
   const workflowId = propWorkflowId ?? routeWorkflowId;
@@ -191,18 +196,19 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     return getDisplayName(
       { id: nodeId!, data },
     );
-  }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
+  }, [definition?.name, nodeId, data.displayName]);
 
   // Named references use the complete inventory; dropdown options use only upstream topology.
   const referenceNodes = useMemo<readonly SemanticNode[]>(() => {
     if (!readOnly) return canonicalGraph.nodes;
+    if (data.historyReferenceNodes) return data.historyReferenceNodes;
     const recorded = new Map<string, unknown>((data.allNodeExecutions ?? []).map(
       (execution: { nodeId: string; output?: unknown }): [string, unknown] => [execution.nodeId, execution.output],
     ));
     return (data.historyNodes ?? []).map((node: SemanticNode) => ({
       ...node, data: { ...node.data, output: recorded.get(node.id) },
     }));
-  }, [canonicalGraph.nodes, readOnly, data.historyNodes, data.allNodeExecutions]);
+  }, [canonicalGraph.nodes, readOnly, data.historyNodes, data.historyReferenceNodes, data.allNodeExecutions]);
   const previousNodes = useMemo(
     () => getPreviousNodes(
       nodeId ?? undefined,
@@ -245,7 +251,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     }
   }, [readOnly, resolvedPrevNodeId, selectedPrevNodeId]);
 
-  const previousExecutionData = useExecutionNodeData(resolvedPrevNodeId);
+  const previousExecutionData = useExecutionNodeData(configurationVisible ? resolvedPrevNodeId : null);
   const selectedInputData = useMemo(() => {
     void previousExecutionData;
     if (readOnly) {
@@ -283,12 +289,14 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     fieldState: fieldStateHook.fieldState,
     workflowId,
     workflowSessionId: data?.workflowSessionId,
+    enabled: !readOnly && configurationVisible,
   });
 
   // Output management
   const outputHook = useNodeOutput({
     data,
     definition,
+    enabled: configurationVisible,
   });
 
   // Execution logic
@@ -312,6 +320,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     referenceNodes,
     selectedPrevNodeId: resolvedPrevNodeId ?? "",
     selectedPrevNode,
+    enabled: configurationVisible,
   });
 
   // Get auth context for API calls
@@ -380,8 +389,8 @@ const BaseNode: React.FC<BaseNodeProps> = ({
           output: stoppedOutput,
           ...LISTENER_CLEAR_STATE,
         });
-        notifyStoreUpdate(); // Trigger re-render to hide streaming footer
         updateNodeData(nodeId, { output: stoppedOutput, ...LISTENER_CLEAR_STATE });
+        notifyStoreUpdate();
         console.log(`✅ [BaseNode] Test listener stopped successfully`);
       }
     } catch (error) {

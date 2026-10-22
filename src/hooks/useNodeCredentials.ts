@@ -8,7 +8,8 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useRef } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { apiClient } from "@/lib/apiClient";
 
@@ -17,318 +18,92 @@ interface UseNodeCredentialsProps {
   fieldState: Record<string, any>;
   workflowId?: string;
   workflowSessionId?: string;
+  enabled?: boolean;
 }
 
-interface UseNodeCredentialsReturn {
-  loadingSelect: Record<string, boolean>;
-  selectOptions: Record<string, any[]>;
-  fetchCredentials: (fieldKey: string, serviceTypeOverride?: string) => void;
-  fetchDependentOptions: (field: any, parentValue: string) => void;
-  fetchStoreWorkflows: (fieldKey: string) => void;
-  fetchStoreVariables: (field: any, workflowId: string) => void;
+interface OptionResource {
+  fieldKey: string;
+  kind: string;
+  key: readonly unknown[];
+  url: string;
+  body?: Record<string, unknown>;
+  available: boolean;
 }
 
-/**
- * Custom hook to handle credential and option fetching
- * Manages dynamic select options from API
- */
-export function useNodeCredentials({
-  definition,
-  fieldState,
-  workflowId,
-  workflowSessionId,
-}: UseNodeCredentialsProps): UseNodeCredentialsReturn {
+const EMPTY_OPTIONS: any[] = [];
+
+/** One query owner per resource. Ordinary field edits never change resource keys. */
+export function useNodeCredentials({ definition, fieldState, workflowId, workflowSessionId, enabled = true }: UseNodeCredentialsProps) {
   const { user, session, loading } = useAuth();
-  const [loadingSelect, setLoadingSelect] = useState<Record<string, boolean>>(
-    {},
-  );
-  const [selectOptions, setSelectOptions] = useState<Record<string, any[]>>({});
-
-  const userId = user?.id;
-
-  // Fetch credentials from API using correct broker-specific endpoints
-  const fetchCredentials = useCallback(
-    async (fieldKey: string, serviceTypeOverride?: string) => {
-      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
-      try {
-        const serviceType = (
-          serviceTypeOverride ||
-          definition?.subCategory ||
-          definition?.parentNode ||
-          definition?.name ||
-          ""
-        ).toLowerCase();
-
-        // Check if userId AND access_token exist
-        if (!userId || !session?.access_token) {
-          console.log(
-            "No authenticated user or access token, skipping credentials fetch",
-          );
-          setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-          return;
-        }
-
-        // Determine correct endpoint based on node definition
-        const url = serviceType
-          ? `/credentials/list?service_type=${encodeURIComponent(serviceType)}`
-          : "/credentials/list";
-
-        console.log("Fetching credentials from:", url);
-
-        const res = await apiClient.get(url, session?.access_token);
-        console.log("Response status:", res.status);
-
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-
-        const json = await res.json();
-        console.log("Credentials response:", json);
-        const credentials = (json.credentials || []).map((credential: any) => ({
-          ...credential,
-          id: credential.id || credential.name,
-          name: credential.name || credential.id || "Unnamed Credential",
-        }));
-
-        setSelectOptions((opts) => ({
-          ...opts,
-          [fieldKey]: credentials,
-        }));
-      } catch (error) {
-        console.error("Error fetching credentials:", error);
-        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-      } finally {
-        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
-      }
-    },
-    [definition, userId, session?.access_token],
-  );
-
-  const fetchStoreWorkflows = useCallback(
-    async (fieldKey: string) => {
-      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
-
-      if (!userId) {
-        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
-        return;
-      }
-
-      try {
-        const response = await apiClient.get(
-          `/storage/store/workflows?user_id=${userId}`,
-          session?.access_token,
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const json = await response.json();
-
-        setSelectOptions((opts) => ({
-          ...opts,
-          [fieldKey]: json.workflows || [],
-        }));
-      } catch (error) {
-        console.error("Error fetching workflows for store options:", error);
-        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-      } finally {
-        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
-      }
-    },
-    [userId, session?.access_token],
-  );
-
-  const fetchStoreVariables = useCallback(
-    async (field: any, workflowId: string) => {
-      const fieldKey = field.key;
-      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
-
-      if (!userId || !workflowId) {
-        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
-        return;
-      }
-
-      try {
-        const response = await apiClient.get(
-          `/storage/store/variables?user_id=${userId}&workflowId=${workflowId}`,
-          session?.access_token,
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const json = await response.json();
-
-        setSelectOptions((opts) => ({
-          ...opts,
-          [fieldKey]:
-            json.variables?.map((v: string) => ({ id: v, name: v })) || [],
-        }));
-      } catch (error) {
-        console.error("Error fetching store variables:", error);
-        setSelectOptions((opts) => ({ ...opts, [fieldKey]: [] }));
-      } finally {
-        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
-      }
-    },
-    [userId, session?.access_token],
-  );
-
-  // Fetch dependent options (cascading selects)
-  const fetchDependentOptions = useCallback(
-    async (field: any, parentValue: string) => {
-      if (!field.optionsApiUrl || !parentValue) {
-        console.warn(
-          `[DEPENDENT-API] Skipping fetch - missing optionsApiUrl or parentValue`,
-          {
-            fieldKey: field.key,
-            hasApiUrl: !!field.optionsApiUrl,
-            parentValue,
-          },
-        );
-        return;
-      }
-
-      const fieldKey = field.key;
-      const requestBody = {
-        nodeName: definition.name,
-        category: definition.category,
-        subCategory: definition.subCategory,
-        user_id: userId,
-        credential_id: parentValue,
-        workflowId,
-        workflowSessionId,
-      };
-
-      console.log(`[DEPENDENT-API] Fetching options for ${fieldKey}`, {
-        url: field.optionsApiUrl,
-        ...requestBody,
+  const client = useQueryClient();
+  const token = useRef(session?.access_token);
+  token.current = session?.access_token;
+  const owner = user?.id;
+  const resources: OptionResource[] = [];
+  const selectOptions: Record<string, any[]> = {};
+  const loadingSelect: Record<string, boolean> = {};
+  for (const field of definition?.fields ?? []) {
+    if (field.type !== "select") continue;
+    if (field.options) selectOptions[field.key] = field.options;
+    const parent = field.dependsOn ? fieldState[field.dependsOn] : undefined;
+    const service = String(parent || definition?.subCategory || definition?.parentNode || definition?.name || "").toLowerCase();
+    const base = { fieldKey: field.key, kind: field.optionsSource, available: true };
+    if (field.optionsSource === "credentialsApi") {
+      resources.push({ ...base, key: ["node-options", owner, "credentials", service],
+        url: service ? `/credentials/list?service_type=${encodeURIComponent(service)}` : "/credentials/list" });
+    } else if (field.optionsSource === "storeWorkflowsApi") {
+      resources.push({ ...base, key: ["node-options", owner, "store-workflows"], url: `/storage/store/workflows?user_id=${encodeURIComponent(owner ?? "")}` });
+    } else if (field.optionsSource === "storeVariablesApi") {
+      resources.push({ ...base, available: !!parent, key: ["node-options", owner, "store-variables", parent ?? null],
+        url: `/storage/store/variables?user_id=${encodeURIComponent(owner ?? "")}&workflowId=${encodeURIComponent(parent ?? "")}` });
+    } else if (field.optionsSource === "dependentApi") {
+      const body = { nodeName: definition.name, category: definition.category, subCategory: definition.subCategory,
+        user_id: owner, credential_id: parent, workflowId, workflowSessionId };
+      resources.push({ ...base, available: !!parent && !!field.optionsApiUrl,
+        key: ["node-options", owner, "dependent", field.optionsApiUrl, body], url: field.optionsApiUrl, body });
+    }
+  }
+  const queries = useQueries({ queries: resources.map(resource => ({
+    queryKey: resource.key,
+    enabled: enabled && !loading && !!owner && !!session?.access_token && resource.available,
+    // Metadata may change outside this editor; reopening refreshes it without per-keystroke requests.
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    retry: false,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const response = await apiClient.request(resource.url, {
+        method: resource.body ? "POST" : "GET", token: token.current, signal,
+        ...(resource.body ? { body: JSON.stringify(resource.body) } : {}),
       });
-
-      setLoadingSelect((prev) => ({ ...prev, [fieldKey]: true }));
-
-      try {
-        const response = await apiClient.post(
-          field.optionsApiUrl,
-          requestBody,
-          session?.access_token,
-        );
-
-        console.log(`[DEPENDENT-API] Response status:`, response.status);
-
-        const result = await response.json();
-        console.log(`[DEPENDENT-API] Response data:`, result);
-
-        if (result.success && result.data?.accounts) {
-          setSelectOptions((prev) => ({
-            ...prev,
-            [fieldKey]: result.data.accounts,
-          }));
-        } else {
-          console.error(
-            `[DEPENDENT-API] Failed to fetch dependent options:`,
-            result.error,
-          );
-          setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
-        }
-      } catch (error) {
-        console.error(
-          `[DEPENDENT-API] Error fetching options for ${fieldKey}:`,
-          error,
-        );
-        setSelectOptions((prev) => ({ ...prev, [fieldKey]: [] }));
-      } finally {
-        setLoadingSelect((prev) => ({ ...prev, [fieldKey]: false }));
-      }
+      if (!response.ok) throw new Error(`Could not load options (${response.status})`);
+      const result = await response.json();
+      if (resource.kind === "credentialsApi") return (result.credentials ?? []).map((credential: any) => ({
+        id: credential.id || credential.name, name: credential.name || credential.id || "Unnamed Credential",
+        reconnect_required: credential.reconnect_required, reconnect_recommended: credential.reconnect_recommended,
+        refresh_token_lifetime_known: credential.refresh_token_lifetime_known,
+        seconds_until_reconnect: credential.seconds_until_reconnect, access_token_auto_managed: credential.access_token_auto_managed,
+      }));
+      if (resource.kind === "storeWorkflowsApi") return result.workflows ?? [];
+      if (resource.kind === "storeVariablesApi") return (result.variables ?? []).map((name: string) => ({ id: name, name }));
+      if (!result.success) throw new Error("Could not load dependent options");
+      return result.data?.accounts ?? [];
     },
-    [userId, session?.access_token, workflowId, workflowSessionId],
-  );
-
-  // Load credentials and static options on mount (wait for auth to be ready)
-  useEffect(() => {
-    // Don't fetch until auth is resolved
-    if (loading) return;
-
-    (definition?.fields || []).forEach(async (f: any) => {
-      if (f.type === "select" && f.optionsSource === "credentialsApi") {
-        const serviceTypeOverride = f.dependsOn
-          ? fieldState[f.dependsOn]
-          : undefined;
-        fetchCredentials(f.key, serviceTypeOverride);
-      }
-      if (f.type === "select" && f.optionsSource === "storeWorkflowsApi") {
-        fetchStoreWorkflows(f.key);
-      }
-      if (f.type === "select" && f.options) {
-        setSelectOptions((opts) => ({ ...opts, [f.key]: f.options! }));
-      }
-    });
-  }, [
-    definition?.fields,
-    definition?.name,
-    fetchCredentials,
-    fetchStoreWorkflows,
-    fieldState,
-    loading,
-  ]);
-
-  // Re-fetch credential options when dependency fields change (e.g. broker)
-  useEffect(() => {
-    (definition?.fields || []).forEach((field: any) => {
-      if (
-        field.type === "select" &&
-        field.optionsSource === "credentialsApi" &&
-        field.dependsOn &&
-        fieldState[field.dependsOn]
-      ) {
-        fetchCredentials(field.key, fieldState[field.dependsOn]);
-      }
-    });
-  }, [definition?.fields, fieldState, fetchCredentials]);
-
-  // Load dependent API options on mount or when parent field changes
-  useEffect(() => {
-    (definition?.fields || []).forEach((field: any) => {
-      if (
-        field.type === "select" &&
-        field.optionsSource === "dependentApi" &&
-        field.dependsOn &&
-        fieldState[field.dependsOn]
-      ) {
-        fetchDependentOptions(field, fieldState[field.dependsOn]);
-      }
-      if (
-        field.type === "select" &&
-        field.optionsSource === "storeVariablesApi"
-      ) {
-        const selectedWorkflowId = field.dependsOn
-          ? fieldState[field.dependsOn]
-          : undefined;
-
-        if (selectedWorkflowId) {
-          fetchStoreVariables(field, selectedWorkflowId);
-        } else {
-          setSelectOptions((opts) => ({ ...opts, [field.key]: [] }));
-        }
-      }
-    });
-  }, [
-    definition?.fields,
-    fieldState,
-    fetchDependentOptions,
-    fetchStoreVariables,
-  ]);
-
-  return {
-    loadingSelect,
-    selectOptions,
-    fetchCredentials,
-    fetchDependentOptions,
-    fetchStoreWorkflows,
-    fetchStoreVariables,
-  };
+  })) });
+  resources.forEach((resource, index) => {
+    selectOptions[resource.fieldKey] = resource.available && enabled ? queries[index].data ?? EMPTY_OPTIONS : EMPTY_OPTIONS;
+    loadingSelect[resource.fieldKey] = enabled && queries[index].isFetching;
+  });
+  const fetchCredentials = useCallback((_fieldKey: string) => {
+    // Explicit credential creation/update invalidates all service lists and their accounts for this owner.
+    void client.invalidateQueries({ queryKey: ["node-options", owner] });
+  }, [client, owner]);
+  // Dependency changes are owned by the keyed queries above, including changes from restored documents.
+  const fetchDependentOptions = useCallback((_field: any, _parent: string) => {}, []);
+  const fetchStoreWorkflows = useCallback((_fieldKey: string) => {
+    void client.invalidateQueries({ queryKey: ["node-options", owner, "store-workflows"] });
+  }, [client, owner]);
+  const fetchStoreVariables = useCallback((_field: any, sourceWorkflowId: string) => {
+    void client.invalidateQueries({ queryKey: ["node-options", owner, "store-variables", sourceWorkflowId] });
+  }, [client, owner]);
+  return { loadingSelect, selectOptions, fetchCredentials, fetchDependentOptions, fetchStoreWorkflows, fetchStoreVariables };
 }

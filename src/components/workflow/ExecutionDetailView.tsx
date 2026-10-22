@@ -141,6 +141,10 @@ export function ExecutionDetailView({
     });
   }, [sourceNodes]);
 
+  const historyReferenceNodes = useMemo(() => Array.isArray(execution.nodes) ? hydratedNodes.map(node => ({
+    id: node.id, type: node.type, data: { ...node.data, output: nodeExecutionMap.get(node.id)?.output },
+  })) : [], [execution.nodes, hydratedNodes, nodeExecutionMap]);
+
   // Transform nodes to show execution status with readOnly mode
   const executionNodes = useMemo(() => {
     return hydratedNodes.map((node) => {
@@ -153,6 +157,7 @@ export function ExecutionDetailView({
           ...node.data,
           // Enable read-only mode for execution view
           readOnly: true,
+          executionRunId: execution.id,
           // Pass execution-specific data
           executionStatus: status,
           executionDuration: nodeExec?.durationMs,
@@ -165,6 +170,7 @@ export function ExecutionDetailView({
           executionInput: nodeExec?.input,
           // Options use saved topology; values use only this run's recorded executions.
           allNodeExecutions: nodeExecutions,
+          historyReferenceNodes,
           historyNodes: Array.isArray(execution.nodes) ? hydratedNodes : undefined,
           // Missing historical topology must not select sources from today's editor graph.
           historyEdges: Array.isArray(execution.edges) ? sourceEdges : undefined,
@@ -173,7 +179,7 @@ export function ExecutionDetailView({
         },
       };
     });
-  }, [hydratedNodes, nodeExecutionMap, nodeExecutions, sourceEdges, execution.edges, execution.nodes]);
+  }, [hydratedNodes, nodeExecutionMap, nodeExecutions, sourceEdges, execution.edges, execution.nodes, historyReferenceNodes]);
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {

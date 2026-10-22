@@ -31,16 +31,17 @@ const emptySubscribe = () => () => {};
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
 const STREAM_PAUSE_DEBUG = false;
+const debugLog = (...args: unknown[]) => {
+  if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_EXECUTION === 'true') console.debug(...args);
+};
 
 export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode }) => {
   const storeRef = useRef<ExecutionContext>();
-  const wsRef = useRef<WebSocket | null>(null);
-  const keepaliveRef = useRef<NodeJS.Timeout | null>(null);
-  const shouldReconnectRef = useRef(true);
-  const { user } = useAuth();
+  const { user, session: authSession } = useAuth();
   const [updateVersion, setUpdateVersion] = useState(0);
   const listenersRef = useRef(new Set<() => void>());
   const notifyUpdate = useCallback(() => {
+    storeRef.current?.flushNotifications();
     startTransition(() => setUpdateVersion(v => v + 1));
     listenersRef.current.forEach(listener => listener());
   }, []);
@@ -60,15 +61,20 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
   // WebSocket listener for streaming market data
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !authSession?.access_token) return;
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let reconnect: ReturnType<typeof setTimeout> | null = null;
+    let keepalive: ReturnType<typeof setInterval> | null = null;
 
     const connectWebSocket = async () => {
-      if (!shouldReconnectRef.current) return;
+      if (disposed) return;
 
       // Get JWT token from Supabase session
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
 
+        if (disposed) return;
         if (error) {
           if ((error as { code?: string }).code === 'refresh_token_not_found') {
             console.warn('⚠️ [ExecutionStore] Missing refresh token. Skipping WebSocket connection until user re-authenticates.');
@@ -84,27 +90,30 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
         }
 
         const wsUrl = `${BACKEND_WS_URL}?token=${session.access_token}`;
-        console.log('📡 [ExecutionStore] Connecting to WebSocket:', BACKEND_WS_URL);
+        debugLog('📡 [ExecutionStore] Connecting to WebSocket:', BACKEND_WS_URL);
 
         const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        socket = ws;
+        const ownsConnection = () => !disposed && socket === ws;
 
         ws.onopen = () => {
-          console.log('✅ [ExecutionStore] WebSocket connected');
+          if (!ownsConnection()) return;
+          debugLog('✅ [ExecutionStore] WebSocket connected');
 
           // Start keepalive - send ping every 25 seconds
-          if (keepaliveRef.current) {
-            clearInterval(keepaliveRef.current);
+          if (keepalive) {
+            clearInterval(keepalive);
           }
-          keepaliveRef.current = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
+          keepalive = setInterval(() => {
+            if (ownsConnection() && ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: 'ping' }));
-              console.log('💓 [ExecutionStore] Sent keepalive ping');
+              debugLog('💓 [ExecutionStore] Sent keepalive ping');
             }
           }, 25000);
         };
 
         ws.onmessage = (event) => {
+          if (!ownsConnection()) return;
           try {
             const message = JSON.parse(event.data);
             const extractReplayFlag = (d: any): boolean =>
@@ -118,11 +127,11 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
             // Ignore pong messages (keepalive response)
             if (message.type === 'pong') {
-              console.log('💓 [ExecutionStore] Received pong');
+              debugLog('💓 [ExecutionStore] Received pong');
               return;
             }
 
-            console.log('📨 [ExecutionStore] Received WebSocket message:', message);
+            debugLog('📨 [ExecutionStore] Received WebSocket message:', message);
 
             // Handle webhook events (manual run mode)
             if (message.type === 'webhook_event' && message.payload) {
@@ -136,7 +145,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   }
                 });
                 notifyUpdate();
-                console.log('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
+                debugLog('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
               }
             }
 
@@ -173,7 +182,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     existingData.testListenWorkflowId &&
                     workflowId !== existingData.testListenWorkflowId
                   ) {
-                    console.log('🚫 [ExecutionStore] WorkflowId mismatch, ignoring:', {
+                    debugLog('🚫 [ExecutionStore] WorkflowId mismatch, ignoring:', {
                       nodeId,
                       expected: existingData.testListenWorkflowId,
                       received: workflowId,
@@ -186,7 +195,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     const listenerBroker = String(listenerSource).split('_')[0].toLowerCase();
                     const eventBroker = String(eventSource).split('_')[0].toLowerCase();
                     if (listenerBroker !== eventBroker) {
-                      console.log('🚫 [ExecutionStore] Source mismatch, ignoring:', {
+                      debugLog('🚫 [ExecutionStore] Source mismatch, ignoring:', {
                         nodeId,
                         listenerSource,
                         eventSource,
@@ -201,13 +210,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   const isReplay =
                     extractReplayFlag(data) || extractReplayFlag(message.payload);
                   if (STREAM_PAUSE_DEBUG && existingData?.isStreamPaused) {
-                    console.log(
+                    debugLog(
                       `[ExecutionStore] ${isReplay ? "ACCEPT(replay)" : "DROP(paused)"}`,
                       { nodeId, type: message.type, entryId: eventEntryId },
                     );
                   }
                   if (existingData?.isStreamPaused && !isReplay) {
-                    console.log('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
+                    debugLog('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
                     return;
                   }
                   storeRef.current.setNodeData(nodeId, {
@@ -219,14 +228,14 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     ...(eventEntryId ? { lastStreamEntryId: eventEntryId } : {}),
                   });
                   notifyUpdate();
-                  console.log(
+                  debugLog(
                     isReplay
                       ? '🔁 [ExecutionStore] Replayed event for:'
                       : '✅ [ExecutionStore] Updated node data for:',
                     nodeId,
                   );
                 } else {
-                  console.log('⚠️ [ExecutionStore] Ignoring market_data for non-listening node:', nodeId);
+                  debugLog('⚠️ [ExecutionStore] Ignoring market_data for non-listening node:', nodeId);
                 }
               }
             }
@@ -250,9 +259,9 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     }
                   });
                   notifyUpdate();
-                  console.log('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
+                  debugLog('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
                 } else {
-                  console.log('⚠️ [ExecutionStore] Ignoring legacy streaming for non-listening node:', nodeId);
+                  debugLog('⚠️ [ExecutionStore] Ignoring legacy streaming for non-listening node:', nodeId);
                 }
               }
             }
@@ -262,50 +271,46 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
         };
 
         ws.onerror = (error) => {
+          if (!ownsConnection()) return;
           console.error('❌ [ExecutionStore] WebSocket error:', error);
         };
 
         ws.onclose = () => {
-          console.log('🔌 [ExecutionStore] WebSocket disconnected');
+          if (!ownsConnection()) return;
+          socket = null;
+          debugLog('🔌 [ExecutionStore] WebSocket disconnected');
 
           // Clear keepalive interval
-          if (keepaliveRef.current) {
-            clearInterval(keepaliveRef.current);
-            keepaliveRef.current = null;
+          if (keepalive) {
+            clearInterval(keepalive);
+            keepalive = null;
           }
 
           // Only reconnect if flag allows (not during cleanup)
-          if (shouldReconnectRef.current) {
-            console.log('🔄 [ExecutionStore] Reconnecting in 3s...');
-            setTimeout(() => connectWebSocket(), 3000);
+          if (!disposed) {
+            debugLog('🔄 [ExecutionStore] Reconnecting in 3s...');
+            reconnect = setTimeout(() => { reconnect = null; void connectWebSocket(); }, 3000);
           }
         };
       } catch (error) {
+        if (disposed) return;
         console.error('❌ [ExecutionStore] Unexpected error while establishing WebSocket:', error);
         return;
       }
     };
 
-    shouldReconnectRef.current = true;
-    connectWebSocket();
-
+    void connectWebSocket();
     return () => {
-      shouldReconnectRef.current = false;
-      
-      // Clear keepalive interval
-      if (keepaliveRef.current) {
-        clearInterval(keepaliveRef.current);
-        keepaliveRef.current = null;
-      }
-      
-      // Close WebSocket
-      if (wsRef.current) {
-        console.log('🔌 [ExecutionStore] Closing WebSocket connection');
-        wsRef.current.close();
-        wsRef.current = null;
+      disposed = true;
+      if (reconnect) clearTimeout(reconnect);
+      if (keepalive) clearInterval(keepalive);
+      if (socket) {
+        socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+        socket.close();
+        socket = null;
       }
     };
-  }, [user?.id, notifyUpdate]);
+  }, [user?.id, authSession?.access_token, notifyUpdate]);
 
   return (
     <ExecutionStoreAccessContext.Provider value={access}>
@@ -332,10 +337,10 @@ export const useExecutionStore = (): ExecutionContext => {
 export const useExecutionStoreVersion = (): number => {
   // Check for static context first
   const staticCtx = useContext(StaticExecutionStoreContext);
-  const ctx = useContext(ExecutionStoreContext);
-  if (staticCtx) return staticCtx.version;
-
-  return ctx?.version ?? 0;
+  const ctx = useContext(ExecutionStoreAccessContext);
+  const getSnapshot = useCallback(() => staticCtx?.version ?? ctx?.store.version ?? 0, [staticCtx, ctx]);
+  const version = useSyncExternalStore(staticCtx ? emptySubscribe : ctx?.subscribe ?? emptySubscribe, getSnapshot, getSnapshot);
+  return staticCtx?.version ?? version;
 };
 
 export const useExecutionStoreNotify = (): (() => void) => {
@@ -356,11 +361,42 @@ export const useExecutionNodeData = (nodeId: string | null | undefined): NodeExe
     () => nodeId ? store?.storeMap.get(nodeId) ?? EMPTY_NODE_DATA : EMPTY_NODE_DATA,
     [nodeId, store],
   );
+  const subscribe = useCallback((listener: () => void) =>
+    !staticCtx && store && nodeId ? store.subscribeNode(nodeId, listener) : () => undefined, [staticCtx, store, nodeId]);
   return useSyncExternalStore(
-    staticCtx ? emptySubscribe : ctx?.subscribe ?? emptySubscribe,
+    subscribe,
     getSnapshot,
     getSnapshot,
   );
 };
 
 export default ExecutionStoreContext;
+
+/** A closed card reads only control flags, never the invisible output payload. */
+export function useExecutionNodeStatus(nodeId: string | null | undefined, listeningFlag = "isListening"): string {
+  const staticCtx = useContext(StaticExecutionStoreContext);
+  const ctx = useContext(ExecutionStoreAccessContext);
+  const store = staticCtx?.store ?? ctx?.store;
+  const subscribe = useCallback((listener: () => void) => !staticCtx && store && nodeId ? store.subscribeNode(nodeId, listener) : () => undefined, [staticCtx, store, nodeId]);
+  const getSnapshot = useCallback(() => {
+    const data = nodeId ? store?.storeMap.get(nodeId) : undefined;
+    return JSON.stringify([(data as unknown as Record<string, unknown> | undefined)?.[listeningFlag], data?.isListening, data?.isTestListening, data?.isStreamingWaiting, data?.isStreamPaused, data?.isStreamStepping, !!data?.lastStreamEntryId]);
+  }, [store, nodeId, listeningFlag]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** null is an intentional fallback for dynamic references; only mounted previews use it. */
+export function useExecutionSourceVersions(nodeIds: readonly string[] | null): string {
+  const staticCtx = useContext(StaticExecutionStoreContext);
+  const ctx = useContext(ExecutionStoreAccessContext);
+  const store = staticCtx?.store ?? ctx?.store;
+  const subscribe = useCallback((listener: () => void) => {
+    if (staticCtx || !store) return () => undefined;
+    if (nodeIds === null) return ctx?.subscribe(listener) ?? (() => undefined);
+    const disposers = nodeIds.map(id => store.subscribeNode(id, listener));
+    return () => disposers.forEach(dispose => dispose());
+  }, [staticCtx, store, ctx, nodeIds]);
+  const getSnapshot = useCallback(() => staticCtx ? String(staticCtx.version)
+    : nodeIds === null ? String(store?.version ?? 0) : nodeIds.map(id => store?.getNodeVersion(id) ?? 0).join(":"), [staticCtx, store, nodeIds]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}

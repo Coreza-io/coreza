@@ -8,14 +8,10 @@
  * See the LICENSE file for details.
  */
 
-import React, { useMemo } from "react";
-import {
-  createJsonReferenceDragPayload,
-  formatPath,
-  type PathSegment,
-} from "./referencePath";
+import React, { useState } from "react";
+import { createJsonReferenceDragPayload, formatPath, type PathSegment } from "./referencePath";
 
-type DraggableFieldsPanelProps = {
+type Props = {
   data: unknown;
   onDragStart: (e: React.DragEvent, keyPath: string, value: string) => void;
   parentKey?: string;
@@ -26,164 +22,84 @@ type DraggableFieldsPanelProps = {
   persistentVariableKeys?: readonly string[];
   variableNamespace?: boolean;
 };
-
 type Entry = { key: PathSegment; value: unknown; variableKey?: string };
-
-const isObjectLike = (v: unknown): v is Record<string, unknown> | unknown[] =>
-  v !== null && typeof v === "object";
-
-const toStringValue = (value: unknown): string => {
-  if (typeof value === "string") {
-    return value;
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
+const objectLike = (value: unknown): value is Record<string, unknown> | unknown[] => value !== null && typeof value === "object";
+const stringify = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value) ?? String(value); } catch { return String(value); }
 };
 
-const DraggableFieldsPanel: React.FC<DraggableFieldsPanelProps> = ({
-  data,
-  onDragStart,
-  parentKey = "",
-  pathSegments,
-  sourceNodeId,
-  maxItems = 25,
-  draggable = true,
-  persistentVariableKeys,
-  variableNamespace = false,
-}) => {
-  const entriesToShow: Entry[] = useMemo(() => {
-    if (!isObjectLike(data)) return [];
-    if (Array.isArray(data)) {
-      return (data as unknown[]).slice(0, maxItems).map((item, idx) => ({
-        key: idx,
-        value: item,
-      }));
+/** One lazy tree owns a global render budget, including every expanded branch. */
+const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = "", pathSegments = [], sourceNodeId, maxItems = 25, draggable = true, persistentVariableKeys, variableNamespace = false }) => {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [pages, setPages] = useState<Record<string, number>>({});
+  if (!objectLike(data)) return null;
+  const budget = { entries: 200, characters: 20_000 };
+  const text = (value: unknown) => {
+    const limit = Math.max(0, Math.min(2000, budget.characters));
+    const raw = typeof value === "string" ? value : stringify(value);
+    const result = raw.length > limit ? `${raw.slice(0, limit)}…` : raw;
+    budget.characters -= Math.min(raw.length, limit);
+    return result;
+  };
+  const renderBranch = (source: Record<string, unknown> | unknown[], segments: PathSegment[], depth: number): React.ReactNode => {
+    const branch = JSON.stringify(segments);
+    const page = pages[branch] ?? 0;
+    const pageSize = Math.max(1, Math.min(maxItems, 200));
+    const keys: PathSegment[] = Array.isArray(source) ? [] : Object.keys(source);
+    const length = Array.isArray(source) ? source.length : keys.length;
+    const start = Math.min(page * pageSize, Math.max(0, Math.ceil(length / pageSize) - 1) * pageSize);
+    const entries: Entry[] = [];
+    for (let index = start; index < Math.min(length, start + pageSize); index++) {
+      const key = Array.isArray(source) ? index : keys[index];
+      const value = (source as Record<PathSegment, unknown>)[key];
+      if (depth === 0 && variableNamespace) entries.push({ key: `$vars.${key}`, value, variableKey: String(key) });
+      else if (depth === 0 && key === "data" && persistentVariableKeys?.length && objectLike(value) && !Array.isArray(value)) {
+        const remaining: Record<string, unknown> = Object.create(null);
+        for (const [name, item] of Object.entries(value)) {
+          if (persistentVariableKeys.includes(name) && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name) && !["__proto__", "constructor", "prototype"].includes(name) && ["string", "number", "boolean"].includes(typeof item)) entries.push({ key: `$vars.${name}`, value: item, variableKey: name });
+          else remaining[name] = item;
+        }
+        if (Object.keys(remaining).length) entries.push({ key, value: remaining });
+      } else entries.push({ key, value });
     }
-    return Object.entries(data as Record<string, unknown>).flatMap(([key, value]): Entry[] => {
-      if (variableNamespace) return [{ key: `$vars.${key}`, value, variableKey: key }];
-      if (key !== "data" || pathSegments?.length || !persistentVariableKeys?.length
-        || !isObjectLike(value) || Array.isArray(value)) return [{ key, value }];
-      // Display accepted Persistent fields directly in the workflow variable namespace.
-      // The execution output itself retains its original data shape.
-      const variables: Entry[] = [];
-      const remaining: Record<string, unknown> = Object.create(null);
-      for (const [name, fieldValue] of Object.entries(value)) {
-        if (persistentVariableKeys.includes(name) && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)
-          && !["__proto__", "constructor", "prototype"].includes(name)
-          && ["string", "number", "boolean"].includes(typeof fieldValue)) {
-          variables.push({ key: `$vars.${name}`, value: fieldValue, variableKey: name });
-        } else remaining[name] = fieldValue;
-      }
-      return [...(Object.keys(remaining).length ? [{ key, value: remaining }] : []), ...variables];
-    });
-  }, [data, maxItems, pathSegments, persistentVariableKeys, variableNamespace]);
-
-  if (!isObjectLike(data)) return null;
-
-  const isArray = Array.isArray(data);
-  const totalLength = isArray ? data.length : 0;
-
-  const remainingCount = isArray ? totalLength - entriesToShow.length : 0;
-
-  return (
-    <div className="flex flex-col gap-2 mb-2">
-      {entriesToShow.map(({ key, value, variableKey }) => {
-        const fullSegments = [...(pathSegments ?? []), key];
-        const fullKey = pathSegments
-          ? formatPath(fullSegments).replace(/^\./, "")
-          : parentKey
-            ? `${parentKey}${formatPath([key])}`
-            : formatPath([key]).replace(/^\./, "");
-        const isNestedObject = isObjectLike(value);
-        const displayKey = isArray ? `[${key}]` : String(key);
-        const canDrag = draggable || Boolean(variableKey && sourceNodeId);
+    return <div className="flex flex-col gap-2 mb-2">
+      {entries.map(({ key, value, variableKey }) => {
+        if (budget.entries <= 0 || budget.characters <= 0) return null;
+        budget.entries -= 1;
+        const fullSegments = [...segments, key];
+        const path = JSON.stringify(fullSegments);
+        const fullKey = `${parentKey}${formatPath(fullSegments)}`.replace(/^\./, "");
+        const nested = objectLike(value);
         const reference = variableKey ? `{{ $vars.${variableKey} }}` : fullKey;
-
-        return (
-          <div key={fullKey} className="flex flex-col ml-2">
-            <div className="flex items-center gap-2">
-              <div
-                className={`nodrag px-2 py-1 bg-primary/10 hover:bg-primary/20 rounded text-xs font-semibold w-fit text-primary transition-colors ${
-                  canDrag
-                    ? "cursor-pointer cursor-grab active:cursor-grabbing"
-                    : "cursor-default"
-                }`}
-                draggable={canDrag}
-                onDragStart={(e) => {
-                  if (!canDrag) return;
-                  const asString = toStringValue(value);
-                  onDragStart(e, reference, asString);
-                  e.dataTransfer.setData(
-                    "application/reactflow",
-                    JSON.stringify(
-                      {
-                        ...createJsonReferenceDragPayload(fullSegments, sourceNodeId, asString),
-                        ...(variableKey ? { variableKey } : {}),
-                      },
-                    ),
-                  );
-                  e.dataTransfer.setData("text/plain", reference);
-                  e.dataTransfer.effectAllowed = "copy";
-                }}
-                onDragEnd={() =>
-                  document.body.classList.remove(
-                    "cursor-grabbing",
-                    "select-none",
-                  )
-                }
-                onMouseDown={(e) => e.stopPropagation()}
-                title={
-                  isNestedObject
-                    ? Array.isArray(value)
-                      ? "Array"
-                      : "Object"
-                    : toStringValue(value)
-                }
-              >
-                {displayKey}
-              </div>
-
-              <span className="text-xs text-muted-foreground">
-                {isNestedObject ? (
-                  <span className="font-mono text-muted-foreground/60">
-                    {Array.isArray(value) ? "[...]" : "{...}"}
-                  </span>
-                ) : (
-                  toStringValue(value)
-                )}
-              </span>
-            </div>
-
-            {isNestedObject && (
-              <div className="ml-4">
-                <DraggableFieldsPanel
-                  data={value}
-                  onDragStart={onDragStart}
-                  parentKey={fullKey}
-                  pathSegments={fullSegments}
-                  sourceNodeId={sourceNodeId}
-                  maxItems={maxItems}
-                  draggable={draggable}
-                  persistentVariableKeys={persistentVariableKeys}
-                />
-              </div>
-            )}
+        const canDrag = draggable || Boolean(variableKey && sourceNodeId);
+        const label = text(Array.isArray(source) ? `[${key}]` : String(key));
+        return <div key={path} className="flex flex-col ml-2">
+          <div className="flex items-center gap-2">
+            {nested && <button type="button" className="nodrag text-xs" aria-label={`${expanded[path] ? "Collapse" : "Expand"} ${label}`} aria-expanded={!!expanded[path]} disabled={depth >= 12} onClick={() => setExpanded(previous => ({ ...previous, [path]: !previous[path] }))}>{expanded[path] ? "−" : "+"}</button>}
+            <div className={`nodrag px-2 py-1 bg-primary/10 rounded text-xs font-semibold text-primary ${canDrag ? "cursor-grab" : "cursor-default"}`}
+              draggable={canDrag} onMouseDown={event => event.stopPropagation()}
+              onDragStart={event => {
+                if (!canDrag) return;
+                const raw = stringify(value);
+                onDragStart(event, reference, raw);
+                event.dataTransfer.setData("application/reactflow", JSON.stringify({ ...createJsonReferenceDragPayload(fullSegments, sourceNodeId, raw), ...(variableKey ? { variableKey } : {}) }));
+                event.dataTransfer.setData("text/plain", reference);
+                event.dataTransfer.effectAllowed = "copy";
+              }} onDragEnd={() => document.body.classList.remove("cursor-grabbing", "select-none")}>{label}</div>
+            <span className="text-xs text-muted-foreground break-all">{nested ? Array.isArray(value) ? `[${value.length} items]` : "{…}" : text(value)}</span>
           </div>
-        );
+          {nested && expanded[path] && depth < 12 && budget.entries > 0 && budget.characters > 0 && <div className="ml-4">{renderBranch(value, fullSegments, depth + 1)}</div>}
+        </div>;
       })}
-
-      {/* Show remaining items indicator for arrays */}
-      {isArray && remainingCount > 0 && (
-        <div className="ml-2 mt-1 text-xs text-muted-foreground italic">
-          ... and {remainingCount.toLocaleString()} more item
-          {remainingCount !== 1 ? "s" : ""}
-        </div>
-      )}
-    </div>
-  );
+      {length > pageSize && <div className="ml-2 flex items-center gap-2 text-xs">
+        <button type="button" className="nodrag underline" disabled={start === 0} onClick={() => setPages(previous => ({ ...previous, [branch]: Math.max(0, page - 1) }))}>Previous</button>
+        <span>{start + 1}–{Math.min(length, start + pageSize)} of {length}</span>
+        <button type="button" className="nodrag underline" disabled={start + pageSize >= length} onClick={() => setPages(previous => ({ ...previous, [branch]: page + 1 }))}>Next</button>
+      </div>}
+    </div>;
+  };
+  const tree = renderBranch(data, pathSegments, 0);
+  return <>{tree}{(budget.entries <= 0 || budget.characters <= 0) && <p role="status" className="text-xs text-muted-foreground">Display limit reached. Collapse a branch to inspect more, or export the complete output.</p>}</>;
 };
-
 export default React.memo(DraggableFieldsPanel);

@@ -39,3 +39,12 @@ export const useEdgeEndpointsExpanded = (source: string, target: string): boolea
     () => false,
   );
 };
+
+export const useNodeExpanded = (nodeId: string | undefined): boolean => {
+  const state = getState(useStoreApi().getState);
+  return useSyncExternalStore(
+    listener => { state.listeners.add(listener); return () => { state.listeners.delete(listener); }; },
+    () => !!nodeId && state.nodes.has(nodeId),
+    () => false,
+  );
+};

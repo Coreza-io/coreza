@@ -53,6 +53,47 @@ export interface NodeExecutionData {
 export class ExecutionContext {
   private store = new Map<string, NodeExecutionData>();
   private pinnedOutputs = new Map<string, unknown>();
+  private dirtyNodes = new Set<string>();
+  private nodeListeners = new Map<string, Set<() => void>>();
+  version = 0;
+  private nodeVersions = new Map<string, number>();
+  getNodeVersion(id: string): number { return this.nodeVersions.get(id) ?? 0; }
+
+  subscribeNode(id: string, listener: () => void): () => void {
+    const listeners = this.nodeListeners.get(id) ?? new Set<() => void>();
+    listeners.add(listener);
+    this.nodeListeners.set(id, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.nodeListeners.delete(id);
+    };
+  }
+
+  /** Stage writes first; the existing explicit notification commits the transaction. */
+  flushNotifications(): void {
+    const dirty = [...this.dirtyNodes];
+    this.dirtyNodes.clear();
+    this.version += 1;
+    dirty.forEach(id => {
+      if (this.store.has(id)) this.nodeVersions.set(id, this.version);
+      else this.nodeVersions.delete(id);
+      this.nodeListeners.get(id)?.forEach(listener => listener());
+    });
+  }
+
+  /** Session replacement drops pins too; Clear Runtime deliberately retains them. */
+  dispose(): void {
+    for (const id of this.store.keys()) this.dirtyNodes.add(id);
+    this.store.clear();
+    this.pinnedOutputs.clear();
+    this.nodeVersions.clear();
+  }
+
+  retireNode(id: string): void {
+    this.store.delete(id);
+    this.pinnedOutputs.delete(id);
+    this.dirtyNodes.add(id);
+  }
   
   // CRITICAL FIX: Expose store for ID checking
   get storeMap() {
@@ -68,6 +109,7 @@ export class ExecutionContext {
   }
 
   setNodeData(id: string, data: Partial<NodeExecutionData>): void {
+    this.dirtyNodes.add(id);
     const prev = this.store.get(id) ?? {};
     if (this.pinnedOutputs.has(id) && Object.prototype.hasOwnProperty.call(data, 'output')) {
       const { output: _ignoredOutput, ...nonOutputData } = data;
@@ -82,6 +124,9 @@ export class ExecutionContext {
   }
 
   setPinned(id: string, value: unknown | null): void {
+    if (value === null && !this.pinnedOutputs.has(id)) return;
+    if (value !== null && this.pinnedOutputs.has(id) && Object.is(this.pinnedOutputs.get(id), value)) return;
+    this.dirtyNodes.add(id);
     if (value === null) {
       this.pinnedOutputs.delete(id);
       return;
@@ -106,6 +151,8 @@ export class ExecutionContext {
     const pinned = this.pinnedOutputs.get(oldId);
     if (hasData && data) this.store.set(newId, data);
     if (hasPinned) this.pinnedOutputs.set(newId, pinned);
+    this.dirtyNodes.add(oldId);
+    this.dirtyNodes.add(newId);
     if (hasData) this.store.delete(oldId);
     if (hasPinned) this.pinnedOutputs.delete(oldId);
   }
@@ -235,6 +282,7 @@ export class ExecutionContext {
 
   /** Clear transient execution data while retaining registered pinned outputs. */
   clear() {
+    for (const id of this.store.keys()) this.dirtyNodes.add(id);
     this.store.clear();
     this.pinnedOutputs.forEach((output, id) => {
       this.store.set(id, { output });

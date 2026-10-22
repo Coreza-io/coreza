@@ -1,3 +1,5 @@
+import { lazy } from "react";
+import { RouteBoundary } from "@/components/common/RouteBoundary";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -15,17 +17,17 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Header } from "@/components/layout/Header";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
-import Dashboard from "./Dashboard";
-import Projects from "./Projects";
-import Workflows from "./Workflows";
-import WorkflowEditor from "./WorkflowEditor";
-import Profile from "./Profile";
-import Settings from "./Settings";
-import MarketSubscriptions from "./MarketSubscriptions";
-import Backtests from "./Backtests";
-import BacktestResults from "./BacktestResults";
-import LiveStrategies from "./LiveStrategies";
-import LiveStrategyDetail from "./LiveStrategyDetail";
+const Dashboard = lazy(() => import("./Dashboard"));
+const Projects = lazy(() => import("./Projects"));
+const Workflows = lazy(() => import("./Workflows"));
+const WorkflowEditor = lazy(() => import("./WorkflowEditor"));
+const Profile = lazy(() => import("./Profile"));
+const Settings = lazy(() => import("./Settings"));
+const MarketSubscriptions = lazy(() => import("./MarketSubscriptions"));
+const Backtests = lazy(() => import("./Backtests"));
+const BacktestResults = lazy(() => import("./BacktestResults"));
+const LiveStrategies = lazy(() => import("./LiveStrategies"));
+const LiveStrategyDetail = lazy(() => import("./LiveStrategyDetail"));
 
 const Interface = () => {
   const { user, loading } = useAuth();
@@ -67,18 +69,18 @@ const Interface = () => {
           {!isWorkflowEditorPage && <Header />}
           <main className={`flex-1 ${!isWorkflowEditorPage ? 'p-6' : ''}`}>
             <Routes>
-              <Route index element={<Dashboard />} />
-              <Route path="projects" element={<Projects />} />
-              <Route path="workflows" element={<Workflows />} />
-              <Route path="workflow/new" element={<WorkflowEditor />} />
-              <Route path="workflow/:id" element={<WorkflowEditor />} />
-              <Route path="backtests" element={<Backtests />} />
-              <Route path="backtests/:id" element={<BacktestResults />} />
-              <Route path="live" element={<LiveStrategies />} />
-              <Route path="live/:id" element={<LiveStrategyDetail />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="market-subscriptions" element={<MarketSubscriptions />} />
+              <Route index element={<RouteBoundary><Dashboard /></RouteBoundary>} />
+              <Route path="projects" element={<RouteBoundary><Projects /></RouteBoundary>} />
+              <Route path="workflows" element={<RouteBoundary><Workflows /></RouteBoundary>} />
+              <Route path="workflow/new" element={<RouteBoundary><WorkflowEditor /></RouteBoundary>} />
+              <Route path="workflow/:id" element={<RouteBoundary><WorkflowEditor /></RouteBoundary>} />
+              <Route path="backtests" element={<RouteBoundary><Backtests /></RouteBoundary>} />
+              <Route path="backtests/:id" element={<RouteBoundary><BacktestResults /></RouteBoundary>} />
+              <Route path="live" element={<RouteBoundary><LiveStrategies /></RouteBoundary>} />
+              <Route path="live/:id" element={<RouteBoundary><LiveStrategyDetail /></RouteBoundary>} />
+              <Route path="profile" element={<RouteBoundary><Profile /></RouteBoundary>} />
+              <Route path="settings" element={<RouteBoundary><Settings /></RouteBoundary>} />
+              <Route path="market-subscriptions" element={<RouteBoundary><MarketSubscriptions /></RouteBoundary>} />
             </Routes>
           </main>
         </div>

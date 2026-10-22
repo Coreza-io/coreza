@@ -17,17 +17,29 @@ export function resolvePreviousNodeId(
   return previousNodes[0]?.id;
 }
 
+// Weak keys keep indexes owned by the lifetime of the current graph snapshot.
+const incomingIndexes = new WeakMap<object, Map<string, string[]>>();
+const distanceCaches = new WeakMap<object, Map<string, Map<string, number>>>();
+const nodeIndexes = new WeakMap<object, Map<string, InputNode>>();
+
 export function getUpstreamDistances(
   nodeId: string | undefined,
   edges: readonly { source: string; target: string }[],
 ): Map<string, number> {
   const distances = new Map<string, number>();
   if (!nodeId) return distances;
-  const incoming = new Map<string, string[]>();
-  for (const edge of edges) {
-    const sources = incoming.get(edge.target) ?? [];
-    sources.push(edge.source);
-    incoming.set(edge.target, sources);
+  let cache = distanceCaches.get(edges);
+  if (!cache) { cache = new Map(); distanceCaches.set(edges, cache); }
+  const cached = cache.get(nodeId);
+  if (cached) return cached;
+  let incoming = incomingIndexes.get(edges);
+  if (!incoming) {
+    incoming = new Map();
+    for (const edge of edges) {
+      const sources = incoming.get(edge.target) ?? [];
+      sources.push(edge.source); incoming.set(edge.target, sources);
+    }
+    incomingIndexes.set(edges, incoming);
   }
   distances.set(nodeId, 0);
   const queue = [nodeId];
@@ -39,6 +51,7 @@ export function getUpstreamDistances(
     }
   }
   distances.delete(nodeId);
+  cache.set(nodeId, distances);
   return distances;
 }
 
@@ -48,7 +61,8 @@ export function getPreviousNodes<T extends InputNode>(
   nodes: readonly T[],
   edges: readonly { source: string; target: string }[],
 ): T[] {
-  const nodesById = new Map(nodes.map(node => [node.id, node]));
+  let nodesById = nodeIndexes.get(nodes) as Map<string, T> | undefined;
+  if (!nodesById) { nodesById = new Map(nodes.map(node => [node.id, node])); nodeIndexes.set(nodes, nodesById); }
   return [...getUpstreamDistances(nodeId, edges).keys()]
     .flatMap(id => nodesById.has(id) ? [nodesById.get(id)!] : []);
 }

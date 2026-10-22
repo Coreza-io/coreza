@@ -8,10 +8,11 @@
  * See the LICENSE file for details.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, Pause, Play, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, Pause, Play, ChevronLeft, ChevronRight } from "lucide-react";
 import { isStandardNodeOutput } from "@/types/nodeOutput";
+import { canEditJson } from "./preview";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 
 
@@ -100,7 +101,7 @@ const createRenderData = (sourceNodeId?: string, persistentVariableKeys?: string
     return (
       <div className="flex items-center gap-2 p-3 bg-background rounded-md border border-border/30">
         <span className="text-xs font-semibold text-primary">value:</span>
-        <span className="text-xs text-foreground break-words">{String(data)}</span>
+        <span className="text-xs text-foreground break-words">{String(data).length > 2000 ? `${String(data).slice(0, 2000)}…` : String(data)}</span>
       </div>
     );
   };
@@ -127,17 +128,20 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   onStepNext,
   onStepPrevious,
 }) => {
-  const [internalData, setInternalData] = useState<any>(data);
+  const internalData = data;
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState("");
-
-  // Sync internal state when upstream data changes, unless pinned
+  const exportUrls = useRef(new Set<string>());
   useEffect(() => {
-    if (!pinned) {
-      setInternalData(data);
-      setIsEditing(false);
-    }
-  }, [data, pinned]);
+    setIsEditing(false); setEditText("");
+    return () => { exportUrls.current.forEach(url => URL.revokeObjectURL(url)); exportUrls.current.clear(); };
+  }, [sourceNodeId]);
+  const handleExport = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    exportUrls.current.add(url);
+    const link = document.createElement("a"); link.href = url; link.download = `${sourceNodeId ?? "output"}.json`; link.click();
+    setTimeout(() => { URL.revokeObjectURL(url); exportUrls.current.delete(url); }, 0);
+  };
 
   const displayData = useMemo(() => {
     if (isStandardNodeOutput(internalData)) {
@@ -161,12 +165,11 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   const handleEdit = () => {
     // For editing, we need to be careful with large data
     try {
-      const dataStr = JSON.stringify(internalData, null, 2);
-      if (dataStr.length > 100000) {
+      if (!canEditJson(internalData)) {
         // Too large to edit safely
         setEditText('// Data too large to edit directly\n// Export to JSON file for editing');
       } else {
-        setEditText(dataStr);
+        setEditText(JSON.stringify(internalData, null, 2));
       }
       setIsEditing(true);
     } catch {
@@ -178,7 +181,6 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   const handleSave = () => {
     try {
       const parsed = JSON.parse(editText);
-      setInternalData(parsed);
       if (typeof onSave === "function") {
         onSave(parsed);
       }
@@ -214,6 +216,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
             <StatusBadge status={internalData.status} success={internalData.success} />
           )}
         </div>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleExport} title="Export complete output"><Download className="w-3 h-3" /></Button>
         {/* Hide edit/pin buttons in readOnly mode */}
         {!readOnly && (
           <div className="flex items-center space-x-1">

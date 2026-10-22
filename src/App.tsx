@@ -1,3 +1,5 @@
+import { lazy } from "react";
+import { RouteBoundary } from "@/components/common/RouteBoundary";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -17,10 +19,10 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { UserPreferencesProvider } from "@/contexts/UserPreferencesContext";
 import { useAuth } from "@/contexts/AuthContext";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import Interface from "./pages/Interface";
-import NotFound from "./pages/NotFound";
+const Login = lazy(() => import("./pages/Login"));
+const Signup = lazy(() => import("./pages/Signup"));
+const Interface = lazy(() => import("./pages/Interface"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
@@ -85,7 +87,7 @@ const App = () => (
                     path="/login"
                     element={
                       <PublicOnlyRoute>
-                        <Login />
+                        <RouteBoundary><Login /></RouteBoundary>
                       </PublicOnlyRoute>
                     }
                   />
@@ -93,7 +95,7 @@ const App = () => (
                     path="/signup"
                     element={
                       <PublicOnlyRoute>
-                        <Signup />
+                        <RouteBoundary><Signup /></RouteBoundary>
                       </PublicOnlyRoute>
                     }
                   />
@@ -101,11 +103,11 @@ const App = () => (
                     path="/dashboard/*"
                     element={
                       <ProtectedRoute>
-                        <Interface />
+                        <RouteBoundary><Interface /></RouteBoundary>
                       </ProtectedRoute>
                     }
                   />
-                  <Route path="*" element={<NotFound />} />
+                  <Route path="*" element={<RouteBoundary><NotFound /></RouteBoundary>} />
                 </Route>
               </Routes>
             </UserPreferencesProvider>

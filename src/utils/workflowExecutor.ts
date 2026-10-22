@@ -12,7 +12,7 @@ import { Node, Edge } from "@xyflow/react";
 import { startTransition } from "react";
 import ExecutionContext from "./executionContext";
 import { acceptEditorExecution } from "./executionGeneration";
-import { executeEditorNode } from "@/services/editorNodeExecution";
+import { executeEditorNode, type EditorNodeActionSnapshot } from "@/services/editorNodeExecution";
 import type { ExecutionVisualSnapshot } from "@/domain/clusters/executionVisuals";
 import { getControlResultHandle } from "./controlResult";
 
@@ -25,6 +25,7 @@ export interface ExecutorContext {
   setExecutionVisuals?: (progress: ExecutionVisualSnapshot | null) => void;
   toast: (params: any) => void;
   executionStore: ExecutionContext;
+  nodeActions?: EditorNodeActionSnapshot;
   executeNode?: (
     nodeId: string,
     executed: Set<string>,
@@ -54,6 +55,8 @@ export interface NodeExecutionDetail {
 
 export class WorkflowExecutor {
   private nodeStore: ExecutionContext;
+  private nodeById = new Map<string, Node>();
+  private incomingById = new Map<string, Edge[]>();
   private isAutoExecuting = false;
   private conditionalMap = new Map<string, Record<string, string[]>>();
   private branchOrigins = new Map<
@@ -96,11 +99,14 @@ export class WorkflowExecutor {
   }
 
   private async invokeNormalNode(nodeId: string): Promise<unknown> {
-    const node = this.context.nodes.find((candidate) => candidate.id === nodeId);
+    const node = this.nodeById.get(nodeId);
     const sessionId = node?.data?.workflowSessionId;
     if (typeof sessionId !== "string") throw new Error(`Node ${nodeId} has no editor session.`);
     const input = this.nodeStore.getNodeData(nodeId).input;
-    const outcome = await executeEditorNode(sessionId, nodeId, { input, lockToken: this.executionLockToken, signal: this.executionAbortController.signal });
+    const request = { input, lockToken: this.executionLockToken, signal: this.executionAbortController.signal };
+    const outcome = await (this.context.nodeActions
+      ? this.context.nodeActions.execute(nodeId, request)
+      : executeEditorNode(sessionId, nodeId, request));
     if (outcome.status === "cancelled") {
       this.stop();
       const error = new Error(outcome.reason ?? `Node ${nodeId} was cancelled.`);
@@ -114,7 +120,7 @@ export class WorkflowExecutor {
   }
 
   private getIncomingEdges = (targetId: string) =>
-    this.context.edges.filter((e) => e.target === targetId);
+    this.incomingById.get(targetId) ?? [];
 
   private markEdgePayload(edgeId: string, payload: any) {
     this.edgePayload.set(edgeId, payload);
@@ -126,26 +132,26 @@ export class WorkflowExecutor {
   }
 
   private isBranchNodeId(id: string) {
-    const n = this.context.nodes.find((x) => x.id === id);
+    const n = this.nodeById.get(id);
     const name = (n?.data?.definition as any)?.name;
     return name === "If" || name === "Switch";
   }
 
   private isLoopNodeId(id: string) {
-    const n = this.context.nodes.find((x) => x.id === id);
+    const n = this.nodeById.get(id);
     const name = (n?.data?.definition as any)?.name;
     return name === "Loop";
   }
 
   private isSubNode(id: string) {
-    const n = this.context.nodes.find((x) => x.id === id);
+    const n = this.nodeById.get(id);
     const nodeType = (n?.data?.definition as any)?.node_type;
     const isTool = (n?.data as any)?.values?.__isTool === true;
     return nodeType === "sub" || isTool;
   }
 
   private isStreamingNode(nodeId: string): boolean {
-    const node = this.context.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeById.get(nodeId);
     const definition = node?.data?.definition as any;
     return (
       definition?.executionMode === "streaming" ||
@@ -159,7 +165,7 @@ export class WorkflowExecutor {
     failed: Set<string>,
   ): boolean {
     if (this.isLoopNodeId(nodeId)) {
-      const n = this.context.nodes.find((x) => x.id === nodeId);
+      const n = this.nodeById.get(nodeId);
       const loopWaits: boolean = Boolean(n?.data?.loopWaits);
       if (!loopWaits) return true;
     }
@@ -170,7 +176,7 @@ export class WorkflowExecutor {
 
     if (requiredEdges.length === 0) return false;
 
-    const node = this.context.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeById.get(nodeId);
     const skipDependencyCheck = Boolean(
       (node?.data?.values as any)?.checkDependency,
     );
@@ -221,6 +227,12 @@ export class WorkflowExecutor {
   constructor(private context: ExecutorContext) {
     this.context.executeNode = this.executeNode.bind(this);
     this.nodeStore = context.executionStore;
+    this.nodeById = new Map(context.nodes.map(node => [node.id, node]));
+    for (const edge of context.edges) {
+      const incoming = this.incomingById.get(edge.target) ?? [];
+      incoming.push(edge);
+      this.incomingById.set(edge.target, incoming);
+    }
     this.preCalculateConditionalBranches();
   }
 
@@ -233,7 +245,7 @@ export class WorkflowExecutor {
 
     // Build a map: nodeId → { handle1: [targetA, targetB], handle2: [targetC], … }
     this.context.edges.forEach((edge) => {
-      const sourceNode = this.context.nodes.find((n) => n.id === edge.source);
+      const sourceNode = this.nodeById.get(edge.source);
       const nodeType = (sourceNode?.data?.definition as any)?.name;
       const isBranchingNode = ["If", "Switch"].includes(nodeType);
       if (!edge.sourceHandle || !isBranchingNode) return;
@@ -420,7 +432,7 @@ export class WorkflowExecutor {
     executedSet: Set<string>,
     explicitlyTriggered: boolean,
   ): Promise<any> {
-    const node = this.context.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeById.get(nodeId);
     const definition = node?.data?.definition as any;
     const timeout = definition?.streamingConfig?.timeout || 30000;
 
@@ -527,7 +539,7 @@ export class WorkflowExecutor {
    * Helper method to aggregate payloads to Loop nodes when an edge fires
    */
   private aggregateToLoop(sourceNodeId: string, edge: Edge, result: any): void {
-    const targetNode = this.context.nodes.find((n) => n.id === edge.target);
+    const targetNode = this.nodeById.get(edge.target);
     const isLoop = (targetNode?.data?.definition as any)?.name === "Loop";
 
     if (!isLoop) return;
@@ -625,7 +637,7 @@ export class WorkflowExecutor {
       acceptEditorExecution();
       if (this.executionAbortController.signal.aborted) this.executionAbortController = new AbortController();
     }
-    const node = this.context.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeById.get(nodeId);
     if (!node) {
       console.error(`❌ [WORKFLOW EXECUTOR] Node ${nodeId} not found`);
       return;
@@ -758,7 +770,7 @@ export class WorkflowExecutor {
 
         const id = queue.shift()!;
         //if (executed.has(id) || failed.has(id)) continue;
-        const node = this.context.nodes.find((n) => n.id === id);
+        const node = this.nodeById.get(id);
 
         // const inc = this.context.edges.filter((e) => e.target === id);
         // const missing =

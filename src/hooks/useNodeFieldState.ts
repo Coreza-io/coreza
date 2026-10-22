@@ -134,6 +134,7 @@ export function useNodeFieldState({
         next[field.key] = options[0].value;
       }
     }
+    if (Object.keys(next).length === Object.keys(base).length && Object.keys(next).every(key => Object.is(next[key], base[key]))) return true;
     if (!updateNodeData(nodeId!, { values: next, fieldState: next })) return false;
     ownWrite.current = next; draft.current = next; setFieldState(next);
     return true;

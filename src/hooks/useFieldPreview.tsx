@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { NodePortalContainerContext } from "@/contexts/NodePortalContainerContext";
 
 // Common focus/click popup for node fields; content still uses each field's evaluator.
-export function useFieldPreview(enabled: boolean, content: ReactNode) {
+export function useFieldPreview(enabled: boolean, content: ReactNode | (() => ReactNode)) {
   const container = useContext(NodePortalContainerContext);
   const [isOpen, setIsOpen] = useState(false);
   const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
@@ -42,7 +42,7 @@ export function useFieldPreview(enabled: boolean, content: ReactNode) {
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">Preview</span>
           </div>
           <div className="px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-40 overflow-auto font-mono bg-background">
-            {content}
+            {typeof content === "function" ? content() : content}
           </div>
           <div className="px-3 py-2 bg-muted/50 text-[11px] text-muted-foreground flex items-center gap-1">
             <span className="font-semibold text-foreground">Tip:</span>

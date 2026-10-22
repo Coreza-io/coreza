@@ -9,10 +9,10 @@ import { recoverClusterDocument } from '@/domain/clusters/recovery';
  * See the LICENSE file for details.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Node, Edge } from '@xyflow/react';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWorkflowVersioning } from '@/hooks/useWorkflowVersioning';
 import { nodeManifest } from '@/nodes/manifest';
@@ -24,6 +24,7 @@ import { hashEditableWorkflowContent, savedWorkflowFromRow, serializeWorkflowCon
 
 export interface WorkflowPersistenceOptions {
   projectId: string | null;
+  workflowId?: string | null;
 }
 
 export interface SaveOptions {
@@ -49,9 +50,17 @@ export interface NodeReductionCheck {
   currentCount: number;
 }
 
-export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions) => {
-  const { toast } = useToast();
+export const useWorkflowPersistence = ({ projectId, workflowId: documentId }: WorkflowPersistenceOptions) => {
   const { user: authUser, session } = useAuth();
+  const scope = useMemo(() => ({}), [authUser?.id, projectId, documentId]);
+  const currentScope = useRef<object | null>(scope);
+  currentScope.current = scope;
+  useEffect(() => {
+    currentScope.current = scope;
+    setLoading(false); setSaving(false);
+    revisionRef.current = null; lastSavedHashRef.current = "";
+    return () => { if (currentScope.current === scope) currentScope.current = null; };
+  }, [scope]);
   const { shouldBlockEmptySave } = useWorkflowVersioning();
 
   const [hierarchySupported, setHierarchySupported] = useState(false);
@@ -132,7 +141,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
       edges: Edge[],
       opts: { isNew?: boolean; clusters?: readonly NodeCluster[] } = {},
     ): Promise<{ success: boolean; newId?: string; revision?: number }> => {
-      if (!authUser) {
+      if (!authUser || currentScope.current !== scope) {
         toast({
           title: 'Error',
           description: 'Please log in to save workflows',
@@ -193,6 +202,7 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           }
           const { workflow: row } = await response.json();
           const workflow = savedWorkflowFromRow(row);
+          if (currentScope.current !== scope) return { success: false };
           revisionRef.current = workflow.revision;
           lastSavedHashRef.current = hashEditableWorkflowContent(workflow.content);
           toast({ title: 'Success', description: 'Workflow updated!' });
@@ -202,12 +212,14 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           if (!response.ok) throw new Error((await response.json() as { message?: string }).message || 'Save failed');
           const { workflow: row } = await response.json();
           const workflow = savedWorkflowFromRow(row);
+          if (currentScope.current !== scope) return { success: false };
           revisionRef.current = workflow.revision;
           lastSavedHashRef.current = hashEditableWorkflowContent(workflow.content);
           toast({ title: 'Success', description: 'Workflow saved!' });
           return { success: true, newId: workflow.workflowId, revision: workflow.revision };
         }
       } catch (error: any) {
+        if (currentScope.current !== scope) return { success: false };
         const msg = error.message || 'Unknown error occurred';
         toast({
           title: 'Error',
@@ -217,11 +229,12 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
         return { success: false };
       } finally {
         saveInFlightRef.current = false;
-        setSaving(false);
+        if (currentScope.current === scope) setSaving(false);
       }
     },
     [
       authUser,
+      scope,
       hierarchySupported,
       projectId,
       toast,
@@ -237,12 +250,16 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
     async (
       workflowId: string,
       removeEdge: (id: string) => void,
+      options: { signal?: AbortSignal; isCurrent?: () => boolean } = {},
     ): Promise<LoadedWorkflow | null> => {
       if (!authUser) return null;
 
+      const canPublish = () => currentScope.current === scope && !options.signal?.aborted && (options.isCurrent?.() ?? true);
+      if (!canPublish()) return null;
       setLoading(true);
       try {
-        const response = await apiClient.get(`/workflows/${workflowId}`, session?.access_token);
+        const response = await apiClient.request(`/workflows/${workflowId}`, { method: "GET", token: session?.access_token, signal: options.signal });
+        if (!canPublish()) return null;
         if (!response.ok) {
           toast({
             title: 'Error',
@@ -305,10 +322,12 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
           revision: typeof data.revision === 'number' ? data.revision : 0,
         };
 
+        if (!canPublish()) return null;
         revisionRef.current = result.revision;
         markSaved(restoredNodes, restoredEdges, result.name, result.clusters);
         return result;
       } catch (error: any) {
+        if (!canPublish()) return null;
         console.error('Error loading workflow:', error);
         toast({
           title: 'Error',
@@ -317,10 +336,10 @@ export const useWorkflowPersistence = ({ projectId }: WorkflowPersistenceOptions
         });
         return null;
       } finally {
-        setLoading(false);
+        if (canPublish()) setLoading(false);
       }
     },
-    [authUser, session?.access_token, toast, markSaved],
+    [authUser?.id, scope, session?.access_token, markSaved],
   );
 
   // ──────────────────────────────────────────────

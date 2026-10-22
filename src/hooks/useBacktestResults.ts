@@ -1,3 +1,4 @@
+import { useScopedLoader } from "./useScopedLoader";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -105,7 +106,8 @@ export const useBacktestResults = (id?: string, enabled = true) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
+  const performLoad = useCallback(async (isCurrent: () => boolean) => {
+    if (!isCurrent()) return;
     if (!enabled || !user || !id) {
       setBacktest(null);
       setMetrics(null);
@@ -127,6 +129,7 @@ export const useBacktestResults = (id?: string, enabled = true) => {
         .eq("id", id)
         .single();
 
+      if (!isCurrent()) return;
       if (backtestError) throw backtestError;
       setBacktest(backtestData as BacktestWithRelations);
 
@@ -149,6 +152,7 @@ export const useBacktestResults = (id?: string, enabled = true) => {
             .order("date", { ascending: true }),
         ]);
 
+      if (!isCurrent()) return;
       if (metricsResult.status === "fulfilled" && metricsResult.value.data) {
         setMetrics(metricsResult.value.data as BacktestResultMetrics);
       }
@@ -164,12 +168,14 @@ export const useBacktestResults = (id?: string, enabled = true) => {
           : [],
       );
     } catch (err: any) {
+      if (!isCurrent()) return;
       console.error("Error loading backtest results", err);
       setError(err.message || "Failed to load backtest results");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [enabled, id, user]);
+  }, [enabled, id, user?.id]);
+  const loadData = useScopedLoader(`${user?.id ?? ""}:${id ?? ""}:${enabled}`, performLoad);
 
   useEffect(() => {
     if (!enabled) {

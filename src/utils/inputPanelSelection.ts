@@ -42,28 +42,15 @@ export function getUpstreamDistances(
   return distances;
 }
 
-export function resolveHistoricalNodeId(
-  selectedId: string | undefined,
-  executions: readonly { nodeId: string }[],
-  nodeId?: string,
-  edges: readonly { source: string; target: string }[] = [],
-): string | undefined {
-  if (executions.length === 0) return undefined;
-  if (executions.some(execution => execution.nodeId === selectedId)) return selectedId;
-  const distances = getUpstreamDistances(nodeId, edges);
-  let nearest: string | undefined;
-  let distance = Infinity;
-  for (const execution of executions) {
-    const candidate = distances.get(execution.nodeId) ?? Infinity;
-    if (candidate < distance) {
-      nearest = execution.nodeId;
-      distance = candidate;
-    }
-  }
-  if (nearest) return nearest;
-  // Older runs may lack edges; use the preceding recorded execution when possible.
-  const index = executions.findIndex(execution => execution.nodeId === nodeId);
-  return executions[index > 0 ? index - 1 : 0]?.nodeId;
+/** Use the complete graph inventory in both editor and history, including unexecuted branches. */
+export function getPreviousNodes<T extends InputNode>(
+  nodeId: string | undefined,
+  nodes: readonly T[],
+  edges: readonly { source: string; target: string }[],
+): T[] {
+  const nodesById = new Map(nodes.map(node => [node.id, node]));
+  return [...getUpstreamDistances(nodeId, edges).keys()]
+    .flatMap(id => nodesById.has(id) ? [nodesById.get(id)!] : []);
 }
 
 export function resolveLiveInputData(

@@ -42,7 +42,7 @@ import {
 } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 import {
-  resolveHistoricalNodeId,
+  getPreviousNodes,
   resolveLiveInputData,
   resolvePreviousNodeId,
 } from "@/utils/inputPanelSelection";
@@ -75,6 +75,7 @@ export interface BaseNodeRenderProps {
   selectOptions: Record<string, any[]>;
   showAuth: boolean;
   previousNodes: readonly SemanticNode[];
+  referenceNodes?: readonly SemanticNode[];
   selectedPrevNodeId: string;
   selectedInputData: any;
   incomingEdgeCount: number;
@@ -192,17 +193,24 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     );
   }, [canonicalGraph.nodes, definition?.name, nodeId, data.displayName]);
 
-  // History previews use the run's executed outputs, independently of editor topology.
-  const previousNodes = useMemo<readonly SemanticNode[]>(() => {
-    if (readOnly) {
-      return (data.allNodeExecutions ?? []).map((execution: { nodeId: string; output?: unknown }) => ({
-        id: execution.nodeId,
-        data: { output: execution.output },
-      }));
-    }
-    if (!nodeId) return [];
-    return canonicalGraph.getUpstreamNodes(nodeId).filter(node => node.id !== nodeId);
-  }, [canonicalGraph, nodeId, readOnly, data.allNodeExecutions]);
+  // Named references use the complete inventory; dropdown options use only upstream topology.
+  const referenceNodes = useMemo<readonly SemanticNode[]>(() => {
+    if (!readOnly) return canonicalGraph.nodes;
+    const recorded = new Map<string, unknown>((data.allNodeExecutions ?? []).map(
+      (execution: { nodeId: string; output?: unknown }): [string, unknown] => [execution.nodeId, execution.output],
+    ));
+    return (data.historyNodes ?? []).map((node: SemanticNode) => ({
+      ...node, data: { ...node.data, output: recorded.get(node.id) },
+    }));
+  }, [canonicalGraph.nodes, readOnly, data.historyNodes, data.allNodeExecutions]);
+  const previousNodes = useMemo(
+    () => getPreviousNodes(
+      nodeId ?? undefined,
+      referenceNodes,
+      readOnly ? data.historyEdges ?? [] : canonicalGraph.edges,
+    ),
+    [nodeId, referenceNodes, readOnly, data.historyEdges, canonicalGraph.edges],
+  );
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;
@@ -217,23 +225,18 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   const preferredPrevNodeId = useMemo(() => {
     if (!nodeId) return undefined;
-    return canonicalGraph.edges.find(
-      (edge) => edge.target === nodeId && edge.sourceHandle === "done",
+    const edges = readOnly ? data.historyEdges ?? [] : canonicalGraph.edges;
+    return edges.find(
+      (edge: { target: string; sourceHandle?: string | null }) => edge.target === nodeId && edge.sourceHandle === "done",
     )?.source;
-  }, [canonicalGraph.edges, nodeId]);
+  }, [canonicalGraph.edges, nodeId, readOnly, data.historyEdges]);
 
   const resolvedPrevNodeId = useMemo(
-    () => readOnly
-      ? resolveHistoricalNodeId(selectedPrevNodeId, data.allNodeExecutions ?? [], nodeId ?? undefined, data.historyEdges)
-      : resolvePreviousNodeId(
-        selectedPrevNodeId,
-        previousNodes,
-        preferredPrevNodeId,
-      ),
-    [preferredPrevNodeId, previousNodes, selectedPrevNodeId, readOnly, data.allNodeExecutions, nodeId, data.historyEdges],
+    () => resolvePreviousNodeId(selectedPrevNodeId, previousNodes, preferredPrevNodeId),
+    [preferredPrevNodeId, previousNodes, selectedPrevNodeId],
   );
 
-  // Historical selection is owned by InputPanel's executed-node options.
+  // InputPanel owns historical selection against the saved graph's upstream nodes.
   useEffect(() => {
     if (readOnly) return;
     const nextId = resolvedPrevNodeId ?? "";
@@ -306,6 +309,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     readOnly,
     fieldState: fieldStateHook.fieldState,
     previousNodes,
+    referenceNodes,
     selectedPrevNodeId: resolvedPrevNodeId ?? "",
     selectedPrevNode,
   });
@@ -605,6 +609,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     selectOptions: credentialsHook.selectOptions,
     showAuth,
     previousNodes,
+    referenceNodes,
     selectedPrevNodeId: readOnly ? resolvedPrevNodeId ?? "" : selectedPrevNodeId,
     selectedInputData,
     incomingEdgeCount,

@@ -14,12 +14,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import NodeInputSelector from "./NodeInputSelector";
 import { useVariableSnapshot } from "@/hooks/useVariableSnapshot";
 import type { Node } from "@xyflow/react";
-import { getAllUpstreamNodes } from "./getAllUpstreamNodes";
+import type { SemanticNode } from "@/contexts/canonicalGraphStore";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useExecutionStoreVersion } from "@/contexts/ExecutionStoreContext";
 import { useOptionalSemanticGraphSnapshot } from "@/contexts/StableNodeContext";
-import { getUpstreamDistances, resolveHistoricalNodeId, resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
+import { getPreviousNodes, getUpstreamDistances, resolveLiveInputData, resolvePreviousNodeId } from "./inputPanelSelection";
 
 type NodeExecutionLog = {
   nodeId: string;
@@ -51,9 +51,10 @@ type InputPanelProps = {
   // Read-only mode for execution view
   readOnly?: boolean;
   executionInput?: any;
-  // All node executions for dropdown in readOnly mode
+  // Recorded values are separate from the historical topology used for options.
   allNodeExecutions?: NodeExecutionLog[];
-  historyEdges?: readonly { source: string; target: string }[];
+  historyNodes?: readonly SemanticNode[];
+  historyEdges?: readonly { source: string; target: string; sourceHandle?: string | null }[];
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({
@@ -68,8 +69,8 @@ const InputPanel: React.FC<InputPanelProps> = ({
   setSelectedPrevNodeId,
   executionStore,
   readOnly = false,
-  executionInput,
   allNodeExecutions,
+  historyNodes,
   historyEdges,
 }) => {
   // History is intentionally isolated from the live canonical document.
@@ -82,21 +83,14 @@ const InputPanel: React.FC<InputPanelProps> = ({
   if (!readOnly && !canonicalGraph) {
     throw new Error("Live InputPanel must be used within StableNodeProvider");
   }
-  const nodes = readOnly ? initialNodes : canonicalGraph?.nodes ?? initialNodes;
-  const edges = readOnly ? initialEdges : canonicalGraph?.edges ?? initialEdges;
+  const nodes = readOnly ? historyNodes ?? [] : canonicalGraph?.nodes ?? initialNodes;
+  const edges = readOnly ? historyEdges ?? [] : canonicalGraph?.edges ?? initialEdges;
 
-  const distances = useMemo(
-    () => getUpstreamDistances(nodeId, readOnly ? historyEdges ?? [] : edges),
-    [nodeId, readOnly, historyEdges, initialEdges, edges],
+  const distances = useMemo(() => getUpstreamDistances(nodeId, edges), [nodeId, edges]);
+  const previousNodes = useMemo(
+    () => getPreviousNodes(nodeId, nodes, edges),
+    [nodeId, nodes, edges],
   );
-  const previousNodes = useMemo(() => {
-    if (!nodeId) return [];
-    const upstream = readOnly
-      ? getAllUpstreamNodes(nodeId, initialEdges, initialNodes)
-      : canonicalGraph?.getUpstreamNodes(nodeId) ?? [];
-    return [...upstream].filter(node => node.id !== nodeId).sort((a, b) =>
-      (distances.get(a.id) ?? Infinity) - (distances.get(b.id) ?? Infinity));
-  }, [canonicalGraph, distances, initialEdges, initialNodes, nodeId, readOnly]);
 
   // Prefer a direct 'done' edge source when connected (Loop aggregated output)
   const preferredPrevId = useMemo(() => {
@@ -112,40 +106,30 @@ const InputPanel: React.FC<InputPanelProps> = ({
     [preferredPrevId, previousNodes, selectedPrevNodeId],
   );
 
-  // Repair stale projected/deleted selections as soon as canonical topology changes.
+  // Repair selections against the same upstream options in both modes.
   useEffect(() => {
-    if (readOnly || typeof setSelectedPrevNodeId !== "function") return;
-    if (resolvedPrevNodeId !== selectedPrevNodeId) {
-      setSelectedPrevNodeId(resolvedPrevNodeId ?? "");
+    if (typeof setSelectedPrevNodeId !== "function") return;
+    const nextId = resolvedPrevNodeId ?? "";
+    if (nextId !== (selectedPrevNodeId ?? "")) {
+      setSelectedPrevNodeId(nextId);
     }
   }, [
-    readOnly,
     resolvedPrevNodeId,
     selectedPrevNodeId,
     setSelectedPrevNodeId,
   ]);
 
-  const historicalNodeId = readOnly
-    ? resolveHistoricalNodeId(selectedPrevNodeId, allNodeExecutions ?? [], nodeId, historyEdges)
-    : undefined;
-  const selectedExecution = allNodeExecutions?.find(exec => exec.nodeId === historicalNodeId);
+  const selectedExecution = allNodeExecutions?.find(exec => exec.nodeId === resolvedPrevNodeId);
   const historicalTimestamp = selectedExecution?.completedAt ?? selectedExecution?.startedAt;
   const timestamp = readOnly
     ? historicalTimestamp ? new Date(historicalTimestamp) : undefined
     : new Date();
 
-  useEffect(() => {
-    if (readOnly && setSelectedPrevNodeId && selectedPrevNodeId !== (historicalNodeId ?? "")) {
-      setSelectedPrevNodeId(historicalNodeId ?? "");
-    }
-  }, [readOnly, historicalNodeId, selectedPrevNodeId, setSelectedPrevNodeId]);
-
-  // Get outputData - use executionInput directly in readOnly mode
+  // Selecting an unexecuted historical branch must never fall back to editor data.
   const outputData = useMemo(() => {
     void executionStoreVersion;
     if (readOnly) {
-      if (selectedExecution) return owns(selectedExecution, "output") ? selectedExecution.output : {};
-      return executionInput !== undefined ? executionInput : {};
+      return owns(selectedExecution, "output") ? selectedExecution.output : undefined;
     }
     return resolveLiveInputData(
       resolvedPrevNodeId,
@@ -158,16 +142,15 @@ const InputPanel: React.FC<InputPanelProps> = ({
     executionStore,
     executionStoreVersion,
     readOnly,
-    executionInput,
     selectedExecution,
   ]);
 
-  const nodeOptions = (readOnly
-    ? (allNodeExecutions ?? []).map(exec => ({ id: exec.nodeId, label: exec.nodeName || exec.nodeId }))
-    : previousNodes.map(node => ({ id: node.id, label: nodeDisplayName(node) })))
-    .map(node => ({ ...node, distance: distances.get(node.id) }))
-    .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
-  const selectedId = readOnly ? historicalNodeId : resolvedPrevNodeId;
+  const nodeOptions = previousNodes.map(node => ({
+    id: node.id,
+    label: nodeDisplayName(node),
+    distance: distances.get(node.id),
+  }));
+  const selectedId = resolvedPrevNodeId;
 
   if (!isExpanded) return null;
 
@@ -203,9 +186,13 @@ const InputPanel: React.FC<InputPanelProps> = ({
           )}
           {readOnly && nodeOptions.length === 0 ? (
             <div className="text-sm text-muted-foreground italic text-center py-8">
-              No node execution details available for this run.
+              {historyNodes && historyEdges ? "No previous node connected." : "The workflow snapshot is unavailable for this run."}
             </div>
-          ) : readOnly || previousNodes.length > 0 ? (
+          ) : readOnly && !owns(selectedExecution, "output") ? (
+            <div className="text-sm text-muted-foreground italic text-center py-8">
+              No recorded output for this node in this run.
+            </div>
+          ) : previousNodes.length > 0 ? (
             <DraggableFieldsPanel
               data={outputData}
               persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}

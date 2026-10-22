@@ -120,7 +120,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
     && !field.options?.length && !!onBatchChange;
   const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
-  const variableQuery = useVariableSnapshot(supportsValueMode && valueMode === "expression", workflowId);
+  const variableQuery = useVariableSnapshot(!readOnly && supportsValueMode && valueMode === "expression", workflowId);
   const variableListId = React.useId();
   const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
     onBatchChange?.({
@@ -132,7 +132,10 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     typeof fieldValue === "string" && fieldValue.includes("{{");
   const referencePreview =
     isReference && getPreview ? getPreview(field.key) : null;
-  const fieldPreview = useFieldPreview(isReference && !!referencePreview, referencePreview);
+  const fieldPreview = useFieldPreview(
+    isReference && referencePreview !== null,
+    referencePreview === "" ? '""' : referencePreview,
+  );
   const multiselectValueMapDeps = React.useMemo(() => {
     if (field.type !== "multiselect") return "";
     const options = selectOptions[field.key] || field.options || [];
@@ -267,7 +270,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
     onFocus: handleInputFocus,
     onDragEnter: referenceDropEventHandlers.onDragEnter,
     onDrop: handleDropWrapper,
-    disabled: readOnly,
+    readOnly,
   };
 
   if (!shouldRender) return null;
@@ -374,7 +377,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
                     : undefined
               }
             />
-            {valueMode === "expression" && <datalist id={variableListId}>{variableQuery.data?.entries.map(entry => <option key={entry.key} value={`{{ $vars.${entry.key} }}`} />)}</datalist>}
+            {!readOnly && valueMode === "expression" && <datalist id={variableListId}>{variableQuery.data?.entries.map(entry => <option key={entry.key} value={`{{ $vars.${entry.key} }}`} />)}</datalist>}
             {referenceDrop.error && <p role="status" className="text-xs text-destructive">{referenceDrop.error}</p>}
             {fieldPreview.popup}
           </div>

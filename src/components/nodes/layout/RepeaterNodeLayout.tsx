@@ -148,6 +148,9 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       if (generation !== previewGeneration.current) return;
       setHasInput(context.hasInput);
       try {
+        if (disabled && referencesVariables(value)) {
+          throw new Error("Workflow variables are not included in execution history.");
+        }
         const dataType = isEditFieldDataType(row.dataType)
           ? row.dataType
           : "string";
@@ -190,7 +193,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [expression, fieldPreview.isOpen, getExpressionContext, row.dataType, row.fieldName, value]);
+  }, [expression, fieldPreview.isOpen, getExpressionContext, row.dataType, row.fieldName, value, disabled]);
   const [dropError, setDropError] = useState<string>();
   const referenceDrop = useReferenceTextDrop({
     value, meta: row.valueMode,
@@ -230,7 +233,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             className={editorClass}
             value={String(row.fieldName ?? "")}
             onChange={(e) => update(index, "fieldName", e.target.value)}
-            disabled={disabled}
+            readOnly={disabled}
           />
         </div>
         <div className="w-32">
@@ -308,7 +311,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLTextAreaElement | null>}
               onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
-              disabled={disabled}
+              readOnly={disabled}
             />
           ) : (
             <input
@@ -320,7 +323,7 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
               ref={referenceDrop.controlRef as React.MutableRefObject<HTMLInputElement | null>}
               onDragEnter={referenceDropEventHandlers.onDragEnter}
               onDrop={onDrop}
-              disabled={disabled}
+              readOnly={disabled}
             />
           )}
         </ReferenceDropTarget>
@@ -394,7 +397,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   readOnly,
 }) => {
   const { getNodes } = useStableNodes();
-  const variableQuery = useVariableSnapshot(referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression")), workflowId);
+  const variableQuery = useVariableSnapshot(!readOnly && (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression"))), workflowId);
   const executionContext = useExecutionStore();
   const executionStoreVersion = useExecutionStoreVersion();
   const { user } = useAuth();
@@ -749,6 +752,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     (val: any, selectedInputData: any, allNodeData: Record<string, any>) => {
       const resolveValue = (value: any): any => {
         if (typeof value === "string") {
+          if (readOnly && referencesVariables(value)) {
+            throw new Error("Workflow variables are not included in execution history.");
+          }
           const allNodes = getNodes();
           return resolveReferences(
             value,
@@ -774,7 +780,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       return resolveValue(val);
     },
-    [getNodes, variableQuery.data],
+    [getNodes, variableQuery.data, readOnly],
   );
 
   const computeDropInsert = useCallback(
@@ -872,8 +878,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   );
 
   const getPreviewData = useCallback(
-    () => buildPreviewData(previousNodes, executionContext, getNodes),
-    [previousNodes, executionContext, getNodes, executionStoreVersion],
+    () => buildPreviewData(previousNodes, executionContext, getNodes, readOnly),
+    [previousNodes, executionContext, getNodes, executionStoreVersion, readOnly],
   );
 
   const getEditExpressionContext = useCallback(() => {
@@ -886,9 +892,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       expressionOutputs: snapshot.nodeResults,
       definitions: snapshot.nodeIdentities,
       hasInput: input !== undefined,
-      variables: variableQuery.data?.values,
+      variables: readOnly ? undefined : variableQuery.data?.values,
     };
-  }, [getPreviewData, getNodes, selectedInputData, executionContext, variableQuery.data]);
+  }, [getPreviewData, getNodes, selectedInputData, executionContext, variableQuery.data, readOnly]);
 
   const getOverlayPreviewFor = useCallback(
     (expr: unknown) => {
@@ -898,6 +904,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       const srcData = getSourceData(selectedPrevNodeId);
 
       try {
+        if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
         return fullePreview(
           resolveReferences(expr, srcData, allNodeData, getNodes(), variableQuery.data?.values),
         );
@@ -905,7 +912,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
-    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variableQuery.data],
+    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variableQuery.data, readOnly],
   );
 
   const handleOverlayDrop = useCallback(
@@ -944,8 +951,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         const resolved = resolveDeep(expr, srcData, allNodeData);
         return fullePreview(resolved);
       } catch (error) {
-        console.error("❌ Preview resolution error:", error);
-        return "";
+        return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
     [
@@ -969,8 +975,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         const resolved = resolveDeep(expr, srcData, allNodeData);
         return fullePreview(resolved);
       } catch (error) {
-        console.error("❌ Preview resolution error:", error);
-        return "";
+        return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
     [selectedPrevNodeId, getPreviewData, resolveDeep, executionStoreVersion],
@@ -1073,7 +1078,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       updateMany={updateFieldsRow}
                       remove={removeCondition}
                       getExpressionContext={getEditExpressionContext}
-                      variableNames={Object.keys(variableQuery.data?.values ?? {})}
+                      variableNames={readOnly ? [] : Object.keys(variableQuery.data?.values ?? {})}
                       makeReference={(event) =>
                         computeDropInsert(event)?.insert ?? null
                       }

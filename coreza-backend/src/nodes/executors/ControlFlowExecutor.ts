@@ -17,8 +17,8 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
-  leanSuccess,
-  leanError,
+  compactSuccess,
+  compactError,
 } from "../../utils/normalizeOutput";
 import { isTypedEditFieldRow } from "../logic/typedEditFieldRow";
 import { applyFieldRows, stagePersistentFields } from "../logic/editFields";
@@ -82,14 +82,14 @@ export class ControlFlowExecutor implements INodeExecutor {
         : "AND";
 
     if (conditions.length === 0) {
-      return leanError("If node requires at least one condition");
+      return compactError("If node requires at least one condition");
     }
 
     const target = logicalOp === "OR";
 
     for (const cond of conditions) {
       if (!cond || !cond.operator) {
-        return leanError("Invalid If condition");
+        return compactError("Invalid If condition");
       }
 
       const evalResult = ComparatorService.evaluate({
@@ -100,7 +100,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       });
 
       if (!evalResult.success) {
-        return leanError(evalResult.error || "If condition evaluation failed");
+        return compactError(evalResult.error || "If condition evaluation failed");
       }
 
       const matched = Boolean(evalResult.data);
@@ -108,14 +108,14 @@ export class ControlFlowExecutor implements INodeExecutor {
       // OR: stop on true
       // AND: stop on false
       if (matched === target) {
-        return leanSuccess({
+        return compactSuccess({
           true: target,
           false: !target,
         });
       }
     }
 
-    return leanSuccess({
+    return compactSuccess({
       true: !target,
       false: target,
     });
@@ -154,7 +154,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     const result = ComparatorService.executeSwitch(switchCases, defaultCase);
 
     if (!result.success) {
-      return leanError(result.error || "Switch evaluation failed");
+      return compactError(result.error || "Switch evaluation failed");
     }
 
     const switchResult =
@@ -162,7 +162,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         ? result.data.result
         : result.data;
 
-    return leanSuccess(switchResult);
+    return compactSuccess(switchResult);
   }
 
   private executeFieldNode(
@@ -231,8 +231,8 @@ export class ControlFlowExecutor implements INodeExecutor {
     const result = ComputeService.compute(resolvedParams);
 
     return result.success
-      ? leanSuccess(result.data)
-      : leanError(result.error || "Compute operation failed");
+      ? compactSuccess(result.data)
+      : compactError(result.error || "Compute operation failed");
   }
 
   private async executeLoopNode(

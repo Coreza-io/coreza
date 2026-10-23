@@ -118,13 +118,13 @@ export function toNodeResult(output: StandardNodeOutput): NodeResult {
   };
 }
 
-/** Lean success result — no meta, no wrapping overhead. Use in backtest hot path. */
-export function leanSuccess<T = any>(data: T): NodeResult {
+/** Compact success result — no meta, no wrapping overhead. Use in backtest hot path. */
+export function compactSuccess<T = any>(data: T): NodeResult {
   return { success: true, data };
 }
 
-/** Lean error result — no meta. Use in backtest hot path. */
-export function leanError(error: string): NodeResult {
+/** Compact error result — no meta. Use in backtest hot path. */
+export function compactError(error: string): NodeResult {
   return { success: false, error };
 }
 

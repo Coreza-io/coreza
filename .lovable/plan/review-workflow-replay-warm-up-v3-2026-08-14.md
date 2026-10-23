@@ -1,4 +1,4 @@
-# Review: LEAN-Style Workflow Replay Warm-Up (v3)
+# Review: Workflow Replay Warm-Up (v3)
 
 Verified end to end against the code. The implementation is faithful to the plan — phase flags, policy gate on both execution paths, SimBroker guards, replay, metrics isolation, deterministic reset and mode exclusivity are all present. Two compile errors and three behavioral gaps need fixing.
 

@@ -19,7 +19,7 @@ import {
   normalizeOutput,
   createSuccessOutput,
   createErrorOutput,
-  leanSuccess,
+  compactSuccess,
 } from "../../utils/normalizeOutput";
 import { toNodeResult } from "../../utils/normalizeOutput";
 

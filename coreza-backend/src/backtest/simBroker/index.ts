@@ -47,7 +47,7 @@ import { BarBuffer } from "./BarBuffer";
  * All operations are SYNCHRONOUS for maximum speed during bar iteration.
  * No Redis round-trips during backtest execution.
  *
- * Uses the QC Lean pattern: immutable Order + append-only OrderEvent + OrderTicket aggregate.
+ * Uses an event-based order model: immutable Order + append-only OrderEvent + OrderTicket aggregate.
  * Adjusted price is the actual execution price; slippage is diagnostic and is
  * never deducted from P&L a second time.
  *
@@ -594,7 +594,7 @@ export class SimBroker {
   }
 
   /**
-   * LEAN-style liquidation for a single symbol.
+   * Position-aware liquidation for a single symbol.
    * Submits a market order for -(holdingQty + signed pending market qty),
    * so in-flight market orders are neutralized rather than double-counted.
    */

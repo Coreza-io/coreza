@@ -44,24 +44,14 @@ The older .lovable/plan/fix-duplicate-overlapping-edges-delete-twice-2026-10-07.
 
 The screenshots demonstrate thin connections but cannot establish whether a missed click, duplicate record, or display synchronization defect causes the repeated delete.
 
-## Verified n8n approach
+## Interaction design
 
-Source inspected on master on 2026-10-22:
-
-- [CanvasEdge.vue](https://github.com/n8n-io/n8n/blob/master/packages/frontend/editor-ui/src/features/workflows/canvas/components/elements/edges/CanvasEdge.vue), blob 4b731fd8e045a153396f529e4a93f97c6aa69353.
-- [CanvasEdgeToolbar.vue](https://github.com/n8n-io/n8n/blob/master/packages/frontend/editor-ui/src/features/workflows/canvas/components/elements/edges/CanvasEdgeToolbar.vue), blob 74d7d9a581ee439c69edbcd8e279e512a27446ee.
-- [durations.ts](https://github.com/n8n-io/n8n/blob/master/packages/frontend/editor-ui/src/app/constants/durations.ts), blob 061249c179660b6e544940e31c3c73154462f994.
-
-Observed behavior:
-
-1. Hover entry reveals the toolbar immediately and cancels a pending hide.
-2. Hover exit schedules hiding using HOVER_DELAY.LEAVE, currently 150 ms. Although a SHOW=300 constant exists, CanvasEdge does not use it to delay showing this toolbar.
-3. BaseEdge has interaction-width=40, independent of visible stroke width.
-4. EdgeLabelRenderer renders the toolbar outside the SVG path; its wrapper emits enter/leave state.
-5. Visible stroke is 2 times a canvas zoom-compensation factor. Thus “like n8n” does not mean blindly increasing every Coreza edge to a large fixed width.
-6. Toolbar deletion emits a resolved canonical connection.
-
-Use these principles in React/React Flow rather than copying Vue components.
+1. Reveal the toolbar immediately on hover entry and cancel any pending hide.
+2. Schedule hiding after a 150 ms leave grace period so the pointer can reach the toolbar.
+3. Keep the 40 px interaction region independent of visible stroke width.
+4. Render controls through React Flow's EdgeLabelRenderer and track toolbar hover/focus separately.
+5. Choose visible stroke width for Coreza's canvas and zoom levels.
+6. Resolve deletion to a canonical connection before committing it.
 
 ## Implementation sequence
 
@@ -115,7 +105,7 @@ Use getBezierPath's returned label coordinates for Bezier routes; preserve the e
 
 ### 3. Make lines slightly thicker, consistently
 
-Use one shared default visible width of 3 graph units for regular, self-loop, loop and connection-preview paths. This is a Coreza design starting point, not n8n's literal width. Remove conflicting hardcoded width-2 defaults where they override the shared policy.
+Use one shared default visible width of 3 graph units for regular, self-loop, loop and connection-preview paths. This is a Coreza design starting point. Remove conflicting hardcoded width-2 defaults where they override the shared policy.
 
 Preserve intentional execution status colors, dashes and width overrides. Ensure agent-active width does not accidentally make an otherwise wider edge thinner. Keep saved graph data free of hover styling.
 

@@ -28,8 +28,8 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
-  leanSuccess,
-  leanError,
+  compactSuccess,
+  compactError,
 } from "../utils/normalizeOutput";
 import { discoverWarmupNodes } from "../nodes/executors/InitializeIndicatorsExecutor";
 import type { DiscoveredWarmupNode } from "../nodes/executors/InitializeIndicatorsExecutor";
@@ -860,7 +860,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return leanError("backtest_id is required");
+        return compactError("backtest_id is required");
       }
 
       const symbol = params.symbol;
@@ -870,17 +870,17 @@ export class BacktestExecutor implements INodeExecutor {
       const operation = params.operation || "place_order";
 
       if (!symbol) {
-        return leanError("symbol is required");
+        return compactError("symbol is required");
       }
 
       // Get SimBroker instance from executor cache - SYNCHRONOUS
       const simBroker = this.getSimBroker(backtestId);
 
-      // LEAN-style liquidation: SimBroker computes the signed target itself.
+      // Position-aware liquidation: SimBroker computes the signed target itself.
       if (operation === "liquidate") {
         const result = simBroker.liquidate(symbol);
         if (!result.success) {
-          return leanError(result.error || "Liquidation failed");
+          return compactError(result.error || "Liquidation failed");
         }
         return toNodeResult(
           createSuccessOutput({
@@ -924,7 +924,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       if (!side || !quantity) {
-        return leanError("symbol, side, and quantity are required");
+        return compactError("symbol, side, and quantity are required");
       }
 
       // Parse current bar from input (passed from loop iteration)
@@ -957,7 +957,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       if (!orderResult.success) {
-        return leanError(orderResult.error || "Order failed");
+        return compactError(orderResult.error || "Order failed");
       }
 
       // For immediate fill model only, attempt same-bar fill of just this order.
@@ -1025,7 +1025,7 @@ export class BacktestExecutor implements INodeExecutor {
       return tradeResult;
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
-      return leanError(error instanceof Error ? error.message : String(error));
+      return compactError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -1055,7 +1055,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       await this.portfolioFinalize(simBroker, backtestId);
 
-      return leanSuccess({
+      return compactSuccess({
         backtest_id: backtestId,
         metrics: {
           total_return: metrics.totalReturn,
@@ -1269,7 +1269,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return leanError("backtest_id is required");
+        return compactError("backtest_id is required");
       }
 
       const simBroker = this.getSimBroker(backtestId);
@@ -1315,11 +1315,11 @@ export class BacktestExecutor implements INodeExecutor {
           return this.portfolioGetTrades(simBroker);
 
         default:
-          return leanError(`Unknown portfolio operation: ${operation}`);
+          return compactError(`Unknown portfolio operation: ${operation}`);
       }
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
-      return leanError(error instanceof Error ? error.message : String(error));
+      return compactError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -1341,7 +1341,7 @@ export class BacktestExecutor implements INodeExecutor {
     const realizedPnlValue = state.cumulativeRealizedPnl;
     const pendingOrders = simBroker.getOpenOrders();
 
-    return leanSuccess({
+    return compactSuccess({
       cash: state.cash,
       initial_capital: initialCapital,
       positions: formattedPositions,
@@ -1370,7 +1370,7 @@ export class BacktestExecutor implements INodeExecutor {
         realized_pnl: state.realizedPnlBySymbol[position.symbol] ?? 0,
       }));
 
-      return leanSuccess({
+      return compactSuccess({
         has_position: positions.length > 0,
         positions,
         positions_count: positions.length,
@@ -1388,7 +1388,7 @@ export class BacktestExecutor implements INodeExecutor {
     const realizedPnlValue =
       simBroker.getPortfolioState().realizedPnlBySymbol[symbol] ?? 0;
 
-    return leanSuccess({
+    return compactSuccess({
       has_position: !!position,
       position: formattedPosition,
       symbol,
@@ -1411,7 +1411,7 @@ export class BacktestExecutor implements INodeExecutor {
     prices?: Record<string, number> | null,
   ): NodeResult {
     if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
-      return leanError(
+      return compactError(
         "Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm",
       );
     }
@@ -1423,7 +1423,7 @@ export class BacktestExecutor implements INodeExecutor {
   private portfolioGetCash(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
 
-    return leanSuccess({
+    return compactSuccess({
       cash: state.cash,
       buying_power: simBroker.getAvailableBuyingPower(),
       initial_capital: simBroker.getConfig().initialCapital,
@@ -1441,7 +1441,7 @@ export class BacktestExecutor implements INodeExecutor {
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
     const initialCapital = simBroker.getConfig().initialCapital;
 
-    return leanSuccess({
+    return compactSuccess({
       total_equity: totalEquity,
       cash: state.cash,
       positions_value: positionsValue,
@@ -1455,7 +1455,7 @@ export class BacktestExecutor implements INodeExecutor {
   private portfoliogetOpenOrders(simBroker: SimBroker): NodeResult {
     const orders = simBroker.getOpenOrders();
 
-    return leanSuccess({
+    return compactSuccess({
       pending_orders: orders,
       count: orders.length,
     });
@@ -1465,7 +1465,7 @@ export class BacktestExecutor implements INodeExecutor {
     const state = simBroker.getPortfolioState();
     const trades = simBroker.getTrades();
 
-    return leanSuccess({
+    return compactSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: state.cumulativeRealizedPnl,

@@ -1,8 +1,8 @@
 # Cross-Symbol Liquidation and Symbol-Scoped Backtest Pricing (Revision 2)
 
-Updated to match the LEAN source-verified design note. The core rule is unchanged: **every simulated fill, validation, reservation, and price estimate must resolve market data from `order.symbol`** — never from whichever symbol's bar the workflow happened to be processing.
+The core rule is unchanged: **every simulated fill, validation, reservation, and price estimate must resolve market data from `order.symbol`** — never from whichever symbol's bar the workflow happened to be processing.
 
-Revision 2 adds five things the earlier plan did not have: a single `resolveMarketContext(order)` boundary, `latestRealBar` kept separate from fill-forward event data, a pure eligibility classifier with atomic transitions, order-type-specific staleness rules instead of one global policy, and LEAN's signed pending-market-quantity arithmetic for liquidation.
+Revision 2 adds five things the earlier plan did not have: a single `resolveMarketContext(order)` boundary, `latestRealBar` kept separate from fill-forward event data, a pure eligibility classifier with atomic transitions, order-type-specific staleness rules instead of one global policy, and signed pending-market-quantity arithmetic for liquidation.
 
 ## Confirmed current-state defect (verified in code)
 
@@ -78,7 +78,7 @@ applyEligibilityTransition(ticket, eligibility)             // atomic: status + 
 - `classifyMarketData` is pure. It applies order-type-specific rules from `MarketDataPolicy`: market orders use `maxMarketOrderAgeMs` and `allowFillForwardMarketOrders`; limit/stop use `maxConditionalOrderAgeMs` and `requireRealBarForConditionalOrders`. No single universal allow/pend/reject rule.
 - `onBar(envelope: MarketBarEnvelope)` is the canonical form:
   - validate the envelope (finite timestamps, `sourceTimestamp <= eventTimestamp`, monotonic `eventTimestamp` per symbol),
-  - **only when `!isFillForward`**: shift `previousRealBar = latestRealBar`, set `latestRealBar = { bar, sourceTimestamp }`. Fill-forward events update `latestEventTimestamp` only — they never replace the last real observation (matches LEAN `SecurityCache`),
+  - **only when `!isFillForward`**: shift `previousRealBar = latestRealBar`, set `latestRealBar = { bar, sourceTimestamp }`. Fill-forward events update `latestEventTimestamp` only — they never replace the last real observation (preserves the last real observation in the security cache),
   - scan pending tickets for that symbol only, passing the current real bar and the captured prior real bar per the selected fill model,
   - stop writing `this.state.currentBar`.
 - Legacy adapter `onBar(symbol, bar, meta?)` normalizes to an envelope, asserts every available symbol identity matches (throw in tests, telemetry counter in prod), and is deleted in Phase 6.
@@ -111,7 +111,7 @@ return this.fillTicket(ticket, context);
 - `BacktestSession.ts` (three `onBar` sites at ~440, ~509, ~626) and `PortfolioExecutor.ts:312` build and pass `MarketBarEnvelope`. Sites without metadata fall back to `sourceTimestamp = bar.time, isFillForward: false`, so behaviour is unchanged.
 - Every fill — including each partial fill — snapshots its own provenance onto the `OrderEvent` and the persisted trade record.
 
-## Phase 4 — Liquidation API (LEAN arithmetic)
+## Phase 4 — Liquidation API (signed quantity arithmetic)
 
 ```ts
 liquidate(symbol: string, options?: { orderType?: OrderType; limitPrice?: number; tag?: string }): OrderResult

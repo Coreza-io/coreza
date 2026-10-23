@@ -28,7 +28,7 @@ Current AGENTS.md and the implemented variable ownership/eligibility contract co
 | Background indicator flushing | Not present; current flush is awaited | Conditional, requires dirty-version and restore contract |
 | Generic checkpoint plus stream ACK transaction | Not implemented; incompatible with present assumptions | Remove from initial performance scope |
 | 25 ms / 100 event / 8 MiB coordinator defaults | Proposed only; not workload-derived | Do not apply to existing variable subsystem |
-| Lean live diagnostics | Detailed result building remains | Measure and add only as explicit live policy |
+| Compact live diagnostics | Detailed result building remains | Measure and add only as explicit live policy |
 | Persistent process pool | Runner remains process-local | Defer until CPU/event-loop/load evidence |
 | Recovery-aware stream retention and reclaim | Gaps remain | Correctness prerequisite, not evidence of lower per-tick CPU cost |
 
@@ -185,7 +185,7 @@ In parallel, eligible $vars use bounded background Redis checkpoints and a SQL c
 4. Merge terminal HSETs. Verify equal results and quantify removed waits.
 5. Snapshot reference migration with reader-first rollout and retention guarantees.
 6. Repair reliable history backlog/discovery and unify shutdown before adding more async buffers.
-7. Introduce live-only lean diagnostics based on measured cost.
+7. Introduce live-only compact diagnostics based on measured cost.
 8. Consider version-safe indicator write-behind separately after restore/durability tests.
 9. Validate and selectively enable existing variable write-behind under current policy; do not replace it.
 10. Consider persistent process isolation only after demonstrating CPU/event-loop contention, with ownership and effect-recovery gates.

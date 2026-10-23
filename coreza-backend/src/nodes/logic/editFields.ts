@@ -361,7 +361,7 @@ export function applyTypedFieldRow(
   }
 }
 
-/** Unwrap both standard outputs and the lean NodeResult used by backtests. */
+/** Unwrap both standard outputs and the compact NodeResult used by backtests. */
 function extractFieldInputData(value: unknown): unknown {
   if (
     isPlainObject(value) &&

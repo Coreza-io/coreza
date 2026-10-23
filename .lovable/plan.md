@@ -7,7 +7,7 @@ Select Expression + Array:
 ```text
 {{ lastN($("get_atr_history").json.data.value, $("short_len").json.data) }}
 ```
-Paths remain conditional on actual outputs: never automatically unwrap every `data` property. Retain the attachment’s acceptance requirements for complete coverage; external n8n research is comparison evidence, not verified runtime parity here.
+Paths remain conditional on actual outputs: never automatically unwrap every `data` property. Retain the attachment’s acceptance requirements for complete coverage; external research is comparison evidence, not verified runtime parity here.
 
 ## Confirmed checkout findings
 Reviewed the complete 232-line upload against checkout `eff5d3d3`, not its cited `7835314`:
@@ -94,4 +94,4 @@ Extend existing safeExpression/editTemplate/editFieldsV2/route/parameterResoluti
 - Browser: empty/start/middle/end; active selection inside/outside/end/keyboard; raw/wrapped/full-template/partial boundary/quoted/incomplete contexts; repeated drops; wraps/fonts/tabs/newlines/scroll/resize/zooms/autoscroll/graphemes; mounted-control focus/select-all suppression; typing/paste/IME/drop/undo/redo; every owner/wrapper/source-map; invalid geometry/unsafe swap rollback; arbitrary keys versus unsupported legacy escapes; stale renamed/deleted/hidden/projected sources; foreign payload/cleanup/live guards and duplicate-event prevention.
 
 ## Deferred scope
-Computed Python bounds and array-only .slice are independent alternatives, not mandatory phases; preserve literal semantics. Generic safe-language adoption needs separate authorization, persisted version/router, complete serializer/import/history/snapshot support, old-writer protection/capabilities, explicit atomic conversion and unknown-version refusal. Absent markers remain legacy; no exception fallback. No full JS/n8n engine, recursive templates, dynamic selectors, callbacks/methods, item/run proxies, leading equals, automatic upstream execution, envelope rewriting or CodeMirror replacement. n8n receives no changes; canonical hierarchy/render-only/runtime rules remain authoritative.
+Computed Python bounds and array-only .slice are independent alternatives, not mandatory phases; preserve literal semantics. Generic safe-language adoption needs separate authorization, persisted version/router, complete serializer/import/history/snapshot support, old-writer protection/capabilities, explicit atomic conversion and unknown-version refusal. Absent markers remain legacy; no exception fallback. No full JavaScript expression engine, recursive templates, dynamic selectors, callbacks/methods, item/run proxies, leading equals, automatic upstream execution, envelope rewriting or CodeMirror replacement. Canonical hierarchy/render-only/runtime rules remain authoritative.

@@ -16,7 +16,7 @@ import {
   createSuccessOutput,
   createErrorOutput,
   toNodeResult,
-  leanSuccess,
+  compactSuccess,
 } from "../../utils/normalizeOutput";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -1491,7 +1491,7 @@ export class PortfolioExecutor implements INodeExecutor {
       initialCapital,
     );
 
-    return leanSuccess({
+    return compactSuccess({
       cash: state.cash,
       initial_capital: initialCapital,
       positions: formattedPositions,
@@ -1535,7 +1535,7 @@ export class PortfolioExecutor implements INodeExecutor {
         )
       : Object.values(simBroker.getPortfolioState().positions);
 
-    return leanSuccess(shapePositionQuery(positions));
+    return compactSuccess(shapePositionQuery(positions));
   }
 
   private backtestUpdateMTM(
@@ -1575,7 +1575,7 @@ export class PortfolioExecutor implements INodeExecutor {
     const peak = state.peakEquity;
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
 
-    return leanSuccess({
+    return compactSuccess({
       total_equity: totalEquity,
       cash: state.cash,
       positions_value: positionsValue,
@@ -1600,7 +1600,7 @@ export class PortfolioExecutor implements INodeExecutor {
       else if (trade.netPnl < 0) losingTrades += 1;
     }
 
-    return leanSuccess({
+    return compactSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: state.cumulativeRealizedPnl,
@@ -1613,7 +1613,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private brokerGetAll(pm: PortfolioManager, baseCurrency: string): NodeResult {
     const state = pm.getPortfolioState(baseCurrency);
-    return leanSuccess({
+    return compactSuccess({
       ...this.getPortfolioSummaryFromState(state),
       drawdown_pct:
         state.peakEquity > 0
@@ -1760,7 +1760,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
-    return leanSuccess(pm.getPositionQuery(symbols));
+    return compactSuccess(pm.getPositionQuery(symbols));
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {
@@ -1774,7 +1774,7 @@ export class PortfolioExecutor implements INodeExecutor {
       else if (trade.netPnl < 0) losingTrades += 1;
     }
 
-    return leanSuccess({
+    return compactSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: state.cumulativeRealizedPnl,

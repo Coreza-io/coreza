@@ -69,12 +69,15 @@ export interface NormalizeContext {
   startTime?: number; timestamp?: string; executionTime?: number; skipTimestamp?: boolean;
 }
 const statuses: readonly string[] = ["pending", "running", "success", "error", "waiting", "listening", "streaming", "skipped", "cancelled", "not-executed"];
+const resultKeys = new Set(["status", "data", "error", "details", "meta", "control", "warmupSuppressed"]);
 const owns = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const record = (value: unknown): value is Record<string, any> => value !== null && typeof value === "object" && !Array.isArray(value);
 export function isNodeResult(value: unknown): value is NodeResult {
-  return record(value) && statuses.includes(value.status) && owns(value, "data") && value.data !== undefined && !owns(value, "success") && !owns(value, "formatVersion")
-    && (value.error === undefined || typeof value.error === "string")
-    && Object.keys(value).every(key => ["status", "data", "error", "details", "meta", "control", "warmupSuppressed"].includes(key));
+  if (!record(value) || !statuses.includes(value.status) || !owns(value, "data") || value.data === undefined
+    || owns(value, "success") || owns(value, "formatVersion")
+    || (value.error !== undefined && typeof value.error !== "string")) return false;
+  for (const key in value) if (owns(value, key) && !resultKeys.has(key)) return false;
+  return true;
 }
 export const isFailedResult = (result: NodeResult): boolean => result.status === "error";
 export const isCompletedResult = (result: NodeResult): boolean => ["success", "error", "skipped", "cancelled", "not-executed"].includes(result.status);
@@ -124,11 +127,12 @@ export function finalizeNodeResult<T>(result: NodeResult<T>, context: NormalizeC
   return Object.keys(additions).length ? { ...result, meta: { ...additions, ...result.meta } } : result;
 }
 export function toPublicNodeResult<T>(result: NodeResult<T>, options: { omitSeries?: boolean } = {}): NodeResult<T> {
-  const { control, details: rawDetails, ...publicResult } = result;
-  let meta = publicResult.meta;
+  const rawDetails = result.details;
+  let meta = result.meta;
   if (options.omitSeries && meta && owns(meta, "series")) { const { series, ...rest } = meta; meta = rest; }
   const details = safeErrorDetails(rawDetails);
   if (!owns(result, "control") && details === rawDetails && meta === result.meta) return result;
+  const { control, details: omittedDetails, ...publicResult } = result;
   return { ...publicResult, ...(meta ? { meta } : {}), ...(details ? { details } : {}) };
 }
 /** Validate only at real JSON boundaries; unsupported data produces an explicit diagnostic. */
@@ -146,6 +150,27 @@ export function serializeNodeResult(result: NodeResult, options: { omitSeries?: 
   };
   try { visit(publicResult); return publicResult; }
   catch { return resultFailure("Node output cannot be serialized", { details: { code: "OUTPUT_NOT_SERIALIZABLE" } }); }
+}
+/** Validate during JSON encoding, without a separate recursive payload pre-scan. */
+export function stringifyNodeResult(result: NodeResult): string {
+  try {
+    const json = JSON.stringify(toPublicNodeResult(result), function (this: Record<string, unknown>, key: string, value: unknown) {
+      // JSON calls toJSON before the replacer, so inspect the original value too.
+      const original = this[key];
+      if (original === null || original === undefined || typeof original === "string" || typeof original === "boolean") return value;
+      if (typeof original === "number" && Number.isFinite(original)) return value;
+      if (original instanceof Date && Number.isFinite(original.getTime())) return value;
+      if (typeof original !== "object") throw new Error("Unsupported node output");
+      const proto = Object.getPrototypeOf(original);
+      if ((!Array.isArray(original) && proto !== Object.prototype && proto !== null)
+        || typeof (original as { toJSON?: unknown }).toJSON === "function") throw new Error("Unsupported node output instance");
+      return value;
+    });
+    if (json === undefined) throw new Error("Missing node output");
+    return json;
+  } catch {
+    return JSON.stringify(resultFailure("Node output cannot be serialized", { details: { code: "OUTPUT_NOT_SERIALIZABLE" } }));
+  }
 }
 export class NodeResultError extends Error {
   constructor(readonly result: NodeResult) { super(result.error ?? "Node execution failed"); this.name = "NodeResultError"; }

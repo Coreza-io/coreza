@@ -17,6 +17,14 @@ Older clients, stored output envelopes and raw pinned-output formats are no long
 
 Observed finalization adds supplied identity/timing metadata while retaining existing fields; it does not manufacture read-time timestamps. Constructors preserve payload references. Error details permit scalar code/provider/status/recoverable/reason and selected scalar response diagnostics. Axios extraction remains server-side. Public JSON rejects non-finite numbers, bigint, functions, symbols, cycles and non-plain instances with OUTPUT_NOT_SERIALIZABLE. Dates use JSON ISO encoding; undefined payload becomes null.
 
+## Live execution overhead
+
+Executor results are checked once by the runtime and written to a typed internal store. External seeds and pins still validate at ingress. Envelope checks avoid per-call key arrays; success construction without metadata context skips observed metadata finalization.
+
+Live Redis history uses `stringifyWorkflowRunResult`: node payload validation runs inside JSON encoding, with no separate recursive payload pre-scan and no second JSON encoding of those node payloads. A cache scoped to one synchronous history write reuses encoded results referenced by boundary edges or aliases. Invalid/cyclic payloads still produce OUTPUT_NOT_SERIALIZABLE; public projection still strips engine control and internal error causes. The direct SQL/object transport projection retains its existing validation.
+
+History remains awaited before event acknowledgement. These changes remove identified duplicate work; they do not establish zero overhead or measured latency improvement. No timings or benchmarks were run.
+
 ## Scope and validation
 
 No tests, type checks, lint, builds, browser checks, broker requests, custom static guard or benchmarks were run, as requested. Source review and git diff --check are the only verification. Existing regression fixtures need updating for this intentional removal of older formats; runtime correctness and performance acceptance remain unverified.

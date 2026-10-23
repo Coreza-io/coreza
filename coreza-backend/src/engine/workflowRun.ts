@@ -1,3 +1,4 @@
+import { readNodeResult } from "../contracts/nodeResult";
 import { DataContext, DataContextManager } from "./DataContext";
 import {
   BacktestExecutionRuntime,
@@ -260,7 +261,7 @@ export class WorkflowRun {
 
   /** Seeds read-only external expression context without claiming node execution. */
   seedContext(results: NodeResults): void {
-    for (const [nodeId, result] of Object.entries(results)) this.store.setNodeResult(nodeId, result);
+    for (const [nodeId, result] of Object.entries(results)) this.store.setNodeResult(nodeId, readNodeResult(result));
   }
 
   resetForNextBar(full = false): void {
@@ -283,7 +284,7 @@ export class WorkflowRun {
   preloadResults(results: NodeResults): void {
     const order = this.runtime.getExecutionOrder();
     for (const [nodeId, result] of Object.entries(results)) {
-      this.store.setNodeResult(nodeId, result);
+      this.store.setNodeResult(nodeId, readNodeResult(result));
       order.push(nodeId);
     }
   }

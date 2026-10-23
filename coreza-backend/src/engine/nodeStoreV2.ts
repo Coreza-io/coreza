@@ -1,4 +1,4 @@
-import { readNodeResult } from "../contracts/nodeResult";
+import { readNodeResult, type NodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -163,8 +163,8 @@ export class NodeStoreV2 {
   }
 
   // Node result management
-  setNodeResult(nodeId: string, result: any) {
-    result = readNodeResult(result);
+  // Executor results are validated by the runtime; external seeds/pins validate at ingress.
+  setNodeResult(nodeId: string, result: NodeResult) {
     this.nodeResults.set(nodeId, result);
     if (this._cachedResults) {
       this._cachedResults[nodeId] = result;

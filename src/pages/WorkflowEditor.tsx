@@ -80,7 +80,8 @@ import {
 import { exportWorkflow, importWorkflow } from "@/utils/workflowExport";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
-import EdgeManager, { EdgeEditingContext } from "@/components/workflow/EdgeManager";
+import EdgeManager from "@/components/workflow/EdgeManager";
+import { EdgeEditingContext } from "@/contexts/EdgeEditingContext";
 import { LoopNode, LoopNodeData } from "@/components/workflow/LoopNode";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";

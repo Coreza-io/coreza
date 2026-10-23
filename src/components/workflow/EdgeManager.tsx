@@ -9,6 +9,7 @@
  */
 
 import React, { useContext } from "react";
+import { EdgeEditingContext } from "@/contexts/EdgeEditingContext";
 import { useEdgeToolbarHover } from "@/hooks/useEdgeToolbarHover";
 import { useEdgeEndpointsExpanded } from "@/hooks/useNodeExpansion";
 import { useAgentParticipantActive } from "@/stores/agentActivityStore";
@@ -71,15 +72,6 @@ const readStrokeWidth = (
   const width = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(width) ? width : EDGE_STROKE_WIDTH;
 };
-
-// History has no editing provider, even when an old snapshot contains callbacks.
-export const EdgeEditingContext = React.createContext({
-  sessionId: "",
-  enabled: false,
-  canEdit: () => false,
-  deletableEdgeIds: new Set<string>(),
-  removeEdge: (_edgeId: string) => {},
-});
 
 const EdgeToolbar = ({
   edgeId,

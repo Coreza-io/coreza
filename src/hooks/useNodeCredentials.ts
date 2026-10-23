@@ -1,3 +1,4 @@
+import { readNodeResult } from "@/utils/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -88,8 +89,9 @@ export function useNodeCredentials({ definition, fieldState, workflowId, workflo
       }));
       if (resource.kind === "storeWorkflowsApi") return result.workflows ?? [];
       if (resource.kind === "storeVariablesApi") return (result.variables ?? []).map((name: string) => ({ id: name, name }));
-      if (!result.success) throw new Error("Could not load dependent options");
-      return result.data?.accounts ?? [];
+      const output = readNodeResult(result);
+      if (output.status !== "success") throw new Error(output.error ?? "Could not load dependent options");
+      return output.data?.accounts ?? [];
     },
   })) });
   resources.forEach((resource, index) => {

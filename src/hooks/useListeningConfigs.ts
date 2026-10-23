@@ -1,4 +1,4 @@
-import { resultState, resultFailure } from "@/utils/nodeResult";
+import { resultState, resultFailure, hasStreamingData } from "@/utils/nodeResult";
 import type { ListeningConfig } from "@/hooks/useListeningHandler";
 import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
@@ -160,20 +160,7 @@ export const buildStreamingSubscribeListeningConfig = ({
       subscriptions: res?.subscriptions,
       lastActionMessage: res?.message,
     }),
-    isDataReceived: (nodeData) => {
-      const result = nodeData?.output;
-      const status = result?.status;
-      const output = result?.data;
-      return Boolean(
-        status === "streaming" &&
-        (output?.news ||
-          output?.data ||
-          output?.trade ||
-          output?.quote ||
-          output?.bar ||
-          output?.dailyBar),
-      );
-    },
+    isDataReceived: (nodeData) => hasStreamingData(nodeData?.output),
     buildSuccessOutput: (nodeData) => nodeData.output,
     buildTimeoutOutput: () => resultFailure(`Timeout waiting for ${definition?.name} data`, { details: { code: "LISTENER_TIMEOUT" } }),
     buildErrorOutput: (error) => resultFailure(error.message),

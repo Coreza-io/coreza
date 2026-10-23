@@ -25,6 +25,14 @@ Live Redis history uses `stringifyWorkflowRunResult`: node payload validation ru
 
 History remains awaited before event acknowledgement. These changes remove identified duplicate work; they do not establish zero overhead or measured latency improvement. No timings or benchmarks were run.
 
+## Current caller and boundary checks
+
+Schwab dependent account options consume the canonical result status, while credential-list APIs keep their separate response. Streaming readiness uses streaming status plus a present data payload, so BarSeries events and falsy payloads are accepted without guessing provider-specific keys; waiting/listening acknowledgements remain distinct.
+
+Node HTTP projection is restricted to explicit operation paths. It cannot capture metadata/control APIs merely because a request body contains node identity fields. The path matcher is allocated once and valid responses are checked once.
+
+Live JSON encoding and database/HTTP validation share one scalar/object policy, including rejecting custom toJSON methods and overridden Date encoding. Public projection failures also become OUTPUT_NOT_SERIALIZABLE diagnostics. These checks remain at serialization boundaries, outside the execution loop.
+
 ## Scope and validation
 
 No tests, type checks, lint, builds, browser checks, broker requests, custom static guard or benchmarks were run, as requested. Source review and git diff --check are the only verification. Existing regression fixtures need updating for this intentional removal of older formats; runtime correctness and performance acceptance remain unverified.

@@ -1,3 +1,4 @@
+import { hasStreamingData } from "./nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -489,16 +490,7 @@ export class WorkflowExecutor {
         const output = nodeData?.output;
 
         // Check if we have actual streaming data (not just "subscribed" status)
-        if (
-          output &&
-          output.status === "streaming" &&
-          (output.news ||
-            output.data ||
-            output.trade ||
-            output.quote ||
-            output.bar ||
-            output.dailyBar)
-        ) {
+        if (hasStreamingData(output)) {
           clearTimeout(timeoutId);
           if (import.meta.env.DEV) console.log(
             `📨 [STREAMING] Node ${nodeId} received first data:`,

@@ -135,35 +135,41 @@ export function toPublicNodeResult<T>(result: NodeResult<T>, options: { omitSeri
   const { control, details: omittedDetails, ...publicResult } = result;
   return { ...publicResult, ...(meta ? { meta } : {}), ...(details ? { details } : {}) };
 }
-/** Validate only at real JSON boundaries; unsupported data produces an explicit diagnostic. */
+/** Shared JSON value policy; it does not recurse or run on the execution hot path. */
+function assertSerializableValue(value: unknown): void {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number" && Number.isFinite(value)) return;
+  if (value instanceof Date) {
+    if (Number.isFinite(value.getTime()) && value.toJSON === Date.prototype.toJSON
+      && value.toISOString === Date.prototype.toISOString) return;
+    throw new Error("Unsupported node output date");
+  }
+  if (typeof value !== "object") throw new Error("Unsupported node output");
+  const proto = Object.getPrototypeOf(value);
+  if ((!Array.isArray(value) && proto !== Object.prototype && proto !== null)
+    || typeof (value as { toJSON?: unknown }).toJSON === "function") throw new Error("Unsupported node output instance");
+}
+/** Validate only at real object transport boundaries; unsupported data produces a diagnostic. */
 export function serializeNodeResult(result: NodeResult, options: { omitSeries?: boolean } = {}): NodeResult {
-  const publicResult = toPublicNodeResult(result, options);
   const ancestors = new Set<object>();
   const visit = (value: unknown): void => {
-    if (value === null || typeof value === "string" || typeof value === "boolean" || value === undefined) return;
-    if (typeof value === "number" && Number.isFinite(value)) return;
-    if (value instanceof Date && Number.isFinite(value.getTime())) return;
-    if (typeof value !== "object" || ancestors.has(value!)) throw new Error("Unsupported or cyclic node output");
-    const proto = Object.getPrototypeOf(value);
-    if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) throw new Error("Unsupported node output instance");
-    ancestors.add(value!); Object.values(value!).forEach(visit); ancestors.delete(value!);
+    assertSerializableValue(value);
+    if (value === null || typeof value !== "object" || value instanceof Date) return;
+    if (ancestors.has(value)) throw new Error("Cyclic node output");
+    ancestors.add(value); Object.values(value).forEach(visit); ancestors.delete(value);
   };
-  try { visit(publicResult); return publicResult; }
-  catch { return resultFailure("Node output cannot be serialized", { details: { code: "OUTPUT_NOT_SERIALIZABLE" } }); }
+  try {
+    const publicResult = toPublicNodeResult(result, options);
+    visit(publicResult);
+    return publicResult;
+  } catch { return resultFailure("Node output cannot be serialized", { details: { code: "OUTPUT_NOT_SERIALIZABLE" } }); }
 }
 /** Validate during JSON encoding, without a separate recursive payload pre-scan. */
 export function stringifyNodeResult(result: NodeResult): string {
   try {
     const json = JSON.stringify(toPublicNodeResult(result), function (this: Record<string, unknown>, key: string, value: unknown) {
-      // JSON calls toJSON before the replacer, so inspect the original value too.
-      const original = this[key];
-      if (original === null || original === undefined || typeof original === "string" || typeof original === "boolean") return value;
-      if (typeof original === "number" && Number.isFinite(original)) return value;
-      if (original instanceof Date && Number.isFinite(original.getTime())) return value;
-      if (typeof original !== "object") throw new Error("Unsupported node output");
-      const proto = Object.getPrototypeOf(original);
-      if ((!Array.isArray(original) && proto !== Object.prototype && proto !== null)
-        || typeof (original as { toJSON?: unknown }).toJSON === "function") throw new Error("Unsupported node output instance");
+      // JSON calls toJSON before the replacer, so validate the original value too.
+      assertSerializableValue(this[key]);
       return value;
     });
     if (json === undefined) throw new Error("Missing node output");

@@ -72,7 +72,7 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
         const path = JSON.stringify(fullSegments);
         const fullKey = (pathSegments ? formatPath(fullSegments) : `${parentKey}${formatPath(fullSegments)}`).replace(/^\./, "");
         const nested = objectLike(value);
-        const defaultExpanded = nested && depth < 12 && (Array.isArray(value) ? value.length : Object.keys(value).length) <= 10;
+        const defaultExpanded = nested && depth < 12 && ((depth === 0 && key === "data") || (Array.isArray(value) ? value.length : Object.keys(value).length) <= 10);
         const isExpanded = depth < 12 && (expanded[path] ?? defaultExpanded);
         const reference = variableKey ? `{{ $vars.${variableKey} }}` : fullKey;
         const canDrag = draggable || Boolean(variableKey && sourceNodeId);

@@ -1,5 +1,5 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { createErrorOutput, createSuccessOutput, toNodeResult } from "../../utils/normalizeOutput";
+import { createErrorOutput, createSuccessOutput } from "../../utils/nodeResultHelpers";
 import { DocumentDownloadService } from "../../services/documents/DocumentDownloadService";
 import { DocumentExtractService } from "../../services/documents/DocumentExtractService";
 import { detectFormat } from "../../services/documents/detectFormat";
@@ -26,7 +26,7 @@ export class DocumentExecutor implements INodeExecutor {
       const url = String(resolvedParams.url ?? "").trim();
 
       if (!url) {
-        return toNodeResult(createErrorOutput("Document URL is required", { nodeId: node.id, nodeName: node.name, category: this.category, startTime }));
+        return createErrorOutput("Document URL is required", { nodeId: node.id, nodeName: node.name, category: this.category, startTime });
       }
 
       const download = await this.downloader.fetch(url, {
@@ -44,9 +44,9 @@ export class DocumentExecutor implements INodeExecutor {
         sizeBytes: download.sizeBytes,
       });
 
-      return toNodeResult(createSuccessOutput(extracted, { nodeId: node.id, nodeName: node.name, category: this.category, startTime }));
+      return createSuccessOutput(extracted, { nodeId: node.id, nodeName: node.name, category: this.category, startTime });
     } catch (error) {
-      return toNodeResult(createErrorOutput(error instanceof Error ? error : String(error), { nodeId: node.id, nodeName: node.name, category: this.category, startTime }));
+      return createErrorOutput(error instanceof Error ? error : String(error), { nodeId: node.id, nodeName: node.name, category: this.category, startTime });
     }
   }
 }

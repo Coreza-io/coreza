@@ -14,11 +14,11 @@ import { RSI, EMA, SMA, MACD, BollingerBands } from "trading-signals";
 import { ADX, Stochastic, IchimokuCloud } from "technicalindicators";
 import Big from "big.js";
 import { createError } from "../../middleware/errorHandler";
-import { StandardNodeOutput } from "../../types/nodeOutput";
+import { NodeResult } from "../../contracts/nodeResult";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../../utils/normalizeOutput";
+} from "../../utils/nodeResultHelpers";
 
 export interface IndicatorInput {
   prices?: any;
@@ -48,7 +48,7 @@ export interface IndicatorInput {
   [key: string]: any;
 }
 
-export type IndicatorResult = StandardNodeOutput<unknown>;
+export type IndicatorResult = NodeResult<unknown>;
 export type IndicatorValue = number | Record<string, unknown>;
 
 export interface IndicatorOutput {

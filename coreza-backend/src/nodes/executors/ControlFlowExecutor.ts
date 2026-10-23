@@ -14,13 +14,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { ComputeService } from "../../nodes/logic/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 import { ComparatorService } from "../../nodes/logic/comparator";
-import {
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-  compactSuccess,
-  compactError,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { isTypedEditFieldRow } from "../logic/typedEditFieldRow";
 import { applyFieldRows, stagePersistentFields } from "../logic/editFields";
 
@@ -53,14 +47,12 @@ export class ControlFlowExecutor implements INodeExecutor {
         case "Loop":
           return this.executeLoopNode(node, input, context);
         default:
-          return toNodeResult(
-            createErrorOutput(
+          return createErrorOutput(
               `Unsupported control flow node type: ${nodeName}`,
-            ),
-          );
+            );
       }
     } catch (error) {
-      return toNodeResult(createErrorOutput(error));
+      return createErrorOutput(error);
     }
   }
 
@@ -83,14 +75,14 @@ export class ControlFlowExecutor implements INodeExecutor {
         : "AND";
 
     if (conditions.length === 0) {
-      return compactError("If node requires at least one condition");
+      return resultFailure("If node requires at least one condition");
     }
 
     const target = logicalOp === "OR";
 
     for (const cond of conditions) {
       if (!cond || !cond.operator) {
-        return compactError("Invalid If condition");
+        return resultFailure("Invalid If condition");
       }
 
       const evalResult = ComparatorService.evaluate({
@@ -101,7 +93,7 @@ export class ControlFlowExecutor implements INodeExecutor {
       });
 
       if (evalResult.status === "error") {
-        return compactError(evalResult.error || "If condition evaluation failed");
+        return resultFailure(evalResult.error || "If condition evaluation failed");
       }
 
       const matched = Boolean(evalResult.data);
@@ -109,14 +101,14 @@ export class ControlFlowExecutor implements INodeExecutor {
       // OR: stop on true
       // AND: stop on false
       if (matched === target) {
-        return compactSuccess({
+        return resultSuccess({
           true: target,
           false: !target,
         });
       }
     }
 
-    return compactSuccess({
+    return resultSuccess({
       true: !target,
       false: target,
     });
@@ -155,7 +147,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     const result = ComparatorService.executeSwitch(switchCases, defaultCase);
 
     if (result.status === "error") {
-      return compactError(result.error || "Switch evaluation failed");
+      return resultFailure(result.error || "Switch evaluation failed");
     }
 
     const switchResult =
@@ -163,7 +155,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         ? result.data.result
         : result.data;
 
-    return compactSuccess(switchResult);
+    return resultSuccess(switchResult);
   }
 
   private executeFieldNode(
@@ -232,8 +224,8 @@ export class ControlFlowExecutor implements INodeExecutor {
     const result = ComputeService.compute(resolvedParams);
 
     return result.status === "success"
-      ? compactSuccess(result.data)
-      : compactError(result.error || "Compute operation failed");
+      ? resultSuccess(result.data)
+      : resultFailure(result.error || "Compute operation failed");
   }
 
   private async executeLoopNode(
@@ -392,11 +384,9 @@ export class ControlFlowExecutor implements INodeExecutor {
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      return toNodeResult(
-        createErrorOutput(
+      return createErrorOutput(
           `No array found for field: ${inputArray} or array is empty`,
-        ),
-      );
+        );
     }
 
     // Cache parsed loop items/config for re-entry fast path

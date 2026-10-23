@@ -1,3 +1,4 @@
+import { resultFailure, resultSuccess } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -23,26 +24,15 @@ router.post('/request', async (req, res) => {
     const result = await HttpService.execute(req.body);
 
     if (result.success) {
-      res.json({
-        status: result.status,
-        statusText: result.statusText,
-        headers: result.headers,
-        data: result.data
-      });
+      res.json(resultSuccess(result.data, { meta: { http: { status: result.status, statusText: result.statusText, headers: result.headers } } }));
     } else {
-      res.status(result.status || 500).json({
-        error: 'HTTP request failed',
-        status: result.status,
-        statusText: result.statusText,
-        data: result.data,
-        message: result.error
-      });
+      res.status(result.status || 500).json(resultFailure(result.error || "HTTP request failed", {
+        data: result.data, details: { status: result.status },
+        meta: { http: { status: result.status, statusText: result.statusText, headers: result.headers } },
+      }));
     }
   } catch (error) {
-    res.status(500).json({
-      error: 'Failed to make HTTP request',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json(resultFailure(error instanceof Error ? error.message : "Failed to make HTTP request"));
   }
 });
 

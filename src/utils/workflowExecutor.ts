@@ -1,4 +1,3 @@
-import { isNodeResult } from "@/utils/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -511,7 +510,7 @@ export class WorkflowExecutor {
         }
 
         // Check for webhook data (TelegramTrigger, WebhookTrigger, etc.)
-        if ((isNodeResult(output) ? output.data : output)?.webhookPayload) {
+        if (output?.status === "success" && output.data != null && Object.prototype.hasOwnProperty.call(output.data, "webhookPayload")) {
           clearTimeout(timeoutId);
           if (import.meta.env.DEV) console.log(
             `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,

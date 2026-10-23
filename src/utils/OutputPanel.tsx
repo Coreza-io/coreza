@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, Pause, Play, ChevronLeft, ChevronRight } from "lucide-react";
-import { isStandardNodeOutput } from "@/types/nodeOutput";
+import { isNodeResult } from "@/utils/nodeResult";
 import { canEditJson } from "./preview";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 
@@ -50,7 +50,7 @@ export type OutputPanelProps = {
   onStepPrevious?: () => void;
 };
 
-// Status badge component for StandardNodeOutput
+// Status badge component for NodeResult
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const statusConfig: Record<string, { icon: React.ReactNode; className: string }> = {
     success: { icon: <CheckCircle className="w-3 h-3" />, className: "bg-green-500/20 text-green-500" },
@@ -147,7 +147,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
   const displayData = internalData;
 
   const renderData = useMemo(() => {
-    return createRenderData(sourceNodeId, !pinned && isStandardNodeOutput(internalData) && internalData.status === "success" ? internalData.meta?.persistentVariableKeys : undefined);
+    return createRenderData(sourceNodeId, !pinned && isNodeResult(internalData) && internalData.status === "success" ? internalData.meta?.persistentVariableKeys : undefined);
   }, [sourceNodeId, pinned, internalData]);
 
   if (!isExpanded) return null;
@@ -203,7 +203,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           <span className="font-semibold text-foreground text-sm tracking-tight">
             Output
           </span>
-          {isStandardNodeOutput(internalData) && (
+          {isNodeResult(internalData) && (
             <StatusBadge status={internalData.status} />
           )}
         </div>
@@ -272,7 +272,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {isStandardNodeOutput(internalData) ? (
+            {isNodeResult(internalData) ? (
               <>
                 {renderData(displayData, "")}
                 {internalData.meta?.executionTime && (

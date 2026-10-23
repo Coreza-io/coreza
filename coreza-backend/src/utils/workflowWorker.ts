@@ -17,7 +17,7 @@ import { EnginePool } from "../engine";
 import { serializeWorkflowRunResult } from "./workflowRunResultContract";
 import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
-import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "./nodeResultHelpers";
 import type { WorkflowJobData } from "../infra/jobQueue/queueInterface";
 import { RedisKeys } from "../infra/redisKeys";
 import type {
@@ -262,7 +262,7 @@ export function createWorkflowWorker({
               totalItems ?? 0,
             );
 
-          // Keep full StandardNodeOutput for each item, preserving structure
+          // Keep full NodeResult for each item, preserving structure
           const aggregatedOutput = results.map((r) => ({
             status: r.status,
             data: r.data,

@@ -1,4 +1,4 @@
-import { decodeLegacyNodeResult } from "../contracts/nodeResult";
+import { readNodeResult } from "../contracts/nodeResult";
 import { resolveClusterHierarchy } from './clusterHierarchy';
 import { createHash } from "crypto";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
@@ -267,7 +267,7 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
   const pinnedResults: Record<string, unknown> = {};
   for (const nodeId of executableNodeIds) {
     const pin = pinnedValue(nodeById.get(nodeId)!);
-    if (pin.pinned) pinnedResults[nodeId] = decodeLegacyNodeResult(pin.value, "pin");
+    if (pin.pinned) pinnedResults[nodeId] = readNodeResult(pin.value);
   }
   const hashMaterial = stable({
     plannerVersion: PLANNER_VERSION,

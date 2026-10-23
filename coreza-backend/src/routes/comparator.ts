@@ -1,3 +1,5 @@
+import { resultSuccess, resultFailure, safeErrorDetails } from "../contracts/nodeResult";
+
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -28,10 +30,7 @@ router.post("/if", async (req, res) => {
 
     // Validate presence and types
     if (!conditions || !Array.isArray(conditions)) {
-      return res.status(400).json({
-        error: "conditions array is required",
-        received: { conditions, logicalOps },
-      });
+      return res.status(400).json(resultFailure("conditions array is required", { data: { received: { conditions, logicalOps } } }));
     }
 
     // Evaluate each condition using ComparatorService
@@ -39,10 +38,7 @@ router.post("/if", async (req, res) => {
     for (const condition of conditions) {
       const { left, operator, right, dataType } = condition;
       if (left === undefined || operator == null || right === undefined) {
-        return res.status(400).json({
-          error: "Each condition must have left, operator, and right",
-          invalidCondition: condition,
-        });
+        return res.status(400).json(resultFailure("Each condition must have left, operator, and right", { data: { invalidCondition: condition } }));
       }
 
       const conditionInput: ComparatorInput = {
@@ -54,11 +50,7 @@ router.post("/if", async (req, res) => {
       const result = await ComparatorService.evaluate(conditionInput);
 
       if (result.status === "error") {
-        return res.status(400).json({
-          error: "Failed to evaluate condition",
-          details: result.error,
-          invalidCondition: condition,
-        });
+        return res.status(400).json(resultFailure("Failed to evaluate condition", { data: { invalidCondition: condition }, details: safeErrorDetails({ ...safeErrorDetails((result.error)) }) }));
       }
 
       if (result.data !== undefined) {
@@ -78,19 +70,13 @@ router.post("/if", async (req, res) => {
       undefined as unknown as boolean,
     );
 
-    res.json({
-      success: true,
-      data: {
+    res.json(resultSuccess({
         true: passed,
         false: !passed,
-      },
-    });
+      }));
   } catch (error) {
     console.error("If condition evaluation error:", error);
-    res.status(500).json({
-      error: "Failed to evaluate conditions",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    res.status(500).json(resultFailure("Failed to evaluate conditions", { data: null, details: safeErrorDetails({ ...safeErrorDetails((error instanceof Error ? error.message : String(error))) }) }));
   }
 });
 
@@ -99,17 +85,11 @@ router.post("/switch", async (req, res) => {
   try {
     const { cases = [], defaultCase = "fallback" } = req.body;
     if (!Array.isArray(cases)) {
-      return res.status(400).json({
-        error: "cases must be an array",
-        received: { cases },
-      });
+      return res.status(400).json(resultFailure("cases must be an array", { data: { received: { cases } } }));
     }
 
     if (cases.length === 0) {
-      return res.json({
-        success: true,
-        data: defaultCase,
-      });
+      return res.json(resultSuccess(defaultCase));
     }
 
     for (const caseItem of cases) {
@@ -117,10 +97,7 @@ router.post("/switch", async (req, res) => {
       const rightValue = caseItem.right;
 
       if (leftValue === undefined || rightValue === undefined) {
-        return res.status(400).json({
-          error: "Each case must include left, operator, and right values",
-          invalidCase: caseItem,
-        });
+        return res.status(400).json(resultFailure("Each case must include left, operator, and right values", { data: { invalidCase: caseItem } }));
       }
     }
 
@@ -142,22 +119,13 @@ router.post("/switch", async (req, res) => {
     );
 
     if (result.status === "error") {
-      return res.status(500).json({
-        error: "Failed to evaluate switch cases",
-        details: result.error,
-      });
+      return res.status(500).json(resultFailure("Failed to evaluate switch cases", { data: null, details: safeErrorDetails({ ...safeErrorDetails((result.error)) }) }));
     }
 
-    res.json({
-      success: true,
-      data: result.data,
-    });
+    res.json(resultSuccess(result.data));
   } catch (error) {
     console.error("Switch case evaluation error:", error);
-    res.status(500).json({
-      error: "Failed to evaluate switch cases",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    res.status(500).json(resultFailure("Failed to evaluate switch cases", { data: null, details: safeErrorDetails({ ...safeErrorDetails((error instanceof Error ? error.message : String(error))) }) }));
   }
 });
 
@@ -167,10 +135,7 @@ router.post("/field", async (req, res) => {
     const { fields = [], data = {}, persistent, expressionContext } = req.body;
 
     if (!Array.isArray(fields)) {
-      return res.status(400).json({
-        error: "fields must be an array",
-        received: { fields },
-      });
+      return res.status(400).json(resultFailure("fields must be an array", { data: { received: { fields } } }));
     }
 
     if (
@@ -181,15 +146,15 @@ router.post("/field", async (req, res) => {
     )
       return res
         .status(400)
-        .json({ error: "expressionContext must be an object" });
+        .json(resultFailure("expressionContext must be an object", { data: null }));
     const nodeResults = expressionContext?.nodeResults;
     const nodeIdentities = expressionContext?.nodeIdentities;
     const expressionResults = expressionContext?.expressionResults;
     const expressionContexts = expressionContext?.expressionContexts;
     if (expressionContexts !== undefined && (!expressionContexts || typeof expressionContexts !== "object" || Array.isArray(expressionContexts) || Object.keys(expressionContexts).some(key => !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= fields.length)))
-      return res.status(400).json({ error: "expressionContext.expressionContexts must contain valid row indexes" });
+      return res.status(400).json(resultFailure("expressionContext.expressionContexts must contain valid row indexes", { data: null }));
     if (expressionResults !== undefined && (!expressionResults || typeof expressionResults !== "object" || Array.isArray(expressionResults)))
-      return res.status(400).json({ error: "expressionContext.expressionResults must be an object" });
+      return res.status(400).json(resultFailure("expressionContext.expressionResults must be an object", { data: null }));
     if (
       nodeResults !== undefined &&
       (!nodeResults ||
@@ -198,11 +163,11 @@ router.post("/field", async (req, res) => {
     )
       return res
         .status(400)
-        .json({ error: "expressionContext.nodeResults must be an object" });
+        .json(resultFailure("expressionContext.nodeResults must be an object", { data: null }));
     if (nodeIdentities !== undefined && (!Array.isArray(nodeIdentities) || nodeIdentities.length > 10_000))
       return res
         .status(400)
-        .json({ error: "expressionContext.nodeIdentities must be an array" });
+        .json(resultFailure("expressionContext.nodeIdentities must be an array", { data: null }));
     if (
       Array.isArray(nodeIdentities) &&
       !nodeIdentities.every(
@@ -217,9 +182,7 @@ router.post("/field", async (req, res) => {
           (identity.label === undefined || typeof identity.label === "string"),
       )
     )
-      return res.status(400).json({
-        error: "expressionContext.nodeIdentities contains an invalid identity",
-      });
+      return res.status(400).json(resultFailure("expressionContext.nodeIdentities contains an invalid identity", { data: null }));
     const safeNodeResults = nodeResults
       ? Object.fromEntries(Object.entries(nodeResults))
       : {};
@@ -247,21 +210,21 @@ router.post("/field", async (req, res) => {
       const staged = stagePersistentFields(fields, options);
       if (!res.locals.variableSnapshot || !req.user?.id) throw new Error("Persistent variable snapshot unavailable");
       if (typeof req.body.variableInvocationId !== "string" || !/^[0-9a-f-]{36}$/i.test(req.body.variableInvocationId))
-        return res.status(400).json({ error: "Persistent Edit execution requires an invocation ID" });
+        return res.status(400).json(resultFailure("Persistent Edit execution requires an invocation ID", { data: null }));
       variableSnapshot = await variableSnapshots.commit(res.locals.variableSnapshot, staged.changes, req.body.variableInvocationId);
       result = staged.result;
       persistentVariableKeys = staged.changes.map(change => change.key);
     } else result = applyFieldRows(fields, options);
-    res.json({ success: true, status: "success", data: result, ...(variableSnapshot ? { variableSnapshot, meta: { persistentVariableKeys } } : {}) });
+    res.json({
+      ...resultSuccess(result, persistentVariableKeys ? { meta: { persistentVariableKeys } } : {}),
+      ...(variableSnapshot ? { variableSnapshot } : {}),
+    });
   } catch (error) {
     console.error("Field manipulation failed");
-    res.status((error as any).statusCode ?? (error instanceof EditFieldError ? 400 : 503)).json({
-      error: "Failed to process field operations",
-      details:
-        error instanceof EditFieldError
-          ? { code: error.code, message: error.message, ...error.details }
-          : { message: error instanceof Error ? error.message : String(error) },
-    });
+    res.status((error as any).statusCode ?? (error instanceof EditFieldError ? 400 : 503)).json(resultFailure(
+      error instanceof Error ? error.message : "Failed to process field operations",
+      { details: safeErrorDetails({ code: (error as any)?.code, reason: error instanceof Error ? error.message : String(error) }) },
+    ));
   }
 });
 
@@ -289,10 +252,7 @@ router.post("/compute", async (req, res) => {
     } = req.body;
 
     if (operator == null) {
-      return res.status(400).json({
-        error: "operator is required",
-        received: { value, operator },
-      });
+      return res.status(400).json(resultFailure("operator is required", { data: { received: { value, operator } } }));
     }
 
     const result = ComputeService.compute({
@@ -315,16 +275,13 @@ router.post("/compute", async (req, res) => {
       extremeReturn,
     });
     if (result.status === "error") {
-      return res.status(400).json({ error: result.error });
+      return res.status(400).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
     }
 
     res.json(result);
   } catch (error) {
     console.error("Compute operation error:", error);
-    res.status(500).json({
-      error: "Failed to perform compute operation",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    res.status(500).json(resultFailure("Failed to perform compute operation", { data: null, details: safeErrorDetails({ ...safeErrorDetails((error instanceof Error ? error.message : String(error))) }) }));
   }
 });
 

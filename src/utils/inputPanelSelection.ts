@@ -75,9 +75,9 @@ export function resolveLiveInputData(
 ): unknown {
   if (!selectedId) return {};
   const executionData = getExecutionData(selectedId);
-  if (owns(executionData, "output")) return readPublicNodeResult(executionData.output, "history");
+  if (owns(executionData, "output")) return readPublicNodeResult(executionData.output);
   const nodeData = nodes.find(({ id }) => id === selectedId)?.data;
-  if (owns(nodeData, "output")) return readPublicNodeResult(nodeData.output, "history");
+  if (owns(nodeData, "output")) return readPublicNodeResult(nodeData.output);
   if (owns(nodeData, "input")) return nodeData.input;
   return {};
 }

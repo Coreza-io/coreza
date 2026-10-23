@@ -7,13 +7,11 @@
  *
  * See the LICENSE file for details.
  */
-
-import { decodeLegacyNodeResult, toPublicNodeResult, type LegacySource, type NodeResult } from "./nodeResult";
+import { readNodeResult, toPublicNodeResult, type NodeResult } from "./nodeResult";
 
 /** Publish one accepted result to all owners, followed by exactly one notification. */
 export function publishNodeResult(
   value: unknown,
-  source: LegacySource,
   owner: {
     nodeId: string;
     isCurrent: () => boolean;
@@ -25,7 +23,7 @@ export function publishNodeResult(
   patch: Record<string, any> = {},
 ): NodeResult | undefined {
   if (!owner.isCurrent()) return;
-  const result = toPublicNodeResult(decodeLegacyNodeResult(value, source));
+  const result = toPublicNodeResult(readNodeResult(value));
   if (owner.updateNodeData(owner.nodeId, { ...patch, output: result }) === false) return;
   owner.store.setNodeData(owner.nodeId, { ...patch, output: result });
   owner.setLastOutput?.(result);

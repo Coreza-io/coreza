@@ -1,3 +1,5 @@
+import { serviceNodeResult } from "../nodes/serviceNodeResult";
+import { resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -22,7 +24,7 @@ router.post('/:screener/:operation', async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json(resultFailure('Unauthorized', { data: null }));
     }
 
     const { screener, operation } = req.params;
@@ -32,10 +34,7 @@ router.post('/:screener/:operation', async (req, res) => {
 
     const screenerService = getScreenerService(screener);
     if (!screenerService) {
-      return res.status(400).json({
-        success: false,
-        error: `Unsupported screener: ${screener}`
-      });
+      return res.status(400).json(resultFailure(`Unsupported screener: ${screener}`, { data: null }));
     }
 
     const result = await screenerService.execute({
@@ -46,13 +45,10 @@ router.post('/:screener/:operation', async (req, res) => {
     });
 
     console.log(`📊 [SCREENER-ROUTE] ${screener}/${operation} completed`);
-    res.json(result);
+    res.json(serviceNodeResult(result));
   } catch (error: any) {
     console.error('[SCREENER-ROUTE] Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Unknown error'
-    });
+    res.status(500).json(resultFailure(error.message || 'Unknown error', { data: null }));
   }
 });
 

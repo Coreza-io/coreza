@@ -7,9 +7,8 @@
  *
  * See the LICENSE file for details.
  */
-
-import { StandardNodeOutput } from "../../types/nodeOutput";
-import { createSuccessOutput, createErrorOutput } from "../../utils/normalizeOutput";
+import { NodeResult } from "../../contracts/nodeResult";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export interface RiskInput {
   buying_power?: string;
@@ -38,7 +37,7 @@ export interface RiskOutput {
   action?: string;
 }
 
-export type RiskResult = StandardNodeOutput<RiskOutput>;
+export type RiskResult = NodeResult<RiskOutput>;
 
 const RISK_CONTEXT = { category: "risk", nodeName: "Risk Engine" };
 

@@ -1,3 +1,4 @@
+import { resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -116,7 +117,7 @@ router.post("/", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     // const parsed = portfolioRequestSchema.safeParse(req.body);
@@ -132,7 +133,7 @@ router.post("/", async (req: Request, res: Response) => {
     if (!executor) {
       return res
         .status(500)
-        .json({ error: "Portfolio executor is not registered" });
+        .json(resultFailure("Portfolio executor is not registered", { data: null }));
     }
 
     const result = await executor.execute(
@@ -159,7 +160,7 @@ router.post("/", async (req: Request, res: Response) => {
     return res.json(result);
   } catch (error) {
     console.error("[PortfolioRoutes] / error:", error);
-    return res.status(500).json({ error: "Failed to execute portfolio node" });
+    return res.status(500).json(resultFailure("Failed to execute portfolio node", { data: null }));
   }
 });
 

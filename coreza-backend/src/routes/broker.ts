@@ -1,3 +1,4 @@
+import { resultFailure } from "../contracts/nodeResult";
 import { toPublicNodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -128,7 +129,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const userId = req.user?.id;
 
     if (!userId || !credential_id) {
-      return res.status(400).json({ error: "credential_id is required" });
+      return res.status(400).json(resultFailure("credential_id is required", { data: null }));
     }
 
     // Parse symbol if it's a JSON array string
@@ -187,7 +188,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       message = err.response.statusText;
     }
 
-    res.status(status || 500).json({ success: false, error: message });
+    res.status(status || 500).json(resultFailure(message, { data: null }));
   }
 });
 

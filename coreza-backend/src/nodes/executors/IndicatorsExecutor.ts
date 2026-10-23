@@ -15,11 +15,7 @@ import { extractPrices, resolveDataRef } from "../../nodes/logic/toolOutputProce
 import { normalizeCandles, candleTimestamp, sameMarketSymbol } from "../../marketData/normalizeCandles";
 import { safeToolError, toolInputFields, toolResultSummary } from "../../utils/toolExecutionLog";
 import { DataContext, DataContextManager } from "../../engine/DataContext";
-import {
-  normalizeOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 import {
   IndicatorStateManager,
   buildIndicatorKey,
@@ -72,7 +68,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   ): NodeResult | Promise<NodeResult> {
     try { return this.executeResolved(node, input, context); }
     catch (error) {
-      return toNodeResult(createErrorOutput(error, { nodeId: node.id, nodeName: node.name, category: this.category }));
+      return createErrorOutput(error, { nodeId: node.id, nodeName: node.name, category: this.category });
     }
   }
 
@@ -165,13 +161,11 @@ export class IndicatorsExecutor implements INodeExecutor {
           !state ||
           !isIndicatorStateCompatible(state, indicatorType, processedParams)
         ) {
-          return toNodeResult(
-            createErrorOutput("Indicator state not warmed for sync execution", {
+          return createErrorOutput("Indicator state not warmed for sync execution", {
               nodeId: node.id,
               nodeName: node.name,
               category: this.category,
-            }),
-          );
+            });
         }
 
         const latestBar = barsData[barsData.length - 1];
@@ -375,13 +369,13 @@ export class IndicatorsExecutor implements INodeExecutor {
 
       context?.agentDataTrace?.('indicator_compute', () => ({ durationMs: computeDuration, inputRowCount: observedBars,
         observedBars, requiredBars, success: (calculated.status === "success"), result: toolResultSummary(result.data, true) }));
-      const normalized = normalizeOutput(result, {
+      const normalized = finalizeNodeResult(result, {
         nodeId: node.id,
         nodeName: node.name,
         category: this.category,
         startTime,
-      });
-      return { ...toNodeResult(normalized), meta: { ...normalized.meta, requiredBars,
+      }, "observed");
+      return { ...normalized, meta: { ...normalized.meta, requiredBars,
         ...(!hasVolume ? { readinessReason: 'VWAP requires positive volume in the current session' } : {}) } };
     } catch (error) {
       context?.agentDataTrace?.('indicator_error', () => ({ failure: safeToolError(error), success: false }));
@@ -398,7 +392,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 
@@ -526,23 +520,19 @@ export class IndicatorsExecutor implements INodeExecutor {
     const requestedTimeframe = normalizeTimeframe(params.timeframe);
     if (operation === "get") {
       if (!requestedSymbol) {
-        return toNodeResult(
-          createErrorOutput(ROLLING_WINDOW_ERRORS.symbolRequired, {
+        return createErrorOutput(ROLLING_WINDOW_ERRORS.symbolRequired, {
             nodeId: node.id,
             nodeName: "RollingWindow",
             category: this.category,
-          }),
-        );
+          });
       }
 
       if (!requestedTimeframe) {
-        return toNodeResult(
-          createErrorOutput(ROLLING_WINDOW_ERRORS.timeframeRequired, {
+        return createErrorOutput(ROLLING_WINDOW_ERRORS.timeframeRequired, {
             nodeId: node.id,
             nodeName: "RollingWindow",
             category: this.category,
-          }),
-        );
+          });
       }
 
       const { userId, workflowId, runId, dataContext } =
@@ -585,13 +575,11 @@ export class IndicatorsExecutor implements INodeExecutor {
 
     const parsed = parseCandleData(params.candle_data);
     if (!parsed.ok) {
-      return toNodeResult(
-        createErrorOutput(parsed.error, {
+      return createErrorOutput(parsed.error, {
           nodeId: node.id,
           nodeName: "RollingWindow",
           category: this.category,
-        }),
-      );
+        });
     }
 
     const { userId, workflowId, runId, dataContext } =
@@ -703,7 +691,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     stateStart?: number,
   ): NodeResult {
     if (state.isReady && !this.finiteIndicatorValue(state.currentValue)) {
-      return toNodeResult(createErrorOutput('Indicator state contains an invalid value'));
+      return createErrorOutput('Indicator state contains an invalid value');
     }
     const hasVolume = indicatorType !== 'vwap' || Number(state.internalState?.cumVol) > 0;
     context?.agentDataTrace?.('indicator_readiness', { observedBars: state.observedBars,

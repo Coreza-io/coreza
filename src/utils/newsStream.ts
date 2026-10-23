@@ -1,4 +1,4 @@
-import { isNodeResult, resultState, type NodeResult } from "./nodeResult";
+import { resultState, type NodeResult } from "./nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -47,7 +47,7 @@ export const createWaitingNewsOutput = (
 });
 
 export const appendNewsItem = (
-  prior: Partial<NewsStreamOutput> | NodeResult<NewsStreamOutput> | undefined,
+  prior: NodeResult<NewsStreamOutput> | undefined,
   news: NewsPayload,
   options: {
     nodeId?: string;
@@ -55,7 +55,7 @@ export const appendNewsItem = (
     receivedAt?: string;
   } = {}
 ): NodeResult<NewsStreamOutput> => {
-  const current = isNodeResult(prior) ? prior.data : prior;
+  const current = prior?.data;
   const receivedAt = options.receivedAt ?? new Date().toISOString();
 
   return resultState<NewsStreamOutput>("streaming", {

@@ -68,7 +68,6 @@ export interface NormalizeContext {
   nodeId?: string; nodeName?: string; category?: string; runId?: string; invocationId?: string;
   startTime?: number; timestamp?: string; executionTime?: number; skipTimestamp?: boolean;
 }
-export type LegacySource = "executor" | "manual" | "history" | "pin" | "listener" | "payload";
 const statuses: readonly string[] = ["pending", "running", "success", "error", "waiting", "listening", "streaming", "skipped", "cancelled", "not-executed"];
 const owns = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const record = (value: unknown): value is Record<string, any> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -92,6 +91,7 @@ export function resultFailure(message: string, options: ResultOptions & { data?:
 }
 /** Only explicitly permitted scalar response diagnostics cross a public boundary. */
 export function safeErrorDetails(value: unknown): ResultErrorDetails | undefined {
+  if (typeof value === "string") return { reason: value };
   if (!record(value)) return undefined;
   const details: ResultErrorDetails = {};
   for (const key of ["code", "provider", "reason"] as const) if (typeof value[key] === "string") details[key] = value[key];
@@ -110,44 +110,9 @@ export function safeErrorDetails(value: unknown): ResultErrorDetails | undefined
   return Object.keys(details).length === Object.keys(value).length
     && Object.keys(details).every(key => Object.is(details[key as keyof ResultErrorDetails], value[key])) ? value as ResultErrorDetails : details;
 }
-/** Decode only at an identified result ingress. Explicit payloads never undergo shape guessing. */
-export function decodeLegacyNodeResult(value: unknown, source: LegacySource): NodeResult {
-  if (source === "payload") return resultSuccess(value);
-  if (isNodeResult(value)) return value;
-  if (!record(value)) return resultSuccess(value);
-  const status = typeof value.status === "string" ? value.status.toLowerCase() : undefined;
-  const message = typeof value.error === "string" ? value.error : typeof value.error?.message === "string" ? value.error.message : undefined;
-  const hasLifecycle = status !== undefined && (statuses.includes(status) || ["failed", "timeout", "expired"].includes(status));
-  // A bare provider {data, pagination} is payload, even at a manual ingress.
-  const legacyEnvelope = typeof value.success === "boolean" || hasLifecycle || Boolean(message)
-    || ((source === "executor" || source === "history") && owns(value, "data") && Object.keys(value).every(key => ["data", "meta", "control", "warmupSuppressed"].includes(key)));
-  if (!legacyEnvelope) return resultSuccess(value);
-  const failed = value.success === false || Boolean(message) || ["error", "failed", "timeout", "expired"].includes(status ?? "");
-  const terminalNonFailure = status === "cancelled" || status === "not-executed";
-  const resolvedStatus: ResultStatus = terminalNonFailure ? status as "cancelled" | "not-executed" : failed ? "error" : hasLifecycle ? status as ResultStatus : "success";
-  const contradiction = (value.success === false && status === "success") || (value.success === true && ["error", "failed"].includes(status ?? ""));
-  const details = safeErrorDetails({ ...(contradiction ? { code: "LEGACY_CONTRADICTORY_STATUS" } : {}), ...value.details,
-    ...(typeof value.code === "string" ? { code: value.code } : {}),
-    ...(typeof value.provider === "string" ? { provider: value.provider } : {}),
-    ...(typeof value.recoverable === "boolean" ? { recoverable: value.recoverable } : {}),
-    ...(["timeout", "expired"].includes(status ?? "") ? { code: status === "timeout" ? "LISTENER_TIMEOUT" : "LISTENER_EXPIRED" } : {}),
-  });
-  const extras = Object.fromEntries(Object.entries(value).filter(([key]) => !["success", "status", "data", "error", "details", "meta", "control", "warmupSuppressed", "code", "provider", "recoverable", "formatVersion"].includes(key)));
-  const legacyFields = Object.fromEntries(Object.entries(extras).filter(([key]) => ["pagination", "cursor", "nextCursor", "total", "count", "channels", "callback_url", "subscriptionType", "index", "isLastBatch", "result", "source", "symbols", "message", "receivedAt", "lastReceivedAt", "lastUpdate", "endedAt", "startedAt", "subscribedAt", "streamType", "streamTypes", "scope", "mode", "headers", "statusText"].includes(key)));
-  const capturedTimestamp = typeof value.meta?.timestamp === "string" ? undefined : typeof value.timestamp === "string" ? value.timestamp
-    : source === "listener" ? value.receivedAt ?? value.lastReceivedAt ?? value.lastUpdate ?? value.endedAt ?? value.startedAt ?? value.subscribedAt : undefined;
-  const hasLegacyFields = owns(value, "data") && Object.keys(legacyFields).length > 0;
-  const data = owns(value, "data") ? value.data : Object.keys(extras).length ? extras : null;
-  const result = resultState(resolvedStatus, data, {
-    ...((record(value.meta) || hasLegacyFields || contradiction || typeof capturedTimestamp === "string") ? {
-      meta: { ...(record(value.meta) ? value.meta : {}), ...(contradiction ? { legacyStatusConflict: true } : {}), ...(hasLegacyFields ? { legacyFields } : {}),
-        ...(typeof capturedTimestamp === "string" ? { timestamp: capturedTimestamp } : {}) },
-    } : {}),
-    ...(record(value.control) ? { control: value.control } : {}),
-    ...(value.warmupSuppressed === true ? { warmupSuppressed: true } : {}), ...(details ? { details } : {}),
-  });
-  if (message || resolvedStatus === "error") result.error = message ?? (typeof value.message === "string" ? value.message : "Node execution failed");
-  return result;
+/** Reject noncanonical values instead of guessing an older output format. */
+export function readNodeResult(value: unknown): NodeResult {
+  return isNodeResult(value) ? value : resultFailure("Expected a status/data node result", { details: { code: "INVALID_NODE_RESULT" } });
 }
 /** No clock reads: timing is captured by the invocation owner, never by a reader. */
 export function finalizeNodeResult<T>(result: NodeResult<T>, context: NormalizeContext = {}, profile: "hot" | "observed" = "hot"): NodeResult<T> {
@@ -187,5 +152,5 @@ export class NodeResultError extends Error {
 }
 /** Public persistence projection; call at serialization, never in the per-node execution loop. */
 export function serializeNodeResults(results: Record<string, unknown>): Record<string, NodeResult> {
-  return Object.fromEntries(Object.entries(results).map(([id, value]) => [id, serializeNodeResult(decodeLegacyNodeResult(value, "history"))]));
+  return Object.fromEntries(Object.entries(results).map(([id, value]) => [id, serializeNodeResult(readNodeResult(value))]));
 }

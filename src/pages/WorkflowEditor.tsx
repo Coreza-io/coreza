@@ -1,5 +1,5 @@
 import { publishNodeResult } from "@/utils/publishNodeResult";
-import { isNodeResult } from "@/utils/nodeResult";
+
 import { RUNTIME_NODE_DATA_KEYS } from "@/contexts/canonicalGraphStore";
 import { clearAgentActivity } from "@/stores/agentActivityStore";
 import { resetReferenceTextHistory } from "@/hooks/useReferenceTextDrop";
@@ -1146,8 +1146,8 @@ const WorkflowEditorContent = () => {
       if (!authUser || currentWorkflowSessionRef.current !== cleanupSession) return;
 
       const storeData = executionStore.getNodeData(nodeId) as any;
-      const storedSymbols = Array.isArray((isNodeResult(storeData?.output) ? storeData.output.data : storeData?.output)?.symbols)
-        ? (isNodeResult(storeData.output) ? storeData.output.data : storeData.output)?.symbols
+      const storedSymbols = Array.isArray(storeData?.output?.data?.symbols)
+        ? storeData.output.data?.symbols
         : [];
       const symbols = storedSymbols.length ? storedSymbols : fallbackSymbols;
 
@@ -1275,8 +1275,8 @@ const WorkflowEditorContent = () => {
           if (isNewsStreamNode(nodeDef)) {
             const nodeData = removedNode.data as any;
             const candidateSymbols =
-              (isNodeResult(executionStore.getNodeData(id)?.output) ? executionStore.getNodeData(id).output.data : executionStore.getNodeData(id)?.output)?.symbols ??
-              (isNodeResult(nodeData?.output) ? nodeData.output.data : nodeData?.output)?.symbols ??
+              executionStore.getNodeData(id)?.output?.data?.symbols ??
+              nodeData?.output?.data?.symbols ??
               nodeData?.values?.symbols ??
               nodeData?.fieldState?.symbols;
             cleanupNewsSubscription(
@@ -1331,7 +1331,7 @@ const WorkflowEditorContent = () => {
         receivedAt,
       });
 
-      publishNodeResult(nextOutput, "listener", { nodeId,
+      publishNodeResult(nextOutput, { nodeId,
         isCurrent: () => currentWorkflowSessionRef.current === workflowSessionId && nodesRef.current.some(node => node.id === nodeId),
         updateNodeData: stableNodes.updateNodeData, store: executionStore, notify: notifyExecutionStoreUpdate });
     },
@@ -1789,8 +1789,8 @@ const WorkflowEditorContent = () => {
             const nodeData = node.data as any;
             const nodeDef = nodeData?.definition;
             const candidateSymbols =
-              (isNodeResult(executionStore.getNodeData(node.id)?.output) ? executionStore.getNodeData(node.id).output.data : executionStore.getNodeData(node.id)?.output)?.symbols ??
-              (isNodeResult(nodeData?.output) ? nodeData.output.data : nodeData?.output)?.symbols ??
+              executionStore.getNodeData(node.id)?.output?.data?.symbols ??
+              nodeData?.output?.data?.symbols ??
               nodeData?.values?.symbols ??
               nodeData?.fieldState?.symbols;
             cleanupNewsSubscription(

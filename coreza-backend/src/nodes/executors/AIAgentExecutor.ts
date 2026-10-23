@@ -39,11 +39,7 @@ import {
   ToolDefinition,
 } from "../../nodes/logic/toolDefinitions";
 import { loadNodeDefinition } from "../nodeDefinitions";
-import {
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { getLLM, LLMConfig } from "../../config/llmProviders";
 import { isSolModel, resolveSolEffort } from '../../config/openAIModelCapabilities';
 import { loadMemoryFromEdges, acquireMemoryConversation } from "../logic/memoryLoader";
@@ -107,7 +103,7 @@ export class AIAgentExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           "user_id is required for AI Agent execution",
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       // Get edges and nodes from context
@@ -123,7 +119,7 @@ export class AIAgentExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           "Chat Model node must be connected to the 'Chat Model' handle",
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       const chatModelNode = allNodes.find(
@@ -133,7 +129,7 @@ export class AIAgentExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           "Connected Chat Model node not found",
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       // Get credentials from the connected Chat Model node
@@ -142,7 +138,7 @@ export class AIAgentExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           "Chat Model node must have credentials configured",
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       // Get provider from Chat Model node (supports OpenAI, Gemini, etc.)
@@ -164,7 +160,7 @@ export class AIAgentExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           "Unable to load chat model credentials",
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       const apiKey = client_json.apiKey;
@@ -172,7 +168,7 @@ export class AIAgentExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           "Chat model credential is missing apiKey",
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       // Get model from Chat Model node
@@ -193,7 +189,7 @@ export class AIAgentExecutor implements INodeExecutor {
 
       if (!userPrompt) {
         const errOutput = createErrorOutput("userPrompt is required");
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       const solModel = isSolModel(providerId, model);
@@ -345,7 +341,7 @@ export class AIAgentExecutor implements INodeExecutor {
       assertAgentActive(signal);
       terminal = "completed";
       const successOutput = createSuccessOutput(agentOutput);
-      return toNodeResult(successOutput);
+      return successOutput;
     } catch (error: any) {
       if (signal?.aborted || error?.name === "AbortError") {
         terminal = "cancelled";
@@ -356,7 +352,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const errOutput = createErrorOutput(
         error.message || "AI Agent execution failed",
       );
-      return toNodeResult(errOutput);
+      return errOutput;
     } finally {
       toolLifetime.closed = true;
       activity.finish(terminal);

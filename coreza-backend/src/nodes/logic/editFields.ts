@@ -1,4 +1,4 @@
-import { isNodeResult, decodeLegacyNodeResult } from "../../contracts/nodeResult";
+import { isNodeResult } from "../../contracts/nodeResult";
 import { VARIABLE_LIMITS, validateVariable, type VariableChange } from "../../variables/contract";
 import { pickTypedJsonSource } from "./typedExpressionContext";
 import { restoreExpressionTransport } from "./expressionTransport";
@@ -9,7 +9,6 @@ import {
   isTypedEditFieldRow,
 } from "./typedEditFieldRow";
 import { pickJsonSource } from "../../utils/referenceResolution";
-import { extractOutputData } from "../../types/nodeOutput";
 
 export type EditFieldDataType =
   | "string"
@@ -362,17 +361,9 @@ export function applyTypedFieldRow(
   }
 }
 
-/** Unwrap both standard outputs and the compact NodeResult used by backtests. */
+/** Field input accepts a current result or an explicit business payload. */
 function extractFieldInputData(value: unknown): unknown {
-  if (isNodeResult(value)) return value.data;
-  if (
-    isPlainObject(value) &&
-    typeof value.success === "boolean" &&
-    Object.prototype.hasOwnProperty.call(value, "data")
-  ) {
-    return decodeLegacyNodeResult(value, "executor").data;
-  }
-  return extractOutputData(value);
+  return isNodeResult(value) ? value.data : value;
 }
 
 export function applyFieldRows(

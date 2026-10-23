@@ -9,7 +9,6 @@
  */
 
 export * from "../../coreza-backend/src/contracts/nodeResult";
-
-import { decodeLegacyNodeResult, toPublicNodeResult, type LegacySource } from "../../coreza-backend/src/contracts/nodeResult";
+import { readNodeResult, toPublicNodeResult } from "../../coreza-backend/src/contracts/nodeResult";
 /** Saved/UI ingress has no ownership of engine routing control. */
-export const readPublicNodeResult = (value: unknown, source: LegacySource) => toPublicNodeResult(decodeLegacyNodeResult(value, source));
+export const readPublicNodeResult = (value: unknown) => toPublicNodeResult(readNodeResult(value));

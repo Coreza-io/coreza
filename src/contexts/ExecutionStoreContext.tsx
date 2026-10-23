@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure, resultState } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -65,7 +66,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
   const publishSocketUpdate = useCallback((nodeId: string, patch: Partial<NodeExecutionData>) => {
     const { output, ...flags } = patch;
-    publishNodeResult(output, "listener", { nodeId, isCurrent: () => !!getNodeById(nodeId),
+    publishNodeResult(output, { nodeId, isCurrent: () => !!getNodeById(nodeId),
       updateNodeData, store: storeRef.current!, notify: notifyUpdate }, flags);
   }, [getNodeById, updateNodeData, notifyUpdate]);
 
@@ -152,15 +153,12 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
             };
 
             // Handle webhook events (manual run mode)
-            if (message.type === 'webhook_event' && message.payload) {
+            if (message.type === 'webhook_event' && Object.prototype.hasOwnProperty.call(message, 'payload')) {
               const { nodeId, payload } = message;
 
               if (nodeId && webhookIsCurrent(nodeId)) {
                 publishSocketUpdate(nodeId, {
-                  output: {
-                    webhookPayload: payload,
-                    receivedAt: message.timestamp
-                  }
+                  output: resultSuccess({ webhookPayload: payload, receivedAt: message.timestamp }, { meta: { timestamp: message.timestamp } })
                 });
                 debugLog('🪝 [ExecutionStore] Webhook data received for node:', nodeId);
               }
@@ -174,11 +172,9 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                 publishSocketUpdate(nodeId, {
                   isListening: false,
                   isTestListening: false,
-                  output: {
-                    error: error?.message ?? 'Trigger stopped due to an error',
-                    code: error?.code,
-                    endedAt: message.timestamp,
-                  },
+                  output: resultFailure(error?.message ?? 'Trigger stopped due to an error', {
+                    data: { endedAt: message.timestamp }, details: { code: error?.code }, meta: { timestamp: message.timestamp },
+                  }),
                 });
               }
 
@@ -236,11 +232,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     return;
                   }
                   publishSocketUpdate(nodeId, {
-                    output: {
-                      status: 'streaming',
-                      data,
-                      lastUpdate: new Date().toISOString()
-                    },
+                    output: resultState("streaming", data, { meta: { timestamp: message.timestamp ?? new Date().toISOString() } }),
                     ...(eventEntryId ? { lastStreamEntryId: eventEntryId } : {}),
                   });
                   debugLog(
@@ -257,28 +249,6 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
 
 
 
-            // Handle legacy streaming format (WebSocketClient broadcasts)
-            if (message.status === 'streaming' && message.payload?.nodeId) {
-              const { nodeId, data } = message.payload;
-
-              if (storeRef.current) {
-                // Only update if this node is actively test listening
-                const existingData = storeRef.current.getNodeData(nodeId);
-                if (existingData?.isTestListening) {
-                  publishSocketUpdate(nodeId, {
-                    output: {
-                      status: 'streaming',
-                      data,
-                      streamType: message.type,
-                      receivedAt: new Date().toISOString()
-                    }
-                  });
-                  debugLog('✅ [ExecutionStore] Updated node data (legacy) for:', nodeId);
-                } else {
-                  debugLog('⚠️ [ExecutionStore] Ignoring legacy streaming for non-listening node:', nodeId);
-                }
-              }
-            }
           } catch (error) {
             console.error('❌ [ExecutionStore] Failed to parse WebSocket message:', error);
           }

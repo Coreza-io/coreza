@@ -25,13 +25,7 @@ import {
 } from "./simBroker";
 import { OrderEvent, normalizeOrderType } from "../types/order";
 import { supabase } from "../config/supabase";
-import {
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-  compactSuccess,
-  compactError,
-} from "../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput, resultFailure } from "../utils/nodeResultHelpers";
 import { discoverWarmupNodes } from "../nodes/executors/InitializeIndicatorsExecutor";
 import type { DiscoveredWarmupNode } from "../nodes/executors/InitializeIndicatorsExecutor";
 import {
@@ -186,9 +180,7 @@ export class BacktestExecutor implements INodeExecutor {
       case "OnBar":
         return this.executeOnBar(node, input, context);
       default:
-        return toNodeResult(
-          createErrorOutput(`Unknown backtest node type: ${nodeName}`),
-        );
+        return createErrorOutput(`Unknown backtest node type: ${nodeName}`);
     }
   }
 
@@ -274,9 +266,7 @@ export class BacktestExecutor implements INodeExecutor {
       const userId = context?.userId;
       const workflowId = context?.workflowId;
       if (!userId || !workflowId) {
-        return toNodeResult(
-          createErrorOutput("User ID and Workflow ID required for backtest"),
-        );
+        return createErrorOutput("User ID and Workflow ID required for backtest");
       }
 
       const config: Partial<SimBrokerConfig> = {
@@ -300,19 +290,15 @@ export class BacktestExecutor implements INodeExecutor {
           .maybeSingle();
 
       if (workflowLookupError) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             `Failed to validate workflow before backtest: ${workflowLookupError.message}`,
-          ),
-        );
+          );
       }
 
       if (!workflow) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             "Workflow not found. Please save the workflow before running a backtest.",
-          ),
-        );
+          );
       }
 
       const { data: backtest, error: insertError } = await supabaseClient
@@ -335,11 +321,9 @@ export class BacktestExecutor implements INodeExecutor {
         .single();
 
       if (insertError || !backtest) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             `Failed to create backtest: ${insertError?.message}`,
-          ),
-        );
+          );
       }
 
       const backtestId = (backtest as { id: string }).id;
@@ -363,17 +347,13 @@ export class BacktestExecutor implements INodeExecutor {
       const adjustment = params.adjustment;
 
       if (!broker || symbols.length === 0 || !interval) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             "broker, symbol/symbols, and interval are required",
-          ),
-        );
+          );
       }
 
       if (broker !== "yahoo_finance" && !credentialId) {
-        return toNodeResult(
-          createErrorOutput("credential_id is required for selected broker"),
-        );
+        return createErrorOutput("credential_id is required for selected broker");
       }
 
       const configuredWarmupBars = parseWarmupPeriod(params.warmup_period);
@@ -405,17 +385,13 @@ export class BacktestExecutor implements INodeExecutor {
       const historicalDataBySymbol = new Map(strategyEntries);
 
       if (historicalDataBySymbol.size === 0) {
-        return toNodeResult(
-          createErrorOutput("No historical bars returned for backtest"),
-        );
+        return createErrorOutput("No historical bars returned for backtest");
       }
 
       const primarySymbol = symbols[0];
       const primaryBars = historicalDataBySymbol.get(primarySymbol) || [];
       if (!Array.isArray(primaryBars) || (primaryBars.length === 0 && !context?.runId)) {
-        return toNodeResult(
-          createErrorOutput(`No historical bars returned for ${primarySymbol}`),
-        );
+        return createErrorOutput(`No historical bars returned for ${primarySymbol}`);
       }
       for (const secondarySymbol of symbols.slice(1)) {
         if ((historicalDataBySymbol.get(secondarySymbol)?.length ?? 0) === 0) {
@@ -451,9 +427,7 @@ export class BacktestExecutor implements INodeExecutor {
           warmupNodes,
         );
       } catch (error) {
-        return toNodeResult(
-          createErrorOutput(error instanceof Error ? error.message : String(error)),
-        );
+        return createErrorOutput(error instanceof Error ? error.message : String(error));
       }
       if (consolidatorWarmup.requiresWorkflowReplay) {
         warmupMode = "workflow_replay";
@@ -466,11 +440,9 @@ export class BacktestExecutor implements INodeExecutor {
       try {
         rollingWindowSize = resolveRollingWindowSeedSize(discoveredWindows);
       } catch (error) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             error instanceof Error ? error.message : String(error),
-          ),
-        );
+          );
       }
 
       const warmupEntries = await Promise.all(
@@ -651,8 +623,7 @@ export class BacktestExecutor implements INodeExecutor {
         await session.initialize();
       }
 
-      const initResult = toNodeResult(
-        createSuccessOutput({
+      const initResult = createSuccessOutput({
           backtest_id: backtestId,
           execution_id: executionId,
           mode: isManual ? "manual" : "batch",
@@ -712,8 +683,7 @@ export class BacktestExecutor implements INodeExecutor {
               : {}),
           },
           status: ownedNodeResults ? "completed" : "ready",
-        }),
-      );
+        });
       if (ownedNodeResults) {
         initResult.control = {
           suppressRouting: true,
@@ -725,7 +695,7 @@ export class BacktestExecutor implements INodeExecutor {
       return initResult;
     } catch (error) {
       console.error("[BacktestExecutor] BacktestInit failed:", error);
-      const errorResult = toNodeResult(createErrorOutput(error));
+      const errorResult = createErrorOutput(error);
       if (failedOwnedNodeResults) {
         errorResult.control = {
           suppressRouting: true,
@@ -858,7 +828,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return compactError("backtest_id is required");
+        return resultFailure("backtest_id is required");
       }
 
       const symbol = params.symbol;
@@ -868,7 +838,7 @@ export class BacktestExecutor implements INodeExecutor {
       const operation = params.operation || "place_order";
 
       if (!symbol) {
-        return compactError("symbol is required");
+        return resultFailure("symbol is required");
       }
 
       // Get SimBroker instance from executor cache - SYNCHRONOUS
@@ -878,10 +848,9 @@ export class BacktestExecutor implements INodeExecutor {
       if (operation === "liquidate") {
         const result = simBroker.liquidate(symbol);
         if (!result.success) {
-          return compactError(result.error || "Liquidation failed");
+          return resultFailure(result.error || "Liquidation failed");
         }
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             operation: "liquidate",
             symbol,
             skipped: result.skipped === true,
@@ -917,12 +886,11 @@ export class BacktestExecutor implements INodeExecutor {
             positions: simBroker.getPositions(),
             pending_orders: simBroker.getOpenOrders(),
             total_equity: simBroker.getTotalEquity(),
-          }),
-        );
+          });
       }
 
       if (!side || !quantity) {
-        return compactError("symbol, side, and quantity are required");
+        return resultFailure("symbol, side, and quantity are required");
       }
 
       // Parse current bar from input (passed from loop iteration)
@@ -955,7 +923,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
 
       if (!orderResult.success) {
-        return compactError(orderResult.error || "Order failed");
+        return resultFailure(orderResult.error || "Order failed");
       }
 
       // For immediate fill model only, attempt same-bar fill of just this order.
@@ -1020,7 +988,7 @@ export class BacktestExecutor implements INodeExecutor {
       return tradeResult;
     } catch (error) {
       console.error("[BacktestExecutor] BacktestTrade failed:", error);
-      return compactError(error instanceof Error ? error.message : String(error));
+      return resultFailure(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -1037,7 +1005,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return toNodeResult(createErrorOutput("backtest_id is required"));
+        return createErrorOutput("backtest_id is required");
       }
 
       // Get SimBroker from executor cache - SYNCHRONOUS
@@ -1050,7 +1018,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       await this.portfolioFinalize(simBroker, backtestId);
 
-      return compactSuccess({
+      return resultSuccess({
         backtest_id: backtestId,
         metrics: {
           total_return: metrics.totalReturn,
@@ -1083,7 +1051,7 @@ export class BacktestExecutor implements INodeExecutor {
       });
     } catch (error) {
       console.error("[BacktestExecutor] BacktestResults failed:", error);
-      return toNodeResult(createErrorOutput(error));
+      return createErrorOutput(error);
     }
   }
 
@@ -1264,7 +1232,7 @@ export class BacktestExecutor implements INodeExecutor {
 
       const backtestId = params.backtest_id;
       if (!backtestId) {
-        return compactError("backtest_id is required");
+        return resultFailure("backtest_id is required");
       }
 
       const simBroker = this.getSimBroker(backtestId);
@@ -1310,11 +1278,11 @@ export class BacktestExecutor implements INodeExecutor {
           return this.portfolioGetTrades(simBroker);
 
         default:
-          return compactError(`Unknown portfolio operation: ${operation}`);
+          return resultFailure(`Unknown portfolio operation: ${operation}`);
       }
     } catch (error) {
       console.error("[BacktestExecutor] BacktestPortfolio failed:", error);
-      return compactError(error instanceof Error ? error.message : String(error));
+      return resultFailure(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -1336,7 +1304,7 @@ export class BacktestExecutor implements INodeExecutor {
     const realizedPnlValue = state.cumulativeRealizedPnl;
     const pendingOrders = simBroker.getOpenOrders();
 
-    return compactSuccess({
+    return resultSuccess({
       cash: state.cash,
       initial_capital: initialCapital,
       positions: formattedPositions,
@@ -1365,7 +1333,7 @@ export class BacktestExecutor implements INodeExecutor {
         realized_pnl: state.realizedPnlBySymbol[position.symbol] ?? 0,
       }));
 
-      return compactSuccess({
+      return resultSuccess({
         has_position: positions.length > 0,
         positions,
         positions_count: positions.length,
@@ -1383,7 +1351,7 @@ export class BacktestExecutor implements INodeExecutor {
     const realizedPnlValue =
       simBroker.getPortfolioState().realizedPnlBySymbol[symbol] ?? 0;
 
-    return compactSuccess({
+    return resultSuccess({
       has_position: !!position,
       position: formattedPosition,
       symbol,
@@ -1406,7 +1374,7 @@ export class BacktestExecutor implements INodeExecutor {
     prices?: Record<string, number> | null,
   ): NodeResult {
     if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
-      return compactError(
+      return resultFailure(
         "Provide either 'prices' map or both 'symbol' and 'current_bar' for update_mtm",
       );
     }
@@ -1418,7 +1386,7 @@ export class BacktestExecutor implements INodeExecutor {
   private portfolioGetCash(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
 
-    return compactSuccess({
+    return resultSuccess({
       cash: state.cash,
       buying_power: simBroker.getAvailableBuyingPower(),
       initial_capital: simBroker.getConfig().initialCapital,
@@ -1436,7 +1404,7 @@ export class BacktestExecutor implements INodeExecutor {
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
     const initialCapital = simBroker.getConfig().initialCapital;
 
-    return compactSuccess({
+    return resultSuccess({
       total_equity: totalEquity,
       cash: state.cash,
       positions_value: positionsValue,
@@ -1450,7 +1418,7 @@ export class BacktestExecutor implements INodeExecutor {
   private portfoliogetOpenOrders(simBroker: SimBroker): NodeResult {
     const orders = simBroker.getOpenOrders();
 
-    return compactSuccess({
+    return resultSuccess({
       pending_orders: orders,
       count: orders.length,
     });
@@ -1460,7 +1428,7 @@ export class BacktestExecutor implements INodeExecutor {
     const state = simBroker.getPortfolioState();
     const trades = simBroker.getTrades();
 
-    return compactSuccess({
+    return resultSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: state.cumulativeRealizedPnl,

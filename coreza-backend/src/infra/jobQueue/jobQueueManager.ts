@@ -1,4 +1,3 @@
-import { decodeLegacyNodeResult } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -21,10 +20,6 @@ import {
 } from "./queueInterface";
 import { createWorkflowWorker } from "../../utils/workflowWorker";
 import { createScheduledWorkflowWorker } from "../../utils/scheduledWorkflowWorker";
-import {
-  createSuccessOutput,
-  createErrorOutput,
-} from "../../utils/normalizeOutput";
 import {
   WorkflowJobResult,
   isWorkflowCancelled,

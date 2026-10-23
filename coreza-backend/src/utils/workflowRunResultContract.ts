@@ -1,4 +1,4 @@
-import { decodeLegacyNodeResult, serializeNodeResult, serializeNodeResults } from "../contracts/nodeResult";
+import { readNodeResult, serializeNodeResult, serializeNodeResults } from "../contracts/nodeResult";
 import type { WorkflowExecutionResult } from "../engine/types";
 
 export type RedisRunResultUpdate =
@@ -28,7 +28,7 @@ export function serializeWorkflowRunResult(result: WorkflowExecutionResult): Wor
     ...(publicError ? { error: publicError } : {}),
     ...(result.boundaryOutputs ? { boundaryOutputs: Object.fromEntries(Object.entries(result.boundaryOutputs).map(([edgeId, boundary]) => [edgeId, {
       ...boundary,
-      value: boundary.value === undefined ? undefined : serializeNodeResult(decodeLegacyNodeResult(boundary.value, "history")),
+      value: boundary.value === undefined ? undefined : serializeNodeResult(readNodeResult(boundary.value)),
     }])) } : {}),
   };
 }

@@ -60,8 +60,8 @@ import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../../utils/normalizeOutput";
-import type { StandardNodeOutput, NormalizeContext } from "../../types/nodeOutput";
+} from "../../utils/nodeResultHelpers";
+import type { NodeResult } from "../../contracts/nodeResult";
 
 type RegexBuildResult = { regex: RegExp } | { error: string };
 
@@ -216,7 +216,7 @@ export class ComputeService {
     return [];
   }
 
-  static compute(input: ComputeInput): StandardNodeOutput {
+  static compute(input: ComputeInput): NodeResult {
     try {
       const {
         value,

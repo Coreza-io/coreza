@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure, safeErrorDetails } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -68,7 +69,7 @@ router.use(requireAuth);
 router.post("/consolidator", async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
-    return res.status(401).json({ success: false, error: "Unauthorized" });
+    return res.status(401).json(resultFailure("Unauthorized", { data: null }));
   }
 
   const {
@@ -92,18 +93,10 @@ router.post("/consolidator", async (req: Request, res: Response) => {
   } = req.body;
   const nodeId = requestedNodeId ?? legacyNodeId;
   if (contextMode !== "editor" && contextMode !== "active-run") {
-    return res.status(400).json({
-      success: false,
-      code: "INVALID_EXECUTION_CONTEXT",
-      error: "contextMode must be editor or active-run",
-    });
+    return res.status(400).json(resultFailure("contextMode must be editor or active-run", { data: null, details: safeErrorDetails({ code: "INVALID_EXECUTION_CONTEXT" }) }));
   }
   if (!isUuid(workflowId) || !isSafeId(nodeId)) {
-    return res.status(400).json({
-      success: false,
-      code: "INVALID_EXECUTION_CONTEXT",
-      error: "workflowId must be a UUID and nodeId must be a valid identifier",
-    });
+    return res.status(400).json(resultFailure("workflowId must be a UUID and nodeId must be a valid identifier", { data: null, details: safeErrorDetails({ code: "INVALID_EXECUTION_CONTEXT" }) }));
   }
   if (
     contextMode === "editor" &&
@@ -112,23 +105,13 @@ router.post("/consolidator", async (req: Request, res: Response) => {
       !isConfigFingerprint(configFingerprint) ||
       !isUuid(operationId))
   ) {
-    return res.status(400).json({
-      success: false,
-      code: "INVALID_EXECUTION_CONTEXT",
-      error:
-        "Editor execution requires valid workflowSessionId, configFingerprint, and operationId values, and cannot include runId",
-    });
+    return res.status(400).json(resultFailure("Editor execution requires valid workflowSessionId, configFingerprint, and operationId values, and cannot include runId", { data: null, details: safeErrorDetails({ code: "INVALID_EXECUTION_CONTEXT" }) }));
   }
   if (
     contextMode === "active-run" &&
     (!isUuid(runId) || workflowSessionId || operationId || configFingerprint)
   ) {
-    return res.status(400).json({
-      success: false,
-      code: "INVALID_EXECUTION_CONTEXT",
-      error:
-        "Active-run execution requires runId and cannot include editor identity fields",
-    });
+    return res.status(400).json(resultFailure("Active-run execution requires runId and cannot include editor identity fields", { data: null, details: safeErrorDetails({ code: "INVALID_EXECUTION_CONTEXT" }) }));
   }
 
   const parameters = {
@@ -143,11 +126,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
     contextMode === "editor" &&
     configFingerprint !== buildConsolidatorConfigFingerprint(parameters)
   ) {
-    return res.status(400).json({
-      success: false,
-      code: "INVALID_CONSOLIDATOR_CONFIG",
-      error: "configFingerprint does not match the Consolidator configuration",
-    });
+    return res.status(400).json(resultFailure("configFingerprint does not match the Consolidator configuration", { data: null, details: safeErrorDetails({ code: "INVALID_CONSOLIDATOR_CONFIG" }) }));
   }
 
   const validSourceProvenance =
@@ -161,12 +140,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
     ((seriesAction !== "start" && seriesAction !== "continue") ||
       !validSourceProvenance)
   ) {
-    return res.status(400).json({
-      success: false,
-      code: "INVALID_EXECUTION_CONTEXT",
-      error:
-        "Editor execution requires a series action and valid source provenance",
-    });
+    return res.status(400).json(resultFailure("Editor execution requires a series action and valid source provenance", { data: null, details: safeErrorDetails({ code: "INVALID_EXECUTION_CONTEXT" }) }));
   }
 
   try {
@@ -179,11 +153,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
         .eq("user_id", userId)
         .maybeSingle();
       if (ownershipError || !ownedWorkflow) {
-        return res.status(404).json({
-          success: false,
-          code: "WORKFLOW_NOT_FOUND",
-          error: "Workflow not found",
-        });
+        return res.status(404).json(resultFailure("Workflow not found", { data: null, details: safeErrorDetails({ code: "WORKFLOW_NOT_FOUND" }) }));
       }
       const identity = {
         userId,
@@ -195,18 +165,10 @@ router.post("/consolidator", async (req: Request, res: Response) => {
       const service = new EditorConsolidatorStateService(getRedisCache());
       if (operation === "reset") {
         await service.reset(identity);
-        return res.json({
-          success: true,
-          data: { reset: true },
-          meta: { key: stateKey },
-        });
+        return res.json(resultSuccess({ reset: true }, { meta: { key: stateKey } }));
       }
       if (operation !== "execute") {
-        return res.status(400).json({
-          success: false,
-          code: "INVALID_EXECUTION_CONTEXT",
-          error: "Unsupported editor operation",
-        });
+        return res.status(400).json(resultFailure("Unsupported editor operation", { data: null, details: safeErrorDetails({ code: "INVALID_EXECUTION_CONTEXT" }) }));
       }
       const result = await service.execute({
         identity,
@@ -216,7 +178,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
         parameters,
         candleData,
       });
-      return res.json({ success: true, data: result, meta: { key: stateKey } });
+      return res.json(resultSuccess(result, { meta: { key: stateKey } }));
     }
 
     const dataContext =
@@ -226,12 +188,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
       dataContext.getUserId() !== userId ||
       dataContext.getWorkflowId() !== workflowId
     ) {
-      return res.status(404).json({
-        success: false,
-        code: "EXECUTION_CONTEXT_COMPLETED",
-        error: "Execution context not found or already completed",
-        meta: { key: stateKey },
-      });
+      return res.status(404).json(resultFailure("Execution context not found or already completed", { data: null, meta: { key: stateKey }, details: safeErrorDetails({ code: "EXECUTION_CONTEXT_COMPLETED" }) }));
     }
 
     const result = runConsolidatorStep(
@@ -240,11 +197,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
       dataContext.getDataByKey(stateKey),
     );
     dataContext.setData(stateKey, result.state);
-    return res.json({
-      success: true,
-      data: result.payload,
-      meta: { key: stateKey },
-    });
+    return res.json(resultSuccess(result.payload, { meta: { key: stateKey } }));
   } catch (error) {
     const editorStateUnavailable =
       contextMode === "editor" &&
@@ -263,22 +216,18 @@ router.post("/consolidator", async (req: Request, res: Response) => {
         : editorStateUnavailable
           ? 503
           : 400;
-    return res.status(status).json({
-      success: false,
-      code:
+    return res.status(status).json(resultFailure(editorStateUnavailable
+        ? "Editor Consolidator state is temporarily unavailable"
+        : error instanceof Error
+          ? error.message
+          : String(error), { data: null, details: safeErrorDetails({ code:
         error instanceof EditorConsolidatorStateError ||
         error instanceof ConsolidationError ||
         error instanceof ConsolidatorValidationError
           ? error.code
           : editorStateUnavailable
             ? "EXECUTION_CONTEXT_UNAVAILABLE"
-            : "CONSOLIDATION_ERROR",
-      error: editorStateUnavailable
-        ? "Editor Consolidator state is temporarily unavailable"
-        : error instanceof Error
-          ? error.message
-          : String(error),
-    });
+            : "CONSOLIDATION_ERROR" }) }));
   }
 });
 
@@ -287,7 +236,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -302,10 +251,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
     } = req.body;
     const executionId = requestedExecutionId ?? workflowSessionId;
     if (!executionId) {
-      return res.status(400).json({
-        success: false,
-        error: "executionId or workflowSessionId is required",
-      });
+      return res.status(400).json(resultFailure("executionId or workflowSessionId is required", { data: null }));
     }
 
     const normalizedSymbol = normalizeSymbol(symbol);
@@ -313,17 +259,11 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
 
     if (operation === "get") {
       if (!normalizedSymbol) {
-        return res.status(400).json({
-          success: false,
-          error: ROLLING_WINDOW_ERRORS.symbolRequired,
-        });
+        return res.status(400).json(resultFailure(ROLLING_WINDOW_ERRORS.symbolRequired, { data: null }));
       }
 
       if (!normalizedTimeframe) {
-        return res.status(400).json({
-          success: false,
-          error: ROLLING_WINDOW_ERRORS.timeframeRequired,
-        });
+        return res.status(400).json(resultFailure(ROLLING_WINDOW_ERRORS.timeframeRequired, { data: null }));
       }
 
       const storeKey = buildExecutionScopedKey({
@@ -336,40 +276,28 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       const dataContext =
         DataContextManager.getInstance().getExistingContext(executionId);
       if (!dataContext) {
-        return res.status(404).json({
-          success: false,
-          error: "Execution context not found or already completed",
-        });
+        return res.status(404).json(resultFailure("Execution context not found or already completed", { data: null }));
       }
       const window = dataContext.getDataByKey(storeKey) as
         | RollingWindow<unknown>
         | undefined;
 
       if (!window) {
-        return res.status(404).json({
-          success: false,
-          data: buildRollingWindowNotFoundPayload(
+        return res.status(404).json(resultFailure("Node operation failed", { data: buildRollingWindowNotFoundPayload(
             normalizedSymbol,
             normalizedTimeframe,
-          ),
-          meta: {
+          ), meta: {
             key: storeKey,
             timeframe: normalizedTimeframe,
             timestamp: new Date().toISOString(),
-          },
-        });
+          } }));
       }
 
-      return res.json({
-        success: true,
-        status: "success",
-        data: buildRollingWindowPayload(window),
-        meta: {
+      return res.json(resultSuccess(buildRollingWindowPayload(window), { meta: {
           key: storeKey,
           timeframe: normalizedTimeframe,
           timestamp: new Date().toISOString(),
-        },
-      });
+        } }));
     }
 
     const windowSize = clampWindowSize(size);
@@ -382,7 +310,7 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
     });
     const parsed = parseCandleData(candle_data);
     if (!parsed.ok) {
-      return res.status(400).json({ success: false, error: parsed.error });
+      return res.status(400).json(resultFailure(parsed.error ?? "Node operation failed", { data: null }));
     }
 
     const dataContext = DataContextManager.getInstance().getContext({
@@ -401,18 +329,13 @@ router.post("/rolling-window", async (req: Request, res: Response) => {
       window.add(bar);
     }
     dataContext.setData(storeKey, window);
-    res.json({
-      success: true,
-      status: "success",
-      data: buildRollingWindowPayload(window),
-      meta: {
+    res.json(resultSuccess(buildRollingWindowPayload(window), { meta: {
         key: storeKey,
         barsAdded: parsed.bars.length,
         timestamp: new Date().toISOString(),
-      },
-    });
+      } }));
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(resultFailure(error.message, { data: null }));
   }
 });
 
@@ -624,7 +547,7 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const { service } = req.params;
@@ -634,10 +557,7 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
 
     const storageService = getStorageService(service);
     if (!storageService) {
-      return res.status(400).json({
-        success: false,
-        error: `Unsupported storage service: ${service}`,
-      });
+      return res.status(400).json(resultFailure(`Unsupported storage service: ${service}`, { data: null }));
     }
 
     const result = await storageService.execute({
@@ -650,7 +570,7 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     console.error("[STORAGE-ROUTE] Error:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json(resultFailure(error.message, { data: null }));
   }
 });
 

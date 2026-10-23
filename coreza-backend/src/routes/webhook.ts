@@ -1,3 +1,4 @@
+import { resultFailure, resultState } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -25,7 +26,7 @@ router.post("/register", requireAuth, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -57,10 +58,7 @@ router.post("/register", requireAuth, async (req, res) => {
     const secretToken = secret_token ?? camelSecretToken;
 
     if (!workflowId || !nodeId) {
-      return res.status(400).json({
-        success: false,
-        error: "workflow_id/workflowId and node_id/nodeId are required",
-      });
+      return res.status(400).json(resultFailure("workflow_id/workflowId and node_id/nodeId are required", { data: null }));
     }
 
     const callbackUrl = webhookService.generateCallbackUrl(
@@ -73,10 +71,7 @@ router.post("/register", requireAuth, async (req, res) => {
     // Register with external provider if applicable
     let providerRegistration = null;
     if (provider !== "generic" && !credentialId) {
-      return res.status(400).json({
-        success: false,
-        error: "credential_id/credentialId is required for provider webhooks",
-      });
+      return res.status(400).json(resultFailure("credential_id/credentialId is required for provider webhooks", { data: null }));
     }
 
     if (provider !== "generic") {
@@ -93,10 +88,7 @@ router.post("/register", requireAuth, async (req, res) => {
       });
 
       if (!providerRegistration.success) {
-        return res.status(502).json({
-          success: false,
-          error: providerRegistration.message || "Provider registration failed",
-        });
+        return res.status(502).json(resultFailure(providerRegistration.message || "Provider registration failed", { data: null }));
       }
     }
 
@@ -105,21 +97,12 @@ router.post("/register", requireAuth, async (req, res) => {
       "Webhook registered",
     );
 
-    res.json({
-      success: true,
-      callback_url: callbackUrl,
-      status: "listening",
-      message:
+    res.json(resultState("listening", { callback_url: callbackUrl, message:
         providerRegistration?.message ||
-        "Webhook endpoint is ready to receive events",
-      provider_registered: providerRegistration?.success,
-    });
+        "Webhook endpoint is ready to receive events", provider_registered: providerRegistration?.success }));
   } catch (error) {
     logger.error({ err: error }, "Error registering webhook");
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    res.status(500).json(resultFailure(error instanceof Error ? error.message : "Unknown error", { data: null }));
   }
 });
 

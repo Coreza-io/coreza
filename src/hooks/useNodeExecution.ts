@@ -1,4 +1,4 @@
-import { decodeLegacyNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
+import { readNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
@@ -401,7 +401,7 @@ export function useNodeExecution({
     const outcomeNodeId = nodeId ?? "unknown";
     if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
     if (overrideOutput !== null && overrideOutput !== undefined) {
-      return { nodeId: outcomeNodeId, status: "pinned", output: toPublicNodeResult(decodeLegacyNodeResult(overrideOutput, "pin")) };
+      return { nodeId: outcomeNodeId, status: "pinned", output: toPublicNodeResult(readNodeResult(overrideOutput)) };
     }
     const continued = canContinueNodeError(definition?.name, fieldState);
     const continuation = continued ? continuedNodeError(definition?.name, fieldState, message, code) : undefined;
@@ -412,7 +412,7 @@ export function useNodeExecution({
       ...(continuation ? { control: continuation.control } : {}),
     }));
     setError(message);
-    if (nodeId) publishNodeResult(output, "executor", {
+    if (nodeId) publishNodeResult(output, {
       nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
       notify: notifyExecutionStoreUpdate, setLastOutput,
     }, continued && definition?.name === "Loop" ? { done: true, aggregated: output } : {});
@@ -460,8 +460,8 @@ export function useNodeExecution({
           definition?.name || "Unknown",
         );
         setError("");
-        const output = toPublicNodeResult(decodeLegacyNodeResult(overrideOutput, "pin"));
-        if (nodeId) publishNodeResult(output, "pin", {
+        const output = toPublicNodeResult(readNodeResult(overrideOutput));
+        if (nodeId) publishNodeResult(output, {
           nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
           notify: notifyExecutionStoreUpdate, setLastOutput,
         }, { input: inputOverride ?? currentSelectedInput });
@@ -650,7 +650,7 @@ export function useNodeExecution({
               edgeArrivals,
             );
             const finalOut = resultSuccess(next.aggregated ?? edgeArrivals ?? []);
-            publishNodeResult(finalOut, "executor", {
+            publishNodeResult(finalOut, {
               nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
               notify: notifyExecutionStoreUpdate, setLastOutput,
             }, { loopItems: undefined, loopIndex: 0, loopItem: undefined, finishedByLoop: true, done: true, _edgeBuf: {} });
@@ -676,7 +676,7 @@ export function useNodeExecution({
               CurrentIndex: currentIndex,
               isLastBatch,
           });
-          publishNodeResult(uiOut, "executor", {
+          publishNodeResult(uiOut, {
             nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
             notify: notifyExecutionStoreUpdate, setLastOutput,
           }, { input: effectiveInput, _edgeBuf: {} });
@@ -741,7 +741,6 @@ export function useNodeExecution({
             method,
             headers: {
               "Content-Type": "application/json",
-              "X-Coreza-Node-Result": "canonical",
               Authorization: `Bearer ${session?.access_token}`,
             },
           };
@@ -779,23 +778,12 @@ export function useNodeExecution({
           const { variableSnapshot: committedVariables, ...responseData } = await res.json();
           const activitySummary = definition?.name === "AIAgent" ? responseData.agentActivity : undefined;
           if (definition?.name === "AIAgent") delete responseData.agentActivity;
-          const responseResult = definition?.name === "HttpRequest" && !isNodeResult(responseData) && typeof responseData.status === "number"
-            ? res.ok
-              ? resultSuccess(responseData.data, { meta: { http: { status: responseData.status, statusText: responseData.statusText, headers: responseData.headers } } })
-              : resultFailure(responseData.message || responseData.error || "HTTP request failed", {
-                  data: responseData.data, details: { status: responseData.status },
-                  meta: { http: { status: responseData.status, statusText: responseData.statusText, headers: responseData.headers } },
-                })
-            : decodeLegacyNodeResult(responseData, "manual");
+          const responseResult = readNodeResult(responseData);
           if (responseResult.status === "cancelled") {
             agentActivity?.finish(activitySummary, "cancelled");
-            publishNodeResult(responseResult, "manual", { nodeId: nodeId!, isCurrent: executionIsCurrent,
+            publishNodeResult(responseResult, { nodeId: nodeId!, isCurrent: executionIsCurrent,
               updateNodeData, store: executionStore, notify: notifyExecutionStoreUpdate, setLastOutput });
             return { nodeId: outcomeNodeId, status: "cancelled", reason: responseResult.error ?? "Node execution cancelled" };
-          }
-          if (definition?.name === "AIAgent" && (responseData.code === "CANCELLED" || responseData.status === "cancelled" || responseData.details?.code === "CANCELLED")) {
-            agentActivity?.finish(activitySummary, "cancelled");
-            return { nodeId: outcomeNodeId, status: "cancelled", reason: "Agent execution was cancelled." };
           }
           agentActivity?.finish(activitySummary, !executionIsCurrent() ? "cancelled"
             : res.ok && responseResult.status === "success" ? "completed" : "failed");
@@ -833,7 +821,7 @@ export function useNodeExecution({
             executionStore,
             isCurrent: sessionIsCurrent,
             publishOutput: (output: unknown, patch: Record<string, any>) => {
-              publishNodeResult(output, "listener", { nodeId: nodeId!, isCurrent: sessionIsCurrent,
+              publishNodeResult(output, { nodeId: nodeId!, isCurrent: sessionIsCurrent,
                 updateNodeData, store: executionStore, notify: notifyExecutionStoreUpdate, setLastOutput }, patch);
             },
             signal,
@@ -848,7 +836,6 @@ export function useNodeExecution({
                 notifyExecutionStoreUpdate();
               }
             },
-            setLastOutput,
             apiClient,
             accessToken: session?.access_token,
             abortRef: pollingAbortRef,
@@ -917,8 +904,8 @@ export function useNodeExecution({
           outputData = resultSuccess(payload);
         }
 
-        const finalOutput = toPublicNodeResult(overrideOutput != null ? decodeLegacyNodeResult(overrideOutput, "pin") : outputData);
-        publishNodeResult(finalOutput, "executor", {
+        const finalOutput = toPublicNodeResult(overrideOutput != null ? readNodeResult(overrideOutput) : outputData);
+        publishNodeResult(finalOutput, {
           nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
           notify: notifyExecutionStoreUpdate, setLastOutput,
         }, { input: effectiveInput });
@@ -933,16 +920,11 @@ export function useNodeExecution({
         let code: string | undefined;
         let parsed = err;
         try { parsed = JSON.parse(message); } catch { /* plain message or structured exception */ }
-        if (parsed && typeof parsed === "object") {
-          const parsedError =
-            (typeof parsed.error === "string" && parsed.error) ||
-            (typeof parsed.message === "string" && parsed.message) ||
-            (typeof parsed.data?.error === "string" && parsed.data.error) ||
-            (typeof parsed.data?.message === "string" && parsed.data.message) ||
-            (typeof parsed.details === "string" && parsed.details) ||
-            (typeof parsed.details?.message === "string" && parsed.details.message);
-          message = parsedError || message;
-          code = typeof parsed.details?.code === "string" ? parsed.details.code : typeof parsed.code === "string" ? parsed.code : undefined;
+        if (isNodeResult(parsed)) {
+          message = parsed.error ?? message;
+          code = parsed.details?.code;
+        } else {
+          code = typeof err?.code === "string" ? err.code : undefined;
         }
         if (definition?.name === "Consolidator" && code === "EDITOR_CONTEXT_EXPIRED") {
           setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);

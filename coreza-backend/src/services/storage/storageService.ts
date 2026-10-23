@@ -14,11 +14,11 @@ import type {
   StorageConfig,
   StorageContext,
 } from "./types";
-import type { StandardNodeOutput } from "../../types/nodeOutput";
+import type { NodeResult } from "../../contracts/nodeResult";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../../utils/normalizeOutput";
+} from "../../utils/nodeResultHelpers";
 import CredentialManager from "../../utils/credentialManager";
 import { getUserRedisConnection } from "./helpers/redisConnection";
 import { getRedisCache } from "../../config/redis";
@@ -58,7 +58,7 @@ export class StorageService implements IStorageService {
     return this.contextMeta;
   }
 
-  async execute(input: StorageInput): Promise<StandardNodeOutput> {
+  async execute(input: StorageInput): Promise<NodeResult> {
     try {
       const { operation, user_id, credential_id, workflow_id, subCategory } =
         input;

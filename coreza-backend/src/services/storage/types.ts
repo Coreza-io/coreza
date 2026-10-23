@@ -9,7 +9,7 @@
  */
 
 import type { Redis } from "ioredis";
-import type { StandardNodeOutput } from "../../types/nodeOutput";
+import type { NodeResult } from "../../contracts/nodeResult";
 
 export interface StorageInput {
   user_id: string;
@@ -72,7 +72,7 @@ export interface StorageResult {
 export interface IStorageService {
   readonly serviceKey: string;
   readonly requiresCredentials: boolean;
-  execute(input: StorageInput): Promise<StandardNodeOutput>;
+  execute(input: StorageInput): Promise<NodeResult>;
   validateCredentials?(credentials: any): Promise<{ valid: boolean; error?: string }>;
 }
 

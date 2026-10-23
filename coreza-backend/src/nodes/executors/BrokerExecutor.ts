@@ -26,12 +26,7 @@ import {
   getOrderFromCache,
   updateOrderCache,
 } from "../../utils/orderIdempotency";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
 import {
   BROKER_CAPABILITIES,
@@ -349,7 +344,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       const normalized = createSuccessOutput(data);
-      return toNodeResult(normalized);
+      return normalized;
     } catch (error) {
       if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
         durationMs: performance.now() - fetchStart, operation, success: false,
@@ -427,7 +422,7 @@ export class BrokerExecutor implements INodeExecutor {
           startTime,
         },
       );
-      return toNodeResult(normalized);
+      return normalized;
     }
   }
 

@@ -19,11 +19,7 @@ import {
 import { IndicatorStateManager } from "../../engine/indicatorStateManager";
 import { buildIndicatorKey } from "../../utils/executionKey";
 import { parseWarmupPeriod } from "../../utils/warmupPeriod";
-import {
-  normalizeOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export const INDICATOR_NAMES = new Set([
   "RSI",
@@ -141,7 +137,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             startTime,
           },
         );
-        return toNodeResult(normalized);
+        return normalized;
       }
 
       if (!symbol || !timeframe) {
@@ -154,7 +150,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             startTime,
           },
         );
-        return toNodeResult(normalized);
+        return normalized;
       }
 
       // --- Retrieve execution context ---
@@ -175,7 +171,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             startTime,
           },
         );
-        return toNodeResult(normalized);
+        return normalized;
       }
 
       if (!executionId) {
@@ -188,7 +184,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             startTime,
           },
         );
-        return toNodeResult(normalized);
+        return normalized;
       }
 
       // --- Discover indicators ---
@@ -215,7 +211,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         console.warn(
           "[InitializeIndicators] No indicator nodes discovered in workflow",
         );
-        const normalized = normalizeOutput(resultSuccess({
+        const normalized = finalizeNodeResult(resultSuccess({
             warmup_completed: false,
             warmup_bars_used: 0,
             remaining_bars: candleData,
@@ -226,8 +222,8 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             timeframe,
             message:
               "No indicator nodes found downstream. Passing all bars through.",
-          }));
-        return toNodeResult(normalized);
+          }), {}, "observed");
+        return normalized;
       }
 
       // --- Slice bars ---
@@ -309,7 +305,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         (r: any) => r.isReady,
       ).length;
 
-      const normalized = normalizeOutput(resultSuccess({
+      const normalized = finalizeNodeResult(resultSuccess({
           warmup_completed: true,
           warmup_bars_used: warmupPeriod,
           remaining_bars: remainingBars,
@@ -319,8 +315,8 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
           indicators: results,
           symbol,
           timeframe,
-        }));
-      return toNodeResult(normalized);
+        }), {}, "observed");
+      return normalized;
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error
@@ -335,7 +331,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 }

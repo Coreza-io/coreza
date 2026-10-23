@@ -1,4 +1,4 @@
-import { decodeLegacyNodeResult, isFailedResult, NodeResultError, resultFailure } from "../contracts/nodeResult";
+import { readNodeResult, isFailedResult, NodeResultError, resultFailure } from "../contracts/nodeResult";
 import { createHash } from "crypto";
 import { isPersistentVariableEdit } from "../variables/contract";
 import { canContinueNodeError, continuedNodeError } from "../nodes/errorContinuation";
@@ -213,7 +213,7 @@ export abstract class BaseExecutionRuntime {
   }
 
   protected normalizeResult(raw: any, category: string): NodeResult {
-    const result = decodeLegacyNodeResult(raw, "executor");
+    const result = readNodeResult(raw);
     if (isFailedResult(result)) {
       if (result.control?.ownedNodeResults) {
         const order = result.control.ownedExecutionOrder ?? Object.keys(result.control.ownedNodeResults);
@@ -286,12 +286,12 @@ export abstract class BaseExecutionRuntime {
     if (!continued) this.failed.add(nodeId);
     this.failedNodeErrors.set(nodeId, errorMessage);
     this.store.setNodeError(nodeId, error instanceof Error ? error : new Error(errorMessage));
-    this.store.setNodeResult(nodeId, continuation ? decodeLegacyNodeResult(continuation, "executor")
+    this.store.setNodeResult(nodeId, continuation ? readNodeResult(continuation)
       : error instanceof NodeResultError ? error.result : resultFailure(errorMessage));
     if (continuation) {
       const outgoing = name === "Loop" ? this.graph.doneEdges(nodeId)
         : this.graph.getOutgoingEdges(nodeId).filter(edge => !continuation.control?.sourceHandle || edge.sourceHandle === continuation.control?.sourceHandle);
-      for (const edge of outgoing) this.routeEdge(edge, decodeLegacyNodeResult(continuation, "executor"), meta);
+      for (const edge of outgoing) this.routeEdge(edge, readNodeResult(continuation), meta);
       return;
     }
     if (this.options.mode === "fail-fast" || isPersistentVariableEdit(this.graph.nodeById.get(nodeId))) throw error;

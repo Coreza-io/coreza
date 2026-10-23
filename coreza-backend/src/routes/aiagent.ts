@@ -1,3 +1,5 @@
+import { resultFailure } from "../contracts/nodeResult";
+
 import { toPublicNodeResult } from "../contracts/nodeResult";
 /** Manual Agent JSON execution; activity is an optional, separately scoped channel. */
 import { randomUUID } from "crypto";
@@ -45,13 +47,13 @@ router.post("/execute", async (req: Request, res: Response) => {
   const deadline = setTimeout(abort, 10 * 60_000);
   try {
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!userId) return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     const { node_id, nodeName, node_type, category, systemPrompt, userPrompt,
       temperature, maxIterations, returnIntermediateSteps,
       support_nodes: workflowNodes, edges: workflowEdges, workflowId } = req.body;
-    if (!userPrompt) return res.status(400).json({ success: false, error: "userPrompt is required" });
+    if (!userPrompt) return res.status(400).json(resultFailure("userPrompt is required", { data: null }));
     if (!Array.isArray(workflowNodes) || !Array.isArray(workflowEdges))
-      return res.status(400).json({ success: false, error: "support_nodes and edges arrays are required" });
+      return res.status(400).json(resultFailure("support_nodes and edges arrays are required", { data: null }));
     if (req.body.activityScopeId) {
       scopeId = req.body.activityScopeId;
       try {
@@ -61,7 +63,7 @@ router.post("/execute", async (req: Request, res: Response) => {
       catch (error) {
         // Another gateway/process or expired telemetry must not fail the action.
         if ((error as Error).message !== "Agent activity scope unavailable")
-          return res.status(409).json({ success: false, error: "Agent action scope does not match or was already used" });
+          return res.status(409).json(resultFailure("Agent action scope does not match or was already used", { data: null }));
         scopeId = undefined;
       }
       scope?.signal.addEventListener("abort", abort, { once: true });
@@ -84,9 +86,13 @@ router.post("/execute", async (req: Request, res: Response) => {
   } catch (error: any) {
     const cancelled = controller.signal.aborted || error?.name === "AbortError";
     const agentActivity = scopeId && req.user ? getActivitySummary(req.user.id, scopeId) : undefined;
-    if (!res.destroyed) res.status(cancelled ? 499 : 500).json({ success: false,
-      error: cancelled ? "Agent execution cancelled" : error.message || "AI Agent execution failed",
-      ...(cancelled ? { code: "CANCELLED" } : {}), ...(agentActivity ? { agentActivity } : {}) });
+    if (!res.destroyed) res.status(cancelled ? 499 : 500).json({
+      ...resultFailure(cancelled ? "Agent execution cancelled" : error.message || "AI Agent execution failed", {
+        ...(cancelled ? { details: { code: "CANCELLED" } } : {}),
+      }),
+      ...(cancelled ? { status: "cancelled" } : {}),
+      ...(agentActivity ? { agentActivity } : {}),
+    });
   } finally {
     clearTimeout(deadline);
     req.off("aborted", abort);

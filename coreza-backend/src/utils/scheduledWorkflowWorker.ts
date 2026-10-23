@@ -11,7 +11,7 @@
 import type Redis from "ioredis";
 import { Job, Queue, Worker } from "bullmq";
 import { supabase } from "../config/supabase";
-import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "./nodeResultHelpers";
 
 export interface ScheduledWorkflowJobData {
   workflowId: string;

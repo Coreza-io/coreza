@@ -1,6 +1,6 @@
 import { readPublicNodeResult, resultState, type NodeResult } from "./nodeResult";
 export type PersistedNodeResult = NodeResult<unknown>;
-export const normalizePersistedNodeResult = (value: unknown): PersistedNodeResult => readPublicNodeResult(value, "history");
+export const normalizePersistedNodeResult = (value: unknown): PersistedNodeResult => readPublicNodeResult(value);
 export const createRunPendingOutput = (runId: string): PersistedNodeResult => resultState("pending", null, { meta: { runId } });
 export const createNotExecutedOutput = (runId: string, cancelled = false): PersistedNodeResult => ({
   ...resultState(cancelled ? "cancelled" : "not-executed", null, { meta: { runId } }),

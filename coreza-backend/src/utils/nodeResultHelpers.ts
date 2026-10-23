@@ -10,9 +10,9 @@
 
 /** Server error extraction stays outside the portable result contract. */
 import axios from "axios";
-import { createErrorOutput as baseErrorOutput } from "../contracts/output";
+import { createErrorOutput as baseErrorOutput } from "../contracts/resultHelpers";
 import { safeErrorDetails, type NormalizeContext, type NodeResult } from "../contracts/nodeResult";
-export * from "../contracts/output";
+export * from "../contracts/resultHelpers";
 export function createErrorOutput(error: unknown, context: NormalizeContext = {}): NodeResult {
   const output = baseErrorOutput(error, context);
   if (!axios.isAxiosError(error)) return output;

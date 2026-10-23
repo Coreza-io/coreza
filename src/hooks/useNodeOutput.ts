@@ -30,7 +30,7 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
   const sessionId = data.workflowSessionId;
   const setLastOutput = useCallback((value: unknown) => setLocalOutput({ session: sessionId, value }), [sessionId]);
   const fallback = useMemo(() => isNewsStreamNode(definition) ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined }) : resultState("pending", null), [definition, nodeId]);
-  const pinnedOutput = useMemo(() => data.readOnly || data.pinnedOutput == null ? null : readPublicNodeResult(data.pinnedOutput, "pin"), [data.readOnly, data.pinnedOutput]);
+  const pinnedOutput = useMemo(() => data.readOnly || data.pinnedOutput == null ? null : readPublicNodeResult(data.pinnedOutput), [data.readOnly, data.pinnedOutput]);
   const isPinned = pinnedOutput !== null;
   const runtime = nodeId ? store.storeMap.get(nodeId) : undefined;
   // Explicit null/falsy output remains distinct from a missing output property.
@@ -38,13 +38,13 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
     : owns(data, "output") ? (!data.readOnly && ["listening", "streaming"].includes(data.output?.status) ? fallback : data.output)
     : localOutput?.session === sessionId ? localOutput.value : fallback;
   void executionData;
-  const displayedData = useMemo(() => isPinned ? pinnedOutput : readPublicNodeResult(unpinned, "history"), [isPinned, pinnedOutput, unpinned]);
+  const displayedData = useMemo(() => isPinned ? pinnedOutput : readPublicNodeResult(unpinned === undefined ? fallback : unpinned), [isPinned, pinnedOutput, unpinned, fallback]);
   useEffect(() => {
     if (localOutput && (localOutput.session !== sessionId || (!runtime && data.output === undefined))) setLocalOutput(null);
   }, [sessionId, executionData, data.output, runtime, localOutput]);
 
   const syncPinnedOutput = useCallback((raw: unknown | null) => {
-    const value = raw === null ? null : readPublicNodeResult(raw, "pin");
+    const value = raw === null ? null : readPublicNodeResult(raw);
     if (!nodeId || data.readOnly) return;
     if (!updateNodeData(nodeId, { pinnedOutput: value ?? undefined, ...(value !== null ? { output: value } : {}) })) return;
     store.setPinned(nodeId, value);

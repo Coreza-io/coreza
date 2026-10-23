@@ -1,4 +1,4 @@
-import { decodeLegacyNodeResult, resultFailure } from "../../contracts/nodeResult";
+import { readNodeResult, resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -58,5 +58,5 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
 }
 
 function normalizeResult(result: unknown): NodeResult {
-  return decodeLegacyNodeResult(result, "executor");
+  return readNodeResult(result);
 }

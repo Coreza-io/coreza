@@ -12,13 +12,7 @@ import { resultFailure, resultState } from "../../contracts/nodeResult";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import logger from "../../utils/logger";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  createWaitingOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 /**
  * TriggerExecutor handles trigger-type nodes (RedisTrigger, AlpacaStreamData, etc.)
@@ -99,13 +93,13 @@ export class TriggerExecutor implements INodeExecutor {
         );
       }
 
-      const normalized = normalizeOutput(result, {
+      const normalized = finalizeNodeResult(result, {
         nodeId: node.id,
         nodeName,
         category: this.category,
         startTime,
-      });
-      return toNodeResult(normalized);
+      }, "observed");
+      return normalized;
     } catch (error) {
       logger.error({ err: error }, "Trigger executor error");
 
@@ -123,7 +117,7 @@ export class TriggerExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 
@@ -212,11 +206,11 @@ export class TriggerExecutor implements INodeExecutor {
         secret_token: params.secret_token ?? params.secretToken,
       });
 
-      if (!response.data.success) {
+      if (response.data.status === "error") {
         return resultFailure(response.data.error || "Webhook registration failed", { data: null });
       }
 
-      return resultState("listening", { message: "Webhook endpoint is listening", callback_url: response.data.callback_url });
+      return resultState("listening", { message: "Webhook endpoint is listening", callback_url: response.data.data?.callback_url });
     } catch (error) {
       logger.error({ err: error }, "Webhook trigger execution failed");
       return resultFailure(`Webhook trigger failed: ${

@@ -1,3 +1,4 @@
+import { serviceNodeResult } from "../serviceNodeResult";
 import { resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -11,12 +12,7 @@ import { resultFailure } from "../../contracts/nodeResult";
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getScreenerService } from "../../services/screeners";
-import {
-  normalizeOutput,
-  normalizeOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export class ScreenerExecutor implements INodeExecutor {
   readonly category = "Screener";
@@ -64,7 +60,7 @@ export class ScreenerExecutor implements INodeExecutor {
         input,
       });
 
-      return normalizeOutput(result, { nodeId: node.id, nodeName: screener, category: this.category });
+      return finalizeNodeResult(serviceNodeResult(result), { nodeId: node.id, nodeName: screener, category: this.category }, "observed");
     } catch (error) {
       console.error("[SCREENER] Execution error:", error);
 
@@ -82,7 +78,7 @@ export class ScreenerExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 }

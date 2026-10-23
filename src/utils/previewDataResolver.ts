@@ -29,7 +29,7 @@ export function buildPreviewData(
   if (recordedOnly) {
     previousNodes.forEach(node => {
       if (Object.prototype.hasOwnProperty.call(node.data, "output")) {
-        allNodeData[node.id] = readPublicNodeResult(node.data.output, "history");
+        allNodeData[node.id] = readPublicNodeResult(node.data.output);
       }
     });
     return { allNodeData, getSourceData: sourceId => allNodeData[sourceId] };
@@ -40,8 +40,8 @@ export function buildPreviewData(
 
     let nodeData = executionStore.getNodeData(prevNode.id).output;
     if (nodeData === undefined) {
-      nodeData = prevNode.data?.pinnedOutput != null ? readPublicNodeResult(prevNode.data.pinnedOutput, "pin")
-        : prevNode.data?.output !== undefined ? readPublicNodeResult(prevNode.data.output, "history") : {};
+      nodeData = prevNode.data?.pinnedOutput != null ? readPublicNodeResult(prevNode.data.pinnedOutput)
+        : prevNode.data?.output !== undefined ? readPublicNodeResult(prevNode.data.output) : {};
     }
 
     if (typeof displayName === "string") {
@@ -62,8 +62,8 @@ export function buildPreviewData(
       return storeOutput;
     }
 
-    return srcNode.data?.pinnedOutput != null ? readPublicNodeResult(srcNode.data.pinnedOutput, "pin")
-      : srcNode.data?.output !== undefined ? readPublicNodeResult(srcNode.data.output, "history") : {};
+    return srcNode.data?.pinnedOutput != null ? readPublicNodeResult(srcNode.data.pinnedOutput)
+      : srcNode.data?.output !== undefined ? readPublicNodeResult(srcNode.data.output) : {};
   };
 
   return { allNodeData, getSourceData };

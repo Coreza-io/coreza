@@ -1,3 +1,4 @@
+import { NodeResultError } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -12,12 +13,7 @@ import { createHash } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
-import {
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-  compactSuccess,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput, resultSuccess } from "../../utils/nodeResultHelpers";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
 import {
@@ -262,10 +258,10 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.executeBrokerMode(params, context);
       }
 
-      return toNodeResult(createErrorOutput(`Unknown portfolio mode: ${mode}`));
+      return createErrorOutput(`Unknown portfolio mode: ${mode}`);
     } catch (error) {
       console.error("[PortfolioExecutor] Execution failed:", error);
-      return toNodeResult(createErrorOutput(error));
+      return createErrorOutput(error);
     }
   }
 
@@ -284,17 +280,15 @@ export class PortfolioExecutor implements INodeExecutor {
   ): NodeResult {
     const backtestId = params.backtestId;
     if (!backtestId) {
-      return toNodeResult(createErrorOutput("backtest_id is required"));
+      return createErrorOutput("backtest_id is required");
     }
 
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
     const simBroker = PortfolioExecutor.simBrokerCache.get(key);
     if (!simBroker) {
-      return toNodeResult(
-        createErrorOutput(
+      return createErrorOutput(
           `No SimBroker found for backtest ${backtestId}. Ensure BacktestInit ran first.`,
-        ),
-      );
+        );
     }
 
     const operation = params.operation || "get_portfolio";
@@ -330,9 +324,7 @@ export class PortfolioExecutor implements INodeExecutor {
       case "get_trades":
         return this.backtestGetTrades(simBroker);
       default:
-        return toNodeResult(
-          createErrorOutput(`Unknown portfolio operation: ${operation}`),
-        );
+        return createErrorOutput(`Unknown portfolio operation: ${operation}`);
     }
   }
 
@@ -344,18 +336,14 @@ export class PortfolioExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const userId = context?.userId;
     if (!userId) {
-      return toNodeResult(
-        createErrorOutput("User ID required for broker mode"),
-      );
+      return createErrorOutput("User ID required for broker mode");
     }
 
     const executionId = context.executionId || context.workflowId;
     if (!executionId) {
-      return toNodeResult(
-        createErrorOutput(
+      return createErrorOutput(
           "executionId is required for broker mode — cannot use workflowId as fallback",
-        ),
-      );
+        );
     }
 
     // Get or create PortfolioManager
@@ -367,13 +355,11 @@ export class PortfolioExecutor implements INodeExecutor {
 
     if (operation === "create_portfolio") {
       if (pm.isBootstrapped()) {
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             message: "Portfolio already initialized",
             already_created: true,
             ...this.getPortfolioSummary(pm, baseCurrency),
-          }),
-        );
+          });
       }
 
       // Read balance fields (broker mode uses balance_cash, backtest uses cash_balance)
@@ -438,13 +424,11 @@ export class PortfolioExecutor implements INodeExecutor {
         });
       }
 
-      return toNodeResult(
-        createSuccessOutput({
+      return createSuccessOutput({
           message: "Portfolio created with explicit balance and position data",
           created: true,
           ...this.getPortfolioSummary(pm, baseCurrency),
-        }),
-      );
+        });
     }
 
     if (operation === "sync_broker_state") {
@@ -463,9 +447,7 @@ export class PortfolioExecutor implements INodeExecutor {
         // Accept marketPrice (new)
         const mtmPrice = toNumber(params.marketPrice ?? params.price);
         if (symbols.length === 0 || mtmPrice === undefined || mtmPrice <= 0) {
-          return toNodeResult(
-            createErrorOutput("Provide symbol and marketPrice for update_mtm"),
-          );
+          return createErrorOutput("Provide symbol and marketPrice for update_mtm");
         }
 
         const priceMap: Record<string, number> = {};
@@ -474,13 +456,11 @@ export class PortfolioExecutor implements INodeExecutor {
         }
 
         pm.updateMarketPrices(priceMap, baseCurrency);
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             updated: true,
             prices_updated: priceMap,
             ...this.getPortfolioSummary(pm, baseCurrency),
-          }),
-        );
+          });
       }
       case "get_position":
         return this.brokerGetPosition(pm, symbols);
@@ -489,11 +469,9 @@ export class PortfolioExecutor implements INodeExecutor {
       case "cancel_order": {
         const cancelOrderId = params.broker_order_id;
         if (!cancelOrderId) {
-          return toNodeResult(
-            createErrorOutput(
+          return createErrorOutput(
               "broker_order_id (or fill_id) is required for cancel_order",
-            ),
-          );
+            );
         }
 
         const openOrder = pm
@@ -532,21 +510,17 @@ export class PortfolioExecutor implements INodeExecutor {
         }
 
         const cancelResult = pm.cancelOrder(cancelOrderId);
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             removed: cancelResult.removed,
             cancelledOrder: cancelResult.order || null,
             isAlgo: params.isAlgo === true || isAlgoOrder,
-          }),
-        );
+          });
       }
       case "get_open_algo_orders": {
         if (!this.supportsAlgoOrders(params.broker)) {
-          return toNodeResult(
-            createErrorOutput(
+          return createErrorOutput(
               "get_open_algo_orders is not supported by this broker",
-            ),
-          );
+            );
         }
 
         const result = await this.callBrokerOperation(
@@ -562,15 +536,13 @@ export class PortfolioExecutor implements INodeExecutor {
           context,
         );
 
-        return toNodeResult(createSuccessOutput(result || {}));
+        return createSuccessOutput(result || {});
       }
       case "get_all_algo_orders": {
         if (!this.supportsAlgoOrders(params.broker)) {
-          return toNodeResult(
-            createErrorOutput(
+          return createErrorOutput(
               "get_all_algo_orders is not supported by this broker",
-            ),
-          );
+            );
         }
 
         const result = await this.callBrokerOperation(
@@ -589,7 +561,7 @@ export class PortfolioExecutor implements INodeExecutor {
           context,
         );
 
-        return toNodeResult(createSuccessOutput(result || {}));
+        return createSuccessOutput(result || {});
       }
       case "get_open_orders": {
         const openOrders = pm.getOpenOrders();
@@ -602,17 +574,13 @@ export class PortfolioExecutor implements INodeExecutor {
           ? openAlgoOrders.filter((o) => o.symbol === filterSymbol)
           : openAlgoOrders;
 
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             openOrders: filteredOpenOrders,
             algoOrders: filteredAlgoOrders,
-          }),
-        );
+          });
       }
       default:
-        return toNodeResult(
-          createErrorOutput(`Unknown portfolio operation: ${operation}`),
-        );
+        return createErrorOutput(`Unknown portfolio operation: ${operation}`);
     }
   }
 
@@ -645,8 +613,8 @@ export class PortfolioExecutor implements INodeExecutor {
       context,
     );
 
-    if (!result.success) {
-      throw new Error(result.error || `Broker operation ${operation} failed`);
+    if (result.status === "error") {
+      throw new NodeResultError(result);
     }
 
     return result.data;
@@ -659,19 +627,15 @@ export class PortfolioExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     try {
       if (params.broker !== "alpaca") {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             "sync_from_broker currently supports broker=alpaca only",
-          ),
-        );
+          );
       }
 
       if (!params.credential_id) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             "credential_id is required when sync_from_broker is enabled",
-          ),
-        );
+          );
       }
 
       const brokerParams = {
@@ -813,8 +777,7 @@ export class PortfolioExecutor implements INodeExecutor {
         });
       }
 
-      return toNodeResult(
-        createSuccessOutput({
+      return createSuccessOutput({
           environment: brokerParams.environment,
           cash,
           currency: baseCurrency,
@@ -824,12 +787,9 @@ export class PortfolioExecutor implements INodeExecutor {
           equity,
           positions: syncedPositions,
           openOrders: syncedOrders,
-        }),
-      );
+        });
     } catch (error: any) {
-      return toNodeResult(
-        createErrorOutput(error?.message || "Failed to sync broker state"),
-      );
+      return createErrorOutput(error?.message || "Failed to sync broker state");
     }
   }
 
@@ -867,14 +827,12 @@ export class PortfolioExecutor implements INodeExecutor {
         status,
       });
 
-      return toNodeResult(
-        createSuccessOutput({
+      return createSuccessOutput({
           order: result.order,
           pendingOrdersCount: pm.getOpenOrders().length,
-        }),
-      );
+        });
     } catch (error: any) {
-      return toNodeResult(createErrorOutput(error.message));
+      return createErrorOutput(error.message);
     }
   }
 
@@ -1079,15 +1037,13 @@ export class PortfolioExecutor implements INodeExecutor {
         !context?.userId ||
         !context?.workflowId
       ) {
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             algo: true,
             algoId,
             algoStatus,
             orderId: orderId ?? null,
             persisted: false,
-          }),
-        );
+          });
       }
 
       const event: FillStreamEvent = {
@@ -1126,8 +1082,7 @@ export class PortfolioExecutor implements INodeExecutor {
         ),
       );
 
-      return toNodeResult(
-        createSuccessOutput({
+      return createSuccessOutput({
           algo: true,
           algoId,
           algoStatus,
@@ -1139,13 +1094,10 @@ export class PortfolioExecutor implements INodeExecutor {
           trailPrice,
           rejectReason: rejectReason ?? null,
           persisted: true,
-        }),
-      );
+        });
     } catch (err: any) {
       fillLogger.warn({ err }, "brokerSyncAlgoUpdate failed");
-      return toNodeResult(
-        createErrorOutput(err?.message || "algo_update sync failed"),
-      );
+      return createErrorOutput(err?.message || "algo_update sync failed");
     }
   }
 
@@ -1192,12 +1144,10 @@ export class PortfolioExecutor implements INodeExecutor {
             );
           }
         }
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             acknowledged: true,
             reconciliation,
-          }),
-        );
+          });
       }
 
       const baseCurrency = params.base_currency || "USDT";
@@ -1238,14 +1188,12 @@ export class PortfolioExecutor implements INodeExecutor {
         clientOrderId,
       );
       if (!ours) {
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             skipped: true,
             reason: "unknown_order",
             normalizedBrokerId,
             clientOrderId,
-          }),
-        );
+          });
       }
 
       // 1. Order update (if status provided)
@@ -1453,13 +1401,11 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
-      return toNodeResult(
-        createSuccessOutput({
+      return createSuccessOutput({
           ...this.getPortfolioSummary(pm, baseCurrency),
-        }),
-      );
+        });
     } catch (error: any) {
-      return toNodeResult(createErrorOutput(error.message));
+      return createErrorOutput(error.message);
     }
   }
 
@@ -1491,7 +1437,7 @@ export class PortfolioExecutor implements INodeExecutor {
       initialCapital,
     );
 
-    return compactSuccess({
+    return resultSuccess({
       cash: state.cash,
       initial_capital: initialCapital,
       positions: formattedPositions,
@@ -1535,7 +1481,7 @@ export class PortfolioExecutor implements INodeExecutor {
         )
       : Object.values(simBroker.getPortfolioState().positions);
 
-    return compactSuccess(shapePositionQuery(positions));
+    return resultSuccess(shapePositionQuery(positions));
   }
 
   private backtestUpdateMTM(
@@ -1545,24 +1491,20 @@ export class PortfolioExecutor implements INodeExecutor {
     prices?: Record<string, number> | null,
   ): NodeResult {
     if (!(prices && Object.keys(prices).length > 0) && !(symbol && bar)) {
-      return toNodeResult(
-        createErrorOutput(
+      return createErrorOutput(
           "Provide either 'prices' map or both 'symbol' and 'currentBar' for update_mtm",
-        ),
-      );
+        );
     }
     return this.backtestGetAll(simBroker);
   }
 
   private backtestGetCash(simBroker: SimBroker): NodeResult {
     const state = simBroker.getPortfolioState();
-    return toNodeResult(
-      createSuccessOutput({
+    return createSuccessOutput({
         cash: state.cash,
         buying_power: state.cash - state.reservedCash,
         initial_capital: simBroker.getConfig().initialCapital,
-      }),
-    );
+      });
   }
 
   private backtestGetEquity(simBroker: SimBroker): NodeResult {
@@ -1575,7 +1517,7 @@ export class PortfolioExecutor implements INodeExecutor {
     const peak = state.peakEquity;
     const drawdownPct = peak > 0 ? ((peak - totalEquity) / peak) * 100 : 0;
 
-    return compactSuccess({
+    return resultSuccess({
       total_equity: totalEquity,
       cash: state.cash,
       positions_value: positionsValue,
@@ -1600,7 +1542,7 @@ export class PortfolioExecutor implements INodeExecutor {
       else if (trade.netPnl < 0) losingTrades += 1;
     }
 
-    return compactSuccess({
+    return resultSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: state.cumulativeRealizedPnl,
@@ -1613,7 +1555,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
   private brokerGetAll(pm: PortfolioManager, baseCurrency: string): NodeResult {
     const state = pm.getPortfolioState(baseCurrency);
-    return compactSuccess({
+    return resultSuccess({
       ...this.getPortfolioSummaryFromState(state),
       drawdown_pct:
         state.peakEquity > 0
@@ -1760,7 +1702,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
-    return compactSuccess(pm.getPositionQuery(symbols));
+    return resultSuccess(pm.getPositionQuery(symbols));
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {
@@ -1774,7 +1716,7 @@ export class PortfolioExecutor implements INodeExecutor {
       else if (trade.netPnl < 0) losingTrades += 1;
     }
 
-    return compactSuccess({
+    return resultSuccess({
       trades,
       count: trades.length,
       total_realized_pnl: state.cumulativeRealizedPnl,

@@ -1,3 +1,5 @@
+import { serviceNodeResult } from "../serviceNodeResult";
+import { resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -10,12 +12,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getScreenerService } from "../../services/screeners";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export class ScreenerExecutor implements INodeExecutor {
   readonly category = "Screener";
@@ -33,10 +30,7 @@ export class ScreenerExecutor implements INodeExecutor {
 
       // Credential is optional for manual screeners
       if (!credential_id && screener !== "YahooFinance") {
-        return {
-          success: false,
-          error: `${screener || "Screener"} credential_id is required`,
-        };
+        return resultFailure(`${screener || "Screener"} credential_id is required`, { data: null });
       }
 
       // Resolve and merge node parameters with input data
@@ -52,10 +46,7 @@ export class ScreenerExecutor implements INodeExecutor {
 
       const screenerService = getScreenerService(screener.toLowerCase());
       if (!screenerService) {
-        return {
-          success: false,
-          error: `Unsupported screener: ${screener}`,
-        };
+        return resultFailure(`Unsupported screener: ${screener}`, { data: null });
       }
 
       console.log(
@@ -69,27 +60,7 @@ export class ScreenerExecutor implements INodeExecutor {
         input,
       });
 
-      if (!result.success) {
-        const errOutput = createErrorOutput(
-          result.error || `${screener} ${operation} operation failed`,
-          {
-            nodeId: node.id,
-            nodeName: screener,
-            category: this.category,
-            startTime,
-          },
-        );
-        return toNodeResult(errOutput);
-      }
-
-      console.log(`📊 [SCREENER] ${screener} screener completed successfully`);
-      const successOutput = createSuccessOutput(result.data, {
-        nodeId: node.id,
-        nodeName: screener,
-        category: this.category,
-        startTime,
-      });
-      return toNodeResult(successOutput);
+      return finalizeNodeResult(serviceNodeResult(result), { nodeId: node.id, nodeName: screener, category: this.category }, "observed");
     } catch (error) {
       console.error("[SCREENER] Execution error:", error);
 
@@ -107,7 +78,7 @@ export class ScreenerExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 }

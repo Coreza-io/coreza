@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure, safeErrorDetails } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -133,7 +134,7 @@ router.post("/execute", async (req, res, next) => {
     // Use authenticated user ID from JWT, not from request body
     const user_id = req.user?.id;
     if (!user_id) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const { credential_id, query, numResults = 10 } = req.body;
@@ -141,7 +142,7 @@ router.post("/execute", async (req, res, next) => {
     if (!credential_id || !query) {
       return res
         .status(400)
-        .json({ error: "credential_id and query are required" });
+        .json(resultFailure("credential_id and query are required", { data: null }));
     }
 
     // Validate input
@@ -155,7 +156,7 @@ router.post("/execute", async (req, res, next) => {
     );
 
     if (!credentialResponse.credentials) {
-      return res.status(404).json({ error: "Credentials not found" });
+      return res.status(404).json(resultFailure("Credentials not found", { data: null }));
     }
 
     const { api_key, search_engine_id } = credentialResponse.credentials.client_json;
@@ -170,14 +171,11 @@ router.post("/execute", async (req, res, next) => {
     const response = await axios.get(searchUrl);
 
     if (!response.data || !response.data.items) {
-      return res.json({
-        success: true,
-        data: {
+      return res.json(resultSuccess({
           query: validatedInput.query,
           results: [],
           searchInformation: response.data.searchInformation || {},
-        },
-      });
+        }));
     }
 
     // Format results
@@ -188,26 +186,20 @@ router.post("/execute", async (req, res, next) => {
       displayLink: item.displayLink,
     }));
 
-    res.json({
-      success: true,
-      data: {
+    res.json(resultSuccess({
         query: validatedInput.query,
         results,
         searchInformation: response.data.searchInformation,
-      },
-    });
+      }));
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors[0].message });
+      return res.status(400).json(resultFailure(error.errors[0].message, { data: null }));
     }
     console.error(
       "Google Search execution error:",
       error.response?.data || error.message
     );
-    res.status(500).json({
-      error: "Search execution failed",
-      details: error.response?.data?.error?.message || error.message,
-    });
+    res.status(500).json(resultFailure("Search execution failed", { data: null, details: safeErrorDetails({ ...safeErrorDetails((error.response?.data?.error?.message || error.message)) }) }));
   }
 });
 

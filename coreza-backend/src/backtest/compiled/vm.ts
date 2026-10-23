@@ -1,3 +1,4 @@
+import { isFailedResult, NodeResultError } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -113,9 +114,9 @@ export async function runBar(plan: CompiledPlan, barInput: any, throwOnNodeFailu
 
     // Propagate activation to downstream nodes
     const activateStart = timingEnabled ? performance.now() : 0;
-    if (result?.success === false) {
+    if (isFailedResult(result)) {
       // Owned sessions must propagate failures before reporting completion.
-      if (throwOnNodeFailure) throw new Error(result.error ?? `Backtest node ${instr.node.id} failed`);
+      if (throwOnNodeFailure) throw new NodeResultError(result);
       if (timingEnabled) {
         activateMs += performance.now() - activateStart;
       }

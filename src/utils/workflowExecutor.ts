@@ -1,3 +1,4 @@
+import { hasStreamingData } from "./nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -98,6 +99,8 @@ export class WorkflowExecutor {
     else this.context.setExecutingNode(null);
   }
 
+  private readonly selectedContinuations = new Map<string, string>();
+
   private async invokeNormalNode(nodeId: string): Promise<unknown> {
     const node = this.nodeById.get(nodeId);
     const sessionId = node?.data?.workflowSessionId;
@@ -116,6 +119,8 @@ export class WorkflowExecutor {
     if (outcome.status === "failed") {
       throw new Error(outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} did not complete.`);
     }
+    if (outcome.selectedContinuation) this.selectedContinuations.set(nodeId, outcome.selectedContinuation);
+    else this.selectedContinuations.delete(nodeId);
     return outcome.output;
   }
 
@@ -220,8 +225,8 @@ export class WorkflowExecutor {
     return this.branchOrigins.get(targetNodeId)?.get(edge.id);
   }
 
-  private getBranchHandleKey(result: unknown): string {
-    return getControlResultHandle(result);
+  private getBranchHandleKey(result: unknown, nodeId: string): string {
+    return this.selectedContinuations.get(nodeId) ?? getControlResultHandle(result);
   }
 
   constructor(private context: ExecutorContext) {
@@ -485,16 +490,7 @@ export class WorkflowExecutor {
         const output = nodeData?.output;
 
         // Check if we have actual streaming data (not just "subscribed" status)
-        if (
-          output &&
-          output.status === "streaming" &&
-          (output.news ||
-            output.data ||
-            output.trade ||
-            output.quote ||
-            output.bar ||
-            output.dailyBar)
-        ) {
+        if (hasStreamingData(output)) {
           clearTimeout(timeoutId);
           if (import.meta.env.DEV) console.log(
             `📨 [STREAMING] Node ${nodeId} received first data:`,
@@ -506,7 +502,7 @@ export class WorkflowExecutor {
         }
 
         // Check for webhook data (TelegramTrigger, WebhookTrigger, etc.)
-        if (output?.webhookPayload) {
+        if (output?.status === "success" && output.data != null && Object.prototype.hasOwnProperty.call(output.data, "webhookPayload")) {
           clearTimeout(timeoutId);
           if (import.meta.env.DEV) console.log(
             `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,
@@ -649,8 +645,7 @@ export class WorkflowExecutor {
       if (import.meta.env.DEV) console.log(
         `📌 [WORKFLOW EXECUTOR] Using pinned output for node ${nodeId}`,
       );
-      this.nodeStore.setNodeData(nodeId, { output: pinnedOutput });
-      return pinnedOutput;
+      return this.invokeNormalNode(nodeId);
     }
 
     // Check if this is a streaming node
@@ -872,7 +867,7 @@ export class WorkflowExecutor {
               `🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`,
             );
 
-            const handleKey = this.getBranchHandleKey(result);
+            const handleKey = this.getBranchHandleKey(result, id);
             if (import.meta.env.DEV) console.log(
               `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`,
             );

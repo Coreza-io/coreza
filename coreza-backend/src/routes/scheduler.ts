@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure, safeErrorDetails } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -23,10 +24,7 @@ router.post("/scheduler", async (req, res) => {
   const { interval, count, hour, minute, timezone, dow } = req.body;
   try {
     if (!interval || !count) {
-      return res.status(400).json({
-        error: "Interval and count are required",
-        received: { interval, count, hour, minute, dow },
-      });
+      return res.status(400).json(resultFailure("Interval and count are required", { data: { received: { interval, count, hour, minute, dow } } }));
     }
 
     const scheduleResult = calculateSchedule({
@@ -44,7 +42,7 @@ router.post("/scheduler", async (req, res) => {
       "yyyy-MM-dd HH:mm"
     );
 
-    res.json({
+    res.json(resultSuccess({
       schedule: {
         interval: scheduleResult.interval,
         count: scheduleResult.intervalCount,
@@ -57,7 +55,7 @@ router.post("/scheduler", async (req, res) => {
       nextExecution: nextExecutionFormatted,
       cronExpression: scheduleResult.cronExpression,
       timestamp: new Date().toISOString(),
-    });
+    }));
   } catch (error) {
     console.error("Scheduler error:", error);
 
@@ -69,18 +67,11 @@ router.post("/scheduler", async (req, res) => {
       };
       const statusCode = err.statusCode || 500;
       if (statusCode === 400) {
-        return res.status(400).json({
-          error: err.message || "Invalid scheduler input",
-          received: { interval, count, hour, minute, dow },
-          ...(err.details ? err.details : {}),
-        });
+        return res.status(400).json(resultFailure(err.message || "Invalid scheduler input", { data: { received: { interval, count, hour, minute, dow }, ...(err.details ? err.details : {}) } }));
       }
     }
 
-    res.status(500).json({
-      error: "Failed to process scheduler request",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
+    res.status(500).json(resultFailure("Failed to process scheduler request", { data: null, details: safeErrorDetails({ ...safeErrorDetails((error instanceof Error ? error.message : "Unknown error")) }) }));
   }
 });
 

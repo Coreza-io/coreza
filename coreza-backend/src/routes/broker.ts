@@ -1,3 +1,5 @@
+import { resultFailure } from "../contracts/nodeResult";
+import { toPublicNodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -127,7 +129,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
     const userId = req.user?.id;
 
     if (!userId || !credential_id) {
-      return res.status(400).json({ error: "credential_id is required" });
+      return res.status(400).json(resultFailure("credential_id is required", { data: null }));
     }
 
     // Parse symbol if it's a JSON array string
@@ -163,17 +165,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       executionId: workflowSessionId || workflowId,
     });
 
-    if (result.success) {
-      return res.json({ success: true, data: result.data, meta: result.meta });
-    }
-
-    res.status(400).json({
-      success: false,
-      error: result.error,
-      code: result.code,
-      provider: result.provider,
-      recoverable: result.recoverable,
-    });
+    return res.status(result.status === "error" ? 400 : 200).json(toPublicNodeResult(result));
   } catch (err: any) {
     const status = err.response?.status;
     let message =
@@ -196,7 +188,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       message = err.response.statusText;
     }
 
-    res.status(status || 500).json({ success: false, error: message });
+    res.status(status || 500).json(resultFailure(message, { data: null }));
   }
 });
 

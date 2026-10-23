@@ -7,8 +7,7 @@
  *
  * See the LICENSE file for details.
  */
-
-import { StandardNodeOutput } from "./nodeOutput";
+import { NodeResult } from "../contracts/nodeResult";
 
 /**
  * Reasons why a workflow job was cancelled
@@ -29,14 +28,14 @@ export interface WorkflowCancelledResult {
 /**
  * Result when a workflow job completes successfully
  */
-export interface WorkflowSuccessResult extends StandardNodeOutput {
+export interface WorkflowSuccessResult extends NodeResult {
   cancelled?: false;
 }
 
 /**
  * Loop item result with index for ordering
  */
-export interface LoopItemResult extends StandardNodeOutput {
+export interface LoopItemResult extends NodeResult {
   itemIndex: number;
   cancelled?: false;
 }

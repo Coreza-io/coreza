@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 import { ConsolidationError } from "../../engine/consolidation/TimeBarConsolidator";
 import {
   buildConsolidatorStateKey,
@@ -23,12 +24,7 @@ export class ConsolidatorExecutor implements INodeExecutor {
       const anchorTime = String(params.anchor_time ?? "").trim();
       const dataContext = context?.dataContext;
       if (!dataContext) {
-        return {
-          success: false,
-          data: null,
-          code: "STATE_UNAVAILABLE",
-          error: "Consolidator requires an active execution data context",
-        };
+        return resultFailure("Consolidator requires an active execution data context", { data: null, details: { code: "STATE_UNAVAILABLE" } });
       }
 
       const parameters = { symbol, sourceTimeframe, targetTimeframe, timezone, anchorTime };
@@ -40,21 +36,12 @@ export class ConsolidatorExecutor implements INodeExecutor {
         storedState,
       );
       dataContext.setData(stateKey, result.state);
-      return {
-        success: true,
-        data: result.payload,
-      };
+      return resultSuccess(result.payload);
     } catch (error) {
-      return {
-        success: false,
-        data: null,
-        code:
-          error instanceof ConsolidationError ||
+      return resultFailure(error instanceof Error ? error.message : String(error), { data: null, details: { code: error instanceof ConsolidationError ||
           error instanceof ConsolidatorValidationError
             ? error.code
-            : "CONSOLIDATION_ERROR",
-        error: error instanceof Error ? error.message : String(error),
-      };
+            : "CONSOLIDATION_ERROR" } });
     }
   }
 }

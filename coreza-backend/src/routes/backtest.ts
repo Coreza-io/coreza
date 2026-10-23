@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -28,7 +29,7 @@ router.post("/init", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -61,7 +62,7 @@ router.post("/init", async (req: Request, res: Response) => {
     } = req.body;
 
     if (!workflowId) {
-      return res.status(400).json({ error: "workflowId is required" });
+      return res.status(400).json(resultFailure("workflowId is required", { data: null }));
     }
 
     const result = await backtestExecutor.execute(
@@ -95,14 +96,14 @@ router.post("/init", async (req: Request, res: Response) => {
       { userId, workflowSessionId, workflowId, nodes, edges },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
     return res.json(result);
   } catch (error) {
     console.error("[BacktestRoutes] /init error:", error);
-    return res.status(500).json({ error: "Failed to initialize backtest" });
+    return res.status(500).json(resultFailure("Failed to initialize backtest", { data: null }));
   }
 });
 
@@ -111,12 +112,12 @@ router.post("/onbar", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const { backtest_id } = req.body;
     if (!backtest_id) {
-      return res.status(400).json({ error: "backtest_id is required" });
+      return res.status(400).json(resultFailure("backtest_id is required", { data: null }));
     }
 
     const session =
@@ -124,25 +125,25 @@ router.post("/onbar", async (req: Request, res: Response) => {
     if (!session) {
       return res
         .status(404)
-        .json({ error: "No active session. Run BacktestInit first." });
+        .json(resultFailure("No active session. Run BacktestInit first.", { data: null }));
     }
 
     if (session.status === "finished") {
-      return res.json({ success: true, data: { isLast: true } });
+      return res.json(resultSuccess({ isLast: true }));
     }
 
     const result = await session.nextBar(true);
-    return res.json({ success: true, data: result });
+    return res.json(resultSuccess(result));
   } catch (error) {
     if (
       error instanceof Error &&
       error.message === "Step already in progress"
     ) {
-      return res.status(409).json({ error: "Step already in progress" });
+      return res.status(409).json(resultFailure("Step already in progress", { data: null }));
     }
 
     console.error("[BacktestRoutes] /onbar error:", error);
-    return res.status(500).json({ error: "Failed to process backtest bar" });
+    return res.status(500).json(resultFailure("Failed to process backtest bar", { data: null }));
   }
 });
 
@@ -211,7 +212,7 @@ router.post("/trade", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -233,13 +234,11 @@ router.post("/trade", async (req: Request, res: Response) => {
     if (!backtest_id || !symbol) {
       return res
         .status(400)
-        .json({ error: "backtest_id and symbol are required" });
+        .json(resultFailure("backtest_id and symbol are required", { data: null }));
     }
 
     if (tradeOperation === "place_order" && (!side || !quantity)) {
-      return res.status(400).json({
-        error: "side and quantity are required for place_order",
-      });
+      return res.status(400).json(resultFailure("side and quantity are required for place_order", { data: null }));
     }
 
     const result = await backtestExecutor.execute(
@@ -262,14 +261,14 @@ router.post("/trade", async (req: Request, res: Response) => {
       { userId },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
-    return res.json({ success: true, data: result.data, meta: result.meta });
+    return res.json(result);
   } catch (error) {
     console.error("[BacktestRoutes] /trade error:", error);
-    return res.status(500).json({ error: "Failed to execute trade" });
+    return res.status(500).json(resultFailure("Failed to execute trade", { data: null }));
   }
 });
 
@@ -278,13 +277,13 @@ router.post("/results", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const { backtest_id } = req.body;
 
     if (!backtest_id) {
-      return res.status(400).json({ error: "backtest_id is required" });
+      return res.status(400).json(resultFailure("backtest_id is required", { data: null }));
     }
 
     const result = await backtestExecutor.execute(
@@ -298,14 +297,14 @@ router.post("/results", async (req: Request, res: Response) => {
       { userId },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
-    return res.json({ success: true, data: result.data, meta: result.meta });
+    return res.json(result);
   } catch (error) {
     console.error("[BacktestRoutes] /results error:", error);
-    return res.status(500).json({ error: "Failed to finalize backtest" });
+    return res.status(500).json(resultFailure("Failed to finalize backtest", { data: null }));
   }
 });
 
@@ -314,13 +313,13 @@ router.post("/portfolio", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const { backtest_id, operation, symbol, current_bar, prices } = req.body;
 
     if (!backtest_id) {
-      return res.status(400).json({ error: "backtest_id is required" });
+      return res.status(400).json(resultFailure("backtest_id is required", { data: null }));
     }
 
     const result = await backtestExecutor.execute(
@@ -334,14 +333,14 @@ router.post("/portfolio", async (req: Request, res: Response) => {
       { userId },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
-    return res.json({ success: true, data: result.data, meta: result.meta });
+    return res.json(result);
   } catch (error) {
     console.error("[BacktestRoutes] /portfolio error:", error);
-    return res.status(500).json({ error: "Failed to get portfolio state" });
+    return res.status(500).json(resultFailure("Failed to get portfolio state", { data: null }));
   }
 });
 

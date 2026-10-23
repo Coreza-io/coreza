@@ -1,3 +1,5 @@
+import { serviceNodeResult } from "../nodes/serviceNodeResult";
+import { resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -27,7 +29,7 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const { service } = req.params;
@@ -41,10 +43,7 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
 
     const dataSourceService = getDataSourceService(service);
     if (!dataSourceService) {
-      return res.status(400).json({
-        success: false,
-        error: `Unsupported data source: ${service}`,
-      });
+      return res.status(400).json(resultFailure(`Unsupported data source: ${service}`, { data: null }));
     }
 
     const result = await dataSourceService.execute({
@@ -58,13 +57,10 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
       `📊 [DATASOURCE-ROUTE] ${service}/${operation} result:`,
       result.success
     );
-    res.json(result);
+    res.json(serviceNodeResult(result));
   } catch (error: any) {
     console.error("[DATASOURCE-ROUTE] Error:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message || "Unknown error",
-    });
+    res.status(500).json(resultFailure(error.message || "Unknown error", { data: null }));
   }
 });
 

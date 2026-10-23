@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -25,12 +26,7 @@ import {
   getOrderFromCache,
   updateOrderCache,
 } from "../../utils/orderIdempotency";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
 import {
   BROKER_CAPABILITIES,
@@ -72,27 +68,18 @@ export class BrokerExecutor implements INodeExecutor {
       //shouldPersistRedisState = context?.executionMode === "live";
 
       if (!credential_id) {
-        return {
-          success: false,
-          error: `${broker || "Broker"} credential_id is required`,
-        };
+        return resultFailure(`${broker || "Broker"} credential_id is required`, { data: null });
       }
 
       // Get broker config (in-memory lookup, no HTTP)
       const config = getBrokerConfig(broker);
       if (!config) {
-        return {
-          success: false,
-          error: `Unsupported broker: ${broker}`,
-        };
+        return resultFailure(`Unsupported broker: ${broker}`, { data: null });
       }
 
       const op = config.operations[operation];
       if (!op) {
-        return {
-          success: false,
-          error: `Unsupported operation: ${operation} for ${broker}`,
-        };
+        return resultFailure(`Unsupported operation: ${operation} for ${broker}`, { data: null });
       }
 
       // Resolve and merge node parameters with input data
@@ -155,19 +142,11 @@ export class BrokerExecutor implements INodeExecutor {
               console.log(
                 `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`,
               );
-              return {
-                success: true,
-                data: cached.result,
-                meta: { cached: true },
-              };
+              return resultSuccess(cached.result, { meta: { cached: true } });
             }
 
             if (cached.status === "pending") {
-              return {
-                success: false,
-                error: "Order is already being processed",
-                meta: { cached: true },
-              };
+              return resultFailure("Order is already being processed", { data: null, meta: { cached: true } });
             }
           }
 
@@ -185,10 +164,7 @@ export class BrokerExecutor implements INodeExecutor {
       );
 
       if (!credentials) {
-        return {
-          success: false,
-          error: `Credentials not found for ${broker}`,
-        };
+        return resultFailure(`Credentials not found for ${broker}`, { data: null });
       }
 
       // credential_id is the saved name: CredentialManager resolves it with eq("name", ...),
@@ -368,7 +344,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       const normalized = createSuccessOutput(data);
-      return toNodeResult(normalized);
+      return normalized;
     } catch (error) {
       if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
         durationMs: performance.now() - fetchStart, operation, success: false,
@@ -417,13 +393,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       if (isBrokerAuthError(error)) {
-        return {
-          success: false,
-          error: error.message,
-          code: error.code,
-          provider: error.provider,
-          recoverable: error.recoverable,
-        };
+        return resultFailure(error.message, { data: null, details: { code: error.code, provider: error.provider, recoverable: error.recoverable } });
       }
 
       if (preRegisteredClientOrderId && operation === "place_order") {
@@ -452,7 +422,7 @@ export class BrokerExecutor implements INodeExecutor {
           startTime,
         },
       );
-      return toNodeResult(normalized);
+      return normalized;
     }
   }
 

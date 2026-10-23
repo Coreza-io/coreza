@@ -1,3 +1,4 @@
+import { resultFailure, resultState } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -11,13 +12,7 @@
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import logger from "../../utils/logger";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  createWaitingOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 /**
  * TriggerExecutor handles trigger-type nodes (RedisTrigger, AlpacaStreamData, etc.)
@@ -39,17 +34,11 @@ export class TriggerExecutor implements INodeExecutor {
       const nodeId = node.id;
 
       if (!userId) {
-        return {
-          success: false,
-          error: "userId is required for trigger nodes",
-        };
+        return resultFailure("userId is required for trigger nodes", { data: null });
       }
 
       if (!workflowId) {
-        return {
-          success: false,
-          error: "workflowId is required for trigger nodes",
-        };
+        return resultFailure("workflowId is required for trigger nodes", { data: null });
       }
 
       const resolvedParams = context?.resolveNodeParameters
@@ -94,26 +83,23 @@ export class TriggerExecutor implements INodeExecutor {
             break;
           }
 
-          return {
-            success: false,
-            error: `Unsupported trigger node type: ${nodeName}`,
-          };
+          return resultFailure(`Unsupported trigger node type: ${nodeName}`, { data: null });
       }
 
-      if (!result.success) {
+      if (result.status === "error") {
         logger.error(
           { nodeName, error: result.error },
           "Trigger node execution failed",
         );
       }
 
-      const normalized = normalizeOutput(result, {
+      const normalized = finalizeNodeResult(result, {
         nodeId: node.id,
         nodeName,
         category: this.category,
         startTime,
-      });
-      return toNodeResult(normalized);
+      }, "observed");
+      return normalized;
     } catch (error) {
       logger.error({ err: error }, "Trigger executor error");
 
@@ -131,7 +117,7 @@ export class TriggerExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 
@@ -145,17 +131,11 @@ export class TriggerExecutor implements INodeExecutor {
       const { credential_id, subscriptionType = "channel", channels } = params;
 
       if (!credential_id) {
-        return {
-          success: false,
-          error: "credential_id is required for Redis Trigger",
-        };
+        return resultFailure("credential_id is required for Redis Trigger", { data: null });
       }
 
       if (!channels) {
-        return {
-          success: false,
-          error: "channels are required for Redis Trigger",
-        };
+        return resultFailure("channels are required for Redis Trigger", { data: null });
       }
 
       // Parse channels (comma-separated)
@@ -165,10 +145,7 @@ export class TriggerExecutor implements INodeExecutor {
         .filter(Boolean);
 
       if (channelList.length === 0) {
-        return {
-          success: false,
-          error: "At least one channel is required",
-        };
+        return resultFailure("At least one channel is required", { data: null });
       }
 
       // Send subscription request to market-stream-service
@@ -188,27 +165,15 @@ export class TriggerExecutor implements INodeExecutor {
       );
 
       if (!response.data.success) {
-        return {
-          success: false,
-          error: response.data.error || "Redis subscription failed",
-        };
+        return resultFailure(response.data.error || "Redis subscription failed", { data: null });
       }
 
-      return {
-        success: true,
-        message: `Subscribed to ${channelList.length} Redis ${subscriptionType}(s)`,
-        channels: channelList,
-        subscriptionType,
-        status: "listening",
-      };
+      return resultState("listening", { message: `Subscribed to ${channelList.length} Redis ${subscriptionType}(s)`, channels: channelList, subscriptionType });
     } catch (error) {
       logger.error({ err: error }, "Redis trigger execution failed");
-      return {
-        success: false,
-        error: `Redis trigger failed: ${
+      return resultFailure(`Redis trigger failed: ${
           error instanceof Error ? error.message : String(error)
-        }`,
-      };
+        }`, { data: null });
     }
   }
 
@@ -241,27 +206,16 @@ export class TriggerExecutor implements INodeExecutor {
         secret_token: params.secret_token ?? params.secretToken,
       });
 
-      if (!response.data.success) {
-        return {
-          success: false,
-          error: response.data.error || "Webhook registration failed",
-        };
+      if (response.data.status === "error") {
+        return resultFailure(response.data.error || "Webhook registration failed", { data: null });
       }
 
-      return {
-        success: true,
-        message: "Webhook endpoint is listening",
-        callback_url: response.data.callback_url,
-        status: "listening",
-      };
+      return resultState("listening", { message: "Webhook endpoint is listening", callback_url: response.data.data?.callback_url });
     } catch (error) {
       logger.error({ err: error }, "Webhook trigger execution failed");
-      return {
-        success: false,
-        error: `Webhook trigger failed: ${
+      return resultFailure(`Webhook trigger failed: ${
           error instanceof Error ? error.message : String(error)
-        }`,
-      };
+        }`, { data: null });
     }
   }
 }

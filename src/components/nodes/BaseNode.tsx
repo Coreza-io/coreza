@@ -1,3 +1,4 @@
+import { resultState } from "@/utils/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -392,11 +393,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       if (!controlsAreCurrent()) return;
       if (response.ok) {
         // Update node state to remove listening status
-        const stoppedOutput = {
-          status: "stopped",
-          message: "Test listener stopped manually",
-          stoppedAt: new Date().toISOString(),
-        };
+        const stoppedOutput = resultState("cancelled", { message: "Test listener stopped manually" }, { meta: { timestamp: new Date().toISOString() } });
 
         outputHook.setLastOutput(stoppedOutput);
         executionStore.setNodeData(nodeId, {

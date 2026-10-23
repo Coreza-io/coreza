@@ -9,11 +9,11 @@
  */
 
 import { createError } from "../../middleware/errorHandler";
-import { StandardNodeOutput } from "../../types/nodeOutput";
+import { NodeResult } from "../../contracts/nodeResult";
 import {
   createSuccessOutput,
   createErrorOutput,
-} from "../../utils/normalizeOutput";
+} from "../../utils/nodeResultHelpers";
 
 export interface ComparatorInput {
   left: any;
@@ -29,7 +29,7 @@ export interface ComparatorInput {
     | "any";
 }
 
-export type ComparatorResult = StandardNodeOutput<boolean>;
+export type ComparatorResult = NodeResult<boolean>;
 
 function parseValueByType(value: any, dataType: string): any {
   if (typeof value !== "string") return value;
@@ -96,7 +96,7 @@ function parseValueByType(value: any, dataType: string): any {
 function parseDateComparisonValues(
   leftValue: any,
   rightValue: any,
-): StandardNodeOutput<{ leftTime: number; rightTime: number }> {
+): NodeResult<{ leftTime: number; rightTime: number }> {
   const leftTime = new Date(leftValue).getTime();
   const rightTime = new Date(rightValue).getTime();
 
@@ -282,7 +282,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -296,7 +296,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -310,7 +310,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -324,7 +324,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -407,12 +407,12 @@ export class ComparatorService {
   static executeSwitch(
     cases: Array<{ condition: ComparatorInput; value: any }>,
     defaultValue?: any,
-  ): StandardNodeOutput<any> {
+  ): NodeResult<any> {
     try {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = this.evaluate(cases[i].condition);
 
-        if (!caseResult.success) {
+        if (caseResult.status === "error") {
           return createErrorOutput(
             caseResult.error || "Switch case evaluation failed",
           );

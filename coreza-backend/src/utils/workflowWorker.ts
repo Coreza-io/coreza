@@ -14,9 +14,10 @@ import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "../engine";
 import { EnginePool } from "../engine";
+import { serializeWorkflowRunResult } from "./workflowRunResultContract";
 import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
-import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "./nodeResultHelpers";
 import type { WorkflowJobData } from "../infra/jobQueue/queueInterface";
 import { RedisKeys } from "../infra/redisKeys";
 import type {
@@ -261,9 +262,8 @@ export function createWorkflowWorker({
               totalItems ?? 0,
             );
 
-          // Keep full StandardNodeOutput for each item, preserving structure
+          // Keep full NodeResult for each item, preserving structure
           const aggregatedOutput = results.map((r) => ({
-            success: r.success,
             status: r.status,
             data: r.data,
             error: r.error,
@@ -580,7 +580,7 @@ export function createWorkflowWorker({
           // outputs that completed before the cancellation was acknowledged.
           await supabase
             .from("workflow_runs")
-            .update({ result })
+            .update({ result: serializeWorkflowRunResult(result) })
             .eq("id", runId);
           const { data: completedRun, error: completionError } = await supabase
             .from("workflow_runs")
@@ -658,7 +658,7 @@ export function createWorkflowWorker({
         } else {
           await supabase
             .from("workflow_runs")
-            .update({ result: executionResult })
+            .update({ result: executionResult ? serializeWorkflowRunResult(executionResult) : undefined })
             .eq("id", runId);
           await supabase
             .from("workflow_runs")

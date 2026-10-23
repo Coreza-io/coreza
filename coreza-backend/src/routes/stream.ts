@@ -1,3 +1,5 @@
+import { resultSuccess, resultFailure, resultState } from "../contracts/nodeResult";
+
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -20,7 +22,6 @@ import { getRedisCache } from "../config/redis";
 import { RedisKeys } from "../infra/redisKeys";
 import {
   StreamExecutionRequest,
-  StreamExecutionResponse,
 } from "../types/streaming";
 import {
   buildCryptoSymbols,
@@ -333,7 +334,7 @@ router.post("/:source/subscribe", async (req, res) => {
     const userId = req.user?.id;
     const source = req.params.source;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -361,9 +362,9 @@ router.post("/:source/subscribe", async (req, res) => {
     } = req.body;
 
     if (!credential_id)
-      return res.status(400).json({ error: "credential_id is required" });
+      return res.status(400).json(resultFailure("credential_id is required", { data: null }));
 
-    if (!node_id) return res.status(400).json({ error: "node_id is required" });
+    if (!node_id) return res.status(400).json(resultFailure("node_id is required", { data: null }));
 
     const sourceId = resolveStreamSourceId(source, category, assetType);
 
@@ -484,24 +485,13 @@ router.post("/:source/subscribe", async (req, res) => {
     }
 
     if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error });
+      return res.status(400).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
     }
 
-    res.json({
-      success: true,
-      message: result.data?.message,
-      symbols: result.data?.symbols,
-      stream_type: result.data?.streamType,
-      sourceId,
-      node_id,
-      workflowId: workflowId || null,
-    });
+    res.json(resultSuccess({ message: result.data?.message, symbols: result.data?.symbols, stream_type: result.data?.streamType, sourceId, node_id, workflowId: workflowId || null }));
   } catch (error) {
     console.error("Subscribe error:", error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Subscription failed",
-    });
+    res.status(500).json(resultFailure(error instanceof Error ? error.message : "Subscription failed", { data: null }));
   }
 });
 
@@ -514,7 +504,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const userId = req.user?.id;
     const source = req.params.source;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -544,7 +534,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const sourceId = resolveStreamSourceId(source, category, assetType);
 
     if (!sourceId) {
-      return res.status(400).json({ error: `Unknown source: ${sourceId}` });
+      return res.status(400).json(resultFailure(`Unknown source: ${sourceId}`, { data: null }));
     }
 
     // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
@@ -644,23 +634,13 @@ router.post("/:source/unsubscribe", async (req, res) => {
     }
 
     if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error });
+      return res.status(400).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
     }
 
-    res.json({
-      success: true,
-      message: result.data?.message,
-      sourceId,
-      symbols: result.data?.symbols,
-      stream_type: result.data?.streamType,
-      targetWorkflowId: targetWorkflowId || null,
-    });
+    res.json(resultSuccess({ message: result.data?.message, sourceId, symbols: result.data?.symbols, stream_type: result.data?.streamType, targetWorkflowId: targetWorkflowId || null }));
   } catch (error) {
     console.error("Unsubscribe error:", error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unsubscribe failed",
-    });
+    res.status(500).json(resultFailure(error instanceof Error ? error.message : "Unsubscribe failed", { data: null }));
   }
 });
 
@@ -754,7 +734,7 @@ router.post("/:source/register", async (req, res) => {
     const userId = req.user?.id;
     const source = req.params.source;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json(resultFailure("Unauthorized", { data: null }));
     }
 
     const {
@@ -788,19 +768,19 @@ router.post("/:source/register", async (req, res) => {
     };
 
     if (!workflowId) {
-      return res.status(400).json({ error: "workflowId is required" });
+      return res.status(400).json(resultFailure("workflowId is required", { data: null }));
     }
     if (!node_id) {
-      return res.status(400).json({ error: "node_id is required" });
+      return res.status(400).json(resultFailure("node_id is required", { data: null }));
     }
     if (!node_type) {
-      return res.status(400).json({ error: "node_type is required" });
+      return res.status(400).json(resultFailure("node_type is required", { data: null }));
     }
 
     const sourceId = resolveStreamSourceId(source, category, assetType);
 
     if (!sourceId) {
-      return res.status(400).json({ error: `Unknown source: ${sourceId}` });
+      return res.status(400).json(resultFailure(`Unknown source: ${sourceId}`, { data: null }));
     }
 
     // Parse symbols (crypto-aware)
@@ -854,10 +834,7 @@ router.post("/:source/register", async (req, res) => {
     // If subscribe mode, subscribe first and WAIT for readiness
     if (mode === "subscribe") {
       if (marketstreamType.length > 0 && parsedSymbols.length === 0) {
-        return res.status(400).json({
-          error:
-            "Subscribe mode requires at least one symbol for market streams",
-        });
+        return res.status(400).json(resultFailure("Subscribe mode requires at least one symbol for market streams", { data: null }));
       }
 
       console.log(
@@ -891,11 +868,7 @@ router.post("/:source/register", async (req, res) => {
             `❌ [ExecuteStreamNode] Trading subscription failed:`,
             tradingResult.error,
           );
-          return res.status(400).json({
-            success: false,
-            status: "error",
-            error: tradingResult.error,
-          } as StreamExecutionResponse);
+          return res.status(400).json(resultFailure(tradingResult.error ?? "Node operation failed", { data: null }));
         }
 
         // Wait for trading subscription readiness
@@ -937,11 +910,7 @@ router.post("/:source/register", async (req, res) => {
         });
 
         if (!newsResult.success) {
-          return res.status(400).json({
-            success: false,
-            status: "error",
-            error: newsResult.error,
-          } as StreamExecutionResponse);
+          return res.status(400).json(resultFailure(newsResult.error ?? "Node operation failed", { data: null }));
         }
 
         await SubscriptionService.waitForSubscriptionReady({
@@ -981,11 +950,7 @@ router.post("/:source/register", async (req, res) => {
             `❌ [ExecuteStreamNode] Subscription failed:`,
             subscribeResult.error,
           );
-          return res.status(400).json({
-            success: false,
-            status: "error",
-            error: subscribeResult.error,
-          } as StreamExecutionResponse);
+          return res.status(400).json(resultFailure(subscribeResult.error ?? "Node operation failed", { data: null }));
         }
 
         // Wait for market subscription readiness
@@ -1000,12 +965,7 @@ router.post("/:source/register", async (req, res) => {
           console.error(
             `❌ [ExecuteStreamNode] Market subscription readiness timed out for ${sourceId}`,
           );
-          return res.status(504).json({
-            success: false,
-            status: "error",
-            error:
-              "Market data subscription timed out before readiness. Please retry.",
-          } as StreamExecutionResponse);
+          return res.status(504).json(resultFailure("Market data subscription timed out before readiness. Please retry.", { data: null }));
         }
       }
 
@@ -1022,11 +982,7 @@ router.post("/:source/register", async (req, res) => {
       console.warn(
         `⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_LISTENERS_PER_USER})`,
       );
-      return res.status(429).json({
-        success: false,
-        status: "error",
-        error: `Maximum concurrent test listeners (${MAX_LISTENERS_PER_USER}) exceeded.`,
-      } as StreamExecutionResponse);
+      return res.status(429).json(resultFailure(`Maximum concurrent test listeners (${MAX_LISTENERS_PER_USER}) exceeded.`, { data: null }));
     }
 
     // Create listener
@@ -1073,28 +1029,17 @@ router.post("/:source/register", async (req, res) => {
     );
 
     // Return success response
-    const response: StreamExecutionResponse = {
-      success: true,
-      status: "listening",
-      symbols: parsedSymbols || [],
-      streamType: streamType || [],
-      source: sourceId,
-      scope: scope,
-      mode: mode,
-    };
+    const response = resultState("listening", {
+      symbols: parsedSymbols || [], streamType: streamType || [], source: sourceId, scope, mode,
+    });
 
     console.log(`✅ [ExecuteStreamNode] Complete - testKey: ${listenerKey}`);
     res.json(response);
   } catch (error) {
     console.error("Error executing stream node:", error);
-    res.status(500).json({
-      success: false,
-      status: "error",
-      error:
-        error instanceof Error
+    res.status(500).json(resultFailure(error instanceof Error
           ? error.message
-          : "Failed to execute stream node",
-    } as StreamExecutionResponse);
+          : "Failed to execute stream node", { data: null }));
   }
 });
 

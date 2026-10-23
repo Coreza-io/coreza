@@ -1,3 +1,4 @@
+import { resultFailure, safeErrorDetails } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -20,16 +21,13 @@ router.use(requireAuth);
 router.post("/engine", async (req, res) => {
   try {
     const result = RiskEngineService.evaluate(req.body);
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
     }
     res.json(result);
   } catch (error) {
     console.error("Risk engine error:", error);
-    res.status(500).json({
-      error: "Failed to evaluate risk engine",
-      details: error instanceof Error ? error.message : String(error),
-    });
+    res.status(500).json(resultFailure("Failed to evaluate risk engine", { data: null, details: safeErrorDetails({ ...safeErrorDetails((error instanceof Error ? error.message : String(error))) }) }));
   }
 });
 

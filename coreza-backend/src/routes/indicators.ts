@@ -87,14 +87,12 @@ async function executeIndicatorWithState(
           let updated = state;
           for (const bar of candles) updated = await indicatorStateManager.update(key, bar);
           return {
-            success: true,
-            status: "success",
+              status: "success",
             data: toIndicatorOutput(indicatorType, updated),
           };
         }
 
         return {
-          success: true,
           status: "success",
           data: toIndicatorOutput(indicatorType, state),
         };
@@ -103,7 +101,7 @@ async function executeIndicatorWithState(
   }
 
   const result = await batchCalculate(req.body);
-  if (!result.success || !Array.isArray(result.data)) return result;
+  if (result.status === "error" || !Array.isArray(result.data)) return result;
   const series = result.data;
   const required = requiredWarmupBars(indicatorType, req.body);
   return {
@@ -151,7 +149,7 @@ router.post("/initialize", async (req, res, next) => {
       }),
     });
 
-    if (result.success) {
+    if (result.status !== "error") {
       return res.json(result);
     }
 

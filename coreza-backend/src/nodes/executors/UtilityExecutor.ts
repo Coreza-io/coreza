@@ -9,7 +9,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import { createSuccessOutput, createErrorOutput, toNodeResult } from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export class UtilityExecutor implements INodeExecutor {
   readonly category = "Utility";
@@ -24,7 +24,7 @@ export class UtilityExecutor implements INodeExecutor {
         error instanceof Error ? error : String(error),
         { nodeId: node.id, nodeName: node.name, category: this.category, startTime }
       );
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 
@@ -51,7 +51,7 @@ export class UtilityExecutor implements INodeExecutor {
           `Unsupported utility node type: ${nodeName}`,
           { nodeId: node.id, nodeName, category: this.category, startTime }
         );
-        return toNodeResult(errOutput);
+        return errOutput;
     }
   }
 
@@ -72,7 +72,7 @@ export class UtilityExecutor implements INodeExecutor {
       category: this.category,
       startTime,
     });
-    return toNodeResult(successOutput);
+    return successOutput;
   }
 
   private executeVisualizeNode(
@@ -100,7 +100,7 @@ export class UtilityExecutor implements INodeExecutor {
       category: this.category,
       startTime,
     });
-    return toNodeResult(successOutput);
+    return successOutput;
   }
 
   private executeWebhookNode(
@@ -120,7 +120,7 @@ export class UtilityExecutor implements INodeExecutor {
       category: this.category,
       startTime,
     });
-    return toNodeResult(successOutput);
+    return successOutput;
   }
 
   private executeHttpNode(
@@ -150,6 +150,6 @@ export class UtilityExecutor implements INodeExecutor {
       category: this.category,
       startTime,
     });
-    return toNodeResult(successOutput);
+    return successOutput;
   }
 }

@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -40,7 +41,7 @@ router.post(
     try {
       const userId = req.user?.id;
       if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
+        return res.status(401).json(resultFailure("Unauthorized", { data: null }));
       }
 
       const { service, operation } = req.params;
@@ -53,7 +54,7 @@ router.post(
 
       const commService = getCommunicationService(service);
       if (!commService) {
-        return res.status(400).json({ error: `Unknown service: ${service}` });
+        return res.status(400).json(resultFailure(`Unknown service: ${service}`, { data: null }));
       }
 
       const result = await commService.execute({
@@ -65,10 +66,10 @@ router.post(
 
       if (!result.success) {
         const statusCode = result.error?.includes("authentication") ? 401 : 400;
-        return res.status(statusCode).json({ error: result.error });
+        return res.status(statusCode).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
       }
 
-      res.json({ success: true, ...result.data });
+      res.json(resultSuccess({ ...result.data }));
     } catch (error) {
       next(error);
     }

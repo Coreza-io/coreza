@@ -1,3 +1,4 @@
+import { serviceNodeResult } from "../serviceNodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -10,11 +11,7 @@
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { getCommunicationService } from "../../services/communication";
-import {
-  normalizeOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export class CommunicationExecutor implements INodeExecutor {
   readonly category = "Communication";
@@ -40,7 +37,7 @@ export class CommunicationExecutor implements INodeExecutor {
         const errOutput = createErrorOutput(
           `Unknown communication service: ${nodeName}`,
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       // Resolve and merge node parameters with input data
@@ -57,8 +54,8 @@ export class CommunicationExecutor implements INodeExecutor {
         ...resolvedParams,
       });
 
-      const normalized = normalizeOutput(result);
-      return toNodeResult(normalized);
+      const normalized = finalizeNodeResult(serviceNodeResult(result), {}, "observed");
+      return normalized;
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error
@@ -68,7 +65,7 @@ export class CommunicationExecutor implements INodeExecutor {
             : String(error),
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 }

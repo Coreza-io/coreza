@@ -21,10 +21,6 @@ import {
 import { createWorkflowWorker } from "../../utils/workflowWorker";
 import { createScheduledWorkflowWorker } from "../../utils/scheduledWorkflowWorker";
 import {
-  createSuccessOutput,
-  createErrorOutput,
-} from "../../utils/normalizeOutput";
-import {
   WorkflowJobResult,
   isWorkflowCancelled,
 } from "../../types/workflowJobResult";
@@ -335,11 +331,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     const context = { userId, workflowId, runId, nodes, edges, abortSignal };
     const input = backtestInitNode?.values || {};
 
-    const result = await backtestExecutor.executeBacktestInit(
-      backtestInitNode,
-      input,
-      context,
-    );
+    const result = await backtestExecutor.execute(backtestInitNode, input, context);
 
     return result;
   }

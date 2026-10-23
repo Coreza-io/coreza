@@ -1,3 +1,4 @@
+import { serviceNodeResult } from "../serviceNodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -15,13 +16,8 @@ import {
 } from "../../services/datasources";
 import { getStorageService } from "../../services/storage";
 import type { StorageInput } from "../../services/storage/types";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  compactSuccess,
-} from "../../utils/normalizeOutput";
-import { toNodeResult } from "../../utils/normalizeOutput";
+import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
+
 
 export class DataSourceExecutor implements INodeExecutor {
   readonly category = "DataSource";
@@ -52,13 +48,11 @@ export class DataSourceExecutor implements INodeExecutor {
 
       if (nodeName === "Store") {
         const result = await this.executeStoreNode(resolvedParams, context);
-        return toNodeResult(
-          normalizeOutput(result, {
+        return finalizeNodeResult(result, {
             nodeId: node.id,
             nodeName,
             category: this.category,
-          }),
-        );
+          }, "observed");
       }
 
       const operation = resolvedParams.operation ?? node.values?.operation;
@@ -85,7 +79,7 @@ export class DataSourceExecutor implements INodeExecutor {
             "userId and credential_id are required for Redis operations",
             { nodeId: node.id, nodeName, category: this.category },
           );
-          return toNodeResult(errOutput);
+          return errOutput;
         }
 
         const result = await this.executeStorageNode(
@@ -100,12 +94,12 @@ export class DataSourceExecutor implements INodeExecutor {
           context,
         );
 
-        const normalized = normalizeOutput(result, {
+        const normalized = finalizeNodeResult(result, {
           nodeId: node.id,
           nodeName,
           category: this.category,
-        });
-        return toNodeResult(normalized);
+        }, "observed");
+        return normalized;
       }
 
       if (!credentialId && !this.isCredentialOptional(nodeName)) {
@@ -113,7 +107,7 @@ export class DataSourceExecutor implements INodeExecutor {
           `${nodeName} credential_id is required`,
           { nodeId: node.id, nodeName, category: this.category },
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       const serviceKey = this.resolveServiceKey(nodeName);
@@ -122,7 +116,7 @@ export class DataSourceExecutor implements INodeExecutor {
           `Unsupported data source: ${nodeName}`,
           { nodeId: node.id, nodeName, category: this.category },
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       const resolvedOperation = this.resolveOperation(
@@ -137,7 +131,7 @@ export class DataSourceExecutor implements INodeExecutor {
           `Unsupported data source: ${serviceKey}`,
           { nodeId: node.id, nodeName, category: this.category },
         );
-        return toNodeResult(errOutput);
+        return errOutput;
       }
 
       // console.log(
@@ -151,20 +145,7 @@ export class DataSourceExecutor implements INodeExecutor {
         ...combinedInput,
       });
 
-      if (!result.success) {
-        const errOutput = createErrorOutput(
-          result.error || `${nodeName} ${resolvedOperation} operation failed`,
-          { nodeId: node.id, nodeName, category: this.category },
-        );
-        return toNodeResult(errOutput);
-      }
-
-      const successOutput = createSuccessOutput(result.data, {
-        nodeId: node.id,
-        nodeName,
-        category: this.category,
-      });
-      return toNodeResult(successOutput);
+      return finalizeNodeResult(serviceNodeResult(result), { nodeId: node.id, nodeName, category: this.category }, "observed");
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error
@@ -179,7 +160,7 @@ export class DataSourceExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 
@@ -200,12 +181,10 @@ export class DataSourceExecutor implements INodeExecutor {
     };
     const storageService = getStorageService(serviceKey);
     if (!storageService) {
-      return toNodeResult(
-        createErrorOutput(
+      return createErrorOutput(
           `Unsupported storage service: ${serviceKey}`,
           outputContext,
-        ),
-      );
+        );
     }
 
     params.user_id =
@@ -213,17 +192,7 @@ export class DataSourceExecutor implements INodeExecutor {
     params.workflow_id =
       params.workflow_id || params.workflowId || context?.workflowId;
 
-    const result = await storageService.execute(params);
-    if (!result.success) {
-      return toNodeResult(
-        createErrorOutput(
-          result.error || `${serviceKey} ${params.operation} operation failed`,
-          outputContext,
-        ),
-      );
-    }
-
-    return toNodeResult(normalizeOutput(result.data, outputContext));
+    return storageService.execute(params);
   }
 
   private clearResultCachesForRun(runId?: string): void {

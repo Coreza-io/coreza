@@ -1,3 +1,5 @@
+import { readNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
+import { publishNodeResult } from "@/utils/publishNodeResult";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
 import { prepareExpressionTransport } from "../../coreza-backend/src/nodes/logic/expressionTransport";
@@ -395,30 +397,27 @@ export function useNodeExecution({
     ],
   );
 
-  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, code?: string): NodeExecutionOutcome => {
+  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, code?: string, details?: ResultErrorDetails, partialData?: unknown, meta?: ResultMeta): NodeExecutionOutcome => {
     const outcomeNodeId = nodeId ?? "unknown";
     if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
     if (overrideOutput !== null && overrideOutput !== undefined) {
-      return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
+      return { nodeId: outcomeNodeId, status: "pinned", output: toPublicNodeResult(readNodeResult(overrideOutput)) };
     }
     const continued = canContinueNodeError(definition?.name, fieldState);
     const continuation = continued ? continuedNodeError(definition?.name, fieldState, message, code) : undefined;
-    const output = continuation ? { ...continuation, timestamp: new Date().toISOString() } : {
-      success: false,
-      status: "error",
-      error: message,
-      timestamp: new Date().toISOString(),
-      ...(code !== undefined ? { code } : {}),
-    };
+    const output = toPublicNodeResult(resultFailure(message, {
+      data: partialData === undefined ? continuation?.data : partialData,
+      details: { ...details, ...(code !== undefined ? { code } : {}) },
+      ...(meta ? { meta } : {}),
+      ...(continuation ? { control: continuation.control } : {}),
+    }));
     setError(message);
-    setLastOutput(output);
-    if (nodeId) {
-      executionStore.setNodeData(nodeId, { output, ...(continued && definition?.name === "Loop" ? { done: true, aggregated: output } : {}) });
-      updateNodeData(nodeId, { output });
-      notifyExecutionStoreUpdate();
-    }
+    if (nodeId) publishNodeResult(output, {
+      nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
+      notify: notifyExecutionStoreUpdate, setLastOutput,
+    }, continued && definition?.name === "Loop" ? { done: true, aggregated: output } : {});
     return { nodeId: outcomeNodeId, status: continued ? "success" : "failed", error: { message, ...(code !== undefined ? { code } : {}) }, output,
-      ...(continuation?.result ? { selectedContinuation: continuation.result } : {}),
+      ...(continuation?.control?.sourceHandle ? { selectedContinuation: continuation.control?.sourceHandle } : {}),
     };
   }, [nodeId, overrideOutput, definition?.name, fieldState, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
 
@@ -461,18 +460,13 @@ export function useNodeExecution({
           definition?.name || "Unknown",
         );
         setError("");
-        setLastOutput(overrideOutput);
-        data.output = overrideOutput;
-        if (nodeId) {
-          executionStore.setNodeData(nodeId, {
-            input: inputOverride ?? currentSelectedInput,
-            output: overrideOutput,
-          });
-          updateNodeData(nodeId, { output: overrideOutput });
-          notifyExecutionStoreUpdate();
-        }
+        const output = toPublicNodeResult(readNodeResult(overrideOutput));
+        if (nodeId) publishNodeResult(output, {
+          nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
+          notify: notifyExecutionStoreUpdate, setLastOutput,
+        }, { input: inputOverride ?? currentSelectedInput });
         setIsSending(false);
-        return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
+        return { nodeId: outcomeNodeId, status: "pinned", output };
       }
 
       if (import.meta.env.DEV) {
@@ -655,20 +649,11 @@ export function useNodeExecution({
               finished,
               edgeArrivals,
             );
-            const finalOut = next.aggregated ?? edgeArrivals ?? [];
-            executionStore.setNodeData(nodeId!, {
-              output: finalOut,
-              loopItems: undefined,
-              loopIndex: 0,
-              loopItem: undefined,
-              finishedByLoop: true,
-              done: true,
-              _edgeBuf: {},
-            });
-            setLastOutput(finalOut);
-            data.output = finalOut;
-            updateNodeData(nodeId, { output: finalOut });
-            notifyExecutionStoreUpdate();
+            const finalOut = resultSuccess(next.aggregated ?? edgeArrivals ?? []);
+            publishNodeResult(finalOut, {
+              nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
+              notify: notifyExecutionStoreUpdate, setLastOutput,
+            }, { loopItems: undefined, loopIndex: 0, loopItem: undefined, finishedByLoop: true, done: true, _edgeBuf: {} });
             return { nodeId: outcomeNodeId, status: "success", output: finalOut, selectedContinuation: "done" };
           }
 
@@ -685,25 +670,16 @@ export function useNodeExecution({
             : next.output == null
               ? []
               : [next.output];
-          const uiOut = {
-            data: {
+          const uiOut = resultSuccess({
               Item: loopItemsOutput,
               totalItem: arrayLength,
               CurrentIndex: currentIndex,
               isLastBatch,
-            },
-          };
-          setLastOutput(uiOut);
-          data.output = uiOut;
-          updateNodeData(nodeId, { output: uiOut });
-
-          executionStore.setNodeData(nodeId!, {
-            input: effectiveInput,
-            output: uiOut,
-            _edgeBuf: {},
           });
-
-          notifyExecutionStoreUpdate();
+          publishNodeResult(uiOut, {
+            nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
+            notify: notifyExecutionStoreUpdate, setLastOutput,
+          }, { input: effectiveInput, _edgeBuf: {} });
           return { nodeId: outcomeNodeId, status: "success", output: uiOut, selectedContinuation: "loop" };
         }
 
@@ -802,12 +778,15 @@ export function useNodeExecution({
           const { variableSnapshot: committedVariables, ...responseData } = await res.json();
           const activitySummary = definition?.name === "AIAgent" ? responseData.agentActivity : undefined;
           if (definition?.name === "AIAgent") delete responseData.agentActivity;
-          if (definition?.name === "AIAgent" && responseData.code === "CANCELLED") {
+          const responseResult = readNodeResult(responseData);
+          if (responseResult.status === "cancelled") {
             agentActivity?.finish(activitySummary, "cancelled");
-            return { nodeId: outcomeNodeId, status: "cancelled", reason: "Agent execution was cancelled." };
+            publishNodeResult(responseResult, { nodeId: nodeId!, isCurrent: executionIsCurrent,
+              updateNodeData, store: executionStore, notify: notifyExecutionStoreUpdate, setLastOutput });
+            return { nodeId: outcomeNodeId, status: "cancelled", reason: responseResult.error ?? "Node execution cancelled" };
           }
           agentActivity?.finish(activitySummary, !executionIsCurrent() ? "cancelled"
-            : res.ok && responseData.success !== false && responseData.status !== "error" ? "completed" : "failed");
+            : res.ok && responseResult.status === "success" ? "completed" : "failed");
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
           if (res.ok && committedVariables) {
             const committed = freezeVariableSnapshot(committedVariables, userId, workflowId);
@@ -819,8 +798,8 @@ export function useNodeExecution({
           if (!executionIsCurrent()) {
             return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
           }
-          if (!res.ok || responseData.success === false || responseData.status === "error")
-            throw new Error(JSON.stringify(responseData) || "Action failed");
+          if (!res.ok || isFailedResult(responseResult))
+            throw new Error(JSON.stringify(responseResult) || "Action failed");
           if (consolidatorSeriesSignature) {
             setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId, consolidatorSeriesSignature);
           }
@@ -841,6 +820,10 @@ export function useNodeExecution({
             nodeId: nodeId!,
             executionStore,
             isCurrent: sessionIsCurrent,
+            publishOutput: (output: unknown, patch: Record<string, any>) => {
+              publishNodeResult(output, { nodeId: nodeId!, isCurrent: sessionIsCurrent,
+                updateNodeData, store: executionStore, notify: notifyExecutionStoreUpdate, setLastOutput }, patch);
+            },
             signal,
             setNodes: (updater) => {
               if (!sessionIsCurrent()) return;
@@ -853,7 +836,6 @@ export function useNodeExecution({
                 notifyExecutionStoreUpdate();
               }
             },
-            setLastOutput,
             apiClient,
             accessToken: session?.access_token,
             abortRef: pollingAbortRef,
@@ -873,7 +855,7 @@ export function useNodeExecution({
               listeningDeps,
             );
 
-            void handler.start(responseData);
+            void handler.start(responseResult.data);
             return {
               nodeId: outcomeNodeId,
               status: "listener-started",
@@ -892,7 +874,7 @@ export function useNodeExecution({
               listeningDeps,
             );
 
-            void handler.start(responseData);
+            void handler.start(responseResult.data);
             return {
               nodeId: outcomeNodeId,
               status: "listener-started",
@@ -909,29 +891,24 @@ export function useNodeExecution({
               listeningDeps,
             );
 
-            void handler.start(responseData);
+            void handler.start(responseResult.data);
             return {
               nodeId: outcomeNodeId,
               status: "listener-started",
               output: executionStore.getNodeData(nodeId!).output,
             };
           } else {
-            outputData = responseData;
+            outputData = responseResult;
           }
         } else {
-          outputData = payload;
+          outputData = resultSuccess(payload);
         }
 
-        setLastOutput(outputData);
-        const finalOutput =
-          overrideOutput !== null ? overrideOutput : outputData;
-        data.output = finalOutput;
-        executionStore.setNodeData(nodeId!, {
-          input: effectiveInput,
-          output: finalOutput,
-        });
-        updateNodeData(nodeId!, { output: finalOutput });
-        notifyExecutionStoreUpdate();
+        const finalOutput = toPublicNodeResult(overrideOutput != null ? readNodeResult(overrideOutput) : outputData);
+        publishNodeResult(finalOutput, {
+          nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
+          notify: notifyExecutionStoreUpdate, setLastOutput,
+        }, { input: effectiveInput });
         return { nodeId: outcomeNodeId, status: "success", output: finalOutput };
       } catch (err: any) {
         agentActivity?.finish(undefined, !executionIsCurrent() ? "cancelled" : "incomplete");
@@ -943,21 +920,16 @@ export function useNodeExecution({
         let code: string | undefined;
         let parsed = err;
         try { parsed = JSON.parse(message); } catch { /* plain message or structured exception */ }
-        if (parsed && typeof parsed === "object") {
-          const parsedError =
-            (typeof parsed.error === "string" && parsed.error) ||
-            (typeof parsed.message === "string" && parsed.message) ||
-            (typeof parsed.data?.error === "string" && parsed.data.error) ||
-            (typeof parsed.data?.message === "string" && parsed.data.message) ||
-            (typeof parsed.details === "string" && parsed.details) ||
-            (typeof parsed.details?.message === "string" && parsed.details.message);
-          message = parsedError || message;
-          code = typeof parsed.code === "string" ? parsed.code : undefined;
+        if (isNodeResult(parsed)) {
+          message = parsed.error ?? message;
+          code = parsed.details?.code;
+        } else {
+          code = typeof err?.code === "string" ? err.code : undefined;
         }
         if (definition?.name === "Consolidator" && code === "EDITOR_CONTEXT_EXPIRED") {
           setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);
         }
-        return publishFailure(message, executionIsCurrent, code);
+        return publishFailure(message, executionIsCurrent, code, parsed?.details, parsed?.data, parsed?.meta);
       } finally {
         agentActivity?.finish(undefined, !executionIsCurrent() ? "cancelled" : "incomplete");
         if (activeAgentRef.current === agentActivity) activeAgentRef.current = undefined;

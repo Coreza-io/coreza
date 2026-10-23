@@ -1,3 +1,4 @@
+import { resultFailure } from "../contracts/nodeResult";
 /** Node-level policy, separate from Loop's existing per-item continueOnError option. */
 export function canContinueNodeError(name: string | undefined, values: Record<string, any>): boolean {
   return values.__continueOnError === true && !(name === "Edit Fields" && values.persistent === true);
@@ -10,13 +11,9 @@ export function continuedNodeError(name: string | undefined, values: Record<stri
     : name === "If" ? "true"
     : name === "Switch" ? (typeof firstCase === "string" && firstCase ? firstCase : "case1")
     : undefined;
-  return {
-    success: false,
-    status: "error",
-    error: message,
+  return resultFailure(message, {
     data: { error: message },
-    result: continuation,
-    ...(code !== undefined ? { code } : {}),
-    ...(name === "Loop" ? { control: { loopCompleted: true } } : {}),
-  };
+    ...(code !== undefined ? { details: { code } } : {}),
+    control: { ...(continuation ? { sourceHandle: continuation } : {}), ...(name === "Loop" ? { loopCompleted: true } : {}) },
+  });
 }

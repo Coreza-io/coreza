@@ -1,3 +1,4 @@
+import { resultState, resultFailure, hasStreamingData } from "@/utils/nodeResult";
 import type { ListeningConfig } from "@/hooks/useListeningHandler";
 import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
@@ -46,8 +47,7 @@ export const buildWebhookListeningConfig = ({
   const provider = definition?.provider;
 
   return {
-    buildListeningOutput: (res) => ({
-      status: "listening",
+    buildListeningOutput: (res) => resultState("listening", {
       message: res.message || "Waiting for webhook event...",
       startedAt: new Date().toISOString(),
       callbackUrl: res.callback_url,
@@ -56,21 +56,13 @@ export const buildWebhookListeningConfig = ({
       provider,
     }),
     buildListeningNodeData: () => ({ testListenWorkflowId: workflowId, testListenNodeId: nodeId }),
-    isDataReceived: (nodeData) => Boolean(nodeData?.output?.[waitField]),
+    isDataReceived: (nodeData) => nodeData?.output?.status === "success" && nodeData.output.data != null && Object.prototype.hasOwnProperty.call(nodeData.output.data, waitField),
     shouldStop: (nodeData) => nodeData?.[listeningFlag] === false,
     buildSuccessOutput: (nodeData) => nodeData.output,
-    buildTimeoutOutput: (listeningOutput) => ({
-      ...(listeningOutput ?? {}),
-      status: "error",
-      message: `Timeout waiting for webhook event after ${
-        timeout / 60000
-      } minutes`,
+    buildTimeoutOutput: (listeningOutput) => resultFailure(`Timeout waiting for webhook event after ${timeout / 60000} minutes`, {
+      data: listeningOutput?.data, details: { code: "LISTENER_TIMEOUT" },
     }),
-    buildErrorOutput: (error, listeningOutput) => ({
-      ...(listeningOutput ?? {}),
-      status: "error",
-      message: error.message,
-    }),
+    buildErrorOutput: (error, listeningOutput) => resultFailure(error.message, { data: listeningOutput?.data }),
     timeout,
     listeningFlag,
   };
@@ -102,8 +94,7 @@ export const buildStreamingTriggerListeningConfig = ({
     streamingConfig.recoveryPolling?.interval ?? DEFAULT_RECOVERY_INTERVAL;
 
   return {
-    buildListeningOutput: (res) => ({
-      status: "listening",
+    buildListeningOutput: (res) => resultState("listening", {
       message: `Listening for ${definition?.name || "streaming"} data...`,
       startedAt: new Date().toISOString(),
       mode: res.mode,
@@ -120,10 +111,7 @@ export const buildStreamingTriggerListeningConfig = ({
     isDataReceived: () => false,
     shouldStop: (nodeData) => nodeData?.isTestListening === false,
     buildSuccessOutput: (nodeData) => nodeData.output,
-    buildTimeoutOutput: () => ({
-      status: "timeout",
-      message: "No stream data received within timeout",
-    }),
+    buildTimeoutOutput: () => resultFailure("No stream data received within timeout", { details: { code: "LISTENER_TIMEOUT" } }),
     timeout: Number.MAX_SAFE_INTEGER,
     listeningFlag,
     receivedFlag: "streamDataReceived",
@@ -134,10 +122,7 @@ export const buildStreamingTriggerListeningConfig = ({
         if (result.status === "expired") {
           return {
             done: true,
-            output: {
-              status: "expired",
-              message: "Test listener expired",
-            },
+            output: resultFailure("Test listener expired", { details: { code: "LISTENER_EXPIRED" } }),
             expired: true,
           };
         }
@@ -165,8 +150,7 @@ export const buildStreamingSubscribeListeningConfig = ({
     definition?.streamingConfig?.subscribeListeningFlag ?? "isStreamingWaiting";
 
   return {
-    buildListeningOutput: (res) => ({
-      status: "waiting",
+    buildListeningOutput: (res) => resultState("waiting", {
       message: `Listening for ${definition?.name} data...`,
       subscribedAt: new Date().toISOString(),
       symbols: payload.parsedSymbols,
@@ -176,27 +160,10 @@ export const buildStreamingSubscribeListeningConfig = ({
       subscriptions: res?.subscriptions,
       lastActionMessage: res?.message,
     }),
-    isDataReceived: (nodeData) => {
-      const output = nodeData?.output;
-      return Boolean(
-        output?.status === "streaming" &&
-        (output.news ||
-          output.data ||
-          output.trade ||
-          output.quote ||
-          output.bar ||
-          output.dailyBar),
-      );
-    },
+    isDataReceived: (nodeData) => hasStreamingData(nodeData?.output),
     buildSuccessOutput: (nodeData) => nodeData.output,
-    buildTimeoutOutput: () => ({
-      status: "timeout",
-      message: `Timeout waiting for ${definition?.name} data`,
-    }),
-    buildErrorOutput: (error) => ({
-      status: "error",
-      message: error.message,
-    }),
+    buildTimeoutOutput: () => resultFailure(`Timeout waiting for ${definition?.name} data`, { details: { code: "LISTENER_TIMEOUT" } }),
+    buildErrorOutput: (error) => resultFailure(error.message),
     timeout,
     listeningFlag,
   };

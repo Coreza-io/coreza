@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, Pause, Play, ChevronLeft, ChevronRight } from "lucide-react";
-import { isStandardNodeOutput } from "@/types/nodeOutput";
+import { isNodeResult } from "@/utils/nodeResult";
 import { canEditJson } from "./preview";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 
@@ -50,8 +50,8 @@ export type OutputPanelProps = {
   onStepPrevious?: () => void;
 };
 
-// Status badge component for StandardNodeOutput
-const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, success }) => {
+// Status badge component for NodeResult
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const statusConfig: Record<string, { icon: React.ReactNode; className: string }> = {
     success: { icon: <CheckCircle className="w-3 h-3" />, className: "bg-green-500/20 text-green-500" },
     error: { icon: <XCircle className="w-3 h-3" />, className: "bg-red-500/20 text-red-500" },
@@ -65,7 +65,7 @@ const StatusBadge: React.FC<{ status: string; success: boolean }> = ({ status, s
     "not-executed": { icon: <Clock className="w-3 h-3" />, className: "bg-slate-500/20 text-slate-500" },
   };
 
-  const config = statusConfig[status] || statusConfig[success ? 'success' : 'error'];
+  const config = statusConfig[status] || statusConfig.error;
 
   return (
     <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.className}`}>
@@ -143,20 +143,11 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
     setTimeout(() => { URL.revokeObjectURL(url); exportUrls.current.delete(url); }, 0);
   };
 
-  const displayData = useMemo(() => {
-    if (isStandardNodeOutput(internalData)) {
-      return {
-        success: internalData.success,
-        status: internalData.status,
-        ...(internalData.error !== undefined ? { error: internalData.error } : {}),
-        ...(internalData.data !== undefined ? { data: internalData.data } : {}),
-      };
-    }
-    return internalData;
-  }, [internalData]);
+  // Keep details/meta visible and retain the result's identity on ordinary renders.
+  const displayData = internalData;
 
   const renderData = useMemo(() => {
-    return createRenderData(sourceNodeId, !pinned && isStandardNodeOutput(internalData) && internalData.success && internalData.status === "success" ? internalData.meta?.persistentVariableKeys : undefined);
+    return createRenderData(sourceNodeId, !pinned && isNodeResult(internalData) && internalData.status === "success" ? internalData.meta?.persistentVariableKeys : undefined);
   }, [sourceNodeId, pinned, internalData]);
 
   if (!isExpanded) return null;
@@ -212,8 +203,8 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           <span className="font-semibold text-foreground text-sm tracking-tight">
             Output
           </span>
-          {isStandardNodeOutput(internalData) && (
-            <StatusBadge status={internalData.status} success={internalData.success} />
+          {isNodeResult(internalData) && (
+            <StatusBadge status={internalData.status} />
           )}
         </div>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleExport} title="Export complete output"><Download className="w-3 h-3" /></Button>
@@ -281,7 +272,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {isStandardNodeOutput(internalData) ? (
+            {isNodeResult(internalData) ? (
               <>
                 {renderData(displayData, "")}
                 {internalData.meta?.executionTime && (

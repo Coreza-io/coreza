@@ -195,7 +195,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
           ) : previousNodes.length > 0 ? (
             <DraggableFieldsPanel
               data={outputData}
-              persistentVariableKeys={outputData?.success === true && outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
+              persistentVariableKeys={outputData?.status === "success" ? outputData?.meta?.persistentVariableKeys : undefined}
               onDragStart={handleDragStart ?? (() => {})}
               sourceNodeId={selectedId}
             />

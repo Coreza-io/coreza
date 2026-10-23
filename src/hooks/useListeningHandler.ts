@@ -40,10 +40,10 @@ export interface ListeningHandlerDeps {
   nodeId: string;
   executionStore: ExecutionContext;
   setNodes: (updater: (nodes: Node[]) => Node[]) => void;
-  setLastOutput: (output: any) => void;
   apiClient: typeof apiClient;
   accessToken?: string;
   abortRef: MutableRefObject<AbortController | null>;
+  publishOutput: (output: unknown, patch: Record<string, any>) => void;
   isCurrent?: () => boolean;
   signal?: AbortSignal;
 }
@@ -78,7 +78,6 @@ export function createListeningHandler<TOutput = any>(
     nodeId,
     executionStore,
     setNodes,
-    setLastOutput,
     apiClient: api,
     accessToken,
     abortRef,
@@ -93,22 +92,7 @@ export function createListeningHandler<TOutput = any>(
 
   const setNodeOutput = (output: TOutput, patch: Record<string, any>) => {
     if (!canPublish()) return;
-    setLastOutput(output);
-    executionStore.setNodeData(nodeId, { output, ...patch });
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                output,
-                ...patch,
-              },
-            }
-          : n,
-      ),
-    );
+    deps.publishOutput(output, patch);
   };
 
   const updateNodeData = (patch: Record<string, any>) => {

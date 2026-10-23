@@ -1,3 +1,4 @@
+import { readNodeResult, resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -49,30 +50,13 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
       executor.execute(node, input, ctx);
 
     if (result && typeof (result as any).then === "function") {
-      return {
-        success: false,
-        data: null,
-        error: `Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})`,
-      };
+      return resultFailure(`Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})`);
     }
 
     return normalizeResult(result as NodeResult);
   };
 }
 
-function normalizeResult(syncResult: NodeResult): NodeResult {
-  if (syncResult && typeof syncResult === "object" && "success" in syncResult) {
-    if (!syncResult.success) {
-      return {
-        success: false,
-        data: null,
-        error: syncResult.error,
-        meta: syncResult.meta,
-        control: syncResult.control,
-      };
-    }
-    return syncResult;
-  }
-
-  return { data: (syncResult as any)?.data ?? syncResult };
+function normalizeResult(result: unknown): NodeResult {
+  return readNodeResult(result);
 }

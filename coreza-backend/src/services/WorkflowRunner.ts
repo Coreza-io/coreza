@@ -1,3 +1,4 @@
+import { resultSuccess } from "../contracts/nodeResult";
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
 import { createDedicatedStreamConnection } from "../config/redis";
@@ -265,7 +266,7 @@ export class WorkflowRunner {
 
     // Preload trigger node results with actual stream data so downstream
     // nodes can reference them (e.g. $('OnBar').json.data)
-    const triggerOutput = { success: true, data: envelope.data };
+    const triggerOutput = resultSuccess(envelope.data);
     const preload: Record<string, any> = {};
     for (const triggerId of this.triggerNodeIds) {
       preload[triggerId] = triggerOutput;

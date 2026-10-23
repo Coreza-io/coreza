@@ -1,3 +1,4 @@
+import { serializeWorkflowRunResult } from "../utils/workflowRunResultContract";
 import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
@@ -11,7 +12,7 @@ export class WorkflowRunRepository {
   ): Promise<boolean> {
     const { data, error } = await (supabase.from("workflow_runs") as any)
       .update({ status, completed_at: new Date().toISOString(), error_message: errorMessage,
-        ...(result ? { result } : {}),
+        ...(result ? { result: serializeWorkflowRunResult(result) } : {}),
       })
       .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId)
       .in("status", ["queued", "running"]).select("id").maybeSingle();

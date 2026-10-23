@@ -13,6 +13,7 @@ import { RedisOps } from "../infra/redisOps";
 import logger from "../utils/logger";
 import {
   normalizeRedisRunResultUpdate,
+  stringifyWorkflowRunResult,
   type RedisRunResultUpdate,
 } from "./workflowRunResultContract";
 
@@ -107,7 +108,7 @@ export async function updateRunStatusInRedis(
 
   if (executionResult !== undefined) {
     const normalized = normalizeRedisRunResultUpdate(executionResult);
-    if (normalized.result !== undefined) updates.result = JSON.stringify(normalized.result);
+    if (normalized.result !== undefined) updates.result = stringifyWorkflowRunResult(normalized.result);
     if (normalized.errorMessage) updates.error_message = normalized.errorMessage;
   }
 

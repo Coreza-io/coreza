@@ -1,3 +1,4 @@
+import { toPublicNodeResult } from "../contracts/nodeResult";
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { DocumentExecutor } from "../nodes/executors/DocumentExecutor";
@@ -13,12 +14,12 @@ router.post("/extract", async (req, res) => {
     {},
   );
 
-  if (result.success) {
-    res.json(result.data);
+  if (result.status !== "error") {
+    res.json(toPublicNodeResult(result));
     return;
   }
 
-  res.status(400).json({ error: "Document extraction failed", message: result.error });
+  res.status(400).json(toPublicNodeResult(result));
 });
 
 export default router;

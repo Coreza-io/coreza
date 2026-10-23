@@ -9,12 +9,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import {
-  normalizeOutput,
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 
 export class IOExecutor implements INodeExecutor {
   readonly category = "IO";
@@ -37,7 +32,7 @@ export class IOExecutor implements INodeExecutor {
             `Unsupported IO node type: ${nodeName}`,
             { nodeId: node.id, nodeName, category: this.category, startTime },
           );
-          return toNodeResult(errOutput);
+          return errOutput;
       }
     } catch (error) {
       const errOutput = createErrorOutput(
@@ -53,7 +48,7 @@ export class IOExecutor implements INodeExecutor {
         },
       );
 
-      return toNodeResult(errOutput);
+      return errOutput;
     }
   }
 
@@ -78,6 +73,6 @@ export class IOExecutor implements INodeExecutor {
         startTime,
       },
     );
-    return toNodeResult(successOutput);
+    return successOutput;
   }
 }

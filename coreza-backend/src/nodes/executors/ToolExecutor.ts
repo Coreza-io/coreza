@@ -9,11 +9,7 @@
  */
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
-import {
-  createSuccessOutput,
-  createErrorOutput,
-  toNodeResult,
-} from "../../utils/normalizeOutput";
+import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { buildExecutorCategoryMap } from "../../brokers/capabilities";
 
 export class ToolExecutor implements INodeExecutor {
@@ -54,7 +50,7 @@ export class ToolExecutor implements INodeExecutor {
       // Result is already in NodeResult format from internal methods
       return result;
     } catch (error) {
-      return toNodeResult(createErrorOutput(error));
+      return createErrorOutput(error);
     }
   }
 
@@ -73,15 +69,15 @@ export class ToolExecutor implements INodeExecutor {
       const { user_id, credential_id, query, numResults = 10 } = params;
 
       if (!user_id) {
-        return toNodeResult(createErrorOutput("user_id is required"));
+        return createErrorOutput("user_id is required");
       }
 
       if (!credential_id) {
-        return toNodeResult(createErrorOutput("credential_id is required"));
+        return createErrorOutput("credential_id is required");
       }
 
       if (!query) {
-        return toNodeResult(createErrorOutput("query is required"));
+        return createErrorOutput("query is required");
       }
 
       console.log(
@@ -96,18 +92,14 @@ export class ToolExecutor implements INodeExecutor {
       );
 
       if (!credentials) {
-        return toNodeResult(
-          createErrorOutput("Google Web Search credentials not found"),
-        );
+        return createErrorOutput("Google Web Search credentials not found");
       }
 
       const { api_key, search_engine_id } = credentials.client_json || {};
       if (!api_key || !search_engine_id) {
-        return toNodeResult(
-          createErrorOutput(
+        return createErrorOutput(
             "Google Web Search credential is missing api_key or search_engine_id",
-          ),
-        );
+          );
       }
 
       // Execute search
@@ -120,13 +112,11 @@ export class ToolExecutor implements INodeExecutor {
       const response = await axios.get(searchUrl);
 
       if (!response.data || !response.data.items) {
-        return toNodeResult(
-          createSuccessOutput({
+        return createSuccessOutput({
             query,
             results: [],
             searchInformation: response.data.searchInformation || {},
-          }),
-        );
+          });
       }
 
       // Format results
@@ -139,25 +129,21 @@ export class ToolExecutor implements INodeExecutor {
 
       console.log(`✅ [GoogleWebSearch] Found ${results.length} results`);
 
-      return toNodeResult(
-        createSuccessOutput({
+      return createSuccessOutput({
           query,
           results,
           searchInformation: response.data.searchInformation,
-        }),
-      );
+        });
     } catch (error: any) {
       console.error(
         "❌ [GoogleWebSearch] Error:",
         error.response?.data || error.message,
       );
-      return toNodeResult(
-        createErrorOutput(
+      return createErrorOutput(
           error.response?.data?.error?.message ||
             error.message ||
             "Google Search execution failed",
-        ),
-      );
+        );
     }
   }
 
@@ -208,9 +194,7 @@ export class ToolExecutor implements INodeExecutor {
     const executor = category ? getNodeExecutor(category) : undefined;
 
     if (!executor) {
-      return toNodeResult(
-        createErrorOutput(`Unsupported tool node type: ${node.name}`),
-      );
+      return createErrorOutput(`Unsupported tool node type: ${node.name}`);
     }
 
     const delegatedNode: WorkflowNode = {

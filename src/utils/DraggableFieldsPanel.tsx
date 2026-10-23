@@ -72,12 +72,14 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
         const path = JSON.stringify(fullSegments);
         const fullKey = (pathSegments ? formatPath(fullSegments) : `${parentKey}${formatPath(fullSegments)}`).replace(/^\./, "");
         const nested = objectLike(value);
+        const defaultExpanded = nested && depth < 12 && (Array.isArray(value) ? value.length : Object.keys(value).length) <= 10;
+        const isExpanded = depth < 12 && (expanded[path] ?? defaultExpanded);
         const reference = variableKey ? `{{ $vars.${variableKey} }}` : fullKey;
         const canDrag = draggable || Boolean(variableKey && sourceNodeId);
         const label = text(Array.isArray(source) ? `[${key}]` : String(key));
         return <div key={path} className="flex flex-col ml-2">
           <div className="flex items-center gap-2">
-            {nested && <button type="button" className="nodrag text-xs" aria-label={`${expanded[path] ? "Collapse" : "Expand"} ${label}`} aria-expanded={!!expanded[path]} disabled={depth >= 12} onClick={() => setExpanded(previous => ({ ...previous, [path]: !previous[path] }))}>{expanded[path] ? "−" : "+"}</button>}
+            {nested && <button type="button" className="nodrag text-xs" aria-label={`${isExpanded ? "Collapse" : "Expand"} ${label}`} aria-expanded={isExpanded} disabled={depth >= 12} onClick={() => setExpanded(previous => ({ ...previous, [path]: !(previous[path] ?? defaultExpanded) }))}>{isExpanded ? "−" : "+"}</button>}
             <div className={`nodrag px-2 py-1 bg-primary/10 rounded text-xs font-semibold text-primary ${canDrag ? "cursor-grab" : "cursor-default"}`}
               draggable={canDrag} onMouseDown={event => event.stopPropagation()}
               onDragStart={event => {
@@ -90,7 +92,7 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
               }} onDragEnd={() => document.body.classList.remove("cursor-grabbing", "select-none")}>{label}</div>
             <span className="text-xs text-muted-foreground break-all">{nested ? Array.isArray(value) ? `[${value.length} items]` : "{…}" : text(value)}</span>
           </div>
-          {nested && expanded[path] && depth < 12 && budget.entries > 0 && budget.characters > 0 && <div className="ml-4">{renderBranch(value, fullSegments, depth + 1)}</div>}
+          {nested && isExpanded && budget.entries > 0 && budget.characters > 0 && <div className="ml-4">{renderBranch(value, fullSegments, depth + 1)}</div>}
         </div>;
       })}
       {length > pageSize && <div className="ml-2 flex items-center gap-2 text-xs">

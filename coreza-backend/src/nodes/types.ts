@@ -1,3 +1,5 @@
+import type { NodeResult, RuntimeControl } from "../contracts/nodeResult";
+export type { NodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -10,33 +12,6 @@
 
 export interface NodeInput {
   [key: string]: any;
-}
-
-export interface NodeResult {
-  success?: boolean;
-  data?: any;
-  message?: string;
-  channels?: any;
-  subscriptionType?: string;
-  status?: string;
-  index?: number;
-  isLastBatch?: boolean;
-  callback_url?: string;
-  error?: string;
-  code?: string;
-  provider?: string;
-  recoverable?: boolean;
-  warmupSuppressed?: boolean;
-  /**
-   * Execution context metadata (e.g., error summaries, timing info).
-   * For loop iteration context, use IterMeta in QueueItem.
-   */
-  meta?: Record<string, any>;
-  /**
-   * Engine routing signals (loopCompleted, loopIteration, sourceHandle, etc.)
-   * that tell the workflow engine what action to take.
-   */
-  control?: ControlFlags;
 }
 
 export interface INodeExecutor {
@@ -97,47 +72,7 @@ export interface Item {
 /**
  * Optional flags that a node can return to influence engine behaviour.
  */
-export interface ControlFlags {
-  /** Do not route this result to outgoing edges; descendants were executed by an owned batch. */
-  suppressRouting?: boolean;
-  /** Latest per-node snapshots produced by an owned batch execution. */
-  ownedNodeResults?: Record<string, NodeResult>;
-  /** Deterministic order for owned batch snapshots. */
-  ownedExecutionOrder?: string[];
-  /** Re‑queue the current node for another pass (used by Loop). */
-  requeueSelf?: boolean;
-  /** Epoch milliseconds until the node should be executed again. */
-  throttleUntil?: number;
-  /** Persist arbitrary node local state. */
-  setState?: Record<string, any>;
-  /** Convenience branch decision for conditional nodes. */
-  branch?: "true" | "false";
-
-  // Unified loop control flags
-  /** Loop completed all items - route to "done" handle */
-  loopCompleted?: boolean;
-  /** Loop iteration in progress - route to "loop" handle */
-  loopIteration?: boolean;
-  /** Items distributed to BullMQ for parallel execution */
-  parallelDistributed?: boolean;
-  /** Explicit source handle for routing */
-  sourceHandle?: string;
-  /** Current iteration index for sequential loops */
-  currentIndex?: number;
-  /** Whether this is the last batch in sequential mode */
-  isLastBatch?: boolean;
-  /** Whether this iteration is at the last item index */
-
-  // Parallel distribution metadata
-  /** Number of items being processed */
-  itemCount?: number;
-  /** ID of the loop node */
-  loopId?: string;
-  /** Max concurrent workers for parallel execution */
-  maxConcurrency?: number;
-  /** Continue processing on individual item errors */
-  continueOnError?: boolean;
-}
+export type ControlFlags = RuntimeControl;
 
 /**
  * Result returned by node executors in the new engine contract.

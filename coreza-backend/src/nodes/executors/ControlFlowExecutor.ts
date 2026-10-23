@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure, resultState } from "../../contracts/nodeResult";
 import { snapshotTypedExpressionContext } from "../logic/typedExpressionContext";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -99,7 +100,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         dataType: cond.dataType,
       });
 
-      if (!evalResult.success) {
+      if (evalResult.status === "error") {
         return compactError(evalResult.error || "If condition evaluation failed");
       }
 
@@ -153,7 +154,7 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     const result = ComparatorService.executeSwitch(switchCases, defaultCase);
 
-    if (!result.success) {
+    if (result.status === "error") {
       return compactError(result.error || "Switch evaluation failed");
     }
 
@@ -230,7 +231,7 @@ export class ControlFlowExecutor implements INodeExecutor {
 
     const result = ComputeService.compute(resolvedParams);
 
-    return result.success
+    return result.status === "success"
       ? compactSuccess(result.data)
       : compactError(result.error || "Compute operation failed");
   }
@@ -260,14 +261,10 @@ export class ControlFlowExecutor implements INodeExecutor {
         context?.setState("_loopItems", undefined);
         context?.setState("_loopConfig", undefined);
 
-        return {
-          success: true,
-          data: aggregatedResults,
-          control: {
+        return resultSuccess(aggregatedResults, { control: {
             loopCompleted: true,
             sourceHandle: "done",
-          },
-        };
+          } });
       }
 
       const batchSize = Number(cachedConfig.batchSize) || 1;
@@ -286,21 +283,17 @@ export class ControlFlowExecutor implements INodeExecutor {
       const loopData =
         currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
 
-      return {
-        success: true,
-        data: {
+      return resultSuccess({
           Item: loopData,
           totalItem: cachedItems.length,
           CurrentIndex: currentIndex,
           isLastBatch: isLastBatch,
-        },
-        control: {
+        }, { control: {
           loopIteration: true,
           sourceHandle: "loop",
           currentIndex,
           isLastBatch: isLastBatch,
-        },
-      };
+        } });
     }
 
     const resolvedParams = context?.resolveNodeParameters
@@ -364,7 +357,9 @@ export class ControlFlowExecutor implements INodeExecutor {
         context,
       );
 
-      // Convert v2 output format to NodeResult format with standardized output
+      if (v2Result.control?.cancelled) return resultState("cancelled", v2Result.output, { control: v2Result.control, meta: v2Result.meta });
+      if (v2Result.error) return resultFailure(v2Result.error, { data: v2Result.output, control: v2Result.control, meta: v2Result.meta });
+      // Preserve the existing Loop payload and routing flags at this compatibility boundary.
       const parallelCurrentIndex = v2Result.control?.currentIndex ?? 0;
       const parallelItems = Array.isArray(v2Result.output)
         ? v2Result.output
@@ -372,17 +367,14 @@ export class ControlFlowExecutor implements INodeExecutor {
           ? []
           : [v2Result.output];
 
-      return {
-        success: true,
-        data: {
+      return resultSuccess({
           Item: parallelItems,
           totalItem: items.length,
           CurrentIndex: parallelCurrentIndex,
           isLastBatch: Boolean(v2Result.control?.isLastBatch),
-        },
-        control: v2Result.control,
-        meta: "meta" in v2Result ? (v2Result as any).meta : undefined,
-      };
+          ...(v2Result.trueItems !== undefined ? { trueItems: v2Result.trueItems } : {}),
+          ...(v2Result.falseItems !== undefined ? { falseItems: v2Result.falseItems } : {}),
+        }, { meta: "meta" in v2Result ? (v2Result as any).meta : undefined, control: v2Result.control });
     }
 
     // Extract array items from input
@@ -430,14 +422,10 @@ export class ControlFlowExecutor implements INodeExecutor {
       context?.setState("_loopItems", undefined);
       context?.setState("_loopConfig", undefined);
 
-      return {
-        success: true,
-        data: aggregatedResults,
-        control: {
+      return resultSuccess(aggregatedResults, { control: {
           loopCompleted: true,
           sourceHandle: "done",
-        },
-      };
+        } });
     }
 
     // Get current batch
@@ -460,20 +448,16 @@ export class ControlFlowExecutor implements INodeExecutor {
     const loopData =
       currentBatch.length === 1 ? [currentBatch[0]] : currentBatch;
 
-    return {
-      success: true,
-      data: {
+    return resultSuccess({
         Item: loopData,
         totalItem: items.length,
         CurrentIndex: currentIndexFromState,
         isLastBatch: isLastBatch,
-      },
-      control: {
+      }, { control: {
         loopIteration: true,
         sourceHandle: "loop",
         currentIndex: currentIndexFromState,
         isLastBatch,
-      },
-    };
+      } });
   }
 }

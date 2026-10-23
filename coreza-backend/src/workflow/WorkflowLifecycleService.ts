@@ -1,3 +1,4 @@
+import { serializeNodeResults } from "../contracts/nodeResult";
 import { createError } from "../middleware/errorHandler";
 import { BacktestLifecycleAdapter } from "../backtest";
 import { SchedulerLifecycleAdapter } from "./SchedulerLifecycleAdapter";
@@ -131,19 +132,19 @@ export class WorkflowLifecycleService {
             trigger.node,
           );
           const { control, ...initOutput } = output;
-          const nodeResults = { [trigger.node.id]: initOutput, ...control?.ownedNodeResults };
+          const nodeResults = serializeNodeResults({ [trigger.node.id]: initOutput, ...control?.ownedNodeResults });
           result = {
-            success: output.success === true,
+            success: output.status === "success",
             resultFinalized: true,
             nodeResults,
             executionOrder: [trigger.node.id, ...(control?.ownedExecutionOrder ?? [])],
             nodeOutcomes: createNodeOutcomes(workflow.nodes.map((node: { id: string }) => node.id),
-              nodeResults, output.success ? "skipped" : "not-executed"),
-            ...(!output.success ? { error: {
+              nodeResults, output.status === "success" ? "skipped" : "not-executed"),
+            ...(output.status !== "success" ? { error: {
               code: "BACKTEST_FAILED", message: output.error ?? "Backtest execution failed", phase: "execute" as const,
             } } : {}),
           };
-          if (!output.success) throw new Error(result.error!.message);
+          if (output.status !== "success") throw new Error(result.error!.message);
           completed = await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "success", null, result);
         } catch (error: unknown) {
           await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "failed",

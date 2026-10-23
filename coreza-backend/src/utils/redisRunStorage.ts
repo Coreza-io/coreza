@@ -1,3 +1,4 @@
+import { serializeNodeResults } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -107,7 +108,7 @@ export async function updateRunStatusInRedis(
 
   if (executionResult !== undefined) {
     const normalized = normalizeRedisRunResultUpdate(executionResult);
-    if (normalized.result !== undefined) updates.result = JSON.stringify(normalized.result);
+    if (normalized.result !== undefined) updates.result = JSON.stringify({ ...normalized.result, nodeResults: serializeNodeResults(normalized.result.nodeResults) });
     if (normalized.errorMessage) updates.error_message = normalized.errorMessage;
   }
 

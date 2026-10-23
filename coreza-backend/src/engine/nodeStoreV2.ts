@@ -1,3 +1,4 @@
+import { decodeLegacyNodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -163,6 +164,7 @@ export class NodeStoreV2 {
 
   // Node result management
   setNodeResult(nodeId: string, result: any) {
+    result = decodeLegacyNodeResult(result, "executor");
     this.nodeResults.set(nodeId, result);
     if (this._cachedResults) {
       this._cachedResults[nodeId] = result;
@@ -192,7 +194,8 @@ export class NodeStoreV2 {
    * Used for BacktestInit results that never change between bars.
    */
   pinResults(results: Record<string, any>): void {
-    for (const [nodeId, result] of Object.entries(results)) {
+    for (const [nodeId, value] of Object.entries(results)) {
+      const result = decodeLegacyNodeResult(value, "pin");
       this.pinnedResults.set(nodeId, result);
       this.nodeResults.set(nodeId, result);
       if (this._cachedResults) {

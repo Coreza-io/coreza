@@ -1,3 +1,4 @@
+import { isNodeResult } from "@/utils/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -506,7 +507,7 @@ export class WorkflowExecutor {
         }
 
         // Check for webhook data (TelegramTrigger, WebhookTrigger, etc.)
-        if (output?.webhookPayload) {
+        if ((isNodeResult(output) ? output.data : output)?.webhookPayload) {
           clearTimeout(timeoutId);
           if (import.meta.env.DEV) console.log(
             `📨 [WEBHOOK] Node ${nodeId} received webhook event:`,
@@ -649,8 +650,7 @@ export class WorkflowExecutor {
       if (import.meta.env.DEV) console.log(
         `📌 [WORKFLOW EXECUTOR] Using pinned output for node ${nodeId}`,
       );
-      this.nodeStore.setNodeData(nodeId, { output: pinnedOutput });
-      return pinnedOutput;
+      return this.invokeNormalNode(nodeId);
     }
 
     // Check if this is a streaming node

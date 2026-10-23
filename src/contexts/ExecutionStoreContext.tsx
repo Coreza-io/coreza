@@ -1,3 +1,4 @@
+import { publishNodeResult } from "@/utils/publishNodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -63,10 +64,9 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
   }), [notifyUpdate]);
 
   const publishSocketUpdate = useCallback((nodeId: string, patch: Partial<NodeExecutionData>) => {
-    if (!getNodeById(nodeId)) return;
-    storeRef.current!.setNodeData(nodeId, patch);
-    updateNodeData(nodeId, patch);
-    notifyUpdate();
+    const { output, ...flags } = patch;
+    publishNodeResult(output, "listener", { nodeId, isCurrent: () => !!getNodeById(nodeId),
+      updateNodeData, store: storeRef.current!, notify: notifyUpdate }, flags);
   }, [getNodeById, updateNodeData, notifyUpdate]);
 
   // WebSocket listener for streaming market data
@@ -176,7 +176,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                   isTestListening: false,
                   output: {
                     error: error?.message ?? 'Trigger stopped due to an error',
-                    errorCode: error?.code,
+                    code: error?.code,
                     endedAt: message.timestamp,
                   },
                 });

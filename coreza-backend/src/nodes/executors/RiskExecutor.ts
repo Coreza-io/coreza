@@ -38,14 +38,7 @@ export class RiskExecutor implements INodeExecutor {
 
       console.log(`⚖️ Executing ${node.name} node:`, node.id);
       const result = RiskEngineService.evaluate(resolvedParams);
-      if (!result.success) {
-        const errOutput = createErrorOutput(
-          result.error || "Risk evaluation failed",
-        );
-        return toNodeResult(errOutput);
-      }
-      const successOutput = createSuccessOutput(result.data);
-      return toNodeResult(successOutput);
+      return result;
     } catch (error) {
       const errOutput = createErrorOutput(
         `Risk engine execution failed: ${error instanceof Error ? error.message : String(error)}`,

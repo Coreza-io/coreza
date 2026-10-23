@@ -1,3 +1,4 @@
+import { isNodeResult, resultState, type NodeResult } from "./nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -28,7 +29,6 @@ export interface NewsPayload {
 }
 
 export interface NewsStreamOutput {
-  status: "waiting" | "streaming";
   message?: string;
   symbols?: string[];
   news: NewsPayload;
@@ -38,8 +38,7 @@ export interface NewsStreamOutput {
 
 export const createWaitingNewsOutput = (
   overrides: Partial<NewsStreamOutput> = {}
-): NewsStreamOutput => ({
-  status: "waiting",
+): NodeResult<NewsStreamOutput> => resultState<NewsStreamOutput>("waiting", {
   message: overrides.message ?? "Waiting for news…",
   symbols: overrides.symbols ?? [],
   news: (overrides.news as NewsPayload) ?? {},
@@ -48,21 +47,21 @@ export const createWaitingNewsOutput = (
 });
 
 export const appendNewsItem = (
-  current: Partial<NewsStreamOutput> | undefined,
+  prior: Partial<NewsStreamOutput> | NodeResult<NewsStreamOutput> | undefined,
   news: NewsPayload,
   options: {
     nodeId?: string;
     symbols?: string[];
     receivedAt?: string;
   } = {}
-): NewsStreamOutput => {
+): NodeResult<NewsStreamOutput> => {
+  const current = isNodeResult(prior) ? prior.data : prior;
   const receivedAt = options.receivedAt ?? new Date().toISOString();
 
-  return {
-    status: "streaming",
+  return resultState<NewsStreamOutput>("streaming", {
     message: current?.message,
     symbols: options.symbols ?? news.symbols ?? current?.symbols ?? [],
     news,
     lastReceivedAt: receivedAt,
-  };
+  });
 };

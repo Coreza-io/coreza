@@ -1,3 +1,4 @@
+import { readPublicNodeResult, resultState } from "@/utils/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -28,8 +29,8 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
   const [localOutput, setLocalOutput] = useState<{ session: unknown; value: unknown } | null>(null);
   const sessionId = data.workflowSessionId;
   const setLastOutput = useCallback((value: unknown) => setLocalOutput({ session: sessionId, value }), [sessionId]);
-  const fallback = useMemo(() => isNewsStreamNode(definition) ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined }) : { status: "pending" }, [definition, nodeId]);
-  const pinnedOutput = data.readOnly ? null : data.pinnedOutput ?? null;
+  const fallback = useMemo(() => isNewsStreamNode(definition) ? createWaitingNewsOutput({ nodeId: nodeId ?? undefined }) : resultState("pending", null), [definition, nodeId]);
+  const pinnedOutput = useMemo(() => data.readOnly || data.pinnedOutput == null ? null : readPublicNodeResult(data.pinnedOutput, "pin"), [data.readOnly, data.pinnedOutput]);
   const isPinned = pinnedOutput !== null;
   const runtime = nodeId ? store.storeMap.get(nodeId) : undefined;
   // Explicit null/falsy output remains distinct from a missing output property.
@@ -37,12 +38,13 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
     : owns(data, "output") ? (!data.readOnly && ["listening", "streaming"].includes(data.output?.status) ? fallback : data.output)
     : localOutput?.session === sessionId ? localOutput.value : fallback;
   void executionData;
-  const displayedData = isPinned ? pinnedOutput : unpinned;
+  const displayedData = useMemo(() => isPinned ? pinnedOutput : readPublicNodeResult(unpinned, "history"), [isPinned, pinnedOutput, unpinned]);
   useEffect(() => {
     if (localOutput && (localOutput.session !== sessionId || (!runtime && data.output === undefined))) setLocalOutput(null);
   }, [sessionId, executionData, data.output, runtime, localOutput]);
 
-  const syncPinnedOutput = useCallback((value: unknown | null) => {
+  const syncPinnedOutput = useCallback((raw: unknown | null) => {
+    const value = raw === null ? null : readPublicNodeResult(raw, "pin");
     if (!nodeId || data.readOnly) return;
     if (!updateNodeData(nodeId, { pinnedOutput: value ?? undefined, ...(value !== null ? { output: value } : {}) })) return;
     store.setPinned(nodeId, value);

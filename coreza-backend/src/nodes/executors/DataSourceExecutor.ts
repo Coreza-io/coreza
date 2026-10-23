@@ -151,20 +151,7 @@ export class DataSourceExecutor implements INodeExecutor {
         ...combinedInput,
       });
 
-      if (!result.success) {
-        const errOutput = createErrorOutput(
-          result.error || `${nodeName} ${resolvedOperation} operation failed`,
-          { nodeId: node.id, nodeName, category: this.category },
-        );
-        return toNodeResult(errOutput);
-      }
-
-      const successOutput = createSuccessOutput(result.data, {
-        nodeId: node.id,
-        nodeName,
-        category: this.category,
-      });
-      return toNodeResult(successOutput);
+      return normalizeOutput(result, { nodeId: node.id, nodeName, category: this.category });
     } catch (error) {
       const errOutput = createErrorOutput(
         error instanceof Error
@@ -213,17 +200,7 @@ export class DataSourceExecutor implements INodeExecutor {
     params.workflow_id =
       params.workflow_id || params.workflowId || context?.workflowId;
 
-    const result = await storageService.execute(params);
-    if (!result.success) {
-      return toNodeResult(
-        createErrorOutput(
-          result.error || `${serviceKey} ${params.operation} operation failed`,
-          outputContext,
-        ),
-      );
-    }
-
-    return toNodeResult(normalizeOutput(result.data, outputContext));
+    return storageService.execute(params);
   }
 
   private clearResultCachesForRun(runId?: string): void {

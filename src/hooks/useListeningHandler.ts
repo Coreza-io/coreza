@@ -1,3 +1,4 @@
+import { decodeLegacyNodeResult } from "@/utils/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -44,6 +45,7 @@ export interface ListeningHandlerDeps {
   apiClient: typeof apiClient;
   accessToken?: string;
   abortRef: MutableRefObject<AbortController | null>;
+  publishOutput?: (output: unknown, patch: Record<string, any>) => void;
   isCurrent?: () => boolean;
   signal?: AbortSignal;
 }
@@ -93,8 +95,10 @@ export function createListeningHandler<TOutput = any>(
 
   const setNodeOutput = (output: TOutput, patch: Record<string, any>) => {
     if (!canPublish()) return;
-    setLastOutput(output);
-    executionStore.setNodeData(nodeId, { output, ...patch });
+    if (deps.publishOutput) { deps.publishOutput(output, patch); return; }
+    const result = decodeLegacyNodeResult(output, "listener");
+    setLastOutput(result);
+    executionStore.setNodeData(nodeId, { output: result, ...patch });
     setNodes((nds) =>
       nds.map((n) =>
         n.id === nodeId
@@ -102,7 +106,7 @@ export function createListeningHandler<TOutput = any>(
               ...n,
               data: {
                 ...n.data,
-                output,
+                output: result,
                 ...patch,
               },
             }

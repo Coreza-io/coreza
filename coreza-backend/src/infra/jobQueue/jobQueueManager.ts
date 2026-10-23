@@ -1,3 +1,4 @@
+import { decodeLegacyNodeResult } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -335,11 +336,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     const context = { userId, workflowId, runId, nodes, edges, abortSignal };
     const input = backtestInitNode?.values || {};
 
-    const result = await backtestExecutor.executeBacktestInit(
-      backtestInitNode,
-      input,
-      context,
-    );
+    const result = await backtestExecutor.execute(backtestInitNode, input, context);
 
     return result;
   }

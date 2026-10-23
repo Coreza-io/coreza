@@ -1,3 +1,4 @@
+import { decodeLegacyNodeResult, isFailedResult, NodeResultError, resultFailure } from "../contracts/nodeResult";
 import { createHash } from "crypto";
 import { isPersistentVariableEdit } from "../variables/contract";
 import { canContinueNodeError, continuedNodeError } from "../nodes/errorContinuation";
@@ -212,22 +213,20 @@ export abstract class BaseExecutionRuntime {
   }
 
   protected normalizeResult(raw: any, category: string): NodeResult {
-    if (raw && typeof raw === "object" && "success" in raw) {
-      if (!raw.success) {
-        if (raw.control?.ownedNodeResults) {
-          const order = raw.control.ownedExecutionOrder ?? Object.keys(raw.control.ownedNodeResults);
-          for (const nodeId of order) {
-            const result = raw.control.ownedNodeResults[nodeId];
-            if (result === undefined) continue;
-            this.store.setNodeResult(nodeId, result);
-            if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
-          }
+    const result = decodeLegacyNodeResult(raw, "executor");
+    if (isFailedResult(result)) {
+      if (result.control?.ownedNodeResults) {
+        const order = result.control.ownedExecutionOrder ?? Object.keys(result.control.ownedNodeResults);
+        for (const nodeId of order) {
+          const owned = result.control.ownedNodeResults[nodeId];
+          if (owned === undefined) continue;
+          this.store.setNodeResult(nodeId, owned);
+          if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
         }
-        throw new Error(raw.error || `Node execution failed: ${category}`);
       }
-      return raw;
+      throw new NodeResultError(result);
     }
-    return { data: raw?.data ?? raw };
+    return result;
   }
 
   protected routeLoop(
@@ -284,15 +283,12 @@ export abstract class BaseExecutionRuntime {
     if (!continued) this.failed.add(nodeId);
     this.failedNodeErrors.set(nodeId, errorMessage);
     this.store.setNodeError(nodeId, error instanceof Error ? error : new Error(errorMessage));
-    this.store.setNodeResult(nodeId, continuation ?? {
-      success: false,
-      data: null,
-      error: errorMessage,
-    });
+    this.store.setNodeResult(nodeId, continuation ? decodeLegacyNodeResult(continuation, "executor")
+      : error instanceof NodeResultError ? error.result : resultFailure(errorMessage));
     if (continuation) {
       const outgoing = name === "Loop" ? this.graph.doneEdges(nodeId)
-        : this.graph.getOutgoingEdges(nodeId).filter(edge => !continuation.result || edge.sourceHandle === continuation.result);
-      for (const edge of outgoing) this.routeEdge(edge, continuation, meta);
+        : this.graph.getOutgoingEdges(nodeId).filter(edge => !continuation.control?.sourceHandle || edge.sourceHandle === continuation.control?.sourceHandle);
+      for (const edge of outgoing) this.routeEdge(edge, decodeLegacyNodeResult(continuation, "executor"), meta);
       return;
     }
     if (this.options.mode === "fail-fast" || isPersistentVariableEdit(this.graph.nodeById.get(nodeId))) throw error;

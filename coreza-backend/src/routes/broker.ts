@@ -1,3 +1,4 @@
+import { toPublicNodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -163,17 +164,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       executionId: workflowSessionId || workflowId,
     });
 
-    if (result.success) {
-      return res.json({ success: true, data: result.data, meta: result.meta });
-    }
-
-    res.status(400).json({
-      success: false,
-      error: result.error,
-      code: result.code,
-      provider: result.provider,
-      recoverable: result.recoverable,
-    });
+    return res.status(result.status === "error" ? 400 : 200).json(toPublicNodeResult(result));
   } catch (err: any) {
     const status = err.response?.status;
     let message =

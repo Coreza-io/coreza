@@ -1,3 +1,4 @@
+import { resultSuccess } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -214,9 +215,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         console.warn(
           "[InitializeIndicators] No indicator nodes discovered in workflow",
         );
-        const normalized = normalizeOutput({
-          success: true,
-          data: {
+        const normalized = normalizeOutput(resultSuccess({
             warmup_completed: false,
             warmup_bars_used: 0,
             remaining_bars: candleData,
@@ -227,8 +226,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
             timeframe,
             message:
               "No indicator nodes found downstream. Passing all bars through.",
-          },
-        });
+          }));
         return toNodeResult(normalized);
       }
 
@@ -311,9 +309,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
         (r: any) => r.isReady,
       ).length;
 
-      const normalized = normalizeOutput({
-        success: true,
-        data: {
+      const normalized = normalizeOutput(resultSuccess({
           warmup_completed: true,
           warmup_bars_used: warmupPeriod,
           remaining_bars: remainingBars,
@@ -323,8 +319,7 @@ export class InitializeIndicatorsExecutor implements INodeExecutor {
           indicators: results,
           symbol,
           timeframe,
-        },
-      });
+        }));
       return toNodeResult(normalized);
     } catch (error) {
       const errOutput = createErrorOutput(

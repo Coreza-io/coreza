@@ -263,7 +263,6 @@ export function createWorkflowWorker({
 
           // Keep full StandardNodeOutput for each item, preserving structure
           const aggregatedOutput = results.map((r) => ({
-            success: r.success,
             status: r.status,
             data: r.data,
             error: r.error,

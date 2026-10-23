@@ -1,3 +1,4 @@
+import { resultSuccess } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -587,8 +588,8 @@ export class BacktestExecutor implements INodeExecutor {
       };
 
       const backtestInitResult: Record<string, any> = {
-        [node.id]: { success: true, data: backtestInitData },
-        BacktestInit: { success: true, data: backtestInitData },
+        [node.id]: resultSuccess(backtestInitData),
+        BacktestInit: resultSuccess(backtestInitData),
       };
 
       const isManual = !context?.runId;
@@ -824,13 +825,10 @@ export class BacktestExecutor implements INodeExecutor {
 
     const data = input?.data;
     if (!this._onBarResults.has(node.id)) {
-      this._onBarResults.set(node.id, {
-        success: true,
-        data: {
+      this._onBarResults.set(node.id, resultSuccess({
           BarSeries: [{ symbol: "", interval: "", bars: [null as any] }],
           barIndex: 0,
-        },
-      });
+        }));
     }
 
     // Mutate per-node pre-allocated template instead of creating new objects
@@ -974,9 +972,7 @@ export class BacktestExecutor implements INodeExecutor {
       const totalEquity = simBroker.getTotalEquity();
 
       if (!this._tradeResults.has(node.id)) {
-        this._tradeResults.set(node.id, {
-          success: true,
-          data: {
+        this._tradeResults.set(node.id, resultSuccess({
             order_id: "",
             order_status: "",
             fill_price: undefined,
@@ -992,8 +988,7 @@ export class BacktestExecutor implements INodeExecutor {
             total_equity: 0,
             pending_orders: 0,
             pending_orders_count: 0,
-          },
-        });
+          }));
       }
 
       const tradeResult = this._tradeResults.get(node.id)!;

@@ -1,3 +1,4 @@
+import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -353,15 +354,15 @@ export class IndicatorsExecutor implements INodeExecutor {
         processedParams,
       );
       const computeDuration = performance.now() - computeStart;
-      if (calculated.success && Array.isArray(calculated.data) && !calculated.data.length && observedBars >= requiredBars) {
+      if ((calculated.status === "success") && Array.isArray(calculated.data) && !calculated.data.length && observedBars >= requiredBars) {
         throw new Error('Indicator calculation returned no values');
       }
-      if (calculated.success && Array.isArray(calculated.data) && calculated.data.length &&
+      if ((calculated.status === "success") && Array.isArray(calculated.data) && calculated.data.length &&
           !this.finiteIndicatorValue(calculated.data.at(-1))) throw new Error('Indicator calculation returned an invalid value');
       const series = Array.isArray(calculated.data) ? calculated.data : undefined;
       const hasVolume = indicatorType !== 'vwap' || !series ||
         candleData.some((bar: any, index: number) => index >= (series.at(-1)?.sessionStart ?? 0) && Number(bar.volume ?? bar.v) > 0);
-      const result = calculated.success && Array.isArray(calculated.data)
+      const result = (calculated.status === "success") && Array.isArray(calculated.data)
         ? {
             ...calculated,
             data: toIndicatorOutput(indicatorType, {
@@ -373,7 +374,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         : calculated;
 
       context?.agentDataTrace?.('indicator_compute', () => ({ durationMs: computeDuration, inputRowCount: observedBars,
-        observedBars, requiredBars, success: calculated.success, result: toolResultSummary(result.data, true) }));
+        observedBars, requiredBars, success: (calculated.status === "success"), result: toolResultSummary(result.data, true) }));
       const normalized = normalizeOutput(result, {
         nodeId: node.id,
         nodeName: node.name,
@@ -563,27 +564,19 @@ export class IndicatorsExecutor implements INodeExecutor {
         | undefined;
 
       if (!window) {
-        return {
-          success: false,
-          data: buildRollingWindowNotFoundPayload(
+        return resultFailure("Node execution failed", { data: buildRollingWindowNotFoundPayload(
             requestedSymbol,
             requestedTimeframe,
-          ),
-          meta: {
+          ), meta: {
             key: storeKey,
             timeframe: requestedTimeframe,
-          },
-        };
+          } });
       }
 
-      return {
-        success: true,
-        data: buildRollingWindowPayload(window),
-        meta: {
+      return resultSuccess(buildRollingWindowPayload(window), { meta: {
           key: storeKey,
           timeframe: requestedTimeframe,
-        },
-      };
+        } });
     }
 
     const size = clampWindowSize(params.size);
@@ -628,10 +621,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       window.add(bar);
     }
     const payload = buildRollingWindowPayload(window);
-    const rw = this.rollingWindowResults.get(node.id) ?? {
-      success: true,
-      data: {},
-    };
+    const rw = this.rollingWindowResults.get(node.id) ?? resultSuccess({});
     Object.assign(rw.data, payload);
     this.rollingWindowResults.set(node.id, rw);
     return rw;
@@ -719,8 +709,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     context?.agentDataTrace?.('indicator_readiness', { observedBars: state.observedBars,
       requiredBars: state.requiredWarmupBars, isReady: state.isReady && hasVolume,
       durationMs: stateStart === undefined ? undefined : performance.now() - stateStart });
-    return { success: true, data: toIndicatorOutput(indicatorType, { ...state, isReady: state.isReady && hasVolume }),
-      meta: { requiredBars: state.requiredWarmupBars,
-        ...(!hasVolume ? { readinessReason: 'VWAP requires positive volume in the current session' } : {}) } };
+    return resultSuccess(toIndicatorOutput(indicatorType, { ...state, isReady: state.isReady && hasVolume }), { meta: { requiredBars: state.requiredWarmupBars,
+        ...(!hasVolume ? { readinessReason: 'VWAP requires positive volume in the current session' } : {}) } });
   }
 }

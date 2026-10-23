@@ -10,6 +10,7 @@
     "test:browser": "playwright test",
     "lint": "eslint .",
     "preview": "vite preview",
+    "check:node-results": "node scripts/check-node-result-contract.cjs",
     "validate:nodes": "npx tsx scripts/validate-nodes.ts",
     "prebuild": "npm run validate:nodes"
   },

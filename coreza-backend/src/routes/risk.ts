@@ -20,7 +20,7 @@ router.use(requireAuth);
 router.post("/engine", async (req, res) => {
   try {
     const result = RiskEngineService.evaluate(req.body);
-    if (!result.success) {
+    if (result.status === "error") {
       return res.status(400).json({ error: result.error });
     }
     res.json(result);

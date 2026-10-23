@@ -1,3 +1,4 @@
+import { isNodeResult } from "@/utils/nodeResult";
 import type { ListeningConfig } from "@/hooks/useListeningHandler";
 import type { NodeConfig } from "@/nodes/schemas/nodeSchema";
 
@@ -56,12 +57,12 @@ export const buildWebhookListeningConfig = ({
       provider,
     }),
     buildListeningNodeData: () => ({ testListenWorkflowId: workflowId, testListenNodeId: nodeId }),
-    isDataReceived: (nodeData) => Boolean(nodeData?.output?.[waitField]),
+    isDataReceived: (nodeData) => Boolean((isNodeResult(nodeData?.output) ? nodeData.output?.data : nodeData?.output)?.[waitField]),
     shouldStop: (nodeData) => nodeData?.[listeningFlag] === false,
     buildSuccessOutput: (nodeData) => nodeData.output,
     buildTimeoutOutput: (listeningOutput) => ({
       ...(listeningOutput ?? {}),
-      status: "error",
+      status: "timeout",
       message: `Timeout waiting for webhook event after ${
         timeout / 60000
       } minutes`,
@@ -177,15 +178,17 @@ export const buildStreamingSubscribeListeningConfig = ({
       lastActionMessage: res?.message,
     }),
     isDataReceived: (nodeData) => {
-      const output = nodeData?.output;
+      const result = nodeData?.output;
+      const status = isNodeResult(result) ? result.status : result?.status;
+      const output = isNodeResult(result) ? result.data : result;
       return Boolean(
-        output?.status === "streaming" &&
-        (output.news ||
-          output.data ||
-          output.trade ||
-          output.quote ||
-          output.bar ||
-          output.dailyBar),
+        status === "streaming" &&
+        (output?.news ||
+          output?.data ||
+          output?.trade ||
+          output?.quote ||
+          output?.bar ||
+          output?.dailyBar),
       );
     },
     buildSuccessOutput: (nodeData) => nodeData.output,

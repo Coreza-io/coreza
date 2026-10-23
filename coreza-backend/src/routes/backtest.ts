@@ -95,8 +95,8 @@ router.post("/init", async (req: Request, res: Response) => {
       { userId, workflowSessionId, workflowId, nodes, edges },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
     return res.json(result);
@@ -262,8 +262,8 @@ router.post("/trade", async (req: Request, res: Response) => {
       { userId },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
     return res.json({ success: true, data: result.data, meta: result.meta });
@@ -298,8 +298,8 @@ router.post("/results", async (req: Request, res: Response) => {
       { userId },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
     return res.json({ success: true, data: result.data, meta: result.meta });
@@ -334,8 +334,8 @@ router.post("/portfolio", async (req: Request, res: Response) => {
       { userId },
     );
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
+    if (result.status === "error") {
+      return res.status(400).json(result);
     }
 
     return res.json({ success: true, data: result.data, meta: result.meta });

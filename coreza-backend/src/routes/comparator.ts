@@ -53,7 +53,7 @@ router.post("/if", async (req, res) => {
       };
       const result = await ComparatorService.evaluate(conditionInput);
 
-      if (!result.success) {
+      if (result.status === "error") {
         return res.status(400).json({
           error: "Failed to evaluate condition",
           details: result.error,
@@ -141,7 +141,7 @@ router.post("/switch", async (req, res) => {
       defaultCase,
     );
 
-    if (!result.success) {
+    if (result.status === "error") {
       return res.status(500).json({
         error: "Failed to evaluate switch cases",
         details: result.error,
@@ -314,7 +314,7 @@ router.post("/compute", async (req, res) => {
       extremeDirection,
       extremeReturn,
     });
-    if (!result.success) {
+    if (result.status === "error") {
       return res.status(400).json({ error: result.error });
     }
 

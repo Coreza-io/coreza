@@ -1,3 +1,4 @@
+import { readPublicNodeResult } from "./nodeResult";
 interface InputNode {
   id: string;
   data: Record<string, unknown>;
@@ -74,9 +75,9 @@ export function resolveLiveInputData(
 ): unknown {
   if (!selectedId) return {};
   const executionData = getExecutionData(selectedId);
-  if (owns(executionData, "output")) return executionData.output;
+  if (owns(executionData, "output")) return readPublicNodeResult(executionData.output, "history");
   const nodeData = nodes.find(({ id }) => id === selectedId)?.data;
-  if (owns(nodeData, "output")) return nodeData.output;
+  if (owns(nodeData, "output")) return readPublicNodeResult(nodeData.output, "history");
   if (owns(nodeData, "input")) return nodeData.input;
   return {};
 }

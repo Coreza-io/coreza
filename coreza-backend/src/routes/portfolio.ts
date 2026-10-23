@@ -150,10 +150,10 @@ router.post("/", async (req: Request, res: Response) => {
       },
     );
 
-    if (!result.success) {
+    if (result.status === "error") {
       return res
         .status(400)
-        .json({ error: result.error || "Portfolio execution failed" });
+        .json(result);
     }
 
     return res.json(result);

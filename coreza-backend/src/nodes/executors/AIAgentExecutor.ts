@@ -563,11 +563,11 @@ export class AIAgentExecutor implements INodeExecutor {
             toolContext,
           );
           ensureActive();
-          trace('execute', { durationMs: performance.now() - executeStart, success: result.success });
-          trace('executor_result', () => ({ operation, success: result.success,
+          trace('execute', { durationMs: performance.now() - executeStart, success: result.status === "success" });
+          trace('executor_result', () => ({ operation, success: result.status === "success",
             result: toolResultSummary(result.data, executorCategory === 'Indicators') }));
 
-          if (!result.success) {
+          if (result.status === "error") {
             throw new Error(result.error || "Tool execution failed");
           }
 
@@ -584,7 +584,7 @@ export class AIAgentExecutor implements INodeExecutor {
           // Workflow outputs retain their legacy placeholders; the LLM must not
           // interpret an unavailable previous sample as a real zero/crossover.
           const outputData = executorCategory === 'Indicators' && result.data?.IsReady === true &&
-            (result.meta?.series?.length === 1 || result.data.SampleCount <= result.meta?.requiredBars)
+            (result.meta?.series?.length === 1 || (typeof result.meta?.requiredBars === "number" && result.data.SampleCount <= result.meta.requiredBars))
             ? { ...result.data, Previous: null, previousValue: null } : result.data;
           // Process output through dataRef pattern (use normalized name for matching)
           const processedOutput = processToolOutput(

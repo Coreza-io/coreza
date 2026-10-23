@@ -1,3 +1,4 @@
+import { decodeLegacyNodeResult } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -117,7 +118,7 @@ export function compilePlan(
   for (const [nodeId, value] of Object.entries(pinnedResults)) {
     const slot = nextSlot++;
     slotMap.set(nodeId, slot);
-    pinnedSlotEntries.push({ slotIndex: slot, value });
+    pinnedSlotEntries.push({ slotIndex: slot, value: decodeLegacyNodeResult(value, "pin") });
   }
 
   const nodeIdToInstrIndex = new Map<string, number>();

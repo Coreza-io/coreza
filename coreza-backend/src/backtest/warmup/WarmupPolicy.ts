@@ -1,3 +1,4 @@
+import { resultFailure, resultSuccess } from "../../contracts/nodeResult";
 import { resolveCategory } from "../../nodes/categoryMap";
 import type { NodeResult, WorkflowNode } from "../../nodes/types";
 import type { WarmupNodePolicy } from "./types";
@@ -66,12 +67,7 @@ export function enforceWarmupPolicy(
   const policy = resolveWarmupPolicy(node);
   if (policy === "execute") return undefined;
   if (policy === "reject") {
-    return {
-      success: false,
-      data: null,
-      code: "ORDER_DURING_WARMUP",
-      error: "Trading operations are disabled during warm-up",
-    };
+    return resultFailure("Trading operations are disabled during warm-up", { details: { code: "ORDER_DURING_WARMUP" } });
   }
-  return { success: true, data: null, warmupSuppressed: true };
+  return resultSuccess(null, { warmupSuppressed: true });
 }

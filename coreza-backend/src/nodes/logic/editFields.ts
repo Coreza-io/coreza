@@ -1,3 +1,4 @@
+import { isNodeResult, decodeLegacyNodeResult } from "../../contracts/nodeResult";
 import { VARIABLE_LIMITS, validateVariable, type VariableChange } from "../../variables/contract";
 import { pickTypedJsonSource } from "./typedExpressionContext";
 import { restoreExpressionTransport } from "./expressionTransport";
@@ -363,13 +364,13 @@ export function applyTypedFieldRow(
 
 /** Unwrap both standard outputs and the compact NodeResult used by backtests. */
 function extractFieldInputData(value: unknown): unknown {
+  if (isNodeResult(value)) return value.data;
   if (
     isPlainObject(value) &&
     typeof value.success === "boolean" &&
-    value.status === undefined &&
     Object.prototype.hasOwnProperty.call(value, "data")
   ) {
-    return value.data;
+    return decodeLegacyNodeResult(value, "executor").data;
   }
   return extractOutputData(value);
 }

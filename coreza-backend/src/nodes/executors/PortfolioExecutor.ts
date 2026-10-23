@@ -1,3 +1,4 @@
+import { NodeResultError } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -645,8 +646,8 @@ export class PortfolioExecutor implements INodeExecutor {
       context,
     );
 
-    if (!result.success) {
-      throw new Error(result.error || `Broker operation ${operation} failed`);
+    if (result.status === "error") {
+      throw new NodeResultError(result);
     }
 
     return result.data;

@@ -282,7 +282,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -296,7 +296,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -310,7 +310,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -324,7 +324,7 @@ export class ComparatorService {
           const right = parseValueByType(input.right, dataType);
           const parsedDates = parseDateComparisonValues(left, right);
 
-          if (!parsedDates.success || !parsedDates.data) {
+          if (parsedDates.status === "error" || !parsedDates.data) {
             return createErrorOutput(
               parsedDates.error || "Invalid date value in comparison",
             );
@@ -412,7 +412,7 @@ export class ComparatorService {
       for (let i = 0; i < cases.length; i++) {
         const caseResult = this.evaluate(cases[i].condition);
 
-        if (!caseResult.success) {
+        if (caseResult.status === "error") {
           return createErrorOutput(
             caseResult.error || "Switch case evaluation failed",
           );

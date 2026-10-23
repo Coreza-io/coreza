@@ -1,3 +1,4 @@
+import { readPublicNodeResult } from "./nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -28,7 +29,7 @@ export function buildPreviewData(
   if (recordedOnly) {
     previousNodes.forEach(node => {
       if (Object.prototype.hasOwnProperty.call(node.data, "output")) {
-        allNodeData[node.id] = node.data.output;
+        allNodeData[node.id] = readPublicNodeResult(node.data.output, "history");
       }
     });
     return { allNodeData, getSourceData: sourceId => allNodeData[sourceId] };
@@ -39,7 +40,8 @@ export function buildPreviewData(
 
     let nodeData = executionStore.getNodeData(prevNode.id).output;
     if (nodeData === undefined) {
-      nodeData = prevNode.data?.pinnedOutput ?? (prevNode.data?.output !== undefined ? prevNode.data.output : prevNode.data ?? {});
+      nodeData = prevNode.data?.pinnedOutput != null ? readPublicNodeResult(prevNode.data.pinnedOutput, "pin")
+        : prevNode.data?.output !== undefined ? readPublicNodeResult(prevNode.data.output, "history") : {};
     }
 
     if (typeof displayName === "string") {
@@ -60,7 +62,8 @@ export function buildPreviewData(
       return storeOutput;
     }
 
-    return srcNode.data?.pinnedOutput ?? (srcNode.data?.output !== undefined ? srcNode.data.output : srcNode.data ?? {});
+    return srcNode.data?.pinnedOutput != null ? readPublicNodeResult(srcNode.data.pinnedOutput, "pin")
+      : srcNode.data?.output !== undefined ? readPublicNodeResult(srcNode.data.output, "history") : {};
   };
 
   return { allNodeData, getSourceData };

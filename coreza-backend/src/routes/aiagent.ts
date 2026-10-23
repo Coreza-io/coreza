@@ -1,3 +1,4 @@
+import { toPublicNodeResult } from "../contracts/nodeResult";
 /** Manual Agent JSON execution; activity is an optional, separately scoped channel. */
 import { randomUUID } from "crypto";
 import { Router, Request, Response } from "express";
@@ -79,9 +80,7 @@ router.post("/execute", async (req: Request, res: Response) => {
     };
     const result = await aiAgentExecutor.execute(node, {}, context);
     const agentActivity = scopeId ? getActivitySummary(userId, scopeId) : undefined;
-    if (!result.success) return res.status(500).json({ success: false,
-      error: result.error || "AI Agent execution failed", ...(agentActivity ? { agentActivity } : {}) });
-    res.json({ success: true, data: result.data, ...(agentActivity ? { agentActivity } : {}) });
+    res.status(result.status === "error" ? 500 : 200).json({ ...toPublicNodeResult(result), ...(agentActivity ? { agentActivity } : {}) });
   } catch (error: any) {
     const cancelled = controller.signal.aborted || error?.name === "AbortError";
     const agentActivity = scopeId && req.user ? getActivitySummary(req.user.id, scopeId) : undefined;

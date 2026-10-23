@@ -24,6 +24,19 @@ No tests, type checks, lint, builds, browser checks, broker requests, benchmarks
 
 This PR implements the shared contract, producers, migration boundaries and an optional static contract guard. Manifest-derived runtime regression coverage and acceptance evidence remain follow-ups after validation is authorized. Existing unsupported node/mode combinations are not made executable by an output formatter. No scheduler, broker, database schema, dependency or expression-language redesign is included. Deploy the compatible frontend readers with/before canonical server producers; old HTTP callers use the named transport adapter. Rollback keeps readers and changes producer enablement; saved rows need no conversion.
 
+## Source review corrections
+
+The PR review traced broker results through historical candle loading, server cluster pins, manual HTTP/listeners, continued-error routing, and run-history writes. Corrections:
+
+- Historical candle loading checks status and carries structured broker failures through its contextual errors.
+- Server cluster pins decode once, preserve falsy values, and treat null/undefined as unpinned; canonical pinned results are not nested inside another result.
+- Continued failures retain partial data, diagnostics and metadata. Editor outputs strip control; the frontend executor carries the selected continuation separately so If/Switch routing still works.
+- Canonical HTTP Request errors retain their diagnostics and response metadata, including headers. Legacy HTTP clients retain top-level broker diagnostic fields and use the same JSON safety projection.
+- Listener decoding retains captured update timestamps and known stream fields. Broker telemetry remains its own trace protocol.
+- Redis history projects both nodeResults and cluster boundary result values so routing control cannot leak through boundary snapshots.
+
+These are source review corrections only. No tests or application execution were performed; existing regression fixtures still require migration/validation with the status-only contract.
+
 ## Authored node and operation inventory
 
 The following table is generated from all 73 authored definitions and the existing category mapping. Operations list the declared operation/mode/method options. Manual, cluster and Run All use normal editor actions; server live/classic/compiled paths use the executor boundary where supported. Model/memory attachments do not execute merely to populate output. This inventory describes source ownership, not evidence that every operation/mode has passed runtime acceptance.

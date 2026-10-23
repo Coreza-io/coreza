@@ -133,9 +133,9 @@ export function decodeLegacyNodeResult(value: unknown, source: LegacySource): No
     ...(["timeout", "expired"].includes(status ?? "") ? { code: status === "timeout" ? "LISTENER_TIMEOUT" : "LISTENER_EXPIRED" } : {}),
   });
   const extras = Object.fromEntries(Object.entries(value).filter(([key]) => !["success", "status", "data", "error", "details", "meta", "control", "warmupSuppressed", "code", "provider", "recoverable", "formatVersion"].includes(key)));
-  const legacyFields = Object.fromEntries(Object.entries(extras).filter(([key]) => ["pagination", "cursor", "nextCursor", "total", "count", "channels", "callback_url", "subscriptionType", "index", "isLastBatch", "result", "source", "symbols", "message", "receivedAt", "lastReceivedAt"].includes(key)));
+  const legacyFields = Object.fromEntries(Object.entries(extras).filter(([key]) => ["pagination", "cursor", "nextCursor", "total", "count", "channels", "callback_url", "subscriptionType", "index", "isLastBatch", "result", "source", "symbols", "message", "receivedAt", "lastReceivedAt", "lastUpdate", "endedAt", "startedAt", "subscribedAt", "streamType", "streamTypes", "scope", "mode", "headers", "statusText"].includes(key)));
   const capturedTimestamp = typeof value.meta?.timestamp === "string" ? undefined : typeof value.timestamp === "string" ? value.timestamp
-    : source === "listener" ? value.receivedAt ?? value.lastReceivedAt ?? value.startedAt ?? value.subscribedAt : undefined;
+    : source === "listener" ? value.receivedAt ?? value.lastReceivedAt ?? value.lastUpdate ?? value.endedAt ?? value.startedAt ?? value.subscribedAt : undefined;
   const hasLegacyFields = owns(value, "data") && Object.keys(legacyFields).length > 0;
   const data = owns(value, "data") ? value.data : Object.keys(extras).length ? extras : null;
   const result = resultState(resolvedStatus, data, {

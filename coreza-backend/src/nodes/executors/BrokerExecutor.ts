@@ -351,7 +351,9 @@ export class BrokerExecutor implements INodeExecutor {
       const normalized = createSuccessOutput(data);
       return toNodeResult(normalized);
     } catch (error) {
-      if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', resultFailure("Node execution failed", { data: { durationMs: performance.now() - fetchStart, operation } }));
+      if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
+        durationMs: performance.now() - fetchStart, operation, success: false,
+      });
       console.error(`❌ [BROKER] Execution failed:`, safeToolError(error));
       let enrichedError =
         typeof error === "object" &&

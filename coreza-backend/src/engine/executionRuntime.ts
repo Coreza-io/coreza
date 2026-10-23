@@ -278,7 +278,10 @@ export abstract class BaseExecutionRuntime {
     const name = node?.name ?? node?.type;
     const values = node?.values ?? {};
     const continued = !this.options.abortSignal?.aborted && !!node && !isPersistentVariableEdit(node) && canContinueNodeError(name, values);
-    const continuation = continued ? continuedNodeError(name, values, errorMessage) : undefined;
+    const continuedResult = continued ? continuedNodeError(name, values, errorMessage) : undefined;
+    const continuation = continuedResult && error instanceof NodeResultError
+      ? { ...error.result, control: { ...error.result.control, ...continuedResult.control } }
+      : continuedResult;
     this.executionOrder.push(nodeId);
     if (!continued) this.failed.add(nodeId);
     this.failedNodeErrors.set(nodeId, errorMessage);

@@ -8,6 +8,7 @@
  * See the LICENSE file for details.
  */
 
+import { NodeResultError } from "../contracts/nodeResult";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import type { Bar } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
@@ -116,10 +117,10 @@ export class HistoricalDataService {
       workflowId: context.workflowId || "backtest-init",
       runId: context.runId || context.workflowSessionId || `backtest-${Date.now()}`,
     });
-    if (!result.success) {
-      throw new Error(
-        `Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${input.start}..${input.end}): ${result.error}`,
-      );
+    if (result.status !== "success") {
+      throw new NodeResultError({ ...result,
+        error: `Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${input.start}..${input.end}): ${result.error}`,
+      });
     }
     const bars = result.data?.BarSeries?.[0]?.bars;
     return normalizeHistoricalBars(Array.isArray(bars) ? bars : []);
@@ -145,9 +146,8 @@ export class HistoricalDataService {
         eligible = bars.filter((bar) => historicalBarTimestamp(bar) < boundary);
         if (eligible.length >= count) return eligible.slice(-count);
       } catch (error) {
-        throw new Error(
-          `Previous-bars request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${new Date(boundary - lookbackMs).toISOString()}..${new Date(boundary).toISOString()}, attempt=${attempt}/${MAX_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const message = `Previous-bars request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${new Date(boundary - lookbackMs).toISOString()}..${new Date(boundary).toISOString()}, attempt=${attempt}/${MAX_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`;
+        throw error instanceof NodeResultError ? new NodeResultError({ ...error.result, error: message }) : new Error(message);
       }
       lookbackMs *= 2;
     }

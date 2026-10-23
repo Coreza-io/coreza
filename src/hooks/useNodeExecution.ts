@@ -1,4 +1,4 @@
-import { decodeLegacyNodeResult, isNodeResult, isFailedResult, resultFailure, resultSuccess, type ResultErrorDetails } from "@/utils/nodeResult";
+import { decodeLegacyNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
@@ -397,18 +397,20 @@ export function useNodeExecution({
     ],
   );
 
-  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, code?: string, details?: ResultErrorDetails, partialData?: unknown): NodeExecutionOutcome => {
+  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, code?: string, details?: ResultErrorDetails, partialData?: unknown, meta?: ResultMeta): NodeExecutionOutcome => {
     const outcomeNodeId = nodeId ?? "unknown";
     if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
     if (overrideOutput !== null && overrideOutput !== undefined) {
-      return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
+      return { nodeId: outcomeNodeId, status: "pinned", output: toPublicNodeResult(decodeLegacyNodeResult(overrideOutput, "pin")) };
     }
     const continued = canContinueNodeError(definition?.name, fieldState);
     const continuation = continued ? continuedNodeError(definition?.name, fieldState, message, code) : undefined;
-    const output = continuation ? decodeLegacyNodeResult(continuation, "executor") : resultFailure(message, {
-      data: partialData,
+    const output = toPublicNodeResult(resultFailure(message, {
+      data: partialData === undefined ? continuation?.data : partialData,
       details: { ...details, ...(code !== undefined ? { code } : {}) },
-    });
+      ...(meta ? { meta } : {}),
+      ...(continuation ? { control: continuation.control } : {}),
+    }));
     setError(message);
     if (nodeId) publishNodeResult(output, "executor", {
       nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
@@ -458,12 +460,13 @@ export function useNodeExecution({
           definition?.name || "Unknown",
         );
         setError("");
-        if (nodeId) publishNodeResult(overrideOutput, "pin", {
+        const output = toPublicNodeResult(decodeLegacyNodeResult(overrideOutput, "pin"));
+        if (nodeId) publishNodeResult(output, "pin", {
           nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
           notify: notifyExecutionStoreUpdate, setLastOutput,
         }, { input: inputOverride ?? currentSelectedInput });
         setIsSending(false);
-        return { nodeId: outcomeNodeId, status: "pinned", output: overrideOutput };
+        return { nodeId: outcomeNodeId, status: "pinned", output };
       }
 
       if (import.meta.env.DEV) {
@@ -777,7 +780,12 @@ export function useNodeExecution({
           const activitySummary = definition?.name === "AIAgent" ? responseData.agentActivity : undefined;
           if (definition?.name === "AIAgent") delete responseData.agentActivity;
           const responseResult = definition?.name === "HttpRequest" && !isNodeResult(responseData) && typeof responseData.status === "number"
-            ? resultSuccess(responseData.data, { meta: { http: { status: responseData.status, statusText: responseData.statusText } } })
+            ? res.ok
+              ? resultSuccess(responseData.data, { meta: { http: { status: responseData.status, statusText: responseData.statusText, headers: responseData.headers } } })
+              : resultFailure(responseData.message || responseData.error || "HTTP request failed", {
+                  data: responseData.data, details: { status: responseData.status },
+                  meta: { http: { status: responseData.status, statusText: responseData.statusText, headers: responseData.headers } },
+                })
             : decodeLegacyNodeResult(responseData, "manual");
           if (responseResult.status === "cancelled") {
             agentActivity?.finish(activitySummary, "cancelled");
@@ -803,7 +811,7 @@ export function useNodeExecution({
             return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
           }
           if (!res.ok || isFailedResult(responseResult))
-            throw new Error(JSON.stringify(responseData) || "Action failed");
+            throw new Error(JSON.stringify(responseResult) || "Action failed");
           if (consolidatorSeriesSignature) {
             setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId, consolidatorSeriesSignature);
           }
@@ -909,7 +917,7 @@ export function useNodeExecution({
           outputData = resultSuccess(payload);
         }
 
-        const finalOutput = overrideOutput != null ? decodeLegacyNodeResult(overrideOutput, "pin") : outputData;
+        const finalOutput = toPublicNodeResult(overrideOutput != null ? decodeLegacyNodeResult(overrideOutput, "pin") : outputData);
         publishNodeResult(finalOutput, "executor", {
           nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
           notify: notifyExecutionStoreUpdate, setLastOutput,
@@ -939,7 +947,7 @@ export function useNodeExecution({
         if (definition?.name === "Consolidator" && code === "EDITOR_CONTEXT_EXPIRED") {
           setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);
         }
-        return publishFailure(message, executionIsCurrent, code, parsed?.details, parsed?.data);
+        return publishFailure(message, executionIsCurrent, code, parsed?.details, parsed?.data, parsed?.meta);
       } finally {
         agentActivity?.finish(undefined, !executionIsCurrent() ? "cancelled" : "incomplete");
         if (activeAgentRef.current === agentActivity) activeAgentRef.current = undefined;

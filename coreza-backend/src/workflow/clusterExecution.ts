@@ -1,3 +1,4 @@
+import { decodeLegacyNodeResult } from "../contracts/nodeResult";
 import { resolveClusterHierarchy } from './clusterHierarchy';
 import { createHash } from "crypto";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
@@ -162,14 +163,14 @@ function hasUnsupportedCycle(
 }
 
 function pinnedValue(node: WorkflowNode): { pinned: boolean; value?: unknown } {
-  if (Object.prototype.hasOwnProperty.call(node, "pinnedOutput")) {
+  if (node.pinnedOutput != null && Object.prototype.hasOwnProperty.call(node, "pinnedOutput")) {
     return { pinned: true, value: node.pinnedOutput };
   }
-  if (node.data && Object.prototype.hasOwnProperty.call(node.data, "pinnedOutput")) {
+  if (node.data?.pinnedOutput != null && Object.prototype.hasOwnProperty.call(node.data, "pinnedOutput")) {
     return { pinned: true, value: node.data.pinnedOutput };
   }
   const values = node.values ?? node.data?.values;
-  if (!values || values.pinned !== true || !("pinnedValue" in values)) return { pinned: false };
+  if (!values || values.pinned !== true || values.pinnedValue == null || !("pinnedValue" in values)) return { pinned: false };
   return { pinned: true, value: values.pinnedValue };
 }
 
@@ -266,7 +267,7 @@ export function compileClusterExecutionPlan(input: CompileClusterPlanInput): Clu
   const pinnedResults: Record<string, unknown> = {};
   for (const nodeId of executableNodeIds) {
     const pin = pinnedValue(nodeById.get(nodeId)!);
-    if (pin.pinned) pinnedResults[nodeId] = { success: true, status: "pinned", data: pin.value };
+    if (pin.pinned) pinnedResults[nodeId] = decodeLegacyNodeResult(pin.value, "pin");
   }
   const hashMaterial = stable({
     plannerVersion: PLANNER_VERSION,

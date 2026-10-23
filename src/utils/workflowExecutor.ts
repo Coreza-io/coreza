@@ -99,6 +99,8 @@ export class WorkflowExecutor {
     else this.context.setExecutingNode(null);
   }
 
+  private readonly selectedContinuations = new Map<string, string>();
+
   private async invokeNormalNode(nodeId: string): Promise<unknown> {
     const node = this.nodeById.get(nodeId);
     const sessionId = node?.data?.workflowSessionId;
@@ -117,6 +119,8 @@ export class WorkflowExecutor {
     if (outcome.status === "failed") {
       throw new Error(outcome.error?.message ?? outcome.reason ?? `Node ${nodeId} did not complete.`);
     }
+    if (outcome.selectedContinuation) this.selectedContinuations.set(nodeId, outcome.selectedContinuation);
+    else this.selectedContinuations.delete(nodeId);
     return outcome.output;
   }
 
@@ -221,8 +225,8 @@ export class WorkflowExecutor {
     return this.branchOrigins.get(targetNodeId)?.get(edge.id);
   }
 
-  private getBranchHandleKey(result: unknown): string {
-    return getControlResultHandle(result);
+  private getBranchHandleKey(result: unknown, nodeId: string): string {
+    return this.selectedContinuations.get(nodeId) ?? getControlResultHandle(result);
   }
 
   constructor(private context: ExecutorContext) {
@@ -872,7 +876,7 @@ export class WorkflowExecutor {
               `🌿 [WORKFLOW EXECUTOR] Processing as branch node: ${id}`,
             );
 
-            const handleKey = this.getBranchHandleKey(result);
+            const handleKey = this.getBranchHandleKey(result, id);
             if (import.meta.env.DEV) console.log(
               `🔑 [WORKFLOW EXECUTOR] Branch node ${id} result handle key: "${handleKey}"`,
             );

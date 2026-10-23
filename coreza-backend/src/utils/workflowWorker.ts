@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../config/supabase";
 import { executeWorkflow } from "../engine";
 import { EnginePool } from "../engine";
+import { serializeWorkflowRunResult } from "./workflowRunResultContract";
 import { updateRunStatusInRedis } from "./redisRunStorage";
 import { initializeNodeExecutors, getAllRegisteredCategories } from "../nodes";
 import { createSuccessOutput, createErrorOutput } from "./normalizeOutput";
@@ -579,7 +580,7 @@ export function createWorkflowWorker({
           // outputs that completed before the cancellation was acknowledged.
           await supabase
             .from("workflow_runs")
-            .update({ result })
+            .update({ result: serializeWorkflowRunResult(result) })
             .eq("id", runId);
           const { data: completedRun, error: completionError } = await supabase
             .from("workflow_runs")
@@ -657,7 +658,7 @@ export function createWorkflowWorker({
         } else {
           await supabase
             .from("workflow_runs")
-            .update({ result: executionResult })
+            .update({ result: executionResult ? serializeWorkflowRunResult(executionResult) : undefined })
             .eq("id", runId);
           await supabase
             .from("workflow_runs")

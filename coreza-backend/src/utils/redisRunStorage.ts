@@ -1,4 +1,3 @@
-import { decodeLegacyNodeResult, serializeNodeResult, serializeNodeResults } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -14,6 +13,7 @@ import { RedisOps } from "../infra/redisOps";
 import logger from "../utils/logger";
 import {
   normalizeRedisRunResultUpdate,
+  serializeWorkflowRunResult,
   type RedisRunResultUpdate,
 } from "./workflowRunResultContract";
 
@@ -108,14 +108,7 @@ export async function updateRunStatusInRedis(
 
   if (executionResult !== undefined) {
     const normalized = normalizeRedisRunResultUpdate(executionResult);
-    if (normalized.result !== undefined) updates.result = JSON.stringify({
-      ...normalized.result,
-      nodeResults: serializeNodeResults(normalized.result.nodeResults),
-      ...(normalized.result.boundaryOutputs ? { boundaryOutputs: normalized.result.boundaryOutputs.map(boundary => ({
-        ...boundary,
-        value: boundary.value === undefined ? undefined : serializeNodeResult(decodeLegacyNodeResult(boundary.value, "history")),
-      })) } : {}),
-    });
+    if (normalized.result !== undefined) updates.result = JSON.stringify(serializeWorkflowRunResult(normalized.result));
     if (normalized.errorMessage) updates.error_message = normalized.errorMessage;
   }
 

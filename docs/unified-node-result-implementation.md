@@ -33,7 +33,7 @@ The PR review traced broker results through historical candle loading, server cl
 - Continued failures retain partial data, diagnostics and metadata. Editor outputs strip control; the frontend executor carries the selected continuation separately so If/Switch routing still works.
 - Canonical HTTP Request errors retain their diagnostics and response metadata, including headers. Legacy HTTP clients retain top-level broker diagnostic fields and use the same JSON safety projection.
 - Listener decoding retains captured update timestamps and known stream fields. Broker telemetry remains its own trace protocol.
-- Redis history projects both nodeResults and cluster boundary result values so routing control cannot leak through boundary snapshots.
+- Redis and direct SQL history writes share one persistence projection for nodeResults and edge-keyed cluster boundary values. Boundary outputs retain their edge IDs; they are records, not arrays. Internal error causes are omitted so typed failure causes cannot reintroduce engine control or unsafe payloads after result sanitization.
 
 These are source review corrections only. No tests or application execution were performed; existing regression fixtures still require migration/validation with the status-only contract.
 

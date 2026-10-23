@@ -97,7 +97,7 @@ Subscription acknowledgement, waiting, timeout, and an emitted market event must
 
 ### G. History already has another compatibility reader
 
-`src/utils/persistedNodeResult.ts` interprets legacy persisted nodeResults. It should become a facade over a version-aware shared decoder rather than an independent source of truth. Reading old history must not replace original timestamps with the current viewing time.
+`src/utils/persistedNodeResult.ts` interprets legacy persisted nodeResults. It should become a facade over a source-aware shared decoder rather than an independent source of truth. Reading old history must not replace original timestamps with the current viewing time.
 
 Keep workflow-run envelopes separate: a run's `result.nodeResults` is a map of node results, not one node result. Likewise HTTP run IDs, pagination, and variable snapshots are transport data.
 
@@ -167,8 +167,6 @@ type ResultStatus =
   | "skipped" | "cancelled" | "not-executed";
 
 interface NodeResult<T = unknown> {
-  formatVersion: 2;
-  success: boolean;
   status: ResultStatus;
   data: T | null;
   error?: string;
@@ -193,7 +191,7 @@ Metadata should have named fields for timestamp, duration, node/run/invocation i
 | `resultSuccess(data, options?)` | Explicitly treat all supplied data as payload |
 | `resultFailure(message, options?)` | Construct error state with safe structured diagnostics and optional partial data |
 | `resultState(status, data, options?)` | Construct listening, waiting, skipped, cancelled, etc. |
-| `isNodeResult(value)` | Strict versioned shape/status guard; never guess from a payload's data key |
+| `isNodeResult(value)` | Validate the status/data contract at a known result boundary; never infer an envelope from arbitrary domain data |
 | `decodeLegacyNodeResult(value, sourceKind)` | Read known old formats at ingress/history boundaries only |
 | `finalizeNodeResult(result, context, profile)` | Add available execution metadata once, without changing payload/control |
 | `toPublicNodeResult(result, options)` | Project engine control and transport-only internals out explicitly |
@@ -204,9 +202,17 @@ New executors must use explicit constructors, not the compatibility decoder. `re
 
 Make canonical recognition idempotent: a fully finalized canonical result returns unchanged when no metadata needs adding. Do not read the clock to check an already finalized result. Keep payload reference identity; no deep clone/freeze/stringify of data in constructors.
 
-### Status and boolean semantics
+### One status field; no success boolean or formatVersion
 
-Retain legacy success compatibility during rollout: error/cancelled are false; non-error lifecycle states are true, with status providing the lifecycle meaning. success alone never proves that an output is a new data event.
+The canonical envelope has one lifecycle field: `status`. Do not add `success` or `formatVersion`. `status: "success"` identifies successful execution; `error`, `cancelled`, `running`, `waiting`, and the other states retain their separate meanings. This prevents contradictory pairs such as `success: true` with `status: "error"`.
+
+Shared predicates such as `isFailedResult(result)` and `isCompletedResult(result)` derive their answers from status. Do not persist another success flag. An error is not the same as cancellation, and a non-error state is not automatically a completed execution or a new data event.
+
+Legacy ingress adapters may read the old success boolean to derive status when the source lacks an explicit lifecycle status. Define precedence for known old formats and flag contradictory legacy states; explicit error/failure cannot be converted to success. Remove the old boolean from the decoded canonical envelope. Keep any temporary old-consumer response adapter at a named transport boundary only.
+
+Because the envelope has no version marker, do not use shape matching to reinterpret arbitrary payload objects. Validate only at known result boundaries with an explicit source kind. A payload may itself contain status and data keys, so a shape guard is not proof that the object is an envelope.
+
+Audit every `result.success`, `!result.success`, `success === false`, and `success !== false` consumer before enabling status-only writers. This includes classic runtime, compiled VM/adapters, AI tool execution, HTTP error decisions, frontend publication, OutputPanel guards, pinned outputs, history, and run serialization. Preserve the old behavior intentionally with status predicates and characterization fixtures; do not replace these checks with a universal `status !== "error"` condition.
 
 Keep existing scheduling decisions unchanged initially. Waiting/listening acknowledgements must retain existing routing policy, and any later scheduler policy change requires separate characterization tests. Do not introduce a new status-based routing gate incidentally while replacing helpers.
 
@@ -216,8 +222,6 @@ Map listener timeout/expired outputs to `status:"error"` with a stable details c
 
 ```json
 {
-  "formatVersion": 2,
-  "success": true,
   "status": "success",
   "data": {"value": 62.4, "IsReady": true}
 }
@@ -225,8 +229,6 @@ Map listener timeout/expired outputs to `status:"error"` with a stable details c
 
 ```json
 {
-  "formatVersion": 2,
-  "success": true,
   "status": "success",
   "data": {"emitted": false, "timeframe": "4h"}
 }
@@ -289,7 +291,7 @@ All 73 definitions are listed in the appendix. Phase 0 must produce node type + 
 
 ## 8. Performance and memory design
 
-- Required status/version fields add a small constant envelope cost; measure it.
+- The required status field has a small constant envelope cost; measure it. Remove redundant success bookkeeping.
 - Keep `resultSuccess` synchronous and allocation-bounded. Do not make syncCapable nodes async.
 - Prefer one final envelope allocation. Do not construct StandardNodeOutput and immediately convert it.
 - Metadata profile `hot` omits optional timestamp/duration/identity allocation per node per bar. `observed` adds captured execution identity and timing at requested publication boundaries. Both use the same schema.
@@ -321,7 +323,7 @@ Gate: no executable node family lacks an owner/entry in the matrix. Configuratio
 
 Deliverables:
 
-- New portable contract/helpers with discriminated version and typed metadata/errors/control.
+- New portable contract/helpers discriminated by status, with typed metadata/errors/control and no success boolean or formatVersion field.
 - Frontend/backend existing type and normalizer files become thin re-export/adaptation facades.
 - Keep Axios-specific error extraction in a server adapter outside the shared module.
 - Define explicit legacy source kinds (executor, manual endpoint, history, pin, listener) and finite adapters.
@@ -335,6 +337,7 @@ Gate: pure shared module compiles in both environments and preserves round-trip 
 Deliverables:
 
 - Change NodeResult/INodeExecutor typing with a temporary legacy union only during migration.
+- Migrate success-boolean consumers in classic runtime, compiled VM/adapters, AI tools and publication to explicit status predicates before enabling status-only results.
 - Migrate all 17 executor files plus BacktestExecutor and direct/local producers in small node-family batches.
 - Preserve error objects/details through classic failure handling; if throwing is required, throw a typed result-carrying runtime error.
 - Keep owned child snapshots on parent failure.
@@ -381,7 +384,7 @@ Deliverables:
 - Add a targeted repository check for result literals/legacy constructor imports outside adapters and tests, with explicit exemptions for domain/provider payloads.
 - Generate coverage tests from the manifest and actual execution mapping.
 - Enable canonical writing only after compatible readers are deployed.
-- Keep legacy readers for saved history/pins/imports; retire them only with a documented version policy.
+- Keep legacy readers for saved history/pins/imports; retire them only with a documented compatibility policy.
 
 Gate: new nodes can implement domain logic and one shared constructor without implementing their own envelope/status/error formatter.
 
@@ -389,6 +392,9 @@ Gate: new nodes can implement domain logic and one shared constructor without im
 
 ### Contract tests
 
+- Canonical envelope has status/data and no success or formatVersion fields.
+- Legacy success-only results decode to the expected lifecycle state; contradictory legacy inputs have defined handling.
+- Pending/running/listening/waiting/skipped/cancelled are not confused with completed success by runtime or UI checks.
 - Object/array/scalar/null, including false/zero/empty string.
 - Payload containing data/success/status/error/json keys is preserved intact.
 - Canonical construction/decode/finalize is idempotent.
@@ -424,12 +430,12 @@ Browser integration checks should exercise normal and clustered nodes, collapsed
 
 ### Rollout and rollback
 
-1. Ship readers/decoders supporting both old and version 2 outputs.
+1. Ship readers/decoders supporting both legacy and status-only outputs.
 2. Introduce shared producer changes by family on dev; run parity fixtures and benchmarks.
 3. Verify representative manual/history/live/backtest flows before enabling all canonical writers.
 4. Preserve legacy stored outputs and graph documents; no bulk rewrite is required.
 5. Roll back producer enablement while retaining compatible readers. Do not revert structured diagnostic/security filtering or variable ownership guards.
-6. Since constants and field semantics may evolve, document result version alongside saved run format. Do not silently label old arbitrary provider data as v2.
+6. Document supported legacy shapes and adapter provenance alongside the saved run format. Do not add a result version field or classify arbitrary provider data as an envelope.
 
 ## 11. Suggested implementation slices
 
@@ -447,7 +453,9 @@ Each slice targets dev and includes its relevant tests. Do not bundle a schedule
 - [ ] One portable shared implementation; old files are facades only.
 - [ ] All 73 definitions classified; executable operations have canonical producers.
 - [ ] No lossy toNodeResult round trip remains.
-- [ ] Required data exists; payload shapes and expression paths remain compatible.
+- [ ] Required status/data exist; canonical outputs have no success or formatVersion fields.
+- [ ] All legacy success checks are migrated to explicit status predicates before status-only writing.
+- [ ] Payload shapes and expression paths remain compatible.
 - [ ] Status, diagnostics, metadata, warmup and control survive the necessary boundaries.
 - [ ] Configuration attachments are handled explicitly.
 - [ ] Runtime result, public result and LLM projection have documented boundaries.

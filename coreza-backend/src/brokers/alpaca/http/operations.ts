@@ -414,8 +414,12 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         throw new Error("close_position requires input.symbol");
       }
 
-      // const normalized = String(resolvedSymbol).replace("/", "");
-      return `/v2/positions/${encodeURIComponent(resolvedSymbol)}`;
+      const normalizedSymbol =
+        getAssetType(input) === "crypto"
+          ? String(resolvedSymbol).replace("/", "")
+          : String(resolvedSymbol);
+
+      return `/v2/positions/${encodeURIComponent(normalizedSymbol)}`;
     },
 
     makeParams: (input: any) => {

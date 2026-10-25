@@ -597,25 +597,7 @@
       "type": "checkbox",
       "default": false,
       "required": false,
-      "description": "Checked: Filled Quantity is the total filled quantity for this order; only the increase is applied. Unchecked: it is the quantity of this individual fill.",
-      "displayOptions": {
-        "show": {
-          "mode": ["broker"],
-          "operation": ["sync_order_event"]
-        }
-      }
-    },
-    {
-      "key": "fillPriceMode",
-      "label": "Fill Price Interpretation",
-      "type": "select",
-      "default": "execution",
-      "required": false,
-      "options": [
-        { "id": "execution", "name": "Individual execution price" },
-        { "id": "cumulative_average", "name": "Cumulative average price" }
-      ],
-      "description": "Select the meaning of Average Price independently of quantity. For an order's cumulative average (for example Alpaca filled_avg_price), derive the new fill price from the change in total order value.",
+      "description": "Checked: Filled Quantity and Average Price are cumulative order totals; derive the new fill quantity and price. Unchecked: both values describe one individual execution. Do not mix cumulative and individual fields.",
       "displayOptions": {
         "show": {
           "mode": ["broker"],

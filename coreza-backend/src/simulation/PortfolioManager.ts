@@ -237,6 +237,7 @@ export class PortfolioManager {
   private balances = new Map<string, BalanceState>();
   private positions = new Map<string, PositionState>();
   private executionKeysSeen = new Set<string>();
+  private positionSequences = new Map<string, number>();
   private static readonly MAX_EXECUTION_KEYS = 50_000;
   private clientOrderIdIndex = new Map<string, string>(); // clientOrderId → orderId
 
@@ -297,6 +298,7 @@ export class PortfolioManager {
     this.balances.clear();
     this.positions.clear();
     this.executionKeysSeen.clear();
+    this.positionSequences.clear();
     this.clientOrderIdIndex.clear();
 
     // Legacy state
@@ -1137,6 +1139,39 @@ export class PortfolioManager {
   getOrderfilledQty(orderId: string): number {
     const order = this.orders.get(orderId);
     return order?.filledQty ?? 0;
+  }
+
+  /** Seed broker snapshot progress without replaying historical cash, positions or trades. */
+  seedOrderFillProgress(orderId: string, quantity: number, average?: number): void {
+    const order = this.orders.get(orderId);
+    if (!order || !Number.isFinite(quantity) || quantity < 0 ||
+        (quantity > 0 && (average == null || !Number.isFinite(average) || average <= 0))) {
+      throw new Error("Invalid broker order fill baseline");
+    }
+    order.filledQty = quantity;
+    order.avgFillPrice = average;
+    order.remainingQty = order.origQty == null ? undefined : Math.max(0, order.origQty - quantity);
+  }
+
+  isFreshPositionSequence(symbol: string, sequence?: number): boolean {
+    return sequence != null && Number.isSafeInteger(sequence) && sequence > 0 &&
+      sequence > (this.positionSequences.get(symbol) ?? 0);
+  }
+
+  recordPositionSequence(symbol: string, sequence?: number): void {
+    if (this.isFreshPositionSequence(symbol, sequence)) this.positionSequences.set(symbol, sequence!);
+  }
+
+  hasProcessedExecution(key: string): boolean {
+    return this.executionKeysSeen.has(key);
+  }
+
+  markExecutionProcessed(key: string): void {
+    this.executionKeysSeen.add(key);
+    if (this.executionKeysSeen.size > PortfolioManager.MAX_EXECUTION_KEYS) {
+      const oldest = this.executionKeysSeen.values().next().value;
+      if (oldest) this.executionKeysSeen.delete(oldest);
+    }
   }
 
   private computeBuyingPower(balance: BalanceState): number {

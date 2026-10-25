@@ -1,3 +1,4 @@
+import { parseOptionalNumber } from "../../utils/parseOptionalNumber";
 import type { CorezaMarketEvent } from "../../types/marketEvent";
 
 // ============ TYPE MAPPING ============
@@ -252,12 +253,6 @@ export function handleAlpacaControlMessage(
   }
 }
 
-function parseOptionalAlpacaNumber(value: unknown): number | undefined {
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
-  const parsed = typeof value === "number" ? value : parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 // ============ NORMALIZATION (source-aware) ============
 export function normalizeAlpacaMessage(
   msg: any,
@@ -279,12 +274,12 @@ export function normalizeAlpacaMessage(
       orderId: order.id,
       clientOrderId: order.client_order_id,
       side: order.side,
-      filledQty: parseFloat(order.filled_qty) || 0,
-      filledAvgPrice: parseOptionalAlpacaNumber(order.filled_avg_price),
+      filledQty: parseOptionalNumber(order.filled_qty),
+      filledAvgPrice: parseOptionalNumber(order.filled_avg_price),
       orderStatus: order.status,
       orderSymbol: order.symbol,
-      requestedQty: parseFloat(order.qty) || 0,
-      positionQty: parseOptionalAlpacaNumber(data.position_qty),
+      requestedQty: parseOptionalNumber(order.qty),
+      positionQty: parseOptionalNumber(data.position_qty),
       executionId: data.execution_id,
       orderType: order.type || order.order_type,
       assetClass: order.asset_class,

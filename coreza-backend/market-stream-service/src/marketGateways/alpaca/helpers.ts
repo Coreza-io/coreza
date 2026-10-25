@@ -279,8 +279,6 @@ export function normalizeAlpacaMessage(
       lastFillPrice: data.price == null ? undefined : Number(data.price),
       cumulativeFilledQty: order.filled_qty == null ? undefined : Number(order.filled_qty),
       cumulativeAvgPrice: order.filled_avg_price == null ? undefined : Number(order.filled_avg_price),
-      fillQuantityProvenance: "cumulative",
-      fillPriceProvenance: "cumulative_average",
       orderStatus: order.status,
       orderSymbol: order.symbol,
       requestedQty: parseFloat(order.qty) || 0,

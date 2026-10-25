@@ -95,8 +95,6 @@ export interface CorezaMarketEvent {
   cumulativeQuoteNotional?: string;
   lastFilledQty?: number;
   lastFillPrice?: number;
-  fillQuantityProvenance?: "cumulative" | "execution" | "unverified";
-  fillPriceProvenance?: "cumulative_average" | "execution" | "unverified";
   brokerOrderReference?: string;
   orderStatus?: string; // filled, partially_filled, canceled, etc.
   orderSymbol?: string; // Original symbol from order

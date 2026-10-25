@@ -103,8 +103,6 @@ export interface MarketEvent {
   cumulativeQuoteNotional?: string;
   lastFilledQty?: number;
   lastFillPrice?: number;
-  fillQuantityProvenance?: "cumulative" | "execution" | "unverified";
-  fillPriceProvenance?: "cumulative_average" | "execution" | "unverified";
   brokerOrderReference?: string;
   orderStatus?: string;
   orderSymbol?: string;

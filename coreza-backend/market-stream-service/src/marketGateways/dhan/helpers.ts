@@ -527,8 +527,6 @@ export function normalizeDhanOrderUpdate(data: DhanOrderAlertData): CorezaMarket
     filledAvgPrice: toNumberValue(data.AvgTradedPrice) ?? toNumberValue(data.TradedPrice),
     cumulativeAvgPrice: toNumberValue(data.AvgTradedPrice),
     lastFillPrice: toNumberValue(data.TradedPrice),
-    fillQuantityProvenance: "unverified",
-    fillPriceProvenance: data.AvgTradedPrice != null ? "cumulative_average" : "execution",
     brokerOrderReference: toStringValue(data.ExchOrderNo),
     orderSymbol: symbol,
     orderType: toStringValue(data.OrderType)?.toLowerCase(),

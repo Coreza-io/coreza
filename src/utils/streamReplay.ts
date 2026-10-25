@@ -55,7 +55,12 @@ export async function replayStreamPreview(options: {
     const accepted = page.events.filter(event => !options.accepts || options.accepts(event));
     const event = accepted[accepted.length - 1];
     if (event) options.apply(event);
-    if (options.mode !== "continue" || !page.hasMore || !page.lastEntryId || page.lastEntryId === cursor) return page;
+    const hasMore = options.mode === "continue" ? page.hasMore
+      : options.mode === "next" ? page.hasNext : page.hasPrevious;
+    // A step may scan a malformed or filtered entry without displaying it.
+    // Keep scanning from the server cursor instead of repeating that entry.
+    if ((options.mode !== "continue" && event) || !hasMore
+      || !page.lastEntryId || page.lastEntryId === cursor) return page;
     cursor = page.lastEntryId;
   }
   return page;

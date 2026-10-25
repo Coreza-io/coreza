@@ -645,6 +645,14 @@ export function normalizeSchwabAccountActivityMessage(
     requestedQty,
     filledQty,
     filledAvgPrice,
+    cumulativeFilledQty: decodeFirstSchwabDecimal(eventDetail, ["CumulativeQuantity"]),
+    lastFilledQty: decodeFirstSchwabDecimal(eventDetail, ["ExecutionQuantity"]),
+    cumulativeAvgPrice: decodeFirstSchwabDecimal(eventDetail, ["AveragePrice"]),
+    lastFillPrice: decodeFirstSchwabDecimal(eventDetail, ["ExecutionPrice"]),
+    fillQuantityProvenance: decodeFirstSchwabDecimal(eventDetail, ["CumulativeQuantity"]) != null ? "cumulative"
+      : decodeFirstSchwabDecimal(eventDetail, ["ExecutionQuantity"]) != null ? "execution" : "unverified",
+    fillPriceProvenance: decodeFirstSchwabDecimal(eventDetail, ["AveragePrice"]) != null ? "cumulative_average"
+      : decodeFirstSchwabDecimal(eventDetail, ["ExecutionPrice"]) != null ? "execution" : "unverified",
     orderType: pickString(
       deepFind(eventDetail, ["OrderTypeCode"]),
       order.orderType,

@@ -13,6 +13,8 @@ import { createHash } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
+import { OrderFillApplicationService, brokerFillAccountingEnabled } from "../../services/OrderFillApplicationService";
+import { parseCumulativeFilledQty } from "../../services/orderFillNormalization";
 import { createSuccessOutput, createErrorOutput, resultSuccess } from "../../utils/nodeResultHelpers";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -352,6 +354,24 @@ export class PortfolioExecutor implements INodeExecutor {
     const symbols = this.parseSymbols(params.symbol);
     const operation = params.operation || "get_portfolio";
     const baseCurrency = params.base_currency || "USDT";
+
+    if (brokerFillAccountingEnabled()) {
+      try {
+        if (operation === "create_portfolio") {
+          await OrderFillApplicationService.recover(pm, params, context);
+          return createSuccessOutput({ already_created: true, ...this.getPortfolioSummary(pm, baseCurrency) });
+        }
+        if (operation === "sync_broker_state") {
+          return createErrorOutput("reconciliation_required: pause ingestion and replace the broker fill baseline through controlled reconciliation");
+        }
+        if (operation === "register_order_intent") {
+          const orderParams = { ...params, symbol: normalizeSymbol(params.symbol), side: normalizeSide(params.side) };
+          return await OrderFillApplicationService.register(pm, orderParams, context, staged => this.brokerRegisterOrderIntent(staged, orderParams));
+        }
+      } catch (error: any) {
+        return createErrorOutput(error.message);
+      }
+    }
 
     if (operation === "create_portfolio") {
       if (pm.isBootstrapped()) {
@@ -1194,6 +1214,24 @@ export class PortfolioExecutor implements INodeExecutor {
             normalizedBrokerId,
             clientOrderId,
           });
+      }
+
+      // Keep the durable acceptance boundary off SimBroker, market ticks and algo lifecycle events.
+      if (brokerFillAccountingEnabled()) {
+        if (!context) throw new Error("Workflow context required for durable fill accounting");
+        const application = await OrderFillApplicationService.apply(pm, params, context);
+        if (application.kind === "invalid" || application.kind === "reconciliation_required") {
+          return { ...createErrorOutput(application.reason), data: { application } };
+        }
+        const snapshot = this.buildLatestSnapshot(pm, {
+          userId: context.userId!, workflowId: context.workflowId!, runId: context.executionId,
+          broker: params.broker, credentialId: params.credential_id, baseCurrency,
+        });
+        await SnapshotCache.upsertLatest(snapshot).catch(err => fillLogger.warn({ err }, "Committed fill snapshot publication deferred"));
+        return createSuccessOutput({ ...this.getPortfolioSummary(pm, baseCurrency), application });
+      }
+      if (parseCumulativeFilledQty(params.cumulativeFilledQty) || (params.fillPriceMode != null && params.fillPriceMode !== "execution")) {
+        throw new Error("Cumulative fill accounting requires BROKER_FILL_ACCOUNTING_ENABLED and a reconciled portfolio baseline");
       }
 
       // 1. Order update (if status provided)

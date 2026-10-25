@@ -525,9 +525,15 @@ export function normalizeDhanOrderUpdate(data: DhanOrderAlertData): CorezaMarket
     filledQty: toNumberValue(data.TradedQty),
     requestedQty: toNumberValue(data.Quantity),
     filledAvgPrice: toNumberValue(data.AvgTradedPrice) ?? toNumberValue(data.TradedPrice),
+    cumulativeAvgPrice: toNumberValue(data.AvgTradedPrice),
+    lastFillPrice: toNumberValue(data.TradedPrice),
+    fillQuantityProvenance: "unverified",
+    fillPriceProvenance: data.AvgTradedPrice != null ? "cumulative_average" : "execution",
+    brokerOrderReference: toStringValue(data.ExchOrderNo),
     orderSymbol: symbol,
     orderType: toStringValue(data.OrderType)?.toLowerCase(),
-    executionId: toStringValue(data.ExchOrderNo),
+    // ExchOrderNo is an order reference, not a broker trade identity.
+    executionId: undefined,
     rejectReason: toStringValue(data.ReasonDescription),
     rawOrderData: data,
   };

@@ -9,6 +9,7 @@
  */
 
 import { finished } from "stream";
+import { FillDecimal, OrderFillCheckpoint } from "../services/orderFillNormalization";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
   Order,
@@ -259,6 +260,72 @@ export class PortfolioManager {
   private startingEquity: number | null = null;
 
   private bootstrapped = false;
+
+  /** Complete recoverable state, including partial closing trades. Never includes credentials. */
+  exportRecoveryState() {
+    return structuredClone({
+      formatVersion: 1 as const,
+      orders: [...this.orders], algoOrders: [...this.algoOrders], executions: [...this.executions],
+      balances: [...this.balances], positions: [...this.positions], executionKeysSeen: [...this.executionKeysSeen],
+      clientOrderIdIndex: [...this.clientOrderIdIndex], cashBook: [...this.cashBook], holdings: [...this.holdings],
+      fillLedger: this.fillLedger, orderCumQtyMap: [...this.orderCumQtyMap], trades: this.trades,
+      pendingClosingTrades: [...this.pendingClosingTrades], currentEntryMap: [...this.currentEntryMap],
+      tradeIdCounter: this.tradeIdCounter, peakEquity: this.peakEquity,
+      startingEquity: this.startingEquity, bootstrapped: this.bootstrapped,
+    });
+  }
+
+  restoreRecoveryState(state: ReturnType<PortfolioManager["exportRecoveryState"]>): void {
+    if (state.formatVersion !== 1 || !state.bootstrapped) throw new Error("Unsupported or uninitialized broker portfolio baseline");
+    const s = structuredClone(state);
+    this.orders = new Map(s.orders); this.algoOrders = new Map(s.algoOrders);
+    this.executions = new Map(s.executions); this.balances = new Map(s.balances);
+    this.positions = new Map(s.positions); this.executionKeysSeen = new Set(s.executionKeysSeen);
+    this.clientOrderIdIndex = new Map(s.clientOrderIdIndex); this.cashBook = new Map(s.cashBook);
+    this.holdings = new Map(s.holdings); this.fillLedger = s.fillLedger;
+    this.orderCumQtyMap = new Map(s.orderCumQtyMap); this.trades = s.trades;
+    this.pendingClosingTrades = new Map(s.pendingClosingTrades); this.currentEntryMap = new Map(s.currentEntryMap);
+    this.tradeIdCounter = s.tradeIdCounter; this.peakEquity = s.peakEquity;
+    this.startingEquity = s.startingEquity; this.bootstrapped = s.bootstrapped;
+  }
+
+  forkForFill(state: ReturnType<PortfolioManager["exportRecoveryState"]>): PortfolioManager {
+    const staged = new PortfolioManager(this.userId, this.executionId);
+    staged.restoreRecoveryState(state);
+    return staged;
+  }
+
+  /** Lifecycle freshness and financial acceptance are independent. Coordinator owns deduplication. */
+  applyAcceptedOrderFill(
+    input: Parameters<PortfolioManager["applyOrderUpdate"]>[0],
+    checkpoint: OrderFillCheckpoint,
+    delta: { quantity: number; notional: number; price: number; fee: number; identity?: string; time: string; baseCurrency: string },
+  ): Trade | null {
+    this.applyOrderUpdate({ ...input, filledQty: 0, feeAmount: 0 });
+    const order = this.orders.get(input.orderId);
+    if (!order || order.symbol !== checkpoint.symbol || order.side !== checkpoint.side) throw new Error("Order identity mismatch");
+    const quantity = FillDecimal.from(checkpoint.quantity).toNumber();
+    order.filledQty = quantity;
+    if (order.origQty != null && order.origQty > 0 && quantity >= order.origQty && !TERMINAL_ORDER_STATUSES.has(order.status)) order.status = "filled";
+    order.avgFillPrice = quantity > 0 ? FillDecimal.from(checkpoint.notional).toNumber() / quantity : 0;
+    order.remainingQty = order.origQty == null ? undefined : Math.max(0, FillDecimal.from(order.origQty).sub(FillDecimal.from(checkpoint.quantity)).toNumber());
+    order.totalFees = FillDecimal.from(order.totalFees).add(FillDecimal.from(delta.fee)).toNumber();
+    const tradeResult = this.applyTrade({
+      orderId: input.orderId, clientOrderId: input.clientOrderId, symbol: input.symbol,
+      side: checkpoint.side, filledQty: delta.quantity, fillPrice: delta.price,
+      feeAmount: delta.fee, status: order.status, baseCurrency: delta.baseCurrency,
+      // This path has already claimed the scoped receipt. Status-only updates must still finalize trades.
+    }, delta.time);
+    if (delta.quantity > 0) {
+      this.applyPositionUpdate({ symbol: input.symbol, side: checkpoint.side,
+        filledQty: delta.quantity, avgFillPrice: delta.price,
+        normalizedBrokerId: input.orderId, executionId: delta.identity, currentPrice: delta.price, exactDecimal: true });
+      this.applyFillAccounting({ symbol: input.symbol, side: checkpoint.side,
+        fillQty: delta.quantity, fillPrice: delta.price, fillNotional: delta.notional,
+        feeAmount: delta.fee, feeAsset: input.feeAsset, baseCurrency: delta.baseCurrency });
+    }
+    return tradeResult.kind === "finalized" ? tradeResult.trade : null;
+  }
 
   private constructor(userId: string, executionId: string) {
     this.userId = userId;
@@ -838,6 +905,7 @@ export class PortfolioManager {
    */
   applyPositionUpdate(input: {
     symbol: string;
+    exactDecimal?: boolean;
     filledQty?: number;
     avgFillPrice?: number; // Alpaca: order.filled_avg_price or raw price
     side: "buy" | "sell";
@@ -891,6 +959,7 @@ export class PortfolioManager {
         filledQty?: number;
         side: "buy" | "sell";
         positionQty?: number;
+        exactDecimal?: boolean;
       },
     ): number => {
       if (input.positionQty != null) {
@@ -901,7 +970,9 @@ export class PortfolioManager {
         return previousQty;
       }
 
-      return previousQty + getSignedFillQty(input.filledQty, input.side);
+      return input.exactDecimal
+        ? FillDecimal.from(previousQty).add(FillDecimal.from(getSignedFillQty(input.filledQty, input.side))).toNumber()
+        : previousQty + getSignedFillQty(input.filledQty, input.side);
     };
 
     const isSameDirectionIncrease = (
@@ -1149,12 +1220,15 @@ export class PortfolioManager {
     side: "buy" | "sell",
     notional: number,
     now: string,
+    exactDecimal = false,
   ): void {
     const balance = this.balances.get(quoteAsset);
     const currentCash = balance?.cash ?? this.cashBook.get(quoteAsset) ?? 0;
 
-    const updatedCash =
-      side === "buy" ? currentCash - notional : currentCash + notional;
+    const updatedCash = exactDecimal ? (side === "buy"
+      ? FillDecimal.from(currentCash).sub(FillDecimal.from(notional))
+      : FillDecimal.from(currentCash).add(FillDecimal.from(notional))).toNumber()
+      : side === "buy" ? currentCash - notional : currentCash + notional;
 
     const nextBalance: BalanceState = balance ?? {
       asset: quoteAsset,
@@ -1190,11 +1264,12 @@ export class PortfolioManager {
     feeAsset: string,
     feeAmount: number,
     now: string,
+    exactDecimal = false,
   ): void {
     const balance = this.balances.get(feeAsset);
     const currentCash = balance?.cash ?? this.cashBook.get(feeAsset) ?? 0;
 
-    const updatedCash = currentCash - feeAmount;
+    const updatedCash = exactDecimal ? FillDecimal.from(currentCash).sub(FillDecimal.from(feeAmount)).toNumber() : currentCash - feeAmount;
 
     const nextBalance: BalanceState = balance ?? {
       asset: feeAsset,
@@ -1234,6 +1309,7 @@ export class PortfolioManager {
     side: "buy" | "sell";
     fillPrice: number;
     fillQty: number;
+    fillNotional?: number;
     feeAmount?: number;
     feeAsset?: string;
     baseCurrency?: string;
@@ -1245,13 +1321,13 @@ export class PortfolioManager {
     );
     const effectiveQuoteAsset = quoteAsset ?? input.baseCurrency ?? "USD";
 
-    const notional = input.fillPrice * input.fillQty;
+    const notional = input.fillNotional ?? input.fillPrice * input.fillQty;
 
-    this.updateBalance(effectiveQuoteAsset, input.side, notional, now);
+    this.updateBalance(effectiveQuoteAsset, input.side, notional, now, input.fillNotional !== undefined);
 
     if (input.feeAmount && input.feeAmount > 0) {
       const feeBalanceAsset = input.feeAsset ?? effectiveQuoteAsset;
-      this.updateFeeBalance(feeBalanceAsset, input.feeAmount, now);
+      this.updateFeeBalance(feeBalanceAsset, input.feeAmount, now, input.fillNotional !== undefined);
     }
 
     this.updateEquity(input.baseCurrency);

@@ -46,6 +46,10 @@ export function createPaletteNodeBatch(args: {
       displayName: primaryNodeId,
       label: args.definition.name || `${args.nodeType} node`,
       definition: args.definition,
+      ...(args.definition.name === "Portfolio" ? { values: {
+        cumulativeFilledQty: true,
+        fillPriceMode: "cumulative_average",
+      } } : {}),
       workflowSessionId: args.workflowSessionId,
     },
   }];

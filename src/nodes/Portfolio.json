@@ -580,7 +580,7 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "required": false,
-      "description": "Cumulative filled quantity from the broker. The executor derives the execution delta internally.",
+      "description": "Quantity selected from the source event. Sync Order Update uses Cumulative Filled Quantity to interpret it. Legacy Apply Execution/Apply Order Update fields use individual execution quantities; those operations are not enabled by this setting.",
       "displayOptions": {
         "show": {
           "operation": [
@@ -592,8 +592,55 @@
       }
     },
     {
+      "key": "cumulativeFilledQty",
+      "label": "Cumulative Filled Quantity",
+      "type": "checkbox",
+      "required": false,
+      "default": true,
+      "description": "Checked: the value is the total filled quantity for this order. Coreza applies only the increase. Unchecked: the value is the quantity of this individual execution.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "fillPriceMode",
+      "label": "Fill Price Interpretation",
+      "type": "select",
+      "required": false,
+      "default": "cumulative_average",
+      "options": [
+        {
+          "id": "execution",
+          "name": "Individual execution price"
+        },
+        {
+          "id": "cumulative_average",
+          "name": "Cumulative average price"
+        }
+      ],
+      "description": "Cumulative average price is the order VWAP. Coreza derives the cost of newly filled quantity from the change in cumulative notional.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
       "key": "avgFillPrice",
       "label": "Average Price",
+      "description": "Sync Order Update: map the execution price or order VWAP according to Fill Price Interpretation. Legacy Apply Execution/Apply Order Update use individual execution prices.",
       "type": "text",
       "placeholder": "e.g. 2122.79",
       "required": false,
@@ -602,6 +649,149 @@
           "operation": [
             "apply_order_update",
             "apply_execution",
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "brokerAccountId",
+      "label": "Broker Account ID",
+      "type": "text",
+      "required": false,
+      "description": "Stable broker account identity, preserved across credential rotation. Required for durable fill accounting.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event",
+            "register_order_intent",
+            "create_portfolio"
+          ]
+        }
+      }
+    },
+    {
+      "key": "environment",
+      "label": "Broker Environment",
+      "type": "text",
+      "required": false,
+      "description": "Map the account environment explicitly (for example paper, live or testnet).",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event",
+            "register_order_intent",
+            "create_portfolio"
+          ]
+        }
+      }
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential ID",
+      "type": "text",
+      "required": false,
+      "description": "Credential used for this broker account. Attribution only; never used as the stable accounting identity.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event",
+            "register_order_intent",
+            "create_portfolio"
+          ]
+        }
+      }
+    },
+    {
+      "key": "eventTime",
+      "label": "Source Event Time",
+      "type": "text",
+      "required": false,
+      "description": "Map the broker event timestamp as ISO text or Unix milliseconds. Do not use local receive time.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "cumulativeOrderQty",
+      "label": "Cumulative Order Quantity",
+      "type": "text",
+      "required": false,
+      "description": "Optional cross-check for individual execution quantity with cumulative VWAP.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "cumulativeQuoteNotional",
+      "label": "Cumulative Quote Notional",
+      "type": "text",
+      "required": false,
+      "description": "Exact broker cumulative quote notional, where available (Binance Spot Z).",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "lastExecutionQty",
+      "label": "Last Execution Quantity",
+      "type": "text",
+      "required": false,
+      "description": "Map the individual execution quantity to prove price and per-event fee coverage.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
+      "key": "fillCoverageComplete",
+      "label": "Complete Execution and Fee Coverage",
+      "type": "checkbox",
+      "required": false,
+      "default": false,
+      "description": "Enable only when the source guarantees complete execution and fee coverage since the accepted checkpoint. Otherwise map Last Execution Quantity.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ],
+          "operation": [
             "sync_order_event"
           ]
         }

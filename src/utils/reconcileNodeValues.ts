@@ -95,7 +95,10 @@ export function reconcileNodeValues(
     } else {
       // Missing key — backfill from definition
       hadMissingKeys = true;
-      merged[key] = field.default ?? null;
+      // Authoring defaults apply only to new nodes. Missing persisted fill modes are legacy.
+      merged[key] = definition.name === "Portfolio" && key === "cumulativeFilledQty" ? false
+        : definition.name === "Portfolio" && key === "fillPriceMode" ? "execution"
+        : field.default ?? null;
     }
   }
 

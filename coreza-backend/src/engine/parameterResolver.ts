@@ -13,6 +13,12 @@ export class ParameterResolver {
   private nodeHasTemplatesCache = new Map<string, boolean>();
 
   constructor(private readonly nodes: WorkflowNode[]) {
+    // Materialize compatibility values before template compilation or execution snapshots.
+    for (const node of nodes) {
+      if (node.name === "Portfolio" || node.type === "Portfolio") {
+        node.values = { cumulativeFilledQty: false, fillPriceMode: "execution", ...node.values };
+      }
+    }
     // Backend safety net: merge any missing definition defaults into node
     // values so live execution never fails due to fields added after the
     // workflow was last saved.

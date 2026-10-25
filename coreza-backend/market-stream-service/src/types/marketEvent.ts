@@ -90,6 +90,14 @@ export interface CorezaMarketEvent {
   side?: string; // buy, sell
   filledQty?: number;
   filledAvgPrice?: number;
+  cumulativeFilledQty?: number;
+  cumulativeAvgPrice?: number;
+  cumulativeQuoteNotional?: string;
+  lastFilledQty?: number;
+  lastFillPrice?: number;
+  fillQuantityProvenance?: "cumulative" | "execution" | "unverified";
+  fillPriceProvenance?: "cumulative_average" | "execution" | "unverified";
+  brokerOrderReference?: string;
   orderStatus?: string; // filled, partially_filled, canceled, etc.
   orderSymbol?: string; // Original symbol from order
   requestedQty?: number; // Original requested order quantity

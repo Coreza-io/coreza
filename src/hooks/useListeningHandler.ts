@@ -137,6 +137,8 @@ export function createListeningHandler<TOutput = any>(
       [listeningFlag]: true,
       isStreamPaused: false,
       isStreamStepping: false,
+      streamReplayRequestId: undefined,
+      lastStreamEntryId: undefined,
       ...listeningNodeData,
     });
 
@@ -269,3 +271,4 @@ export function createListeningHandler<TOutput = any>(
 
   return { start, abort };
 }
+

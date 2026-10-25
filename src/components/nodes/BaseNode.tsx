@@ -1,4 +1,6 @@
 import { resultState } from "@/utils/nodeResult";
+import { publishNodeResult } from "@/utils/publishNodeResult";
+import { createStreamPreviewControls } from "@/utils/streamReplay";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -372,6 +374,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   const handleStopListening = useCallback(async () => {
     if (!workflowId || !nodeId || !controlsAreCurrent()) return;
 
+    // Cancel pending replay immediately, before waiting for the stop request.
+    replaySessionRef.current += 1;
+    executionStore.setNodeData(nodeId, { streamReplayRequestId: undefined, isStreamStepping: false });
+    notifyStoreUpdate();
     try {
       const stopAction = resolveStopAction(definition);
       console.log(
@@ -421,177 +427,22 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     controlsAreCurrent,
   ]);
 
-  // Toggle pause/resume for streaming
-  const handleTogglePause = useCallback(async () => {
-    if (!nodeId || !controlsAreCurrent()) return;
-    const current = executionStore.getNodeData(nodeId);
-    const wasUserPaused =
-      current.isStreamPaused === true && current.isStreamStepping !== true;
-
-    if (wasUserPaused) {
-      // Resume immediately for responsive UI; replay catch-up runs in background.
-      executionStore.setNodeData(nodeId, {
-        isStreamPaused: false,
-        isStreamStepping: false,
-      });
-      notifyStoreUpdate();
-
-      if (
-        current.lastStreamEntryId &&
-        (current.testListenWorkflowId || workflowId)
-      ) {
-        try {
-          const replaySessionId = replaySessionRef.current + 1;
-          replaySessionRef.current = replaySessionId;
-          let replayCursor: string | null = current.lastStreamEntryId;
-          const maxReplayPasses = 5;
-
-          for (let i = 0; i < maxReplayPasses && replayCursor; i += 1) {
-            if (!controlsAreCurrent() || replaySessionRef.current !== replaySessionId) {
-              break;
-            }
-
-            const latestNodeData = executionStore.getNodeData(nodeId);
-            if (latestNodeData.isStreamPaused) {
-              break;
-            }
-
-            const replayResponse = await apiClient.post(
-              "/stream/replay",
-              {
-                workflowId: current.testListenWorkflowId || workflowId,
-                nodeId,
-                afterEntryId: replayCursor,
-              },
-              session?.access_token,
-            );
-
-            if (!controlsAreCurrent() || replaySessionRef.current !== replaySessionId || !replayResponse.ok) {
-              break;
-            }
-
-            const replayBody = await replayResponse
-              .json()
-              .catch(() => ({ replayed: 0, lastEntryId: null }));
-            if (!controlsAreCurrent() || replaySessionRef.current !== replaySessionId) break;
-            const replayed =
-              typeof replayBody?.replayed === "number"
-                ? replayBody.replayed
-                : 0;
-            const lastEntryId =
-              typeof replayBody?.lastEntryId === "string"
-                ? replayBody.lastEntryId
-                : null;
-
-            if (!lastEntryId || replayed === 0) {
-              break;
-            }
-
-            replayCursor = lastEntryId;
-          }
-        } catch (error) {
-          console.error("Failed to replay paused stream events:", error);
-        }
-      }
-      return;
-    }
-
-    // User paused stream; cancel any in-flight replay sequence.
-    replaySessionRef.current += 1;
-    executionStore.setNodeData(nodeId, {
-      isStreamPaused: true,
-      isStreamStepping: false,
-    });
-    notifyStoreUpdate();
-  }, [
-    nodeId,
-    readOnly,
-    executionStore,
-    notifyStoreUpdate,
-    workflowId,
-    session?.access_token,
-    controlsAreCurrent,
-  ]);
-
-  const handleStepStream = useCallback(
-    async (mode: "next" | "prev") => {
-      if (!nodeId || !controlsAreCurrent()) return;
-      const current = executionStore.getNodeData(nodeId);
-      if (!current.lastStreamEntryId) return;
-      const activeWorkflowId = current.testListenWorkflowId || workflowId;
-      if (!activeWorkflowId) return;
-
-      if (!current.isStreamPaused) {
-        replaySessionRef.current += 1;
-        executionStore.setNodeData(nodeId, {
-          isStreamPaused: true,
-          isStreamStepping: true,
-        });
-        notifyStoreUpdate();
-      } else {
-        executionStore.setNodeData(nodeId, { isStreamStepping: true });
-        notifyStoreUpdate();
-      }
-
-      const stepSession = ++replaySessionRef.current;
-      const stepResponse = await apiClient.post(
-        "/stream/replay",
-        {
-          workflowId: activeWorkflowId,
-          nodeId,
-          afterEntryId: current.lastStreamEntryId,
-          mode,
-        },
-        session?.access_token,
-      );
-
-      if (!controlsAreCurrent() || replaySessionRef.current !== stepSession || !stepResponse.ok) {
-        return;
-      }
-
-      const stepBody = await stepResponse
-        .json()
-        .catch(() => ({ replayed: 0, hasMore: false }));
-      if (!controlsAreCurrent() || replaySessionRef.current !== stepSession) return;
-      const replayed =
-        typeof stepBody?.replayed === "number" ? stepBody.replayed : 0;
-      const hasDirectionalMore =
-        mode === "prev"
-          ? typeof stepBody?.hasPrevious === "boolean"
-            ? stepBody.hasPrevious
-            : undefined
-          : typeof stepBody?.hasNext === "boolean"
-            ? stepBody.hasNext
-            : undefined;
-      const hasMore =
-        typeof hasDirectionalMore === "boolean"
-          ? hasDirectionalMore
-          : typeof stepBody?.hasMore === "boolean"
-            ? stepBody.hasMore
-            : false;
-
-      if (mode === "next") {
-        setCanStepNext(hasMore);
-        if (replayed > 0) {
-          setCanStepPrevious(true);
-        }
-      } else {
-        setCanStepPrevious(hasMore);
-        if (replayed > 0) {
-          setCanStepNext(true);
-        }
-      }
+  const { handleTogglePause, handleStepStream } = useMemo(() => createStreamPreviewControls({
+    nodeId, workflowId, executionStore, replaySessionRef, controlsAreCurrent,
+    notifyStoreUpdate, setCanStepNext, setCanStepPrevious,
+    request: async (body) => {
+      const response = await apiClient.post("/stream/replay", body, session?.access_token);
+      if (!response.ok) throw new Error(`Stream replay failed (${response.status})`);
+      return response.json();
     },
-    [
-      nodeId,
-      readOnly,
-      executionStore,
-      notifyStoreUpdate,
-      workflowId,
-      session?.access_token,
-      controlsAreCurrent,
-    ],
-  );
+    publish: (event, isCurrent) => {
+      publishNodeResult(resultState("streaming", event.data, {
+        meta: { timestamp: new Date().toISOString() },
+      }), { nodeId: nodeId!, isCurrent, updateNodeData, store: executionStore, notify: notifyStoreUpdate }, {
+        lastStreamEntryId: event.entryId,
+      });
+    },
+  }), [nodeId, workflowId, executionStore, controlsAreCurrent, notifyStoreUpdate, updateNodeData, session?.access_token]);
 
   const handleStepNext = useCallback(async () => {
     await handleStepStream("next");
@@ -687,3 +538,4 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 };
 
 export default BaseNode;
+

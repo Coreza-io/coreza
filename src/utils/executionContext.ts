@@ -46,6 +46,7 @@ export interface NodeExecutionData {
   testListenSource?: string;                 // broker source for stream filtering
   streamDataReceived?: boolean;              // true when stream data just arrived (for flash animation)
   isStreamPaused?: boolean;                  // client-side pause: skip UI updates while stream stays alive
+  streamReplayRequestId?: string;             // owner of the current panel replay request
   isStreamStepping?: boolean;                // true while user is stepping event-by-event
   lastStreamEntryId?: string;                // Redis stream Entry ID of last displayed event
 }
@@ -287,3 +288,4 @@ export class ExecutionContext {
 }
 
 export default ExecutionContext;
+

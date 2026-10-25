@@ -1,5 +1,6 @@
 import { resultSuccess, resultFailure, resultState } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
+import { shouldPublishLiveStreamEvent } from "@/utils/streamReplay";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -34,7 +35,6 @@ const EMPTY_NODE_DATA: NodeExecutionData = Object.freeze({});
 const emptySubscribe = () => () => {};
 
 const BACKEND_WS_URL = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
-const STREAM_PAUSE_DEBUG = false;
 const debugLog = (...args: unknown[]) => {
   if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_EXECUTION === 'true') console.debug(...args);
 };
@@ -216,21 +216,13 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
                     }
                   }
 
-                  // Skip live updates while paused, but allow replayed events through.
                   const eventEntryId =
                     extractEntryId(data) || extractEntryId(message.payload);
                   const isReplay =
                     extractReplayFlag(data) || extractReplayFlag(message.payload);
-                  if (STREAM_PAUSE_DEBUG && existingData?.isStreamPaused) {
-                    debugLog(
-                      `[ExecutionStore] ${isReplay ? "ACCEPT(replay)" : "DROP(paused)"}`,
-                      { nodeId, type: message.type, entryId: eventEntryId },
-                    );
-                  }
-                  if (existingData?.isStreamPaused && !isReplay) {
-                    debugLog('⏸️ [ExecutionStore] Stream paused, skipping update for:', nodeId);
-                    return;
-                  }
+                  // Replay belongs to its HTTP request. A shared user socket has
+                  // no panel/session ownership and cannot safely publish it.
+                  if (!shouldPublishLiveStreamEvent(existingData, isReplay, eventEntryId)) return;
                   publishSocketUpdate(nodeId, {
                     output: resultState("streaming", data, { meta: { timestamp: message.timestamp ?? new Date().toISOString() } }),
                     ...(eventEntryId ? { lastStreamEntryId: eventEntryId } : {}),
@@ -384,3 +376,4 @@ export function useExecutionSourceVersions(nodeIds: readonly string[] | null): s
     : nodeIds === null ? String(store?.version ?? 0) : nodeIds.map(id => store?.getNodeVersion(id) ?? 0).join(":"), [staticCtx, store, nodeIds]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
+

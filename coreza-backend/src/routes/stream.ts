@@ -34,8 +34,6 @@ const router = express.Router();
 // Apply JWT auth to all routes
 router.use(requireAuth);
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const ORDER_UPDATE_MARKERS = new Set([
   "trade_updates",
   "ORDER_TRADE_UPDATE",
@@ -81,11 +79,13 @@ router.post("/replay", async (req, res) => {
       nodeId,
       afterEntryId,
       mode = "continue",
+      delivery = "socket",
     } = req.body as {
       workflowId?: string;
       nodeId?: string;
       afterEntryId?: string;
       mode?: "continue" | "next" | "prev";
+      delivery?: "socket" | "response";
     };
 
     if (!workflowId || !nodeId || !afterEntryId) {
@@ -100,22 +100,11 @@ router.post("/replay", async (req, res) => {
       });
     }
 
-    if (!["continue", "next", "prev"].includes(mode)) {
-      return res.status(400).json({
-        error: "Invalid mode. Expected one of: continue, next, prev",
-      });
+    if (!["socket", "response"].includes(delivery)) {
+      return res.status(400).json({ error: "Invalid replay delivery" });
     }
-
-    if (!["continue", "next", "prev"].includes(mode)) {
-      return res.status(400).json({
-        error: "Invalid mode. Expected one of: continue, next, prev",
-      });
-    }
-
-    if (!["continue", "next", "prev"].includes(mode)) {
-      return res.status(400).json({
-        error: "Invalid mode. Expected one of: continue, next, prev",
-      });
+    if (!/^\d+-\d+$/.test(afterEntryId)) {
+      return res.status(400).json({ error: "Invalid stream cursor" });
     }
 
     const streamKey = RedisKeys.strategyStream(userId, workflowId);
@@ -173,10 +162,13 @@ router.post("/replay", async (req, res) => {
       events = previousEvent ? [previousEvent] : [];
     }
 
+    const replayEvents: Array<{ entryId: string; source?: string; data: unknown }> = [];
     let replayed = 0;
     let lastEntryId: string | null = afterEntryId;
 
     for (const [entryId, fields] of events) {
+      // Advance past malformed entries too, so a bad page cannot stall catch-up.
+      lastEntryId = entryId;
       const eventIndex = fields.findIndex((field) => field === "event");
 
       if (eventIndex < 0 || eventIndex + 1 >= fields.length) {
@@ -196,27 +188,23 @@ router.post("/replay", async (req, res) => {
           },
         };
 
-        await redis.publish(
-          `ws:user:${userId}`,
-          JSON.stringify({
-            type: "market_data",
-            payload: {
-              workflowId,
-              nodeId,
-              source: payload?.source,
-              data: enriched.data,
-            },
-          }),
-        );
-
-        replayed += 1;
-        lastEntryId = entryId;
-
-        // Only batch replay should be delayed.
-        // Single-step next/prev should be instant.
-        if (mode === "continue") {
-          await sleep(5000);
+        if (delivery === "response") {
+          replayEvents.push({ entryId, source: payload?.source, data: enriched.data });
+        } else {
+          await redis.publish(
+            `ws:user:${userId}`,
+            JSON.stringify({
+              type: "market_data",
+              payload: {
+                workflowId,
+                nodeId,
+                source: payload?.source,
+                data: enriched.data,
+              },
+            }),
+          );
         }
+        replayed += 1;
       } catch (error) {
         console.error("Failed to replay stream event:", {
           error,
@@ -232,6 +220,8 @@ router.post("/replay", async (req, res) => {
         replayed,
         lastEntryId,
         mode,
+        hasMore: events.length === 1000,
+        ...(delivery === "response" ? { events: replayEvents } : {}),
       });
     }
 
@@ -282,6 +272,7 @@ router.post("/replay", async (req, res) => {
       mode,
       hasNext: mode === "next" ? hasMore : undefined,
       hasPrevious: mode === "prev" ? hasMore : undefined,
+      ...(delivery === "response" ? { events: replayEvents } : {}),
     });
   } catch (error) {
     console.error("Replay stream error:", error);
@@ -1216,3 +1207,4 @@ router.post("/cleanup-user-streams", async (req, res) => {
 });
 
 export default router;
+

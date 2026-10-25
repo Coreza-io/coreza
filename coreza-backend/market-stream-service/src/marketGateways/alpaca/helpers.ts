@@ -252,6 +252,12 @@ export function handleAlpacaControlMessage(
   }
 }
 
+function parseOptionalAlpacaNumber(value: unknown): number | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const parsed = typeof value === "number" ? value : parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 // ============ NORMALIZATION (source-aware) ============
 export function normalizeAlpacaMessage(
   msg: any,
@@ -274,11 +280,11 @@ export function normalizeAlpacaMessage(
       clientOrderId: order.client_order_id,
       side: order.side,
       filledQty: parseFloat(order.filled_qty) || 0,
-      filledAvgPrice: parseFloat(order.filled_avg_price) || 0,
+      filledAvgPrice: parseOptionalAlpacaNumber(order.filled_avg_price),
       orderStatus: order.status,
       orderSymbol: order.symbol,
       requestedQty: parseFloat(order.qty) || 0,
-      positionQty: parseFloat(data.position_qty) || 0,
+      positionQty: parseOptionalAlpacaNumber(data.position_qty),
       executionId: data.execution_id,
       orderType: order.type || order.order_type,
       assetClass: order.asset_class,

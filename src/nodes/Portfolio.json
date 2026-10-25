@@ -580,7 +580,7 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "required": false,
-      "description": "Cumulative filled quantity from the broker. The executor derives the execution delta internally.",
+      "description": "Cumulative filled quantity from the broker (stream output: cumulativeFilledQty). Do not map the stream filledQty, which is only the latest execution. The executor derives the execution delta internally.",
       "displayOptions": {
         "show": {
           "operation": [

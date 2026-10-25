@@ -88,7 +88,9 @@ export interface CorezaMarketEvent {
   orderId?: string;
   clientOrderId?: string; // Broker client order ID for idempotency/ownership checks
   side?: string; // buy, sell
-  filledQty?: number;
+  filledQty?: number; // Quantity of this execution only; absent if broker supplies only totals.
+  cumulativeFilledQty?: number; // Broker-reported total filled for this order so far.
+  lastFilledPrice?: number; // Price of this execution; filledAvgPrice remains the order average.
   filledAvgPrice?: number;
   orderStatus?: string; // filled, partially_filled, canceled, etc.
   orderSymbol?: string; // Original symbol from order

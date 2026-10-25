@@ -566,11 +566,10 @@ export function normalizeSchwabAccountActivityMessage(
         "quantityRequested",
       ]),
     );
-  const filledQty =
-    decodeFirstSchwabDecimal(eventDetail, [
-      "CumulativeQuantity",
-      "ExecutionQuantity",
-    ]) ??
+  const filledQty = decodeFirstSchwabDecimal(eventDetail, ["ExecutionQuantity"]);
+  const lastFilledPrice = decodeFirstSchwabDecimal(eventDetail, ["ExecutionPrice"]);
+  const cumulativeFilledQty =
+    decodeFirstSchwabDecimal(eventDetail, ["CumulativeQuantity"]) ??
     toNumber(order.filledQuantity) ??
     toNumber(order.filledQty) ??
     toNumber(pickTextField(rawMessageText, ["filledQuantity", "filledQty"]));
@@ -634,6 +633,8 @@ export function normalizeSchwabAccountActivityMessage(
     orderStatus,
     requestedQty,
     filledQty,
+    cumulativeFilledQty,
+    lastFilledPrice,
     filledAvgPrice,
     orderType: pickString(
       deepFind(eventDetail, ["OrderTypeCode"]),

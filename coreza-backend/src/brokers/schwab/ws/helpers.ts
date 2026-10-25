@@ -392,7 +392,7 @@ function normalizeSchwabAccountActivityMessage(
         'quantityRequested',
       ]),
     );
-  const filledQty =
+  const cumulativeFilledQty =
     toNumber(order.filledQuantity) ??
     toNumber(order.filledQty) ??
     toNumber(pickTextField(rawMessageText, ['filledQuantity', 'filledQty']));
@@ -435,10 +435,10 @@ function normalizeSchwabAccountActivityMessage(
     orderStatus: normalizeSchwabOrderStatus(rawStatus),
     quantity,
     requestedQty: quantity,
-    filledQty,
+    cumulativeFilledQty,
     remainingQty:
-      quantity !== undefined && filledQty !== undefined
-        ? Math.max(quantity - filledQty, 0)
+      quantity !== undefined && cumulativeFilledQty !== undefined
+        ? Math.max(quantity - cumulativeFilledQty, 0)
         : toNumber(order.remainingQuantity) ??
           toNumber(
             pickTextField(rawMessageText, [

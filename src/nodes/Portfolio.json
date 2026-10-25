@@ -606,6 +606,24 @@
       }
     },
     {
+      "key": "fillPriceMode",
+      "label": "Fill Price Interpretation",
+      "type": "select",
+      "default": "execution",
+      "required": false,
+      "options": [
+        { "id": "execution", "name": "Individual execution price" },
+        { "id": "cumulative_average", "name": "Cumulative average price" }
+      ],
+      "description": "Select the meaning of Average Price independently of quantity. For an order's cumulative average (for example Alpaca filled_avg_price), derive the new fill price from the change in total order value.",
+      "displayOptions": {
+        "show": {
+          "mode": ["broker"],
+          "operation": ["sync_order_event"]
+        }
+      }
+    },
+    {
       "key": "avgFillPrice",
       "label": "Average Price",
       "type": "text",

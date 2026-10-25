@@ -1164,7 +1164,7 @@ export class PortfolioExecutor implements INodeExecutor {
       let filledQty = toNumber(params.filledQty);
       const origQty = toNumber(params.origQty);
       const positionQty = toNumber(params.positionQty);
-      const avgFillPrice = toNumber(params.avgFillPrice);
+      let avgFillPrice = toNumber(params.avgFillPrice);
       let feeAmount = toNumber(params.feeAmount);
       const limitPrice = toNumber(params.limitPrice);
       const stopPrice = toNumber(params.stopPrice);
@@ -1205,20 +1205,48 @@ export class PortfolioExecutor implements INodeExecutor {
           quantityMode !== true && quantityMode !== 1) {
         throw new Error("Cumulative Filled Quantity must resolve to true or false");
       }
-      const previousFilledQty = cumulativeFilledQty ? pm.getOrderfilledQty(normalizedBrokerId) : 0;
-      if (cumulativeFilledQty) {
+      const fillPriceMode = params.fillPriceMode ?? "execution";
+      if (fillPriceMode !== "execution" && fillPriceMode !== "cumulative_average") {
+        throw new Error("Fill Price Interpretation must be execution or cumulative_average");
+      }
+      const normalizeFill = cumulativeFilledQty || fillPriceMode === "cumulative_average";
+      const previousOrder = normalizeFill ? pm.getOrder(normalizedBrokerId) : undefined;
+      const previousFilledQty = previousOrder?.filledQty ?? 0;
+      if (normalizeFill) {
         if (params.filledQty != null && params.filledQty !== "" && (filledQty == null || filledQty < 0)) {
           throw new Error("Filled Quantity must be a finite nonnegative number");
         }
-        filledQty = filledQty == null ? 0 : Math.max(0, filledQty - previousFilledQty);
+        // Lower totals are inconsistent observations: do not advance lifecycle or finalize trades.
+        if (cumulativeFilledQty && filledQty != null && filledQty < previousFilledQty) {
+          return createSuccessOutput({ skipped: true, reason: "lower_cumulative_quantity" });
+        }
+        const currentFilledQty = cumulativeFilledQty ? filledQty ?? previousFilledQty
+          : previousFilledQty + (filledQty ?? 0);
+        filledQty = cumulativeFilledQty ? currentFilledQty - previousFilledQty : filledQty ?? 0;
+        if (filledQty > 0 && fillPriceMode === "cumulative_average") {
+          const previousAverage = previousOrder?.avgFillPrice ?? 0;
+          if (previousFilledQty > 0 && (!Number.isFinite(previousAverage) || previousAverage <= 0)) {
+            throw new Error("Previous order average price is required to derive the new fill value");
+          }
+          if (avgFillPrice == null || avgFillPrice <= 0) {
+            throw new Error("A fill requires a positive cumulative average price");
+          }
+          const fillValue = currentFilledQty * avgFillPrice - previousFilledQty * previousAverage;
+          const executionPrice = fillValue / filledQty;
+          if (!Number.isFinite(fillValue) || fillValue <= 0 ||
+              !Number.isFinite(executionPrice) || executionPrice <= 0) {
+            throw new Error("Cumulative average implies an invalid new fill value");
+          }
+          avgFillPrice = executionPrice;
+        }
         if (filledQty > 0 && (!symbol || !side || avgFillPrice == null || avgFillPrice <= 0)) {
           throw new Error("A fill requires symbol, side and a positive fill price");
         }
         // Repeated totals may carry a new lifecycle status, but no new fill or fee.
         if (filledQty === 0) feeAmount = 0;
-        const order = pm.getOrder(normalizedBrokerId);
+        const order = previousOrder;
         if ((order?.origQty ?? origQty) == null) {
-          throw new Error("Original Quantity is required for cumulative order updates");
+          throw new Error("Original Quantity is required for normalized order updates");
         }
         if (!order) {
           const registered = this.brokerRegisterOrderIntent(pm, { ...params, orderId: normalizedBrokerId, side });
@@ -1229,7 +1257,7 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       // 1. Order update (if status provided)
-      if (status || cumulativeFilledQty) {
+      if (status || normalizeFill) {
         const resolvedorderId =
           normalizedBrokerId ??
           pm.resolveOrderIdByClientId(clientOrderId ?? "");
@@ -1261,7 +1289,7 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
-      if (cumulativeFilledQty && (filledQty ?? 0) > 0 &&
+      if (normalizeFill && (filledQty ?? 0) > 0 &&
           pm.getOrderfilledQty(normalizedBrokerId) <= previousFilledQty) {
         return createSuccessOutput({ skipped: true, reason: "order_update_rejected" });
       }
@@ -1270,7 +1298,7 @@ export class PortfolioExecutor implements INodeExecutor {
       let finalizedTrade:
         | import("../../backtest/simBroker/interfaces").Trade
         | null = null;
-      const normalizedStatus = String(cumulativeFilledQty ? pm.getOrder(normalizedBrokerId)?.status ?? status ?? "" : status ?? "")
+      const normalizedStatus = String(normalizeFill ? pm.getOrder(normalizedBrokerId)?.status ?? status ?? "" : status ?? "")
         .trim()
         .toLowerCase();
       const hasFillEvent =
@@ -1285,7 +1313,7 @@ export class PortfolioExecutor implements INodeExecutor {
           {
             orderId: normalizedBrokerId,
             clientOrderId,
-            executionId: cumulativeFilledQty && !filledQty ? undefined : params.executionId,
+            executionId: normalizeFill && !filledQty ? undefined : params.executionId,
             symbol,
             side: params.side,
             filledQty: filledQty ?? 0,
@@ -1361,7 +1389,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
 
-      if (!cumulativeFilledQty || (filledQty ?? 0) > 0) pm.applyPositionUpdate({
+      if (!normalizeFill || (filledQty ?? 0) > 0) pm.applyPositionUpdate({
         symbol,
         filledQty,
         avgFillPrice,

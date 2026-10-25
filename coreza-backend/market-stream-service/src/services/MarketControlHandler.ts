@@ -776,11 +776,11 @@ export class MarketControlHandler {
           (name) => !state.streams.has(name),
         );
 
-        if (newStreamNames.length > 0) {
+        if (requestedStreamNames.length > 0) {
           console.log(
-            `➕ [MarketControl] Subscribing to new streams on ${source}:`,
-            newStreamNames.slice(0, 5).join(", ") +
-              (newStreamNames.length > 5 ? "..." : ""),
+            `➕ [MarketControl] Ensuring subscriptions on ${source}:`,
+            requestedStreamNames.slice(0, 5).join(", ") +
+              (requestedStreamNames.length > 5 ? "..." : ""),
           );
 
           // Add to tracking
@@ -792,10 +792,13 @@ export class MarketControlHandler {
           requestedStreamNames.forEach((s) => currentStream.add(s));
           state.workflowStreams.set(workflowId, currentStream);
           // Subscribe gateway with stream names directly
-          state.gateway.subscribeStreams(newStreamNames);
+          if (newStreamNames.length > 0) {
+            state.gateway.subscribeStreams(newStreamNames);
+          }
 
-          // Routing keys are identical to native stream names.
-          const routingStreamNames = newStreamNames;
+          // Persist every requested stream for this scope, including streams
+          // already subscribed by another workflow or an earlier listener.
+          const routingStreamNames = requestedStreamNames;
 
           // Persist to Redis
           await this.persistState(userId, source);
@@ -848,25 +851,7 @@ export class MarketControlHandler {
           );
 
           console.log(
-            `✅ [MarketControl] Subscribed to ${newStreamNames.length} stream(s) on ${source}`,
-          );
-        } else {
-          const currentStream =
-            state.workflowStreams.get(workflowId) || new Set<string>();
-          requestedStreamNames.forEach((s) => currentStream.add(s));
-          state.workflowStreams.set(workflowId, currentStream);
-
-          await this.updateActiveStreamingWorkflows(
-            userId,
-            requestedStreamNames,
-            // symbols,
-            scope,
-            targetWorkflowId,
-            // tradingSource ? streamType : tradingNativeStreams,
-          );
-
-          console.log(
-            `ℹ️ [MarketControl] All streams already subscribed on ${source}`,
+            `✅ [MarketControl] Recorded ${requestedStreamNames.length} subscription stream(s) on ${source}`,
           );
         }
       });

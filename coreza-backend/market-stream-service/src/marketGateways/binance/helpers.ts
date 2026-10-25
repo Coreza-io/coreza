@@ -488,7 +488,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
 
         requestedQty,
         lastFilledQty,
-        filledQty: cumulativeFilledQty,
+        filledQty: lastFilledQty,
         cumulativeFilledQty,
         lastFillPrice,
         filledAvgPrice:
@@ -609,7 +609,8 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         priceProtect: o.pP === true,
         orderId: o.ai !== "" && o.ai != null ? String(o.ai) : undefined,
         filledAvgPrice: parseOptionalNumber(o.ap),
-        filledQty: parseOptionalNumber(o.aq),
+        // Algo lifecycle updates contain an executed total, not an individual fill.
+        cumulativeFilledQty: parseOptionalNumber(o.aq),
         orderTradeTime: parseOptionalNumber(o.tt),
         rejectReason: o.rm || undefined,
         rawOrderData: eventMsg,

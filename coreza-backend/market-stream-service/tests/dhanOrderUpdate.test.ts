@@ -163,7 +163,7 @@ describe('Dhan order-update stream', () => {
       clientOrderId: 'idem-789',
       side: 'buy',
       orderStatus: 'filled',
-      filledQty: 10,
+      cumulativeFilledQty: 10,
       requestedQty: 10,
       filledAvgPrice: 101.25,
       orderSymbol: 'RELIANCE',

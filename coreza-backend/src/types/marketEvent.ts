@@ -96,7 +96,9 @@ export interface MarketEvent {
   clientAlgoId?: string;
   algoId?: string;
   side?: string;
-  filledQty?: number;
+  filledQty?: number; // Quantity of this execution only; absent if broker supplies only totals.
+  cumulativeFilledQty?: number; // Broker-reported total filled for this order so far.
+  lastFilledPrice?: number; // Price of this execution; filledAvgPrice remains the order average.
   filledAvgPrice?: number;
   orderStatus?: string;
   orderSymbol?: string;

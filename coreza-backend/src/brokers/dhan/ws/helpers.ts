@@ -522,7 +522,8 @@ export function normalizeDhanOrderUpdate(data: DhanOrderAlertData): MarketEvent 
     clientOrderId,
     side: normalizeDhanSide(data.TxnType),
     orderStatus: normalizeDhanOrderStatus(data.Status, data),
-    filledQty: toNumberValue(data.TradedQty),
+    // Order snapshot total; the order-alert schema has no individual fill quantity.
+    cumulativeFilledQty: toNumberValue(data.TradedQty),
     requestedQty: toNumberValue(data.Quantity),
     filledAvgPrice: toNumberValue(data.AvgTradedPrice) ?? toNumberValue(data.TradedPrice),
     orderSymbol: symbol,

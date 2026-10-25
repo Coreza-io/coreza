@@ -320,7 +320,7 @@
         "origQty": "{{ $('AlpacaStreamListener').json.data.order.requestedQty }}",
         "feeAsset": null,
         "feeAmount": "0",
-        "filledQty": "{{ $('AlpacaStreamListener').json.data.order.filledQty }}",
+        "filledQty": "{{ $('AlpacaStreamListener').json.data.order.cumulativeFilledQty }}",
         "operation": "sync_order_event",
         "orderType": "{{ $('AlpacaStreamListener').json.data.order.orderType }}",
         "stopPrice": null,

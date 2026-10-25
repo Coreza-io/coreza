@@ -104,7 +104,7 @@ describe('Schwab account activity normalization', () => {
       type: 'order_update',
       orderStatus: 'filled',
       symbol: 'ADTX',
-      filledQty: 1,
+      cumulativeFilledQty: 1,
     });
     expect(normalized?.filledAvgPrice).toBeCloseTo(0.013599, 8);
   });

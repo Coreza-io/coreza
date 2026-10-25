@@ -1,3 +1,4 @@
+import { parseOptionalNumber as toNumberValue } from '../../utils/parseOptionalNumber';
 import { createHash } from 'node:crypto';
 import { parseDhanBinaryPacket } from '../../utils/dhanBinaryParser';
 import { createLogger } from '../../utils/logger';
@@ -70,12 +71,6 @@ function validateDhanMarketCredentials(creds: DhanCredentials): {
   if (!token) throw new Error('Dhan access token missing in credentials (api_key or access_token required)');
   if (!clientId) throw new Error('Dhan client_id missing in credentials');
   return { token, clientId };
-}
-
-function toNumberValue(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === '') return undefined;
-  const normalized = Number(value);
-  return Number.isFinite(normalized) ? normalized : undefined;
 }
 
 type DhanDepthPayload = {

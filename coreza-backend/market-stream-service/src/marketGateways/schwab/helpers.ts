@@ -1,3 +1,4 @@
+import { parseOptionalNumber as toNumber } from "../../utils/parseOptionalNumber";
 import type { CorezaMarketEvent } from "../../types/marketEvent";
 import type { GatewayPreConnectContext } from "../types";
 import {
@@ -55,17 +56,6 @@ const SCHWAB_SERVICE_FIELDS: Record<SchwabService, string> = {
   CHART_FUTURES: "0,1,2,3,4,5,6,7,8",
   ACCT_ACTIVITY: "0,1,2,3",
 };
-
-function toNumber(value: unknown): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : undefined;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
 
 function toSymbol(value: unknown): string {
   return typeof value === "string" ? value.toUpperCase() : "";

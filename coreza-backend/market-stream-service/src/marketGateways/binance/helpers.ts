@@ -1,3 +1,4 @@
+import { parseOptionalNumber } from "../../utils/parseOptionalNumber";
 import { createHmac } from "crypto";
 import type { CorezaMarketEvent } from "../../types/marketEvent";
 import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
@@ -453,13 +454,13 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
   if (source === "binance_trading") {
     // Spot: executionReport
     if (eventMsg.e === "executionReport") {
-      const cumulativeFilledQty = parseFloat(eventMsg.z) || 0;
-      const cumulativeQuoteQty = parseFloat(eventMsg.Z) || 0;
-      const lastFilledQty = parseFloat(eventMsg.l) || 0;
-      const lastFillPrice = parseFloat(eventMsg.L) || 0;
-      const requestedQty = parseFloat(eventMsg.q) || 0;
-      const feeAmount = parseFloat(eventMsg.n) || 0;
-      const lastQuoteQty = parseFloat(eventMsg.Y) || 0;
+      const cumulativeFilledQty = parseOptionalNumber(eventMsg.z);
+      const cumulativeQuoteQty = parseOptionalNumber(eventMsg.Z);
+      const lastFilledQty = parseOptionalNumber(eventMsg.l);
+      const lastFillPrice = parseOptionalNumber(eventMsg.L);
+      const requestedQty = parseOptionalNumber(eventMsg.q);
+      const feeAmount = parseOptionalNumber(eventMsg.n);
+      const lastQuoteQty = parseOptionalNumber(eventMsg.Y);
       return {
         source: "binance" as const,
         symbol: eventMsg.s?.toUpperCase() || "*",
@@ -491,9 +492,10 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         cumulativeFilledQty,
         lastFillPrice,
         filledAvgPrice:
-          cumulativeFilledQty > 0
-            ? cumulativeQuoteQty / cumulativeFilledQty
-            : 0,
+          cumulativeFilledQty !== undefined && cumulativeFilledQty > 0
+            && cumulativeQuoteQty !== undefined
+            ? parseOptionalNumber(cumulativeQuoteQty / cumulativeFilledQty)
+            : undefined,
         lastQuoteQty,
         cumulativeQuoteQty,
 
@@ -545,22 +547,22 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         positionSide: o.ps?.toLowerCase(),
 
         // Quantities
-        requestedQty: parseFloat(o.q) || 0, // original order qty
-        filledQty: parseFloat(o.l) || 0, // this event fill qty
-        cumulativeFilledQty: parseFloat(o.z) || 0, // total filled qty so far
+        requestedQty: parseOptionalNumber(o.q), // original order qty
+        filledQty: parseOptionalNumber(o.l), // this event fill qty
+        cumulativeFilledQty: parseOptionalNumber(o.z), // total filled qty so far
 
         // Prices
-        requestedPrice: parseFloat(o.p) || 0, // original order price
-        stopPrice: parseFloat(o.sp) || 0, // stop price
-        lastFilledPrice: parseFloat(o.L) || 0, // this event fill price
-        filledAvgPrice: parseFloat(o.ap) || 0, // average fill price so far
-        activationPrice: parseFloat(o.AP) || 0, // trailing stop only
-        callbackRate: parseFloat(o.cr) || 0, // trailing stop only
+        requestedPrice: parseOptionalNumber(o.p), // original order price
+        stopPrice: parseOptionalNumber(o.sp), // stop price
+        lastFilledPrice: parseOptionalNumber(o.L), // this event fill price
+        filledAvgPrice: parseOptionalNumber(o.ap), // average fill price so far
+        activationPrice: parseOptionalNumber(o.AP), // trailing stop only
+        callbackRate: parseOptionalNumber(o.cr), // trailing stop only
 
         // Fees / pnl
-        feeAmount: parseFloat(o.n) || 0,
+        feeAmount: parseOptionalNumber(o.n),
         feeAsset: o.N || undefined,
-        realizedPnl: parseFloat(o.rp) || 0,
+        realizedPnl: parseOptionalNumber(o.rp),
 
         // Flags / behavior
         isMaker: o.m === true,
@@ -570,13 +572,13 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         workingType: o.wt, // MARK_PRICE / CONTRACT_PRICE
         selfTradePreventionMode: o.V, // e.g. EXPIRE_TAKER / EXPIRE_MAKER / EXPIRE_BOTH / NONE
         priceMatchMode: o.pm, // e.g. NONE
-        goodTillDate: Number(o.gtd) || 0, // GTD cancel time, 0 if not used
+        goodTillDate: parseOptionalNumber(o.gtd), // GTD cancel time, 0 if not used
 
         // Additional numeric fields from Binance payload
-        bidNotional: parseFloat(o.b) || 0,
-        askNotional: parseFloat(o.a) || 0,
-        orderTradeTime: Number(o.T) || 0,
-        expiryReasonCode: Number(o.er) || 0,
+        bidNotional: parseOptionalNumber(o.b),
+        askNotional: parseOptionalNumber(o.a),
+        orderTradeTime: parseOptionalNumber(o.T),
+        expiryReasonCode: parseOptionalNumber(o.er),
         rawOrderData: eventMsg,
       };
     }
@@ -598,17 +600,17 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         orderType: o.o?.toLowerCase(),
         side: o.S?.toLowerCase(),
         positionSide: o.ps?.toLowerCase(),
-        requestedQty: parseFloat(o.q) || 0,
-        triggerPrice: parseFloat(o.tp) || 0,
-        requestedPrice: parseFloat(o.p) || 0,
+        requestedQty: parseOptionalNumber(o.q),
+        triggerPrice: parseOptionalNumber(o.tp),
+        requestedPrice: parseOptionalNumber(o.p),
         workingType: o.wt,
         reduceOnly: o.R === true,
         closeAll: o.cp === true,
         priceProtect: o.pP === true,
         orderId: o.ai !== "" && o.ai != null ? String(o.ai) : undefined,
-        filledAvgPrice: parseFloat(o.ap) || 0,
-        filledQty: parseFloat(o.aq) || 0,
-        orderTradeTime: Number(o.tt) || 0,
+        filledAvgPrice: parseOptionalNumber(o.ap),
+        filledQty: parseOptionalNumber(o.aq),
+        orderTradeTime: parseOptionalNumber(o.tt),
         rejectReason: o.rm || undefined,
         rawOrderData: eventMsg,
       };

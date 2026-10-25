@@ -13,8 +13,6 @@ import { createHash } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
-import { OrderFillApplicationService, brokerFillAccountingEnabled } from "../../services/OrderFillApplicationService";
-import { parseCumulativeFilledQty } from "../../services/orderFillNormalization";
 import { createSuccessOutput, createErrorOutput, resultSuccess } from "../../utils/nodeResultHelpers";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -354,24 +352,6 @@ export class PortfolioExecutor implements INodeExecutor {
     const symbols = this.parseSymbols(params.symbol);
     const operation = params.operation || "get_portfolio";
     const baseCurrency = params.base_currency || "USDT";
-
-    if (brokerFillAccountingEnabled()) {
-      try {
-        if (operation === "create_portfolio") {
-          await OrderFillApplicationService.recover(pm, params, context);
-          return createSuccessOutput({ already_created: true, ...this.getPortfolioSummary(pm, baseCurrency) });
-        }
-        if (operation === "sync_broker_state") {
-          return createErrorOutput("reconciliation_required: pause ingestion and replace the broker fill baseline through controlled reconciliation");
-        }
-        if (operation === "register_order_intent") {
-          const orderParams = { ...params, symbol: normalizeSymbol(params.symbol), side: normalizeSide(params.side) };
-          return await OrderFillApplicationService.register(pm, orderParams, context, staged => this.brokerRegisterOrderIntent(staged, orderParams));
-        }
-      } catch (error: any) {
-        return createErrorOutput(error.message);
-      }
-    }
 
     if (operation === "create_portfolio") {
       if (pm.isBootstrapped()) {
@@ -1181,11 +1161,11 @@ export class PortfolioExecutor implements INodeExecutor {
           ? normalizeSide(params.side)
           : undefined;
 
-      const filledQty = toNumber(params.filledQty);
+      let filledQty = toNumber(params.filledQty);
       const origQty = toNumber(params.origQty);
       const positionQty = toNumber(params.positionQty);
       const avgFillPrice = toNumber(params.avgFillPrice);
-      const feeAmount = toNumber(params.feeAmount);
+      let feeAmount = toNumber(params.feeAmount);
       const limitPrice = toNumber(params.limitPrice);
       const stopPrice = toNumber(params.stopPrice);
       const trailPercent = toNumber(params.trailPercent);
@@ -1216,26 +1196,40 @@ export class PortfolioExecutor implements INodeExecutor {
           });
       }
 
-      // Keep the durable acceptance boundary off SimBroker, market ticks and algo lifecycle events.
-      if (brokerFillAccountingEnabled()) {
-        if (!context) throw new Error("Workflow context required for durable fill accounting");
-        const application = await OrderFillApplicationService.apply(pm, params, context);
-        if (application.kind === "invalid" || application.kind === "reconciliation_required") {
-          return { ...createErrorOutput(application.reason), data: { application } };
-        }
-        const snapshot = this.buildLatestSnapshot(pm, {
-          userId: context.userId!, workflowId: context.workflowId!, runId: context.executionId,
-          broker: params.broker, credentialId: params.credential_id, baseCurrency,
-        });
-        await SnapshotCache.upsertLatest(snapshot).catch(err => fillLogger.warn({ err }, "Committed fill snapshot publication deferred"));
-        return createSuccessOutput({ ...this.getPortfolioSummary(pm, baseCurrency), application });
+      const quantityMode = params.cumulativeFilledQty;
+      const cumulativeFilledQty = quantityMode === true ||
+        (typeof quantityMode === "string" && ["true", "1"].includes(quantityMode.trim().toLowerCase())) ||
+        quantityMode === 1;
+      if (quantityMode != null && quantityMode !== false && quantityMode !== 0 &&
+          !(typeof quantityMode === "string" && ["true", "false", "1", "0"].includes(quantityMode.trim().toLowerCase())) &&
+          quantityMode !== true && quantityMode !== 1) {
+        throw new Error("Cumulative Filled Quantity must resolve to true or false");
       }
-      if (parseCumulativeFilledQty(params.cumulativeFilledQty) || (params.fillPriceMode != null && params.fillPriceMode !== "execution")) {
-        throw new Error("Cumulative fill accounting requires BROKER_FILL_ACCOUNTING_ENABLED and a reconciled portfolio baseline");
+      const previousFilledQty = cumulativeFilledQty ? pm.getOrderfilledQty(normalizedBrokerId) : 0;
+      if (cumulativeFilledQty) {
+        if (params.filledQty != null && params.filledQty !== "" && (filledQty == null || filledQty < 0)) {
+          throw new Error("Filled Quantity must be a finite nonnegative number");
+        }
+        filledQty = filledQty == null ? 0 : Math.max(0, filledQty - previousFilledQty);
+        if (filledQty > 0 && (!symbol || !side || avgFillPrice == null || avgFillPrice <= 0)) {
+          throw new Error("A fill requires symbol, side and a positive fill price");
+        }
+        // Repeated totals may carry a new lifecycle status, but no new fill or fee.
+        if (filledQty === 0) feeAmount = 0;
+        const order = pm.getOrder(normalizedBrokerId);
+        if ((order?.origQty ?? origQty) == null) {
+          throw new Error("Original Quantity is required for cumulative order updates");
+        }
+        if (!order) {
+          const registered = this.brokerRegisterOrderIntent(pm, { ...params, orderId: normalizedBrokerId, side });
+          if (registered.status === "error") return registered;
+        } else if (order.origQty == null) {
+          order.origQty = origQty;
+        }
       }
 
       // 1. Order update (if status provided)
-      if (status) {
+      if (status || cumulativeFilledQty) {
         const resolvedorderId =
           normalizedBrokerId ??
           pm.resolveOrderIdByClientId(clientOrderId ?? "");
@@ -1257,7 +1251,7 @@ export class PortfolioExecutor implements INodeExecutor {
             stopPrice,
             trailPercent,
             trailPrice,
-            status,
+            status: status || pm.getOrder(normalizedBrokerId)?.status || "new",
             filledQty,
             avgFillPrice,
             feeAmount,
@@ -1267,11 +1261,16 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
+      if (cumulativeFilledQty && (filledQty ?? 0) > 0 &&
+          pm.getOrderfilledQty(normalizedBrokerId) <= previousFilledQty) {
+        return createSuccessOutput({ skipped: true, reason: "order_update_rejected" });
+      }
+
       // 2. Record closed trade (must run before position update which may delete the position)
       let finalizedTrade:
         | import("../../backtest/simBroker/interfaces").Trade
         | null = null;
-      const normalizedStatus = String(status ?? "")
+      const normalizedStatus = String(cumulativeFilledQty ? pm.getOrder(normalizedBrokerId)?.status ?? status ?? "" : status ?? "")
         .trim()
         .toLowerCase();
       const hasFillEvent =
@@ -1286,7 +1285,7 @@ export class PortfolioExecutor implements INodeExecutor {
           {
             orderId: normalizedBrokerId,
             clientOrderId,
-            executionId: params.executionId,
+            executionId: cumulativeFilledQty && !filledQty ? undefined : params.executionId,
             symbol,
             side: params.side,
             filledQty: filledQty ?? 0,
@@ -1362,7 +1361,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
 
-      pm.applyPositionUpdate({
+      if (!cumulativeFilledQty || (filledQty ?? 0) > 0) pm.applyPositionUpdate({
         symbol,
         filledQty,
         avgFillPrice,
@@ -1385,10 +1384,8 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // 5. Buffer fill for async DB persistence (fire-and-forget)
       if (filledQty && avgFillPrice && orderId) {
-        //const fillDeltaQty = this.computeFillDelta(orderId, filledQty);
 
         if (
-          //fillDeltaQty > 0 &&
           filledQty > 0 &&
           context?.executionMode === "live" &&
           context?.userId &&
@@ -1401,7 +1398,6 @@ export class PortfolioExecutor implements INodeExecutor {
             side: params.side,
             orderId: normalizedBrokerId,
             executionId: params.executionId,
-            //fillDeltaQty,
             filledQty,
             fillPrice: avgFillPrice,
             fillStatus: params.status,

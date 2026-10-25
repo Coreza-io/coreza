@@ -23,19 +23,17 @@ import {
 } from "../repositories/CashSnapshotRepository";
 import { LatestSnapshotState, SnapshotCache } from "../services/SnapshotCache";
 import Redis from "ioredis";
-import { randomUUID } from "crypto";
-import { supabase } from "../config/supabase";
-import { FillEventBus, FillStreamEvent } from "../services/FillEventBus";
-import { brokerFillAccountingEnabled } from "../services/OrderFillApplicationService";
 import { RedisKeys } from "../infra/redisKeys";
 
 const logger = createLogger("FillSyncWorker");
 
 const CONSUMER_GROUP = "fill-sync";
-const CONSUMER_NAME = `worker-${randomUUID()}`;
+const CONSUMER_NAME = "worker-1";
 const BATCH_SIZE = 100;
 const BLOCK_TIMEOUT_MS = 2000;
 const SNAPSHOT_FLUSH_INTERVAL_MS = 5000;
+const DLQ_STREAM = "portfolio:fills:dlq";
+const MAX_RETRIES = 5;
 
 const toFiniteNumber = (value: unknown): number | null => {
   if (typeof value === "number") {
@@ -62,6 +60,8 @@ export class FillSyncWorker {
   private isRunning = false;
   private streamConnection: Redis | null = null;
 
+  /** Track retry counts for poison message detection */
+  private retryCounters = new Map<string, number>();
 
   private constructor() {}
 
@@ -140,7 +140,6 @@ export class FillSyncWorker {
   }
 
   private async processPendingFills(): Promise<void> {
-    if (brokerFillAccountingEnabled()) await this.deliverOutbox();
     const redis = getRedisCache();
     const streamConn = this.streamConnection || redis;
 
@@ -164,8 +163,7 @@ export class FillSyncWorker {
 
         let results: any;
         try {
-          const reclaimed = await redis.xautoclaim(streamKey, CONSUMER_GROUP, CONSUMER_NAME, 30_000, "0-0", "COUNT", BATCH_SIZE) as any;
-          results = reclaimed?.[1]?.length ? [[streamKey, reclaimed[1]]] : await streamConn.xreadgroup(
+          results = await streamConn.xreadgroup(
             "GROUP",
             CONSUMER_GROUP,
             CONSUMER_NAME,
@@ -203,9 +201,8 @@ export class FillSyncWorker {
             fields[fieldValues[i]] = fieldValues[i + 1];
           }
           const dedupeKey = fields.algo_id
-            ? fields.broker_account_id ? `algo:${fields.broker_account_id}:${fields.environment || ""}:${fields.algo_id}` : `algo:${fields.algo_id}`
+            ? `algo:${fields.algo_id}`
             : fields.fill_id;
-          if (!dedupeKey) throw new Error(`Fill ${entryId} is missing its stable identity`);
           if (dedupeKey) {
             deduped.set(dedupeKey, { entryId, fields });
           }
@@ -217,9 +214,6 @@ export class FillSyncWorker {
             user_id: fields.user_id,
             broker: fields.broker,
             credential_id: fields.credential_id || fields.user_id,
-            broker_account_id: fields.broker_account_id || "",
-            environment: fields.environment || "",
-            broker_execution_id: fields.broker_execution_id || undefined,
             symbol: fields.symbol,
             fill_id: fillId,
             order_id: fields.order_id || (null as any),
@@ -266,13 +260,49 @@ export class FillSyncWorker {
             await redis.xack(streamKey, CONSUMER_GROUP, ...entryIds);
           }
 
+          for (const id of entryIds) {
+            this.retryCounters.delete(id);
+          }
 
           logger.debug(
             { stream: streamKey, count: rows.length },
             "fills synced",
           );
         } catch (err) {
-          // Keep failed entries pending until the SQL sink succeeds; reclaim after worker restart.
+          for (const entryId of entryIds) {
+            const count = (this.retryCounters.get(entryId) || 0) + 1;
+            this.retryCounters.set(entryId, count);
+
+            if (count >= MAX_RETRIES) {
+              logger.warn(
+                { entryId, stream: streamKey },
+                "moving poison message to DLQ",
+              );
+              try {
+                const entry = entries.find(([id]: any) => id === entryId);
+                if (entry) {
+                  const [, fieldValues] = entry;
+                  await redis.xadd(
+                    DLQ_STREAM,
+                    "MAXLEN",
+                    "~",
+                    "10000",
+                    "*",
+                    "original_stream",
+                    streamKey,
+                    "original_entry_id",
+                    entryId,
+                    ...fieldValues,
+                  );
+                }
+                await redis.xack(streamKey, CONSUMER_GROUP, entryId);
+                this.retryCounters.delete(entryId);
+              } catch (dlqErr) {
+                logger.error({ err: dlqErr, entryId }, "DLQ append failed");
+              }
+            }
+          }
+
           logger.error(
             { err, stream: streamKey, count: entryIds.length },
             "fill upsert failed, will retry",
@@ -283,20 +313,6 @@ export class FillSyncWorker {
   }
 
   // ─── Snapshot Flush ────────────────────────────────────
-
-  private async deliverOutbox(): Promise<void> {
-    const db = supabase as any;
-    const { data, error } = await db.from("broker_fill_outbox").select("scope_id,receipt_id,payload")
-      .is("delivered_at", null).order("created_at").limit(BATCH_SIZE);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      // Multiple dispatchers may publish the same deterministic fill ID; the sink is idempotent.
-      await FillEventBus.publish(row.payload as FillStreamEvent);
-      const { error: markError } = await db.from("broker_fill_outbox").update({ delivered_at: new Date().toISOString() })
-        .eq("scope_id", row.scope_id).eq("receipt_id", row.receipt_id);
-      if (markError) throw markError;
-    }
-  }
 
   private async flushSnapshots(): Promise<void> {
     const redis = getRedisCache();

@@ -21,9 +21,6 @@ export interface FillStreamEvent {
   execution_id?: string;
   broker: string;
   credential_id?: string;
-  broker_account_id?: string;
-  environment?: string;
-  broker_execution_id?: string;
   symbol: string;
   side: "buy" | "sell";
   order_id?: string;
@@ -46,10 +43,12 @@ export interface FillStreamEvent {
   tag?: string;
 }
 
+const STREAM_MAX_LEN = "100000";
+
 export class FillEventBus {
   /**
    * Append a fill event to the workflow-scoped Redis stream.
-   * Durable outbox callers await publication. SQL remains the recoverable source.
+   * Fire-and-forget — caller should NOT await this.
    */
   static async publish(event: FillStreamEvent): Promise<void> {
     const redis = getRedisCache();
@@ -70,10 +69,8 @@ export class FillEventBus {
     const pipeline = redis.pipeline();
     pipeline.sadd(activeStreamsKey, streamKey);
     pipeline.sadd(RedisKeys.registryFillsActive(), event.user_id);
-    // Never trim an unacknowledged event. Retention requires a consumer-aware policy.
-    pipeline.xadd(streamKey, "*", ...fields);
-    const results = await pipeline.exec();
-    if (!results || results.some(([error]) => error)) throw new Error("Fill stream publication failed");
+    pipeline.xadd(streamKey, "MAXLEN", "~", STREAM_MAX_LEN, "*", ...fields);
+    await pipeline.exec();
 
     logger.debug({ streamKey, fillId: event.fill_id }, "fill event published");
   }

@@ -17,8 +17,6 @@ export interface LiveFillRow {
   user_id: string;
   broker: string;
   credential_id: string;
-  broker_account_id?: string;
-  environment?: string;
   symbol: string;
   fill_id: string;
   order_id?: string;
@@ -52,7 +50,7 @@ export class LiveFillRepository {
 
     const { error } = await supabase
       .from("live_fills")
-      .upsert(rows as any, { onConflict: "user_id,broker,broker_account_id,environment,symbol,fill_id" });
+      .upsert(rows as any, { onConflict: "user_id,broker,symbol,fill_id" });
 
     if (error) {
       logger.error(

@@ -488,7 +488,6 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         requestedQty,
         lastFilledQty,
         filledQty: cumulativeFilledQty,
-        cumulativeQuoteNotional: eventMsg.Z == null ? undefined : String(eventMsg.Z),
         cumulativeFilledQty,
         lastFillPrice,
         filledAvgPrice:
@@ -548,8 +547,6 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         // Quantities
         requestedQty: parseFloat(o.q) || 0, // original order qty
         filledQty: parseFloat(o.l) || 0, // this event fill qty
-        lastFilledQty: o.l == null ? undefined : Number(o.l),
-        lastFillPrice: o.L == null ? undefined : Number(o.L),
         cumulativeFilledQty: parseFloat(o.z) || 0, // total filled qty so far
 
         // Prices

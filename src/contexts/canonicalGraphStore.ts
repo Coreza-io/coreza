@@ -129,7 +129,7 @@ function createSemanticSnapshot(
 export const RUNTIME_NODE_DATA_KEYS = new Set([
   "input", "loopItems", "output", "executionInput", "executionStatus", "executionDuration", "itemCount", "error",
   "isExecuting", "isStreamingWaiting", "streamDataReceived", "isListening", "isTestListening",
-  "isStreamPaused", "isStreamStepping", "lastStreamEntryId", "loopItem", "loopIndex", "aggregated",
+  "isStreamPaused", "isStreamStepping", "streamReplayRequestId", "lastStreamEntryId", "loopItem", "loopIndex", "aggregated",
 ]);
 
 const shallowEqual = (a: Record<string, unknown> | undefined, b: Record<string, unknown> | undefined): boolean => {
@@ -235,3 +235,4 @@ export function createCanonicalGraphStore(): CanonicalGraphStore {
     },
   };
 }
+

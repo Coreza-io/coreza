@@ -27,6 +27,7 @@ import type { MarketSource } from "../types/marketEvent";
 
 interface ControlMessage {
   action: "subscribe" | "unsubscribe";
+  requestId?: string;
   userId: string;
   workflowId: string;
   nodeId?: string;
@@ -855,7 +856,21 @@ export class MarketControlHandler {
           );
         }
       });
+      if (msg.requestId) {
+        await this.redisPub.set(
+          `md:subscription:result:${userId}:${msg.requestId}`,
+          JSON.stringify({ success: true }),
+          "EX", 120,
+        );
+      }
     } catch (error) {
+      if (msg.requestId) {
+        await this.redisPub.set(
+          `md:subscription:result:${userId}:${msg.requestId}`,
+          JSON.stringify({ success: false, error: error instanceof Error ? error.message : "Subscription failed" }),
+          "EX", 120,
+        );
+      }
       console.error(
         `❌ [MarketControl] Failed to handle subscribe for ${source}:`,
         error,
@@ -1397,3 +1412,4 @@ export class MarketControlHandler {
     console.log("✅ [MarketControl] Cleanup complete");
   }
 }
+

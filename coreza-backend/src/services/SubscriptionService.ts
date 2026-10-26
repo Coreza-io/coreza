@@ -8,7 +8,8 @@
  * See the LICENSE file for details.
  */
 
-import { getRedisCache } from "../config/redis";
+import { randomUUID } from "crypto";
+import { getRedisCache, getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { lookupSecurityId } from "../brokers/dhan/scripMaster";
 import { MarketSource } from "../types/marketEvent";
@@ -20,6 +21,7 @@ export interface SubscriptionParams {
   nodeId?: string;
   credentialId: string;
   operation: "subscribe" | "unsubscribe";
+  waitForResult?: boolean; // Await gateway setup; publishing alone does not confirm success.
   // Symbol sources
   symbols?: string | string[];
   initialInput?: { symbols?: string | string[] };
@@ -195,7 +197,11 @@ export class SubscriptionService {
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
       // This allows proper cleanup when the workflow is deactivated
       // nodeId is NOT included - Subscribe nodes don't receive data routing (that's handled by StreamData nodes)
+      const requestId = operation === "subscribe" && params.waitForResult
+        ? randomUUID()
+        : undefined;
       const controlMessage: Record<string, unknown> = {
+        requestId,
         action: operation,
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup
@@ -226,13 +232,37 @@ export class SubscriptionService {
 
       // Publish to appropriate control channel
       // NOTE: Stream name building and Redis storage is handled by MarketControlHandler
-      const redis = getRedisCache();
+      // Confirmed requests and replies use the same Redis as MarketControlHandler.
+      const redis = requestId ? getRedisQueue() : getRedisCache();
       const channel =
         operation === "subscribe"
           ? REDIS_CHANNELS.controlSubscribe
           : REDIS_CHANNELS.controlUnsubscribe;
 
       await redis.publish(channel, JSON.stringify(controlMessage));
+
+      // A published command is not confirmation that the gateway connected.
+      if (requestId) {
+        const resultKey = `md:subscription:result:${userId}:${requestId}`;
+        const startedAt = Date.now();
+        let confirmed = false;
+        while (Date.now() - startedAt < SUBSCRIPTION_READY_TIMEOUT_MS) {
+          const rawResult = await redis.get(resultKey);
+          if (rawResult) {
+            await redis.del(resultKey);
+            const result = JSON.parse(rawResult) as { success: boolean; error?: string };
+            if (!result.success) {
+              return { success: false, error: result.error || "Subscription failed" };
+            }
+            confirmed = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_READY_POLL_MS));
+        }
+        if (!confirmed) {
+          return { success: false, error: `Subscription confirmation timed out for ${source}. Please retry.` };
+        }
+      }
 
       console.log(
         `📤 [SubscriptionService] Published ${operation} control message for ${source}:`,
@@ -341,3 +371,4 @@ export class SubscriptionService {
     return false;
   }
 }
+

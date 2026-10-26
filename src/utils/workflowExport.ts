@@ -1,6 +1,6 @@
 import { allocateNodeName } from "@/domain/nodeNaming";
 import { mapNodeReferences, remapNodeReferenceMap } from "@/utils/remapNodeReferences";
-import { resolveNodeIdentity, withUniqueInstanceAliases } from "@/utils/referenceResolution";
+import { nodeReferenceName, resolveNodeIdentity, withUniqueInstanceAliases } from "@/utils/referenceResolution";
 import { nodeManifest } from "@/nodes/manifest";
 import { validateClusters } from "@/domain/clusters/validate";
 /**
@@ -163,7 +163,6 @@ export async function importWorkflow(file: File): Promise<{
     });
   }
   const idMap = Object.fromEntries(normalizedNodes.map((node) => [node.id, crypto.randomUUID()]));
-  const references = withUniqueInstanceAliases(idMap, normalizedNodes);
   const reservations = new Set<string>();
   const familyNames = normalizedNodes.map((node) => node.displayName?.trim() ? node.displayName : node.id);
   const freshNodes = normalizedNodes.map((node, index) => {
@@ -172,9 +171,11 @@ export async function importWorkflow(file: File): Promise<{
     reservations.add(result.name);
     return {
       ...node, id: idMap[node.id], displayName: result.name,
-      values: remapNodeReferenceMap(node.values, references),
     };
   });
+  const references = withUniqueInstanceAliases(Object.fromEntries(
+    normalizedNodes.map((node, index) => [node.id, nodeReferenceName(freshNodes[index], freshNodes)]),
+  ), normalizedNodes);
   const freshEdges = importedEdges.map((edge) => ({
     ...edge, id: crypto.randomUUID(), source: idMap[edge.source], target: idMap[edge.target],
   }));
@@ -187,7 +188,7 @@ export async function importWorkflow(file: File): Promise<{
 
   return {
     name: parsed.name,
-    nodes: freshNodes,
+    nodes: freshNodes.map((node) => ({ ...node, values: remapNodeReferenceMap(node.values, references) })),
     edges: freshEdges,
     isActive: parsed.isActive ?? false,
     clusters: normalizeClusters(freshClusters),

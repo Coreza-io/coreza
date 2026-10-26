@@ -26,3 +26,15 @@ export function withUniqueInstanceAliases(
   }
   return result;
 }
+
+/** Prefer the public name only when it resolves back to this canonical node. */
+export function nodeReferenceName(node: ReferenceNode, nodes: readonly ReferenceNode[]): string {
+  const data = node.data as Record<string, unknown> | undefined;
+  const name = node.displayName ?? data?.displayName;
+  if (typeof name === "string" && name.trim()) {
+    try {
+      if (resolveNodeIdentity(name, nodes)?.id === node.id) return name;
+    } catch { /* Ambiguous names require the canonical ID. */ }
+  }
+  return node.id;
+}

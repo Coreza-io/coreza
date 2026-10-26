@@ -81,6 +81,8 @@ export class SubscriptionService {
   static async execute(
     params: SubscriptionParams,
   ): Promise<SubscriptionResult> {
+    let confirmationRedis: ReturnType<typeof getRedisQueue> | undefined;
+    let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const {
         source,
@@ -233,13 +235,35 @@ export class SubscriptionService {
       // Publish to appropriate control channel
       // NOTE: Stream name building and Redis storage is handled by MarketControlHandler
       // Confirmed requests and replies use the same Redis as MarketControlHandler.
-      const redis = requestId ? getRedisQueue() : getRedisCache();
+      const redis = requestId
+        ? (confirmationRedis = getRedisQueue().duplicate({
+            lazyConnect: true,
+            maxRetriesPerRequest: 0,
+            enableOfflineQueue: false,
+            autoResendUnfulfilledCommands: false,
+            commandTimeout: SUBSCRIPTION_READY_TIMEOUT_MS,
+            retryStrategy: () => null,
+            sentinelRetryStrategy: () => null,
+          }))
+        : getRedisCache();
+      // Bound connection, publication and reads, including a command in flight.
+      const deadline = requestId ? new Promise<never>((_, reject) => {
+        confirmationTimer = setTimeout(() => reject(new Error(
+          `Subscription confirmation timed out for ${source}. Please retry.`,
+        )), SUBSCRIPTION_READY_TIMEOUT_MS);
+      }) : undefined;
+      const withinDeadline = <T>(command: Promise<T>): Promise<T> =>
+        deadline ? Promise.race([command, deadline]) : command;
+      if (confirmationRedis) {
+        confirmationRedis.on("error", () => { /* Awaited commands report connection failures. */ });
+        await withinDeadline(confirmationRedis.connect());
+      }
       const channel =
         operation === "subscribe"
           ? REDIS_CHANNELS.controlSubscribe
           : REDIS_CHANNELS.controlUnsubscribe;
 
-      await redis.publish(channel, JSON.stringify(controlMessage));
+      await withinDeadline(redis.publish(channel, JSON.stringify(controlMessage)));
 
       // A published command is not confirmation that the gateway connected.
       if (requestId) {
@@ -247,9 +271,9 @@ export class SubscriptionService {
         const startedAt = Date.now();
         let confirmed = false;
         while (Date.now() - startedAt < SUBSCRIPTION_READY_TIMEOUT_MS) {
-          const rawResult = await redis.get(resultKey);
+          const rawResult = await withinDeadline(redis.get(resultKey));
           if (rawResult) {
-            await redis.del(resultKey);
+            await withinDeadline(redis.del(resultKey));
             const result = JSON.parse(rawResult) as { success: boolean; error?: string };
             if (!result.success) {
               return { success: false, error: result.error || "Subscription failed" };
@@ -257,7 +281,7 @@ export class SubscriptionService {
             confirmed = true;
             break;
           }
-          await new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_READY_POLL_MS));
+          await withinDeadline(new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_READY_POLL_MS)));
         }
         if (!confirmed) {
           return { success: false, error: `Subscription confirmation timed out for ${source}. Please retry.` };
@@ -286,6 +310,9 @@ export class SubscriptionService {
           error instanceof Error ? error.message : String(error)
         }`,
       };
+    } finally {
+      if (confirmationTimer) clearTimeout(confirmationTimer);
+      confirmationRedis?.disconnect();
     }
   }
 

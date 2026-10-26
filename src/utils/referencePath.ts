@@ -1,3 +1,5 @@
+import { nodeReferenceName, type ReferenceNode } from "./referenceResolution";
+
 export type PathSegment = string | number;
 
 export interface JsonReferenceDragPayload {
@@ -135,15 +137,15 @@ export function isPathSegments(value: unknown): value is PathSegment[] {
   );
 }
 
-/** Build selectors only from a current canonical identity. */
+/** Resolve the current canonical source before choosing a readable, unambiguous selector. */
 export function buildNodeReference(
   payload: JsonReferenceDragPayload,
-  nodes: readonly { id: string }[],
+  nodes: readonly ReferenceNode[],
   selectedSourceId?: string,
 ): string | null {
   const id = payload.sourceNodeId ?? selectedSourceId;
   const source = nodes.find((node) => node.id === id);
   if (!source || source.id.toLowerCase().startsWith("__cluster__")) return null;
   if (payload.variableKey) return `{{ $vars${formatPath([payload.variableKey])} }}`;
-  return `{{ $(${JSON.stringify(source.id)}).json${formatPath(payload.pathSegments)} }}`;
+  return `{{ $(${JSON.stringify(nodeReferenceName(source, nodes))}).json${formatPath(payload.pathSegments)} }}`;
 }

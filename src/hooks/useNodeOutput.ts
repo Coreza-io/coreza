@@ -35,7 +35,7 @@ export function useNodeOutput({ data, definition, enabled = true }: UseNodeOutpu
   // Explicit null/falsy output remains distinct from a missing output property.
   const unpinned = runtime && owns(runtime, "output") ? runtime.output
     : owns(data, "output") ? (!data.readOnly && ["listening", "streaming"].includes(data.output?.status) ? fallback : data.output)
-    : localOutput?.session === sessionId ? localOutput.value : fallback;
+    : localOutput && localOutput.session === sessionId ? localOutput.value : fallback;
   void executionData;
   const displayedData = isPinned ? pinnedOutput : unpinned;
   useEffect(() => {

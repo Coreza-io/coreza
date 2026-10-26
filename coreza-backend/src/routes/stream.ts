@@ -837,6 +837,7 @@ router.post("/:source/register", async (req, res) => {
       if (hasOrderUpdate) {
         const tradingSourceId = getTradingCompanionSource(source);
         const tradingResult = await SubscriptionService.subscribe({
+          waitForResult: true,
           source: tradingSourceId,
           userId,
           workflowId,
@@ -862,21 +863,7 @@ router.post("/:source/register", async (req, res) => {
           return res.status(400).json(resultFailure(tradingResult.error ?? "Node operation failed", { data: null }));
         }
 
-        // Wait for trading subscription readiness
-        const tradingReady = await SubscriptionService.waitForSubscriptionReady(
-          {
-            userId,
-            source: tradingSourceId,
-            environment: requiredEnvironment,
-            scope,
-            workflowId,
-          },
-        );
-        if (!tradingReady) {
-          console.warn(
-            `⚠️ [ExecuteStreamNode] Trading subscription readiness timed out for ${tradingSourceId}; continuing in market-only mode`,
-          );
-        }
+        // Confirmation is returned only after gateway setup and stream persistence.
       }
 
       if (hasNews) {
@@ -1207,4 +1194,5 @@ router.post("/cleanup-user-streams", async (req, res) => {
 });
 
 export default router;
+
 

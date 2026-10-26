@@ -485,6 +485,7 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
         side: eventMsg.S?.toLowerCase(),
         orderSymbol: eventMsg.s?.toUpperCase() || "*",
         orderType: eventMsg.o?.toLowerCase(),
+        timeInForce: eventMsg.f,
 
         requestedQty,
         lastFilledQty,

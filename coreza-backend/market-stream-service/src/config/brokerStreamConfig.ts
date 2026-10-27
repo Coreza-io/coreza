@@ -127,12 +127,10 @@ const BROKER_STREAM_CONFIG: Record<string, BrokerStreamConfig> = {
     symbolFirst: true,
     companionSources: ["binance_trading"],
     emitsUnclosedBars: true,
-    normalizeStreamType: (streamType: string) =>
-      streamType === "liquidation"
-        ? "forceOrder"
-        : streamType === "continuous_kline" || streamType === "continuousKline"
-          ? "continuousKline"
-          : streamType,
+    normalizeStreamType: (streamType: string) => {
+      const normalized = streamType.trim().replace(/^continuous_kline(?=_|$)/, "continuousKline");
+      return normalized === "liquidation" ? "forceOrder" : normalized;
+    },
   },
 
   dhan: {

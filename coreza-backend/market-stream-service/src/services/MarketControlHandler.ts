@@ -17,6 +17,7 @@ import {
   extractSymbol,
   parseStreamName,
   tradingRoutingKey,
+  isMalformedBinanceContinuousStream,
 } from "../utils/streamName";
 import {
   computeTradingNativeStreamsFromConfig,
@@ -54,6 +55,9 @@ interface SourceState {
   gateway: MarketDataGateway;
   connectedUserId: string;
   credentialId: string;
+  environment?: string;
+  marketType?: string;
+  feed?: string;
   // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
   streams: Set<string>;
   workflowStreams: Map<string, Set<string>>; // workflowId → streams (for reference counting)
@@ -733,6 +737,11 @@ export class MarketControlHandler {
         const stateKey = this.getStateKey(userId, source);
         let state = this.sourceStates.get(stateKey);
 
+        if (source.split("_")[0] === "binance" && state?.gateway.getStats().connected &&
+          (state.environment !== environment || (marketType && state.marketType !== marketType.toLowerCase()))) {
+          throw new Error("Binance gateway is already connected with a different environment/marketType; stop its affected workflows before changing endpoint context.");
+        }
+
         // Connect gateway if needed
         if (!state || !state.gateway.getStats().connected) {
           console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
@@ -946,6 +955,17 @@ export class MarketControlHandler {
               exchange,
             );
 
+        // A scoped teardown must also retire this workflow's legacy spellings.
+        if (source.split("_")[0] === "binance" && !tradingSource) {
+          for (const claimed of state.workflowStreams.get(workflowId) ?? []) {
+            if (!isMalformedBinanceContinuousStream(source, claimed)) continue;
+            const parsed = parseStreamName(source, claimed);
+            const canonical = buildStreamNames(source, [parsed.symbol], [parsed.streamType], parsed.interval || "", parsed.contractType)[0];
+            if (streamNamesToRemove.includes(canonical)) streamNamesToRemove.push(claimed);
+          }
+          streamNamesToRemove = [...new Set(streamNamesToRemove)];
+        }
+
         if (streamNamesToRemove.length === 0) {
           streamNamesToRemove = Array.from(
             state.workflowStreams.get(workflowId) ?? new Set<string>(),
@@ -975,15 +995,19 @@ export class MarketControlHandler {
 
         const shouldRemoveGatewayStreams =
           !tradingSource || !hasTradingClaimRemaining;
+        const scopedBinance = source.split("_")[0] === "binance" && scope === "workflow";
+        const gatewayStreamsToRemove = scopedBinance
+          ? streamNamesToRemove.filter((name) => !Array.from(state.workflowStreams.values()).some((claims) => claims.has(name)))
+          : shouldRemoveGatewayStreams ? streamNamesToRemove : [];
 
-        if (shouldRemoveGatewayStreams) {
-          streamNamesToRemove.forEach((name) => state.streams.delete(name));
-          state.gateway.unsubscribeStreams(streamNamesToRemove);
+        if (gatewayStreamsToRemove.length > 0) {
+          gatewayStreamsToRemove.forEach((name) => state.streams.delete(name));
+          state.gateway.unsubscribeStreams(gatewayStreamsToRemove);
         }
 
         if (
           streamNamesToRemove.length > 0 &&
-          (!tradingSource || shouldRemoveGatewayStreams)
+          (scopedBinance || !tradingSource || shouldRemoveGatewayStreams)
         ) {
           // Routing keys are identical to native stream names.
           const routingStreamNamesToRemove = streamNamesToRemove;
@@ -1057,7 +1081,7 @@ export class MarketControlHandler {
       }
 
       // if (workflowId && !tradingSource) {
-      if (workflowId) {
+      if (workflowId && !(source.split("_")[0] === "binance" && scope === "workflow" && symbols.length > 0)) {
         state.workflowStreams.delete(workflowId);
       }
 
@@ -1185,6 +1209,13 @@ export class MarketControlHandler {
         connectedUserId: userId,
         credentialId: credentialId || "default",
         streams: new Set(), // Native stream names as single source of truth
+        environment: baseSource === "binance"
+          ? (creds.environment === "testnet" ? "testnet" : "live")
+          : creds.environment ?? environment,
+        marketType: baseSource === "binance"
+          ? (String(creds.marketType || "").toLowerCase() === "futures" ? "futures" : "spot")
+          : creds.marketType ?? marketType,
+        feed: creds.feed ?? feed,
         workflowStreams: new Map(),
       });
 
@@ -1215,6 +1246,9 @@ export class MarketControlHandler {
     const stateData = {
       userId: state.connectedUserId,
       credentialId: state.credentialId,
+      environment: state.environment,
+      marketType: state.marketType,
+      feed: state.feed,
       // Store native stream names directly
       streams: Array.from(state.streams),
       workflowStreams: Array.from(state.workflowStreams.entries()).map(
@@ -1269,6 +1303,18 @@ export class MarketControlHandler {
           try {
             const stateData = JSON.parse(stateJson);
             const persistedWorkflowStreams = stateData.workflowStreams || [];
+            const savedStreams: string[] = Array.isArray(stateData.streams) ? stateData.streams : [];
+            if (source.split("_")[0] === "binance" && savedStreams.length > 0 &&
+              (!["live", "testnet"].includes(stateData.environment) ||
+                !["spot", "futures"].includes(stateData.marketType))) {
+              throw new Error("Saved Binance gateway lacks resolved environment/marketType; stop and re-register the affected workflows from node configuration.");
+            }
+            const restorableStreams = savedStreams.filter((stream) =>
+              !isMalformedBinanceContinuousStream(source, stream));
+            if (restorableStreams.length !== savedStreams.length) {
+              console.warn(`⚠️ [MarketControl] Skipping malformed continuous-kline claims for ${source}/${userId}; stop and re-register affected workflows. Other streams are preserved.`);
+            }
+            if (restorableStreams.length === 0) continue;
 
             console.log(`📦 [MarketControl] Found saved state for ${source}:`, {
               userId: stateData.userId,
@@ -1309,15 +1355,15 @@ export class MarketControlHandler {
               state = this.sourceStates.get(restoredStateKey)!;
             }
 
-            // Restore streams directly - no conversion needed!
-            if (stateData.streams && Array.isArray(stateData.streams)) {
-              stateData.streams.forEach((s: string) => state.streams.add(s));
+            // Never replay malformed names while leaving their routing claims unchanged.
+            if (restorableStreams.length > 0) {
+              restorableStreams.forEach((s: string) => state.streams.add(s));
 
               // Subscribe gateway with stored stream names
-              state.gateway.subscribeStreams(stateData.streams);
+              state.gateway.subscribeStreams(restorableStreams);
 
               console.log(
-                `🔄 [MarketControl] Restored ${stateData.streams.length} streams on ${source}`,
+                `🔄 [MarketControl] Restored ${restorableStreams.length} streams on ${source}`,
               );
             }
 
@@ -1329,7 +1375,9 @@ export class MarketControlHandler {
                   ? wf.streams
                   : [];
 
-                persistedStreams.forEach((s: string) => streams.add(String(s)));
+                persistedStreams.forEach((s: string) => {
+                  if (!isMalformedBinanceContinuousStream(source, String(s))) streams.add(String(s));
+                });
 
                 state.workflowStreams.set(wf.workflowId, streams);
               });

@@ -15,7 +15,7 @@ import logger from "../utils/logger";
 import { getSourceMapping } from "../marketGateways";
 import { RedisKeys } from "../infra/redisKeys";
 import { normalizeOrderSymbol } from "../utils/symbolNormalize";
-import { tradingRoutingKey } from "../utils/streamName";
+import { tradingRoutingKey, isMalformedBinanceContinuousStream } from "../utils/streamName";
 import {
   computeTradingNativeStreamsFromConfig,
   getBrokerStreamConfig,
@@ -295,6 +295,11 @@ export class MarketDataSubscriber {
           if (!data) continue;
 
           const registration = JSON.parse(data) as PersistedRegistration;
+          if ((registration.streams || []).some((stream) =>
+            isMalformedBinanceContinuousStream(String(registration.source), stream))) {
+            console.warn(`⚠️ [MarketDataSubscriber] Skipping malformed continuous-kline registration for ${registration.userId}/${registration.workflowId}; stop and re-register this workflow from node configuration.`);
+            continue;
+          }
           const inferredTradingNativeStreams = computeTradingNativeStreams(
             String(registration.source),
             registration.marketType ||

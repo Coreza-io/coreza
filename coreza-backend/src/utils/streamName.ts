@@ -121,7 +121,7 @@ export function buildStreamNames(
       if (
         underscoreIndex !== -1 &&
         normalizeEventType &&
-        eventType !== "continuous_kline"
+        eventType !== "continuousKline" && eventType !== "continuous_kline"
       ) {
         const type = eventType.slice(0, underscoreIndex);
         const embeddedInterval = eventType.slice(underscoreIndex + 1);

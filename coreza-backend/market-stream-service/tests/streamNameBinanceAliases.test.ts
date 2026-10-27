@@ -12,7 +12,7 @@ describe('Binance stream type aliases', () => {
     expect(streams).toEqual([
       'btcusdt@markPrice_1m',
       'btcusdt@forceOrder_1m',
-      'btcusdt_perpetual@continuous_kline_1m',
+      'btcusdt_perpetual@continuousKline_1m',
       'btcusdt@indexPrice_1m',
       'btcusdt@compositeIndex_1m',
     ]);
@@ -35,8 +35,8 @@ describe('Binance stream type aliases', () => {
       'next_quarter',
     );
 
-    expect(currentQuarter).toEqual(['btcusdt_current_quarter@continuous_kline_1m']);
-    expect(nextQuarter).toEqual(['btcusdt_next_quarter@continuous_kline_1m']);
+    expect(currentQuarter).toEqual(['btcusdt_current_quarter@continuousKline_1m']);
+    expect(nextQuarter).toEqual(['btcusdt_next_quarter@continuousKline_1m']);
   });
 
   it('maps continuousKline alias to Binance-native stream naming', () => {
@@ -48,7 +48,7 @@ describe('Binance stream type aliases', () => {
       'perpetual',
     );
 
-    expect(streams).toEqual(['btcusdt_perpetual@continuous_kline_5m']);
+    expect(streams).toEqual(['btcusdt_perpetual@continuousKline_5m']);
   });
 
   it("keeps native trading stream names parseable", () => {

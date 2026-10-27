@@ -45,10 +45,17 @@ export function buildStreamName(
     ? cfg.normalizeStreamType(streamType)
     : streamType;
 
-  if (normalizedStreamType === "continuous_kline") {
-    if (!interval)
+  const continuous = source.split("_")[0] === "binance"
+    ? /^continuousKline(?:_(.*))?$/.exec(normalizedStreamType)
+    : null;
+  if (continuous) {
+    const resolvedInterval = (continuous[1] ?? interval)?.trim();
+    if (!resolvedInterval)
       throw new Error("interval is required for continuousKline stream names");
-    return `${symbol}_${contractType || "perpetual"}@${normalizedStreamType}_${interval}`;
+    const contract = contractType?.trim().toLowerCase() || "perpetual";
+    if (!["perpetual", "current_quarter", "next_quarter"].includes(contract))
+      throw new Error(`Unsupported Binance continuous contract: ${contract}`);
+    return `${symbol.toLowerCase()}_${contract}@continuousKline_${resolvedInterval}`;
   }
   const typePart = interval
     ? `${normalizedStreamType}_${interval}`
@@ -95,6 +102,16 @@ function parseTypeWithInterval(
   rawSymbol: string,
   typeWithInterval: string,
 ): StreamIdentifier {
+  const continuous = /^(?:continuousKline|continuous_kline)(?:_(.*))?$/.exec(typeWithInterval);
+  if (continuous) {
+    const contract = /^(.*)_(perpetual|current_quarter|next_quarter)$/i.exec(rawSymbol);
+    return {
+      symbol: (contract?.[1] ?? rawSymbol).toUpperCase(),
+      streamType: "continuousKline",
+      interval: continuous[1],
+      contractType: contract?.[2].toLowerCase() ?? "perpetual",
+    };
+  }
   if (typeWithInterval.startsWith("depth")) {
     const d = typeWithInterval.slice(5);
     return {
@@ -107,17 +124,6 @@ function parseTypeWithInterval(
   if (underscoreIndex !== -1) {
     const streamType = typeWithInterval.slice(0, underscoreIndex);
     const interval = typeWithInterval.slice(underscoreIndex + 1);
-    if (streamType === "continuousKline" || streamType === "continuous_kline") {
-      const [symbolPart, ...contractParts] = rawSymbol.split("_");
-      return {
-        symbol: symbolPart.toUpperCase(),
-        streamType: "continuousKline",
-        interval,
-        contractType: contractParts.length
-          ? contractParts.join("_")
-          : "perpetual",
-      };
-    }
     return { symbol: rawSymbol.toUpperCase(), streamType, interval };
   }
   return { symbol: rawSymbol.toUpperCase(), streamType: typeWithInterval };
@@ -137,7 +143,7 @@ export function buildStreamNames(
       streamNames.push(
         buildStreamName(
           source,
-          symbol.toLocaleLowerCase(),
+          symbol.toLowerCase(),
           streamType,
           interval,
           contractType,
@@ -149,4 +155,15 @@ export function buildStreamNames(
 
 export function extractSymbol(source: string, streamName: string): string {
   return parseStreamName(source, streamName).symbol;
+}
+
+/** Old claims need scoped re-registration, never an outbound-only rename. */
+export function isMalformedBinanceContinuousStream(source: string, stream: string): boolean {
+  if (source.split("_")[0] !== "binance" || !/@(?:continuousKline|continuous_kline)(?:_|$)/.test(stream)) return false;
+  const parsed = parseStreamName(source, stream);
+  try {
+    return buildStreamName(source, parsed.symbol, parsed.streamType, parsed.interval, parsed.contractType) !== stream;
+  } catch {
+    return true;
+  }
 }

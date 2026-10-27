@@ -15,6 +15,7 @@ import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
 import { buildCryptoSymbols } from "../utils/symbolHelpers";
+import { parseStreamName } from "../utils/streamName";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
@@ -627,6 +628,28 @@ export class StreamingLifecycleAdapter {
         const isOrderUpdate = streams.some((streamName) =>
           ORDER_UPDATE_MARKERS.has(streamName),
         );
+
+        // Preserve each Binance contract and interval when rebuilding teardown names.
+        if (source === "binance" && !isOrderUpdate) {
+          for (const stream of streams) {
+            const parsed = parseStreamName(sourceId, stream);
+            const result = await SubscriptionService.unsubscribe({
+              source: sourceId,
+              userId,
+              workflowId,
+              symbols: [parsed.symbol],
+              streamType: [parsed.eventType],
+              contractType: parsed.contractType as "perpetual" | "current_quarter" | "next_quarter" | undefined,
+              interval: parsed.interval,
+              environment,
+              scope: "workflow",
+              targetWorkflowId: workflowId,
+            });
+            if (!result.success) throw new Error(result.error || "Binance stream cleanup failed");
+          }
+          await redis.del(key);
+          continue;
+        }
 
         let symbols: string[] = [];
         let streamTypes: string[] = [];

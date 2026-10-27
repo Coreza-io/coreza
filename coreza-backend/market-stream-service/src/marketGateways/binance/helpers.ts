@@ -426,6 +426,18 @@ export function handleBinanceControlMessage(
     }
     return;
   }
+
+  // Market command acceptance is distinct from receiving the first candle.
+  if (msg?.id !== undefined && msg?.result === null) {
+    logger.info({ source, requestId: msg.id }, "Binance market command acknowledged (not first data)");
+  } else if (msg?.code !== undefined || msg?.error) {
+    logger.warn({
+      source,
+      requestId: msg.id,
+      code: msg.error?.code ?? msg.code,
+      message: msg.error?.msg ?? msg.msg,
+    }, "Binance market command rejected");
+  }
 }
 
 // ============ ORDER STATUS MAPPING ============

@@ -2,13 +2,13 @@ import { BrokerCapabilities, StreamIdentifier } from "../capabilities";
 import { extractBinanceOrderOwnerIds } from "./orderOwnerExtract";
 
 function normalizeBinanceEventType(eventType: string): string {
-  const normalized = eventType.trim();
+  const normalized = eventType.trim().replace(/^continuous_kline(?=_|$)/, "continuousKline");
   switch (normalized) {
     case "liquidation":
       return "forceOrder";
     case "continuous_kline":
     case "continuousKline":
-      return "continuous_kline";
+      return "continuousKline";
     case "markPrice":
       return "markPrice";
     case "indexPrice":
@@ -29,6 +29,17 @@ function parseBinanceStreamName(streamName: string): StreamIdentifier {
   const rawSymbol = streamName.slice(0, atIndex);
   const typeWithInterval = streamName.slice(atIndex + 1);
 
+  const continuous = /^(?:continuousKline|continuous_kline)(?:_(.*))?$/.exec(typeWithInterval);
+  if (continuous) {
+    const contract = /^(.*)_(perpetual|current_quarter|next_quarter)$/i.exec(rawSymbol);
+    return {
+      symbol: (contract?.[1] ?? rawSymbol).toUpperCase(),
+      eventType: "continuousKline",
+      interval: continuous[1],
+      contractType: contract?.[2].toLowerCase() ?? "perpetual",
+    };
+  }
+
   if (typeWithInterval.startsWith("depth")) {
     const interval = typeWithInterval.slice(5);
     return {
@@ -44,18 +55,6 @@ function parseBinanceStreamName(streamName: string): StreamIdentifier {
       typeWithInterval.slice(0, underscoreIndex),
     );
     const interval = typeWithInterval.slice(underscoreIndex + 1);
-
-    if (eventType === "continuous_kline") {
-      const [symbolPart, ...contractParts] = rawSymbol.split("_");
-      return {
-        symbol: symbolPart.toUpperCase(),
-        eventType: "continuousKline",
-        interval,
-        contractType: contractParts.length
-          ? contractParts.join("_")
-          : "perpetual",
-      };
-    }
 
     return { symbol: rawSymbol.toUpperCase(), eventType, interval };
   }
@@ -73,11 +72,16 @@ function buildBinanceStreamName(
   contractType?: string,
 ): string {
   const resolvedEventType = normalizeBinanceEventType(eventType);
-  const normalizedContractType = contractType || "perpetual";
-  const sym =
-    resolvedEventType === "continuous_kline"
-      ? `${symbol.toLowerCase()}_${normalizedContractType}`
-      : symbol.toLowerCase();
+  const continuous = /^continuousKline(?:_(.*))?$/.exec(resolvedEventType);
+  if (continuous) {
+    const resolvedInterval = (continuous[1] ?? interval)?.trim();
+    if (!resolvedInterval) throw new Error("interval is required for continuousKline stream names");
+    const contract = contractType?.trim().toLowerCase() || "perpetual";
+    if (!["perpetual", "current_quarter", "next_quarter"].includes(contract))
+      throw new Error(`Unsupported Binance continuous contract: ${contract}`);
+    return `${symbol.toLowerCase()}_${contract}@continuousKline_${resolvedInterval}`;
+  }
+  const sym = symbol.toLowerCase();
 
   return interval
     ? `${sym}@${resolvedEventType}_${interval}`

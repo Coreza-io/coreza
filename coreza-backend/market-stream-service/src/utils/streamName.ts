@@ -45,7 +45,10 @@ export function buildStreamName(
     ? cfg.normalizeStreamType(streamType)
     : streamType;
 
-  if (normalizedStreamType === "continuous_kline") {
+  if (
+    normalizedStreamType === "continuous_kline" ||
+    normalizedStreamType === "continuousKline"
+  ) {
     if (!interval)
       throw new Error("interval is required for continuousKline stream names");
     return `${symbol}_${contractType || "perpetual"}@${normalizedStreamType}_${interval}`;

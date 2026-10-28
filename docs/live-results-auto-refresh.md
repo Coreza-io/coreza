@@ -12,11 +12,27 @@ published only with its successfully loaded children. Explicit historical
 execution selection remains pinned; the current view can discover a new activation.
 Subscriptions, listeners and timers are cleaned up on scope change/unmount.
 
+The follow-up review adds a guard at load admission and before each subsequent
+query/page. A queued load cannot bypass hidden/offline suspension, and old scope
+reads cannot keep requesting more pages after navigation. Already dispatched HTTP
+requests may settle; their results are ignored when the read is suspended.
+Parallel child reads settle as a group before the loader flight is released;
+one failed reader stops sibling pagination, without hiding the original error.
+
+All chart/metric/trade transformations finish before any new run state is
+published. Prior-owner data is masked immediately on scope changes, before reset
+effects run. Each component/subscription lifetime has a unique Realtime topic:
+Supabase's same-topic channel reuse cannot make an old async unsubscribe tear
+down a Strict Mode replacement or another instance's subscription.
+
 Temporary background failures retain the last successful chart, viewport, metrics
 and run header, with a retry status. Last checked means the last successful read,
 not the timestamp of the latest equity observation. Initial failures still show
 an error and automatically retry. Background loads do not replace the header
 with a loading skeleton. The chart is not remounted for same-run updates.
+Confirmed missing-row/permission/auth failures clear retained data rather than
+displaying an unavailable run indefinitely; only transient failures keep the last
+successful view. Type/source review does not establish browser runtime behavior.
 
 Only reporting reads are automated. The previous manual authenticated reporting
 refresh POST is removed from this page; no broker queries, workflow starts,

@@ -458,6 +458,7 @@ export class PortfolioExecutor implements INodeExecutor {
           broker: params.broker || "unknown", credential_id: params.credential_id || userId, base_currency: baseCurrency,
         });
       }
+      if (explicitCapital !== undefined) this.queueLiveSnapshot(pm, params, context, baseCurrency);
       return createSuccessOutput({
           message: "Portfolio created with explicit balance and position data",
           created: true,
@@ -490,6 +491,7 @@ export class PortfolioExecutor implements INodeExecutor {
         }
 
         pm.updateMarketPrices(priceMap, baseCurrency);
+        this.queueLiveSnapshot(pm, params, context, baseCurrency);
         return createSuccessOutput({
             updated: true,
             prices_updated: priceMap,
@@ -811,6 +813,7 @@ export class PortfolioExecutor implements INodeExecutor {
         });
       }
 
+      this.queueLiveSnapshot(pm, params, context, baseCurrency);
       return createSuccessOutput({
           environment: brokerParams.environment,
           cash,
@@ -975,6 +978,27 @@ export class PortfolioExecutor implements INodeExecutor {
     };
   }
 
+  /** Reporting-only observation; never changes broker/order execution. */
+  private queueLiveSnapshot(
+    pm: PortfolioManager, params: any, context: NodeExecutionContext | undefined, baseCurrency: string,
+  ): void {
+    if (!context?.userId || !context.workflowId || !pm.isBootstrapped() ||
+      !(context.executionMode === "live" || context.reportingExecutionId)) return;
+    const executionId = context.reportingExecutionId ?? context.executionId;
+    if (!executionId) return;
+    try {
+      const snapshot = this.buildLatestSnapshot(pm, {
+        userId: context.userId, workflowId: context.workflowId, runId: executionId,
+        broker: params.broker || "unknown", credentialId: params.credential_id, baseCurrency,
+      });
+      void SnapshotCache.upsertLatest(snapshot).catch(err =>
+        fillLogger.warn({ err }, "snapshot cache update failed"));
+    } catch (err) {
+      // Reporting must not turn a completed portfolio update into a trading retry.
+      fillLogger.warn({ err }, "snapshot observation failed");
+    }
+  }
+
   private buildLatestSnapshot(
     pm: PortfolioManager,
     meta: {
@@ -987,10 +1011,6 @@ export class PortfolioExecutor implements INodeExecutor {
     },
   ): LatestSnapshotState {
     const state = pm.getPortfolioState(meta.baseCurrency);
-    const tradeStats = this.calculateTradeAnalytics(
-      state.trades,
-      state.startingEquity,
-    );
     const balances = pm.getCash() as Record<string, unknown>;
     const baseCashRaw =
       (meta.baseCurrency && balances

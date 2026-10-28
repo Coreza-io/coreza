@@ -19,6 +19,7 @@ import {
   PaginationConfig,
 } from "../../brokers";
 import CredentialManager from "../../utils/credentialManager";
+import type { CredentialLookupEvent } from "../../utils/credentialCache";
 import { refreshOAuthTokenIfNeeded } from "../../utils/oauthTokenManager";
 import { formatBrokerAuthenticationFailure, isBrokerAuthError } from "../../utils/brokerAuthError";
 import {
@@ -41,6 +42,8 @@ const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 function createTradeTiming(enabled: boolean) {
   const started = enabled ? performance.now() : 0;
   const phasesMs: Record<string, number> = {};
+  const sources: Record<string, unknown> = {};
+  const credentialLookups: CredentialLookupEvent[] = [];
   let phase = "setup";
   let phaseStarted = started;
   let httpMs = 0;
@@ -83,6 +86,11 @@ function createTradeTiming(enabled: boolean) {
   return {
     mark,
     wrap,
+    source: (name: string, source: unknown) => { if (enabled) sources[name] = source; },
+    credentialLookup: enabled ? (event: CredentialLookupEvent) => {
+      credentialLookups.push(event);
+      if (event.outcome === "hit") sources.credentials = event.source;
+    } : undefined,
     finish: (fields: Record<string, unknown>) => {
       if (!enabled) return;
       mark("finished");
@@ -102,6 +110,8 @@ function createTradeTiming(enabled: boolean) {
           httpMs: round(httpMs),
           httpRequestCount,
           httpFailureCount,
+          sources,
+          credentialLookups,
           phasesMs: Object.fromEntries(Object.entries(phasesMs).map(([name, ms]) => [name, round(ms)])),
         });
       } catch { /* Diagnostics must not change the order result. */ }
@@ -148,6 +158,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       // Get broker config (in-memory lookup, no HTTP)
       const config = getBrokerConfig(broker);
+      timing.source("brokerConfig", "in_memory_registry");
       if (!config) {
         return resultFailure(`Unsupported broker: ${broker}`, { data: null });
       }
@@ -158,6 +169,11 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       timing.mark("parameters");
+      timing.source("parameters", {
+        nodeValues: "in_memory_node_snapshot",
+        input: "in_memory_execution_input",
+        resolution: context?.resolveNodeParameters ? "execution_context_resolver" : "node_values_input_merge",
+      });
       // Resolve and merge node parameters with input data
       console.log(
         `🔧 [BROKER] Starting parameter resolution for node ${node.id}`,
@@ -209,11 +225,13 @@ export class BrokerExecutor implements INodeExecutor {
         });
 
         if (shouldPersistRedisState) {
+          timing.source("idempotency", { storage: "redis_cache", outcome: "attempted" });
           const cached = await getOrderFromCache(
             userId,
             workflowId,
             idempotencyKey,
           );
+          timing.source("idempotency", { storage: "redis_cache", outcome: cached ? `hit_${cached.status}` : "miss" });
           if (cached) {
             if (cached.status === "success") {
               console.log(
@@ -235,15 +253,17 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       timing.mark("credentials");
+      timing.source("credentials", "not_resolved");
       // Fetch credentials directly (no HTTP)
       const { credentials } = await CredentialManager.getCredentials(
         context?.userId,
         broker,
         credential_id,
-        { useCache: shouldPersistRedisState },
+        { useCache: shouldPersistRedisState, onLookup: timing.credentialLookup },
       );
 
       if (!credentials) {
+        timing.source("credentials", "not_found_or_error");
         return resultFailure(`Credentials not found for ${broker}`, { data: null });
       }
 
@@ -312,6 +332,7 @@ export class BrokerExecutor implements INodeExecutor {
 
         if (shouldPreRegisterOrderOwner) {
           timing.mark("ownerBeforeRequest");
+          timing.source("ownerBeforeRequest", "redis_queue");
           preRegisteredClientOrderId = resolvedParams._idempotencyKey.trim();
           try {
             await OrderOwnerRegistry.saveOwner({
@@ -397,6 +418,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       timing.mark("ownerAfterRequest");
       if (operation === "place_order") {
+        timing.source("ownerAfterRequest", "redis_queue");
         try {
           const extractor = getOrderOwnerExtractor(broker);
           const ids = extractor ? extractor(data) : {};
@@ -425,6 +447,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       timing.mark("orderCache");
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
+        timing.source("orderCache", "redis_cache");
         await updateOrderCache(
           userId,
           workflowId,
@@ -479,6 +502,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
+        timing.source("orderCache", "redis_cache");
         await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
           error:
             enrichedError instanceof Error
@@ -706,4 +730,5 @@ export class BrokerExecutor implements INodeExecutor {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
+
 

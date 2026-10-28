@@ -11,6 +11,7 @@ import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
+import { performance } from "perf_hooks";
 import { historicalRowCount, safeToolError, toolInputFields, traceToolHttp, ToolExecutionTrace } from "../../utils/toolExecutionLog";
 import {
   getBrokerConfig,
@@ -36,6 +37,78 @@ import {
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
+// Keep timing local to one invocation; never log request bodies, credentials or responses.
+function createTradeTiming(enabled: boolean) {
+  const started = enabled ? performance.now() : 0;
+  const phasesMs: Record<string, number> = {};
+  let phase = "setup";
+  let phaseStarted = started;
+  let httpMs = 0;
+  let httpRequestCount = 0;
+  let httpFailureCount = 0;
+  const mark = (next: string) => {
+    if (!enabled) return;
+    const now = performance.now();
+    phasesMs[phase] = (phasesMs[phase] ?? 0) + now - phaseStarted;
+    phase = next;
+    phaseStarted = now;
+  };
+  const observe = async (invoke: () => any) => {
+    const begin = performance.now();
+    httpRequestCount += 1;
+    try {
+      return await invoke();
+    } catch (error) {
+      httpFailureCount += 1;
+      throw error;
+    } finally {
+      httpMs += performance.now() - begin;
+    }
+  };
+  const methods = new Set(["request", "get", "delete", "head", "options", "post", "put", "patch", "postForm", "putForm", "patchForm"]);
+  const wrap = (client: typeof axios): typeof axios => !enabled ? client : new Proxy(client, {
+    apply(target, receiver, args) {
+      return observe(() => Reflect.apply(target, receiver, args));
+    },
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property === "create" && typeof value === "function") {
+        return (...args: any[]) => wrap(Reflect.apply(value, target, args));
+      }
+      return typeof property === "string" && methods.has(property) && typeof value === "function"
+        ? (...args: any[]) => observe(() => Reflect.apply(value, target, args))
+        : value;
+    },
+  });
+  return {
+    mark,
+    wrap,
+    finish: (fields: Record<string, unknown>) => {
+      if (!enabled) return;
+      mark("finished");
+      const totalMs = performance.now() - started;
+      const round = (ms: number) => +ms.toFixed(3);
+      // HTTP is summed across requests, so it can exceed wall time for concurrent custom operations.
+      // The residual below uses exclusive phase wall times rather than subtracting summed HTTP time.
+      const brokerOperationMs = phasesMs.brokerOperation ?? 0;
+      const enrichmentMs = phasesMs.enrichment ?? 0;
+      try {
+        console.info("[TRADE_TIMING]", {
+          ...fields,
+          totalMs: round(totalMs),
+          brokerOperationMs: round(brokerOperationMs),
+          enrichmentMs: round(enrichmentMs),
+          otherWorkMs: round(Math.max(0, totalMs - brokerOperationMs - enrichmentMs)),
+          httpMs: round(httpMs),
+          httpRequestCount,
+          httpFailureCount,
+          phasesMs: Object.fromEntries(Object.entries(phasesMs).map(([name, ms]) => [name, round(ms)])),
+        });
+      } catch { /* Diagnostics must not change the order result. */ }
+    },
+  };
+}
+
 export class BrokerExecutor implements INodeExecutor {
   readonly category = "Broker";
 
@@ -44,6 +117,8 @@ export class BrokerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
+    const timing = createTradeTiming(["place_order", "close_position"].includes(node.values?.operation));
+    let timingStatus = "error";
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
     let isOrderOperation = false;
@@ -82,6 +157,7 @@ export class BrokerExecutor implements INodeExecutor {
         return resultFailure(`Unsupported operation: ${operation} for ${broker}`, { data: null });
       }
 
+      timing.mark("parameters");
       // Resolve and merge node parameters with input data
       console.log(
         `🔧 [BROKER] Starting parameter resolution for node ${node.id}`,
@@ -104,12 +180,13 @@ export class BrokerExecutor implements INodeExecutor {
       context?.agentDataTrace?.('broker_parameters', () => ({ broker, operation,
         fields: toolInputFields(resolvedParams, operation) }), 'debug');
       const transport = context?.agentDataTrace ? traceToolHttp(axios, context.agentDataTrace, resolvedParams) : undefined;
-      const request = transport?.client ?? axios;
+      const request = timing.wrap(transport?.client ?? axios);
       if (transport) requestCount = transport.requestCount;
 
       isOrderOperation =
         operation === "place_order" || operation === "close_position";
 
+      timing.mark("idempotency");
       if (isOrderOperation) {
         idempotencyKey = generateIdempotencyKey({
           workflowId,
@@ -142,10 +219,12 @@ export class BrokerExecutor implements INodeExecutor {
               console.log(
                 `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`,
               );
+              timingStatus = "cached";
               return resultSuccess(cached.result, { meta: { cached: true } });
             }
 
             if (cached.status === "pending") {
+              timingStatus = "pending";
               return resultFailure("Order is already being processed", { data: null, meta: { cached: true } });
             }
           }
@@ -155,6 +234,7 @@ export class BrokerExecutor implements INodeExecutor {
         resolvedParams._idempotencyKey = idempotencyKey;
       }
 
+      timing.mark("credentials");
       // Fetch credentials directly (no HTTP)
       const { credentials } = await CredentialManager.getCredentials(
         context?.userId,
@@ -172,6 +252,7 @@ export class BrokerExecutor implements INodeExecutor {
       credentialLabel = typeof credential_id === "string" ? credential_id : undefined;
       const creds = credentials.client_json;
 
+      timing.mark("authentication");
       // Handle OAuth token refresh if needed
       let workingCreds = creds;
       if (config.authType === "oauth") {
@@ -199,11 +280,13 @@ export class BrokerExecutor implements INodeExecutor {
           : requestHost === "api.alpaca.markets" ? "Live Trading" : undefined;
       }
 
+      timing.mark("requestPreparation");
       let data: any;
       fetchStart = performance.now();
 
       if (op.execute) {
         console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
+        timing.mark("brokerOperation");
         data = await op.execute({
           input: resolvedParams,
           creds: workingCreds,
@@ -228,6 +311,7 @@ export class BrokerExecutor implements INodeExecutor {
           resolvedParams._idempotencyKey.trim().length > 0;
 
         if (shouldPreRegisterOrderOwner) {
+          timing.mark("ownerBeforeRequest");
           preRegisteredClientOrderId = resolvedParams._idempotencyKey.trim();
           try {
             await OrderOwnerRegistry.saveOwner({
@@ -246,6 +330,7 @@ export class BrokerExecutor implements INodeExecutor {
           }
         }
 
+        timing.mark("requestPreparation");
         console.log(`📤 [BROKER] Executing ${broker}.${operation}`);
 
         // Check if pagination is enabled and requested
@@ -255,6 +340,7 @@ export class BrokerExecutor implements INodeExecutor {
         context?.agentDataTrace?.('broker_options', () => ({ broker, operation,
           effectiveOptions: { auto_paginate: autoPaginate, max_pages: maxPages, paginationEnabled: !!pagination?.enabled } }), 'debug');
 
+        timing.mark("brokerOperation");
         if (pagination?.enabled && autoPaginate) {
           // Execute with automatic pagination
           data = await this.executeWithPagination(
@@ -290,12 +376,14 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
+      timing.mark("responseProcessing");
       context?.agentDataTrace?.('broker_fetch', () => ({ durationMs: performance.now() - fetchStart!, broker, operation,
         requestCount: requestCount(), transformedRowCount: operation === 'get_candle' ? historicalRowCount(data, resolvedParams.symbol) : null }));
       fetchStart = undefined;
       console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
       if (operation === "place_order") {
+        timing.mark("enrichment");
         data = await this.enrichPlacedOrder({
           broker,
           data,
@@ -307,6 +395,7 @@ export class BrokerExecutor implements INodeExecutor {
         });
       }
 
+      timing.mark("ownerAfterRequest");
       if (operation === "place_order") {
         try {
           const extractor = getOrderOwnerExtractor(broker);
@@ -334,6 +423,7 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
+      timing.mark("orderCache");
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         await updateOrderCache(
           userId,
@@ -345,9 +435,12 @@ export class BrokerExecutor implements INodeExecutor {
         );
       }
 
+      timing.mark("result");
       const normalized = createSuccessOutput(data);
+      timingStatus = "success";
       return normalized;
     } catch (error) {
+      timing.mark("errorHandling");
       if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
         durationMs: performance.now() - fetchStart, operation, success: false,
       });
@@ -425,6 +518,16 @@ export class BrokerExecutor implements INodeExecutor {
         },
       );
       return normalized;
+    } finally {
+      timing.finish({
+        workflowId,
+        nodeId: node.id,
+        runId: context?.runId ?? context?.executionId,
+        executionId: context?.reportingExecutionId ?? context?.executionId,
+        broker,
+        operation,
+        status: timingStatus,
+      });
     }
   }
 

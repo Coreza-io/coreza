@@ -1,3 +1,4 @@
+import { aggregateDailyEquity } from "../reporting/equityOhlc";
 import { finiteMetrics, reportingTradeId } from "../reporting/persistence";
 import { resultSuccess } from "../contracts/nodeResult";
 /**
@@ -22,7 +23,6 @@ import {
   SimBrokerConfig,
   Bar,
   Position,
-  EquityPoint,
 } from "./simBroker";
 import { OrderEvent, normalizeOrderType } from "../types/order";
 import { supabase } from "../config/supabase";
@@ -1091,6 +1091,11 @@ export class BacktestExecutor implements INodeExecutor {
       throw new Error("Backtest is no longer executable");
     }
 
+    // Fail before reporting writes when the additive OHLC migration is missing.
+    const { error: schemaError } = await (supabaseClient as any).from("portfolio")
+      .select("equity_open,equity_high,equity_low,equity_close,equity_sample_count").limit(0);
+    if (schemaError) throw new Error(`Equity OHLC storage is not ready; deploy the equity OHLC migration first: ${schemaError.message}`);
+
     // Update the lifecycle header created with the backtest
     const { data: result, error: resultsError } = await (supabaseClient as any)
       .from("live_strategies")
@@ -1173,7 +1178,7 @@ export class BacktestExecutor implements INodeExecutor {
     }
 
     // Persist equity curve to portfolio (daily resampled)
-    const dailyCurve = this.resampleToDaily(equityCurve);
+    const dailyCurve = aggregateDailyEquity(equityCurve);
     if (dailyCurve.length > 0) {
       const initialCapital = simBroker.getConfig().initialCapital;
       const snapshots = dailyCurve.map((point, idx) => {
@@ -1190,6 +1195,11 @@ export class BacktestExecutor implements INodeExecutor {
           cash_balance: point.cash,
           stock_value: point.positionsValue,
           total_value: point.totalEquity,
+          equity_open: point.equity_open,
+          equity_high: point.equity_high,
+          equity_low: point.equity_low,
+          equity_close: point.equity_close,
+          equity_sample_count: point.equity_sample_count,
           daily_return: dailyReturn,
         };
       });
@@ -1449,20 +1459,6 @@ export class BacktestExecutor implements INodeExecutor {
       winning_trades: trades.filter((trade) => trade.netPnl > 0).length,
       losing_trades: trades.filter((trade) => trade.netPnl < 0).length,
     });
-  }
-
-  private resampleToDaily(curve?: EquityPoint[]): EquityPoint[] {
-    if (!curve || curve.length === 0) {
-      return [];
-    }
-
-    const byDate = new Map<string, EquityPoint>();
-    for (const point of curve) {
-      const day = point.timestamp.substring(0, 10);
-      byDate.set(day, point);
-    }
-
-    return Array.from(byDate.values());
   }
 }
 

@@ -26,6 +26,8 @@ export type ReportingPortfolioRow = {
   user_id: string; workflow_id: string; execution_id: string | null;
   date: string | null; total_value: number | null; cash_balance: number | null;
   stock_value: number | null; daily_return: number | null;
+  equity_open: number | null; equity_high: number | null; equity_low: number | null;
+  equity_close: number | null; equity_sample_count: number | null;
   snapshot_at: string | null; broker: string | null; credential_id: string | null;
   base_currency: string | null; balances: Record<string, unknown> | null;
   cash: number | null; equity: number | null; realized_pnl: number | null; unrealized_pnl: number | null;

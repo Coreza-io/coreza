@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import type { EquityChartContext } from "@/components/backtest/equityChartTypes";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -69,6 +71,12 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   const { backtest, metrics, trades, snapshots, loading, error } = isLive
     ? liveData
     : backtestData;
+  const equityChartContext = useMemo<EquityChartContext>(() => ({
+    runId: `${mode}:${backtest?.id ?? id ?? ""}:${metrics?.base_currency ?? ""}:${isLive ? liveData.chartSourceKey : ""}`,
+    mode, active: isLive && backtest?.status === "running",
+    initialCapital: backtest?.initial_capital,
+    capitalInferred: metrics?.metrics_context?.initial_capital === "inferred",
+  }), [mode, isLive, id, backtest?.id, backtest?.status, backtest?.initial_capital, metrics?.base_currency, metrics?.metrics_context?.initial_capital, liveData.chartSourceKey]);
   const liveOrdersResult = isLive
     ? aggregateFillsToOrders(liveData.rawFills ?? [])
     : { orders: [] };
@@ -208,7 +216,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         })}
       </div>
 
-      <EquityCurveChart snapshots={snapshots} currency={metrics?.base_currency} intraday={isLive} />
+      <EquityCurveChart key={equityChartContext.runId} snapshots={snapshots} currency={metrics?.base_currency} intraday={isLive} context={equityChartContext} />
 
       <Tabs defaultValue="performance" className="space-y-4">
         <TabsList>

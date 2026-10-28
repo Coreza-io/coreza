@@ -91,13 +91,18 @@ export function applyNodeExecutionVisuals(
   const members = memberNodeIds ? new Set(memberNodeIds) : null;
   const selectedEdges = progress ? new Set(progress.edgeIds) : null;
   const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
+  const branching = ["If", "Switch"].includes(
+    (nodeById.get(nodeId)?.data.definition as { name?: string } | undefined)?.name ?? "",
+  );
   const incidentEdges = new Map(
     canonicalEdges
       .filter(
         (edge) =>
           (!members ||
             (members.has(edge.source) && members.has(edge.target))) &&
-          (selectedEdges ? selectedEdges.has(edge.id) : edge.source === nodeId || edge.target === nodeId) &&
+          // Without explicit traversal IDs, a branch output is not yet known.
+          (selectedEdges ? selectedEdges.has(edge.id) : edge.target === nodeId ||
+            (edge.source === nodeId && !branching)) &&
           getClusterEdgeKind(
             edge,
             nodeById.get(edge.source),

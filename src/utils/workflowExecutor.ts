@@ -384,6 +384,9 @@ export class WorkflowExecutor {
     // Look up the branch map
     const branchMap = this.conditionalMap.get(nodeId) || {};
     const targets = branchMap[handleKey] || [];
+    this.highlightEdges(nodeId, this.context.edges.filter(
+      edge => edge.source === nodeId && edge.sourceHandle === handleKey,
+    ));
 
     if (targets.length === 0) {
       console.warn(`No branch found for node ${nodeId} handle "${handleKey}"`);
@@ -424,7 +427,8 @@ export class WorkflowExecutor {
   /** Publish current progress without touching the canonical graph. */
   private highlightEdges(nodeId: string, selectedEdges?: readonly Edge[], streamingWaiting = false): void {
     const connected = selectedEdges ?? this.context.edges.filter(
-      (edge) => edge.source === nodeId || edge.target === nodeId,
+      (edge) => edge.target === nodeId ||
+        (edge.source === nodeId && !this.conditionalMap.has(nodeId)),
     );
     this.publishVisual({ nodeId, edgeIds: connected.map(({ id }) => id), streamingWaiting });
   }

@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import type { EquityChartContext } from "@/components/backtest/equityChartTypes";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -69,6 +71,13 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   const { backtest, metrics, trades, snapshots, loading, error } = isLive
     ? liveData
     : backtestData;
+  const equityChartContext = useMemo<EquityChartContext>(() => ({
+    runId: `${mode}:${backtest?.id ?? id ?? ""}:${metrics?.base_currency ?? ""}:${isLive ? liveData.chartSourceKey : ""}`,
+    mode, active: isLive && backtest?.status === "running",
+    initialCapital: backtest?.initial_capital,
+    capitalInferred: metrics?.metrics_context?.initial_capital === "inferred",
+    inputDiagnostics: isLive ? liveData.chartDiagnostics : undefined,
+  }), [mode, isLive, id, backtest?.id, backtest?.status, backtest?.initial_capital, metrics?.base_currency, metrics?.metrics_context?.initial_capital, liveData.chartSourceKey, liveData.chartDiagnostics]);
   const liveOrdersResult = isLive
     ? aggregateFillsToOrders(liveData.rawFills ?? [])
     : { orders: [] };
@@ -167,6 +176,18 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     return value.toFixed(2);
   };
 
+  // Header/child rows must belong to the selected route before any renderer or
+  // settings field reads them. Keep a loaded chart mounted during same-run refresh.
+  const selectedExecution = searchParams.get("executionId");
+  const hasCurrentResult = backtest && (isLive
+    ? backtest.workflow_id === id && (!selectedExecution || backtest.id === selectedExecution)
+    : backtest.id === id);
+  if (!hasCurrentResult) return <div className="space-y-4">
+    <Button variant="outline" asChild><Link to={backPath}><ArrowLeft className="mr-2 h-4 w-4" />Back</Link></Button>
+    {error ? <p role="alert" className="text-destructive">{error}</p> :
+      <div role="status" aria-label="Loading strategy results"><Skeleton className="h-6 w-48" /><Skeleton className="mt-6 h-[360px] w-full" /></div>}
+  </div>;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -208,7 +229,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         })}
       </div>
 
-      <EquityCurveChart snapshots={snapshots} currency={metrics?.base_currency} intraday={isLive} />
+      <EquityCurveChart key={equityChartContext.runId} snapshots={snapshots} currency={metrics?.base_currency} intraday={isLive} context={equityChartContext} />
 
       <Tabs defaultValue="performance" className="space-y-4">
         <TabsList>

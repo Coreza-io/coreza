@@ -1,62 +1,76 @@
+import { useEffect, useId, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { PortfolioSnapshot } from "@/hooks/useBacktestResults";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
+import type { PortfolioSnapshot } from "@/hooks/useBacktestResults";
+import { buildEquityChartData } from "@/lib/equityChartData";
+import { EquityLineChart } from "./EquityLineChart";
+import { EquityCandlestickChart } from "./EquityCandlestickChart";
+import type { EquityChartContext, EquityChartType, EquityInterval } from "./equityChartTypes";
 
-interface EquityCurveChartProps {
+function readPreference(key: string | null): EquityChartType {
+  try { return key && localStorage.getItem(key) === "candle" ? "candle" : "line"; }
+  catch { return "line"; }
+}
+
+export const EquityCurveChart = ({ snapshots, currency, intraday = false, context }: {
   snapshots: PortfolioSnapshot[];
   currency?: string | null;
   intraday?: boolean;
-}
+  context: EquityChartContext;
+}) => {
+  const { user } = useAuth();
+  const chartTypeId = useId();
+  const intervalId = useId();
+  const preferenceKey = user ? `coreza:equity-chart:v1:${user.id}` : null;
+  const [choice, setChoice] = useState<{ key: string | null; type: EquityChartType } | null>(null);
+  const preference = useMemo(() => choice?.key === preferenceKey ? choice.type : readPreference(preferenceKey), [choice, preferenceKey]);
+  const [interval, setInterval] = useState<EquityInterval>("auto");
+  const [now, setNow] = useState(Date.now);
+  const model = useMemo(() => buildEquityChartData(snapshots, context, interval, Date.now()), [snapshots, context, interval, now]);
+  const last = model.candles[model.candles.length - 1];
+  useEffect(() => {
+    if (!last?.isProvisional) return;
+    // Local display rollover only: no network polling or subscriptions.
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.max(1, last.endMs - Date.now() + 1));
+    return () => window.clearTimeout(timer);
+  }, [last?.isProvisional, last?.endMs]);
+  const chartType = model.candleAvailable ? preference : "line";
+  const chooseType = (type: EquityChartType) => {
+    setChoice({ key: preferenceKey, type });
+    try { if (preferenceKey) localStorage.setItem(preferenceKey, type); } catch { /* Storage can be blocked. */ }
+  };
 
-export const EquityCurveChart = ({ snapshots, currency, intraday = false }: EquityCurveChartProps) => {
-  const currencyPrefix = currency ? `${currency} ` : "$";
-  const returnLabel = intraday ? "Period Return %" : "Daily Return %";
-  const formatTime = (value: string) => intraday ? new Date(value).toLocaleString() : new Date(value).toLocaleDateString();
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Equity Curve</CardTitle>
-          <p className="text-sm text-muted-foreground">Portfolio equity over time</p>
+  return <Card>
+    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4">
+      <div>
+        <CardTitle>Equity Curve</CardTitle>
+        <p className="text-sm text-muted-foreground">Portfolio equity over time</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="space-y-1">
+          <label htmlFor={chartTypeId} className="text-xs text-muted-foreground">Chart type</label>
+          <Select value={chartType} onValueChange={value => { if (value === "line" || value === "candle") chooseType(value); }}>
+            <SelectTrigger id={chartTypeId} className="min-h-10 w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="line">Line</SelectItem>
+              <SelectItem value="candle" disabled={!model.candleAvailable}>Candle</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      </CardHeader>
-      <CardContent className="h-[360px]">
-        {snapshots.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-            No portfolio snapshots yet.
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={snapshots} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" className="text-muted-foreground" />
-              <XAxis dataKey="date" tickFormatter={(value) => formatTime(value)} minTickGap={32} />
-              <YAxis yAxisId="left" tickFormatter={(value) => `${currencyPrefix}${value.toLocaleString()}`} />
-              <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => `${value?.toFixed(2) || 0}%`} />
-              <Tooltip
-                formatter={(value: any, name: string) => {
-                  if (name === returnLabel) {
-                    return [`${Number(value).toFixed(2)}%`, returnLabel];
-                  }
-                  return [`${currencyPrefix}${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`, name === 'total_value' ? 'Equity' : name];
-                }}
-                labelFormatter={(label) => formatTime(label)}
-              />
-              <Legend />
-              <Line yAxisId="left" type="monotone" dataKey="total_value" stroke="#2563eb" dot={false} strokeWidth={2} name="Equity" />
-              <Line yAxisId="right" type="monotone" dataKey="daily_return" stroke="#f97316" dot={false} strokeWidth={1} name={returnLabel} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-      </CardContent>
-    </Card>
-  );
+        {chartType === "candle" && <div className="space-y-1">
+          <label htmlFor={intervalId} className="text-xs text-muted-foreground">Interval</label>
+          <Select value={context.mode === "backtest" ? "1D" : interval} onValueChange={value => setInterval(value as EquityInterval)} disabled={context.mode === "backtest"}>
+            <SelectTrigger id={intervalId} className="min-h-10 w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>{["auto", "1m", "5m", "15m", "1h", "1D"].map(value => <SelectItem key={value} value={value}>{value === "auto" ? "Auto" : value}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>}
+      </div>
+    </CardHeader>
+    {model.unavailableReason && <p role="note" className="px-6 pb-3 text-sm text-muted-foreground">{model.unavailableReason}</p>}
+    <CardContent className={chartType === "line" ? "h-[360px]" : undefined}>
+      {chartType === "line" ? <EquityLineChart snapshots={snapshots} currency={currency} intraday={intraday} /> :
+        <EquityCandlestickChart model={model} context={context} currency={currency} />}
+    </CardContent>
+  </Card>;
 };

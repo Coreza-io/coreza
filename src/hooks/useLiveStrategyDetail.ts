@@ -1,6 +1,7 @@
 import { apiClient } from "@/lib/apiClient";
 import { reportingPages } from "@/lib/reportingPages";
 import { useScopedLoader } from "./useScopedLoader";
+import { finiteEquityNumber, orderedLiveEquitySnapshots } from "@/lib/equityChartData";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -82,17 +83,19 @@ const mapSnapshotToPortfolioSnapshot = (
   id: snapshot.id,
   live_strategy_id: strategyId,
   date: snapshot.snapshot_at,
-  cash_balance: snapshot.cash ?? snapshot.total_value_usdt ?? 0,
+  cash_balance: finiteEquityNumber(snapshot.cash) ?? finiteEquityNumber(snapshot.total_value_usdt) ?? 0,
   stock_value: 0,
-  total_value: snapshot.equity ?? snapshot.total_value_usdt ?? 0,
+  total_value: finiteEquityNumber(snapshot.equity) ?? finiteEquityNumber(snapshot.total_value_usdt) ?? finiteEquityNumber(snapshot.cash) ?? NaN,
+  broker: snapshot.broker,
+  credential_id: snapshot.credential_id,
+  base_currency: snapshot.base_currency,
   daily_return: undefined,
 });
 
 const mapNormalizedSnapshots = (raw: any[], strategyId: string, normalized: ReturnType<typeof normalizeLiveEquitySnapshots>): PortfolioSnapshot[] => {
-  const equityByTimestamp = new Map(normalized.normalizedSnapshots.map(row => [row.ts, row.equity]));
-  const rows = raw.filter(row => row.snapshot_at).map(row => {
+  const rows = raw.map((row, index) => {
     const snapshot = mapSnapshotToPortfolioSnapshot(row, strategyId);
-    const equity = equityByTimestamp.get(Date.parse(row.snapshot_at));
+    const equity = normalized.normalizedSnapshots[index]?.equity;
     if (equity !== undefined) snapshot.total_value = equity;
     return snapshot;
   });
@@ -112,6 +115,8 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
   const [rawFills, setRawFills] = useState<any[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chartSourceKey, setChartSourceKey] = useState("");
+  const [chartDiagnostics, setChartDiagnostics] = useState({ invalidRows: 0, duplicateRows: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const performLoad = useCallback(async (isCurrent: () => boolean) => {
@@ -135,7 +140,14 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
         reportingPages(() => supabase.from("portfolio").select("*").eq("live_strategy_id", header.id).order("snapshot_at").order("id")),
       ]);
       if (!isCurrent()) return;
-      const series = selectLiveSnapshotSeries(rawSnapshots, header.metrics_context?.snapshot_source as { broker?: string; credential_id?: string; base_currency?: string } | undefined);
+      const prepared = orderedLiveEquitySnapshots(selectLiveSnapshotSeries(rawSnapshots, header.metrics_context?.snapshot_source as { broker?: string; credential_id?: string; base_currency?: string } | undefined));
+      const series = prepared.snapshots;
+      const seriesCurrency = series[0]?.base_currency;
+      if (header.base_currency && seriesCurrency && header.base_currency.toUpperCase() !== seriesCurrency.toUpperCase()) {
+        throw new Error("The selected equity snapshot currency does not match this strategy's reporting currency. Refresh reporting before displaying this series.");
+      }
+      setChartDiagnostics(prepared.diagnostics);
+      setChartSourceKey(JSON.stringify([series[0]?.broker, series[0]?.credential_id, series[0]?.base_currency]));
       const summary = header.initial_capital == null ? undefined : { initial_capital: Number(header.initial_capital) };
       const normalized = normalizeLiveEquitySnapshots(series, summary);
       setBacktest({
@@ -162,7 +174,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
   }, [enabled, user?.id, workflowId, executionId]);
   const loadData = useScopedLoader(`${user?.id ?? ""}:${workflowId ?? ""}:${executionId ?? ""}:${enabled}`, performLoad);
   useEffect(() => {
-    setSelectedId(null); setBacktest(null); setMetrics(null); setTrades([]); setSnapshots([]); setRawFills([]); setError(null); setLoading(false);
+    setSelectedId(null); setChartSourceKey(""); setChartDiagnostics({ invalidRows: 0, duplicateRows: 0 }); setBacktest(null); setMetrics(null); setTrades([]); setSnapshots([]); setRawFills([]); setError(null); setLoading(false);
     if (enabled && user && workflowId) void loadData();
   }, [enabled, user?.id, workflowId, executionId, loadData]);
   useEffect(() => {
@@ -193,5 +205,5 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }, [selectedId, session?.access_token, loadData]);
-  return { backtest, metrics, trades, rawFills, snapshots, loading, error, refetch };
+  return { backtest, metrics, trades, rawFills, snapshots, chartSourceKey, chartDiagnostics, loading, error, refetch };
 };

@@ -1,8 +1,7 @@
-import { apiClient } from "@/lib/apiClient";
 import { reportingPages } from "@/lib/reportingPages";
 import { useScopedLoader } from "./useScopedLoader";
 import { finiteEquityNumber, orderedLiveEquitySnapshots } from "@/lib/equityChartData";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -108,7 +107,10 @@ const mapNormalizedSnapshots = (raw: any[], strategyId: string, normalized: Retu
 
 /** Historical selection always wins; all children use the validated header ID. */
 export const useLiveStrategyDetail = (workflowId?: string, enabled = true, executionId?: string | null) => {
-  const { user, session } = useAuth();
+  const { user } = useAuth();
+  const scopeKey = `${user?.id ?? ""}:${workflowId ?? ""}:${executionId ?? ""}:${enabled}`;
+  const loadedScope = useRef<string | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [backtest, setBacktest] = useState<BacktestWithRelations | null>(null);
   const [metrics, setMetrics] = useState<BacktestResultMetrics | null>(null);
   const [trades, setTrades] = useState<BacktestTrade[]>([]);
@@ -133,7 +135,6 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
         .order("started_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(1).single();
       if (!isCurrent()) return;
       if (headerError) throw headerError;
-      setSelectedId(header.id);
       const [closedTrades, fills, rawSnapshots] = await Promise.all([
         reportingPages(() => supabase.from("trades").select("*").eq("live_strategy_id", header.id).order("exitTime").order("id")),
         reportingPages(() => supabase.from("live_fills").select("*").eq("user_id", user.id).eq("workflow_id", workflowId).eq("execution_id", header.execution_id).order("event_time").order("id")),
@@ -144,7 +145,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
       const series = prepared.snapshots;
       const seriesCurrency = series[0]?.base_currency;
       if (header.base_currency && seriesCurrency && header.base_currency.toUpperCase() !== seriesCurrency.toUpperCase()) {
-        throw new Error("The selected equity snapshot currency does not match this strategy's reporting currency. Refresh reporting before displaying this series.");
+        throw new Error("The selected snapshot currency does not match this run. Waiting for updated reporting data.");
       }
       setChartDiagnostics(prepared.diagnostics);
       setChartSourceKey(JSON.stringify([series[0]?.broker, series[0]?.credential_id, series[0]?.base_currency]));
@@ -161,6 +162,9 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
       setRawFills(fills);
       setTrades(closedTrades.map(row => mapLiveTradeToBacktestTrade(row, fills.filter(fill => !fill.algo_id))));
       setSnapshots(mapNormalizedSnapshots(series, header.id, normalized));
+      setSelectedId(header.id);
+      loadedScope.current = scopeKey;
+      setLastCheckedAt(Date.now());
       setMetrics({ ...buildLiveMetrics(summary, closedTrades.map(liveTradeMetricInput), series),
         metrics_context: { ...header.metrics_context,
           initial_capital: header.initial_capital != null ? "recorded" : normalized.initialCapital == null ? "unavailable" : "inferred",
@@ -169,18 +173,33 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
         metrics_updated_at: header.metrics_updated_at,
       });
     } catch (err: any) {
-      if (isCurrent()) { setError(err.message || "Failed to load live strategy"); setBacktest(null); }
+      if (isCurrent()) {
+        setError(err.message || "Failed to load live strategy");
+        // A transient background failure must not destroy a loaded chart/viewport.
+        if (loadedScope.current !== scopeKey) setBacktest(null);
+      }
     } finally { if (isCurrent()) setLoading(false); }
-  }, [enabled, user?.id, workflowId, executionId]);
-  const loadData = useScopedLoader(`${user?.id ?? ""}:${workflowId ?? ""}:${executionId ?? ""}:${enabled}`, performLoad);
+  }, [enabled, user?.id, workflowId, executionId, scopeKey]);
+  const loadData = useScopedLoader(scopeKey, performLoad);
   useEffect(() => {
+    loadedScope.current = null; setLastCheckedAt(null);
     setSelectedId(null); setChartSourceKey(""); setChartDiagnostics({ invalidRows: 0, duplicateRows: 0 }); setBacktest(null); setMetrics(null); setTrades([]); setSnapshots([]); setRawFills([]); setError(null); setLoading(false);
     if (enabled && user && workflowId) void loadData();
   }, [enabled, user?.id, workflowId, executionId, loadData]);
   useEffect(() => {
     if (!enabled || !user || !workflowId) return;
-    const refresh = () => { void loadData(); };
-    const channel = supabase.channel(`strategy-detail-${workflowId}-${selectedId ?? "current"}`);
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const canRefresh = () => !disposed && document.visibilityState !== "hidden" && navigator.onLine !== false;
+    // Throttle bursts, rather than resetting a trailing debounce indefinitely.
+    const refresh = () => {
+      if (!canRefresh() || timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (canRefresh()) void loadData();
+      }, 250);
+    };
+    const channel = supabase.channel(`strategy-detail-${user.id}-${workflowId}-${selectedId ?? "current"}`);
     if (selectedId) {
       channel.on("postgres_changes", { event: "*", schema: "public", table: "live_strategies", filter: `id=eq.${selectedId}` }, refresh)
         .on("postgres_changes", { event: "*", schema: "public", table: "trades", filter: `live_strategy_id=eq.${selectedId}` }, refresh)
@@ -188,22 +207,27 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
         .on("postgres_changes", { event: "*", schema: "public", table: "live_fills", filter: `execution_id=eq.${selectedId}` }, refresh);
     }
     if (!executionId) channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "workflows", filter: `id=eq.${workflowId}` }, refresh);
-    channel.subscribe();
+    channel.subscribe(status => { if (status === "SUBSCRIBED") refresh(); });
+    // Read-only recovery also covers missing publications and missed socket events.
+    // useScopedLoader serializes requests and queues at most one reconciliation.
+    const interval = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
     const sessionUpdate = (event: Event) => {
       if (!executionId && (event as CustomEvent).detail?.workflowId === workflowId) refresh();
     };
     window.addEventListener("coreza-live-session-updated", sessionUpdate);
-    return () => { void channel.unsubscribe(); window.removeEventListener("coreza-live-session-updated", sessionUpdate); };
+    return () => {
+      disposed = true;
+      if (timer !== undefined) clearTimeout(timer);
+      window.clearInterval(interval);
+      void channel.unsubscribe();
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("coreza-live-session-updated", sessionUpdate);
+    };
   }, [enabled, user?.id, workflowId, executionId, selectedId, loadData]);
-  const refetch = useCallback(async () => {
-    if (!selectedId || !session?.access_token) return;
-    setLoading(true); setError(null);
-    try {
-      const response = await apiClient.post(`/portfolio/reporting/${selectedId}/refresh`, {}, session.access_token);
-      if (!response.ok) throw new Error("Failed to refresh reporting metrics");
-      await loadData();
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
-  }, [selectedId, session?.access_token, loadData]);
-  return { backtest, metrics, trades, rawFills, snapshots, chartSourceKey, chartDiagnostics, loading, error, refetch };
+  return { backtest, metrics, trades, rawFills, snapshots, chartSourceKey, chartDiagnostics, loading, error, lastCheckedAt };
 };

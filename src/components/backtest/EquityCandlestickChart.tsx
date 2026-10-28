@@ -200,6 +200,8 @@ export function EquityCandlestickChart({ model, context, currency }: {
         <Button size="sm" variant="outline" onClick={() => chart.current?.timeScale().fitContent()}>All / reset</Button>
       </div>
     </div>
+    {context.mode === "backtest" && (model.interval === "1W" || model.interval === "1M") && <p role="note" className="text-xs text-muted-foreground">Observed daily equity grouped into {model.interval === "1W" ? "weekly (Monday–Monday)" : "calendar-month"} candles. High/low reflect saved equity observations, not unobserved intraday extremes.</p>}
+    {context.mode === "backtest" && model.interval === "1D" && allSparse && <p role="note" className="text-xs text-muted-foreground">This run has one equity observation per day, so daily O/H/L/C are equal. Choose Auto, 1W or 1M to group observations, or rerun with intraday input data for daily equity ranges.</p>}
     {model.candles.length > 1000 && <p className="text-xs text-muted-foreground">Initially showing the most recent 1,000 buckets. Pan to earlier history or choose All / reset; all loaded history is retained.</p>}
     <div className="relative" onMouseLeave={() => setHover(null)}>
       <div ref={container} className="h-[420px] min-h-[360px] w-full" role="img" aria-label="Portfolio equity candles above percentage return bars" aria-describedby={summaryId} />

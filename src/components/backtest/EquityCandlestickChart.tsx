@@ -103,21 +103,30 @@ export function EquityCandlestickChart({ model, context, currency }: {
   }, [context.runId]);
 
   useEffect(() => {
-    const palette = colors();
-    chart.current?.applyOptions({ layout: { background: { type: ColorType.Solid, color: palette.background }, textColor: palette.text },
-      grid: { vertLines: { color: palette.grid }, horzLines: { color: palette.grid } },
-      rightPriceScale: { borderColor: palette.grid }, timeScale: { borderColor: palette.grid } });
-    equity.current?.applyOptions({ upColor: palette.up, downColor: palette.down, wickUpColor: palette.up,
-      wickDownColor: palette.down, borderUpColor: palette.up, borderDownColor: palette.down,
-      priceFormat: { type: "custom", minMove: 0.01, formatter: value => `${prefix}${Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 }).format(value)}` } });
-    returns.current?.applyOptions({ color: palette.blue });
-    zeroLine.current?.applyOptions({ color: palette.grid });
+    const applyTheme = () => {
+      const palette = colors();
+      chart.current?.applyOptions({ layout: { background: { type: ColorType.Solid, color: palette.background }, textColor: palette.text },
+        grid: { vertLines: { color: palette.grid }, horzLines: { color: palette.grid } },
+        rightPriceScale: { borderColor: palette.grid }, timeScale: { borderColor: palette.grid } });
+      equity.current?.applyOptions({ upColor: palette.up, downColor: palette.down, wickUpColor: palette.up,
+        wickDownColor: palette.down, borderUpColor: palette.up, borderDownColor: palette.down,
+        priceFormat: { type: "custom", minMove: 0.01, formatter: value => `${prefix}${Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 }).format(value)}` } });
+      returns.current?.applyOptions({ color: palette.blue });
+      zeroLine.current?.applyOptions({ color: palette.grid });
+    };
+    applyTheme();
+    // A provider can apply its initial root class after this child's effect
+    // without changing resolvedTheme. Observe the actual CSS boundary as well.
+    const observer = new MutationObserver(applyTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
+    return () => observer.disconnect();
   }, [theme, prefix, context.runId]);
 
   const seriesData = useMemo(() => {
     const candles: (CandlestickData | WhitespaceData)[] = [];
     const histogram: (HistogramData | WhitespaceData)[] = [];
     const lookup = new Map<number, EquityCandle>();
+    let smallestReturn = Infinity;
     for (let index = 0; index < model.candles.length; index++) {
       const candle = model.candles[index];
       // One whitespace marker per gap, never fabricated equity or zero returns.
@@ -128,9 +137,14 @@ export function EquityCandlestickChart({ model, context, currency }: {
       const time = chartTime(candle.startMs);
       candles.push({ time, open: candle.open, high: candle.high, low: candle.low, close: candle.close });
       histogram.push(candle.returnPct === null ? { time } : { time, value: candle.returnPct });
+      if (candle.returnPct !== null && candle.returnPct !== 0) smallestReturn = Math.min(smallestReturn, Math.abs(candle.returnPct));
       lookup.set(time, candle);
     }
-    return { candles, histogram, lookup };
+    // Custom text formatting alone does not change the library's 0.01 tick
+    // resolution. Use decimal ticks small enough for observed percentage points.
+    const returnMinMove = Number.isFinite(smallestReturn)
+      ? Math.max(1e-15, Math.min(0.01, 10 ** (Math.floor(Math.log10(smallestReturn)) - 1))) : 0.01;
+    return { candles, histogram, lookup, returnMinMove };
   }, [model.candles]);
 
   useEffect(() => {
@@ -141,6 +155,7 @@ export function EquityCandlestickChart({ model, context, currency }: {
     const changedInterval = previousInterval.current !== model.interval;
     buckets.current = seriesData.lookup;
     setHover(null);
+    returns.current.applyOptions({ priceFormat: { type: "custom", minMove: seriesData.returnMinMove, formatter: formatEquityReturn } });
     equity.current.setData(seriesData.candles);
     returns.current.setData(seriesData.histogram);
     if (model.candles.length && (!fitted.current || changedInterval)) {

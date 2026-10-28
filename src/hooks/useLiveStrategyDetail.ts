@@ -142,6 +142,10 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
       if (!isCurrent()) return;
       const prepared = orderedLiveEquitySnapshots(selectLiveSnapshotSeries(rawSnapshots, header.metrics_context?.snapshot_source as { broker?: string; credential_id?: string; base_currency?: string } | undefined));
       const series = prepared.snapshots;
+      const seriesCurrency = series[0]?.base_currency;
+      if (header.base_currency && seriesCurrency && header.base_currency.toUpperCase() !== seriesCurrency.toUpperCase()) {
+        throw new Error("The selected equity snapshot currency does not match this strategy's reporting currency. Refresh reporting before displaying this series.");
+      }
       setChartDiagnostics(prepared.diagnostics);
       setChartSourceKey(JSON.stringify([series[0]?.broker, series[0]?.credential_id, series[0]?.base_currency]));
       const summary = header.initial_capital == null ? undefined : { initial_capital: Number(header.initial_capital) };

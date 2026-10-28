@@ -45,6 +45,13 @@ write grants. A fresh read-only schema inspection still found none of the five
 OHLC columns: deployment readiness remains outstanding. No remote changes were
 made during this review.
 
+A second review also corrected percentage-axis tick resolution for tiny returns
+(the formatter alone left the library's default 0.01 step), and observes actual
+root theme changes so initial provider timing cannot leave stale canvas colors.
+The live loader refuses a known header/selected-series currency mismatch before
+publishing chart or metric data. These corrections were source/type reviewed;
+the unrun browser and deployment gates above still apply.
+
 Before rollout verify observed OHLC survives save/reload, retry preserves the same
 daily row and close/return metrics, Line remains visually equivalent, and live
 refresh/navigation cannot mix executions/accounts/currencies. Check Strict Mode,

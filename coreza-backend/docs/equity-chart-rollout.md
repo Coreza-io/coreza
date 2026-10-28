@@ -1,6 +1,25 @@
 # Equity chart selector rollout
 
-## Line-mode cumulative return amendment
+## Current shared Line/Candle panes
+
+The latest user request supersedes the orange cumulative-return Line amendment.
+Both modes now share EquityHistoryChart, native equity/return panes, Auto/interval
+controls, UTC aggregation, crosshair, theme, resize/disposal, visibility controls
+and an accessible table. Line's upper series is blue closing equity; Candle's is
+observed equity OHLC. Both lower series are blue bucket-to-bucket percentage
+return bars, comparing the first bucket with valid initial capital when available.
+There is no cumulative-return overlay. Data refresh preserves the viewport;
+switching upper series may reset it, without fetching or changing execution.
+
+The previous separate Recharts Line and Candle-only components are removed.
+Historical daily-close-only backtests remain readable as a Line plus period bars;
+that path exposes no OHLC values or invented intra-day observation timestamps.
+Candle stays unavailable without full OHLC. Saved reporting data, metrics, market
+subscriptions and trading are unchanged. No migration or backend update is needed.
+Source/type review only; tests and visual/performance validation remain unrun.
+
+
+## Superseded Line-mode cumulative return amendment (historical)
 
 Line mode now shows blue portfolio equity and orange cumulative return, as
 explicitly requested after the sparse-candle follow-up. Cumulative return equals

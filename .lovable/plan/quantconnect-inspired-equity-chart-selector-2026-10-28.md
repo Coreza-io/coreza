@@ -5,18 +5,39 @@ Target branch: `dev`
 Status: reviewed design specification. PR #871 and sparse-daily PR #872 are merged. The user-approved Line-mode amendment below is a follow-up; browser and performance validation remain outstanding.
 Coreza baseline reviewed: `34e19cf0088a7566848398aa44f3f424121aae7d`.
 
+## Current user-approved presentation (supersedes earlier Line amendments)
+
+Both modes use the same native two-pane chart, selected interval, UTC buckets,
+period-return histogram, crosshair, theme, visibility/reset controls and accessible
+bucket table. Line shows a blue line through each bucket's closing equity in the
+upper pane. Candle shows portfolio-equity OHLC in that pane. Both show blue
+period-return bars below: 100 * (bucket close / previous observed bucket close - 1),
+using validated initial capital for the first bucket when available. There is no
+orange cumulative-return overlay. The equity scale remains autoscaled to visible
+observations. Both modes expose the interval selector; switching types does not
+fetch or alter execution. A type switch may reset the viewport; refresh preserves it.
+
+Use one shared EquityHistoryChart renderer. Remove the separate Recharts Line
+renderer and old Candle-only component. Line may read historical daily closes
+when full OHLC is missing; show only equity/return values and label that basis.
+Candle remains disabled without complete OHLC coverage. Do not expose synthetic
+OHLC or invented observation timestamps for close-only history. This change needs
+no database migration or backend changes. The original Recharts-preservation and
+later cumulative-return requirements below are historical and superseded by this
+latest user request. Tests and browser/performance validation remain unrun.
+
 ## 1. Requested outcome
 
 Add a chart-type selector to the Equity Curve card shown in the first supplied screenshot. Offer **Line** and **Candle** on both backtest and live/streaming results.
 
-- **Line (user-approved amendment):** retain Recharts with blue portfolio equity, but change orange to cumulative return from initial capital. Scale the equity axis around observed values with padding instead of forcing zero. Label the cumulative metric explicitly and keep Candle returns as period returns.
+- **Line:** blue closing-equity line in the upper pane and blue period-return bars below, using the shared chart renderer and interval controls described above.
 - **Candle:** introduce a QuantConnect-inspired layout: portfolio-equity candlesticks in the upper pane and blue percentage-return bars in a smaller lower pane, with a shared time axis and crosshair tooltip.
 - Keep Coreza's card, theme, typography, spacing, and currency conventions. Treat the second screenshot as interaction/layout inspiration, not a pixel copy.
 - This is an equity chart, not a security-price chart. Candle OHLC must come from portfolio valuations; symbol OHLC and trade execution prices cannot substitute for equity observations.
 
 Default to Line for compatibility. Remember an explicit user choice locally. The original document was a plan-only delivery; this revision records the implemented follow-up interval policy without claiming completed deployment or validation.
 
-### User-approved Line-mode amendment
+### Superseded cumulative-return amendment (historical)
 
 The user subsequently requested blue equity and orange cumulative growth in Line mode. Cumulative return is `100 * (current normalized equity / initial capital - 1)` in percentage points, not a sum of daily returns. Use the selected run's recorded initial capital, or the existing inferred live capital with its label; missing, nonfinite or nonpositive capital produces an unavailable series. Never silently substitute the first displayed observation. Preserve genuine zero equity and leave invalid values as gaps.
 
@@ -254,7 +275,7 @@ This documentation-only commit does not claim these implementation tests have ru
 ## 11. Acceptance criteria
 
 - [ ] Equity Curve offers Line and Candle in backtest and live results.
-- [ ] Line shows blue equity on a padded observed-value axis and orange cumulative return from validated initial capital, following the user-approved amendment; no persisted daily-return values are rewritten.
+- [ ] Line shows closing equity above blue period-return bars using the same intervals and aggregation as Candle, with autoscaled equity and no cumulative-return overlay; persisted daily-return values remain unchanged.
 - [ ] Candle shows observed portfolio-equity OHLC above aligned blue bucket returns, including weekly/monthly reduction of saved daily OHLC.
 - [ ] Sparse daily backtests offer Auto/1D/1W/1M and clearly distinguish observed coarser ranges from unavailable intraday extrema; no invented candles or previous-close opens.
 - [ ] OHLC tooltip, currency, return precision, crosshair, and time labels agree with the selected bucket.

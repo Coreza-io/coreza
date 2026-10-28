@@ -77,7 +77,7 @@ export function hasEquityOhlc(row: PortfolioSnapshot): boolean {
 
 /** Pure adapter: source-selected, normalized live equity enters here exactly once. */
 export function buildEquityChartData(
-  rows: PortfolioSnapshot[], context: EquityChartContext, requestedInterval: EquityInterval = "auto", now = Date.now(),
+  rows: PortfolioSnapshot[], context: EquityChartContext, requestedInterval: EquityInterval = "auto", now = Date.now(), allowCloseOnlyLine = false,
 ): EquityChartModel {
   const diagnostics = { invalidRows: context.inputDiagnostics?.invalidRows ?? 0, duplicateRows: context.inputDiagnostics?.duplicateRows ?? 0, foreignRows: 0 };
   const source = rows[0] ? sourceKey(rows[0]) : null;
@@ -135,14 +135,14 @@ export function buildEquityChartData(
       if (buckets.size <= 1000) { interval = candidate; break; }
     }
   }
-  if (context.mode === "backtest" && (incompleteOhlc || diagnostics.invalidRows || diagnostics.foreignRows)) {
-    const unavailableReason = completeOhlcRows > 0 ? "Candle data has incomplete OHLC coverage for this backtest. Run it again to capture every day." : LEGACY_CANDLE_MESSAGE;
-    return { candles: [], interval, candleAvailable: false, unavailableReason, diagnostics };
-  }
+  const closeOnly = context.mode === "backtest" && !!(incompleteOhlc || diagnostics.invalidRows || diagnostics.foreignRows);
+  const unavailableReason = closeOnly ? completeOhlcRows > 0 ? "Candle data has incomplete OHLC coverage for this backtest. Run it again to capture every day." : LEGACY_CANDLE_MESSAGE : undefined;
+  if (closeOnly && !allowCloseOnlyLine) return { candles: [], interval, candleAvailable: false, unavailableReason, diagnostics };
   const candles: EquityCandle[] = [];
   for (const { row, ts, equity } of unique) {
     const [startMs, endMs] = bucketBounds(ts, interval);
-    const saved = context.mode === "backtest";
+    // Close-only observations are for Line mode only; Candle stays unavailable.
+    const saved = context.mode === "backtest" && !closeOnly;
     const open = saved ? Number(row.equity_open) : equity;
     const high = saved ? Number(row.equity_high) : equity;
     const low = saved ? Number(row.equity_low) : equity;
@@ -154,11 +154,11 @@ export function buildEquityChartData(
       previous.low = Math.min(previous.low, low);
       previous.close = close;
       previous.sampleCount += count;
-      previous.lastObservedMs = saved ? null : ts;
+      previous.lastObservedMs = context.mode === "backtest" ? null : ts;
       previous.quality = previous.sampleCount === 1 ? "sparse" : "observed";
     } else candles.push({
       startMs, endMs, open, high, low, close, sampleCount: count,
-      firstObservedMs: saved ? null : ts, lastObservedMs: saved ? null : ts,
+      firstObservedMs: context.mode === "backtest" ? null : ts, lastObservedMs: context.mode === "backtest" ? null : ts,
       returnPct: null, isProvisional: false, quality: count === 1 ? "sparse" : "observed", returnSpansGap: false,
     });
   }
@@ -170,5 +170,5 @@ export function buildEquityChartData(
     candle.returnSpansGap = index > 0 && candles[index - 1].endMs < candle.startMs;
     candle.isProvisional = context.mode === "live" && context.active && index === candles.length - 1 && now >= candle.startMs && now < candle.endMs;
   }
-  return { candles, interval, candleAvailable: true, diagnostics };
+  return { candles, interval, candleAvailable: !closeOnly, unavailableReason, diagnostics };
 }

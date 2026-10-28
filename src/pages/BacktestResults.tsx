@@ -229,7 +229,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         })}
       </div>
 
-      <EquityCurveChart key={equityChartContext.runId} snapshots={snapshots} currency={metrics?.base_currency} intraday={isLive} context={equityChartContext} />
+      <EquityCurveChart key={equityChartContext.runId} snapshots={snapshots} currency={metrics?.base_currency} context={equityChartContext} />
 
       <Tabs defaultValue="performance" className="space-y-4">
         <TabsList>

@@ -1,3 +1,4 @@
+import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { resultSuccess } from "../contracts/nodeResult";
 import Redis from "ioredis";
@@ -465,8 +466,9 @@ export class WorkflowRunner {
     }
     // This drain deliberately does not use the execution abort signal.
     await this.engine.drainVariables(deadline);
+    await FillSyncWorker.flushWorkflow(this.userId, this.workflowId, this.executionId);
     this.engine.destroy();
-    PortfolioManager.removeInstance(this.userId, this.executionId);
+    PortfolioManager.retireInstance(this.userId, this.executionId);
     await this.cleanupRunnerKeys();
     await this.streamRedisClient.quit();
   }

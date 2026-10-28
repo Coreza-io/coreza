@@ -8,12 +8,14 @@
  * See the LICENSE file for details.
  */
 
+import { randomUUID } from "crypto";
 import { getRedisCache } from "../config/redis";
 import { RedisKeys } from "../infra/redisKeys";
 
 const SNAPSHOT_TTL = 86400; // 24 hours
 
 export interface LatestSnapshotState {
+  id?: string;
   user_id: string;
   workflow_id: string;
   execution_id?: string;
@@ -32,35 +34,48 @@ export interface LatestSnapshotState {
 export class SnapshotCache {
   /**
    * Upsert the latest coalesced portfolio snapshot into Redis.
-   * Only the most recent state per workflow is kept.
+   * Only the most recent state per activation/account/currency source is kept.
    * Fire-and-forget — caller should NOT await this.
    */
   private static pending = new Map<string, LatestSnapshotState>();
   private static writes = new Map<string, Promise<void>>();
 
+  private static key(snapshot: LatestSnapshotState): string {
+    return RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id, snapshot.execution_id,
+      `${snapshot.broker}:${snapshot.credential_id ?? snapshot.user_id}:${snapshot.base_currency ?? ""}`);
+  }
+
   static upsertLatest(snapshot: LatestSnapshotState): Promise<void> {
-    const key = RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id, snapshot.execution_id);
-    this.pending.set(key, snapshot);
-    const previous = this.writes.get(key) ?? Promise.resolve();
-    const write = previous.catch(() => undefined).then(() => this.persist(snapshot)).then(() => {
-      if (this.pending.get(key) === snapshot) this.pending.delete(key);
-    }).finally(() => { if (this.writes.get(key) === write) this.writes.delete(key); });
+    const key = this.key(snapshot);
+    this.pending.set(key, { ...snapshot, id: snapshot.id ?? randomUUID() });
+    const existing = this.writes.get(key);
+    if (existing) return existing;
+    // One writer per coalesced key; a slow Redis connection never queues every mutation.
+    const write = (async () => {
+      while (this.pending.has(key)) {
+        const latest = this.pending.get(key)!;
+        await this.persist(latest);
+        if (this.pending.get(key) === latest) this.pending.delete(key);
+      }
+    })().finally(() => { this.writes.delete(key); });
     this.writes.set(key, write);
     return write;
   }
 
-  static async drain(userId: string, workflowId: string, executionId?: string): Promise<void> {
-    const rows = [...this.pending.entries()].filter(([, row]) => row.user_id === userId && row.workflow_id === workflowId && (!executionId || row.execution_id === executionId));
-    await Promise.allSettled(rows.map(([key]) => this.writes.get(key)));
-    for (const [key] of rows) {
+  static async drain(userId?: string, workflowId?: string, executionId?: string): Promise<void> {
+    const rows = [...this.pending.entries()].filter(([, row]) => (!userId || row.user_id === userId) && (!workflowId || row.workflow_id === workflowId) && (!executionId || row.execution_id === executionId));
+    const settled = await Promise.allSettled(rows.map(async ([key]) => {
+      await this.writes.get(key)?.catch(() => undefined);
       const pending = this.pending.get(key);
       if (pending) await this.upsertLatest(pending);
-    }
+    }));
+    const failures = settled.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Snapshot cache drain incomplete");
   }
 
   private static async persist(snapshot: LatestSnapshotState): Promise<void> {
     const redis = getRedisCache();
-    const key = RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id, snapshot.execution_id);
+    const key = this.key(snapshot);
     const activeKeysSet = RedisKeys.userActiveSnapshotKeys(snapshot.user_id);
 
     const pipeline = redis.multi();

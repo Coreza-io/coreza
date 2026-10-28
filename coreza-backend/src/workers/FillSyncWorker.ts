@@ -317,16 +317,23 @@ export class FillSyncWorker {
   // ─── Snapshot Flush ────────────────────────────────────
 
   private snapshotFlush: Promise<void> = Promise.resolve();
-  private reportingRecovered = false;
 
-  private async flushReporting(): Promise<void> {
-    if (!this.reportingRecovered) {
-      await LiveStrategiesRepository.recoverPending();
-      this.reportingRecovered = true;
-    }
-    await LiveTradeRepository.flush();
-    await this.flushSnapshots();
+  private reportingFlush: Promise<void> | null = null;
+
+  private flushReporting(): Promise<void> {
+    if (this.reportingFlush) return this.reportingFlush;
+    const flush = this.persistReporting().finally(() => { this.reportingFlush = null; });
+    this.reportingFlush = flush;
+    return flush;
+  }
+
+  private async persistReporting(): Promise<void> {
+    const writes = await Promise.allSettled([LiveTradeRepository.flush(), SnapshotCache.drain()]);
+    const snapshots = await Promise.allSettled([this.flushSnapshots()]);
+    await LiveStrategiesRepository.recoverPending();
     await LiveStrategiesRepository.refreshDirty();
+    const failures = [...writes, ...snapshots].filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Reporting flush incomplete");
   }
 
   private flushSnapshots(scope?: { userId: string; workflowId: string; executionId?: string }): Promise<void> {
@@ -338,39 +345,48 @@ export class FillSyncWorker {
   private async persistSnapshots(scope?: { userId: string; workflowId: string; executionId?: string }): Promise<void> {
     const redis = getRedisCache();
     const users = scope ? [scope.userId] : await redis.smembers(RedisKeys.registrySnapshotsActive());
+    const failures: unknown[] = [];
     for (const userId of users) {
       const activeSet = SnapshotCache.activeKeysSet(userId);
       for (const key of await redis.smembers(activeSet)) {
+        if (scope && !key.startsWith(RedisKeys.portfolioSnapshotLatest(scope.userId, scope.workflowId, scope.executionId))) continue;
         const json = await redis.get(key);
-        if (!json) continue;
-        const snapshot: LatestSnapshotState = JSON.parse(json);
-        if (scope && (snapshot.workflow_id !== scope.workflowId || (scope.executionId && snapshot.execution_id !== scope.executionId))) continue;
-        const cash = toFiniteNumber(snapshot.cash);
-        const equity = toFiniteNumber(snapshot.equity);
-        const realized = toFiniteNumber(snapshot.realized_pnl);
-        const unrealized = toFiniteNumber(snapshot.unrealized_pnl);
-        if (cash === null || equity === null || realized === null || unrealized === null) {
-          throw new Error(`Malformed portfolio snapshot retained for recovery: ${key}`);
+        if (!json) {
+          await redis.eval(`if redis.call('EXISTS',KEYS[1]) == 0 then redis.call('SREM',KEYS[2],KEYS[1]); if redis.call('SCARD',KEYS[2]) == 0 then redis.call('SREM',KEYS[3],ARGV[1]) end end`,
+            3, key, activeSet, RedisKeys.registrySnapshotsActive(), userId);
+          continue;
         }
-        await CashSnapshotRepository.batchInsert([{
-          user_id: snapshot.user_id, workflow_id: snapshot.workflow_id,
-          execution_id: snapshot.execution_id, broker: snapshot.broker,
-          credential_id: snapshot.credential_id || snapshot.user_id,
-          snapshot_at: snapshot.snapshot_at, base_currency: snapshot.base_currency,
-          balances: snapshot.balances_json && typeof snapshot.balances_json === "object" ? snapshot.balances_json as Record<string, unknown> : {},
-          cash, equity, realized_pnl: realized, unrealized_pnl: unrealized,
-          positions_count: snapshot.positions_count, total_value_usdt: equity,
-        }]);
-        // Compare and delete atomically: a newer coalesced snapshot must survive.
-        await redis.eval(`
-          if redis.call('GET', KEYS[1]) == ARGV[1] then
-            redis.call('DEL', KEYS[1]); redis.call('SREM', KEYS[2], KEYS[1])
-            if redis.call('SCARD', KEYS[2]) == 0 then redis.call('SREM', KEYS[3], ARGV[2]) end
-            return 1
-          end
-          return 0`, 3, key, activeSet, RedisKeys.registrySnapshotsActive(), json, userId);
+        try {
+          const snapshot: LatestSnapshotState = JSON.parse(json);
+          if (scope && (snapshot.workflow_id !== scope.workflowId || (scope.executionId && snapshot.execution_id !== scope.executionId))) continue;
+          const cash = toFiniteNumber(snapshot.cash);
+          const equity = toFiniteNumber(snapshot.equity);
+          const realized = toFiniteNumber(snapshot.realized_pnl);
+          const unrealized = toFiniteNumber(snapshot.unrealized_pnl);
+          if (cash === null || equity === null || realized === null || unrealized === null) {
+            throw new Error(`Malformed portfolio snapshot retained for recovery: ${key}`);
+          }
+          await CashSnapshotRepository.batchInsert([{
+            id: snapshot.id, user_id: snapshot.user_id, workflow_id: snapshot.workflow_id,
+            execution_id: snapshot.execution_id, broker: snapshot.broker,
+            credential_id: snapshot.credential_id || snapshot.user_id,
+            snapshot_at: snapshot.snapshot_at, base_currency: snapshot.base_currency,
+            balances: snapshot.balances_json && typeof snapshot.balances_json === "object" ? snapshot.balances_json as Record<string, unknown> : {},
+            cash, equity, realized_pnl: realized, unrealized_pnl: unrealized,
+            positions_count: snapshot.positions_count, total_value_usdt: equity,
+          }]);
+          // Compare and delete atomically: a newer coalesced snapshot must survive.
+          await redis.eval(`
+            if redis.call('GET', KEYS[1]) == ARGV[1] then
+              redis.call('DEL', KEYS[1]); redis.call('SREM', KEYS[2], KEYS[1])
+              if redis.call('SCARD', KEYS[2]) == 0 then redis.call('SREM', KEYS[3], ARGV[2]) end
+              return 1
+            end
+            return 0`, 3, key, activeSet, RedisKeys.registrySnapshotsActive(), json, userId);
+        } catch (error) { failures.push(error); }
       }
     }
+    if (failures.length) throw new AggregateError(failures, "Portfolio snapshots require retry");
   }
 
   static async flushWorkflow(userId: string, workflowId: string, executionId?: string): Promise<void> {

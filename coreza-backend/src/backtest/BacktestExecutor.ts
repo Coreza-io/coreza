@@ -1156,10 +1156,11 @@ export class BacktestExecutor implements INodeExecutor {
         portfolio_value_after: null,
       }));
 
-      if (tradeRows.length > 0) {
+      for (let offset = 0; offset < tradeRows.length; offset += 500) {
+        if (signal?.aborted) throw new Error("Workflow cancelled by user");
         const { error: tradesError } = await (supabaseClient as any)
           .from("trades")
-          .upsert(tradeRows, { onConflict: "id" });
+          .upsert(tradeRows.slice(offset, offset + 500), { onConflict: "id" });
 
         if (tradesError) {
           throw new Error(`Failed to persist backtest trades: ${tradesError.message}`);

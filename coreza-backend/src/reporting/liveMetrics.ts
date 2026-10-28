@@ -186,6 +186,7 @@ export interface LiveTradeAggregate {
 }
 
 export const buildLiveMetrics = (portfolioSummary?: LivePortfolioSummary, closedTrades: ClosedTrade[] = [], snapshots: LiveSnapshot[] = [], aggregate?: LiveTradeAggregate): BacktestResultMetrics => {
+  snapshots = selectLiveSnapshotSeries(snapshots);
   const { normalizedSnapshots, initialCapital, shouldTranslateFromPnl, rawFinalEquity } = normalizeLiveEquitySnapshots(snapshots, portfolioSummary);
   const riskMetrics = calculateRiskMetrics(normalizedSnapshots, initialCapital);
   const finalPortfolioValue = toFiniteNumber(portfolioSummary?.final_portfolio_value) ?? (shouldTranslateFromPnl && initialCapital ? (rawFinalEquity ?? 0) + initialCapital : rawFinalEquity);
@@ -218,7 +219,7 @@ export const buildLiveMetrics = (portfolioSummary?: LivePortfolioSummary, closed
 
   return {
     total_return: toFiniteNumber(portfolioSummary?.total_return) ?? computedTotalReturn,
-    net_profit: toFiniteNumber(portfolioSummary?.net_profit) ?? toFiniteNumber(portfolioSummary?.realized_pnl) ?? tradeNetProfit,
+    net_profit: toFiniteNumber(portfolioSummary?.net_profit) ?? toFiniteNumber(portfolioSummary?.realized_pnl) ?? toFiniteNumber(snapshots[snapshots.length - 1]?.realized_pnl) ?? tradeNetProfit,
     total_trades: toFiniteNumber(portfolioSummary?.total_trades) ?? toFiniteNumber(portfolioSummary?.trades_count) ?? totalTrades,
     final_portfolio_value: finalPortfolioValue,
     profitable_trades: toFiniteNumber(portfolioSummary?.profitable_trades) ?? profitableTrades,
@@ -239,8 +240,8 @@ export const buildLiveMetrics = (portfolioSummary?: LivePortfolioSummary, closed
 };
 
 /** A single account/currency series is a strategy baseline, never a sum of accounts. */
-export const selectLiveSnapshotSeries = <T extends LiveSnapshot>(rows: T[]): T[] => {
-  const first = rows[0];
+export const selectLiveSnapshotSeries = <T extends LiveSnapshot>(rows: T[], source?: Pick<LiveSnapshot, "broker" | "credential_id" | "base_currency">): T[] => {
+  const first = source ?? rows[0];
   return first ? rows.filter(row => row.broker === first.broker && row.credential_id === first.credential_id && row.base_currency === first.base_currency) : [];
 };
 

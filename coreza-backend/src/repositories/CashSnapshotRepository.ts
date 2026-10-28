@@ -1,3 +1,4 @@
+import { reportingTradeId } from "../reporting/persistence";
 import { LiveStrategiesRepository } from "./LiveStrategiesRepository";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -15,6 +16,7 @@ import { createLogger } from "../utils/logger";
 const logger = createLogger("CashSnapshotRepository");
 
 export interface CashSnapshotRow {
+  id?: string;
   user_id: string;
   broker: string;
   credential_id: string;
@@ -46,8 +48,8 @@ export class CashSnapshotRepository {
     }
     if (!scoped.length) return;
     const { error } = await (supabase as any).from("portfolio").upsert(
-      scoped.map(row => ({ ...row, live_strategy_id: row.execution_id })),
-      { onConflict: "live_strategy_id,broker,credential_id,snapshot_at" },
+      scoped.map(row => ({ ...row, id: row.id ?? reportingTradeId(row.execution_id!, JSON.stringify(row)), live_strategy_id: row.execution_id })),
+      { onConflict: "id" },
     );
 
     if (error) {

@@ -62,6 +62,8 @@ export class LiveTradeRepository {
   static async flush(executionId?: string, workflowId?: string, userId?: string): Promise<void> {
     const rows = [...this.pending.values()].filter(row => (!executionId || row.execution_id === executionId) && (!workflowId || row.workflow_id === workflowId) && (!userId || row.user_id === userId));
     await Promise.allSettled(rows.map(row => this.writes.get(row.id)));
-    for (const row of rows) if (this.pending.has(row.id)) await this.insert(row);
+    const settled = await Promise.allSettled(rows.filter(row => this.pending.has(row.id)).map(row => this.insert(row)));
+    const failures = settled.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Closed trades require retry");
   }
 }

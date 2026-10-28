@@ -1,3 +1,4 @@
+import { reportingPages } from "@/lib/reportingPages";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -160,16 +161,12 @@ const Dashboard = () => {
         const activeExecutionIds = Array.from(new Set(activeExecutionMap.values()));
 
         if (liveSessionWorkflowIds.length > 0 && activeExecutionIds.length > 0) {
-          const { data: liveTrades, error: tradesError } = await supabase
+          const liveTrades = await reportingPages(() => supabase
             .from('trades')
-            .select('workflow_id, execution_id, exitTime, net_pnl')
+            .select('id, workflow_id, execution_id, exitTime, net_pnl').eq('user_id', user.id)
             .in('workflow_id', liveSessionWorkflowIds)
             .in('live_strategy_id', activeExecutionIds)
-            .gte('exitTime', thirtyDaysAgo.toISOString());
-
-          if (tradesError) {
-            throw tradesError;
-          }
+            .gte('exitTime', thirtyDaysAgo.toISOString()).order('exitTime').order('id'));
 
           for (const trade of liveTrades || []) {
             if (!trade.exitTime || !trade.workflow_id) continue;

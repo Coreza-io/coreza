@@ -1,3 +1,4 @@
+import { PortfolioManager } from "../simulation/PortfolioManager";
 import { randomUUID } from "crypto";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { FillSyncWorker } from "../workers/FillSyncWorker";
@@ -45,7 +46,8 @@ export class WorkflowLifecycleService {
 
     const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
 
-    const reporting = trigger.kind !== "backtest" && isBrokerPortfolioWorkflow(workflow);
+    const existingReportingStatus = workflow.active_execution_id ? await LiveStrategiesRepository.status(workflow.active_execution_id) : null;
+    const reporting = (trigger.kind !== "backtest" && isBrokerPortfolioWorkflow(workflow)) || ((workflow.is_active || !input.isActive) && existingReportingStatus !== null);
     let claimedId: string | undefined;
     if (input.isActive && reporting) {
       if (workflow.is_active) {
@@ -74,7 +76,7 @@ export class WorkflowLifecycleService {
       return await this.deactivate(workflow, trigger, input.userId);
     } catch (error) {
       // Backtests release only the activation claimed by their own run.
-      if (trigger.kind === "backtest") throw error;
+      if (trigger.kind === "backtest" || (error as { statusCode?: number })?.statusCode === 409) throw error;
       if (claimedId) {
         await LiveStrategiesRepository.setStatus(claimedId, input.userId, workflow.id, "failed",
           error instanceof Error ? error.message : "Activation failed");
@@ -211,7 +213,9 @@ export class WorkflowLifecycleService {
     trigger: ClassifiedTrigger,
     userId: string,
   ): Promise<ActivationResult> {
-    if (trigger.kind === "backtest") {
+    const reportingId = workflow.active_execution_id && await LiveStrategiesRepository.status(workflow.active_execution_id)
+      ? workflow.active_execution_id : undefined;
+    if (trigger.kind === "backtest" && !reportingId) {
       const runId = typeof workflow.active_execution_id === "string" ? workflow.active_execution_id : null;
       if (!workflow.is_active) {
         return { workflow, next_run_at: null, message: "Workflow deactivated" };
@@ -224,44 +228,51 @@ export class WorkflowLifecycleService {
       const updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);
       return { workflow: updated, next_run_at: null, message: "Workflow deactivated" };
     }
-    const cancelledJobs = await this.scheduler.cancelJobs(userId, workflow.id);
-
-    if (cancelledJobs > 0) {
-      await this.runRepo.cancelActiveRuns(workflow.id);
+    if (!workflow.is_active) return { workflow, next_run_at: null, message: "Workflow deactivated" };
+    const stopToken = randomUUID();
+    if (reportingId && !await LiveStrategiesRepository.claimStop(userId, workflow.id, reportingId, stopToken)) {
+      return { workflow: await this.workflowRepo.getOwnedWorkflow(userId, workflow.id), next_run_at: null, message: "Workflow deactivated" };
     }
+    try {
+      if (reportingId) await LiveStrategiesRepository.setStatus(reportingId, userId, workflow.id, "cancelled");
+      const cancelledJobs = await this.scheduler.cancelJobs(userId, workflow.id);
 
-    if (workflow.active_execution_id && isBrokerPortfolioWorkflow(workflow)) {
-      await LiveStrategiesRepository.setStatus(workflow.active_execution_id, userId, workflow.id, "cancelled");
+      if (cancelledJobs > 0) {
+        await this.runRepo.cancelActiveRuns(workflow.id);
+      }
+      switch (trigger.kind) {
+        case "scheduler":
+          await this.scheduler.unschedule(workflow.id);
+          break;
+        case "streaming":
+          await this.streaming.deactivateStreaming(userId, workflow.id);
+          break;
+        case "webhook":
+          break;
+      }
+
+      if (reportingId) {
+        const activationId = reportingId;
+        await FillSyncWorker.flushWorkflow(userId, workflow.id, activationId);
+        PortfolioManager.retireInstance(userId, activationId);
+        // Status is durable even if summary finalization needs a later worker retry.
+        try { await LiveStrategiesRepository.refresh(activationId, true); }
+        catch { LiveStrategiesRepository.markDirty(activationId); }
+      }
+      await this.streaming.cleanupWorkflowSubscriptions(userId, workflow.id);
+
+      const updated = reportingId
+        ? await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, reportingId)
+        : await this.workflowRepo.setActivationState(userId, workflow.id, false, null);
+
+      return {
+        workflow: updated,
+        next_run_at: null,
+        message: "Workflow deactivated",
+      };
+    } finally {
+      if (reportingId) await LiveStrategiesRepository.releaseStop(userId, workflow.id, reportingId, stopToken);
     }
-    switch (trigger.kind) {
-      case "scheduler":
-        await this.scheduler.unschedule(workflow.id);
-        break;
-      case "streaming":
-        await this.streaming.deactivateStreaming(userId, workflow.id);
-        break;
-      case "webhook":
-        break;
-    }
-
-    if (workflow.active_execution_id && isBrokerPortfolioWorkflow(workflow)) {
-      const activationId = workflow.active_execution_id;
-      await FillSyncWorker.flushWorkflow(userId, workflow.id, activationId);
-      // Status is durable even if summary finalization needs a later worker retry.
-      try { await LiveStrategiesRepository.refresh(activationId, true); }
-      catch { LiveStrategiesRepository.markDirty(activationId); }
-    }
-    await this.streaming.cleanupWorkflowSubscriptions(userId, workflow.id);
-
-    const updated = workflow.active_execution_id && isBrokerPortfolioWorkflow(workflow)
-      ? await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, workflow.active_execution_id)
-      : await this.workflowRepo.setActivationState(userId, workflow.id, false, null);
-
-    return {
-      workflow: updated,
-      next_run_at: null,
-      message: "Workflow deactivated",
-    };
   }
 
   async deleteWorkflow(userId: string, workflowId: string): Promise<void> {
@@ -273,7 +284,7 @@ export class WorkflowLifecycleService {
 
     if (workflow.is_active) {
       const trigger = detectSingleTriggerOrThrow(workflow.nodes ?? []);
-      if (isBrokerPortfolioWorkflow(workflow) && workflow.active_execution_id && await LiveStrategiesRepository.status(workflow.active_execution_id) === "pending") {
+      if (workflow.active_execution_id && await LiveStrategiesRepository.status(workflow.active_execution_id) === "pending") {
         throw createError("Activation is still starting; retry deletion after startup settles", 409);
       }
       await this.deactivate(workflow, trigger, userId);

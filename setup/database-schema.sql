@@ -627,6 +627,11 @@ ALTER TABLE public.trades
 ALTER TABLE public.portfolio
   ALTER COLUMN backtest_id DROP NOT NULL,
   ALTER COLUMN date DROP NOT NULL,
+  ALTER COLUMN date DROP DEFAULT,
+  ALTER COLUMN total_value DROP DEFAULT,
+  ALTER COLUMN cash_balance DROP DEFAULT,
+  ALTER COLUMN stock_value DROP DEFAULT,
+  ALTER COLUMN daily_return DROP DEFAULT,
   ALTER COLUMN total_value DROP NOT NULL,
   ALTER COLUMN cash_balance DROP NOT NULL,
   ALTER COLUMN stock_value DROP NOT NULL,
@@ -653,18 +658,24 @@ FROM public.live_strategies r WHERE c.backtest_id=r.backtest_id;
 -- Only reliable, owned activation groups qualify. Technical event run IDs do not.
 CREATE TEMP TABLE reporting_legacy_activations ON COMMIT DROP AS
 WITH evidence AS (
-  SELECT workflow_id,user_id,execution_id,"entryTime" AS observed_at FROM public.live_trades
+  SELECT workflow_id,user_id,execution_id,coalesce("entryTime","exitTime") AS observed_at FROM public.live_trades
   UNION ALL SELECT workflow_id,user_id,execution_id,snapshot_at FROM public.cash_snapshots
-  UNION ALL SELECT id,user_id,active_execution_id,NULL::timestamptz FROM public.workflows WHERE is_active
-  UNION ALL SELECT workflow_id,initiated_by,execution_id,started_at FROM public.workflow_runs WHERE execution_id IS NOT NULL AND execution_id<>id
+  UNION ALL SELECT w.id,w.user_id,w.active_execution_id,NULL::timestamptz FROM public.workflows w
+    WHERE w.is_active AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.nodes)='array' THEN w.nodes ELSE '[]'::jsonb END) n
+      WHERE 'portfolio'=lower(coalesce(n->>'type',n->>'name',n->>'def',n->>'node_type',''))
+        AND coalesce(n#>>'{values,mode}',n#>>'{data,values,mode}',n#>>'{data,config,mode}',n#>>'{data,mode}')='broker'
+    ) AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.nodes)='array' THEN w.nodes ELSE '[]'::jsonb END) n WHERE lower(coalesce(n->>'type',n->>'name',''))='backtestinit')
+  UNION ALL SELECT r.workflow_id,r.initiated_by,r.execution_id,r.started_at FROM public.workflow_runs r
+    WHERE r.execution_id IS NOT NULL AND r.execution_id<>r.id AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.nodes)='array' THEN r.nodes ELSE '[]'::jsonb END) n
+      WHERE lower(coalesce(n->>'type',n->>'name',n->>'def',n->>'node_type',''))='portfolio'
+        AND coalesce(n#>>'{values,mode}',n#>>'{data,values,mode}',n#>>'{data,config,mode}',n#>>'{data,mode}')='broker'
+    )
 )
 SELECT e.workflow_id,e.user_id,e.execution_id,min(e.observed_at) AS first_observed_at
 FROM evidence e JOIN public.workflows w ON w.id=e.workflow_id AND w.user_id=e.user_id
-WHERE e.execution_id IS NOT NULL AND EXISTS (
-  SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.nodes)='array' THEN w.nodes ELSE '[]'::jsonb END) n
-  WHERE lower(coalesce(n->>'type',n->>'name',n->>'def',n->>'node_type',''))='portfolio'
-    AND coalesce(n#>>'{values,mode}',n#>>'{data,values,mode}',n#>>'{data,config,mode}',n#>>'{data,mode}')='broker'
-)
+WHERE e.execution_id IS NOT NULL
 GROUP BY e.workflow_id,e.user_id,e.execution_id;
 DO $$ BEGIN
   IF EXISTS (SELECT execution_id FROM reporting_legacy_activations GROUP BY execution_id HAVING count(*)>1)
@@ -677,7 +688,7 @@ SELECT a.execution_id,'live',a.user_id,a.workflow_id,a.execution_id,w.name,
   CASE WHEN w.is_active AND w.active_execution_id=a.execution_id THEN 'running' ELSE 'cancelled' END,
   a.first_observed_at,
   jsonb_build_object('source','live','granularity','intraday','legacy',true,
-    'lifecycle_unknown',NOT(w.is_active AND w.active_execution_id=a.execution_id),
+    'lifecycle_unknown',NOT coalesce(w.is_active AND w.active_execution_id=a.execution_id,false),
     'started_at_inferred',true,'initial_capital','unavailable',
     'average_trade_return_unit','percent','avg_holding_period_unit','milliseconds')
 FROM reporting_legacy_activations a JOIN public.workflows w ON w.id=a.workflow_id
@@ -705,7 +716,7 @@ CREATE INDEX live_strategies_owner_mode_status ON public.live_strategies(user_id
 CREATE INDEX trades_strategy_exit ON public.trades(live_strategy_id,"exitTime",id);
 CREATE INDEX portfolio_strategy_snapshot ON public.portfolio(live_strategy_id,snapshot_at,id);
 CREATE UNIQUE INDEX portfolio_strategy_date ON public.portfolio(live_strategy_id,date);
-CREATE UNIQUE INDEX portfolio_snapshot_retry ON public.portfolio(live_strategy_id,broker,credential_id,snapshot_at);
+CREATE INDEX portfolio_snapshot_source ON public.portfolio(live_strategy_id,broker,credential_id,base_currency,snapshot_at,id);
 
 -- Validate identity even for service-role writes. Historical names/revisions stay captured.
 CREATE OR REPLACE FUNCTION public.validate_reporting_scope() RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
@@ -832,6 +843,58 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path='' AS $$
 $$;
 REVOKE ALL ON FUNCTION public.reporting_trade_aggregate(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.reporting_trade_aggregate(uuid) TO service_role;
+
+
+CREATE OR REPLACE FUNCTION public.mark_reporting_changes() RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+  UPDATE public.live_strategies r SET metrics_context=r.metrics_context || jsonb_build_object(
+    'refresh_pending',true,'data_revision',(coalesce((r.metrics_context->>'data_revision')::bigint,0)+1)::text,
+    'finalization_pending',r.status IN ('completed','failed','cancelled') OR coalesce((r.metrics_context->>'finalization_pending')::boolean,false))
+  WHERE r.mode='live' AND r.id IN (SELECT DISTINCT live_strategy_id FROM reporting_changed);
+  RETURN NULL;
+END $$;
+CREATE TRIGGER reporting_trade_inserted AFTER INSERT ON public.trades REFERENCING NEW TABLE AS reporting_changed FOR EACH STATEMENT EXECUTE FUNCTION public.mark_reporting_changes();
+CREATE TRIGGER reporting_trade_updated AFTER UPDATE ON public.trades REFERENCING NEW TABLE AS reporting_changed FOR EACH STATEMENT EXECUTE FUNCTION public.mark_reporting_changes();
+CREATE TRIGGER reporting_snapshot_inserted AFTER INSERT ON public.portfolio REFERENCING NEW TABLE AS reporting_changed FOR EACH STATEMENT EXECUTE FUNCTION public.mark_reporting_changes();
+CREATE TRIGGER reporting_snapshot_updated AFTER UPDATE ON public.portfolio REFERENCING NEW TABLE AS reporting_changed FOR EACH STATEMENT EXECUTE FUNCTION public.mark_reporting_changes();
+CREATE INDEX live_strategies_pending_metrics ON public.live_strategies(id) WHERE mode='live' AND
+  (metrics_updated_at IS NULL OR metrics_context->>'refresh_pending'='true' OR metrics_context->>'finalization_pending'='true');
+
+-- Serialize resource cleanup across competing stop/delete requests. A process that
+-- dies with a stop in progress retains ownership for explicit lifecycle recovery.
+CREATE OR REPLACE FUNCTION public.claim_reporting_stop(p_user_id uuid,p_workflow_id uuid,p_execution_id uuid,p_token uuid)
+RETURNS boolean LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE w public.workflows; r public.live_strategies;
+BEGIN
+  SELECT * INTO STRICT w FROM public.workflows WHERE id=p_workflow_id AND user_id=p_user_id FOR UPDATE;
+  IF NOT w.is_active OR w.active_execution_id IS DISTINCT FROM p_execution_id THEN RETURN false; END IF;
+  SELECT * INTO STRICT r FROM public.live_strategies WHERE id=p_execution_id AND mode='live' AND user_id=p_user_id AND workflow_id=p_workflow_id FOR UPDATE;
+  IF r.status='pending' THEN RAISE EXCEPTION 'Activation is still starting'; END IF;
+  IF r.metrics_context ? 'stop_token' THEN RAISE EXCEPTION 'Activation stop is in progress'; END IF;
+  UPDATE public.live_strategies SET metrics_context=metrics_context || jsonb_build_object('stop_token',p_token::text,'data_revision',(coalesce((metrics_context->>'data_revision')::bigint,0)+1)::text) WHERE id=r.id;
+  RETURN true;
+END $$;
+CREATE OR REPLACE FUNCTION public.release_reporting_stop(p_user_id uuid,p_workflow_id uuid,p_execution_id uuid,p_token uuid)
+RETURNS void LANGUAGE sql SET search_path='' AS $$
+  UPDATE public.live_strategies SET metrics_context=(metrics_context-'stop_token') || jsonb_build_object('data_revision',(coalesce((metrics_context->>'data_revision')::bigint,0)+1)::text)
+    WHERE id=p_execution_id AND mode='live' AND user_id=p_user_id AND workflow_id=p_workflow_id AND metrics_context->>'stop_token'=p_token::text;
+$$;
+REVOKE ALL ON FUNCTION public.claim_reporting_stop(uuid,uuid,uuid,uuid),public.release_reporting_stop(uuid,uuid,uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_reporting_stop(uuid,uuid,uuid,uuid),public.release_reporting_stop(uuid,uuid,uuid,uuid) TO service_role;
+
+
+-- Capture an explicitly supplied equity baseline once, tied to its account/currency.
+CREATE OR REPLACE FUNCTION public.record_reporting_baseline(p_user_id uuid,p_workflow_id uuid,p_execution_id uuid,p_capital numeric,p_source jsonb)
+RETURNS void LANGUAGE sql SET search_path='' AS $$
+  UPDATE public.live_strategies SET initial_capital=p_capital,base_currency=p_source->>'base_currency',
+    metrics_context=metrics_context || jsonb_build_object('initial_capital','recorded','snapshot_source',p_source,
+      'refresh_pending',true,'data_revision',(coalesce((metrics_context->>'data_revision')::bigint,0)+1)::text)
+  WHERE id=p_execution_id AND mode='live' AND user_id=p_user_id AND workflow_id=p_workflow_id
+    AND status IN ('pending','running') AND initial_capital IS NULL AND p_capital>0
+    AND (NOT(metrics_context ? 'snapshot_source') OR metrics_context->'snapshot_source'=p_source);
+$$;
+REVOKE ALL ON FUNCTION public.record_reporting_baseline(uuid,uuid,uuid,numeric,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.record_reporting_baseline(uuid,uuid,uuid,numeric,jsonb) TO service_role;
 
 NOTIFY pgrst,'reload schema';
 COMMIT;

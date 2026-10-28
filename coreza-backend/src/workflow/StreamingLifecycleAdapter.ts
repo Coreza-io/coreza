@@ -437,7 +437,7 @@ export class StreamingLifecycleAdapter {
     await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
     await jobQueue.stopWorkflowRunner(workflowId);
     await FillSyncWorker.flushWorkflow(userId, workflowId);
-    await OrderOwnerRegistry.cleanupByWorkflow(workflowId);
+    // Keep scoped order owners until their existing TTL so late fills retain identity.
     await this.cleanupWorkflowListeners(userId, workflowId);
     await RegistrationService.publishUnregisterWorkflow({
       userId,

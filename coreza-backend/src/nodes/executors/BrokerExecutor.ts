@@ -236,6 +236,7 @@ export class BrokerExecutor implements INodeExecutor {
               workflowId,
               nodeId: node.id,
               runId: context?.runId,
+              reportingExecutionId: context?.reportingExecutionId ?? (context?.executionMode === "live" ? context.executionId : undefined),
               symbol: String(resolvedParams?.symbol || ""),
               createdAt: new Date().toISOString(),
               clientOrderId: preRegisteredClientOrderId || "",
@@ -323,6 +324,7 @@ export class BrokerExecutor implements INodeExecutor {
             workflowId,
             nodeId: node.id,
             runId: context?.runId,
+            reportingExecutionId: context?.reportingExecutionId ?? (context?.executionMode === "live" ? context.executionId : undefined),
             symbol: String(resolvedParams?.symbol || ""),
             createdAt: new Date().toISOString(),
             ...ids,
@@ -601,3 +603,4 @@ export class BrokerExecutor implements INodeExecutor {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
+

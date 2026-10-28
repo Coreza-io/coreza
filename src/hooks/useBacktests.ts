@@ -1,3 +1,4 @@
+import { reportingPages } from "@/lib/reportingPages";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -49,7 +50,7 @@ export const useBacktests = (enabled = true) => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: supabaseError } = await supabase
+      const data = await reportingPages(() => supabase
         .from("backtests")
         .select(
           `
@@ -63,9 +64,7 @@ export const useBacktests = (enabled = true) => {
         `,
         )
         .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (supabaseError) throw supabaseError;
+        .order("created_at", { ascending: false }).order("id", { ascending: false }));
 
       const parsed = (data || []).map((item: any) => ({
         id: item.id,

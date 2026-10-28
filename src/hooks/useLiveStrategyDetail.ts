@@ -136,7 +136,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
         reportingPages(() => supabase.from("portfolio").select("*").eq("live_strategy_id", header.id).order("snapshot_at").order("id")),
       ]);
       if (!isCurrent()) return;
-      const series = selectLiveSnapshotSeries(rawSnapshots);
+      const series = selectLiveSnapshotSeries(rawSnapshots, header.metrics_context?.snapshot_source as { broker?: string; credential_id?: string; base_currency?: string } | undefined);
       const summary = header.initial_capital == null ? undefined : { initial_capital: Number(header.initial_capital) };
       const normalized = normalizeLiveEquitySnapshots(series, summary);
       setBacktest({

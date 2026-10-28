@@ -20,9 +20,9 @@ export const useLiveStrategies = (enabled = true) => {
         .order("started_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }));
       if (!isCurrent()) return;
       setBacktests(rows.map(row => ({
-        id: row.id, execution_id: row.execution_id, started_at_inferred: row.metrics_context?.started_at_inferred, name: row.name,
+        id: row.id, execution_id: row.execution_id, name: row.name,
         workflow_id: row.workflow_id, workflow_name: row.name,
-        status: row.metrics_context?.lifecycle_unknown ? "unknown" : row.status,
+        status: row.status,
         total_return: row.total_return, sharpe_ratio: row.sharpe_ratio,
         total_trades: row.total_trades, created_at: row.started_at, completed_at: row.completed_at,
       })));
@@ -44,6 +44,6 @@ export const useLiveStrategies = (enabled = true) => {
   }, [enabled, user?.id, load]);
   const stats = useMemo(() => backtests.reduce((acc, row) => {
     acc.total++; acc[row.status]++; return acc;
-  }, { total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, unknown: 0 }), [backtests]);
+  }, { total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 }), [backtests]);
   return { backtests, loading, error, stats, refetch: load };
 };

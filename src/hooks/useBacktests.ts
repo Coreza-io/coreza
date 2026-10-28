@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
-export type BacktestStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "unknown";
+export type BacktestStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 const BACKTEST_STATUSES: BacktestStatus[] = [
   "pending",
@@ -30,7 +30,6 @@ export interface Backtest {
   total_trades?: number;
   created_at?: string;
   completed_at?: string;
-  started_at_inferred?: boolean;
   execution_id?: string;
 }
 
@@ -60,7 +59,7 @@ export const useBacktests = (enabled = true) => {
           status,
           created_at,
           workflows(name),
-          live_strategies(total_return, sharpe_ratio, total_trades)
+          live_strategies!inner(total_return, sharpe_ratio, total_trades)
         `,
         )
         .eq("user_id", user.id)
@@ -72,9 +71,9 @@ export const useBacktests = (enabled = true) => {
         workflow_id: item.workflow_id,
         workflow_name: item.workflows?.name,
         status: toBacktestStatus(item.status),
-        total_return: (Array.isArray(item.live_strategies) ? item.live_strategies[0] : item.live_strategies)?.total_return,
-        sharpe_ratio: (Array.isArray(item.live_strategies) ? item.live_strategies[0] : item.live_strategies)?.sharpe_ratio,
-        total_trades: (Array.isArray(item.live_strategies) ? item.live_strategies[0] : item.live_strategies)?.total_trades,
+        total_return: item.live_strategies?.total_return,
+        sharpe_ratio: item.live_strategies?.sharpe_ratio,
+        total_trades: item.live_strategies?.total_trades,
         created_at: item.created_at,
       }));
 
@@ -130,7 +129,7 @@ export const useBacktests = (enabled = true) => {
         acc[status] += 1;
         return acc;
       },
-      { total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, unknown: 0 },
+      { total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 },
     );
   }, [backtests]);
 

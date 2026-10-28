@@ -78,7 +78,6 @@ const statusConfig: Record<
     className: "text-green-500",
   },
   cancelled: { label: "Cancelled", variant: "outline", className: "text-muted-foreground" },
-  unknown: { label: "Unknown", variant: "outline", className: "text-muted-foreground" },
   failed: {
     label: "Failed",
     variant: "destructive",
@@ -369,7 +368,6 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                         {backtest.created_at
                           ? new Date(backtest.created_at).toLocaleString()
                           : "—"}
-                        {isLive && backtest.started_at_inferred && " (inferred)"}
                         {isLive && backtest.completed_at && <div>{new Date(backtest.completed_at).toLocaleString()}</div>}
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -449,7 +447,7 @@ const SelectStatus = ({
 }) => {
   return (
     <div className="flex gap-2 flex-wrap">
-      {(["all", "pending", "running", "completed", "failed", "cancelled", "unknown"] as const).filter(status => isLive || status !== "unknown").map(
+      {(["all", "pending", "running", "completed", "failed", "cancelled"] as const).map(
         (status) => (
           <Button
             key={status}

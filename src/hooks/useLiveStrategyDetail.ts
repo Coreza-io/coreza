@@ -26,7 +26,6 @@ const mapFillStatusToOrderStatus = (
 
 const mapLiveTradeToBacktestTrade = (
   row: any,
-  workflowId: string,
   fills?: any[],
 ): BacktestTrade => {
   const entryOrderId = row.entry_order_id;
@@ -58,7 +57,7 @@ const mapLiveTradeToBacktestTrade = (
 
   return {
     id: row.id,
-    backtest_id: workflowId,
+    live_strategy_id: row.live_strategy_id,
     symbol: row.symbol,
     action: row.action,
     quantity: Number(row.quantity) || 0,
@@ -78,10 +77,10 @@ const mapLiveTradeToBacktestTrade = (
 
 const mapSnapshotToPortfolioSnapshot = (
   snapshot: any,
-  workflowId: string,
+  strategyId: string,
 ): PortfolioSnapshot => ({
   id: snapshot.id,
-  backtest_id: workflowId,
+  live_strategy_id: strategyId,
   date: snapshot.snapshot_at,
   cash_balance: snapshot.cash ?? snapshot.total_value_usdt ?? 0,
   stock_value: 0,
@@ -89,10 +88,10 @@ const mapSnapshotToPortfolioSnapshot = (
   daily_return: undefined,
 });
 
-const mapNormalizedSnapshots = (raw: any[], workflowId: string, normalized: ReturnType<typeof normalizeLiveEquitySnapshots>): PortfolioSnapshot[] => {
+const mapNormalizedSnapshots = (raw: any[], strategyId: string, normalized: ReturnType<typeof normalizeLiveEquitySnapshots>): PortfolioSnapshot[] => {
   const equityByTimestamp = new Map(normalized.normalizedSnapshots.map(row => [row.ts, row.equity]));
   const rows = raw.filter(row => row.snapshot_at).map(row => {
-    const snapshot = mapSnapshotToPortfolioSnapshot(row, workflowId);
+    const snapshot = mapSnapshotToPortfolioSnapshot(row, strategyId);
     const equity = equityByTimestamp.get(Date.parse(row.snapshot_at));
     if (equity !== undefined) snapshot.total_value = equity;
     return snapshot;
@@ -141,15 +140,15 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
       const normalized = normalizeLiveEquitySnapshots(series, summary);
       setBacktest({
         id: header.id, name: header.name, workflow_id: header.workflow_id,
-        status: (header.metrics_context as any)?.lifecycle_unknown ? "unknown" : header.status as BacktestWithRelations["status"],
+        status: header.status as BacktestWithRelations["status"],
         started_at: header.started_at, completed_at: header.completed_at,
         start_date: header.started_at ?? "", end_date: header.completed_at ?? "",
         initial_capital: header.initial_capital ?? normalized.initialCapital,
         error_message: header.error_message,
       } as BacktestWithRelations);
       setRawFills(fills);
-      setTrades(closedTrades.map(row => mapLiveTradeToBacktestTrade(row, workflowId, fills.filter(fill => !fill.algo_id))));
-      setSnapshots(mapNormalizedSnapshots(series, workflowId, normalized));
+      setTrades(closedTrades.map(row => mapLiveTradeToBacktestTrade(row, fills.filter(fill => !fill.algo_id))));
+      setSnapshots(mapNormalizedSnapshots(series, header.id, normalized));
       setMetrics({ ...buildLiveMetrics(summary, closedTrades.map(liveTradeMetricInput), series),
         metrics_context: { ...header.metrics_context,
           initial_capital: header.initial_capital != null ? "recorded" : normalized.initialCapital == null ? "unavailable" : "inferred",

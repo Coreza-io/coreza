@@ -15,8 +15,8 @@ import { supabase } from "../config/supabase";
 export interface LiveTradeRow {
   id: string;
   user_id: string;
-  workflow_id?: string;
-  execution_id?: string;
+  workflow_id: string;
+  execution_id: string;
   symbol: string;
   action: string;
   quantity: number;
@@ -56,7 +56,7 @@ export class LiveTradeRepository {
       holding_period_bars: row.holding_period_bars ?? 0,
     }, { onConflict: "id" });
     if (error) throw error;
-    LiveStrategiesRepository.markDirty(row.execution_id!);
+    LiveStrategiesRepository.markDirty(row.execution_id);
   }
 
   static async flush(executionId?: string, workflowId?: string, userId?: string): Promise<void> {

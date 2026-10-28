@@ -12,7 +12,7 @@ import { NodeResultError } from "../../contracts/nodeResult";
  * See the LICENSE file for details.
  */
 
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
@@ -1000,6 +1000,7 @@ export class PortfolioExecutor implements INodeExecutor {
       typeof baseCashRaw === "number" ? baseCashRaw : Number(baseCashRaw) || 0;
 
     return {
+      id: randomUUID(),
       user_id: meta.userId,
       workflow_id: meta.workflowId,
       execution_id: meta.runId,

@@ -8,14 +8,13 @@
  * See the LICENSE file for details.
  */
 
-import { randomUUID } from "crypto";
 import { getRedisCache } from "../config/redis";
 import { RedisKeys } from "../infra/redisKeys";
 
 const SNAPSHOT_TTL = 86400; // 24 hours
 
 export interface LatestSnapshotState {
-  id?: string;
+  id: string;
   user_id: string;
   workflow_id: string;
   execution_id?: string;
@@ -46,8 +45,9 @@ export class SnapshotCache {
   }
 
   static upsertLatest(snapshot: LatestSnapshotState): Promise<void> {
+    if (!snapshot.id) return Promise.reject(new Error("Snapshot retry ID is required"));
     const key = this.key(snapshot);
-    this.pending.set(key, { ...snapshot, id: snapshot.id ?? randomUUID() });
+    this.pending.set(key, snapshot);
     const existing = this.writes.get(key);
     if (existing) return existing;
     // One writer per coalesced key; a slow Redis connection never queues every mutation.

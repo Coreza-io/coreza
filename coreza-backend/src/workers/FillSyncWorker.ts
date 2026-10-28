@@ -358,6 +358,7 @@ export class FillSyncWorker {
         }
         try {
           const snapshot: LatestSnapshotState = JSON.parse(json);
+          if (!snapshot.id) throw new Error(`Snapshot retry ID missing: ${key}`);
           if (scope && (snapshot.workflow_id !== scope.workflowId || (scope.executionId && snapshot.execution_id !== scope.executionId))) continue;
           const cash = toFiniteNumber(snapshot.cash);
           const equity = toFiniteNumber(snapshot.equity);

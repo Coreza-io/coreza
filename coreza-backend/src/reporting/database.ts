@@ -11,7 +11,7 @@ export type ReportingHeaderRow = MetricColumns & {
   metrics_updated_at: string | null; metrics_context: Record<string, unknown>;
 };
 export type ReportingTradeRow = {
-  id: string; live_strategy_id: string; backtest_id: string | null;
+  id: string; live_strategy_id: string;
   user_id: string; workflow_id: string; execution_id: string | null;
   symbol: string; action: string; quantity: number;
   entryPrice: number | null; exitPrice: number; entryTime: string | null; exitTime: string;
@@ -22,7 +22,7 @@ export type ReportingTradeRow = {
   created_at: string;
 };
 export type ReportingPortfolioRow = {
-  id: string; live_strategy_id: string; backtest_id: string | null;
+  id: string; live_strategy_id: string;
   user_id: string; workflow_id: string; execution_id: string | null;
   date: string | null; total_value: number | null; cash_balance: number | null;
   stock_value: number | null; daily_return: number | null;
@@ -38,7 +38,7 @@ type ReportingTable<Row, Required extends keyof Row, Relationships extends reado
 };
 export type ReportingTables = {
   live_strategies: ReportingTable<ReportingHeaderRow, "mode" | "user_id" | "workflow_id" | "name", [{
-    foreignKeyName: "backtest_results_backtest_id_fkey"; columns: ["backtest_id"];
+    foreignKeyName: "live_strategies_backtest_id_fkey"; columns: ["backtest_id"];
     isOneToOne: true; referencedRelation: "backtests"; referencedColumns: ["id"];
   }, {
     foreignKeyName: "live_strategies_workflow_id_fkey"; columns: ["workflow_id"];

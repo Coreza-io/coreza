@@ -108,7 +108,6 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
             {backtest.started_at
               ? new Date(backtest.started_at).toLocaleString()
               : isLive ? "Unknown" : "Not started"}
-            {isLive && metrics?.metrics_context?.started_at_inferred && " (inferred)"}
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-muted-foreground">

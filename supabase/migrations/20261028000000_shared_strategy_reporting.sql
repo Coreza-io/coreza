@@ -1,147 +1,106 @@
--- Coordinated cutover: pause starts/writers and drain before applying; deploy readers
--- and writers together. This migration never stops or restarts a trading strategy.
+-- Shared reporting for new backtests and live activations.
+-- Deploy the schema and matching writers/readers together before resuming starts.
 BEGIN;
-DO $$
-BEGIN
-  IF to_regclass('public.live_strategies') IS NULL THEN
-    ALTER TABLE public.backtest_results RENAME TO live_strategies;
-    ALTER TABLE public.backtest_trades RENAME TO trades;
-    ALTER TABLE public.backtest_portfolio_snapshots RENAME TO portfolio;
-  END IF;
-END $$;
-
-ALTER TABLE public.live_strategies
-  ALTER COLUMN backtest_id DROP NOT NULL,
-  ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'backtest',
-  ADD COLUMN IF NOT EXISTS user_id uuid,
-  ADD COLUMN IF NOT EXISTS workflow_id uuid REFERENCES public.workflows(id) ON DELETE CASCADE,
-  ADD COLUMN IF NOT EXISTS execution_id uuid,
-  ADD COLUMN IF NOT EXISTS name text,
-  ADD COLUMN IF NOT EXISTS source_workflow_revision bigint,
-  ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending',
-  ADD COLUMN IF NOT EXISTS started_at timestamptz,
-  ADD COLUMN IF NOT EXISTS completed_at timestamptz,
-  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now(),
-  ADD COLUMN IF NOT EXISTS error_message text,
-  ADD COLUMN IF NOT EXISTS initial_capital numeric,
-  ADD COLUMN IF NOT EXISTS base_currency text,
-  ADD COLUMN IF NOT EXISTS metrics_updated_at timestamptz,
-  ADD COLUMN IF NOT EXISTS metrics_context jsonb NOT NULL DEFAULT '{}'::jsonb;
-
--- Refuse ambiguous legacy summaries instead of dropping or merging financial rows.
-CREATE UNIQUE INDEX IF NOT EXISTS live_strategies_backtest ON public.live_strategies(backtest_id);
-CREATE UNIQUE INDEX IF NOT EXISTS live_strategies_execution ON public.live_strategies(execution_id);
-UPDATE public.live_strategies r SET user_id=b.user_id, workflow_id=b.workflow_id,
-  name=b.name, status=b.status, started_at=b.started_at, completed_at=b.completed_at,
-  error_message=b.error_message, initial_capital=b.initial_capital,
-  metrics_context='{"source":"backtest","granularity":"daily","average_trade_return_unit":"currency","avg_holding_period_unit":"bars"}'
-FROM public.backtests b WHERE r.backtest_id=b.id;
-INSERT INTO public.live_strategies(backtest_id,user_id,workflow_id,name,status,started_at,completed_at,error_message,initial_capital,created_at,metrics_context)
-SELECT b.id,b.user_id,b.workflow_id,b.name,b.status,b.started_at,b.completed_at,b.error_message,b.initial_capital,b.created_at,
-  '{"source":"backtest","granularity":"daily","average_trade_return_unit":"currency","avg_holding_period_unit":"bars"}'::jsonb
-FROM public.backtests b WHERE NOT EXISTS (SELECT 1 FROM public.live_strategies r WHERE r.backtest_id=b.id);
-
-ALTER TABLE public.trades
-  ALTER COLUMN backtest_id DROP NOT NULL,
-  ADD COLUMN IF NOT EXISTS live_strategy_id uuid REFERENCES public.live_strategies(id) ON DELETE CASCADE,
-  ADD COLUMN IF NOT EXISTS user_id uuid,
-  ADD COLUMN IF NOT EXISTS workflow_id uuid,
-  ADD COLUMN IF NOT EXISTS execution_id uuid,
-  ADD COLUMN IF NOT EXISTS gross_pnl numeric,
-  ADD COLUMN IF NOT EXISTS entry_order_id text,
-  ADD COLUMN IF NOT EXISTS exit_order_id text;
-ALTER TABLE public.portfolio
-  ALTER COLUMN backtest_id DROP NOT NULL,
-  ALTER COLUMN date DROP NOT NULL,
-  ALTER COLUMN date DROP DEFAULT,
-  ALTER COLUMN total_value DROP DEFAULT,
-  ALTER COLUMN cash_balance DROP DEFAULT,
-  ALTER COLUMN stock_value DROP DEFAULT,
-  ALTER COLUMN daily_return DROP DEFAULT,
-  ALTER COLUMN total_value DROP NOT NULL,
-  ALTER COLUMN cash_balance DROP NOT NULL,
-  ALTER COLUMN stock_value DROP NOT NULL,
-  ADD COLUMN IF NOT EXISTS live_strategy_id uuid REFERENCES public.live_strategies(id) ON DELETE CASCADE,
-  ADD COLUMN IF NOT EXISTS user_id uuid,
-  ADD COLUMN IF NOT EXISTS workflow_id uuid,
-  ADD COLUMN IF NOT EXISTS execution_id uuid,
-  ADD COLUMN IF NOT EXISTS snapshot_at timestamptz,
-  ADD COLUMN IF NOT EXISTS broker text,
-  ADD COLUMN IF NOT EXISTS credential_id uuid,
-  ADD COLUMN IF NOT EXISTS base_currency text,
-  ADD COLUMN IF NOT EXISTS balances jsonb,
-  ADD COLUMN IF NOT EXISTS cash numeric,
-  ADD COLUMN IF NOT EXISTS equity numeric,
-  ADD COLUMN IF NOT EXISTS realized_pnl numeric,
-  ADD COLUMN IF NOT EXISTS unrealized_pnl numeric,
-  ADD COLUMN IF NOT EXISTS positions_count integer,
-  ADD COLUMN IF NOT EXISTS total_value_usdt numeric;
-UPDATE public.trades c SET live_strategy_id=r.id,user_id=r.user_id,workflow_id=r.workflow_id
-FROM public.live_strategies r WHERE c.backtest_id=r.backtest_id;
-UPDATE public.portfolio c SET live_strategy_id=r.id,user_id=r.user_id,workflow_id=r.workflow_id
-FROM public.live_strategies r WHERE c.backtest_id=r.backtest_id;
-
--- Only reliable, owned activation groups qualify. Technical event run IDs do not.
-CREATE TEMP TABLE reporting_legacy_activations ON COMMIT DROP AS
-WITH evidence AS (
-  SELECT workflow_id,user_id,execution_id,coalesce("entryTime","exitTime") AS observed_at FROM public.live_trades
-  UNION ALL SELECT workflow_id,user_id,execution_id,snapshot_at FROM public.cash_snapshots
-  UNION ALL SELECT w.id,w.user_id,w.active_execution_id,NULL::timestamptz FROM public.workflows w
-    WHERE w.is_active AND EXISTS (
-      SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.nodes)='array' THEN w.nodes ELSE '[]'::jsonb END) n
-      WHERE 'portfolio'=lower(coalesce(n->>'type',n->>'name',n->>'def',n->>'node_type',''))
-        AND coalesce(n#>>'{values,mode}',n#>>'{data,values,mode}',n#>>'{data,config,mode}',n#>>'{data,mode}')='broker'
-    ) AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.nodes)='array' THEN w.nodes ELSE '[]'::jsonb END) n WHERE lower(coalesce(n->>'type',n->>'name',''))='backtestinit')
-  UNION ALL SELECT r.workflow_id,r.initiated_by,r.execution_id,r.started_at FROM public.workflow_runs r
-    WHERE r.execution_id IS NOT NULL AND r.execution_id<>r.id AND EXISTS (
-      SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.nodes)='array' THEN r.nodes ELSE '[]'::jsonb END) n
-      WHERE lower(coalesce(n->>'type',n->>'name',n->>'def',n->>'node_type',''))='portfolio'
-        AND coalesce(n#>>'{values,mode}',n#>>'{data,values,mode}',n#>>'{data,config,mode}',n#>>'{data,mode}')='broker'
-    )
-)
-SELECT e.workflow_id,e.user_id,e.execution_id,min(e.observed_at) AS first_observed_at
-FROM evidence e JOIN public.workflows w ON w.id=e.workflow_id AND w.user_id=e.user_id
-WHERE e.execution_id IS NOT NULL
-GROUP BY e.workflow_id,e.user_id,e.execution_id;
-DO $$ BEGIN
-  IF EXISTS (SELECT execution_id FROM reporting_legacy_activations GROUP BY execution_id HAVING count(*)>1)
-    OR EXISTS (SELECT 1 FROM reporting_legacy_activations a JOIN public.live_strategies r ON r.id=a.execution_id
-      WHERE r.mode<>'live' OR r.execution_id IS DISTINCT FROM a.execution_id OR r.workflow_id<>a.workflow_id OR r.user_id<>a.user_id)
-  THEN RAISE EXCEPTION 'Conflicting reporting activation UUID; reconcile before cutover'; END IF;
-END $$;
-INSERT INTO public.live_strategies(id,mode,user_id,workflow_id,execution_id,name,status,started_at,metrics_context)
-SELECT a.execution_id,'live',a.user_id,a.workflow_id,a.execution_id,w.name,
-  CASE WHEN w.is_active AND w.active_execution_id=a.execution_id THEN 'running' ELSE 'cancelled' END,
-  a.first_observed_at,
-  jsonb_build_object('source','live','granularity','intraday','legacy',true,
-    'lifecycle_unknown',NOT coalesce(w.is_active AND w.active_execution_id=a.execution_id,false),
-    'started_at_inferred',true,'initial_capital','unavailable',
-    'average_trade_return_unit','percent','avg_holding_period_unit','milliseconds')
-FROM reporting_legacy_activations a JOIN public.workflows w ON w.id=a.workflow_id
-ON CONFLICT (execution_id) DO NOTHING;
-
--- Source UUIDs are retry identities. Never deduplicate partial exits by order/time.
-INSERT INTO public.trades(id,live_strategy_id,user_id,workflow_id,execution_id,symbol,action,quantity,
-  "entryPrice","exitPrice","entryTime","exitTime",commission,slippage,net_pnl,gross_pnl,entry_order_id,exit_order_id,holding_period_bars,exit_reason,created_at)
-SELECT t.id,r.id,t.user_id,t.workflow_id,t.execution_id,t.symbol,t.action,t.quantity,
-  t."entryPrice",t."exitPrice",t."entryTime",t."exitTime",t.commission,t.slippage,t.net_pnl,t.gross_pnl,t.entry_order_id,t.exit_order_id,t.holding_period_bars,t.exit_reason,t.created_at
-FROM public.live_trades t JOIN public.live_strategies r ON r.execution_id=t.execution_id AND r.workflow_id=t.workflow_id AND r.user_id=t.user_id AND r.mode='live';
-INSERT INTO public.portfolio(id,live_strategy_id,user_id,workflow_id,execution_id,snapshot_at,broker,credential_id,base_currency,balances,cash,equity,realized_pnl,unrealized_pnl,positions_count,total_value_usdt,created_at)
-SELECT c.id,r.id,c.user_id,c.workflow_id,c.execution_id,c.snapshot_at,c.broker,c.credential_id,c.base_currency,c.balances,c.cash,c.equity,c.realized_pnl,c.unrealized_pnl,c.positions_count,c.total_value_usdt,c.created_at
-FROM public.cash_snapshots c JOIN public.live_strategies r ON r.execution_id=c.execution_id AND r.workflow_id=c.workflow_id AND r.user_id=c.user_id AND r.mode='live';
-
-ALTER TABLE public.live_strategies ALTER COLUMN user_id SET NOT NULL, ALTER COLUMN workflow_id SET NOT NULL, ALTER COLUMN name SET NOT NULL;
-ALTER TABLE public.live_strategies ADD CONSTRAINT reporting_mode_identity CHECK (
-  (mode='backtest' AND backtest_id IS NOT NULL AND execution_id IS NULL) OR
-  (mode='live' AND backtest_id IS NULL AND execution_id IS NOT NULL AND id=execution_id));
-ALTER TABLE public.live_strategies ADD CONSTRAINT reporting_status CHECK (status IN ('pending','running','completed','failed','cancelled'));
-ALTER TABLE public.trades ALTER COLUMN live_strategy_id SET NOT NULL, ALTER COLUMN user_id SET NOT NULL, ALTER COLUMN workflow_id SET NOT NULL;
-ALTER TABLE public.portfolio ALTER COLUMN live_strategy_id SET NOT NULL, ALTER COLUMN user_id SET NOT NULL, ALTER COLUMN workflow_id SET NOT NULL;
+CREATE TABLE public.live_strategies (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  mode text NOT NULL,
+  user_id uuid NOT NULL,
+  workflow_id uuid NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
+  backtest_id uuid UNIQUE REFERENCES public.backtests(id) ON DELETE CASCADE,
+  execution_id uuid UNIQUE,
+  name text NOT NULL,
+  source_workflow_revision bigint,
+  status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed','cancelled')),
+  started_at timestamptz,
+  completed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  error_message text,
+  initial_capital numeric,
+  base_currency text,
+  metrics_updated_at timestamptz,
+  metrics_context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  total_return numeric,
+  annualized_return numeric,
+  sharpe_ratio numeric,
+  sortino_ratio numeric,
+  calmar_ratio numeric,
+  max_drawdown numeric,
+  win_rate numeric,
+  profit_factor numeric,
+  expectancy numeric,
+  total_trades integer,
+  profitable_trades integer,
+  losing_trades integer,
+  avg_win numeric,
+  avg_loss numeric,
+  largest_win numeric,
+  largest_loss numeric,
+  average_trade_return numeric,
+  avg_holding_period numeric,
+  net_profit numeric,
+  final_portfolio_value numeric,
+  total_commission numeric,
+  total_slippage numeric,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT reporting_mode_identity CHECK (
+    (mode='backtest' AND backtest_id IS NOT NULL AND execution_id IS NULL) OR
+    (mode='live' AND backtest_id IS NULL AND execution_id IS NOT NULL AND id=execution_id))
+);
+CREATE TABLE public.trades (
+  id uuid PRIMARY KEY,
+  live_strategy_id uuid NOT NULL REFERENCES public.live_strategies(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL,
+  workflow_id uuid NOT NULL,
+  execution_id uuid,
+  symbol text NOT NULL,
+  action text NOT NULL,
+  quantity numeric NOT NULL,
+  "entryPrice" numeric,
+  "exitPrice" numeric NOT NULL,
+  "entryTime" timestamptz,
+  "exitTime" timestamptz NOT NULL,
+  commission numeric,
+  slippage numeric,
+  return_pct numeric,
+  net_pnl numeric,
+  gross_pnl numeric,
+  portfolio_value_before numeric,
+  portfolio_value_after numeric,
+  holding_period_bars integer,
+  exit_reason text,
+  entry_order_id text,
+  exit_order_id text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.portfolio (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  live_strategy_id uuid NOT NULL REFERENCES public.live_strategies(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL,
+  workflow_id uuid NOT NULL,
+  execution_id uuid,
+  date date,
+  total_value numeric,
+  cash_balance numeric,
+  stock_value numeric,
+  daily_return numeric,
+  snapshot_at timestamptz,
+  broker text,
+  credential_id uuid,
+  base_currency text,
+  balances jsonb,
+  cash numeric,
+  equity numeric,
+  realized_pnl numeric,
+  unrealized_pnl numeric,
+  positions_count integer,
+  total_value_usdt numeric,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(live_strategy_id,date)
+);
 CREATE INDEX live_strategies_owner_mode_start ON public.live_strategies(user_id,mode,started_at DESC,id DESC);
 CREATE INDEX live_strategies_owner_mode_status ON public.live_strategies(user_id,mode,status);
 CREATE INDEX trades_strategy_exit ON public.trades(live_strategy_id,"exitTime",id);
 CREATE INDEX portfolio_strategy_snapshot ON public.portfolio(live_strategy_id,snapshot_at,id);
-CREATE UNIQUE INDEX portfolio_strategy_date ON public.portfolio(live_strategy_id,date);
 CREATE INDEX portfolio_snapshot_source ON public.portfolio(live_strategy_id,broker,credential_id,base_currency,snapshot_at,id);
 
 -- Validate identity even for service-role writes. Historical names/revisions stay captured.
@@ -166,7 +125,6 @@ BEGIN
     SELECT * INTO STRICT parent FROM public.live_strategies WHERE id=NEW.live_strategy_id;
     IF (NEW.user_id IS NOT NULL AND NEW.user_id<>parent.user_id) OR
        (NEW.workflow_id IS NOT NULL AND NEW.workflow_id<>parent.workflow_id) OR
-       (NEW.backtest_id IS NOT NULL AND NEW.backtest_id IS DISTINCT FROM parent.backtest_id) OR
        (NEW.execution_id IS NOT NULL AND NEW.execution_id IS DISTINCT FROM parent.execution_id) THEN
       RAISE EXCEPTION 'Reporting child identity mismatch'; END IF;
     NEW.user_id:=parent.user_id; NEW.workflow_id:=parent.workflow_id;
@@ -227,22 +185,15 @@ END $$;
 REVOKE ALL ON FUNCTION public.complete_reporting_activation(uuid,uuid,uuid,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_reporting_activation(uuid,uuid,uuid,text) TO service_role;
 
--- Remove legacy policies after rename: child access follows the owned parent only.
-DO $$ DECLARE p record; t text; BEGIN
-  FOR p IN SELECT tablename,policyname FROM pg_policies WHERE schemaname='public' AND tablename IN ('live_strategies','trades','portfolio') LOOP
-    EXECUTE format('DROP POLICY %I ON public.%I',p.policyname,p.tablename);
-  END LOOP;
-  FOREACH t IN ARRAY ARRAY['live_strategies','trades','portfolio'] LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
-    EXECUTE format('GRANT SELECT ON public.%I TO authenticated',t);
-    EXECUTE format('GRANT ALL ON public.%I TO service_role',t);
-  END LOOP;
-END $$;
+-- Reporting is written by the backend and read through parent ownership.
+ALTER TABLE public.live_strategies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.portfolio ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON public.live_strategies,public.trades,public.portfolio TO authenticated;
+GRANT ALL ON public.live_strategies,public.trades,public.portfolio TO service_role;
 CREATE POLICY reporting_owner ON public.live_strategies FOR SELECT TO authenticated USING(user_id=(SELECT auth.uid()));
 CREATE POLICY reporting_trade_owner ON public.trades FOR SELECT TO authenticated USING(live_strategy_id IN (SELECT id FROM public.live_strategies WHERE user_id=(SELECT auth.uid())));
 CREATE POLICY reporting_portfolio_owner ON public.portfolio FOR SELECT TO authenticated USING(live_strategy_id IN (SELECT id FROM public.live_strategies WHERE user_id=(SELECT auth.uid())));
--- Old live tables remain rollback sources; account-level cash snapshots remain operational.
-REVOKE INSERT,UPDATE,DELETE ON public.live_trades FROM authenticated;
 DO $$ DECLARE t text; BEGIN
   IF EXISTS(SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime') THEN
     FOREACH t IN ARRAY ARRAY['live_strategies','trades','portfolio'] LOOP

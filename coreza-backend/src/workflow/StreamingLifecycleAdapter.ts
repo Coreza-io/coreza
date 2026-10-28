@@ -107,6 +107,7 @@ export class StreamingLifecycleAdapter {
     allEdges: WorkflowEdge[],
     executionId?: string,
   ): Promise<string> {
+    await this.clearSessionData(userId, workflowId);
     const redis = getRedisCache();
     const nodeValues = ((
       triggerNode as WorkflowNode & {
@@ -416,7 +417,6 @@ export class StreamingLifecycleAdapter {
       streamTypes: streamType,
     });
 
-    await this.clearSessionData(userId, workflowId);
     await jobQueue.startWorkflowRunner(
       workflowId,
       userId,

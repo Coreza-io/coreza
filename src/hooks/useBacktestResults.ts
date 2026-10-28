@@ -27,7 +27,7 @@ export interface TradeOrder {
 
 export interface BacktestTrade {
   id: string;
-  backtest_id: string;
+  live_strategy_id: string;
   symbol: string;
   action: string;
   quantity: number;
@@ -51,7 +51,7 @@ export interface BacktestTrade {
 
 export interface PortfolioSnapshot {
   id: string;
-  backtest_id: string;
+  live_strategy_id: string;
   date: string;
   cash_balance: number;
   stock_value: number;

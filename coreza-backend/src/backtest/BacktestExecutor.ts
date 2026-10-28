@@ -706,7 +706,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
       return errorResult;
     } finally {
-      if (context?.runId && createdBacktestId && !initialized) {
+      if (context?.userId && createdBacktestId && !initialized) {
         BacktestSessionManager.getInstance().deleteSession(createdBacktestId);
         BacktestExecutor.cleanupBacktestResources(createdBacktestId);
         const { error } = await (supabase.from("backtests") as any)
@@ -1151,6 +1151,10 @@ export class BacktestExecutor implements INodeExecutor {
         exitTime: t.exitTime,
         commission: t.commission,
         net_pnl: t.netPnl,
+        gross_pnl: t.grossPnl,
+        entry_order_id: t.entryOrderId,
+        exit_order_id: t.exitOrderId,
+        holding_period_bars: t.holdingPeriodBars,
         slippage: t.slippage,
         portfolio_value_before: null,
         portfolio_value_after: null,

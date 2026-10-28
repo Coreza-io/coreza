@@ -1,5 +1,5 @@
 export type EquityChartType = "line" | "candle";
-export type EquityInterval = "auto" | "1m" | "5m" | "15m" | "1h" | "1D";
+export type EquityInterval = "auto" | "1m" | "5m" | "15m" | "1h" | "1D" | "1W" | "1M";
 export type FixedEquityInterval = Exclude<EquityInterval, "auto">;
 
 export interface EquityChartContext {

@@ -60,9 +60,9 @@ export const EquityCurveChart = ({ snapshots, currency, intraday = false, contex
         </div>
         {chartType === "candle" && <div className="space-y-1">
           <label htmlFor={intervalId} className="text-xs text-muted-foreground">Interval</label>
-          <Select value={context.mode === "backtest" ? "1D" : interval} onValueChange={value => setInterval(value as EquityInterval)} disabled={context.mode === "backtest"}>
+          <Select value={interval} onValueChange={value => setInterval(value as EquityInterval)}>
             <SelectTrigger id={intervalId} className="min-h-10 w-28"><SelectValue /></SelectTrigger>
-            <SelectContent>{["auto", "1m", "5m", "15m", "1h", "1D"].map(value => <SelectItem key={value} value={value}>{value === "auto" ? "Auto" : value}</SelectItem>)}</SelectContent>
+            <SelectContent>{(context.mode === "backtest" ? ["auto", "1D", "1W", "1M"] : ["auto", "1m", "5m", "15m", "1h", "1D"]).map(value => <SelectItem key={value} value={value}>{value === "auto" ? "Auto" : value}</SelectItem>)}</SelectContent>
           </Select>
         </div>}
       </div>

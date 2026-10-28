@@ -1,9 +1,27 @@
 import type { PortfolioSnapshot } from "@/hooks/useBacktestResults";
 import type { EquityCandle, EquityChartContext, EquityChartModel, EquityInterval, FixedEquityInterval } from "@/components/backtest/equityChartTypes";
 
-export const EQUITY_INTERVALS: Record<FixedEquityInterval, number> = {
+export const EQUITY_INTERVALS: Record<Exclude<FixedEquityInterval, "1W" | "1M">, number> = {
   "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "1D": 86_400_000,
 };
+const LIVE_INTERVALS = ["1m", "5m", "15m", "1h", "1D"] as const;
+
+/** UTC calendar months and Monday-start weeks; no synthetic observations. */
+function bucketBounds(ts: number, interval: FixedEquityInterval): [number, number] {
+  if (interval === "1M") {
+    const date = new Date(ts);
+    return [Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1), Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)];
+  }
+  if (interval === "1W") {
+    const week = 7 * 86_400_000;
+    const offset = 3 * 86_400_000; // Epoch Thursday -> Monday boundary.
+    const start = Math.floor((ts + offset) / week) * week - offset;
+    return [start, start + week];
+  }
+  const size = EQUITY_INTERVALS[interval];
+  const start = Math.floor(ts / size) * size;
+  return [start, start + size];
+}
 export const LEGACY_CANDLE_MESSAGE = "Candle data is unavailable for this older backtest. Run it again to capture equity OHLC.";
 
 export function finiteEquityNumber(value: unknown): number | null {
@@ -89,9 +107,26 @@ export function buildEquityChartData(
       else completeOhlcRows++;
     }
   }
-  let interval: FixedEquityInterval = context.mode === "backtest" ? "1D" : requestedInterval === "auto" ? "1D" : requestedInterval;
+  let interval: FixedEquityInterval = requestedInterval === "auto" ? "1D" : requestedInterval;
+  if (context.mode === "backtest") {
+    // Saved backtests have daily resolution; never offer fictitious intraday buckets.
+    if (interval !== "1D" && interval !== "1W" && interval !== "1M") interval = "1D";
+    if (requestedInterval === "auto" && unique.length > 1 && unique.every(({ row }) => row.equity_sample_count === 1)) {
+      for (const candidate of ["1W", "1M"] as const) {
+        const counts = new Map<number, number>();
+        let hasMultiple = false;
+        for (const sample of unique) {
+          const start = bucketBounds(sample.ts, candidate)[0];
+          const count = (counts.get(start) ?? 0) + 1;
+          counts.set(start, count);
+          if (count > 1) hasMultiple = true;
+        }
+        if (hasMultiple) { interval = candidate; break; }
+      }
+    }
+  }
   if (context.mode === "live" && requestedInterval === "auto") {
-    for (const candidate of Object.keys(EQUITY_INTERVALS) as FixedEquityInterval[]) {
+    for (const candidate of LIVE_INTERVALS) {
       const buckets = new Set<number>();
       for (const sample of unique) {
         buckets.add(Math.floor(sample.ts / EQUITY_INTERVALS[candidate]));
@@ -104,10 +139,9 @@ export function buildEquityChartData(
     const unavailableReason = completeOhlcRows > 0 ? "Candle data has incomplete OHLC coverage for this backtest. Run it again to capture every day." : LEGACY_CANDLE_MESSAGE;
     return { candles: [], interval, candleAvailable: false, unavailableReason, diagnostics };
   }
-  const size = EQUITY_INTERVALS[interval];
   const candles: EquityCandle[] = [];
   for (const { row, ts, equity } of unique) {
-    const startMs = Math.floor(ts / size) * size;
+    const [startMs, endMs] = bucketBounds(ts, interval);
     const saved = context.mode === "backtest";
     const open = saved ? Number(row.equity_open) : equity;
     const high = saved ? Number(row.equity_high) : equity;
@@ -123,7 +157,7 @@ export function buildEquityChartData(
       previous.lastObservedMs = saved ? null : ts;
       previous.quality = previous.sampleCount === 1 ? "sparse" : "observed";
     } else candles.push({
-      startMs, endMs: startMs + size, open, high, low, close, sampleCount: count,
+      startMs, endMs, open, high, low, close, sampleCount: count,
       firstObservedMs: saved ? null : ts, lastObservedMs: saved ? null : ts,
       returnPct: null, isProvisional: false, quality: count === 1 ? "sparse" : "observed", returnSpansGap: false,
     });

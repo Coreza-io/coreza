@@ -1,5 +1,28 @@
 # Equity chart selector rollout
 
+## Sparse daily backtests
+
+The inspected daily-data run has 675 saved daily rows, each with one observed
+valuation. Equal daily O/H/L/C is correct for that data. Daily market-bar highs
+and lows do not establish portfolio-equity extrema, especially across assets.
+
+Backtest Candle now offers Auto, 1D, 1W and 1M. Auto keeps 1D when daily rows
+already contain multiple observations; for single-observation daily history it
+selects 1W (or 1M when only monthly grouping combines observations). If no grouping
+combines observations, Auto keeps 1D. Explicit choices are never changed by zoom.
+
+Weeks start Monday 00:00 UTC; months use UTC calendar boundaries. Coarser candles
+aggregate saved daily OHLC, sum sample counts and recompute returns from closes.
+The chart labels the sampling basis and explains single-sample daily dojis above
+the canvas. Existing Line values and the daily reporting rows remain unchanged.
+This is observed weekly/monthly equity, not recovered intraday equity. Rerun with
+intraday inputs to obtain observed ranges within each day. No historical backfill,
+additional market-data requests or trading changes are introduced. Backtests
+without saved OHLC retain their existing unavailable-Candle behavior.
+
+The follow-up uses existing persisted data and requires no additional migration.
+Source/TypeScript review only; no tests or performance benchmarks were run.
+
 The results page defaults to the existing Line view. A user-scoped, versioned
 local preference can select Candle. Live candles use the already selected
 account/currency snapshot series and shared equity normalization; returns are
@@ -19,8 +42,9 @@ existing inferred live capital with its label. Cash movements can affect returns
    Completed older backtests are not rewritten; incomplete OHLC coverage keeps
    Candle unavailable. Stepped and automatic finalization share the same writer.
 
-The connected project's schema was inspected during implementation and does not
-yet contain these columns. This change does not apply a remote migration, deploy
+The original implementation inspection found the columns missing. The later
+sparse-candle investigation confirmed all five OHLC columns are now present
+in the connected project. This change does not apply a remote migration, deploy
 services or run trading workflows. Apply the migration before enabling the writer.
 
 ## Review and rollout gates

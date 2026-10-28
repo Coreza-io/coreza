@@ -2,7 +2,7 @@
 
 Date: 2026-10-28
 Target branch: `dev`
-Status: implementation plan only; no application, migration, or deployment changes in this commit.
+Status: reviewed design specification. Base feature implemented in merged PR #871; sparse-daily presentation is implemented in PR #872, pending merge. Browser and performance validation remain outstanding.
 Coreza baseline reviewed: `34e19cf0088a7566848398aa44f3f424121aae7d`.
 
 ## 1. Requested outcome
@@ -14,7 +14,7 @@ Add a chart-type selector to the Equity Curve card shown in the first supplied s
 - Keep Coreza's card, theme, typography, spacing, and currency conventions. Treat the second screenshot as interaction/layout inspiration, not a pixel copy.
 - This is an equity chart, not a security-price chart. Candle OHLC must come from portfolio valuations; symbol OHLC and trade execution prices cannot substitute for equity observations.
 
-Default to Line for compatibility. Remember an explicit user choice locally. This task does not implement the feature.
+Default to Line for compatibility. Remember an explicit user choice locally. The original document was a plan-only delivery; this revision records the implemented follow-up interval policy without claiming completed deployment or validation.
 
 ## 2. What QuantConnect actually does
 
@@ -104,10 +104,13 @@ Persist only the chart preference with a versioned, user-scoped localStorage key
 
 Show a separate `Interval` control in Candle mode. Interval is independent of Line/Candle choice.
 
-- Backtest first version: 1D observed equity candles, matching existing UTC daily reporting boundaries.
+- Backtest: Auto, 1D, 1W and 1M. Persisted input remains UTC daily observed equity OHLC; coarser intervals aggregate those rows without changing persistence or execution.
+- Backtest Auto keeps 1D when any usable daily row contains multiple observations. When every usable daily row has one observation, choose 1W if any weekly bucket combines multiple daily rows, otherwise 1M if a monthly bucket combines rows, otherwise retain 1D. Auto does not guarantee every edge/sparse bucket has multiple samples or a nonzero range. Mixed daily sample counts retain 1D; explicit coarser selection remains available.
+- Weeks use Monday 00:00 UTC through the next Monday; months use actual UTC calendar-month boundaries, including leap years and December/January rollover. All membership is half-open [start,end).
 - Live: Auto, 1m, 5m, 15m, 1h, 1D.
 - Auto chooses the smallest supported interval that keeps the full selected run at or below 1,000 nonempty buckets. If even 1D exceeds this target, show a bounded recent window and retain full loaded history for navigation; do not silently discard history.
-- Show the resolved interval and `Sampled equity` caption so users know what each candle represents.
+- Show the resolved interval and `Sampled equity` caption so users know what each candle represents. Explain above the canvas when daily observations are grouped into weeks/months, and when explicit 1D yields O=H=L=C because each day has only one valuation.
+- Calendar bucket labels show period boundaries, not proof of complete coverage. The first/last week or month, holidays and gaps may contain fewer observations; sample count describes actual captured valuations. A completed backtest's partial calendar period is not marked live/provisional.
 - Zoom does not silently change an explicitly selected interval.
 
 ## 5. Deterministic chart data contract
@@ -122,8 +125,8 @@ Rules:
 2. Reuse existing live normalization exactly once. Ensure the normalized timestamp list and raw row mapping have consistent ordering; the current hook's per-timestamp map and subsequent adjacent-row return loop deserve explicit duplicate/order coverage.
 3. Validate dates and finite equity values. Reject missing values instead of coercing them into fictitious zero equity. A real numeric zero is valid.
 4. Sort by timestamp with stable row-id tie breaking. Deduplicate exact same-instant samples deterministically (last row in this stable order wins); do not invent chronology between simultaneous valuations. Track diagnostics for invalid and duplicate rows.
-5. Fixed UTC buckets use half-open [start,end) membership. A timestamp exactly at the boundary enters the next bucket. Label UTC clearly initially. Browser locale may change text formatting but must not change bucket membership; exchange/session-aligned days are a later explicit feature.
-6. Open = first observed equity in the bucket; high = maximum observed equity; low = minimum; close = last observed equity. A single observation has O=H=L=C. Do not substitute previous close for observed open.
+5. Fixed UTC buckets and UTC calendar weeks/months use half-open [start,end) membership. A timestamp exactly at the boundary enters the next bucket. Label UTC clearly initially. Browser locale may change text formatting but must not change bucket membership; exchange/session-aligned days are a later explicit feature.
+6. Open = first observed equity in the bucket; high = maximum observed equity; low = minimum; close = last observed equity. When aggregating saved daily OHLC, use the first daily open, maximum daily high, minimum daily low and last daily close; sum daily sample counts rather than counting rows as individual valuations. A single observation has O=H=L=C. Multiple identical valuations can also yield a doji. Do not substitute previous close for observed open.
 7. Return = 100 * (bucket close / prior observed bucket close - 1). For the first bucket use the validated initial-capital baseline when available and positive; label inferred live capital consistently with existing reporting context. Otherwise return is unavailable. Nonpositive baseline also yields unavailable.
 8. Returns are already percentage points, e.g. 0.34 means 0.34%, not 34%. Do not sum or average snapshot returns; aggregate equity and recompute bucket returns.
 9. Missing buckets stay missing/whitespace. No forward-filled candles or made-up zero-return bars. When the previous observed bucket is separated by a gap, tooltip identifies that return spans the gap.
@@ -156,6 +159,14 @@ Do not manufacture daily highs/lows from neighboring closes. If some dates are m
 
 Live history is different: existing timestamped snapshots can be aggregated into sampled candles immediately. No migration/backfill is needed to invent live intraperiod observations. If all usable live buckets are single-sample, show dojis with a sparse-data caption.
 
+### Reviewed sparse-daily follow-up (PR #872)
+
+The inspected 1d backtest contains 675 saved daily rows with equity_sample_count=1 throughout. Equal daily OHLC therefore reflects the stored observations, not a lost frontend aggregation. PR #872 adds calendar grouping to use those existing observations; it does not recover within-day valuation paths.
+
+Source review checked Monday anchoring, UTC calendar months, sorted first/last observations, extrema/count reduction and close-to-close return recomputation. Read-only SQL aggregation of saved rows supplied reference weekly/monthly values consistent with those formulas. This was source/data inspection, not execution of the frontend adapter or browser validation. No tests or benchmarks were run, following the user's no-testing instruction.
+
+No additional migration, historical backfill, market-data fetch, polling or trading change is required by this follow-up. Saved OHLC coverage remains mandatory for all backtest Candle intervals; older runs without OHLC stay unavailable. Genuine within-day ranges require intraday valuation observations.
+
 ## 7. Component and integration changes
 
 | File | Work |
@@ -164,7 +175,7 @@ Live history is different: existing timestamped snapshots can be aggregated into
 | New `EquityLineChart.tsx` | Extract existing Recharts content without changing its data/visual semantics |
 | New `EquityCandlestickChart.tsx` | Two-pane canvas lifecycle, candle and histogram series, crosshair, tooltip, range controls |
 | New `equityChartTypes.ts` | Presentation contracts and run context |
-| New `src/lib/equityChartData.ts` | Pure sanitation, bucketing, return calculations, formatting helpers |
+| New `src/lib/equityChartData.ts` | Pure sanitation, UTC fixed/calendar bucketing, sparse-daily Auto choice, saved OHLC/count reduction, returns and formatting |
 | `src/pages/BacktestResults.tsx` | Pass run id, mode/status, initial capital/context, OHLC capability; memoize view-model inputs |
 | `src/hooks/useBacktestResults.ts` | Optional persisted OHLC typing; retain pagination and query scoping |
 | `src/hooks/useLiveStrategyDetail.ts` | Retain selected source and normalized equity basis; expose explicit chart context if needed |
@@ -217,9 +228,9 @@ Gate: no run/source/currency leakage on navigation, no duplicate chart canvases/
 
 | Area | Cases and expected result |
 | --- | --- |
-| OHLC | Rising/falling/mixed/flat series; extrema preserved; correct first/last values |
+| OHLC | Rising/falling/mixed/flat series; daily extrema preserved in weekly/monthly reduction; first daily open and last daily close; summed observation counts; all-single and mixed-sample Auto policies; dojis remain valid |
 | Returns | First capital baseline, absent/inferred baseline, tiny positive/negative returns, zero/negative denominator; no double percent scaling |
-| Time | UTC boundary, exactly-on-boundary sample, date-only backtest rows, DST/browser timezone changes, session gaps |
+| Time | UTC day/Monday/month boundaries, exactly-on-boundary sample, December/January rollover, leap February, date-only rows, DST/browser timezone changes, partial first/last periods and gaps |
 | Data quality | Empty input, one snapshot, unsorted rows, duplicate timestamps, NaN/null equity, genuine zero, incomplete OHLC |
 | Isolation | Different execution, workflow, broker, credential, base currency; never merge them |
 | Persistence | Migration with legacy rows, OHLC constraint rejection, daily close equality, retry, ownership checks, unchanged metrics |
@@ -236,7 +247,8 @@ This documentation-only commit does not claim these implementation tests have ru
 
 - [ ] Equity Curve offers Line and Candle in backtest and live results.
 - [ ] Line retains today's presentation and data semantics.
-- [ ] Candle shows observed portfolio-equity OHLC above aligned blue bucket returns.
+- [ ] Candle shows observed portfolio-equity OHLC above aligned blue bucket returns, including weekly/monthly reduction of saved daily OHLC.
+- [ ] Sparse daily backtests offer Auto/1D/1W/1M and clearly distinguish observed coarser ranges from unavailable intraday extrema; no invented candles or previous-close opens.
 - [ ] OHLC tooltip, currency, return precision, crosshair, and time labels agree with the selected bucket.
 - [ ] Future backtest OHLC survives reload; historical unavailable OHLC is clearly explained.
 - [ ] Live candles use existing source-selected normalized valuations and disclose snapshot sampling.

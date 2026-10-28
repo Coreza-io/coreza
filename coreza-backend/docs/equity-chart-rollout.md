@@ -1,5 +1,23 @@
 # Equity chart selector rollout
 
+## Line-mode cumulative return amendment
+
+Line mode now shows blue portfolio equity and orange cumulative return, as
+explicitly requested after the sparse-candle follow-up. Cumulative return equals
+100 * (current equity / initial capital - 1), using the selected run's existing
+recorded or inferred baseline. Unknown/nonpositive capital yields unavailable
+returns; invalid equity leaves gaps, and genuine zero remains valid. The legend,
+axis and tooltip name the cumulative metric and preserve tiny-return precision.
+The equity axis uses a padded observed range, including a flat-series fallback,
+with wider tick-label space and an explicit scale caption. Original instructions
+to keep Line's period-return semantics are superseded by this request.
+
+Candle keeps bucket-to-bucket percentage returns; saved daily_return, OHLC,
+metrics, trading, loaded observations and subscriptions are unchanged. No new
+migration is required. This cumulative measure can be affected by cash movements.
+No tests or visual validation were run; type-check findings are recorded in the PR.
+
+
 ## Sparse daily backtests
 
 The inspected daily-data run has 675 saved daily rows, each with one observed

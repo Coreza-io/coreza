@@ -69,7 +69,7 @@ export const EquityCurveChart = ({ snapshots, currency, intraday = false, contex
     </CardHeader>
     {model.unavailableReason && <p role="note" className="px-6 pb-3 text-sm text-muted-foreground">{model.unavailableReason}</p>}
     <CardContent className={chartType === "line" ? "h-[360px]" : undefined}>
-      {chartType === "line" ? <EquityLineChart snapshots={snapshots} currency={currency} intraday={intraday} /> :
+      {chartType === "line" ? <EquityLineChart snapshots={snapshots} currency={currency} intraday={intraday} initialCapital={context.initialCapital} capitalInferred={context.capitalInferred} /> :
         <EquityCandlestickChart model={model} context={context} currency={currency} />}
     </CardContent>
   </Card>;

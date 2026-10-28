@@ -1,3 +1,4 @@
+import "./utils/logging";
 import express from 'express';
 import { register } from 'prom-client';
 import logger from './utils/logger';

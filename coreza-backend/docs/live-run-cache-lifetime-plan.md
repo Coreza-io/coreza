@@ -1,6 +1,8 @@
 # Live-run cache lifetime and manual-run cleanup
 
-Status: implementation plan. PR #870 currently delivers lookup diagnostics only.
+Status: implementation plan. PR #870 currently delivers lookup diagnostics and
+an opt-in application logging gate (`LOG_LEVEL=debug`); it does not implement
+activation cache lifetimes.
 Its runtime still uses shared credential L1 = 30 seconds and encrypted Redis L2 =
 300 seconds for both manual and live calls. This document does not claim the
 lifecycle policy below is implemented or verified.
@@ -195,8 +197,12 @@ These are implementation completion criteria, not claims of checks run in this r
 
 ## Delivery status
 
-Implemented in PR #870: request-scoped lookup-source/timing diagnostics.
+Implemented in PR #870: request-scoped lookup-source/timing diagnostics and a
+startup logging gate for the API and market-stream service. Console, structured
+and HTTP application logs are silent unless `LOG_LEVEL=debug`, including warnings
+and errors. This setting is read at startup; changing it requires a service restart.
 Not implemented by the current runtime commits: the lifetime contract above.
 The lifecycle feature is not end-to-end complete until its owning paths, invalidation,
 retention and cleanup satisfy the acceptance criteria. No tests, broker calls,
-Redis/database mutations or lifecycle implementation were performed for this plan review.
+Redis/database mutations or lifecycle implementation were performed for this review;
+the logging update changes only application log emission.

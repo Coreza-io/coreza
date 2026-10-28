@@ -1,8 +1,10 @@
+import { LOG } from './logging';
 import pino from 'pino';
 
 const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: process.env.NODE_ENV === 'development' 
+  enabled: LOG,
+  level: LOG ? 'debug' : 'silent',
+  transport: LOG && process.env.NODE_ENV === 'development' 
     ? { 
         target: 'pino-pretty', 
         options: { 

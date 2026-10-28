@@ -1,3 +1,4 @@
+import "./utils/logging";
 import { nodeResultTransport } from "./middleware/nodeResultTransport";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -12,10 +13,7 @@ import { nodeResultTransport } from "./middleware/nodeResultTransport";
 // Force UTC timezone for all date operations in Node.js
 process.env.TZ = "UTC";
 
-import dotenv from "dotenv";
-
-// Load environment variables FIRST before any other imports
-dotenv.config();
+// Environment and logging are initialized by the first import above.
 
 import express from "express";
 import cors from "cors";

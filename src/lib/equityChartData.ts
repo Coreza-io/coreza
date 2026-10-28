@@ -26,13 +26,14 @@ export function parseEquityTimestamp(value: unknown): number {
 }
 
 /** Keep raw rows aligned with the shared normalization's timestamp order. */
-export function orderedLiveEquitySnapshots<T extends { id: string; snapshot_at: string; equity?: unknown; total_value_usdt?: unknown; cash?: unknown }>(rows: T[]): T[] {
+export function orderedLiveEquitySnapshots<T extends { id: string; snapshot_at: string; equity?: unknown; total_value_usdt?: unknown; cash?: unknown }>(rows: T[]): { snapshots: T[]; diagnostics: { invalidRows: number; duplicateRows: number } } {
   const valid = rows.map((row, index) => ({ row, index, ts: parseEquityTimestamp(row.snapshot_at) }))
     .filter(({ row, ts }) => Number.isFinite(ts) &&
       (finiteEquityNumber(row.equity) ?? finiteEquityNumber(row.total_value_usdt) ?? finiteEquityNumber(row.cash)) !== null);
   valid.sort((a, b) => a.ts - b.ts || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : a.index - b.index));
-  return valid.filter((sample, index) => index === valid.length - 1 || sample.ts !== valid[index + 1].ts)
+  const snapshots = valid.filter((sample, index) => index === valid.length - 1 || sample.ts !== valid[index + 1].ts)
     .map(sample => ({ ...sample.row, snapshot_at: new Date(sample.ts).toISOString() }));
+  return { snapshots, diagnostics: { invalidRows: rows.length - valid.length, duplicateRows: valid.length - snapshots.length } };
 }
 
 export function formatEquityReturn(value: number | null): string {
@@ -60,7 +61,7 @@ export function hasEquityOhlc(row: PortfolioSnapshot): boolean {
 export function buildEquityChartData(
   rows: PortfolioSnapshot[], context: EquityChartContext, requestedInterval: EquityInterval = "auto", now = Date.now(),
 ): EquityChartModel {
-  const diagnostics = { invalidRows: 0, duplicateRows: 0, foreignRows: 0 };
+  const diagnostics = { invalidRows: context.inputDiagnostics?.invalidRows ?? 0, duplicateRows: context.inputDiagnostics?.duplicateRows ?? 0, foreignRows: 0 };
   const source = rows[0] ? sourceKey(rows[0]) : null;
   const samples: { row: PortfolioSnapshot; ts: number; equity: number; index: number }[] = [];
   let incompleteOhlc = false;
@@ -71,10 +72,6 @@ export function buildEquityChartData(
     const ts = parseEquityTimestamp(row.date);
     const equity = finiteEquityNumber(row.total_value);
     if (!Number.isFinite(ts) || equity === null) { diagnostics.invalidRows++; continue; }
-    if (context.mode === "backtest") {
-      if (!hasEquityOhlc(row)) incompleteOhlc = true;
-      else completeOhlcRows++;
-    }
     samples.push({ row, ts, equity, index });
   }
   samples.sort((a, b) => a.ts - b.ts || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : a.index - b.index));
@@ -84,6 +81,13 @@ export function buildEquityChartData(
       diagnostics.duplicateRows++;
       unique[unique.length - 1] = sample;
     } else unique.push(sample);
+  }
+  // Capability follows the winning same-instant row, not an obsolete duplicate.
+  if (context.mode === "backtest") {
+    for (const { row } of unique) {
+      if (!hasEquityOhlc(row)) incompleteOhlc = true;
+      else completeOhlcRows++;
+    }
   }
   let interval: FixedEquityInterval = context.mode === "backtest" ? "1D" : requestedInterval === "auto" ? "1D" : requestedInterval;
   if (context.mode === "live" && requestedInterval === "auto") {

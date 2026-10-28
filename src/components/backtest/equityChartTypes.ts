@@ -8,6 +8,7 @@ export interface EquityChartContext {
   active: boolean;
   initialCapital?: number | null;
   capitalInferred?: boolean;
+  inputDiagnostics?: { invalidRows: number; duplicateRows: number };
 }
 
 export interface EquityCandle {

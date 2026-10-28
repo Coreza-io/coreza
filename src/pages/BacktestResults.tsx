@@ -76,7 +76,8 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     mode, active: isLive && backtest?.status === "running",
     initialCapital: backtest?.initial_capital,
     capitalInferred: metrics?.metrics_context?.initial_capital === "inferred",
-  }), [mode, isLive, id, backtest?.id, backtest?.status, backtest?.initial_capital, metrics?.base_currency, metrics?.metrics_context?.initial_capital, liveData.chartSourceKey]);
+    inputDiagnostics: isLive ? liveData.chartDiagnostics : undefined,
+  }), [mode, isLive, id, backtest?.id, backtest?.status, backtest?.initial_capital, metrics?.base_currency, metrics?.metrics_context?.initial_capital, liveData.chartSourceKey, liveData.chartDiagnostics]);
   const liveOrdersResult = isLive
     ? aggregateFillsToOrders(liveData.rawFills ?? [])
     : { orders: [] };
@@ -174,6 +175,18 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
       return `${metrics?.base_currency ? metrics.base_currency + " " : "$"}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return value.toFixed(2);
   };
+
+  // Header/child rows must belong to the selected route before any renderer or
+  // settings field reads them. Keep a loaded chart mounted during same-run refresh.
+  const selectedExecution = searchParams.get("executionId");
+  const hasCurrentResult = backtest && (isLive
+    ? backtest.workflow_id === id && (!selectedExecution || backtest.id === selectedExecution)
+    : backtest.id === id);
+  if (!hasCurrentResult) return <div className="space-y-4">
+    <Button variant="outline" asChild><Link to={backPath}><ArrowLeft className="mr-2 h-4 w-4" />Back</Link></Button>
+    {error ? <p role="alert" className="text-destructive">{error}</p> :
+      <div role="status" aria-label="Loading strategy results"><Skeleton className="h-6 w-48" /><Skeleton className="mt-6 h-[360px] w-full" /></div>}
+  </div>;
 
   return (
     <div className="space-y-6">

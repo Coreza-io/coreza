@@ -30,6 +30,21 @@ persistence, browser, screenshot and 100k-row performance gates from the design
 remain outstanding; no performance numbers or visual equivalence are claimed.
 Type checks are recorded in the PR, including any existing repository failures.
 
+The follow-up source review corrected Strict Mode cleanup that mutated the
+memoized crosshair lookup, whole-bar range rounding on refresh, and capability
+checks that considered obsolete same-instant duplicates. Results now wait for
+the selected run before reading settings or mounting a chart, while same-run
+refresh keeps its chart mounted. Live sanitation counts are carried into chart
+diagnostics rather than disappearing before aggregation. Bucket table controls
+wrap on narrow screens.
+
+The reviewed automatic and stepped paths share finalization; daily OHLC stays in
+the existing upsert with the final cash/stock/close and unchanged daily-return
+calculation. The migration retains existing scope guards/RLS and adds no client
+write grants. A fresh read-only schema inspection still found none of the five
+OHLC columns: deployment readiness remains outstanding. No remote changes were
+made during this review.
+
 Before rollout verify observed OHLC survives save/reload, retry preserves the same
 daily row and close/return metrics, Line remains visually equivalent, and live
 refresh/navigation cannot mix executions/accounts/currencies. Check Strict Mode,

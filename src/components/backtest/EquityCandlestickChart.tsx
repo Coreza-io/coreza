@@ -41,6 +41,7 @@ export function EquityCandlestickChart({ model, context, currency }: {
   const zeroLine = useRef<IPriceLine | null>(null);
   const fitted = useRef(false);
   const previousInterval = useRef(model.interval);
+  const previousTimeline = useRef<(CandlestickData | WhitespaceData)[]>([]);
   const buckets = useRef(new Map<number, EquityCandle>());
   const [hover, setHover] = useState<{ candle: EquityCandle; x: number; y: number } | null>(null);
   const [showEquity, setShowEquity] = useState(true);
@@ -94,7 +95,10 @@ export function EquityCandlestickChart({ model, context, currency }: {
       returnSeries.removePriceLine(zero);
       instance.remove();
       chart.current = null; equity.current = null; returns.current = null; zeroLine.current = null;
-      buckets.current.clear();
+      // The ref can alias seriesData.lookup, which Strict Mode reuses on setup.
+      // Never mutate that memoized map during effect cleanup.
+      buckets.current = new Map();
+      previousTimeline.current = [];
     };
   }, [context.runId]);
 
@@ -132,6 +136,8 @@ export function EquityCandlestickChart({ model, context, currency }: {
   useEffect(() => {
     if (!chart.current || !equity.current || !returns.current) return;
     const range = chart.current.timeScale().getVisibleRange();
+    const logicalRange = chart.current.timeScale().getVisibleLogicalRange();
+    const samePrefix = previousTimeline.current.every((point, index) => seriesData.candles[index]?.time === point.time);
     const changedInterval = previousInterval.current !== model.interval;
     buckets.current = seriesData.lookup;
     setHover(null);
@@ -143,8 +149,14 @@ export function EquityCandlestickChart({ model, context, currency }: {
         chart.current.timeScale().setVisibleRange({ from, to: chartTime(model.candles[model.candles.length - 1].startMs) });
       } else chart.current.timeScale().fitContent();
       fitted.current = true;
-    } else if (range && model.candles.length) chart.current.timeScale().setVisibleRange(range);
+    } else if (model.candles.length) {
+      // Timestamp ranges round to whole bars. Retain fractional zoom/pan on
+      // ordinary refresh/appends; use timestamps when historical inserts shift indexes.
+      if (samePrefix && logicalRange) chart.current.timeScale().setVisibleLogicalRange(logicalRange);
+      else if (range) chart.current.timeScale().setVisibleRange(range);
+    } else fitted.current = false;
     previousInterval.current = model.interval;
+    previousTimeline.current = seriesData.candles;
   }, [seriesData, model.interval, model.candles, context.runId]);
 
   useEffect(() => {
@@ -204,7 +216,7 @@ export function EquityCandlestickChart({ model, context, currency }: {
           </tr>)}</tbody>
         </table>
       </div>
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-3">
         <Button size="sm" variant="outline" disabled={tableStart === 0} onClick={() => setTablePage(Math.max(0, tableStart / 25 - 1))}>Previous</Button>
         <span>{tableStart + 1}–{Math.min(tableStart + 25, model.candles.length)} of {model.candles.length}</span>
         <Button size="sm" variant="outline" disabled={tableStart + 25 >= model.candles.length} onClick={() => setTablePage(tableStart / 25 + 1)}>Next</Button>

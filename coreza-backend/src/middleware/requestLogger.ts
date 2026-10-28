@@ -10,10 +10,11 @@
 
 import pinoHttp from 'pino-http';
 import logger from '../utils/logger';
+import { LOG } from '../utils/logging';
 
 export const requestLogger = pinoHttp({
   logger,
-  autoLogging: true,
+  autoLogging: LOG,
   customLogLevel: (req, res, err) => {
     if (res.statusCode >= 500 || err) return 'error';
     if (res.statusCode >= 400) return 'warn';

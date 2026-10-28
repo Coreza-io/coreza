@@ -16,7 +16,9 @@
 import crypto from "crypto";
 import { supabase } from "../config/supabase";
 import ClientEncryption from "./ClientEncryption";
-import CredentialCache from "./credentialCache";
+import CredentialCache, { reportCredentialLookup } from "./credentialCache";
+import type { CredentialLookupEvent } from "./credentialCache";
+import { performance } from "perf_hooks";
 
 export interface UserCredential {
   id: string;
@@ -280,6 +282,7 @@ class CredentialManager {
     credentialName: string,
     options?: {
       useCache?: boolean;
+      onLookup?: (event: CredentialLookupEvent) => void;
     },
   ): Promise<{
     bot_token: any;
@@ -294,7 +297,9 @@ class CredentialManager {
 
       if (useCache) {
         const cache = CredentialCache.getInstance();
-        const cached = await cache.get(userId, serviceType, credentialName);
+        const cached = options?.onLookup
+          ? await cache.get(userId, serviceType, credentialName, options.onLookup)
+          : await cache.get(userId, serviceType, credentialName);
         if (cached !== null) {
           console.log(`📦 Cache HIT: ${serviceType}:${credentialName}`);
           return {
@@ -303,16 +308,26 @@ class CredentialManager {
           };
         }
       } else {
+        reportCredentialLookup(options?.onLookup, { source: "l1_memory", outcome: "bypass", stage: "cache_lookup", durationMs: 0 });
+        reportCredentialLookup(options?.onLookup, { source: "l2_redis", outcome: "bypass", stage: "cache_lookup", durationMs: 0 });
         console.log(`📦 Cache BYPASS: ${serviceType}:${credentialName}`);
       }
 
       console.log(`📦 Cache MISS: ${serviceType}:${credentialName}`);
+      const databaseStarted = options?.onLookup ? performance.now() : 0;
       const result = await this.getDecryptedCredentials(
         userId,
         serviceType,
         credentialName,
         { useCache },
       );
+
+      if (options?.onLookup) reportCredentialLookup(options.onLookup, {
+        source: "database",
+        outcome: result.credentials ? "hit" : result.error === "Credentials not found" ? "miss" : "error",
+        stage: "load_decrypt_and_cache",
+        durationMs: +(performance.now() - databaseStarted).toFixed(3),
+      });
 
       if (result.error || !result.credentials) {
         return { bot_token: null, credentials: null };
@@ -494,3 +509,4 @@ class CredentialManager {
 }
 
 export default CredentialManager;
+

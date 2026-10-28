@@ -1,9 +1,27 @@
 import crypto from "crypto";
+import { performance } from "perf_hooks";
 import Redis from "ioredis";
 import { getRedisCache } from "../config/redis";
 import { createLogger } from "./logger";
 
 const logger = createLogger("CredentialCache");
+
+// Only fixed source labels and timings may cross this diagnostics boundary.
+export interface CredentialLookupEvent {
+  source: "l1_memory" | "l2_redis" | "database";
+  outcome: "hit" | "miss" | "expired" | "error" | "bypass";
+  // Redis lookup includes decryption and L1 promotion. Database loading includes
+  // decryption and best-effort cache population; these are not wire-only timings.
+  stage: "cache_lookup" | "load_decrypt_and_cache";
+  durationMs: number;
+}
+
+export function reportCredentialLookup(
+  observer: ((event: CredentialLookupEvent) => void) | undefined,
+  event: CredentialLookupEvent,
+): void {
+  try { observer?.(event); } catch { /* Diagnostics must not affect credential lookup. */ }
+}
 
 interface L1Entry {
   credentials: any;
@@ -99,15 +117,29 @@ export class CredentialCache {
     return JSON.parse(decrypted.toString("utf8"));
   }
 
-  async get(userId: string, serviceType: string, name?: string): Promise<any | null> {
+  async get(
+    userId: string,
+    serviceType: string,
+    name?: string,
+    onLookup?: (event: CredentialLookupEvent) => void,
+  ): Promise<any | null> {
+    const started = onLookup ? performance.now() : 0;
+    const report = (source: CredentialLookupEvent["source"], outcome: CredentialLookupEvent["outcome"], since: number) => {
+      if (onLookup) reportCredentialLookup(onLookup, {
+        source, outcome, stage: "cache_lookup", durationMs: +(performance.now() - since).toFixed(3),
+      });
+    };
     const key = CredentialCache.buildKey(userId, serviceType, name);
 
     const l1Entry = this.l1Cache.get(key);
     if (l1Entry && l1Entry.expiresAt > Date.now()) {
       logger.debug({ key }, "L1 cache HIT");
+      report("l1_memory", "hit", started);
       return l1Entry.credentials;
     }
     if (l1Entry) this.l1Cache.delete(key);
+    report("l1_memory", l1Entry ? "expired" : "miss", started);
+    const l2Started = onLookup ? performance.now() : 0;
 
     try {
       const redis = this.ensureRedis();
@@ -117,9 +149,12 @@ export class CredentialCache {
         const credentials = this.decryptFromRedis(encrypted);
         this.setL1(key, credentials);
         logger.debug({ key }, "L2 cache HIT → L1 populated");
+        report("l2_redis", "hit", l2Started);
         return credentials;
       }
+      report("l2_redis", "miss", l2Started);
     } catch (error) {
+      report("l2_redis", "error", l2Started);
       logger.warn({ key, error }, "L2 cache read failed, falling through to L3");
     }
 
@@ -208,3 +243,4 @@ export class CredentialCache {
 }
 
 export default CredentialCache;
+

@@ -101,7 +101,9 @@ export function applyNodeExecutionVisuals(
           (!members ||
             (members.has(edge.source) && members.has(edge.target))) &&
           // Without explicit traversal IDs, a branch output is not yet known.
-          (selectedEdges ? selectedEdges.has(edge.id) : edge.target === nodeId ||
+          (selectedEdges ? selectedEdges.has(edge.id) : (edge.target === nodeId && !["If", "Switch"].includes(
+            (nodeById.get(edge.source)?.data.definition as { name?: string } | undefined)?.name ?? "",
+          )) ||
             (edge.source === nodeId && !branching)) &&
           getClusterEdgeKind(
             edge,

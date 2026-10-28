@@ -379,7 +379,7 @@ export class WorkflowExecutor {
     completedNodes: Set<string>,
   ): Promise<void> {
     // Normalize result to handle key
-    const handleKey = getControlResultHandle(result);
+    const handleKey = this.getBranchHandleKey(result, nodeId);
 
     // Look up the branch map
     const branchMap = this.conditionalMap.get(nodeId) || {};
@@ -427,8 +427,9 @@ export class WorkflowExecutor {
   /** Publish current progress without touching the canonical graph. */
   private highlightEdges(nodeId: string, selectedEdges?: readonly Edge[], streamingWaiting = false): void {
     const connected = selectedEdges ?? this.context.edges.filter(
-      (edge) => edge.target === nodeId ||
-        (edge.source === nodeId && !this.conditionalMap.has(nodeId)),
+      (edge) => (edge.target === nodeId &&
+        (!this.isBranchNodeId(edge.source) || this.edgePayload.has(edge.id))) ||
+        (edge.source === nodeId && !this.isBranchNodeId(nodeId)),
     );
     this.publishVisual({ nodeId, edgeIds: connected.map(({ id }) => id), streamingWaiting });
   }
@@ -891,7 +892,7 @@ export class WorkflowExecutor {
               // 3) for each target node, find its outgoing edge and collect into next[]
               next = targets
                 .map((targetNodeId) =>
-                  out.find((e) => e.target === targetNodeId),
+                  out.find((e) => e.target === targetNodeId && e.sourceHandle === handleKey),
                 )
                 .filter((e): e is Edge => !!e);
 

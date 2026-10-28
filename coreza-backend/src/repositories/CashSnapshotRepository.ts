@@ -1,3 +1,4 @@
+import { LiveStrategiesRepository } from "./LiveStrategiesRepository";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -14,6 +15,7 @@ import { createLogger } from "../utils/logger";
 const logger = createLogger("CashSnapshotRepository");
 
 export interface CashSnapshotRow {
+  id: string;
   user_id: string;
   broker: string;
   credential_id: string;
@@ -36,8 +38,19 @@ export class CashSnapshotRepository {
    */
   static async batchInsert(rows: CashSnapshotRow[]): Promise<void> {
     if (rows.length === 0) return;
+    if (rows.some(row => !row.id)) throw new Error("Snapshot retry ID is required");
 
-    const { error } = await supabase.from("cash_snapshots").insert(rows as any);
+    const scoped = rows.filter(row => row.workflow_id && row.execution_id);
+    const account = rows.filter(row => !row.workflow_id || !row.execution_id);
+    if (account.length) {
+      const { error } = await supabase.from("cash_snapshots").insert(account as any);
+      if (error) throw error;
+    }
+    if (!scoped.length) return;
+    const { error } = await (supabase as any).from("portfolio").upsert(
+      scoped.map(row => ({ ...row, live_strategy_id: row.execution_id })),
+      { onConflict: "id" },
+    );
 
     if (error) {
       logger.error(
@@ -47,6 +60,7 @@ export class CashSnapshotRepository {
       throw error;
     }
 
+    scoped.forEach(row => LiveStrategiesRepository.markDirty(row.execution_id!));
     logger.debug({ count: rows.length }, "snapshots inserted");
   }
 }

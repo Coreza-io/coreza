@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -62,10 +62,11 @@ interface BacktestResultsProps {
 const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   const { id } = useParams();
   const isLive = mode === "live";
+  const [searchParams] = useSearchParams();
 
   const backtestData = useBacktestResults(id, !isLive);
-  const liveData = useLiveStrategyDetail(id, isLive);
-  const { backtest, metrics, trades, snapshots, loading } = isLive
+  const liveData = useLiveStrategyDetail(id, isLive, searchParams.get("executionId"));
+  const { backtest, metrics, trades, snapshots, loading, error } = isLive
     ? liveData
     : backtestData;
   const liveOrdersResult = isLive
@@ -82,6 +83,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   };
 
   const renderHeader = () => {
+    if (error) return <p role="alert" className="text-destructive">{error}</p>;
     if (loading || !backtest) {
       return (
         <div className="space-y-3">
@@ -99,13 +101,13 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
             variant={statusVariants[backtest.status] || "outline"}
             className="capitalize"
           >
-            {backtest.status}
+            {isLive && backtest.status === "running" ? "Active" : isLive && backtest.status === "cancelled" ? "Stopped" : backtest.status}
           </Badge>
           <Badge variant="outline" className="gap-1">
             <Clock3 className="h-4 w-4" />
             {backtest.started_at
               ? new Date(backtest.started_at).toLocaleString()
-              : "Not started"}
+              : isLive ? "Unknown" : "Not started"}
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
@@ -161,7 +163,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     if (value === undefined || value === null || !Number.isFinite(value)) return "—";
     if (format === "percent") return formatPercent(value);
     if (format === "currency")
-      return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      return `${metrics?.base_currency ? metrics.base_currency + " " : "$"}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     return value.toFixed(2);
   };
 
@@ -177,6 +179,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
           {renderHeader()}
         </div>
         <div className="flex gap-2">
+          {isLive && <Button variant="outline" disabled={loading} onClick={() => void liveData.refetch()}>Refresh</Button>}
           <Button variant="secondary">
             <Download className="h-4 w-4 mr-2" /> Export
           </Button>
@@ -205,7 +208,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         })}
       </div>
 
-      <EquityCurveChart snapshots={snapshots} />
+      <EquityCurveChart snapshots={snapshots} currency={metrics?.base_currency} intraday={isLive} />
 
       <Tabs defaultValue="performance" className="space-y-4">
         <TabsList>
@@ -224,7 +227,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         </TabsContent>
 
         <TabsContent value="trades">
-          <TradesTable trades={trades} />
+          <TradesTable trades={trades} currency={metrics?.base_currency} />
         </TabsContent>
         {isLive && (
           <TabsContent value="orders">
@@ -251,7 +254,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
                         <Calendar className="h-3 w-3" /> Date Range
                       </p>
                       <p className="text-sm font-medium">
-                        {backtest.start_date} to {backtest.end_date}
+                        {backtest.start_date || "Unknown"} to {backtest.end_date || (isLive && backtest.status === "running" ? "Active" : "Unknown")}
                       </p>
                     </div>
                     <div className="p-3 rounded-lg border bg-muted/40">
@@ -259,8 +262,9 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
                         <DollarSign className="h-3 w-3" /> Initial Capital
                       </p>
                       <p className="text-sm font-medium">
-                        $
-                        {backtest.initial_capital?.toLocaleString() || "10,000"}
+                        {metrics?.base_currency ? metrics.base_currency + " " : "$"}
+                        {backtest.initial_capital?.toLocaleString() ?? "—"}
+                        {isLive && metrics?.metrics_context?.initial_capital === "inferred" && " (inferred)"}
                       </p>
                     </div>
                     <div className="p-3 rounded-lg border bg-muted/40">
@@ -268,7 +272,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
                         Data Frequency
                       </p>
                       <p className="text-sm font-medium">
-                        {backtest.data_frequency || "1d"}
+                        {backtest.data_frequency || (isLive ? "Intraday" : "1d")}
                       </p>
                     </div>
                     <div className="p-3 rounded-lg border bg-muted/40">

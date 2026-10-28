@@ -1,3 +1,5 @@
+import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
+import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { WorkflowRunner } from "./WorkflowRunner";
 
@@ -58,7 +60,10 @@ export class WorkflowRunnerManager {
         `[WorkflowRunnerManager] Strategy ${workflowId} crashed:`,
         error,
       );
-      void runner.stop().then(() => {
+      void LiveStrategiesRepository.setStatus(runner.runnerInstanceId, userId, workflowId, "failed", error instanceof Error ? error.message : "Strategy runner failed")
+        .catch(reportingError => console.error("Failed to record activation failure", reportingError));
+      void runner.stop().then(async () => {
+        await FillSyncWorker.flushWorkflow(userId, workflowId, runner.runnerInstanceId);
         if (this.runners.get(workflowId) === runner) this.runners.delete(workflowId);
       }).catch(() => console.warn("[WorkflowRunnerManager] Runner stop incomplete; recovery metadata retained"));
     });

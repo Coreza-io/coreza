@@ -1,146 +1,49 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Backtest, BacktestStatus } from "./useBacktests";
-import { isBrokerPortfolioWorkflow } from "@/utils/liveWorkflowFilter";
+import { Backtest } from "./useBacktests";
+import { reportingPages } from "@/lib/reportingPages";
+import { useScopedLoader } from "./useScopedLoader";
 
-/**
- * Returns live (active) workflows with portfolio broker nodes,
- * shaped identically to useBacktests for UI reuse.
- */
+/** One row per activation, including runs without a trade or snapshot. */
 export const useLiveStrategies = (enabled = true) => {
   const { user } = useAuth();
   const [backtests, setBacktests] = useState<Backtest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const loadStrategies = useCallback(async () => {
-    if (!enabled || !user) {
-      setBacktests([]);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
+  const performLoad = useCallback(async (isCurrent: () => boolean) => {
+    if (!enabled || !user) return;
+    setLoading(true); setError(null);
     try {
-      const { data: workflows, error: wfError } = await supabase
-        .from("workflows")
-        .select("id, name, is_active, created_at, nodes")
-        .eq("user_id", user.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
-
-      if (wfError) throw wfError;
-
-      const liveWorkflows = (workflows || []).filter(isBrokerPortfolioWorkflow);
-
-      if (liveWorkflows.length === 0) {
-        setBacktests([]);
-        return;
-      }
-
-      const latestRuns = await Promise.allSettled(
-        liveWorkflows.map(async (workflow: any) => {
-          const { data, error: runError } = await supabase
-            .from("workflow_runs")
-            .select("workflow_id, result, status, started_at")
-            .eq("workflow_id", workflow.id)
-            .order("started_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (runError) throw runError;
-          return data;
-        }),
-      );
-
-      const latestRunByWorkflow: Record<string, any> = {};
-      for (const runResult of latestRuns) {
-        if (runResult.status === "fulfilled" && runResult.value?.workflow_id) {
-          latestRunByWorkflow[runResult.value.workflow_id] = runResult.value;
-        }
-      }
-
-      const mapped: Backtest[] = liveWorkflows.map((wf: any) => {
-        const run = latestRunByWorkflow[wf.id];
-        const result = run?.result as any;
-        const portfolioResult = result?.nodeResults
-          ? Object.values(result.nodeResults).find(
-              (nr: any) => nr?.data?.equity !== undefined,
-            )
-          : null;
-
-        const portfolio = (portfolioResult as any)?.data;
-
-        let status: BacktestStatus = "running";
-        if (!wf.is_active) status = "completed";
-
-        return {
-          id: wf.id,
-          name: wf.name,
-          workflow_id: wf.id,
-          workflow_name: wf.name,
-          status,
-          total_return: portfolio?.totalReturnPct ?? undefined,
-          sharpe_ratio: undefined,
-          total_trades: portfolio?.tradeCount ?? undefined,
-          created_at: wf.created_at,
-        };
-      });
-
-      setBacktests(mapped);
+      const rows = await reportingPages(() => supabase.from("live_strategies").select("*")
+        .eq("user_id", user.id).eq("mode", "live")
+        .order("started_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }));
+      if (!isCurrent()) return;
+      setBacktests(rows.map(row => ({
+        id: row.id, execution_id: row.execution_id, name: row.name,
+        workflow_id: row.workflow_id, workflow_name: row.name,
+        status: row.status,
+        total_return: row.total_return, sharpe_ratio: row.sharpe_ratio,
+        total_trades: row.total_trades, created_at: row.started_at, completed_at: row.completed_at,
+      })));
     } catch (err: any) {
-      console.error("Error loading live strategies", err);
-      setError(err.message || "Failed to load live strategies");
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled, user]);
-
+      if (isCurrent()) setError(err.message || "Failed to load live strategies");
+    } finally { if (isCurrent()) setLoading(false); }
+  }, [enabled, user?.id]);
+  const load = useScopedLoader(`${user?.id ?? ""}:${enabled}`, performLoad);
   useEffect(() => {
-    if (!enabled) {
-      setBacktests([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    loadStrategies();
-  }, [enabled, loadStrategies]);
-
+    setBacktests([]); setError(null); setLoading(false);
+    if (enabled && user) void load();
+  }, [enabled, user?.id, load]);
   useEffect(() => {
     if (!enabled || !user) return;
-
-    const channel = supabase
-      .channel("live-strategies")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "workflows",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadStrategies(),
-      )
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [enabled, loadStrategies, user]);
-
-  const stats = useMemo(() => {
-    return backtests.reduce(
-      (acc, b) => {
-        acc.total += 1;
-        acc[b.status] += 1;
-        return acc;
-      },
-      { total: 0, pending: 0, running: 0, completed: 0, failed: 0 },
-    );
-  }, [backtests]);
-
-  return { backtests, loading, error, stats, refetch: loadStrategies };
+    const channel = supabase.channel(`live-strategies-${user.id}`).on("postgres_changes", {
+      event: "*", schema: "public", table: "live_strategies", filter: `user_id=eq.${user.id}`,
+    }, () => { void load(); }).subscribe();
+    return () => { void channel.unsubscribe(); };
+  }, [enabled, user?.id, load]);
+  const stats = useMemo(() => backtests.reduce((acc, row) => {
+    acc.total++; acc[row.status]++; return acc;
+  }, { total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 }), [backtests]);
+  return { backtests, loading, error, stats, refetch: load };
 };

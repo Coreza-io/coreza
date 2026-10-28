@@ -25,6 +25,7 @@ type NodeResults = NonNullable<WorkflowExecutionResult["nodeResults"]>;
 
 interface WorkflowRunOptions {
   executionId: string;
+  reportingExecutionId?: string;
   workflowId: string;
   userId: string;
   mode?: "best-effort" | "fail-fast";
@@ -186,6 +187,7 @@ export class WorkflowRun {
   private buildRuntime(): BaseExecutionRuntime {
     const runtimeOptions = {
       executionId: this.options.executionId,
+      reportingExecutionId: this.options.reportingExecutionId,
       workflowId: this.options.workflowId,
       userId: this.options.userId,
       mode: this.options.mode ?? "best-effort",
@@ -513,3 +515,4 @@ export class WorkflowRun {
     }
   }
 }
+

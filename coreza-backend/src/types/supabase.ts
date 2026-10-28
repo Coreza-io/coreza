@@ -1,3 +1,4 @@
+import type { ReportingTables } from "../reporting/database";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -10,7 +11,7 @@
 
 export interface Database {
   public: {
-    Tables: {
+    Tables: ReportingTables & {
       workflows: {
         Row: {
           id: string;
@@ -261,180 +262,9 @@ export interface Database {
           completed_at?: string | null;
         };
       };
-      backtest_results: {
-        Row: {
-          id: string;
-          backtest_id: string;
-          total_return: number | null;
-          annualized_return: number | null;
-          max_drawdown: number | null;
-          sharpe_ratio: number | null;
-          sortino_ratio: number | null;
-          calmar_ratio: number | null;
-          total_trades: number | null;
-          win_rate: number | null;
-          profitable_trades: number | null;
-          losing_trades: number | null;
-          average_trade_return: number | null;
-          largest_win: number | null;
-          largest_loss: number | null;
-          final_portfolio_value: number | null;
-          profit_factor: number | null;
-          avg_win: number | null;
-          avg_loss: number | null;
-          total_commission: number | null;
-          total_slippage: number | null;
-          net_profit: number | null;
-          expectancy: number | null;
-          avg_holding_period: number | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          backtest_id: string;
-          total_return?: number | null;
-          annualized_return?: number | null;
-          max_drawdown?: number | null;
-          sharpe_ratio?: number | null;
-          sortino_ratio?: number | null;
-          calmar_ratio?: number | null;
-          total_trades?: number | null;
-          win_rate?: number | null;
-          profitable_trades?: number | null;
-          losing_trades?: number | null;
-          average_trade_return?: number | null;
-          largest_win?: number | null;
-          largest_loss?: number | null;
-          final_portfolio_value?: number | null;
-          profit_factor?: number | null;
-          avg_win?: number | null;
-          avg_loss?: number | null;
-          total_commission?: number | null;
-          total_slippage?: number | null;
-          net_profit?: number | null;
-          expectancy?: number | null;
-          avg_holding_period?: number | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          backtest_id?: string;
-          total_return?: number | null;
-          annualized_return?: number | null;
-          max_drawdown?: number | null;
-          sharpe_ratio?: number | null;
-          sortino_ratio?: number | null;
-          calmar_ratio?: number | null;
-          total_trades?: number | null;
-          win_rate?: number | null;
-          profitable_trades?: number | null;
-          losing_trades?: number | null;
-          average_trade_return?: number | null;
-          largest_win?: number | null;
-          largest_loss?: number | null;
-          final_portfolio_value?: number | null;
-          profit_factor?: number | null;
-          avg_win?: number | null;
-          avg_loss?: number | null;
-          total_commission?: number | null;
-          total_slippage?: number | null;
-          net_profit?: number | null;
-          expectancy?: number | null;
-          avg_holding_period?: number | null;
-          created_at?: string;
-        };
-      };
-      backtest_trades: {
-        Row: {
-          id: string;
-          backtest_id: string;
-          symbol: string;
-          action: string;
-          quantity: number;
-          price: number;
-          timestamp: string;
-          commission: number | null;
-          slippage: number | null;
-          entry_price: number | null;
-          exit_reason: string | null;
-          holding_period_bars: number | null;
-          net_pnl: number | null;
-          return_pct: number | null;
-          portfolio_value_before: number | null;
-          portfolio_value_after: number | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          backtest_id: string;
-          symbol: string;
-          action: string;
-          quantity: number;
-          price: number;
-          timestamp: string;
-          commission?: number | null;
-          slippage?: number | null;
-          entry_price?: number | null;
-          exit_reason?: string | null;
-          holding_period_bars?: number | null;
-          net_pnl?: number | null;
-          return_pct?: number | null;
-          portfolio_value_before?: number | null;
-          portfolio_value_after?: number | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          backtest_id?: string;
-          symbol?: string;
-          action?: string;
-          quantity?: number;
-          price?: number;
-          timestamp?: string;
-          commission?: number | null;
-          slippage?: number | null;
-          entry_price?: number | null;
-          exit_reason?: string | null;
-          holding_period_bars?: number | null;
-          net_pnl?: number | null;
-          return_pct?: number | null;
-          portfolio_value_before?: number | null;
-          portfolio_value_after?: number | null;
-          created_at?: string;
-        };
-      };
-      backtest_portfolio_snapshots: {
-        Row: {
-          id: string;
-          backtest_id: string;
-          date: string;
-          cash_balance: number;
-          stock_value: number;
-          total_value: number;
-          daily_return: number | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          backtest_id: string;
-          date: string;
-          cash_balance: number;
-          stock_value: number;
-          total_value: number;
-          daily_return?: number | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          backtest_id?: string;
-          date?: string;
-          cash_balance?: number;
-          stock_value?: number;
-          total_value?: number;
-          daily_return?: number | null;
-          created_at?: string;
-        };
-      };
+
+
+
     };
   };
 }

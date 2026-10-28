@@ -77,6 +77,7 @@ const statusConfig: Record<
     variant: "default",
     className: "text-green-500",
   },
+  cancelled: { label: "Cancelled", variant: "outline", className: "text-muted-foreground" },
   failed: {
     label: "Failed",
     variant: "destructive",
@@ -109,11 +110,12 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
   const { session } = useAuth();
   const backtestData = useBacktests(!isLive);
   const liveData = useLiveStrategies(isLive);
-  const { backtests, loading, stats, refetch } = isLive
+  const { backtests, loading, error, stats, refetch } = isLive
     ? liveData
     : backtestData;
 
   const { toast } = useToast();
+  const [view, setView] = useState<"active" | "history">("active");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<BacktestStatus | "all">(
     "all",
@@ -125,7 +127,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
   const basePath = isLive ? "/dashboard/live" : "/dashboard/backtests";
   const pageTitle = isLive ? "Live Strategies" : "Backtests";
   const pageDescription = isLive
-    ? "Monitor your active live trading strategies."
+    ? "Review current activations and live trading history."
     : "Manage and review your strategy backtests.";
 
   const filtered = useMemo(() => {
@@ -135,9 +137,14 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
         .includes(search.toLowerCase());
       const matchesStatus =
         statusFilter === "all" || backtest.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const active = backtest.status === "pending" || backtest.status === "running";
+      return matchesSearch && matchesStatus && (!isLive || (view === "active" ? active : !active));
     });
-  }, [backtests, search, statusFilter]);
+  }, [backtests, search, statusFilter, isLive, view]);
+
+  const detailPath = (row: (typeof backtests)[number]) => isLive
+    ? `${basePath}/${row.workflow_id}?executionId=${encodeURIComponent(row.execution_id!)}`
+    : `${basePath}/${row.id}`;
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -205,7 +212,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>
-              Total {isLive ? "Strategies" : "Backtests"}
+              Total {isLive ? "Runs" : "Backtests"}
             </CardDescription>
             <CardTitle className="text-2xl">{stats.total}</CardTitle>
           </CardHeader>
@@ -215,15 +222,15 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
             <CardDescription>{isLive ? "Active" : "Completed"}</CardDescription>
             <CardTitle className="text-2xl flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-500" />{" "}
-              {isLive ? stats.running : stats.completed}
+              {isLive ? stats.pending + stats.running : stats.completed}
             </CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Running</CardDescription>
+            <CardDescription>{isLive ? "Completed" : "Running"}</CardDescription>
             <CardTitle className="text-2xl flex items-center gap-2">
-              <PlayCircle className="h-5 w-5 text-amber-500" /> {stats.running}
+              <PlayCircle className="h-5 w-5 text-amber-500" /> {isLive ? stats.completed : stats.running}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -241,6 +248,10 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <CardTitle>{pageTitle}</CardTitle>
+            {isLive && <div className="flex gap-2">
+              <Button size="sm" variant={view === "active" ? "default" : "outline"} onClick={() => setView("active")}>Active</Button>
+              <Button size="sm" variant={view === "history" ? "default" : "outline"} onClick={() => setView("history")}>History</Button>
+            </div>}
             <div className="flex flex-wrap gap-2">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -251,17 +262,17 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <SelectStatus value={statusFilter} onChange={setStatusFilter} />
+              <SelectStatus value={statusFilter} onChange={setStatusFilter} isLive={isLive} />
             </div>
           </div>
           <CardDescription>
             {isLive
-              ? "View all active live strategies and their real-time performance."
+              ? "Each activation retains its own performance, trades and portfolio history."
               : "View all of your strategy backtests and access detailed performance results."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {error ? <p role="alert" className="text-destructive">{error}</p> : loading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, idx) => (
                 <div
@@ -300,7 +311,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                     <TableHead className="text-right">Total Return</TableHead>
                     <TableHead className="text-right">Sharpe Ratio</TableHead>
                     <TableHead className="text-right">Trades</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead>{isLive ? "Started / Ended" : "Created"}</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -309,11 +320,11 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                     <TableRow
                       key={backtest.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => navigate(`${basePath}/${backtest.id}`)}
+                      onClick={() => navigate(detailPath(backtest))}
                     >
                       <TableCell className="font-medium">
                         <Link
-                          to={`${basePath}/${backtest.id}`}
+                          to={detailPath(backtest)}
                           className="hover:underline flex items-center gap-1"
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -326,7 +337,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusConfig[backtest.status].variant}>
-                          {statusConfig[backtest.status].label}
+                          {isLive && backtest.status === "running" ? "Active" : isLive && backtest.status === "cancelled" ? "Stopped" : statusConfig[backtest.status].label}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
@@ -357,6 +368,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                         {backtest.created_at
                           ? new Date(backtest.created_at).toLocaleString()
                           : "—"}
+                        {isLive && backtest.completed_at && <div>{new Date(backtest.completed_at).toLocaleString()}</div>}
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
@@ -367,13 +379,13 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem asChild>
-                              <Link to={`${basePath}/${backtest.id}`}>
+                              <Link to={detailPath(backtest)}>
                                 View {isLive ? "Details" : "Results"}
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
-                              onSelect={() => setDeleteId(backtest.id)}
+                              onSelect={() => setDeleteId(isLive ? backtest.workflow_id : backtest.id)}
                             >
                               <Trash2 className="h-4 w-4 mr-2" /> Delete
                             </DropdownMenuItem>
@@ -408,7 +420,7 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
             </AlertDialogTitle>
             <CardDescription>
               {isLive
-                ? "Deleting an active strategy will also stop its scheduler and live streams."
+                ? "Deleting this workflow removes all its activation history and stops its scheduler and live streams."
                 : "This action cannot be undone."}
             </CardDescription>
           </AlertDialogHeader>
@@ -427,13 +439,15 @@ const Backtests = ({ mode = "backtest" }: BacktestsProps) => {
 const SelectStatus = ({
   value,
   onChange,
+  isLive,
 }: {
+  isLive?: boolean;
   value: BacktestStatus | "all";
   onChange: (value: BacktestStatus | "all") => void;
 }) => {
   return (
     <div className="flex gap-2 flex-wrap">
-      {(["all", "pending", "running", "completed", "failed"] as const).map(
+      {(["all", "pending", "running", "completed", "failed", "cancelled"] as const).map(
         (status) => (
           <Button
             key={status}
@@ -442,7 +456,7 @@ const SelectStatus = ({
             onClick={() => onChange(status as BacktestStatus | "all")}
             className="capitalize"
           >
-            {status}
+            {status === "cancelled" ? (isLive ? "Stopped" : "Cancelled") : isLive && status === "running" ? "Active" : status}
           </Button>
         ),
       )}

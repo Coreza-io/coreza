@@ -15,6 +15,7 @@ export interface OrderOwner {
   workflowId: string;
   nodeId: string;
   runId?: string;
+  reportingExecutionId?: string;
   source: string;
   symbol?: string;
   createdAt: string;
@@ -40,6 +41,7 @@ export class OrderOwnerRegistry {
       workflowId: input.workflowId,
       nodeId: input.nodeId,
       runId: input.runId,
+      reportingExecutionId: input.reportingExecutionId,
       source: input.source,
       symbol: input.symbol,
       createdAt: input.createdAt || new Date().toISOString(),

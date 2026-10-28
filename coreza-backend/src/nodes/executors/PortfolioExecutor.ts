@@ -1,3 +1,6 @@
+import { LiveStrategiesRepository } from "../../repositories/LiveStrategiesRepository";
+import { OrderOwnerRegistry, OrderOwner } from "../../services/OrderOwnerRegistry";
+import { reportingTradeId } from "../../reporting/persistence";
 import { NodeResultError } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -9,7 +12,7 @@ import { NodeResultError } from "../../contracts/nodeResult";
  * See the LICENSE file for details.
  */
 
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
@@ -335,11 +338,24 @@ export class PortfolioExecutor implements INodeExecutor {
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
     const userId = context?.userId;
-    if (!userId) {
+    if (!context || !userId) {
       return createErrorOutput("User ID required for broker mode");
     }
 
-    const executionId = context.executionId || context.workflowId;
+    const operation = params.operation || "get_portfolio";
+    let reportingOwner: OrderOwner | null = null;
+    const currentActivationId = context.reportingExecutionId ?? context.executionId;
+    if (operation === "sync_order_event" && (context.executionMode === "live" || context.reportingExecutionId) && params.broker) {
+      const owner = await OrderOwnerRegistry.findOwner(`${params.broker}_trading`, {
+        orderId: params.orderId, clientOrderId: params.clientOrderId,
+        algoId: params.algoId, clientAlgoId: params.clientAlgoId,
+      });
+      if (owner?.reportingExecutionId && owner.userId === userId && owner.workflowId === context.workflowId) {
+        reportingOwner = owner;
+        context = { ...context, reportingExecutionId: owner.reportingExecutionId };
+      }
+    }
+    const executionId = context.reportingExecutionId ?? context.executionId;
     if (!executionId) {
       return createErrorOutput(
           "executionId is required for broker mode — cannot use workflowId as fallback",
@@ -347,10 +363,22 @@ export class PortfolioExecutor implements INodeExecutor {
     }
 
     // Get or create PortfolioManager
-    const pm = PortfolioManager.getInstance(userId, executionId);
+    const isPreviousActivation = executionId !== currentActivationId;
+    const existing = PortfolioManager.existingInstance(userId, executionId);
+    if (isPreviousActivation && !existing) {
+      // Preserve raw fill attribution without inventing a position or resetting old equity.
+      await FillEventBus.publish(this.buildFillStreamEvent({
+        context, params, symbol: String(params.symbol || ""), side: params.side,
+        orderId: String(params.orderId || ""), executionId: params.executionId,
+        filledQty: toNumber(params.filledQty) ?? 0, fillPrice: toNumber(params.avgFillPrice) ?? 0,
+        fillStatus: params.status, feeAmount: toNumber(params.feeAmount), feeAsset: params.feeAsset,
+        baseCurrency: params.base_currency, algoId: params.algoId,
+      }));
+      return createErrorOutput("Late fill retained for its previous activation; portfolio state requires reconciliation");
+    }
+    const pm = existing ?? PortfolioManager.getInstance(userId, executionId);
 
     const symbols = this.parseSymbols(params.symbol);
-    const operation = params.operation || "get_portfolio";
     const baseCurrency = params.base_currency || "USDT";
 
     if (operation === "create_portfolio") {
@@ -424,6 +452,12 @@ export class PortfolioExecutor implements INodeExecutor {
         });
       }
 
+      const explicitCapital = toNumber(params.balance_equity) ?? (posSymbols.length === 0 ? toNumber(params.balance_cash ?? params.cash_balance) : undefined);
+      if (explicitCapital !== undefined && (context.executionMode === "live" || context.reportingExecutionId)) {
+        await LiveStrategiesRepository.recordBaseline(userId, context.workflowId, executionId, explicitCapital, {
+          broker: params.broker || "unknown", credential_id: params.credential_id || userId, base_currency: baseCurrency,
+        });
+      }
       return createSuccessOutput({
           message: "Portfolio created with explicit balance and position data",
           created: true,
@@ -440,7 +474,7 @@ export class PortfolioExecutor implements INodeExecutor {
       case "register_order_intent":
         return this.brokerRegisterOrderIntent(pm, params);
       case "sync_order_event":
-        return this.brokerSyncOrderEvent(pm, params, context);
+        return this.brokerSyncOrderEvent(pm, params, context, Boolean(reportingOwner));
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
       case "update_mtm": {
@@ -915,7 +949,7 @@ export class PortfolioExecutor implements INodeExecutor {
       fill_id: fillId,
       user_id: opts.context.userId,
       workflow_id: opts.context.workflowId,
-      execution_id: opts.context.executionId,
+      execution_id: opts.context.reportingExecutionId ?? opts.context.executionId,
       broker: opts.params.broker || "unknown",
       credential_id: opts.params.credential_id,
       symbol: opts.symbol,
@@ -966,6 +1000,7 @@ export class PortfolioExecutor implements INodeExecutor {
       typeof baseCashRaw === "number" ? baseCashRaw : Number(baseCashRaw) || 0;
 
     return {
+      id: randomUUID(),
       user_id: meta.userId,
       workflow_id: meta.workflowId,
       execution_id: meta.runId,
@@ -1033,7 +1068,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // Persist only when running live with workflow context.
       if (
-        context?.executionMode !== "live" ||
+        (context?.executionMode !== "live" && !context?.reportingExecutionId) ||
         !context?.userId ||
         !context?.workflowId
       ) {
@@ -1051,7 +1086,7 @@ export class PortfolioExecutor implements INodeExecutor {
         algo_id: algoId,
         user_id: context.userId,
         workflow_id: context.workflowId,
-        execution_id: context.executionId,
+        execution_id: context.reportingExecutionId ?? context.executionId,
         broker: params.broker,
         credential_id: params.credential_id,
         symbol,
@@ -1105,6 +1140,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     params: any,
     context?: NodeExecutionContext,
+    verifiedReportingOwner = false,
   ): Promise<NodeResult> {
     // Algo lifecycle (Binance ALGO_UPDATE) — single upserted row in live_fills via
     // the existing FillEventBus path (algo_id set). Algo events carry no fill
@@ -1187,7 +1223,7 @@ export class PortfolioExecutor implements INodeExecutor {
         normalizedBrokerId,
         clientOrderId,
       );
-      if (!ours) {
+      if (!ours && !verifiedReportingOwner) {
         return createSuccessOutput({
             skipped: true,
             reason: "unknown_order",
@@ -1288,17 +1324,18 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
-        // Persist closed trade to live_trades table
+        // Persist closed trade to shared reporting storage
         if (
           finalizedTrade &&
-          context?.executionMode === "live" &&
+          (context?.executionMode === "live" || context?.reportingExecutionId) &&
           context?.userId &&
           context?.workflowId
         ) {
           void LiveTradeRepository.insert({
+            id: reportingTradeId(context.reportingExecutionId ?? context.executionId, finalizedTrade.id),
             user_id: context.userId,
             workflow_id: context.workflowId,
-            execution_id: context.executionId,
+            execution_id: context.reportingExecutionId ?? context.executionId,
             symbol: finalizedTrade.symbol,
             action: finalizedTrade.side,
             quantity: finalizedTrade.quantity,
@@ -1352,7 +1389,7 @@ export class PortfolioExecutor implements INodeExecutor {
         if (
           //fillDeltaQty > 0 &&
           filledQty > 0 &&
-          context?.executionMode === "live" &&
+          (context?.executionMode === "live" || context?.reportingExecutionId) &&
           context?.userId &&
           context?.workflowId
         ) {
@@ -1390,7 +1427,7 @@ export class PortfolioExecutor implements INodeExecutor {
           const snapshot = this.buildLatestSnapshot(pm, {
             userId: context.userId,
             workflowId: context.workflowId,
-            runId: context.executionId,
+            runId: context.reportingExecutionId ?? context.executionId,
             broker: params.broker || "unknown",
             credentialId: params.credential_id,
             baseCurrency,
@@ -1725,3 +1762,4 @@ export class PortfolioExecutor implements INodeExecutor {
     });
   }
 }
+

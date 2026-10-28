@@ -1,3 +1,5 @@
+import { FillSyncWorker } from "../workers/FillSyncWorker";
+import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { resultSuccess } from "../contracts/nodeResult";
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
@@ -91,6 +93,9 @@ export class WorkflowRunner {
       "live",
     );
     this.engine.setVariableSafetyStopHandler(() => {
+      // Retain pending source events and ownership for approved recovery.
+      void LiveStrategiesRepository.setStatus(this.executionId, userId, workflowId, "failed", "Strategy paused for live variable recovery")
+        .catch(error => console.error("Failed to record activation safety stop", error));
       this.running = false;
       this.abortController.abort();
     });
@@ -461,8 +466,9 @@ export class WorkflowRunner {
     }
     // This drain deliberately does not use the execution abort signal.
     await this.engine.drainVariables(deadline);
+    await FillSyncWorker.flushWorkflow(this.userId, this.workflowId, this.executionId);
     this.engine.destroy();
-    PortfolioManager.removeInstance(this.userId, this.executionId);
+    PortfolioManager.retireInstance(this.userId, this.executionId);
     await this.cleanupRunnerKeys();
     await this.streamRedisClient.quit();
   }
@@ -492,3 +498,4 @@ export class WorkflowRunner {
     } while (cursor !== "0");
   }
 }
+

@@ -8,6 +8,7 @@
  * See the LICENSE file for details.
  */
 
+import { randomUUID } from "crypto";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -219,6 +220,7 @@ const TERMINAL_ORDER_STATUSES = new Set([
  * One instance per (userId, executionId) pair, managed via static cache.
  */
 export class PortfolioManager {
+  private static retirementTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private static instances = new Map<string, PortfolioManager>();
   private static readonly SYMBOL_QUOTE_SUFFIXES = [
     "USDT",
@@ -254,7 +256,6 @@ export class PortfolioManager {
       entryTime: string;
     }
   >();
-  private tradeIdCounter = 0;
   private peakEquity = 0;
   private startingEquity: number | null = null;
 
@@ -281,8 +282,27 @@ export class PortfolioManager {
   /**
    * Remove a cached instance (e.g., on run cleanup).
    */
+  static existingInstance(userId: string, executionId: string): PortfolioManager | undefined {
+    return this.instances.get(`${userId}:${executionId}`);
+  }
+
+  /** Retain settled state for late owned fills for the existing order-owner TTL. */
+  static retireInstance(userId: string, executionId: string): void {
+    const key = `${userId}:${executionId}`;
+    if (!this.instances.has(key)) return;
+    const previous = this.retirementTimers.get(key);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => this.removeInstance(userId, executionId), 86_400_000);
+    timer.unref();
+    this.retirementTimers.set(key, timer);
+  }
+
   static removeInstance(userId: string, executionId: string): void {
-    PortfolioManager.instances.delete(`${userId}:${executionId}`);
+    const key = `${userId}:${executionId}`;
+    const timer = this.retirementTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.retirementTimers.delete(key);
+    this.instances.delete(key);
   }
 
   /**
@@ -307,12 +327,11 @@ export class PortfolioManager {
     this.trades.length = 0;
     this.pendingClosingTrades.clear();
     this.currentEntryMap.clear();
-    this.tradeIdCounter = 0;
     this.peakEquity = 0;
     this.startingEquity = null;
     this.bootstrapped = false;
 
-    PortfolioManager.instances.delete(`${this.userId}:${this.executionId}`);
+    PortfolioManager.removeInstance(this.userId, this.executionId);
     console.log(
       `[PortfolioManager] Destroyed instance for user=${this.userId} execution=${this.executionId}`,
     );
@@ -765,7 +784,7 @@ export class PortfolioManager {
     if (!existingPending) {
       pending = {
         key,
-        tradeId: `LT-${++this.tradeIdCounter}`,
+        tradeId: randomUUID(),
         symbol: input.symbol,
         side: tradeSide,
         entryOrderId: entry?.fillId ?? "",

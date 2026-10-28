@@ -15,15 +15,16 @@ import { getOrderStatusBadgeClass } from "./orderStatus";
 
 interface TradesTableProps {
   trades: BacktestTrade[];
+  currency?: string | null;
 }
 
-const formatCurrency = (value?: number | null) =>
-  value == null ? "—" : `$${value.toFixed(2)}`;
+const formatCurrency = (value?: number | null, currency?: string | null) =>
+  value == null ? "—" : `${currency ? currency + " " : "$"}${value.toFixed(2)}`;
 
 const formatTime = (time?: string | null) =>
   time ? new Date(time).toLocaleString() : "—";
 
-const OrderSubRow = ({ order }: { order: TradeOrder }) => (
+const OrderSubRow = ({ order, currency }: { order: TradeOrder; currency?: string | null }) => (
   <TableRow className="bg-muted/30 text-xs">
     <TableCell />
     <TableCell className="text-muted-foreground whitespace-nowrap">
@@ -41,7 +42,7 @@ const OrderSubRow = ({ order }: { order: TradeOrder }) => (
         </span>
       )}
     </TableCell>
-    <TableCell>{formatCurrency(order.fillPrice)}</TableCell>
+    <TableCell>{formatCurrency(order.fillPrice, currency)}</TableCell>
     <TableCell>{order.quantity}</TableCell>
     <TableCell>
       <Badge
@@ -58,10 +59,12 @@ const OrderSubRow = ({ order }: { order: TradeOrder }) => (
 
 const TradeRow = ({
   trade,
+  currency,
   isExpanded,
   onToggle,
 }: {
   trade: BacktestTrade;
+  currency?: string | null;
   isExpanded: boolean;
   onToggle: () => void;
 }) => {
@@ -103,8 +106,8 @@ const TradeRow = ({
             {trade.action?.toUpperCase()}
           </Badge>
         </TableCell>
-        <TableCell>{formatCurrency(trade.entryPrice)}</TableCell>
-        <TableCell>{formatCurrency(trade.exitPrice)}</TableCell>
+        <TableCell>{formatCurrency(trade.entryPrice, currency)}</TableCell>
+        <TableCell>{formatCurrency(trade.exitPrice, currency)}</TableCell>
         <TableCell>{trade.quantity}</TableCell>
         <TableCell>
           {trade.net_pnl != null ? (
@@ -114,14 +117,14 @@ const TradeRow = ({
               }
             >
               {trade.net_pnl >= 0 ? "+" : ""}
-              {formatCurrency(trade.net_pnl)}
+              {formatCurrency(trade.net_pnl, currency)}
             </span>
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
         </TableCell>
         <TableCell className="text-muted-foreground">
-          {formatCurrency(trade.fees ?? trade.commission)}
+          {formatCurrency(trade.fees ?? trade.commission, currency)}
         </TableCell>
         <TableCell>
           {trade.result ? (
@@ -153,13 +156,13 @@ const TradeRow = ({
       </TableRow>
       {isExpanded &&
         trade.orders?.map((order) => (
-          <OrderSubRow key={order.id} order={order} />
+          <OrderSubRow key={order.id} order={order} currency={currency} />
         ))}
     </>
   );
 };
 
-export const TradesTable = ({ trades }: TradesTableProps) => {
+export const TradesTable = ({ trades, currency }: TradesTableProps) => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = (id: string) => {
@@ -212,6 +215,7 @@ export const TradesTable = ({ trades }: TradesTableProps) => {
                   <TradeRow
                     key={trade.id}
                     trade={trade}
+                    currency={currency}
                     isExpanded={expandedIds.has(trade.id)}
                     onToggle={() => toggleExpand(trade.id)}
                   />

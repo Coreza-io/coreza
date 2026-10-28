@@ -161,10 +161,10 @@ const Dashboard = () => {
 
         if (liveSessionWorkflowIds.length > 0 && activeExecutionIds.length > 0) {
           const { data: liveTrades, error: tradesError } = await supabase
-            .from('live_trades')
+            .from('trades')
             .select('workflow_id, execution_id, exitTime, net_pnl')
             .in('workflow_id', liveSessionWorkflowIds)
-            .in('execution_id', activeExecutionIds)
+            .in('live_strategy_id', activeExecutionIds)
             .gte('exitTime', thirtyDaysAgo.toISOString());
 
           if (tradesError) {

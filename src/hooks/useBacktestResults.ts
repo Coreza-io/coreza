@@ -4,30 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { BacktestStatus } from "./useBacktests";
 
-export interface BacktestResultMetrics {
-  total_return?: number;
-  annualized_return?: number;
-  sharpe_ratio?: number;
-  max_drawdown?: number;
-  win_rate?: number;
-  total_trades?: number;
-  profitable_trades?: number;
-  average_trade_return?: number;
-  largest_win?: number;
-  largest_loss?: number;
-  final_portfolio_value?: number;
-  sortino_ratio?: number;
-  calmar_ratio?: number;
-  profit_factor?: number;
-  avg_win?: number;
-  avg_loss?: number;
-  total_commission?: number;
-  total_slippage?: number;
-  net_profit?: number;
-  losing_trades?: number;
-  expectancy?: number;
-  avg_holding_period?: number;
-}
+import type { BacktestResultMetrics } from "../../coreza-backend/src/reporting/types";
+export type { BacktestResultMetrics } from "../../coreza-backend/src/reporting/types";
+import { reportingPages } from "@/lib/reportingPages";
 
 export interface TradeOrder {
   id: string;
@@ -133,42 +112,18 @@ export const useBacktestResults = (id?: string, enabled = true) => {
       if (backtestError) throw backtestError;
       setBacktest(backtestData as BacktestWithRelations);
 
-      const [metricsResult, tradesResult, snapshotsResult] =
-        await Promise.allSettled([
-          supabase
-            .from("backtest_results")
-            .select("*")
-            .eq("backtest_id", id)
-            .maybeSingle(),
-          supabase
-            .from("backtest_trades")
-            .select("*")
-            .eq("backtest_id", id)
-            .order("exitTime", { ascending: true }),
-          supabase
-            .from("backtest_portfolio_snapshots")
-            .select("*")
-            .eq("backtest_id", id)
-            .order("date", { ascending: true }),
-        ]);
-
+      const { data: header, error: headerError } = await supabase.from("live_strategies")
+        .select("*").eq("backtest_id", id).eq("mode", "backtest").eq("user_id", user.id).single();
       if (!isCurrent()) return;
-      for (const result of [metricsResult, tradesResult, snapshotsResult]) {
-        if (result.status === "rejected") throw result.reason;
-        if (result.value.error) throw result.value.error;
-      }
-      setMetrics(metricsResult.status === "fulfilled" ? metricsResult.value.data as BacktestResultMetrics | null : null);
-
-      setTrades(
-        tradesResult.status === "fulfilled"
-          ? ((tradesResult.value.data || []) as BacktestTrade[])
-          : [],
-      );
-      setSnapshots(
-        snapshotsResult.status === "fulfilled"
-          ? ((snapshotsResult.value.data || []) as PortfolioSnapshot[])
-          : [],
-      );
+      if (headerError) throw headerError;
+      const [tradeRows, snapshotRows] = await Promise.all([
+        reportingPages(() => supabase.from("trades").select("*").eq("live_strategy_id", header.id).order("exitTime").order("id")),
+        reportingPages(() => supabase.from("portfolio").select("*").eq("live_strategy_id", header.id).order("date").order("id")),
+      ]);
+      if (!isCurrent()) return;
+      setMetrics(header as unknown as BacktestResultMetrics);
+      setTrades(tradeRows as BacktestTrade[]);
+      setSnapshots(snapshotRows as PortfolioSnapshot[]);
     } catch (err: any) {
       if (!isCurrent()) return;
       console.error("Error loading backtest results", err);

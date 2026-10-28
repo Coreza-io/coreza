@@ -1,3 +1,5 @@
+import { supabase } from "../config/supabase";
+import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -113,6 +115,22 @@ const portfolioRequestSchema = z.object({
 
 router.use(requireAuth);
 
+router.post("/reporting/:id/refresh", async (req: Request, res: Response) => {
+  const parsed = z.string().uuid().safeParse(req.params.id);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid reporting ID" });
+  const { data: header, error } = await (supabase as any).from("live_strategies")
+    .select("id").eq("id", parsed.data).eq("mode", "live").eq("user_id", req.user!.id).maybeSingle();
+  if (error) return res.status(500).json({ error: "Failed to load reporting run" });
+  if (!header) return res.status(404).json({ error: "Reporting run not found" });
+  try {
+    await LiveStrategiesRepository.refresh(header.id, true);
+    return res.json({ refreshed: true });
+  } catch {
+    LiveStrategiesRepository.markDirty(header.id);
+    return res.status(500).json({ error: "Failed to refresh reporting metrics" });
+  }
+});
+
 router.post("/", async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -165,3 +183,4 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 export default router;
+

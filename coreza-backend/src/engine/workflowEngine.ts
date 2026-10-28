@@ -150,6 +150,7 @@ export class WorkflowEngine {
 export type ExecutionOptions = {
   mode?: "best-effort" | "fail-fast";
   executionMode?: ExecutionMode;
+  reportingExecutionId?: string;
   initialInput?: unknown;
   startNodeId?: string;
   abortSignal?: AbortSignal;
@@ -178,6 +179,7 @@ export async function executeWorkflow(
     executionId,
     workflowId,
     userId,
+    reportingExecutionId: opts?.reportingExecutionId,
     mode: opts?.mode,
     abortSignal: opts?.abortSignal,
     executionMode: opts?.executionMode ?? plan.executionMode,

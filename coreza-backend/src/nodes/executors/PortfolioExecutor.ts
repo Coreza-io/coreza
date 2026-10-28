@@ -1,3 +1,4 @@
+import { reportingTradeId } from "../../reporting/persistence";
 import { NodeResultError } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -915,7 +916,7 @@ export class PortfolioExecutor implements INodeExecutor {
       fill_id: fillId,
       user_id: opts.context.userId,
       workflow_id: opts.context.workflowId,
-      execution_id: opts.context.executionId,
+      execution_id: opts.context.reportingExecutionId ?? opts.context.executionId,
       broker: opts.params.broker || "unknown",
       credential_id: opts.params.credential_id,
       symbol: opts.symbol,
@@ -1033,7 +1034,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       // Persist only when running live with workflow context.
       if (
-        context?.executionMode !== "live" ||
+        (context?.executionMode !== "live" && !context?.reportingExecutionId) ||
         !context?.userId ||
         !context?.workflowId
       ) {
@@ -1051,7 +1052,7 @@ export class PortfolioExecutor implements INodeExecutor {
         algo_id: algoId,
         user_id: context.userId,
         workflow_id: context.workflowId,
-        execution_id: context.executionId,
+        execution_id: context.reportingExecutionId ?? context.executionId,
         broker: params.broker,
         credential_id: params.credential_id,
         symbol,
@@ -1288,17 +1289,18 @@ export class PortfolioExecutor implements INodeExecutor {
           );
         }
 
-        // Persist closed trade to live_trades table
+        // Persist closed trade to shared reporting storage
         if (
           finalizedTrade &&
-          context?.executionMode === "live" &&
+          (context?.executionMode === "live" || context?.reportingExecutionId) &&
           context?.userId &&
           context?.workflowId
         ) {
           void LiveTradeRepository.insert({
+            id: reportingTradeId(`${context.reportingExecutionId ?? context.executionId}:${context.executionId}`, finalizedTrade.id),
             user_id: context.userId,
             workflow_id: context.workflowId,
-            execution_id: context.executionId,
+            execution_id: context.reportingExecutionId ?? context.executionId,
             symbol: finalizedTrade.symbol,
             action: finalizedTrade.side,
             quantity: finalizedTrade.quantity,
@@ -1352,7 +1354,7 @@ export class PortfolioExecutor implements INodeExecutor {
         if (
           //fillDeltaQty > 0 &&
           filledQty > 0 &&
-          context?.executionMode === "live" &&
+          (context?.executionMode === "live" || context?.reportingExecutionId) &&
           context?.userId &&
           context?.workflowId
         ) {
@@ -1390,7 +1392,7 @@ export class PortfolioExecutor implements INodeExecutor {
           const snapshot = this.buildLatestSnapshot(pm, {
             userId: context.userId,
             workflowId: context.workflowId,
-            runId: context.executionId,
+            runId: context.reportingExecutionId ?? context.executionId,
             broker: params.broker || "unknown",
             credentialId: params.credential_id,
             baseCurrency,
@@ -1725,3 +1727,4 @@ export class PortfolioExecutor implements INodeExecutor {
     });
   }
 }
+

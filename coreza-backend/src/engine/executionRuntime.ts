@@ -24,6 +24,7 @@ import { enforceWarmupPolicy } from "../backtest/warmup/WarmupPolicy";
 
 export type RuntimeOptions = {
   executionId: string;
+  reportingExecutionId?: string;
   workflowId: string;
   userId: string;
   mode: "best-effort" | "fail-fast";
@@ -159,6 +160,7 @@ export abstract class BaseExecutionRuntime {
         user_id: this.options.userId,
         userId: this.options.userId,
         executionId: this.options.executionId,
+        reportingExecutionId: this.options.reportingExecutionId,
         runId: this.options.executionId,
         workflowId: this.options.workflowId,
         nodeId,
@@ -559,3 +561,4 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     if (full) this.execCtx = null;
   }
 }
+

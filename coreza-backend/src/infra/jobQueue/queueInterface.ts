@@ -30,6 +30,7 @@ export interface WorkflowJobData {
     | "loop_continuation";
   initialInput?: any;
   executionMode?: ExecutionMode;
+  reportingExecutionId?: string;
   scope?: ExecutionScope;
   sourceRevision?: number;
   planHash?: string;
@@ -80,6 +81,7 @@ export interface ParallelLoopOptions {
   parentStoreData?: Record<string, any>;
   /** Execution mode to propagate into loop child/continuation jobs */
   executionMode?: ExecutionMode;
+  reportingExecutionId?: string;
   scope?: ExecutionScope;
   rootRunId?: string;
   sourceRevision?: number;

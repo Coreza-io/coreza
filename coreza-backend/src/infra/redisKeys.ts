@@ -34,8 +34,8 @@ export const RedisKeys = {
   portfolioFillsStream: (userId: string, workflowId: string): string =>
     `fills:userId:${userId}:workflowId:${workflowId}:stream`,
 
-  portfolioSnapshotLatest: (userId: string, workflowId: string): string =>
-    `portfolio:userId:${userId}:workflowId:${workflowId}:snapshot`,
+  portfolioSnapshotLatest: (userId: string, workflowId: string, executionId?: string): string =>
+    `portfolio:userId:${userId}:workflowId:${workflowId}:snapshot${executionId ? `:executionId:${executionId}` : ""}`,
 
   order: (userId: string, workflowId: string, idempotencyKey: string): string =>
     `order:userId:${userId}:workflowId:${workflowId}:${idempotencyKey}`,

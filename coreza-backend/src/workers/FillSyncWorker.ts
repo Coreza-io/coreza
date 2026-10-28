@@ -1,3 +1,5 @@
+import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
+import { LiveTradeRepository } from "../repositories/LiveTradeRepository";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -89,7 +91,7 @@ export class FillSyncWorker {
 
     // Start snapshot flush interval
     this.snapshotInterval = setInterval(() => {
-      this.flushSnapshots().catch((err) => {
+      this.flushReporting().catch((err) => {
         logger.error({ err }, "snapshot flush failed");
       });
     }, SNAPSHOT_FLUSH_INTERVAL_MS);
@@ -113,7 +115,7 @@ export class FillSyncWorker {
     logger.info("flushing all pending data before shutdown...");
     try {
       await this.processPendingFills();
-      await this.flushSnapshots();
+      await this.flushReporting();
     } catch (err) {
       logger.error({ err }, "flushAll error");
     }
@@ -314,123 +316,67 @@ export class FillSyncWorker {
 
   // ─── Snapshot Flush ────────────────────────────────────
 
-  private async flushSnapshots(): Promise<void> {
+  private snapshotFlush: Promise<void> = Promise.resolve();
+  private reportingRecovered = false;
+
+  private async flushReporting(): Promise<void> {
+    if (!this.reportingRecovered) {
+      await LiveStrategiesRepository.recoverPending();
+      this.reportingRecovered = true;
+    }
+    await LiveTradeRepository.flush();
+    await this.flushSnapshots();
+    await LiveStrategiesRepository.refreshDirty();
+  }
+
+  private flushSnapshots(scope?: { userId: string; workflowId: string; executionId?: string }): Promise<void> {
+    const flush = this.snapshotFlush.catch(() => undefined).then(() => this.persistSnapshots(scope));
+    this.snapshotFlush = flush;
+    return flush;
+  }
+
+  private async persistSnapshots(scope?: { userId: string; workflowId: string; executionId?: string }): Promise<void> {
     const redis = getRedisCache();
-    const activeUsers = await redis.smembers(
-      RedisKeys.registrySnapshotsActive(),
-    );
-    if (activeUsers.length === 0) return;
-
-    for (const userId of activeUsers) {
-      const activeKeysSet = SnapshotCache.activeKeysSet(userId);
-      const activeKeys = await redis.smembers(activeKeysSet);
-      if (activeKeys.length === 0) {
-        await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
-        continue;
-      }
-
-      const rows: CashSnapshotRow[] = [];
-      const processedKeys: string[] = [];
-
-      for (const key of activeKeys) {
+    const users = scope ? [scope.userId] : await redis.smembers(RedisKeys.registrySnapshotsActive());
+    for (const userId of users) {
+      const activeSet = SnapshotCache.activeKeysSet(userId);
+      for (const key of await redis.smembers(activeSet)) {
         const json = await redis.get(key);
-        if (!json) {
-          await redis.srem(activeKeysSet, key);
-          continue;
+        if (!json) continue;
+        const snapshot: LatestSnapshotState = JSON.parse(json);
+        if (scope && (snapshot.workflow_id !== scope.workflowId || (scope.executionId && snapshot.execution_id !== scope.executionId))) continue;
+        const cash = toFiniteNumber(snapshot.cash);
+        const equity = toFiniteNumber(snapshot.equity);
+        const realized = toFiniteNumber(snapshot.realized_pnl);
+        const unrealized = toFiniteNumber(snapshot.unrealized_pnl);
+        if (cash === null || equity === null || realized === null || unrealized === null) {
+          throw new Error(`Malformed portfolio snapshot retained for recovery: ${key}`);
         }
-
-        try {
-          const snapshot: LatestSnapshotState = JSON.parse(json);
-          const balances =
-            snapshot.balances_json && typeof snapshot.balances_json === "object"
-              ? (snapshot.balances_json as Record<string, unknown>)
-              : {};
-          const cash = toFiniteNumber(snapshot.cash);
-          const equity = toFiniteNumber(snapshot.equity);
-          const realizedPnl = toFiniteNumber(snapshot.realized_pnl);
-          const unrealizedPnl = toFiniteNumber(snapshot.unrealized_pnl);
-
-          if (
-            cash === null ||
-            equity === null ||
-            realizedPnl === null ||
-            unrealizedPnl === null
-          ) {
-            logger.warn(
-              {
-                key,
-                base_currency: snapshot.base_currency,
-                cash_type: typeof snapshot.cash,
-                equity_type: typeof snapshot.equity,
-                realized_pnl_type: typeof snapshot.realized_pnl,
-                unrealized_pnl_type: typeof snapshot.unrealized_pnl,
-                skipped: true,
-              },
-              "snapshot payload malformed, skipping key",
-            );
-            await redis.del(key);
-            await redis.srem(activeKeysSet, key);
-            continue;
-          }
-
-          rows.push({
-            user_id: snapshot.user_id,
-            broker: snapshot.broker,
-            credential_id: snapshot.credential_id || snapshot.user_id,
-            snapshot_at: snapshot.snapshot_at,
-            balances,
-            total_value_usdt: equity,
-            workflow_id: snapshot.workflow_id || (null as any),
-            execution_id: snapshot.execution_id || (null as any),
-            base_currency: snapshot.base_currency,
-            cash,
-            equity,
-            realized_pnl: realizedPnl,
-            unrealized_pnl: unrealizedPnl,
-            positions_count: snapshot.positions_count,
-          });
-          processedKeys.push(key);
-        } catch (parseErr) {
-          logger.warn(
-            { err: parseErr, key },
-            "snapshot parse failed, removing",
-          );
-          await redis.srem(activeKeysSet, key);
-        }
-      }
-
-      if (rows.length > 0) {
-        try {
-          await CashSnapshotRepository.batchInsert(rows);
-
-          const pipeline = redis.pipeline();
-          for (const key of processedKeys) {
-            pipeline.del(key);
-            pipeline.srem(activeKeysSet, key);
-          }
-          pipeline.scard(activeKeysSet);
-          const results = await pipeline.exec();
-          const lenResult = results?.[results.length - 1];
-          const pendingLen =
-            lenResult && !lenResult[0] ? Number(lenResult[1] ?? 0) : null;
-          if (pendingLen === 0) {
-            await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
-          }
-
-          logger.debug({ count: rows.length }, "snapshots flushed");
-        } catch (err) {
-          logger.error(
-            { err, count: rows.length },
-            "snapshot flush to DB failed",
-          );
-        }
-      }
-
-      const remaining = await redis.scard(activeKeysSet);
-      if (remaining === 0) {
-        await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
+        await CashSnapshotRepository.batchInsert([{
+          user_id: snapshot.user_id, workflow_id: snapshot.workflow_id,
+          execution_id: snapshot.execution_id, broker: snapshot.broker,
+          credential_id: snapshot.credential_id || snapshot.user_id,
+          snapshot_at: snapshot.snapshot_at, base_currency: snapshot.base_currency,
+          balances: snapshot.balances_json && typeof snapshot.balances_json === "object" ? snapshot.balances_json as Record<string, unknown> : {},
+          cash, equity, realized_pnl: realized, unrealized_pnl: unrealized,
+          positions_count: snapshot.positions_count, total_value_usdt: equity,
+        }]);
+        // Compare and delete atomically: a newer coalesced snapshot must survive.
+        await redis.eval(`
+          if redis.call('GET', KEYS[1]) == ARGV[1] then
+            redis.call('DEL', KEYS[1]); redis.call('SREM', KEYS[2], KEYS[1])
+            if redis.call('SCARD', KEYS[2]) == 0 then redis.call('SREM', KEYS[3], ARGV[2]) end
+            return 1
+          end
+          return 0`, 3, key, activeSet, RedisKeys.registrySnapshotsActive(), json, userId);
       }
     }
+  }
+
+  static async flushWorkflow(userId: string, workflowId: string, executionId?: string): Promise<void> {
+    await SnapshotCache.drain(userId, workflowId, executionId);
+    await LiveTradeRepository.flush(executionId, workflowId, userId);
+    await this.getInstance().flushSnapshots({ userId, workflowId, executionId });
   }
 
   // ─── Helpers ───────────────────────────────────────────

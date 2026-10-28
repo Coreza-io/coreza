@@ -211,6 +211,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
           initialInput: { $parentStore: itemParentStore },
           trigger: "loop_parallel",
           executionMode: options.executionMode ?? "manual",
+        reportingExecutionId: options.reportingExecutionId,
           parentRunId,
           rootRunId: options.rootRunId ?? parentRunId,
           scope: options.scope,
@@ -267,6 +268,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         edges: [],
         continueOnError,
         executionMode: options.executionMode ?? "manual",
+        reportingExecutionId: options.reportingExecutionId,
         // Include continuation metadata for done edge routing
         doneEdges: options.doneEdges || [],
         parentNodes: options.parentNodes || [],
@@ -618,3 +620,4 @@ gracefulShutdown.registerSignalHandlers(async () => {
   await redis.quit();
   console.log("✅ All queue resources cleaned up");
 });
+

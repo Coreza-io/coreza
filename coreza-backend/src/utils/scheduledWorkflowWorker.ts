@@ -1,3 +1,4 @@
+import { isBrokerPortfolioWorkflow } from "../reporting/liveWorkflowFilter";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -102,6 +103,7 @@ export function createScheduledWorkflowWorker({
           edges: (workflow as any).edges,
           trigger: "scheduled",
           executionMode: "manual" as const,
+          reportingExecutionId: isBrokerPortfolioWorkflow(workflow) ? (workflow as any).active_execution_id ?? undefined : undefined,
         };
 
         workflowQueue.add("execute-workflow", data, {
@@ -143,3 +145,4 @@ export function createScheduledWorkflowWorker({
     },
   );
 }
+

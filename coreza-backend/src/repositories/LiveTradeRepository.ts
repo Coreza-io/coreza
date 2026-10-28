@@ -1,3 +1,4 @@
+import { LiveStrategiesRepository } from "./LiveStrategiesRepository";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -9,11 +10,10 @@
  */
 
 import { supabase } from "../config/supabase";
-import { createLogger } from "../utils/logger";
 
-const logger = createLogger("LiveTradeRepository");
 
 export interface LiveTradeRow {
+  id: string;
   user_id: string;
   workflow_id?: string;
   execution_id?: string;
@@ -35,42 +35,33 @@ export interface LiveTradeRow {
 }
 
 export class LiveTradeRepository {
-  /**
-   * Insert a single closed trade into the live_trades table.
-   */
-  static async insert(row: LiveTradeRow): Promise<void> {
-    const { error } = await supabase.from("live_trades").insert({
-      user_id: row.user_id,
-      workflow_id: row.workflow_id,
-      execution_id: row.execution_id,
-      symbol: row.symbol,
-      action: row.action,
-      quantity: row.quantity,
-      entryPrice: row.entryPrice,
-      entryTime: row.entryTime,
-      exitPrice: row.exitPrice,
-      exitTime: row.exitTime,
-      commission: row.commission ?? 0,
-      slippage: row.slippage ?? 0,
-      net_pnl: row.net_pnl,
-      gross_pnl: row.gross_pnl,
-      entry_order_id: row.entry_order_id,
-      exit_order_id: row.exit_order_id,
+  private static pending = new Map<string, LiveTradeRow>();
+  private static writes = new Map<string, Promise<void>>();
+
+  static insert(row: LiveTradeRow): Promise<void> {
+    if (!row.execution_id || !row.workflow_id) return Promise.reject(new Error("Closed trade requires an activation identity"));
+    const existing = this.writes.get(row.id);
+    if (existing) return existing;
+    this.pending.set(row.id, row);
+    const write = this.persist(row).then(() => { this.pending.delete(row.id); })
+      .finally(() => { this.writes.delete(row.id); });
+    this.writes.set(row.id, write);
+    return write;
+  }
+
+  private static async persist(row: LiveTradeRow): Promise<void> {
+    const { error } = await (supabase as any).from("trades").upsert({
+      ...row, live_strategy_id: row.execution_id,
+      commission: row.commission ?? 0, slippage: row.slippage ?? 0,
       holding_period_bars: row.holding_period_bars ?? 0,
-      exit_reason: row.exit_reason,
-    } as any);
+    }, { onConflict: "id" });
+    if (error) throw error;
+    LiveStrategiesRepository.markDirty(row.execution_id!);
+  }
 
-    if (error) {
-      logger.error(
-        { error: error.message, symbol: row.symbol },
-        "live trade insert failed",
-      );
-      throw error;
-    }
-
-    logger.debug(
-      { symbol: row.symbol, net_pnl: row.net_pnl },
-      "live trade inserted",
-    );
+  static async flush(executionId?: string, workflowId?: string, userId?: string): Promise<void> {
+    const rows = [...this.pending.values()].filter(row => (!executionId || row.execution_id === executionId) && (!workflowId || row.workflow_id === workflowId) && (!userId || row.user_id === userId));
+    await Promise.allSettled(rows.map(row => this.writes.get(row.id)));
+    for (const row of rows) if (this.pending.has(row.id)) await this.insert(row);
   }
 }

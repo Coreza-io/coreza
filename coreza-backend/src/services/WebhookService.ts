@@ -1,3 +1,4 @@
+import { isBrokerPortfolioWorkflow } from "../reporting/liveWorkflowFilter";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -19,6 +20,7 @@ import {
 import CredentialManager from "../utils/credentialManager";
 
 type WorkflowWebhookRow = {
+  active_execution_id?: string | null;
   is_active?: boolean | null;
   nodes?: any[] | null;
   edges?: any[] | null;
@@ -424,6 +426,7 @@ export class WebhookService {
           edges: workflow.edges ?? [],
           trigger: "webhook",
           executionMode: "manual",
+          reportingExecutionId: isBrokerPortfolioWorkflow(workflow) ? workflow.active_execution_id ?? undefined : undefined,
           initialInput: {
             webhookPayload: normalizedPayload,
           },

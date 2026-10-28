@@ -17,6 +17,7 @@ export interface NodeExecutionContext {
   user_id?: string;
   userId: string;
   executionId: string;
+  reportingExecutionId?: string;
   runId?: string;
   workflowId: string;
   nodeId: string;

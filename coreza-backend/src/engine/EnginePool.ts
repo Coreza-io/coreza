@@ -36,6 +36,7 @@ export class EnginePool {
       mode?: "best-effort" | "fail-fast";
       abortSignal?: AbortSignal;
       executionMode?: ExecutionMode;
+      reportingExecutionId?: string;
     },
   ): WorkflowRun {
     const mode = opts?.executionMode ?? "manual";
@@ -60,6 +61,7 @@ export class EnginePool {
       mode: opts?.mode,
       abortSignal: opts?.abortSignal,
       executionMode: cached.plan.executionMode,
+      reportingExecutionId: opts?.reportingExecutionId,
     });
   }
 

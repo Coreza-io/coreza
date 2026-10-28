@@ -1,3 +1,4 @@
+import { LiveStrategiesRepository } from "./LiveStrategiesRepository";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -37,7 +38,17 @@ export class CashSnapshotRepository {
   static async batchInsert(rows: CashSnapshotRow[]): Promise<void> {
     if (rows.length === 0) return;
 
-    const { error } = await supabase.from("cash_snapshots").insert(rows as any);
+    const scoped = rows.filter(row => row.workflow_id && row.execution_id);
+    const account = rows.filter(row => !row.workflow_id || !row.execution_id);
+    if (account.length) {
+      const { error } = await supabase.from("cash_snapshots").insert(account as any);
+      if (error) throw error;
+    }
+    if (!scoped.length) return;
+    const { error } = await (supabase as any).from("portfolio").upsert(
+      scoped.map(row => ({ ...row, live_strategy_id: row.execution_id })),
+      { onConflict: "live_strategy_id,broker,credential_id,snapshot_at" },
+    );
 
     if (error) {
       logger.error(
@@ -47,6 +58,7 @@ export class CashSnapshotRepository {
       throw error;
     }
 
+    scoped.forEach(row => LiveStrategiesRepository.markDirty(row.execution_id!));
     logger.debug({ count: rows.length }, "snapshots inserted");
   }
 }

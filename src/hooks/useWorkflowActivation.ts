@@ -91,6 +91,12 @@ export function useWorkflowActivation(scopeKey?: string) {
       }
       if (!isCurrent() || localStorage.getItem(sessionStorageKey) !== (executionId ?? priorSessionId)) return null;
       const actualStatus: boolean = result.workflow.is_active;
+      if (actualStatus && result.workflow.active_execution_id) {
+        localStorage.setItem(sessionStorageKey, result.workflow.active_execution_id);
+        window.dispatchEvent(new CustomEvent("coreza-live-session-updated", {
+          detail: { workflowId, sessionId: result.workflow.active_execution_id },
+        }));
+      }
       toast({
         title: "Success",
         description: newStatus && !actualStatus && result.message === "Backtest completed"

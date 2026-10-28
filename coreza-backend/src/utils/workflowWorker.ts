@@ -180,6 +180,7 @@ export function createWorkflowWorker({
               startNodeId, // Pass entry point to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
               executionMode: (job.data as any).executionMode,
+              reportingExecutionId: job.data.reportingExecutionId,
               allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
               executionScope: job.data.scope?.kind === "cluster" ? {
                 kind: "cluster",
@@ -311,6 +312,7 @@ export function createWorkflowWorker({
                   edges: parentEdges,
                   trigger: "loop_continuation",
                   executionMode: (job.data as any).executionMode,
+                  reportingExecutionId: job.data.reportingExecutionId,
                   initialInput: {
                     data: aggregatedOutput,
                     $loopResult: {
@@ -460,6 +462,7 @@ export function createWorkflowWorker({
               startNodeId, // Pass start node to workflow engine
               abortSignal: signal, // Pass abort signal from BullMQ for cancellation
               executionMode: (job.data as any).executionMode,
+              reportingExecutionId: job.data.reportingExecutionId,
               allowedExecutableNodeIds: job.data.allowedExecutableNodeIds,
               executionScope: job.data.scope?.kind === "cluster" ? {
                 kind: "cluster",
@@ -560,7 +563,7 @@ export function createWorkflowWorker({
           : await (async () => {
               const run = EnginePool.getInstance().getOrCreate(
                 workflowId, runId, userId, nodes, edges,
-                { mode: "best-effort", abortSignal: signal, executionMode: job.data.executionMode },
+                { mode: "best-effort", abortSignal: signal, executionMode: job.data.executionMode, reportingExecutionId: job.data.reportingExecutionId },
               );
               try { return await run.execute(renamed); } finally { run.destroy(); }
             })();
@@ -690,3 +693,4 @@ export function createWorkflowWorker({
     },
   );
 }
+

@@ -1,3 +1,4 @@
+import { finiteMetrics, reportingTradeId } from "../reporting/persistence";
 import { resultSuccess } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -1058,7 +1059,10 @@ export class BacktestExecutor implements INodeExecutor {
   private portfolioFinalize(simBroker: SimBroker, backtestId: string, signal?: AbortSignal): Promise<void> {
     let finalization = BacktestExecutor.finalizations.get(simBroker);
     if (!finalization) {
-      finalization = this.persistPortfolio(simBroker, backtestId, signal);
+      finalization = this.persistPortfolio(simBroker, backtestId, signal).catch(error => {
+        BacktestExecutor.finalizations.delete(simBroker);
+        throw error;
+      });
       BacktestExecutor.finalizations.set(simBroker, finalization);
     }
     return finalization;
@@ -1087,11 +1091,10 @@ export class BacktestExecutor implements INodeExecutor {
       throw new Error("Backtest is no longer executable");
     }
 
-    // Insert backtest results
-    const { error: resultsError } = await (supabaseClient as any)
-      .from("backtest_results")
-      .insert({
-        backtest_id: backtestId,
+    // Update the lifecycle header created with the backtest
+    const { data: result, error: resultsError } = await (supabaseClient as any)
+      .from("live_strategies")
+      .update(finiteMetrics({
         total_return: metrics.totalReturnPct,
         annualized_return: metrics.annualizedReturn,
         max_drawdown: metrics.maxDrawdownPct,
@@ -1124,15 +1127,21 @@ export class BacktestExecutor implements INodeExecutor {
             ? trades.reduce((sum, t) => sum + (t.holdingPeriodBars || 0), 0) /
               trades.length
             : 0,
-      });
+      })).eq("backtest_id", backtestId).eq("mode", "backtest").select("id").single();
     if (resultsError) {
       throw new Error(`Failed to persist backtest results: ${resultsError.message}`);
     }
 
+    const liveStrategyId = result.id;
+    const { error: freshnessError } = await (supabaseClient as any).from("live_strategies")
+      .update({ metrics_updated_at: new Date().toISOString() }).eq("id", liveStrategyId);
+    if (freshnessError) throw freshnessError;
+
     // Insert trades
     if (trades.length > 0) {
       const tradeRows = trades.map((t) => ({
-        backtest_id: backtestId,
+        id: reportingTradeId(backtestId, t.id),
+        live_strategy_id: liveStrategyId,
         symbol: t.symbol,
         action: t.side,
         quantity: t.quantity,
@@ -1149,8 +1158,8 @@ export class BacktestExecutor implements INodeExecutor {
 
       if (tradeRows.length > 0) {
         const { error: tradesError } = await (supabaseClient as any)
-          .from("backtest_trades")
-          .insert(tradeRows);
+          .from("trades")
+          .upsert(tradeRows, { onConflict: "id" });
 
         if (tradesError) {
           throw new Error(`Failed to persist backtest trades: ${tradesError.message}`);
@@ -1158,7 +1167,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
     }
 
-    // Persist equity curve to backtest_portfolio_snapshots (daily resampled)
+    // Persist equity curve to portfolio (daily resampled)
     const dailyCurve = this.resampleToDaily(equityCurve);
     if (dailyCurve.length > 0) {
       const initialCapital = simBroker.getConfig().initialCapital;
@@ -1171,7 +1180,7 @@ export class BacktestExecutor implements INodeExecutor {
             : 0;
 
         return {
-          backtest_id: backtestId,
+          live_strategy_id: liveStrategyId,
           date: point.timestamp.substring(0, 10),
           cash_balance: point.cash,
           stock_value: point.positionsValue,
@@ -1182,8 +1191,8 @@ export class BacktestExecutor implements INodeExecutor {
 
       for (let i = 0; i < snapshots.length; i += 500) {
         const { error: snapshotError } = await (supabaseClient as any)
-          .from("backtest_portfolio_snapshots")
-          .insert(snapshots.slice(i, i + 500));
+          .from("portfolio")
+          .upsert(snapshots.slice(i, i + 500), { onConflict: "live_strategy_id,date" });
         if (snapshotError) {
           throw new Error(`Failed to persist backtest snapshots: ${snapshotError.message}`);
         }
@@ -1451,3 +1460,4 @@ export class BacktestExecutor implements INodeExecutor {
     return Array.from(byDate.values());
   }
 }
+

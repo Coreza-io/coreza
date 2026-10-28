@@ -1,3 +1,4 @@
+import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { resultSuccess } from "../contracts/nodeResult";
 import Redis from "ioredis";
 import { randomUUID } from "crypto";
@@ -91,6 +92,9 @@ export class WorkflowRunner {
       "live",
     );
     this.engine.setVariableSafetyStopHandler(() => {
+      // Retain pending source events and ownership for approved recovery.
+      void LiveStrategiesRepository.setStatus(this.executionId, userId, workflowId, "failed", "Strategy paused for live variable recovery")
+        .catch(error => console.error("Failed to record activation safety stop", error));
       this.running = false;
       this.abortController.abort();
     });
@@ -492,3 +496,4 @@ export class WorkflowRunner {
     } while (cursor !== "0");
   }
 }
+

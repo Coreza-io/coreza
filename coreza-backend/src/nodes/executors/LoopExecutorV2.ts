@@ -51,6 +51,9 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
       getState: (k: string) => any;
       setState: (k: string, v: any) => void;
       runId?: string;
+      executionId?: string;
+      executionMode?: import("../../engine/types").ExecutionMode;
+      reportingExecutionId?: string;
       workflowId?: string;
       userId?: string;
       nodes?: WorkflowNode[];
@@ -147,7 +150,8 @@ export class LoopExecutorV2 implements INodeExecutorV2 {
           maxConcurrency,
           continueOnError,
           useRedisStorage: true,
-          executionMode: (context as any).executionMode,
+          executionMode: context.executionMode,
+          reportingExecutionId: context.reportingExecutionId ?? (context.executionMode === "live" ? context.executionId : undefined),
           doneEdges,
           parentNodes: context.nodes,
           parentEdges: context.edges,

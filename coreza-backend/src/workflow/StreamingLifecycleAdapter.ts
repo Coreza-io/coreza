@@ -1,3 +1,4 @@
+import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import { createError } from "../middleware/errorHandler";
@@ -90,38 +91,12 @@ export class StreamingLifecycleAdapter {
     workflowId: string,
   ): Promise<void> {
     const redis = getRedisCache();
-    const fillStreamKey = RedisKeys.portfolioFillsStream(userId, workflowId);
-    const snapshotKey = RedisKeys.portfolioSnapshotLatest(userId, workflowId);
-    const keysToDelete = [
-      RedisKeys.strategyStream(userId, workflowId),
-      fillStreamKey,
-      snapshotKey,
-    ];
-
-    await redis.del(...keysToDelete);
+    // Reporting writes and operational fill streams outlive the runner. Never
+    // destroy an old activation's snapshots or unconsumed fills during handoff.
+    await FillSyncWorker.flushWorkflow(userId, workflowId);
+    await redis.del(RedisKeys.strategyStream(userId, workflowId));
     await this.deleteByPattern(RedisKeys.order(userId, workflowId, "*"));
     await this.deleteByPattern(RedisKeys.orderReverse(userId, workflowId, "*"));
-
-    const activeStreamsKey = RedisKeys.userActiveFillStreams(userId);
-    const activeSnapshotKeysKey = RedisKeys.userActiveSnapshotKeys(userId);
-
-    await redis.srem(activeStreamsKey, fillStreamKey);
-    await redis.srem(activeSnapshotKeysKey, snapshotKey);
-
-    const [remainingStreams, remainingSnapshots] = await Promise.all([
-      redis.scard(activeStreamsKey),
-      redis.scard(activeSnapshotKeysKey),
-    ]);
-
-    if (remainingStreams === 0) {
-      await redis.del(activeStreamsKey);
-      await redis.srem(RedisKeys.registryFillsActive(), userId);
-    }
-
-    if (remainingSnapshots === 0) {
-      await redis.del(activeSnapshotKeysKey);
-      await redis.srem(RedisKeys.registrySnapshotsActive(), userId);
-    }
   }
 
   async activateStreaming(
@@ -460,6 +435,8 @@ export class StreamingLifecycleAdapter {
       workflowId,
     );
     await redis.del(REDIS_CHANNELS.workflowStreamFilter(userId, workflowId));
+    await jobQueue.stopWorkflowRunner(workflowId);
+    await FillSyncWorker.flushWorkflow(userId, workflowId);
     await OrderOwnerRegistry.cleanupByWorkflow(workflowId);
     await this.cleanupWorkflowListeners(userId, workflowId);
     await RegistrationService.publishUnregisterWorkflow({
@@ -468,10 +445,7 @@ export class StreamingLifecycleAdapter {
       isTestListener: false,
     });
 
-    // Stop the in-memory WorkflowRunner so it doesn't keep persisting
-    // data under the old runnerInstanceId after deactivation.
-    await jobQueue.stopWorkflowRunner(workflowId);
-    //await this.clearSessionData(userId, workflowId);
+
   }
 
   async unsubscribeStreamingNodes(

@@ -92,8 +92,8 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
   };
 
   const renderHeader = () => {
-    if (error) return <p role="alert" className="text-destructive">{error}</p>;
-    if (loading || !backtest) {
+    if (error && (!isLive || !backtest)) return <p role="alert" className="text-destructive">{error}</p>;
+    if (!backtest || (!isLive && loading)) {
       return (
         <div className="space-y-3">
           <Skeleton className="h-6 w-32" />
@@ -200,7 +200,10 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
           {renderHeader()}
         </div>
         <div className="flex gap-2">
-          {isLive && <Button variant="outline" disabled={loading} onClick={() => void liveData.refetch()}>Refresh</Button>}
+          {isLive && <div className="text-right text-sm text-muted-foreground" role="status" title={error ?? "New reporting data appears automatically; fallback checks run every 15 seconds while visible and online."}>
+            <div>{error ? "Update failed · retrying automatically" : loading ? "Updating…" : "Auto-updating"}</div>
+            {liveData.lastCheckedAt !== null && <div className="text-xs">Last checked <time dateTime={new Date(liveData.lastCheckedAt).toISOString()}>{new Date(liveData.lastCheckedAt).toLocaleTimeString()}</time></div>}
+          </div>}
           <Button variant="secondary">
             <Download className="h-4 w-4 mr-2" /> Export
           </Button>
@@ -229,6 +232,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
         })}
       </div>
 
+      {isLive && snapshots.length === 0 && <p role="status" className="text-sm text-muted-foreground">Waiting for portfolio equity snapshots. This view updates automatically when reporting data arrives.</p>}
       <EquityCurveChart key={equityChartContext.runId} snapshots={snapshots} currency={metrics?.base_currency} context={equityChartContext} />
 
       <Tabs defaultValue="performance" className="space-y-4">

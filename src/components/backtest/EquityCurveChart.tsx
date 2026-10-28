@@ -4,8 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/contexts/AuthContext";
 import type { PortfolioSnapshot } from "@/hooks/useBacktestResults";
 import { buildEquityChartData } from "@/lib/equityChartData";
-import { EquityLineChart } from "./EquityLineChart";
-import { EquityCandlestickChart } from "./EquityCandlestickChart";
+import { EquityHistoryChart } from "./EquityHistoryChart";
 import type { EquityChartContext, EquityChartType, EquityInterval } from "./equityChartTypes";
 
 function readPreference(key: string | null): EquityChartType {
@@ -13,10 +12,9 @@ function readPreference(key: string | null): EquityChartType {
   catch { return "line"; }
 }
 
-export const EquityCurveChart = ({ snapshots, currency, intraday = false, context }: {
+export const EquityCurveChart = ({ snapshots, currency, context }: {
   snapshots: PortfolioSnapshot[];
   currency?: string | null;
-  intraday?: boolean;
   context: EquityChartContext;
 }) => {
   const { user } = useAuth();
@@ -27,7 +25,7 @@ export const EquityCurveChart = ({ snapshots, currency, intraday = false, contex
   const preference = useMemo(() => choice?.key === preferenceKey ? choice.type : readPreference(preferenceKey), [choice, preferenceKey]);
   const [interval, setInterval] = useState<EquityInterval>("auto");
   const [now, setNow] = useState(Date.now);
-  const model = useMemo(() => buildEquityChartData(snapshots, context, interval, Date.now()), [snapshots, context, interval, now]);
+  const model = useMemo(() => buildEquityChartData(snapshots, context, interval, Date.now(), true), [snapshots, context, interval, now]);
   const last = model.candles[model.candles.length - 1];
   useEffect(() => {
     if (!last?.isProvisional) return;
@@ -58,19 +56,18 @@ export const EquityCurveChart = ({ snapshots, currency, intraday = false, contex
             </SelectContent>
           </Select>
         </div>
-        {chartType === "candle" && <div className="space-y-1">
+        <div className="space-y-1">
           <label htmlFor={intervalId} className="text-xs text-muted-foreground">Interval</label>
           <Select value={interval} onValueChange={value => setInterval(value as EquityInterval)}>
             <SelectTrigger id={intervalId} className="min-h-10 w-28"><SelectValue /></SelectTrigger>
             <SelectContent>{(context.mode === "backtest" ? ["auto", "1D", "1W", "1M"] : ["auto", "1m", "5m", "15m", "1h", "1D"]).map(value => <SelectItem key={value} value={value}>{value === "auto" ? "Auto" : value}</SelectItem>)}</SelectContent>
           </Select>
-        </div>}
+        </div>
       </div>
     </CardHeader>
     {model.unavailableReason && <p role="note" className="px-6 pb-3 text-sm text-muted-foreground">{model.unavailableReason}</p>}
-    <CardContent className={chartType === "line" ? "h-[360px]" : undefined}>
-      {chartType === "line" ? <EquityLineChart snapshots={snapshots} currency={currency} intraday={intraday} initialCapital={context.initialCapital} capitalInferred={context.capitalInferred} /> :
-        <EquityCandlestickChart model={model} context={context} currency={currency} />}
+    <CardContent>
+      <EquityHistoryChart model={model} context={context} currency={currency} chartType={chartType} />
     </CardContent>
   </Card>;
 };

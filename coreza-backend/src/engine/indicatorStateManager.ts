@@ -9,6 +9,7 @@
  */
 
 import { getRedisCache } from "../config/redis";
+import { timingNow, observeStage, countLive } from "../utils/liveTiming";
 import { buildIndicatorKey } from "../utils/executionKey";
 export { buildIndicatorKey } from "../utils/executionKey";
 import {
@@ -169,11 +170,13 @@ export function requiredWarmupBars(
 }
 
 export class IndicatorStateManager {
+  get dirtyCount(): number { return this.dirtyKeys.size; }
+  lastFlushOutcome: "empty" | "success" | "error" = "empty";
   private readonly l1Cache = new Map<string, IndicatorState>();
   private readonly dirtyKeys = new Set<string>();
   private readonly updaterCache = new Map<string, IncrementalUpdater>();
 
-  constructor(private readonly ttlSeconds?: number) {}
+  constructor(private readonly ttlSeconds?: number, private readonly measureLive = false) {}
 
   async getState(key: string): Promise<IndicatorState | null> {
     const fromL1 = this.l1Cache.get(key);
@@ -199,13 +202,19 @@ export class IndicatorStateManager {
   async setState(key: string, state: IndicatorState): Promise<void> {
     this.l1Cache.set(key, state);
 
-    const redis = getRedisCache();
-    if (this.ttlSeconds && this.ttlSeconds > 0) {
-      await redis.set(key, JSON.stringify(state), "EX", this.ttlSeconds);
-      return;
+    const startedAt = this.measureLive ? timingNow() : 0;
+    let outcome = "error";
+    try {
+      const redis = getRedisCache();
+      if (this.ttlSeconds && this.ttlSeconds > 0) {
+        await redis.set(key, JSON.stringify(state), "EX", this.ttlSeconds);
+      } else {
+        await redis.set(key, JSON.stringify(state));
+      }
+      outcome = "success";
+    } finally {
+      if (this.measureLive) observeStage("indicator_immediate_write", startedAt, outcome);
     }
-
-    await redis.set(key, JSON.stringify(state));
   }
 
   setStateSync(key: string, state: IndicatorState): void {
@@ -214,10 +223,13 @@ export class IndicatorStateManager {
   }
 
   async flushToRedis(): Promise<void> {
+    this.lastFlushOutcome = "empty";
     if (this.dirtyKeys.size === 0) return;
+    this.lastFlushOutcome = "error";
 
     const redis = getRedisCache();
     const pipeline = redis.pipeline();
+    const serializationStartedAt = this.measureLive ? timingNow() : 0;
 
     for (const key of this.dirtyKeys) {
       const state = this.l1Cache.get(key);
@@ -231,7 +243,15 @@ export class IndicatorStateManager {
       }
     }
 
-    await pipeline.exec();
+    if (this.measureLive) observeStage("indicator_serialize", serializationStartedAt);
+    const flushStartedAt = this.measureLive ? timingNow() : 0;
+    try {
+      const results = await pipeline.exec();
+      this.lastFlushOutcome = !this.measureLive || (results && results.every(([error]) => !error)) ? "success" : "error";
+      if (this.measureLive && this.lastFlushOutcome === "error") countLive("indicator_pipeline", "command_error");
+    } finally {
+      if (this.measureLive) observeStage("indicator_redis_write", flushStartedAt, this.lastFlushOutcome);
+    }
     this.dirtyKeys.clear();
   }
 

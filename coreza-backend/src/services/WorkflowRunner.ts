@@ -13,6 +13,7 @@ import {
 } from "../utils/redisRunStorage";
 import { WorkflowExecutionResult } from "../engine/types";
 import { RedisKeys } from "../infra/redisKeys";
+import { LIVE_TIMING_ENABLED, timingNow, liveEventKind, observeStage, observeLive, observeEpoch, countLive, liveQueueDelay, liveExecution, liveRunnerCycle, liveReceiptToDecision, type LiveTimingEnvelope, type LiveExecutionTiming } from "../utils/liveTiming";
 
 const STRATEGY_GROUP = "strategy-group";
 const AUTOCLAIM_IDLE_MS = 60_000; // 60s idle threshold for reclaiming
@@ -21,6 +22,7 @@ const POLL_BATCH_SIZE = 10;
 const TRANSIENT_BACKOFF_MS = 1_000;
 
 interface StreamEventEnvelope {
+  _timing?: LiveTimingEnvelope;
   type?: string;
   data: unknown;
   timestamp?: string;
@@ -28,6 +30,7 @@ interface StreamEventEnvelope {
 }
 
 interface StreamMessageWithSequence {
+  batchReceivedAt?: number;
   messageId: string;
   fields: string[];
   payload:
@@ -174,6 +177,9 @@ export class WorkflowRunner {
   private async pollLoop(): Promise<void> {
     while (this.running) {
       let results: [string, [string, string[]][]][] | null = null;
+      let batchReceivedAt = 0;
+      const readStartedAt = timingNow();
+      let readOutcome = "error";
 
       try {
         results = (await (this.streamRedisClient as any).xreadgroup(
@@ -188,6 +194,8 @@ export class WorkflowRunner {
           this.streamKey,
           ">",
         )) as [string, [string, string[]][]][] | null;
+        batchReceivedAt = timingNow();
+        readOutcome = results?.length ? "data" : "idle";
       } catch (err) {
         if (!this.running) break;
         console.warn(
@@ -196,12 +204,14 @@ export class WorkflowRunner {
         );
         await this.sleep(TRANSIENT_BACKOFF_MS);
         continue;
+      } finally {
+        observeStage("stream_read", readStartedAt, readOutcome);
       }
 
       if (!results?.length) continue;
 
       for (const [, messages] of results) {
-        const parsed = this.parseAndSortMessages(messages);
+        const parsed = this.parseAndSortMessages(messages, batchReceivedAt);
 
         for (const item of parsed) {
           if (!this.running) break;
@@ -214,22 +224,41 @@ export class WorkflowRunner {
   private async processMessage(
     message: StreamMessageWithSequence,
   ): Promise<void> {
-    try { this.engine.assertVariableAdmission(); }
-    catch { this.running = false; return; } // Safety stops retain the pending source event.
-    const task = this.executeMessage(message);
-    this.activeMessage = task;
-    try { await task; } finally { if (this.activeMessage === task) this.activeMessage = undefined; }
+    const ingress = message.payload.status === "valid" ? message.payload.envelope._timing : undefined;
+    const timing: LiveExecutionTiming | undefined = LIVE_TIMING_ENABLED ? {
+      eventKind: liveEventKind(ingress?.eventKind ?? (message.payload.status === "valid" ? (message.payload.envelope.data as any)?.type : undefined)),
+      startedAt: timingNow(), executionStartedAt: 0, ingress, submitted: false, outcome: "error",
+    } : undefined;
+    if (timing && message.batchReceivedAt !== undefined) observeStage("consumer_batch_wait", message.batchReceivedAt);
+    try {
+      try { this.engine.assertVariableAdmission(); }
+      catch {
+        if (timing) timing.outcome = "admission_blocked";
+        this.running = false;
+        return; // Safety stops retain the pending source event.
+      }
+      const task = this.executeMessage(message, timing);
+      this.activeMessage = task;
+      try { await task; } finally { if (this.activeMessage === task) this.activeMessage = undefined; }
+    } finally {
+      if (timing) {
+        observeLive(liveRunnerCycle, { event_kind: timing.eventKind, outcome: timing.outcome }, (timingNow() - timing.startedAt) / 1000);
+        countLive("runner", timing.outcome);
+      }
+    }
   }
 
-  private async executeMessage({ messageId, payload }: StreamMessageWithSequence): Promise<void> {
+  private async executeMessage({ messageId, payload }: StreamMessageWithSequence, timing?: LiveExecutionTiming): Promise<void> {
     // Phase 1: Missing payload — permanent failure
     if (payload.status === "missing") {
+      if (timing) timing.outcome = "missing";
       await this.ack(messageId);
       return;
     }
 
     // Phase 2: Invalid JSON — discard only after the admission check
     if (payload.status !== "valid") {
+      if (timing) timing.outcome = "invalid";
       console.warn(
         "[WorkflowRunner] Invalid JSON, discarding message:",
         messageId,
@@ -241,6 +270,8 @@ export class WorkflowRunner {
 
     // Phase 3: Create run record — transient failure, do NOT ack
     const runId = randomUUID();
+    const admissionStartedAt = timingNow();
+    let admissionOutcome = "error";
     try {
       await createRunInRedis(
         this.userId,
@@ -256,34 +287,55 @@ export class WorkflowRunner {
         },
         this.executionId,
       );
+      admissionOutcome = "success";
     } catch (err) {
+      if (timing) timing.outcome = "pending";
       console.warn(
         "[WorkflowRunner] createRunInRedis failed (will retry):",
         (err as Error).message,
       );
       return; // No ack — message stays pending for reclaim
+    } finally {
+      observeStage("run_create", admissionStartedAt, admissionOutcome);
     }
 
     // Phase 4: Execute workflow — skip trigger, start from downstream
-    this.engine.resetForNextBar(true);
-    this.engine.setRunId(runId);
-    this.engine.setVariableEventId(`${this.streamKey}:${messageId}`);
-
-    // Preload trigger node results with actual stream data so downstream
-    // nodes can reference them (e.g. $('OnBar').json.data)
-    const triggerOutput = resultSuccess(envelope.data);
-    const preload: Record<string, any> = {};
-    for (const triggerId of this.triggerNodeIds) {
-      preload[triggerId] = triggerOutput;
+    if (timing) {
+      timing.executionStartedAt = timingNow();
+      observeStage("runner_admission", timing.startedAt);
+      observeEpoch(liveQueueDelay, "queue_delay", Number(messageId.split("-", 1)[0]), Date.now(), timing.eventKind);
     }
-    this.engine.preloadResults(preload);
+    try {
+      this.engine.resetForNextBar(true);
+      this.engine.setRunId(runId);
+      this.engine.setVariableEventId(`${this.streamKey}:${messageId}`);
+      if (timing) this.engine.setLiveTiming(timing);
+
+      // Preload trigger node results with actual stream data so downstream
+      // nodes can reference them (e.g. $('OnBar').json.data)
+      const triggerOutput = resultSuccess(envelope.data);
+      const preload: Record<string, any> = {};
+      for (const triggerId of this.triggerNodeIds) {
+        preload[triggerId] = triggerOutput;
+      }
+      this.engine.preloadResults(preload);
+    } catch (error) {
+      this.observeExecution(timing);
+      throw error; // Preserve the existing pending-event behavior on preparation failure.
+    }
 
     try {
       // Execute from downstream nodes only — trigger executors are skipped
-      const executionResult = await this.engine.executeFromEntries(
-        { data: envelope.data },
-        this.downstreamEntryIds,
-      );
+      let executionResult: WorkflowExecutionResult;
+      try {
+        executionResult = await this.engine.executeFromEntries(
+          { data: envelope.data },
+          this.downstreamEntryIds,
+        );
+        if (timing) timing.outcome = executionResult.success ? "success" : executionResult.error?.code === "CANCELLED" ? "cancelled" : "failed";
+      } finally {
+        this.observeExecution(timing);
+      }
 
       if (executionResult.success) await this.recordSuccess(runId, executionResult);
       else await this.recordFailure(
@@ -297,13 +349,21 @@ export class WorkflowRunner {
     }
 
     // Phase 6: Ack
-    if (this.engine.variableSafetyStop) { this.running = false; return; }
+    if (this.engine.variableSafetyStop) { if (timing) timing.outcome = "safety_stop"; this.running = false; return; }
     await this.ack(messageId);
+  }
+
+  private observeExecution(timing?: LiveExecutionTiming): void {
+    if (!timing) return;
+    observeLive(liveExecution, { event_kind: timing.eventKind, outcome: timing.outcome }, (timingNow() - timing.executionStartedAt) / 1000);
+    observeEpoch(liveReceiptToDecision, "receipt_to_decision", timing.ingress?.barEligibleAt ?? timing.ingress?.gatewayReceivedAt, Date.now(), timing.eventKind, timing.outcome);
   }
 
   private parseAndSortMessages(
     messages: [string, string[]][],
+    batchReceivedAt = timingNow(),
   ): StreamMessageWithSequence[] {
+    const parseStartedAt = timingNow();
     // Secondary ordering safety only:
     // subscriber ingress serializes per workflow+orderingDomain before XADD.
     // This sort protects reclaimed/mixed batches and malformed edge cases.
@@ -341,7 +401,7 @@ export class WorkflowRunner {
         }
       }
 
-      return { messageId, fields, payload, seq, orderingDomain, index };
+      return { messageId, fields, payload, seq, orderingDomain, index, batchReceivedAt };
     });
 
     parsed.sort((a, b) => {
@@ -351,6 +411,7 @@ export class WorkflowRunner {
       return a.seq - b.seq;
     });
 
+    observeStage("parse_batch", parseStartedAt);
     return parsed;
   }
 
@@ -372,6 +433,8 @@ export class WorkflowRunner {
     runId: string,
     executionResult: WorkflowExecutionResult,
   ): Promise<void> {
+    const startedAt = timingNow();
+    let outcome = "error";
     try {
       await updateRunStatusInRedis(
         this.userId,
@@ -383,11 +446,15 @@ export class WorkflowRunner {
           variableCheckpoint: this.engine.variableCheckpoint,
         },
       );
+      outcome = "success";
     } catch (err) {
       console.warn(
         "[WorkflowRunner] recordSuccess failed:",
         (err as Error).message,
       );
+    } finally {
+      observeStage("outcome_write", startedAt, outcome);
+      countLive("outcome_write", outcome);
     }
   }
 
@@ -396,6 +463,8 @@ export class WorkflowRunner {
     error: unknown,
     executionResult?: WorkflowExecutionResult,
   ): Promise<void> {
+    const startedAt = timingNow();
+    let outcome = "error";
     try {
       // Prefer the finalized outcome over an abort received during indicator flushing.
       const cancelled = !this.engine.variableSafetyStop && (
@@ -416,22 +485,29 @@ export class WorkflowRunner {
           variableCheckpoint: this.engine.variableCheckpoint,
         },
       );
+      outcome = "success";
     } catch (err) {
       console.warn(
         "[WorkflowRunner] recordFailure failed:",
         (err as Error).message,
       );
+    } finally {
+      observeStage("outcome_write", startedAt, outcome);
+      countLive("outcome_write", outcome);
     }
     console.error("[WorkflowRunner] Execution error:", error);
   }
 
   private async ack(messageId: string): Promise<void> {
+    const startedAt = timingNow();
+    let outcome = "error";
     try {
-      await this.streamRedisClient.xack(
+      const acknowledged = await this.streamRedisClient.xack(
         this.streamKey,
         STRATEGY_GROUP,
         messageId,
       );
+      outcome = acknowledged > 0 ? "success" : "missing";
     } catch (err) {
       console.warn(
         "[WorkflowRunner] ACK failed for",
@@ -439,6 +515,9 @@ export class WorkflowRunner {
         ":",
         (err as Error).message,
       );
+    } finally {
+      observeStage("ack", startedAt, outcome);
+      countLive("ack", outcome);
     }
   }
 

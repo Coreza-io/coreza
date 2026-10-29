@@ -40,6 +40,7 @@ export type MarketSource =
 export type Timeframe = "tick" | "1m" | "5m" | "15m" | "1h" | "1d";
 
 export interface CorezaMarketEvent {
+  _timing?: import("../utils/liveTiming").LiveTimingEnvelope;
   // Identification
   source: MarketSource;
   symbol: string; // Normalized: "AAPL", "BTCUSD", "RELIANCE"

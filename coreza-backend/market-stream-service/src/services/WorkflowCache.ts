@@ -1,3 +1,4 @@
+import { LOG } from "../utils/logging";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createLogger } from "../utils/logger";
 import { workflowCacheSizeGauge } from "../utils/metrics";
@@ -57,12 +58,12 @@ export class WorkflowCache {
     // Check cache first
     const cached = this.cache.get(workflowId);
     if (cached && cached.expiresAt > Date.now()) {
-      logger.debug({ workflowId, cacheSize: this.cache.size }, "Cache HIT");
+      if (LOG) logger.debug({ workflowId, cacheSize: this.cache.size }, "Cache HIT");
       return cached.workflow;
     }
 
     // Cache miss - fetch from Supabase
-    logger.debug({ workflowId }, "Cache MISS - fetching from database");
+    if (LOG) logger.debug({ workflowId }, "Cache MISS - fetching from database");
 
     try {
       const { data: workflow, error } = await this.getSupabase()

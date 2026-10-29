@@ -103,6 +103,9 @@ export class WorkflowEngine {
   setRunId(runId: string): void {
     this.run.setRunId(runId);
   }
+  setLiveTiming(liveTiming: import("../utils/liveTiming").LiveExecutionTiming | undefined): void {
+    this.run.setExecutionContextExtras({ liveTiming });
+  }
   setVariableEventId(eventId: string): void { this.run.setExecutionContextExtras({ variableEventId: eventId }); }
   checkCancellation(): boolean {
     return this.run.checkCancellation();

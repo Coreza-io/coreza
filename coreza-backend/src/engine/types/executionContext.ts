@@ -11,6 +11,7 @@ export interface MultiBarExecutionContext {
 }
 
 export interface NodeExecutionContext {
+  liveTiming?: import("../../utils/liveTiming").LiveExecutionTiming;
   variableEventId?: string;
   commitVariables?: (changes: readonly import("../../variables/contract").VariableChange[]) => void | Promise<void>;
   variables?: Readonly<Record<string, unknown>>;

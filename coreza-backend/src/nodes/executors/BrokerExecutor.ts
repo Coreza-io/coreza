@@ -12,6 +12,8 @@ import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import { performance } from "perf_hooks";
+import { LOG } from "../../utils/logging";
+import { LIVE_TIMING_ENABLED, observeLive, observeEpoch, orderSubmitHttp, orderStage, liveSignalToSubmit, liveReceiptToSubmit, countLive, type LiveExecutionTiming } from "../../utils/liveTiming";
 import { historicalRowCount, safeToolError, toolInputFields, traceToolHttp, ToolExecutionTrace } from "../../utils/toolExecutionLog";
 import {
   getBrokerConfig,
@@ -38,9 +40,22 @@ import {
 
 const RATE_LIMIT_DELAY_MS = 350; // ~170 requests/min, under 200 limit
 
+const disabledTradeTiming = {
+  configure: (_broker: string, _operation: string) => {},
+  mark: (_phase: string) => {},
+  wrap: (client: typeof axios) => client,
+  source: (_name: string, _source: unknown) => {},
+  credentialLookup: undefined,
+  finish: (_fields: Record<string, unknown>) => {},
+};
+
 // Keep timing local to one invocation; never log request bodies, credentials or responses.
-function createTradeTiming(enabled: boolean) {
+function createTradeTiming(enabled: boolean, liveTiming?: LiveExecutionTiming) {
+  if (!enabled) return disabledTradeTiming;
   const started = enabled ? performance.now() : 0;
+  const measure = LIVE_TIMING_ENABLED;
+  let metricBroker = "other";
+  let metricOperation = "place_order";
   const phasesMs: Record<string, number> = {};
   const sources: Record<string, unknown> = {};
   const credentialLookups: CredentialLookupEvent[] = [];
@@ -53,25 +68,36 @@ function createTradeTiming(enabled: boolean) {
     if (!enabled) return;
     const now = performance.now();
     phasesMs[phase] = (phasesMs[phase] ?? 0) + now - phaseStarted;
+    if (measure) observeLive(orderStage, { stage: phase, outcome: "settled" }, (now - phaseStarted) / 1000);
     phase = next;
     phaseStarted = now;
   };
-  const observe = async (invoke: () => any) => {
+  const observe = async (invoke: () => any, method: string) => {
     const begin = performance.now();
+    const submission = measure && phase === "brokerOperation" && ["post", "put", "delete"].includes(method.toLowerCase());
+    if (submission && liveTiming && !liveTiming.submitted) {
+      liveTiming.submitted = true;
+      observeLive(liveSignalToSubmit, { event_kind: liveTiming.eventKind, outcome: "submitted" }, (begin - liveTiming.executionStartedAt) / 1000);
+      observeEpoch(liveReceiptToSubmit, "receipt_to_submit", liveTiming.ingress?.barEligibleAt ?? liveTiming.ingress?.gatewayReceivedAt, Date.now(), liveTiming.eventKind, "submitted");
+    }
+    let outcome = "success";
     httpRequestCount += 1;
     try {
       return await invoke();
     } catch (error) {
+      outcome = "error";
       httpFailureCount += 1;
       throw error;
     } finally {
       httpMs += performance.now() - begin;
+      if (submission) observeLive(orderSubmitHttp, { broker: metricBroker, operation: metricOperation, outcome }, (performance.now() - begin) / 1000);
     }
   };
   const methods = new Set(["request", "get", "delete", "head", "options", "post", "put", "patch", "postForm", "putForm", "patchForm"]);
   const wrap = (client: typeof axios): typeof axios => !enabled ? client : new Proxy(client, {
     apply(target, receiver, args) {
-      return observe(() => Reflect.apply(target, receiver, args));
+      const config = typeof args[0] === "string" ? args[1] : args[0];
+      return observe(() => Reflect.apply(target, receiver, args), config?.method ?? "get");
     },
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -79,21 +105,27 @@ function createTradeTiming(enabled: boolean) {
         return (...args: any[]) => wrap(Reflect.apply(value, target, args));
       }
       return typeof property === "string" && methods.has(property) && typeof value === "function"
-        ? (...args: any[]) => observe(() => Reflect.apply(value, target, args))
+        ? (...args: any[]) => observe(() => Reflect.apply(value, target, args), property === "request" ? args[0]?.method ?? "get" : property)
         : value;
     },
   });
   return {
+    configure: (broker: string, operation: string) => {
+      metricBroker = ["alpaca", "binance", "dhan", "schwab"].includes(broker) ? broker : "other";
+      metricOperation = operation === "close_position" ? "close_position" : "place_order";
+    },
     mark,
     wrap,
-    source: (name: string, source: unknown) => { if (enabled) sources[name] = source; },
-    credentialLookup: enabled ? (event: CredentialLookupEvent) => {
+    source: (name: string, source: unknown) => { if (enabled && LOG) sources[name] = source; },
+    credentialLookup: enabled && LOG ? (event: CredentialLookupEvent) => {
       credentialLookups.push(event);
       if (event.outcome === "hit") sources.credentials = event.source;
     } : undefined,
     finish: (fields: Record<string, unknown>) => {
       if (!enabled) return;
       mark("finished");
+      if (measure) countLive("order", String(fields.status));
+      if (!LOG) return;
       const totalMs = performance.now() - started;
       const round = (ms: number) => +ms.toFixed(3);
       // HTTP is summed across requests, so it can exceed wall time for concurrent custom operations.
@@ -127,7 +159,8 @@ export class BrokerExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): Promise<NodeResult> {
-    const timing = createTradeTiming(["place_order", "close_position"].includes(node.values?.operation));
+    const orderOperation = ["place_order", "close_position"].includes(node.values?.operation);
+    const timing = createTradeTiming(orderOperation && (LOG || LIVE_TIMING_ENABLED), orderOperation ? context?.liveTiming : undefined);
     let timingStatus = "error";
     const startTime = Date.now();
     let idempotencyKey: string | null = null;
@@ -149,6 +182,7 @@ export class BrokerExecutor implements INodeExecutor {
       operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory: string };
       broker = (brokerNode.subCategory ?? node.name).toLowerCase();
+      timing.configure(broker, operation);
       const credential_id = node.values?.credential_id;
       //shouldPersistRedisState = context?.executionMode === "live";
 
@@ -158,7 +192,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       // Get broker config (in-memory lookup, no HTTP)
       const config = getBrokerConfig(broker);
-      timing.source("brokerConfig", "in_memory_registry");
+      if (LOG) timing.source("brokerConfig", "in_memory_registry");
       if (!config) {
         return resultFailure(`Unsupported broker: ${broker}`, { data: null });
       }
@@ -169,19 +203,19 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       timing.mark("parameters");
-      timing.source("parameters", {
+      if (LOG) timing.source("parameters", {
         nodeValues: "in_memory_node_snapshot",
         input: "in_memory_execution_input",
         resolution: context?.resolveNodeParameters ? "execution_context_resolver" : "node_values_input_merge",
       });
       // Resolve and merge node parameters with input data
-      console.log(
+      if (LOG) console.log(
         `🔧 [BROKER] Starting parameter resolution for node ${node.id}`,
       );
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
-      console.log(
+      if (LOG) console.log(
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`,
       );
 
@@ -225,16 +259,16 @@ export class BrokerExecutor implements INodeExecutor {
         });
 
         if (shouldPersistRedisState) {
-          timing.source("idempotency", { storage: "redis_cache", outcome: "attempted" });
+          if (LOG) timing.source("idempotency", { storage: "redis_cache", outcome: "attempted" });
           const cached = await getOrderFromCache(
             userId,
             workflowId,
             idempotencyKey,
           );
-          timing.source("idempotency", { storage: "redis_cache", outcome: cached ? `hit_${cached.status}` : "miss" });
+          if (LOG) timing.source("idempotency", { storage: "redis_cache", outcome: cached ? `hit_${cached.status}` : "miss" });
           if (cached) {
             if (cached.status === "success") {
-              console.log(
+              if (LOG) console.log(
                 `🔒 [IDEMPOTENCY] Returning cached order: ${idempotencyKey}`,
               );
               timingStatus = "cached";
@@ -253,7 +287,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       timing.mark("credentials");
-      timing.source("credentials", "not_resolved");
+      if (LOG) timing.source("credentials", "not_resolved");
       // Fetch credentials directly (no HTTP)
       const { credentials } = await CredentialManager.getCredentials(
         context?.userId,
@@ -263,7 +297,7 @@ export class BrokerExecutor implements INodeExecutor {
       );
 
       if (!credentials) {
-        timing.source("credentials", "not_found_or_error");
+        if (LOG) timing.source("credentials", "not_found_or_error");
         return resultFailure(`Credentials not found for ${broker}`, { data: null });
       }
 
@@ -305,7 +339,7 @@ export class BrokerExecutor implements INodeExecutor {
       fetchStart = performance.now();
 
       if (op.execute) {
-        console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
+        if (LOG) console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
         timing.mark("brokerOperation");
         data = await op.execute({
           input: resolvedParams,
@@ -332,7 +366,7 @@ export class BrokerExecutor implements INodeExecutor {
 
         if (shouldPreRegisterOrderOwner) {
           timing.mark("ownerBeforeRequest");
-          timing.source("ownerBeforeRequest", "redis_queue");
+          if (LOG) timing.source("ownerBeforeRequest", "redis_queue");
           preRegisteredClientOrderId = resolvedParams._idempotencyKey.trim();
           try {
             await OrderOwnerRegistry.saveOwner({
@@ -352,7 +386,7 @@ export class BrokerExecutor implements INodeExecutor {
         }
 
         timing.mark("requestPreparation");
-        console.log(`📤 [BROKER] Executing ${broker}.${operation}`);
+        if (LOG) console.log(`📤 [BROKER] Executing ${broker}.${operation}`);
 
         // Check if pagination is enabled and requested
         const autoPaginate = resolvedParams.auto_paginate !== false; // Default true
@@ -401,7 +435,7 @@ export class BrokerExecutor implements INodeExecutor {
       context?.agentDataTrace?.('broker_fetch', () => ({ durationMs: performance.now() - fetchStart!, broker, operation,
         requestCount: requestCount(), transformedRowCount: operation === 'get_candle' ? historicalRowCount(data, resolvedParams.symbol) : null }));
       fetchStart = undefined;
-      console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
+      if (LOG) console.log(`✅ [BROKER] ${broker}.${operation} completed successfully`);
 
       if (operation === "place_order") {
         timing.mark("enrichment");
@@ -418,7 +452,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       timing.mark("ownerAfterRequest");
       if (operation === "place_order") {
-        timing.source("ownerAfterRequest", "redis_queue");
+        if (LOG) timing.source("ownerAfterRequest", "redis_queue");
         try {
           const extractor = getOrderOwnerExtractor(broker);
           const ids = extractor ? extractor(data) : {};
@@ -447,7 +481,7 @@ export class BrokerExecutor implements INodeExecutor {
 
       timing.mark("orderCache");
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
-        timing.source("orderCache", "redis_cache");
+        if (LOG) timing.source("orderCache", "redis_cache");
         await updateOrderCache(
           userId,
           workflowId,
@@ -502,7 +536,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
-        timing.source("orderCache", "redis_cache");
+        if (LOG) timing.source("orderCache", "redis_cache");
         await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
           error:
             enrichedError instanceof Error
@@ -543,7 +577,7 @@ export class BrokerExecutor implements INodeExecutor {
       );
       return normalized;
     } finally {
-      timing.finish({
+      if (orderOperation && (LOG || LIVE_TIMING_ENABLED)) timing.finish({
         workflowId,
         nodeId: node.id,
         runId: context?.runId ?? context?.executionId,

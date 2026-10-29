@@ -44,6 +44,11 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly rollingWindowResults = new Map<string, NodeResult>();
   private cachedRunId: string | null = null;
 
+  private stateScopeId(context: any): string | undefined {
+    // Live state belongs to the activation; runId still identifies each event/order.
+    return context?.executionMode === "live" ? context.executionId : context?.runId;
+  }
+
   private indicatorType(node: WorkflowNode): string {
     const type = String(node.name || node.node_type || '').trim().toLowerCase();
     return ({ bb: 'bollinger bands', bollinger: 'bollinger bands', stoch: 'stochastic' } as Record<string, string>)[type] ?? type;
@@ -77,7 +82,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): NodeResult | Promise<NodeResult> {
-    const runId = context?.runId;
+    const runId = this.stateScopeId(context);
     if (runId && runId !== this.cachedRunId) {
       this.indicatorKeyCache.clear();
       this.rollingWindowKeyCache.clear();
@@ -117,7 +122,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         | undefined;
       const userId = context?.userId || context?.user_id;
       const workflowId = context?.workflowId;
-      const runId = context?.runId || context?.user_id;
+      const runId = this.stateScopeId(context) || context?.user_id;
       const symbol = String(processedParams.symbol || "");
       const timeframe = String(processedParams.timeframe || "");
 
@@ -192,7 +197,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
-      const runId = context?.runId;
+      const runId = this.stateScopeId(context);
       if (runId && runId !== this.cachedRunId) {
         this.indicatorKeyCache.clear();
         this.rollingWindowKeyCache.clear();
@@ -235,7 +240,7 @@ export class IndicatorsExecutor implements INodeExecutor {
           | undefined;
         const userId = context?.userId || context?.user_id;
         const workflowId = context?.workflowId;
-        const runId = context?.runId || context?.user_id;
+        const runId = this.stateScopeId(context) || context?.user_id;
         const symbol = String(processedParams.symbol || "");
         const timeframe = String(processedParams.timeframe || "");
 
@@ -637,7 +642,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       params.workflow_id ||
       "manual";
     const runId =
-      context?.runId ||
+      this.stateScopeId(context) ||
       context?.executionId ||
       params.executionId ||
       params.execution_id ||

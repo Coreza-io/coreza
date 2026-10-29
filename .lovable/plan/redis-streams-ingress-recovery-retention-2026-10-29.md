@@ -1,13 +1,35 @@
 # Coreza — Redis Streams ingress, acknowledgment, recovery and retention hardening
 Date: 2026-10-29
 Target branch: dev
-Status: PLAN ONLY — no runtime code changes
+Status: REVISED PLAN ONLY (latency-protected) — no runtime code changes
 Scope: Live market-data gateway → subscriber → workflow strategy streams → WorkflowRunner; protect trading side effects. Preserve existing Redis/BullMQ/PostgreSQL architecture. Do not introduce Kafka.
 
 ## Objective and non-goals
 Close the verified correctness gaps in the Redis producer-consumer pipeline while keeping sequential low-latency live execution. Distinguish **market data** (often freshness-oriented, possibly lossy under explicit policy) from **broker/order/fill lifecycle events** (recovery-sensitive). Do not promise every-tick delivery across broker disconnections or Pub/Sub outages without a durable upstream ingestion redesign.
 
 Not in scope: Kafka migration, rewrite of execution engine, automatic replay of already-effecting trade commands, or replacing the existing live-variable checkpoint subsystem. No blanket unbounded stream retention.
+
+## Mandatory low-latency execution contract (applies to every phase)
+**Protect the existing normal tick hot path.** No new synchronous Redis/PostgreSQL round trips, broker reconciliation calls, PEL scans, consumer-group introspection, XINFO/XPENDING, retention cleanup, SQL checkpoints, or network-dependent instrumentation per tick merely for monitoring/recovery. The existing awaited XADD, create-run, execution, terminal-status and XACK stages remain visible and measurable; existing necessary correctness awaits must not be removed casually.
+
+- Treat `gateway receive → durable workflow XADD`, `XADD → execution start` (queue wait), `execution start → finished` (node execution), `finished → XACK`, and `broker submission → broker response` as **separate** timing measures. End-to-end market-event-to-order latency is the primary trading metric, not just node execution time.
+- Recovery workers, stream trimming, PEL inspection, queue-depth sampling and ownership reconciliation operate asynchronously/off the hot path, with bounded batch/time budgets, jittered scheduling, and capped Redis resource use. No periodic scanner competes unboundedly with XREADGROUP.
+- Simple in-process O(1) counters and event timestamps are acceptable on ingestion; batch metric exports and sample/log high-cardinality details. Avoid per-tick debug logs, expensive JSON reserialization, high-cardinality metrics labels, and awaited telemetry.
+- If an event cannot be admitted safely due to backlog, ownership or durability ambiguity, fail visibly and stop/pause under the event-class policy; **correctness may override latency**. No "performance optimization" may ACK, skip, coalesce or lose protected trading events.
+- No second queue per variable/tick, no duplicate checkpoint coordinator, no per-tick SQL persistence. Continue reusing the existing live runner and RAM-first/versioned variable checkpoint subsystem.
+- Establish baseline for p50/p95/p99 and sustained event throughput using representative broker streams before any changes; compare each phase under the same traffic, worker count, Redis topology and machine/load conditions. Do not claim zero latency overhead without measurements.
+- Proposed provisional rollout guardrail: target **no statistically meaningful regression**, explicitly agree numeric acceptable p95/p99 and throughput budgets using baseline noise; additionally monitor tail latency, Redis CPU/memory, event-loop delay, backlog age and order submission time. If violated, halt rollout and diagnose or roll back. Reliability-related safe pauses remain visible rather than misclassified as latency regressions.
+
+### Hot-path change budget
+| Change | Normal tick path | Background/control path | Risk control |
+|---|---|---|---|
+| Redis topology alignment | Same single XADD/XREADGROUP operations; no extra hop | Validate connectivity and migrate at activation/deployment | Measure RTT/producer-to-consumer lag before/after |
+| Retention | Avoid XPENDING/XINFO/scan per event and avoid synchronous trim bookkeeping | Bounded periodic ACK-safe trimming, observe memory ceiling | Size retention empirically; do not use unbounded streams |
+| Recovery | No XAUTOCLAIM per tick | Startup/owner recovery with bounded cursor paging | Gate reads on unresolved older ordered work; no blind broker replay |
+| ACK error | Existing XACK call, capture result without extra round trip | Retry/reconcile only on failure | Preserve idempotent disposition |
+| Ingress bounds | O(1) counter/byte admission; normally no blocking | Overload action according to event class | Prevent unlimited Promise chains |
+| Metrics | O(1) clocks/counters | Batched/sampled export and dashboard queries | No cardinality explosion |
+| Live variable persistence | No changes | Existing async versioned snapshots | Never confuse variable checkpoint with execution receipt |
 
 ## Verified baseline (dev source)
 1. `market-stream-service/src/services/MarketDataGateway.ts`: normalized broker events are sent through Redis Pub/Sub (`publishToRedis`) before workflow-specific stream persistence. Pub/Sub has no replay on disconnection.
@@ -28,18 +50,18 @@ Not in scope: Kafka migration, rewrite of execution engine, automatic replay of 
 - Audit producer/consumer/cleanup/admin Redis configurations, env vars, Redis DB index, Sentinel/cluster mode, deployments, ownership. Choose **one** shared strategy-stream Redis topology, preferably durable queue Redis, preserving separate cache usage for cache keys.
 - Migration plan: enumerate keys/consumer groups/pending IDs on both old and new topology; stop or quiesce relevant workflows, reconcile and migrate retained events without double processing; fence old writers and consumers; rollback and restart policy. No silent switch that strands pending input.
 - Fail startup or activation with a clear error if producer/consumer topology identity cannot be validated; avoid using credentials in logs.
-- Add counters/gauges/histograms: gateway received; Pub/Sub publish; routed event; XADD accepted/failed; XREADGROUP processed; ACK success/failure; PEL count/oldest idle; stream length/age; gateway→XADD, XADD→start, start→ACK lag; ingestion Promise queue count/bytes; trimmed/overflow/recovery quarantined; per event class and workflow (cardinality bounded).
+- Collect timestamps/counters with O(1) in-memory instrumentation, low-cardinality labels, and batched/sample-based export; do not synchronously query Redis or emit a detailed log per event. Add counters/gauges/histograms: gateway received; Pub/Sub publish; routed event; XADD accepted/failed; XREADGROUP processed; ACK success/failure; PEL count/oldest idle; stream length/age; gateway→XADD, XADD→start, start→ACK lag; ingestion Promise queue count/bytes; trimmed/overflow/recovery quarantined; per event class and workflow (cardinality bounded).
 - Measure baseline under representative provider traffic before choosing thresholds.
 
 ## Phase 1 — retention and ingress backpressure (P0)
-- Remove unconditional `MAXLEN ~ 1000` from recovery-sensitive workflow streams. Implement a bounded consumer-aware retention design: track group-safe minimum processed/acknowledged cursor and avoid trimming pending or undelivered entries. Inspect `XINFO GROUPS`/`XPENDING` and Redis version semantics; deletion by ID only once all relevant consumers no longer require entries.
+- Remove unconditional `MAXLEN ~ 1000` from recovery-sensitive workflow streams without replacing it with an unbounded stream or per-tick expensive scan. Implement a bounded consumer-aware retention design: track group-safe minimum processed/acknowledged cursor and avoid trimming pending or undelivered entries. Inspect `XINFO GROUPS`/`XPENDING` and Redis version semantics; deletion by ID only once all relevant consumers no longer require entries.
 - Account for un-delivered messages as well as PEL entries: 'not pending' does not mean 'safe to trim'. Use a safe acknowledged watermark and explicit single-consumer-group policy (or a minimum watermark across groups).
 - Set per-class retention and memory/backlog limits grounded in measured tick rates, processing throughput and maximum planned outage. When limits are exceeded, emit visible overload state, gate/stop affected workflow, or apply **explicitly approved** quote/tick coalescing only; do not silently discard fills/orders.
 - Bound `MarketDataSubscriber.deliveryQueues` by events and bytes. Backpressure/drop/coalesce only according to class policy. Preserve ordering and never block the Redis event loop indefinitely; fail closed if critical backlog exceeds safe bound.
 - Recognize pre-XADD Pub/Sub loss window. For stronger delivery, separately consider direct durable ingress before Pub/Sub or provider supported replay, but do not include a broad gateway rewrite in initial phase.
 
 ## Phase 2 — pending recovery and sequencing (P0/P1)
-- Build a recovery state machine: NEW → RECEIVED → EXECUTING → TERMINAL/ACKED or PENDING_RECONCILIATION. Recover pending pages with cursor-aware `XAUTOCLAIM` and handle `deletedIds`, empty page, idle thresholds, transient connection failures and interrupted scans.
+- All PEL scans and broker reconciliation run only in dedicated startup/recovery work, not as per-tick checks. Under unresolved ordering/ownership ambiguity, safely pause the affected workflow rather than allowing unverified hot-path execution. Build a recovery state machine: NEW → RECEIVED → EXECUTING → TERMINAL/ACKED or PENDING_RECONCILIATION. Recover pending pages with cursor-aware `XAUTOCLAIM` and handle `deletedIds`, empty page, idle thresholds, transient connection failures and interrupted scans.
 - Avoid simply adding periodic unconditional reclaim. Separate **safe pre-execution** pending events from **ambiguous post-side-effect** events; quarantine latter until broker/order-ledger reconciliation. Use run ID, event stream ID, workflow generation/fencing token and durable intent/receipt when supported.
 - Ensure a pre-execution persistence/admission failure prevents later inputs from overtaking an unresolved older event in the same required ordering domain. Explicitly pause or retry with backoff; resume only once cleared.
 - ACK failure is not success. Record and expose unresolved ACK, retry idempotently while preserving proper order, and reconcile side effects before re-execution. Malformed input should go to an observable DLQ/terminal record before ACK when feasible.
@@ -51,6 +73,8 @@ Not in scope: Kafka migration, rewrite of execution engine, automatic replay of 
 - If product requirements demand automatic deterministic replay, propose separate durable execution intents, full state checkpointing, idempotency and reconciliation before changing ACK contracts. Otherwise retain explicit operator recovery for ambiguous events.
 
 ## Phase 4 — performance and rollout
+- Require phase-by-phase measured comparison for end-to-end tick-to-order latency, ingress latency, queueing delay, execution duration, completion/ACK time, p50/p95/p99, stable peak throughput, Redis CPU/memory, event-loop lag, and pending backlog. Record baseline before Phase 0, gate each rollout, and report samples/variance rather than single-run conclusions.
+- Confirm monitoring and cleanup run with finite per-cycle resource budgets. Stress-test mixed busy/idle workflows so recovery maintenance cannot starve live ticks.
 - Deploy incrementally behind feature gates per workflow/event class. Start with metrics and topology validation; then retention/overload; then recovery state machine. No single big-bang migration.
 - Benchmark peak/steady market load, burst, slow executor, disconnections, Redis restart/failover, overlapping runners, producer crash before/after XADD, consumer crash before/after broker request and before/after XACK.
 - Success metrics: no silent loss of protected events in declared retention envelope; no duplicate broker orders on replay; bounded RAM/stream growth; ordered processing where declared; successful PEL scan and visible quarantine; p50/p95/p99 ingress and execution latency no regression beyond agreed budget.
@@ -77,10 +101,14 @@ Not in scope: Kafka migration, rewrite of execution engine, automatic replay of 
 - [ ] No later event overtakes unresolved earlier event in guaranteed ordering domain.
 - [ ] Tests validate crash windows and duplicate-order prevention.
 - [ ] Latency/memory/retention baselines measured and rollout/rollback documented.
+- [ ] No new routinely awaited Redis/Postgres/network operations or scans on the normal per-tick hot path.
+- [ ] Recovery/retention/telemetry tasks bounded and asynchronous, with no observed starvation of live runners.
+- [ ] End-to-end tick-to-trade latency and per-stage p95/p99 pass baseline-derived budgets; benchmark and rollback evidence recorded.
+- [ ] No per-tick verbose logs, excessive metric cardinality, or duplicate live-variable persistence system.
 
 ## Priority and dependencies
 P0: topology alignment, event semantics, safe retention/overload, no duplicate-trade replay.
 P1: complete recovery/pagination, sequencing, ACK/DLQ visibility.
 P2: latency tuning, provider ingress redesign only if required by explicit durability SLA.
 
-**Plan only: implement only after confirming deployment topology, critical-event semantics and recovery policy.**
+**Plan only: implement only after confirming deployment topology, critical-event semantics, recovery policy and measurable performance budgets. Reliability safeguards may deliberately pause unsafe execution; never suppress those pauses merely to meet a latency goal.**

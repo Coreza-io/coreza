@@ -73,15 +73,15 @@ function createTradeTiming(enabled: boolean, liveTiming?: LiveExecutionTiming) {
     phaseStarted = now;
   };
   const observe = async (invoke: () => any, method: string) => {
-    const begin = performance.now();
-    const submission = measure && phase === "brokerOperation" && ["post", "put", "delete"].includes(method.toLowerCase());
-    if (submission && liveTiming && !liveTiming.submitted) {
+    const submission = measure && phase === "brokerOperation" && ["post", "put", "patch", "delete", "postform", "putform", "patchform"].includes(method.toLowerCase());
+    const firstSubmission = submission && !!liveTiming && !liveTiming.submitted;
+    if (firstSubmission && liveTiming) {
       liveTiming.submitted = true;
-      observeLive(liveSignalToSubmit, { event_kind: liveTiming.eventKind, outcome: "submitted" }, (begin - liveTiming.executionStartedAt) / 1000);
-      observeEpoch(liveReceiptToSubmit, "receipt_to_submit", liveTiming.ingress?.barEligibleAt ?? liveTiming.ingress?.gatewayReceivedAt, Date.now(), liveTiming.eventKind, "submitted");
     }
     let outcome = "success";
     httpRequestCount += 1;
+    const submissionEpoch = firstSubmission ? Date.now() : 0;
+    const begin = performance.now();
     try {
       return await invoke();
     } catch (error) {
@@ -89,8 +89,14 @@ function createTradeTiming(enabled: boolean, liveTiming?: LiveExecutionTiming) {
       httpFailureCount += 1;
       throw error;
     } finally {
-      httpMs += performance.now() - begin;
-      if (submission) observeLive(orderSubmitHttp, { broker: metricBroker, operation: metricOperation, outcome }, (performance.now() - begin) / 1000);
+      const elapsedMs = performance.now() - begin;
+      httpMs += elapsedMs;
+      // Observe after capturing the request interval so collector work is not HTTP latency.
+      if (firstSubmission && liveTiming) {
+        observeLive(liveSignalToSubmit, { event_kind: liveTiming.eventKind, outcome: "submitted" }, (begin - liveTiming.executionStartedAt) / 1000);
+        observeEpoch(liveReceiptToSubmit, "receipt_to_submit", liveTiming.ingress?.barEligibleAt ?? liveTiming.ingress?.gatewayReceivedAt, submissionEpoch, liveTiming.eventKind, "submitted");
+      }
+      if (submission) observeLive(orderSubmitHttp, { broker: metricBroker, operation: metricOperation, outcome }, elapsedMs / 1000);
     }
   };
   const methods = new Set(["request", "get", "delete", "head", "options", "post", "put", "patch", "postForm", "putForm", "patchForm"]);

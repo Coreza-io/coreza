@@ -397,9 +397,15 @@ export class WorkflowRun {
       }
 
       const startedAtMs = performance.now();
-      const executionResult = this.buildExecutionResult();
-      this._lastBuildResultMs = performance.now() - startedAtMs;
-      if (this.plan.executionMode === "live") observeStage("result_build", startedAtMs);
+      let executionResult: WorkflowExecutionResult;
+      let buildOutcome = "error";
+      try {
+        executionResult = this.buildExecutionResult();
+        buildOutcome = "success";
+      } finally {
+        this._lastBuildResultMs = performance.now() - startedAtMs;
+        if (this.plan.executionMode === "live") observeStage("result_build", startedAtMs, buildOutcome);
+      }
       variableOutcome = executionResult.success ? "success" : "failed";
 
       return executionResult;

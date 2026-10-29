@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { LOG } from "../utils/logging";
-import { LIVE_TIMING_ENABLED, timingNow, observeStage, observeIngress, countLive, liveIngressQueueDepth, liveEventKind } from "../utils/liveTiming";
+import { LIVE_TIMING_ENABLED, timingNow, observeStage, observeIngress, countLive, changeIngressQueueDepth, liveEventKind } from "../utils/liveTiming";
 import { createRedisPubSub, getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
@@ -768,7 +768,7 @@ export class MarketDataSubscriber {
     const enqueueAt = Date.now();
     const queuedAt = registration.isLive ? timingNow() : 0;
     if (LIVE_TIMING_ENABLED && registration.isLive) {
-      liveIngressQueueDepth.inc();
+      changeIngressQueueDepth(1);
       countLive("delivery", "enqueued");
     }
     const orderId = event.orderId || event.clientOrderId;
@@ -792,7 +792,7 @@ export class MarketDataSubscriber {
     const prev = this.deliveryQueues.get(queueKey) ?? Promise.resolve();
     const next = prev.then(async () => {
       if (LIVE_TIMING_ENABLED && registration.isLive) {
-        liveIngressQueueDepth.dec();
+        changeIngressQueueDepth(-1);
         observeStage("subscriber_queue_wait", queuedAt);
       }
       if (
@@ -969,7 +969,7 @@ export class MarketDataSubscriber {
         payloadStr,
         registration.isLive,
       );
-      if (registration.isLive) observeIngress(
+      if (LIVE_TIMING_ENABLED && registration.isLive) observeIngress(
         event._timing?.barEligibleAt ?? event._timing?.gatewayReceivedAt,
         entryId,
         liveEventKind(event._timing?.eventKind ?? event.type),

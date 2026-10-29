@@ -11,16 +11,25 @@ export interface LiveTimingEnvelope {
   gatewayGeneration: string;
   barEligibleAt?: number;
 }
+const barTypes = new Set(["bar", "kline", "daily_bar", "continuousKline"]);
+const orderTypes = new Set(["order", "order_update", "algo_update", "account_update", "account_config_update", "margin_call", "listen_key_expired"]);
+const tickTypes = new Set(["tick", "trade", "aggTrade", "quote", "ticker", "full", "index", "miniTicker", "bookTicker", "depth", "depthUpdate", "24hrTicker", "markPriceUpdate"]);
 export function liveEventKind(type: unknown): LiveEventKind {
-  if (["tick", "bar", "aggregated_bar", "order", "other"].includes(String(type))) return type as LiveEventKind;
-  if (["kline", "daily_bar", "continuousKline"].includes(String(type))) return "bar";
-  if (["order_update", "algo_update", "account_update", "account_config_update", "margin_call", "listen_key_expired"].includes(String(type))) return "order";
-  return ["trade", "aggTrade", "quote", "ticker", "full", "index", "miniTicker", "bookTicker", "depth", "depthUpdate", "24hrTicker", "markPriceUpdate"].includes(String(type)) ? "tick" : "other";
+  // Metadata is optional/untrusted; never coerce objects or return them as labels.
+  if (typeof type !== "string") return "other";
+  if (type === "aggregated_bar") return type;
+  if (barTypes.has(type)) return "bar";
+  if (orderTypes.has(type)) return "order";
+  return tickTypes.has(type) ? "tick" : "other";
 }
 export const liveIngress = new client.Histogram({ name: "coreza_live_ingress_seconds", help: "Approximate Coreza receipt (bar eligibility for aggregated bars) to workflow stream append; requires verified clocks", buckets, labelNames: ["event_kind", "outcome"] });
 export const liveStage = new client.Histogram({ name: "coreza_live_stage_seconds", help: "Local monotonic stage wall time; stages can be nested", buckets, labelNames: ["stage", "outcome"] });
 export const liveEvents = new client.Counter({ name: "coreza_live_events_total", help: "Observed live event dispositions; not proof of lossless provider delivery", labelNames: ["stage", "outcome"] });
 export const liveIngressQueueDepth = new client.Gauge({ name: "coreza_live_ingress_queue_events", help: "Waiting live delivery tasks, not the number of promise chains" });
+export function changeIngressQueueDepth(delta: 1 | -1): void {
+  if (!LIVE_TIMING_ENABLED) return;
+  try { liveIngressQueueDepth.inc(delta); } catch { /* Observer isolation. */ }
+}
 const clockSamples = new client.Counter({ name: "coreza_live_clock_samples_total", help: "Cross-clock sample eligibility", labelNames: ["stage", "outcome"] });
 export const timingNow = () => LIVE_TIMING_ENABLED ? performance.now() : 0;
 export function observeStage(stage: string, startedAt: number, outcome = "success"): void {

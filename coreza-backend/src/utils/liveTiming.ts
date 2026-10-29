@@ -15,16 +15,22 @@ export interface LiveExecutionTiming {
   eventKind: LiveEventKind;
   startedAt: number;
   executionStartedAt: number;
+  executionStartedEpoch: number;
   ingress?: LiveTimingEnvelope;
   submitted: boolean;
   outcome: string;
 }
 
+const barTypes = new Set(["bar", "kline", "daily_bar", "continuousKline"]);
+const orderTypes = new Set(["order", "order_update", "algo_update", "account_update", "account_config_update", "margin_call", "listen_key_expired"]);
+const tickTypes = new Set(["tick", "trade", "aggTrade", "quote", "ticker", "full", "index", "miniTicker", "bookTicker", "depth", "depthUpdate", "24hrTicker", "markPriceUpdate"]);
 export function liveEventKind(type: unknown): LiveEventKind {
-  if (["tick", "bar", "aggregated_bar", "order", "other"].includes(String(type))) return type as LiveEventKind;
-  if (["kline", "daily_bar", "continuousKline"].includes(String(type))) return "bar";
-  if (["order_update", "algo_update", "account_update", "account_config_update", "margin_call", "listen_key_expired"].includes(String(type))) return "order";
-  return ["trade", "aggTrade", "quote", "ticker", "full", "index", "miniTicker", "bookTicker", "depth", "depthUpdate", "24hrTicker", "markPriceUpdate"].includes(String(type)) ? "tick" : "other";
+  // Metadata is optional/untrusted; never coerce objects or return them as labels.
+  if (typeof type !== "string") return "other";
+  if (type === "aggregated_bar") return type;
+  if (barTypes.has(type)) return "bar";
+  if (orderTypes.has(type)) return "order";
+  return tickTypes.has(type) ? "tick" : "other";
 }
 
 function histogram(name: string, help: string) {

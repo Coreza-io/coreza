@@ -37,6 +37,8 @@ including credentials, idempotency, ownership, broker operation and enrichment.
 Its `settled` samples report elapsed phase time even when the operation later
 fails. Submission histograms include failed attempts, never fake zero-duration
 samples for cached/pending/rejected orders. Broker acceptance is not a fill.
+Request intervals end before metric collection; first-submission observations use
+the captured invocation timestamp and are emitted when that attempt settles.
 Current order adapters use generic POST/DELETE submission paths; transport
 wrapping also covers custom operations and Axios instances created through it.
 Within an order operation, mutating HTTP calls in `brokerOperation` are submissions;
@@ -52,6 +54,10 @@ and order dispositions. `coreza_live_ingress_queue_events` counts waiting live
 tasks, not promise-chain keys. Use the API's existing default process/event-loop
 metrics alongside these distributions. Counters describe observed handling;
 they do not prove lossless delivery through Pub/Sub or stream trimming.
+Runner-cycle outcomes distinguish admission-command, outcome-write and ACK errors
+from successful completion; execution outcomes remain the engine's own result.
+Queue/admission samples use captured execution-start timestamps and are emitted
+after execution settles, without counting collector work in those boundaries.
 
 ## Clock estimates
 
@@ -76,12 +82,22 @@ This is the plan's measurement/low-risk first slice. Debug argument construction
 is guarded, disabled order diagnostics reuse a no-op observer, and live indicator
 and rolling-window keys use activation `executionId`, while per-event `runId`
 continues to identify history/orders. Runtime context updates preserve both.
+Rolling-window result objects are reset per event even while backing state and
+key caches persist, so a later tick cannot mutate a retained prior-event output.
 
 Strategy ordering, manual/backtest state policy, credential TTL/refresh,
 stream topology/retention, order intent, outcome recording, ACK and indicator
 flush scheduling are unchanged. Existing outcome-write failure handling and
 indicator dirty-key clearing after command-level pipeline errors are unchanged;
 metrics expose those failures rather than claiming checkpoint coverage.
+Run-creation pipeline command errors are likewise reported without changing the
+existing admission policy. Failed result building and indicator serialization
+attempts retain their own elapsed samples. Unknown event-kind metadata is mapped
+to a bounded `other` label without coercing objects.
+
+Before enabling collection, confirm that the stream producer's cache Redis and
+the runner's queue Redis resolve to the intended same Redis database. This PR
+does not migrate streams or change their retention.
 
 Before further optimization, compare telemetry off/on with the same revision,
 hardware and independent offered load. Record p50/p95/p99, event counts, sustained

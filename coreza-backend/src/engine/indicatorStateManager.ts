@@ -231,19 +231,24 @@ export class IndicatorStateManager {
     const pipeline = redis.pipeline();
     const serializationStartedAt = this.measureLive ? timingNow() : 0;
 
-    for (const key of this.dirtyKeys) {
-      const state = this.l1Cache.get(key);
-      if (!state) continue;
+    let serializationOutcome = "error";
+    try {
+      for (const key of this.dirtyKeys) {
+        const state = this.l1Cache.get(key);
+        if (!state) continue;
 
-      const json = JSON.stringify(state);
-      if (this.ttlSeconds && this.ttlSeconds > 0) {
-        pipeline.set(key, json, "EX", this.ttlSeconds);
-      } else {
-        pipeline.set(key, json);
+        const json = JSON.stringify(state);
+        if (this.ttlSeconds && this.ttlSeconds > 0) {
+          pipeline.set(key, json, "EX", this.ttlSeconds);
+        } else {
+          pipeline.set(key, json);
+        }
       }
+      serializationOutcome = "success";
+    } finally {
+      if (this.measureLive) observeStage("indicator_serialize", serializationStartedAt, serializationOutcome);
     }
 
-    if (this.measureLive) observeStage("indicator_serialize", serializationStartedAt);
     const flushStartedAt = this.measureLive ? timingNow() : 0;
     try {
       const results = await pipeline.exec();

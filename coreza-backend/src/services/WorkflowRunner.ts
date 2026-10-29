@@ -13,7 +13,7 @@ import {
 } from "../utils/redisRunStorage";
 import { WorkflowExecutionResult } from "../engine/types";
 import { RedisKeys } from "../infra/redisKeys";
-import { LIVE_TIMING_ENABLED, timingNow, liveEventKind, observeStage, observeLive, observeEpoch, countLive, liveQueueDelay, liveExecution, liveRunnerCycle, liveReceiptToDecision, type LiveTimingEnvelope, type LiveExecutionTiming } from "../utils/liveTiming";
+import { LIVE_TIMING_ENABLED, timingNow, liveEventKind, observeStage, observeLive, observeEpoch, countLive, liveStage, liveQueueDelay, liveExecution, liveRunnerCycle, liveReceiptToDecision, type LiveTimingEnvelope, type LiveExecutionTiming } from "../utils/liveTiming";
 
 const STRATEGY_GROUP = "strategy-group";
 const AUTOCLAIM_IDLE_MS = 60_000; // 60s idle threshold for reclaiming
@@ -227,7 +227,7 @@ export class WorkflowRunner {
     const ingress = message.payload.status === "valid" ? message.payload.envelope._timing : undefined;
     const timing: LiveExecutionTiming | undefined = LIVE_TIMING_ENABLED ? {
       eventKind: liveEventKind(ingress?.eventKind ?? (message.payload.status === "valid" ? (message.payload.envelope.data as any)?.type : undefined)),
-      startedAt: timingNow(), executionStartedAt: 0, ingress, submitted: false, outcome: "error",
+      startedAt: timingNow(), executionStartedAt: 0, executionStartedEpoch: 0, ingress, submitted: false, outcome: "error",
     } : undefined;
     if (timing && message.batchReceivedAt !== undefined) observeStage("consumer_batch_wait", message.batchReceivedAt);
     try {
@@ -252,7 +252,7 @@ export class WorkflowRunner {
     // Phase 1: Missing payload — permanent failure
     if (payload.status === "missing") {
       if (timing) timing.outcome = "missing";
-      await this.ack(messageId);
+      if (!(await this.ack(messageId)) && timing) timing.outcome = "ack_error";
       return;
     }
 
@@ -263,7 +263,7 @@ export class WorkflowRunner {
         "[WorkflowRunner] Invalid JSON, discarding message:",
         messageId,
       );
-      await this.ack(messageId);
+      if (!(await this.ack(messageId)) && timing) timing.outcome = "ack_error";
       return;
     }
     const envelope = payload.envelope;
@@ -273,7 +273,7 @@ export class WorkflowRunner {
     const admissionStartedAt = timingNow();
     let admissionOutcome = "error";
     try {
-      await createRunInRedis(
+      const created = await createRunInRedis(
         this.userId,
         this.workflowId,
         runId,
@@ -287,7 +287,7 @@ export class WorkflowRunner {
         },
         this.executionId,
       );
-      admissionOutcome = "success";
+      admissionOutcome = created ? "success" : "command_error";
     } catch (err) {
       if (timing) timing.outcome = "pending";
       console.warn(
@@ -297,13 +297,13 @@ export class WorkflowRunner {
       return; // No ack — message stays pending for reclaim
     } finally {
       observeStage("run_create", admissionStartedAt, admissionOutcome);
+      countLive("run_create", admissionOutcome);
     }
 
     // Phase 4: Execute workflow — skip trigger, start from downstream
     if (timing) {
+      timing.executionStartedEpoch = Date.now();
       timing.executionStartedAt = timingNow();
-      observeStage("runner_admission", timing.startedAt);
-      observeEpoch(liveQueueDelay, "queue_delay", Number(messageId.split("-", 1)[0]), Date.now(), timing.eventKind);
     }
     try {
       this.engine.resetForNextBar(true);
@@ -320,7 +320,7 @@ export class WorkflowRunner {
       }
       this.engine.preloadResults(preload);
     } catch (error) {
-      this.observeExecution(timing);
+      this.observeExecution(timing, messageId);
       throw error; // Preserve the existing pending-event behavior on preparation failure.
     }
 
@@ -333,30 +333,40 @@ export class WorkflowRunner {
           this.downstreamEntryIds,
         );
         if (timing) timing.outcome = executionResult.success ? "success" : executionResult.error?.code === "CANCELLED" ? "cancelled" : "failed";
+      } catch (error) {
+        if (timing) timing.outcome = this.abortController.signal.aborted && !this.engine.variableSafetyStop ? "cancelled" : "failed";
+        throw error;
       } finally {
-        this.observeExecution(timing);
+        this.observeExecution(timing, messageId);
       }
 
-      if (executionResult.success) await this.recordSuccess(runId, executionResult);
-      else await this.recordFailure(
+      const recorded = executionResult.success ? await this.recordSuccess(runId, executionResult) : await this.recordFailure(
         runId,
         new Error(executionResult.error?.message ?? "Workflow execution failed"),
         executionResult,
       );
+      if (!recorded && timing) timing.outcome = "outcome_error";
     } catch (error) {
       // Phase 5b: Record failure (execution failed — not retryable)
-      await this.recordFailure(runId, error);
+      if (!(await this.recordFailure(runId, error)) && timing) timing.outcome = "outcome_error";
     }
 
     // Phase 6: Ack
     if (this.engine.variableSafetyStop) { if (timing) timing.outcome = "safety_stop"; this.running = false; return; }
-    await this.ack(messageId);
+    if (!(await this.ack(messageId)) && timing) {
+      timing.outcome = timing.outcome === "outcome_error" ? "outcome_and_ack_error" : "ack_error";
+    }
+    if (timing?.outcome === "success" && admissionOutcome !== "success") timing.outcome = "admission_error";
   }
 
-  private observeExecution(timing?: LiveExecutionTiming): void {
+  private observeExecution(timing: LiveExecutionTiming | undefined, messageId: string): void {
     if (!timing) return;
-    observeLive(liveExecution, { event_kind: timing.eventKind, outcome: timing.outcome }, (timingNow() - timing.executionStartedAt) / 1000);
-    observeEpoch(liveReceiptToDecision, "receipt_to_decision", timing.ingress?.barEligibleAt ?? timing.ingress?.gatewayReceivedAt, Date.now(), timing.eventKind, timing.outcome);
+    const finishedAt = timingNow();
+    const finishedEpoch = Date.now();
+    observeLive(liveExecution, { event_kind: timing.eventKind, outcome: timing.outcome }, (finishedAt - timing.executionStartedAt) / 1000);
+    observeLive(liveStage, { stage: "runner_admission", outcome: "success" }, (timing.executionStartedAt - timing.startedAt) / 1000);
+    observeEpoch(liveQueueDelay, "queue_delay", Number(messageId.split("-", 1)[0]), timing.executionStartedEpoch, timing.eventKind);
+    observeEpoch(liveReceiptToDecision, "receipt_to_decision", timing.ingress?.barEligibleAt ?? timing.ingress?.gatewayReceivedAt, finishedEpoch, timing.eventKind, timing.outcome);
   }
 
   private parseAndSortMessages(
@@ -432,7 +442,7 @@ export class WorkflowRunner {
   private async recordSuccess(
     runId: string,
     executionResult: WorkflowExecutionResult,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const startedAt = timingNow();
     let outcome = "error";
     try {
@@ -456,13 +466,14 @@ export class WorkflowRunner {
       observeStage("outcome_write", startedAt, outcome);
       countLive("outcome_write", outcome);
     }
+    return outcome === "success";
   }
 
   private async recordFailure(
     runId: string,
     error: unknown,
     executionResult?: WorkflowExecutionResult,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const startedAt = timingNow();
     let outcome = "error";
     try {
@@ -496,9 +507,10 @@ export class WorkflowRunner {
       countLive("outcome_write", outcome);
     }
     console.error("[WorkflowRunner] Execution error:", error);
+    return outcome === "success";
   }
 
-  private async ack(messageId: string): Promise<void> {
+  private async ack(messageId: string): Promise<boolean> {
     const startedAt = timingNow();
     let outcome = "error";
     try {
@@ -519,6 +531,7 @@ export class WorkflowRunner {
       observeStage("ack", startedAt, outcome);
       countLive("ack", outcome);
     }
+    return outcome === "success";
   }
 
   private sleep(ms: number): Promise<void> {

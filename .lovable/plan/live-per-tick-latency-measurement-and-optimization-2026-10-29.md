@@ -4,6 +4,7 @@ Target: dev
 Status: PLAN ONLY — no runtime changes
 Audited source: bb1fb6038f46d6ebac69431dd43846c7853d295f
 Repository: Coreza-io/coreza
+Review update: clarified indicator write paths/recovery, per-event timing, histogram resolution and existing lifecycle/logging work.
 
 ## 1. Goal and scope
 
@@ -26,7 +27,7 @@ This is a new performance plan based on the source review. The previous ingress/
 | Area | Current behavior | Consequence |
 | --- | --- | --- |
 | MarketDataGateway.handleMessage | Starts Date.now() inside gateway handler; histogram observed after Pub/Sub publish | Excludes provider transit, subscriber routing and workflow XADD; batch handling and logging are mixed into the measurement |
-| MarketDataGateway | Unconditional console output includes publication and JSON.stringify(event) for normal events | Repeated formatting/output work on the ingress path |
+| MarketDataGateway / logging | Console call sites remain, but PR #870 gates application emission behind startup LOG_LEVEL=debug; arguments such as JSON.stringify(event) may still be evaluated | Profile argument construction separately from enabled logging/output; do not claim logs are always emitted |
 | MarketDataSubscriber.enqueueWorkflowDelivery | Promise chains per workflow + ordering domain; records enqueueAt | Serial ingress queue exists before the stream; this is distinct from stream backlog |
 | MarketDataSubscriber.deliverWorkflowEvent | Awaits WorkflowCache.getWorkflow before XADD | Cache misses can delay stream ingestion |
 | WorkflowCache | RAM entries expire after 60 seconds; misses query database | Periodic ingress latency spikes are possible |
@@ -35,7 +36,7 @@ This is a new performance plan based on the source review. The previous ingress/
 | WorkflowRunner.executeMessage | Awaits run creation, engine execution, outcome update and ACK | Extra work before/after the engine affects tick throughput |
 | redisRunStorage | Pipelined run creation includes serialized nodes/edges per event; outcome update serializes result | Graph serialization is cached by runner, but graph bytes are still transmitted each event |
 | workflowRun.runExecution | Builds result and awaits flushIfNeeded in finally | Caller-visible completion includes indicator flush; result/node timings alone omit portions of wall time |
-| IndicatorStateManager | L1 state/updater caches; dirty state flushed via pipeline | Good RAM reuse; dirty flush can still add a network wait |
+| IndicatorStateManager | setState updates RAM and awaits Redis immediately; setStateSync updates RAM and marks dirty; final flush pipelines dirty keys | Immediate writes inside nodes contribute to node timing; end-of-workflow flush contributes to execution wall time; no dirty keys means no flush network call |
 | executionRuntime | Node elapsed/count totals accumulate; live reset does not clear nodeTiming | Returned timing is cumulative, not one event's wall-clock duration |
 | BrokerExecutor | TRADE_TIMING covers place_order and close_position with exclusive phases and HTTP sum | Useful existing diagnostics; not a dedicated submission-request histogram |
 | credentialCache | L1 30 seconds; L2 300 seconds | Not activation-lifetime credential pinning; expiry introduces lookup/decrypt/load costs |
@@ -53,6 +54,12 @@ Source references (relative to repo root):
 - AGENTS.md
 
 These observations do not establish production Redis topology, enabled feature flags, traffic rate or actual milliseconds saved.
+
+### Existing lifecycle and logging work
+
+PR #870 implemented lookup-source/timing diagnostics and a startup application logging gate, not activation-lifetime credentials. The authoritative lifecycle design is [Live-run cache lifetime and manual-run cleanup](../../coreza-backend/docs/live-run-cache-lifetime-plan.md). Reuse that work for credential references, invalidation and stop/drain cleanup instead of introducing a competing activation registry.
+
+Shared credential TTLs describe the reviewed runtime. Once activation-owned references are implemented, fallback-cache expiry must not evict required active references. Stopping one activation releases its own references without invalidating another active user of the credential.
 
 ## 3. Measurement contract
 
@@ -120,7 +127,9 @@ Use bounded labels such as broker, event kind, stage and outcome. Workflow IDs, 
 
 Suggested classic histogram buckets in seconds:
 0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30.
-Tune by metric; execution/queue and broker requests need different useful ranges. The current workflow histogram starts at 0.1 seconds, which cannot resolve sub-100ms distributions adequately.
+Tune by metric; execution/queue and broker requests need different useful ranges. The current workflow histogram starts at 0.1 seconds (100 ms). Samples of 1, 5, 20 and 90 ms all count below the same first boundary. This does not round observations to 100 ms: sum/count can still provide an overall average. The limitation is the distribution and percentile resolution. Bucket-derived percentiles are estimates.
+
+Version the histogram schema or coordinate bucket changes across instances so dashboards do not combine incompatible bucket layouts. Observe actual per-event durations, not cumulative node averages.
 
 Observe bounded histograms locally; export through existing scrape infrastructure. No awaited telemetry writes. Use a feature gate and measure telemetry-on versus telemetry-off overhead. Keep timestamps as local numbers; avoid allocating tracing spans/large objects at each node.
 
@@ -133,7 +142,7 @@ Observe bounded histograms locally; export through existing scrape infrastructur
 5. Capture consumer batch-return time, then each event's processing start. Compute queue delay at the defined workflow start, not at batch receipt.
 6. Wrap existing run creation, reset/preload, engine call, outcome recording and ACK with local timers.
 7. Add execution/flush/result-build observations at their true boundaries, including exceptions and cancellation.
-8. Keep existing cumulative node timing available; add optional per-event deltas or a separate resettable counter set for diagnostics. Do not silently change cumulative backtest/reporting contracts. Measure routing/context/reset time through wall-clock boundaries because node sums exclude it.
+8. Keep existing cumulative node timing available; add per-event deltas or separate resettable counters. Name cumulative totals/counts/averages separately from event node totals/invocation counts. A Loop can invoke one node multiple times in a tick: include all those invocations. Reset only timing counters, never indicator/rolling state. Preserve cumulative backtest/reporting contracts. Include failed-node elapsed time too; successful-result routing alone is insufficient for every outcome. Measure surrounding routing/context/reset work through whole-execution wall time.
 9. Add request-purpose tagging to BrokerExecutor transport timing: submit, close, enrichment, authentication, other. Support both generic requests and op.execute custom paths; review each broker adapter so no submit request bypasses classification.
 10. Keep HTTP sum distinct from exclusive wall time, including concurrent requests. Record per-attempt submissions and failures; never retry a trade simply because timing failed.
 11. Add bounded backlog, ingress queue size, throughput and process event-loop delay measurements to explain p99 spikes. They are supporting signals.
@@ -144,9 +153,10 @@ Deliverable: four requested metric distributions plus supporting phase breakdown
 ## 5. Phase B — low-risk hot-path reductions (P1)
 
 ### B1. Logging and serialization
-- Replace unconditional gateway and broker progress logs with disabled-by-default structured debug events.
+- Reuse PR #870's existing LOG_LEVEL=debug startup gate in both services; do not add a second switch or redefine its silent-mode policy.
+- Guard expensive debug argument construction at call sites, or use supported lazy debug events. A gated console method cannot prevent argument evaluation before the call.
 - Avoid evaluating expensive payload formatting/JSON serialization when debug is disabled.
-- Keep operational errors and safety events visible; sample verbose trade diagnostics without logging secrets or raw credential payloads.
+- Preserve error propagation, metrics and the existing configured logging policy; sample verbose diagnostics when logging is enabled, without secrets or raw credential payloads.
 - Serialize each routed payload once where its contract allows. Reuse the runner's existing serialized graph snapshots.
 - Measure log volume, serialization time and event-loop delay before/after. Logger transport can still consume CPU even when asynchronous.
 
@@ -159,6 +169,7 @@ Deliverable: four requested metric distributions plus supporting phase breakdown
 - Keep manual/preview cache policy separate. No new database schema is needed for this step.
 
 ### B3. Credential availability
+- Follow coreza-backend/docs/live-run-cache-lifetime-plan.md for activation ownership, freshness and cleanup. Merged diagnostics do not establish that lifecycle support is implemented.
 - Prewarm required credentials at activation, using existing credential APIs.
 - Preserve encrypted shared cache handling and user/credential isolation.
 - Prefer a bounded activation-scoped RAM reference with explicit invalidation and OAuth refresh handling, or proactive refresh before current TTL expiry if cross-process invalidation cannot yet be guaranteed.
@@ -187,13 +198,64 @@ Run creation currently pipelines several commands in one round trip. Do not clai
 - Do not pipeline commands across cache and queue Redis as if they were one server.
 - Verify producer/consumer topology during setup; do not silently migrate streams as part of performance work.
 
-### C3. Indicator state
-- Preserve RAM state, incremental updater reuse and existing state compatibility checks.
-- Measure steady dirty flush, warm-up and cold Redis reads separately.
-- First reduce duplicate serialization/writes within the existing flush boundary.
-- Defer asynchronous checkpointing to a separate gated change only if measurements justify it and restart/state-loss semantics are explicit.
-- A variable snapshot is not a full engine checkpoint. Do not remove indicator flushes on the assumption that $vars recovery covers indicators.
-- Preserve AGENTS.md live-variable requirements and feature gates; manual Persistent edits remain awaited. No blanket enabling of write-behind.
+### C3. Indicator state: distinguish calculation from persistence
+
+Verified paths:
+1. getState checks L1 RAM before optionally reading Redis.
+2. setState updates L1 and awaits an immediate Redis SET. If invoked inside a node, its wait contributes to that node's elapsed time.
+3. setStateSync updates L1 and marks the key dirty, without waiting for Redis at that call.
+4. flushIfNeeded uses the configured flush policy. Default is on-success; the current predicate checks !runtime.hasFailures(), which is not identical to every caller-visible cancellation/failure outcome. Instrument actual behavior rather than assuming only successful returned results flush.
+5. flushToRedis returns immediately when no dirty keys exist. Otherwise it serializes changed states, pipelines SETs, awaits pipeline.exec(), then clears dirty keys.
+6. runExecution awaits this flush in finally. Returning the result from try does not resolve the caller until finally completes. The result object is built before this flush.
+
+Measure separately:
+- Cold state read/warm-up versus warmed incremental calculations.
+- Immediate writes inside nodes versus deferred end-of-workflow flush.
+- Dirty-key count, serialized bytes, serialization duration and pipeline round trip.
+- No dirty work, policy skip, successful flush and failed flush. Use bounded labels, not indicator keys.
+- Whole execution through awaited finally completion. Flush time is nested inside executionMs, so never add it twice.
+- Individual pipeline command failures as well as a rejected exec Promise before reporting successful checkpoint coverage. Promise resolution alone is not proof that every write succeeded. Preserve runtime behavior in the metrics-only phase.
+
+Illustration only: 0.8 ms node work + 0.2 ms result construction + 2.5 ms final flush is 3.5 ms across those stages. A 0.8 ms node sum is not whole-execution time.
+
+First reduce duplicate serialization/writes within the existing flush boundary. Keep L1 state, incremental updater reuse and compatibility checks. Change persistence scheduling only if measurements justify it.
+
+#### Optional later background-checkpoint gate
+
+Background persistence is a separate behavior change, not a prerequisite for adding timings. Its contract must include:
+- Bounded coalesced dirty state, not one queued job per tick.
+- Initially at most one unresolved capture/write per ownership scope; limits on bytes, batch work, retry work and checkpoint age.
+- Immutable settled snapshots or equivalent consistent revisions; do not serialize objects while foreground updates mutate them.
+- Activation/generation fencing and ordered revisions so stale writers cannot replace newer state.
+- Clear only acknowledged dirty revisions. New changes arriving during an in-flight write remain dirty afterward.
+- Command-level failures retain required dirty/recoverable state. Define bounded retries and admission pause when coverage age or resource limits are exceeded.
+- Stop fences new admission, settles active work, drains required writes and then releases references. Incomplete drains retain recovery-owned state; late callbacks cannot recreate disposed state.
+
+Before enabling it, specify which indicator/rolling/consolidator state and event positions form a consistent checkpoint; the permitted crash-loss window; the reconstruction source; alignment with Stream ACK, variables, portfolio and order boundaries; and the conditions requiring reconciliation.
+
+Example: Redis covers event 100 but RAM has processed through event 110. Restart cannot silently resume with event-100 state or replay events 101–110 with broker side effects enabled just to rebuild indicators. Use a proven side-effect-free reconstruction path or pause.
+
+A Redis write response is not proof of disk durability, failover survival or a complete engine checkpoint. A $vars checkpoint does not cover all indicator/portfolio/external-effect state. Preserve AGENTS.md gates and existing flush behavior until the separate recovery design is ready.
+
+### C4. Current-event versus cumulative node timing
+
+Current nodeTiming adds elapsed time and invocation count across live events. avgMs = totalMs/count. resetForNextBar clears transient outputs and queue state but not these counters; clearNodeTiming is a separate operation.
+
+| Event | Actual node elapsed | Cumulative total | Count | Cumulative average |
+| --- | --- | --- | --- | --- |
+| 1 | 0.4 ms | 0.4 ms | 1 | 0.4 ms |
+| 2 | 0.6 ms | 1.0 ms | 2 | 0.5 ms |
+| 3 | 8.0 ms | 9.0 ms | 3 | 3.0 ms |
+
+Event 3 took 8 ms, not the accumulated total of 9 ms or average of 3 ms. A long-run average can hide a slow event.
+
+Required outputs:
+- Current event: execution wall time, per-node event totals/invocation counts, flush time and runner cycle.
+- Activation cumulative: explicitly labelled totals/counts/averages, preserving existing consumers.
+- Across events: p50/p95/p99 from actual event durations with sufficiently small histogram buckets.
+- Errors/cancellation: measured elapsed time and outcome rather than omitted slow samples.
+
+Node sums exclude surrounding work and may contain nested execution accounting; they must not replace workflow wall time. Keep detailed per-node diagnostics optional/lightweight and the primary event histogram independent. Reset timing separately from all strategy state.
 
 ## 7. Phase D — order-path optimization (P2, measured)
 
@@ -231,7 +293,10 @@ During implementation, use focused verification:
 - Malformed input, execution error, cancellation, cache miss/expiry, ACK error and broker submission error.
 - Missing telemetry fields on legacy events, clock skew and future stream-ID timestamps.
 - Bars/aggregated bars, raw ticks and broker lifecycle events labelled distinctly.
-- Stable cumulative timing contract plus correct per-event diagnostics.
+- Stable cumulative timing contract plus correct per-event diagnostics: 0.4/0.6/8.0 ms events retain those event values while cumulative totals become 0.4/1.0/9.0 ms; cover Loop repeats and failed nodes.
+- Empty dirty set, policy skip, immediate state SET, deferred flush, serialization delay, rejected pipeline and command-level failure. Verify execution includes finally and does not double-count flush.
+- Histogram buckets distinguish millisecond samples; dashboards handle bucket-schema rollout and label accumulated averages separately.
+- If checkpoint scheduling changes later: concurrent dirty revisions, partial writes, stale owners, maximum-age pause, crash windows, stop/drain failure and reconstruction without broker side-effect replay.
 - Credential rotation/invalidation, token refresh and stop/restart resource cleanup.
 - Strategy outputs and broker request counts remain unchanged for deterministic fixtures.
 
@@ -297,6 +362,9 @@ Paths above are relative to coreza-backend unless prefixed otherwise. Confirm ad
 - [ ] Implement and validate the four primary timings.
 - [ ] Add runner-cycle/stage evidence without remote telemetry waits.
 - [ ] Preserve cumulative timing and history/output contracts.
+- [ ] Separate current-event timings from accumulated node statistics.
+- [ ] Attribute immediate indicator writes and deferred flushes; classify skipped/empty/error cases.
+- [ ] Gate asynchronous indicator checkpointing on a defined recovery contract.
 - [ ] Gate routine hot-path logging.
 - [ ] Remove activation-definition expiry stalls safely.
 - [ ] Prewarm credentials and validate update/revocation behavior.

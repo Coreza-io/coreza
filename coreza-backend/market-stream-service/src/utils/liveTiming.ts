@@ -1,6 +1,8 @@
 import client from "prom-client";
+import { LOG } from "./logging";
 
-export const LIVE_TIMING_ENABLED = process.env.LIVE_TIMING_ENABLED === "true";
+// Reuse the existing startup logging switch; no separate timing-enable setting.
+export const LIVE_TIMING_ENABLED = LOG;
 const clocksVerified = process.env.LIVE_TIMING_CLOCKS_VERIFIED === "true";
 const buckets = [0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
 export type LiveEventKind = "tick" | "bar" | "aggregated_bar" | "order" | "other";

@@ -1,10 +1,11 @@
 # Live tick latency
 
-Set `LIVE_TIMING_ENABLED=true` in the API and market-stream service, then restart
-both. Metrics use their existing Prometheus scrape endpoints. The default is off;
+Set the existing `LOG_LEVEL=debug` in the API and market-stream service, then restart
+both. This enables application logging and latency diagnostics together; there is
+no separate timing-enable setting. Metrics use the existing Prometheus scrape
+endpoints. Unset/non-debug log levels keep both logging and timing observations off;
 there are no telemetry network calls or per-tick tracing IDs. One correlation
 generation is allocated per gateway, alongside the existing sequence/domain.
-Logging continues to use the existing `LOG_LEVEL=debug` startup switch.
 
 ## Measurements
 

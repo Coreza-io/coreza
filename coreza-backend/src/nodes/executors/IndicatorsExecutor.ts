@@ -42,7 +42,29 @@ export class IndicatorsExecutor implements INodeExecutor {
   private readonly indicatorKeyCache = new Map<string, string>();
   private readonly rollingWindowKeyCache = new Map<string, string>();
   private readonly rollingWindowResults = new Map<string, NodeResult>();
+  private cachedStateScopeId: string | null = null;
   private cachedRunId: string | null = null;
+
+  private stateScopeId(context: any): string | undefined {
+    // Live state belongs to the activation; runId still identifies each event/order.
+    return context?.executionMode === "live" ? context.executionId : context?.runId;
+  }
+
+  private prepareCaches(context: any): void {
+    const stateScopeId = this.stateScopeId(context);
+    if (stateScopeId && stateScopeId !== this.cachedStateScopeId) {
+      this.indicatorKeyCache.clear();
+      this.rollingWindowKeyCache.clear();
+      this.rollingWindowResults.clear();
+      this.cachedStateScopeId = stateScopeId;
+    }
+    // A cached output is an event snapshot, even when its backing window persists.
+    const runId = context?.runId ?? stateScopeId;
+    if (runId && runId !== this.cachedRunId) {
+      this.rollingWindowResults.clear();
+      this.cachedRunId = runId;
+    }
+  }
 
   private indicatorType(node: WorkflowNode): string {
     const type = String(node.name || node.node_type || '').trim().toLowerCase();
@@ -77,13 +99,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     input: NodeInput,
     context?: any,
   ): NodeResult | Promise<NodeResult> {
-    const runId = context?.runId;
-    if (runId && runId !== this.cachedRunId) {
-      this.indicatorKeyCache.clear();
-      this.rollingWindowKeyCache.clear();
-      this.rollingWindowResults.clear();
-      this.cachedRunId = runId;
-    }
+    this.prepareCaches(context);
 
     const indicatorType = this.indicatorType(node);
     if (indicatorType === "initializeindicators") {
@@ -117,7 +133,7 @@ export class IndicatorsExecutor implements INodeExecutor {
         | undefined;
       const userId = context?.userId || context?.user_id;
       const workflowId = context?.workflowId;
-      const runId = context?.runId || context?.user_id;
+      const runId = this.stateScopeId(context) || context?.user_id;
       const symbol = String(processedParams.symbol || "");
       const timeframe = String(processedParams.timeframe || "");
 
@@ -192,13 +208,7 @@ export class IndicatorsExecutor implements INodeExecutor {
   ): Promise<NodeResult> {
     const startTime = Date.now();
     try {
-      const runId = context?.runId;
-      if (runId && runId !== this.cachedRunId) {
-        this.indicatorKeyCache.clear();
-        this.rollingWindowKeyCache.clear();
-        this.rollingWindowResults.clear();
-        this.cachedRunId = runId;
-      }
+      this.prepareCaches(context);
       const indicatorType = this.indicatorType(node);
 
       // Delegate to InitializeIndicatorsExecutor
@@ -235,7 +245,7 @@ export class IndicatorsExecutor implements INodeExecutor {
           | undefined;
         const userId = context?.userId || context?.user_id;
         const workflowId = context?.workflowId;
-        const runId = context?.runId || context?.user_id;
+        const runId = this.stateScopeId(context) || context?.user_id;
         const symbol = String(processedParams.symbol || "");
         const timeframe = String(processedParams.timeframe || "");
 
@@ -637,7 +647,7 @@ export class IndicatorsExecutor implements INodeExecutor {
       params.workflow_id ||
       "manual";
     const runId =
-      context?.runId ||
+      this.stateScopeId(context) ||
       context?.executionId ||
       params.executionId ||
       params.execution_id ||

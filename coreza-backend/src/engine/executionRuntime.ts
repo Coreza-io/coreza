@@ -43,7 +43,7 @@ export type RuntimeOptions = {
 };
 
 type ExecutionContextExtras = Partial<
-  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp" | "variableEventId">
+  Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp" | "variableEventId" | "liveTiming">
 >;
 
 export abstract class BaseExecutionRuntime {
@@ -208,7 +208,7 @@ export abstract class BaseExecutionRuntime {
   }
 
   setExecutionContextExtras(extras: ExecutionContextExtras): void {
-    this.executionContextExtras = extras;
+    Object.assign(this.executionContextExtras, extras);
     if (this.execCtx) {
       Object.assign(this.execCtx, extras);
     }

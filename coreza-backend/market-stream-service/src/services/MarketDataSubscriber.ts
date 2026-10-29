@@ -1,4 +1,6 @@
 import Redis from "ioredis";
+import { LOG } from "../utils/logging";
+import { LIVE_TIMING_ENABLED, timingNow, observeStage, observeIngress, countLive, changeIngressQueueDepth, liveEventKind } from "../utils/liveTiming";
 import { createRedisPubSub, getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
@@ -514,7 +516,7 @@ export class MarketDataSubscriber {
 
         if (allWorkflows.size === 0) return;
 
-        logger.debug(
+        if (LOG) logger.debug(
           {
             stream: stream,
             workflowCount: allWorkflows.size,
@@ -576,7 +578,7 @@ export class MarketDataSubscriber {
             (event.type === "kline" || event.type === "continuousKline") &&
             event.isClosed !== true
           ) {
-            logger.debug(
+            if (LOG) logger.debug(
               {
                 symbol: event.symbol,
                 type: event.type,
@@ -664,7 +666,7 @@ export class MarketDataSubscriber {
   private formatMarketEventPayload(event: CorezaMarketEvent): {
     data: Record<string, any>;
   } {
-    const { symbol, type, source, ...cleanEventData } = event;
+    const { symbol, type, source, _timing, ...cleanEventData } = event;
 
     const typeKeyMap: Record<string, string> = {
       bar: "bar",
@@ -724,7 +726,7 @@ export class MarketDataSubscriber {
         data: {
           symbol,
           type,
-          order: event,
+          order: _timing ? { symbol, type, source, ...cleanEventData } : event,
           _seq: event._seq,
           _orderingDomain: event._orderingDomain,
         },
@@ -764,9 +766,14 @@ export class MarketDataSubscriber {
     const domain = event._orderingDomain || `${event.source}:${event.type}`;
     const queueKey = `${workflowId}:${domain}`;
     const enqueueAt = Date.now();
+    const queuedAt = registration.isLive ? timingNow() : 0;
+    if (LIVE_TIMING_ENABLED && registration.isLive) {
+      changeIngressQueueDepth(1);
+      countLive("delivery", "enqueued");
+    }
     const orderId = event.orderId || event.clientOrderId;
 
-    logger.debug(
+    if (LOG) logger.debug(
       {
         workflowId,
         queueKey,
@@ -784,6 +791,10 @@ export class MarketDataSubscriber {
 
     const prev = this.deliveryQueues.get(queueKey) ?? Promise.resolve();
     const next = prev.then(async () => {
+      if (LIVE_TIMING_ENABLED && registration.isLive) {
+        changeIngressQueueDepth(-1);
+        observeStage("subscriber_queue_wait", queuedAt);
+      }
       if (
         !registration.isLive &&
         TRADING_LIFECYCLE_EVENT_TYPES.has(event.type)
@@ -836,7 +847,7 @@ export class MarketDataSubscriber {
       },
     });
     await redisPublishBreaker.fire(userChannel, payload);
-    logger.debug(
+    if (LOG) logger.debug(
       {
         userId: registration.userId,
         workflowId: registration.workflowId,
@@ -858,25 +869,36 @@ export class MarketDataSubscriber {
     queueKey: string,
     streamKey: string,
     payload: string,
+    isLive: boolean,
   ): Promise<string> {
     const redis = getRedisCache();
-    const entryId = await redis.xadd(
-      streamKey,
-      "MAXLEN",
-      "~",
-      "1000",
-      "*",
-      "event",
-      payload,
-    );
-    if (!entryId) {
-      throw new Error("Redis xadd did not return a stream entry ID");
+    const startedAt = timingNow();
+    let outcome = "error";
+    try {
+      const entryId = await redis.xadd(
+        streamKey,
+        "MAXLEN",
+        "~",
+        "1000",
+        "*",
+        "event",
+        payload,
+      );
+      if (!entryId) {
+        throw new Error("Redis xadd did not return a stream entry ID");
+      }
+      outcome = "success";
+      if (LOG) logger.debug(
+        { queueKey, streamKey, entryId },
+        "Appended market event to strategy stream",
+      );
+      return entryId;
+    } finally {
+      if (isLive) {
+        observeStage("xadd", startedAt, outcome);
+        countLive("append", outcome);
+      }
     }
-    logger.debug(
-      { queueKey, streamKey, entryId },
-      "Appended market event to strategy stream",
-    );
-    return entryId;
   }
 
   /**
@@ -897,9 +919,13 @@ export class MarketDataSubscriber {
     try {
       if (registration.isLive) {
         // Only the live runner path needs persisted workflow state.
-        const workflow = await this.getWorkflowCache().getWorkflow(workflowId);
+        const lookupStartedAt = timingNow();
+        let workflow: any;
+        try { workflow = await this.getWorkflowCache().getWorkflow(workflowId); }
+        finally { observeStage("workflow_lookup", lookupStartedAt, workflow ? "success" : "error"); }
 
         if (!workflow) {
+          countLive("delivery", "missing_workflow");
           console.error(
             `❌ [MarketDataSubscriber] Live workflow ${workflowId} not found or inactive`,
           );
@@ -916,10 +942,10 @@ export class MarketDataSubscriber {
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
-      const payloadStr = JSON.stringify(formattedPayload);
+      const payloadStr = JSON.stringify(event._timing ? { ...formattedPayload, _timing: event._timing } : formattedPayload);
       const executeAt = Date.now();
 
-      logger.debug(
+      if (LOG) logger.debug(
         {
           workflowId,
           queueKey,
@@ -941,6 +967,12 @@ export class MarketDataSubscriber {
         queueKey,
         streamKey,
         payloadStr,
+        registration.isLive,
+      );
+      if (LIVE_TIMING_ENABLED && registration.isLive) observeIngress(
+        event._timing?.barEligibleAt ?? event._timing?.gatewayReceivedAt,
+        entryId,
+        liveEventKind(event._timing?.eventKind ?? event.type),
       );
       const payloadWithEntryId = {
         ...formattedPayload,
@@ -961,7 +993,7 @@ export class MarketDataSubscriber {
         }
       }
 
-      logger.debug(
+      if (LOG) logger.debug(
         {
           workflowId,
           queueKey,
@@ -989,6 +1021,7 @@ export class MarketDataSubscriber {
         },
         "Workflow delivery error",
       );
+      if (registration.isLive) countLive("delivery", "error");
     }
   }
 

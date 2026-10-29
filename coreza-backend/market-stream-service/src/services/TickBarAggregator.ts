@@ -54,6 +54,11 @@ function cloneBarEvent(bucket: OpenBucket): CorezaMarketEvent {
 
   return {
     ...bucket.event,
+    ...(bucket.event._timing && { _timing: {
+      ...bucket.event._timing,
+      eventKind: "aggregated_bar" as const,
+      barEligibleAt: bucket.bucketStart + ONE_MINUTE_MS,
+    } }),
     type: "bar",
     timeframe: TIMEFRAME,
     isClosed: true,

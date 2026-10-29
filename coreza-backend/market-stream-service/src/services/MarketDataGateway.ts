@@ -1,4 +1,7 @@
 import WebSocket from "ws";
+import { randomUUID } from "crypto";
+import { LOG } from "../utils/logging";
+import { LIVE_TIMING_ENABLED, liveEventKind } from "../utils/liveTiming";
 import { getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
@@ -48,6 +51,7 @@ export class MarketDataGateway {
   private ws: WebSocket | null = null;
   private config: GatewayConfig;
   private source: string; // Full source_id for behavior routing (e.g., 'alpaca_news')
+  private readonly timingGeneration = LIVE_TIMING_ENABLED ? randomUUID() : "";
   private credentials: any = null;
   private preConnectContext: GatewayPreConnectContext | null = null;
   // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
@@ -165,7 +169,7 @@ export class MarketDataGateway {
 
       socket.on("open", () => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source },
             "Ignoring open from replaced gateway socket",
           );
@@ -206,7 +210,7 @@ export class MarketDataGateway {
 
       socket.on("message", (data: WebSocket.RawData, isBinary: boolean) => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source },
             "Ignoring message from replaced gateway socket",
           );
@@ -222,7 +226,7 @@ export class MarketDataGateway {
 
       socket.on("close", (code: number, reason: Buffer) => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source, code },
             "Ignoring close from replaced gateway socket",
           );
@@ -270,7 +274,7 @@ export class MarketDataGateway {
 
       socket.on("error", (err) => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source, error: err },
             "Ignoring error from replaced gateway socket",
           );
@@ -282,13 +286,13 @@ export class MarketDataGateway {
 
       socket.on("ping", (payload: Buffer) => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source },
             "Ignoring ping from replaced gateway socket",
           );
           return;
         }
-        this.logger.debug(
+        if (LOG) this.logger.debug(
           { source: this.source, payloadBytes: payload.length, autoPong: true },
           "Received gateway ping",
         );
@@ -296,14 +300,14 @@ export class MarketDataGateway {
 
       socket.on("pong", (payload: Buffer) => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source },
             "Ignoring pong from replaced gateway socket",
           );
           return;
         }
         this.lastPongAt = Date.now();
-        this.logger.debug(
+        if (LOG) this.logger.debug(
           { source: this.source, payloadBytes: payload.length },
           "Received gateway pong",
         );
@@ -311,7 +315,7 @@ export class MarketDataGateway {
 
       socket.on("unexpected-response", (_request, response) => {
         if (!isCurrentSocket()) {
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source },
             "Ignoring unexpected response from replaced gateway socket",
           );
@@ -345,7 +349,7 @@ export class MarketDataGateway {
       const messages = this.config.parseMessage(buffer, this.source, isBinary);
 
       // Debug log ALL incoming messages
-      this.logger.debug(
+      if (LOG) this.logger.debug(
         { source: this.source, rawMessages: messages },
         "Raw messages received",
       );
@@ -426,6 +430,11 @@ export class MarketDataGateway {
         // Keep ordering domain bound to gateway source identifier (this.source),
         // not normalized event.source. Example: alpaca_trading -> *_trading domain.
         event._orderingDomain = `${this.source}:${event.type}`;
+        if (LIVE_TIMING_ENABLED) event._timing = {
+          gatewayReceivedAt: startTime,
+          eventKind: liveEventKind(event.type),
+          gatewayGeneration: this.timingGeneration,
+        };
 
         if (event.type === "news") {
           const eventSymbols = Array.isArray(event.symbols)
@@ -452,8 +461,10 @@ export class MarketDataGateway {
               symbol: subscribedSymbol,
             };
             await this.publishToRedis(channel, JSON.stringify(publishEvent));
-            console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
-            console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
+            if (LOG) {
+              console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
+              console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
+            }
 
             marketMessagesCounter.inc({
               source: this.source,
@@ -482,8 +493,10 @@ export class MarketDataGateway {
 
         const channel = REDIS_CHANNELS.streamData(stream);
         await this.publishToRedis(channel, JSON.stringify(event));
-        console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
-        console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
+        if (LOG) {
+          console.log(`🔴 [DEBUG-1] PUBLISHED to Redis channel: ${channel}`);
+          console.log(`🔴 [DEBUG-1] Event data:`, JSON.stringify(event));
+        }
 
         // Metrics
         marketMessagesCounter.inc({
@@ -493,7 +506,7 @@ export class MarketDataGateway {
         const latency = (Date.now() - startTime) / 1000;
         marketMessageLatencyHistogram.observe({ source: this.source }, latency);
 
-        this.logger.debug(
+        if (LOG) this.logger.debug(
           {
             source: this.source,
             stream: stream,
@@ -572,7 +585,7 @@ export class MarketDataGateway {
         return undefined;
       }
 
-      this.logger.debug(
+      if (LOG) this.logger.debug(
         {
           source: this.source,
           streamSource,
@@ -608,7 +621,7 @@ export class MarketDataGateway {
     );
 
     if (newStreams.length === 0) {
-      this.logger.debug(
+      if (LOG) this.logger.debug(
         { source: this.source },
         "All streams already subscribed",
       );
@@ -769,7 +782,7 @@ export class MarketDataGateway {
 
   private handleReconnect(): void {
     if (this.reconnectTimer) {
-      this.logger.debug(
+      if (LOG) this.logger.debug(
         { source: this.source },
         "Reconnect already scheduled; skipping duplicate request",
       );
@@ -833,7 +846,7 @@ export class MarketDataGateway {
     this.keepaliveInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.ping();
-        this.logger.debug({ source: this.source }, "Sent keepalive ping");
+        if (LOG) this.logger.debug({ source: this.source }, "Sent keepalive ping");
       }
     }, 30000); // Ping every 30 seconds
   }
@@ -859,7 +872,7 @@ export class MarketDataGateway {
         const payload = this.encodeMessage(keepaliveMsg);
         if (this.assertSocketBoundary(keepaliveMsg, "send")) {
           this.ws.send(payload);
-          this.logger.debug(
+          if (LOG) this.logger.debug(
             { source: this.source },
             "Sent trading keepalive ping",
           );

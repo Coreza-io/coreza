@@ -34,7 +34,7 @@ export async function createRunInRedis(
     variable_revision?: string;
   },
   executionId?: string,
-): Promise<void> {
+): Promise<boolean> {
 
   const runData: Record<string, string> = {
     id: runId,
@@ -79,9 +79,11 @@ export async function createRunInRedis(
   pipeline.lpush(pendingQueue, runId);
   pipeline.ltrim(pendingQueue, 0, 9999);
   pipeline.sadd(RedisKeys.registryRunsPending(), userId);
-  await pipeline.exec();
+  const results = await pipeline.exec();
 
   logger.debug({ runId, workflowId }, "Created run in Redis");
+  // Report partial writes without changing the existing admission/retry policy.
+  return !!results && results.every(([error]) => !error);
 }
 
 /**

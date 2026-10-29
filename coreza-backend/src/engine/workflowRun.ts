@@ -1,4 +1,5 @@
 import { readNodeResult } from "../contracts/nodeResult";
+import { LIVE_TIMING_ENABLED, timingNow, observeStage, type LiveExecutionTiming } from "../utils/liveTiming";
 import { DataContext, DataContextManager } from "./DataContext";
 import {
   BacktestExecutionRuntime,
@@ -38,6 +39,7 @@ interface WorkflowRunOptions {
 }
 
 interface ExecutionContextExtras {
+  liveTiming?: LiveExecutionTiming;
   variableEventId?: string;
   multiBarContext?: MultiBarExecutionContext;
   runId?: string;
@@ -169,6 +171,7 @@ export class WorkflowRun {
       plan.isBacktest
         ? ENGINE_CONFIG.BACKTEST_INDICATOR_RETENTION_SECONDS
         : undefined,
+      plan.executionMode === "live" && LIVE_TIMING_ENABLED,
     );
 
     this.runtime = this.buildRuntime();
@@ -380,20 +383,36 @@ export class WorkflowRun {
         variableEventStarted = true;
       }
       enqueueWork();
-      await this.drainQueue();
+      const nodeWorkStartedAt = timingNow();
+      let nodeWorkOutcome = "error";
+      try {
+        await this.drainQueue();
+        nodeWorkOutcome = this.runtime.hasFailures() || this.options.abortSignal?.aborted ? "error" : "success";
+      } finally {
+        if (this.plan.executionMode === "live") observeStage("node_work", nodeWorkStartedAt, nodeWorkOutcome);
+      }
       // The final async node may settle after cancellation with no queued work left.
       if (this.options.abortSignal?.aborted) {
         throw new Error("Workflow cancelled by user");
       }
 
       const startedAtMs = performance.now();
-      const executionResult = this.buildExecutionResult();
-      this._lastBuildResultMs = performance.now() - startedAtMs;
+      let executionResult: WorkflowExecutionResult;
+      let buildOutcome = "error";
+      try {
+        executionResult = this.buildExecutionResult();
+        buildOutcome = "success";
+      } finally {
+        this._lastBuildResultMs = performance.now() - startedAtMs;
+        if (this.plan.executionMode === "live") observeStage("result_build", startedAtMs, buildOutcome);
+      }
       variableOutcome = executionResult.success ? "success" : "failed";
 
       return executionResult;
     } catch (error) {
-      return this.buildFailureResult(error);
+      const startedAtMs = timingNow();
+      try { return this.buildFailureResult(error); }
+      finally { if (this.plan.executionMode === "live") observeStage("result_build", startedAtMs, "error"); }
     } finally {
       if (variableEventStarted) this.liveVariables?.state.settle(this.options.abortSignal?.aborted ? "cancelled" : variableOutcome);
       await this.flushIfNeeded();
@@ -497,21 +516,28 @@ export class WorkflowRun {
   }
 
   private async flushIfNeeded(): Promise<void> {
+    const startedAt = timingNow();
     const shouldFlush =
       this.flushPolicy === "always" ||
       (this.flushPolicy === "on-success" && !this.runtime.hasFailures());
 
     if (!shouldFlush) {
+      if (this.plan.executionMode === "live") observeStage("indicator_flush", startedAt, "skipped");
       return;
     }
 
+    let outcome = this.indicatorStateManager.dirtyCount === 0 ? "empty" : "success";
     try {
       await this.indicatorStateManager.flushToRedis();
+      outcome = this.indicatorStateManager.lastFlushOutcome;
     } catch (error) {
+      outcome = "error";
       console.warn(
         "[WorkflowRun] flushToRedis failed:",
         error instanceof Error ? error.message : String(error),
       );
+    } finally {
+      if (this.plan.executionMode === "live") observeStage("indicator_flush", startedAt, outcome);
     }
   }
 }

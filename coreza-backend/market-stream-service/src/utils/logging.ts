@@ -1,3 +1,6 @@
+// Load .env before capturing the startup switch or muting console methods.
+import "dotenv/config";
+
 /**
  * One startup switch for application logging. Unset/non-debug values are silent.
  * Import before application modules so startup console output is gated too.

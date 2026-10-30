@@ -29,9 +29,11 @@ async function quote(market: Market): Promise<object> {
       const price = meta?.regularMarketPrice;
       const previous = meta?.previousClose ?? meta?.chartPreviousClose;
       const timestamp = meta?.regularMarketTime;
-      if (!finite(price) || !finite(previous) || previous <= 0 || !finite(timestamp) || timestamp <= 0) throw new Error('Incomplete quote');
+      if (meta?.symbol !== benchmark.symbol || !finite(price) || price <= 0 || !finite(previous) || previous <= 0 || !finite(timestamp) || timestamp <= 0) throw new Error('Incomplete quote');
       const change = price - previous;
-      const value = { market, ...benchmark, available: true, price, change, percent: change / previous * 100,
+      const percent = change / previous * 100;
+      if (!finite(change) || !finite(percent)) throw new Error('Invalid quote change');
+      const value = { market, ...benchmark, available: true, price, change, percent,
         asOf: new Date(timestamp * 1000).toISOString(), fetchedAt: new Date().toISOString(),
         period: market === 'crypto' ? 'Provider daily reference' : 'Regular session / last close', source: 'Yahoo Finance' };
       cache.set(market, { expires: Date.now() + 60000, value });

@@ -1,4 +1,3 @@
-import marketQuotesRoutes from './routes/marketQuotes';
 import "./utils/logging";
 import { nodeResultTransport } from "./middleware/nodeResultTransport";
 /**
@@ -28,6 +27,7 @@ import { register } from "./utils/metrics";
 import logger from "./utils/logger";
 
 // Import routes
+import marketQuotesRoutes from './routes/marketQuotes';
 import indicatorRoutes from "./routes/indicators";
 import streamRoutes from "./routes/stream";
 import oauthRoutes from "./routes/oauth";

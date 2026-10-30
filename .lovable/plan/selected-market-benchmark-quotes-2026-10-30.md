@@ -26,3 +26,19 @@ verification; the authenticated endpoint was not exercised against a live accoun
 
 No automated tests added/run. TypeScript diagnostics are compared to baseline,
 and a production frontend build is performed. No migration or new dependency.
+
+## Source review follow-up
+
+- Keep environment/logging initialization as the first backend import; route auth
+  reads configuration at import time, so route imports must follow initialization.
+- Use one reference-counted poller per QueryClient/user/market key. React Query
+  shares cached requests but its observer interval option would create a timer
+  for each dashboard/sidebar instance. Stop polling on last unsubscribe; skip
+  hidden tabs and avoid cancelling an in-flight fetch during interval refresh.
+- Require matching provider symbol and finite positive prices/reference values;
+  exclude non-finite derived changes. Validate response count, unique requested
+  markets, units, values and timestamps before rendering financial amounts.
+- PR884 is merged. Its named sessions, assigned overnight dates, source metadata,
+  coverage bounds and independent regular/ATS labels were reviewed again. No
+  additional session-code change was required in this follow-up. Provider-policy
+  re-verification and manual runtime/browser checks remain outstanding.

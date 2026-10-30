@@ -1,3 +1,4 @@
+import marketQuotesRoutes from './routes/marketQuotes';
 import "./utils/logging";
 import { nodeResultTransport } from "./middleware/nodeResultTransport";
 /**
@@ -158,6 +159,7 @@ app.use("/storage", storageRoutes);
 app.use("/backtest", backtestRoutes);
 app.use("/datasource", datasourceRoutes);
 app.use("/portfolio", portfolioRoutes);
+app.use("/market-quotes", marketQuotesRoutes);
 app.use("/documents", documentRoutes);
 
 logger.info("All routes mounted");

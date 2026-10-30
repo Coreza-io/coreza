@@ -162,8 +162,11 @@ export function ExecutionHistoryPanel({
       <div className="text-sm font-medium">
         {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
       </div>
-      <div className="text-xs text-muted-foreground mt-1">
-        {getStatusLabel(execution.status)} in {getDuration(execution)}
+      <div
+        className="text-xs text-muted-foreground mt-1"
+        title="Elapsed start-to-finish workflow time. The selected run shows recorded node time separately."
+      >
+        {getStatusLabel(execution.status)} · Elapsed: {getDuration(execution)}
       </div>
     </button>
   );

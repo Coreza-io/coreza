@@ -257,11 +257,27 @@ export function ExecutionDetailView({
     }
   };
 
+  const recordedNodeTime = useMemo(() => {
+    let totalMs = 0;
+    let measured = false;
+    // Sum persisted totals before badge rounding, including measurements whose
+    // node output is absent. Each total already includes repeated invocations.
+    for (const timing of Object.values(execution.result?.timing ?? {})) {
+      const durationMs = timing?.totalMs;
+      if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) continue;
+      measured = true;
+      totalMs += durationMs;
+    }
+    if (!measured || loading) return "—";
+    return totalMs < 1000 ? `${Number(totalMs.toFixed(2))}ms` : `${(totalMs / 1000).toFixed(1)}s`;
+  }, [execution.result?.timing, loading]);
+
   const getDurationDisplay = () => {
     if (!execution.completed_at || !execution.started_at) return "—";
     const start = new Date(execution.started_at).getTime();
     const end = new Date(execution.completed_at).getTime();
-    const ms = end - start;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return "—";
+    const ms = Math.max(0, end - start);
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
   };
@@ -281,9 +297,18 @@ export function ExecutionDetailView({
                     ? "Failed"
                     : execution.status}
               </span>
-              <span className="text-muted-foreground text-sm">
-                in {getDurationDisplay()}
+              <span
+                className="text-muted-foreground text-sm"
+                title="Elapsed start-to-finish workflow time, including overhead and overlapping node execution."
+              >
+                · Elapsed: {getDurationDisplay()}
               </span>
+            </div>
+            <div
+              className="text-xs text-muted-foreground"
+              title="Sum of recorded node durations in this run, including repeated invocations. Missing timings are excluded; overlapping or nested work may be counted more than once."
+            >
+              Recorded node time: {recordedNodeTime}
             </div>
             <div className="text-xs text-muted-foreground">
               {format(

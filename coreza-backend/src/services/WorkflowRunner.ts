@@ -307,6 +307,8 @@ export class WorkflowRunner {
     }
     try {
       this.engine.resetForNextBar(true);
+      // History belongs to this event's run, not the reused engine's lifetime.
+      this.engine.clearNodeTiming();
       this.engine.setRunId(runId);
       this.engine.setVariableEventId(`${this.streamKey}:${messageId}`);
       if (timing) this.engine.setLiveTiming(timing);

@@ -25,13 +25,44 @@ unchanged. Do not interpret existing cumulative node averages as one tick's time
 | `coreza_live_receipt_to_submit_seconds` | Gateway receipt (bar eligibility for aggregated bars) to the first submission attempt |
 | `coreza_live_signal_to_submit_seconds` | Execution start to the first submission attempt |
 
-`coreza_live_stage_seconds` separates subscriber queue wait, workflow lookup,
+`coreza_live_stage_seconds` separates subscriber queue wait,
 XADD round trip, stream read, batch parsing/wait, run creation/admission, node work,
 result building, immediate indicator writes, indicator serialization/flush/write,
 outcome write and ACK. These stages can overlap/nest; do not sum them or their
 percentiles. Stream-read time includes idle blocking and error backoff, so it is
 not an engine latency. Runner-cycle time excludes stream reads and batch parsing;
 include them when interpreting sustained throughput.
+
+Live market delivery validates workflow existence and ownership at registration,
+not on each event. Re-registration refreshes that check; restart recovery also
+checks `is_active` again during fresh registration validation. Workflow-scoped
+control messages run in arrival order; registration/unregister I/O is serialized
+per workflow. Re-registration removes previous stream routes and aggregation state.
+The registration is retired on unregister, and queued work
+for retired/replaced registrations is skipped. No workflow definition is used by
+the subscriber during delivery, so its 60-second cache expiry no longer triggers
+a database request in that path. This does not pin the backend runner's graph or
+credentials. Deactivation/deletion must use the existing unregister lifecycle.
+
+Both `place_order` and `close_position` save order-owner mappings from the broker
+response. Close-position requests cannot pre-register an Alpaca-generated client
+order ID, so early lifecycle updates still use the existing bounded owner retries.
+Unknown/external orders retain the existing broadcast fallback; warnings now
+include order IDs and lifecycle event for investigation.
+
+For local collection with the default ports, save snapshots before and after the
+same workload (PowerShell):
+
+```powershell
+curl.exe -sS http://localhost:8090/metrics -o market-before.prom
+curl.exe -sS http://localhost:8000/metrics -o backend-before.prom
+# Let the workflow process events, then capture again.
+curl.exe -sS http://localhost:8090/metrics -o market-after.prom
+curl.exe -sS http://localhost:8000/metrics -o backend-after.prom
+```
+
+Use bucket/count/sum differences across the snapshots; these are cumulative
+histograms, not individual-event logs. Use configured ports if they differ.
 
 `coreza_order_stage_seconds` reuses the existing fixed TRADE_TIMING phases,
 including credentials, idempotency, ownership, broker operation and enrichment.

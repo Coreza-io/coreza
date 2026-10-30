@@ -98,6 +98,7 @@ export class MarketDataSubscriber {
   private messageHandler:
     | ((channel: string, message: string) => Promise<void>)
     | null = null;
+  private registrationChanges = new Map<string, Promise<void>>();
   private deliveryQueues = new Map<string, Promise<void>>();
   private tickAggregator = new TickBarAggregator();
   private aggregationSweep: NodeJS.Timeout | null = null;
@@ -118,6 +119,21 @@ export class MarketDataSubscriber {
 
   private getWorkflowCache(): WorkflowCache {
     return WorkflowCache.getInstance();
+  }
+
+  // Serialize lifecycle I/O only; market-event delivery never takes this lock.
+  private async lockRegistration(workflowId: string): Promise<() => void> {
+    const previous = this.registrationChanges.get(workflowId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.registrationChanges.set(workflowId, current);
+    await previous;
+    return () => {
+      if (this.registrationChanges.get(workflowId) === current) {
+        this.registrationChanges.delete(workflowId);
+      }
+      release();
+    };
   }
 
   static getInstance(): MarketDataSubscriber {
@@ -145,7 +161,10 @@ export class MarketDataSubscriber {
     symbolMatchMode: "exact" | "wildcard" = "exact",
     tradingNativeStreams: string[] = [],
     interval?: string,
+    requireActive = false,
   ): Promise<void> {
+    const release = await this.lockRegistration(workflowId);
+    let installed: WorkflowRegistration | undefined;
     try {
       console.log(
         `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams (isLive: ${isLive ?? false}):`,
@@ -154,6 +173,18 @@ export class MarketDataSubscriber {
 
       if (!String(source || "").trim()) {
         throw new Error("registerWorkflow requires non-empty source");
+      }
+
+      if (isLive) {
+        // Validate once per registration, outside event delivery. Activation
+        // publishes registration before committing is_active, so check existence
+        // and ownership here; restart recovery requires is_active as well.
+        const cache = this.getWorkflowCache();
+        cache.invalidate(workflowId);
+        const workflow = await cache.getWorkflow(workflowId);
+        if (!workflow || workflow.user_id !== userId || (requireActive && !workflow.is_active)) {
+          throw new Error("Live workflow unavailable for registering user");
+        }
       }
 
       const normalizedSymbols = filterSymbols.map((symbol) =>
@@ -178,8 +209,14 @@ export class MarketDataSubscriber {
         isLive: isLive ?? false,
       };
 
+      // Replace routing and aggregation state along with the registration.
+      if (this.registrations.has(workflowId)) {
+        await this.unregisterWorkflowLocked(userId, workflowId);
+      }
+
       // Store in memory
       this.registrations.set(workflowId, registration);
+      installed = registration;
 
       // Update stream→workflow mapping
       for (const stream of this.getRedisSubscriptionStreams(registration)) {
@@ -215,8 +252,17 @@ export class MarketDataSubscriber {
         `✅ [MarketDataSubscriber] Workflow ${workflowId} registered successfully`,
       );
     } catch (error) {
+      if (installed && this.registrations.get(workflowId) === installed) {
+        try {
+          await this.unregisterWorkflowLocked(userId, workflowId);
+        } catch (cleanupError) {
+          logger.error({ err: cleanupError, workflowId }, "Failed registration cleanup");
+        }
+      }
       console.error(`❌ [MarketDataSubscriber] Register error:`, error);
       throw error;
+    } finally {
+      release();
     }
   }
 
@@ -226,6 +272,15 @@ export class MarketDataSubscriber {
    * the internal routing table
    */
   async unregisterWorkflow(userId: string, workflowId: string): Promise<void> {
+    const release = await this.lockRegistration(workflowId);
+    try {
+      await this.unregisterWorkflowLocked(userId, workflowId);
+    } finally {
+      release();
+    }
+  }
+
+  private async unregisterWorkflowLocked(userId: string, workflowId: string): Promise<void> {
     try {
       console.log(
         `📊 [MarketDataSubscriber] Unregistering workflow ${workflowId}`,
@@ -236,8 +291,14 @@ export class MarketDataSubscriber {
         console.warn(
           `⚠️  [MarketDataSubscriber] No registration found for workflow ${workflowId}`,
         );
+        const { pub } = this.ensureRedisConnections();
+        await pub.del(REDIS_CHANNELS.workflowRegistration(userId, workflowId));
         return;
       }
+
+      // Retire the registration before awaiting I/O so queued deliveries stop.
+      this.registrations.delete(workflowId);
+      this.tickAggregator.dispose(workflowId);
 
       // Remove from stream→workflow mapping
       for (const stream of this.getRedisSubscriptionStreams(registration)) {
@@ -257,10 +318,6 @@ export class MarketDataSubscriber {
           }
         }
       }
-
-      // Remove from memory
-      this.registrations.delete(workflowId);
-      this.tickAggregator.dispose(workflowId);
 
       // Remove from Redis persistence
       const { pub } = this.ensureRedisConnections();
@@ -349,6 +406,7 @@ export class MarketDataSubscriber {
             registration.symbolMatchMode || "exact",
             cleanedTradingNativeStreams,
             registration.interval,
+            true,
           );
 
           restored++;
@@ -648,7 +706,13 @@ export class MarketDataSubscriber {
 
     if (!owner?.workflowId) {
       logger.warn(
-        { eventType: event.type, source: event.source },
+        {
+          eventType: event.type,
+          source: event.source,
+          orderId: event.orderId,
+          clientOrderId: event.clientOrderId,
+          orderEvent: event.orderEvent,
+        },
         "No owner mapping found after retries; falling back to account-level broadcast",
       );
       this.broadcastAccountEvent(event);
@@ -917,28 +981,12 @@ export class MarketDataSubscriber {
     const streamKey = RedisKeys.strategyStream(registration.userId, workflowId);
     const orderId = event.orderId || event.clientOrderId;
     try {
-      if (registration.isLive) {
-        // Only the live runner path needs persisted workflow state.
-        const lookupStartedAt = timingNow();
-        let workflow: any;
-        try { workflow = await this.getWorkflowCache().getWorkflow(workflowId); }
-        finally { observeStage("workflow_lookup", lookupStartedAt, workflow ? "success" : "error"); }
-
-        if (!workflow) {
-          countLive("delivery", "missing_workflow");
-          console.error(
-            `❌ [MarketDataSubscriber] Live workflow ${workflowId} not found or inactive`,
-          );
-          return;
-        }
+      // Registration owns delivery eligibility. Do not refresh a TTL-based
+      // database cache on the event path, or deliver queued work after retirement.
+      if (this.registrations.get(workflowId) !== registration) {
+        if (registration.isLive) countLive("delivery", "retired_registration");
+        return;
       }
-
-      // if (!workflow.is_active) {
-      //   console.log(
-      //     `⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`,
-      //   );
-      //   return;
-      // }
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);

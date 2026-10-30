@@ -112,6 +112,7 @@ export class MarketControlHandler {
   private redisPub: Redis;
   private sourceStates = new Map<string, SourceState>();
   private initialized = false;
+  private workflowControlQueues = new Map<string, Promise<void>>();
   private gatewayMutex = new Mutex(); // Mutex to prevent race conditions
 
   private constructor() {
@@ -187,14 +188,34 @@ export class MarketControlHandler {
           userId: msg.userId,
         });
 
-        if (channel === REDIS_CHANNELS.controlSubscribe) {
-          await this.handleSubscribe(msg as ControlMessage);
-        } else if (channel === REDIS_CHANNELS.controlUnsubscribe) {
-          await this.handleUnsubscribe(msg as ControlMessage);
-        } else if (channel === REDIS_CHANNELS.controlRegister) {
-          await this.handleRegister(msg);
-        } else if (channel === REDIS_CHANNELS.controlUnregister) {
-          await this.handleUnregister(msg);
+        const dispatch = async () => {
+          if (channel === REDIS_CHANNELS.controlSubscribe) {
+            await this.handleSubscribe(msg as ControlMessage);
+          } else if (channel === REDIS_CHANNELS.controlUnsubscribe) {
+            await this.handleUnsubscribe(msg as ControlMessage);
+          } else if (channel === REDIS_CHANNELS.controlRegister) {
+            await this.handleRegister(msg);
+          } else if (channel === REDIS_CHANNELS.controlUnregister) {
+            await this.handleUnregister(msg);
+          }
+        };
+        // Preserve arrival order across registration's DB lookup and the earlier
+        // stream lookup in handleRegister. Different workflows remain independent.
+        const workflowId = msg.workflowId;
+        if (typeof workflowId !== "string" || !workflowId) {
+          await dispatch();
+        } else {
+          const previous = this.workflowControlQueues.get(workflowId) ?? Promise.resolve();
+          const next = previous.then(dispatch);
+          const settled = next.catch(() => {});
+          this.workflowControlQueues.set(workflowId, settled);
+          try {
+            await next;
+          } finally {
+            if (this.workflowControlQueues.get(workflowId) === settled) {
+              this.workflowControlQueues.delete(workflowId);
+            }
+          }
         }
       } catch (error) {
         console.error(

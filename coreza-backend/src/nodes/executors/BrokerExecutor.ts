@@ -457,7 +457,7 @@ export class BrokerExecutor implements INodeExecutor {
       }
 
       timing.mark("ownerAfterRequest");
-      if (operation === "place_order") {
+      if (isOrderOperation) {
         if (LOG) timing.source("ownerAfterRequest", "redis_queue");
         try {
           const extractor = getOrderOwnerExtractor(broker);
@@ -467,6 +467,8 @@ export class BrokerExecutor implements INodeExecutor {
           // - pre-save (before request) protects early WS fills via clientOrderId
           // - post-save enriches mapping with broker-assigned IDs (orderId/algoId),
           //   which later lifecycle events may reference instead of clientOrderId.
+          // - close_position also creates an order; its response IDs must be
+          //   registered even when the broker cannot accept a client ID upfront.
           // This is broker-agnostic: any broker may emit later lifecycle events with
           // broker-native IDs rather than clientOrderId.
           await OrderOwnerRegistry.saveOwner({

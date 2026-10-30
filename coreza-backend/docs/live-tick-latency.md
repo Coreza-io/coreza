@@ -35,7 +35,10 @@ include them when interpreting sustained throughput.
 
 Live market delivery validates workflow existence and ownership at registration,
 not on each event. Re-registration refreshes that check; restart recovery also
-checks `is_active`. The registration is retired on unregister, and queued work
+checks `is_active` again during fresh registration validation. Workflow-scoped
+control messages run in arrival order; registration/unregister I/O is serialized
+per workflow. Re-registration removes previous stream routes and aggregation state.
+The registration is retired on unregister, and queued work
 for retired/replaced registrations is skipped. No workflow definition is used by
 the subscriber during delivery, so its 60-second cache expiry no longer triggers
 a database request in that path. This does not pin the backend runner's graph or

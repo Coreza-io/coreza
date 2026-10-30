@@ -98,6 +98,7 @@ export class MarketDataSubscriber {
   private messageHandler:
     | ((channel: string, message: string) => Promise<void>)
     | null = null;
+  private registrationChanges = new Map<string, Promise<void>>();
   private deliveryQueues = new Map<string, Promise<void>>();
   private tickAggregator = new TickBarAggregator();
   private aggregationSweep: NodeJS.Timeout | null = null;
@@ -118,6 +119,21 @@ export class MarketDataSubscriber {
 
   private getWorkflowCache(): WorkflowCache {
     return WorkflowCache.getInstance();
+  }
+
+  // Serialize lifecycle I/O only; market-event delivery never takes this lock.
+  private async lockRegistration(workflowId: string): Promise<() => void> {
+    const previous = this.registrationChanges.get(workflowId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.registrationChanges.set(workflowId, current);
+    await previous;
+    return () => {
+      if (this.registrationChanges.get(workflowId) === current) {
+        this.registrationChanges.delete(workflowId);
+      }
+      release();
+    };
   }
 
   static getInstance(): MarketDataSubscriber {
@@ -145,7 +161,10 @@ export class MarketDataSubscriber {
     symbolMatchMode: "exact" | "wildcard" = "exact",
     tradingNativeStreams: string[] = [],
     interval?: string,
+    requireActive = false,
   ): Promise<void> {
+    const release = await this.lockRegistration(workflowId);
+    let installed: WorkflowRegistration | undefined;
     try {
       console.log(
         `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams (isLive: ${isLive ?? false}):`,
@@ -159,12 +178,12 @@ export class MarketDataSubscriber {
       if (isLive) {
         // Validate once per registration, outside event delivery. Activation
         // publishes registration before committing is_active, so check existence
-        // and ownership here; restart recovery checks is_active separately.
+        // and ownership here; restart recovery requires is_active as well.
         const cache = this.getWorkflowCache();
         cache.invalidate(workflowId);
         const workflow = await cache.getWorkflow(workflowId);
-        if (!workflow || workflow.user_id !== userId) {
-          throw new Error("Live workflow not found for registering user");
+        if (!workflow || workflow.user_id !== userId || (requireActive && !workflow.is_active)) {
+          throw new Error("Live workflow unavailable for registering user");
         }
       }
 
@@ -190,8 +209,14 @@ export class MarketDataSubscriber {
         isLive: isLive ?? false,
       };
 
+      // Replace routing and aggregation state along with the registration.
+      if (this.registrations.has(workflowId)) {
+        await this.unregisterWorkflowLocked(userId, workflowId);
+      }
+
       // Store in memory
       this.registrations.set(workflowId, registration);
+      installed = registration;
 
       // Update stream→workflow mapping
       for (const stream of this.getRedisSubscriptionStreams(registration)) {
@@ -227,8 +252,17 @@ export class MarketDataSubscriber {
         `✅ [MarketDataSubscriber] Workflow ${workflowId} registered successfully`,
       );
     } catch (error) {
+      if (installed && this.registrations.get(workflowId) === installed) {
+        try {
+          await this.unregisterWorkflowLocked(userId, workflowId);
+        } catch (cleanupError) {
+          logger.error({ err: cleanupError, workflowId }, "Failed registration cleanup");
+        }
+      }
       console.error(`❌ [MarketDataSubscriber] Register error:`, error);
       throw error;
+    } finally {
+      release();
     }
   }
 
@@ -238,6 +272,15 @@ export class MarketDataSubscriber {
    * the internal routing table
    */
   async unregisterWorkflow(userId: string, workflowId: string): Promise<void> {
+    const release = await this.lockRegistration(workflowId);
+    try {
+      await this.unregisterWorkflowLocked(userId, workflowId);
+    } finally {
+      release();
+    }
+  }
+
+  private async unregisterWorkflowLocked(userId: string, workflowId: string): Promise<void> {
     try {
       console.log(
         `📊 [MarketDataSubscriber] Unregistering workflow ${workflowId}`,
@@ -248,6 +291,8 @@ export class MarketDataSubscriber {
         console.warn(
           `⚠️  [MarketDataSubscriber] No registration found for workflow ${workflowId}`,
         );
+        const { pub } = this.ensureRedisConnections();
+        await pub.del(REDIS_CHANNELS.workflowRegistration(userId, workflowId));
         return;
       }
 
@@ -361,6 +406,7 @@ export class MarketDataSubscriber {
             registration.symbolMatchMode || "exact",
             cleanedTradingNativeStreams,
             registration.interval,
+            true,
           );
 
           restored++;

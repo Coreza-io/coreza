@@ -16,7 +16,8 @@ Date: 2026-10-30
   with their own boundaries.
 
 - History rows and the selected-run header explicitly label elapsed workflow time.
-  The detail view separately sums available node durations as Recorded node time.
+  The detail view separately sums saved node timing totals as Recorded node time,
+  before rounding for display and independently of node-output availability.
   This is not substituted for elapsed time: overlapping/nested node work may be
   counted more than once, missing measurements are excluded, and legacy records
   may still contain cumulative values. No extra list-detail fetches are added.

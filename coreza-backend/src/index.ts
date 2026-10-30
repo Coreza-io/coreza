@@ -27,6 +27,7 @@ import { register } from "./utils/metrics";
 import logger from "./utils/logger";
 
 // Import routes
+import marketQuotesRoutes from './routes/marketQuotes';
 import indicatorRoutes from "./routes/indicators";
 import streamRoutes from "./routes/stream";
 import oauthRoutes from "./routes/oauth";
@@ -158,6 +159,7 @@ app.use("/storage", storageRoutes);
 app.use("/backtest", backtestRoutes);
 app.use("/datasource", datasourceRoutes);
 app.use("/portfolio", portfolioRoutes);
+app.use("/market-quotes", marketQuotesRoutes);
 app.use("/documents", documentRoutes);
 
 logger.info("All routes mounted");

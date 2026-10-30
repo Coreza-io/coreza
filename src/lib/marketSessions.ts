@@ -1,3 +1,5 @@
+import { fromZonedTime } from 'date-fns-tz';
+
 /** Display markets only: choosing one never creates a market-data subscription. */
 export const MARKET_CATALOG = [
   { id: 'nyse', name: 'NYSE', timezone: 'America/New_York' },
@@ -65,35 +67,102 @@ function exchangeClock(date: Date, timezone: string) {
     weekday: new Date(`${day}T12:00:00Z`).getUTCDay() };
 }
 
-export function marketSession(id: MarketId, now: Date = new Date()) {
-  if (id === 'crypto') return {
-    label: '24/7 schedule', description: 'Trading schedule only; not venue uptime or account connectivity.',
-  };
+export type SessionPhase = 'preopen' | 'premarket' | 'regular' | 'afterhours' | 'overnight' | 'closed' | 'unknown' | 'always';
+export interface MarketSession {
+  phase: SessionPhase;
+  label: string;
+  description: string;
+  basis: 'calendar';
+  venue: MarketId | 'blue_ocean_ats';
+  regularSessionOpen: boolean | null;
+  tradeDate: string | null;
+  timezone: string;
+  coverage: { from: string; through: string; version: string } | null;
+  sources: readonly string[];
+  extendedCoverage: 'covered' | 'unavailable' | 'not-applicable';
+}
+const labels: Record<SessionPhase, string> = {
+  preopen: 'Pre-open', premarket: 'Pre-market', regular: 'Open', afterhours: 'After-hours',
+  overnight: 'Overnight (ATS)', closed: 'Closed', unknown: 'Schedule unavailable', always: '24/7 schedule',
+};
+const OVERNIGHT_SOURCE = 'https://docs.alpaca.markets/us/v1.1/docs/245-trading';
+const shiftDay = (day: string, delta: number) => {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + delta);
+  return date.toISOString().slice(0, 10);
+};
+const time = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+const covered = (calendar: Calendar, day: string) => day >= calendar.from && day <= calendar.through;
+const tradingDay = (calendar: Calendar, day: string) => {
+  if (calendar.overrides[day]) return true;
+  const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+  return weekday !== 0 && weekday !== 6 && !calendar.holidays.includes(day);
+};
+
+/** Calendar information only. No result here authorizes orders or proves venue uptime. */
+export function marketSession(id: MarketId, now: Date = new Date()): MarketSession {
   const market = MARKET_CATALOG.find(item => item.id === id);
-  if (!market || !Number.isFinite(now.getTime())) return {
-    label: 'Schedule unavailable', description: 'Market or current time is invalid.',
-  };
   const calendar = id === 'nyse' || id === 'nasdaq' ? usCalendar : indiaCalendar;
+  // Each profile names its own authority; matching regular holidays do not imply
+  // matching extended sessions (NYSE Tape A is not NASDAQ or NYSE Arca).
+  const sources = id === 'nasdaq' ? usCalendar.sources.filter(url => !url.includes('nyse.com'))
+    : id === 'nyse' ? usCalendar.sources.filter(url => url.includes('nyse.com'))
+    : id === 'bse' ? indiaCalendar.sources.filter(url => url.includes('bseindia.com'))
+    : id === 'nse' ? indiaCalendar.sources.filter(url => !url.includes('bseindia.com')) : [];
+  const base = {
+    basis: 'calendar' as const, venue: id, timezone: market?.timezone ?? 'UTC',
+    tradeDate: null, regularSessionOpen: null,
+    coverage: id === 'crypto' ? null : { from: calendar.from, through: calendar.through, version: '2026-10-30' },
+    sources, extendedCoverage: 'not-applicable' as const,
+  };
+  const result = (phase: SessionPhase, description: string, patch: Partial<MarketSession> = {}): MarketSession => ({
+    ...base, phase, label: labels[phase], description, ...patch,
+  });
+  if (!market || !Number.isFinite(now.getTime())) return result('unknown', 'Market or current time is invalid.');
+  if (id === 'crypto') return result('always', '24/7 trading schedule only; not venue uptime or account connectivity.');
   try {
-    const { day, minute, weekday } = exchangeClock(now, market.timezone);
-    if (day < calendar.from || day > calendar.through) return {
-      label: 'Schedule unavailable',
-      description: `Published calendar coverage: ${calendar.from} to ${calendar.through}. Update the calendar for this date.`,
-    };
-    // Special sessions override weekends (e.g. Sunday Muhurat trading).
+    const { day, minute } = exchangeClock(now, market.timezone);
+    if (!covered(calendar, day)) return result('unknown', `Calendar coverage is ${calendar.from} through ${calendar.through}.`);
     const special = calendar.overrides[day];
-    const holiday = calendar.holidays.includes(day);
-    const tradingDay = special != null || (!holiday && weekday !== 0 && weekday !== 6);
     const [open, close] = special ?? [calendar.open, calendar.close];
-    const isOpen = tradingDay && minute >= open && minute < close;
-    const time = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-    const reason = holiday ? 'Exchange holiday.' : !tradingDay ? 'Weekend.'
-      : `${special ? 'Special/shortened' : 'Regular'} equity session: ${time(open)}–${time(close)} ${market.timezone}.`;
-    return {
-      label: isOpen ? 'Scheduled open' : 'Scheduled closed',
-      description: `${reason} Calendar through ${calendar.through}; scheduled hours only, not live exchange connectivity or unscheduled halts.`,
-    };
+    const isTradingDay = tradingDay(calendar, day);
+    const regularSessionOpen = isTradingDay && minute >= open && minute < close;
+    const reason = `${special ? 'Special/shortened' : 'Regular'} cash-equity session: ${time(open)}–${time(close)} ${market.timezone}.`;
+    const core = { tradeDate: day, regularSessionOpen };
+    if (regularSessionOpen) return result('regular', `${reason} Scheduled hours only; unscheduled halts and connectivity are not monitored.`, core);
+    if (id !== 'nasdaq') {
+      return result('closed', `${!isTradingDay ? 'Weekend or exchange holiday. ' : ''}${reason} Only the named exchange cash-equity session is covered; no pre-open auction or other venue hours are inferred.`, core);
+    }
+    // A core early-close notice does not establish the extended/ATS hours for
+    // that date. Do not accidentally keep a normal 16:00/20:00 boundary active.
+    if (special) return result('closed', `${reason} Extended and ATS hours for this special date are not verified.`, {
+      ...core, label: 'Closed (regular)', extendedCoverage: 'unavailable',
+    });
+    const extended = { ...core, extendedCoverage: 'covered' as const, sources };
+    if (isTradingDay && minute >= 240 && minute < open) return result('premarket', 'NASDAQ scheduled pre-market: 04:00–09:30 America/New_York. Broker access and security eligibility may differ.', extended);
+    if (isTradingDay && minute >= close && minute < 1200) return result('afterhours', 'NASDAQ scheduled after-hours: 16:00–20:00 America/New_York. Broker access and security eligibility may differ.', extended);
+    if (minute >= 1200 || minute < 240) {
+      const tradeDate = minute >= 1200 ? shiftDay(day, 1) : day;
+      const startDay = shiftDay(tradeDate, -1);
+      const overnight = { ...core, tradeDate, sources: [...sources, OVERNIGHT_SOURCE] };
+      if (!covered(calendar, startDay) || !covered(calendar, tradeDate) || calendar.overrides[startDay] || calendar.overrides[tradeDate]) return result('closed', 'NASDAQ regular exchange session is closed. Adjacent trade-date coverage or special-date ATS hours are unavailable.', {
+        ...overnight, label: 'Closed (regular)', extendedCoverage: 'unavailable',
+      });
+      if (tradingDay(calendar, tradeDate)) {
+        // Resolve both endpoints as zoned instants; never use a fixed IST/UTC offset.
+        const start = fromZonedTime(`${startDay}T20:00:00`, market.timezone).getTime();
+        const end = fromZonedTime(`${tradeDate}T04:00:00`, market.timezone).getTime();
+        if (now.getTime() >= start && now.getTime() < end) return result('overnight',
+          'NASDAQ exchange closed. Blue Ocean ATS reference schedule for eligible US equities: 20:00–04:00 America/New_York, Sunday evening through Friday morning, subject to the upcoming trade-date holiday calendar. This does not confirm broker access, live quotes, or Coreza order/stream support.', {
+            ...overnight, venue: 'blue_ocean_ats', tradeDate, extendedCoverage: 'covered',
+          });
+      }
+      return result('closed', `No Blue Ocean ATS reference session is scheduled for trade date ${tradeDate}; the NASDAQ regular exchange session is closed. No future NASDAQ exchange overnight launch is assumed.`, {
+        ...overnight, extendedCoverage: 'covered',
+      });
+    }
+    return result('closed', 'No covered NASDAQ exchange session is scheduled now. No future NASDAQ exchange overnight launch is assumed.', extended);
   } catch {
-    return { label: 'Schedule unavailable', description: 'Exchange timezone could not be evaluated.' };
+    return result('unknown', 'Exchange timezone or session interval could not be evaluated.');
   }
 }

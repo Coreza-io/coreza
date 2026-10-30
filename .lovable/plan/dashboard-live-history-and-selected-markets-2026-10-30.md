@@ -238,3 +238,10 @@ or deployment-readiness claims are made by this planning document.
   protecting queued React updates across account switches.
 - Production build and unchanged frontend TypeScript baseline were rechecked.
   Database/browser validation and verified equity calendars remain outstanding.
+
+## Named-session follow-up
+
+See [selected-market extended sessions](selected-market-extended-sessions-2026-10-30.md)
+for NASDAQ pre-market/after-hours and separately identified Blue Ocean ATS reference
+sessions. It retains the calendar coverage and shared clock added after this
+original dashboard plan. It does not change P/L, preferences or execution.

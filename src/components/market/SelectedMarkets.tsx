@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
-import { MARKET_CATALOG, marketSession } from '@/lib/marketSessions';
+import { MARKET_CATALOG, marketSession, type SessionPhase } from '@/lib/marketSessions';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Globe } from 'lucide-react';
@@ -37,6 +37,16 @@ const subscribeSessionClock = (listener: () => void) => {
 const getSessionClock = () => sessionNow;
 const getServerClock = () => 0;
 
+const phaseColors: Record<SessionPhase, string> = {
+  regular: 'border-green-500/50 text-green-700 dark:text-green-400',
+  preopen: 'border-amber-500/50 text-amber-700 dark:text-amber-300',
+  premarket: 'border-blue-500/50 text-blue-700 dark:text-blue-300',
+  afterhours: 'border-purple-500/50 text-purple-700 dark:text-purple-300',
+  overnight: 'border-indigo-500/50 text-indigo-700 dark:text-indigo-300',
+  closed: 'text-muted-foreground', unknown: 'border-amber-500/50 text-muted-foreground',
+  always: 'text-muted-foreground',
+};
+
 export function SelectedMarkets({ compact = false, collapsed = false }: { compact?: boolean; collapsed?: boolean }) {
   const now = useSyncExternalStore(subscribeSessionClock, getSessionClock, getServerClock);
   const { selectedMarkets, loading, error } = useUserPreferences();
@@ -46,14 +56,29 @@ export function SelectedMarkets({ compact = false, collapsed = false }: { compac
     : <div className={compact ? 'max-h-40 space-y-2 overflow-y-auto' : 'flex flex-wrap gap-3'}>
       {MARKET_CATALOG.filter(market => selectedMarkets.includes(market.id)).map(market => {
         const session = marketSession(market.id, new Date(now));
-        return <div key={market.id} className="flex items-center gap-2 text-sm" title={`${session.description} Exchange timezone: ${market.timezone}`}>
+        return <div key={market.id} className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">{market.name}</span>
-          <Badge variant="outline" className="text-xs">{session.label}</Badge>
+          <Popover><PopoverTrigger asChild>
+            <button type="button" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${market.name}: ${session.label}. Session details`}>
+              <Badge variant="outline" className={`text-xs ${phaseColors[session.phase]}`}>{session.label}</Badge>
+            </button>
+          </PopoverTrigger><PopoverContent className="w-80 max-w-[calc(100vw-2rem)] space-y-2 text-sm">
+            <p className="font-medium">{market.name} · {session.label}</p>
+            <p>{session.description}</p>
+            <p className="text-xs text-muted-foreground">Timezone: {session.timezone}{session.tradeDate ? ` · Trade date: ${session.tradeDate}` : ''}</p>
+            {session.coverage && <p className="text-xs text-muted-foreground">Calendar: {session.coverage.from}–{session.coverage.through} · version {session.coverage.version}</p>}
+            <p className="text-xs text-muted-foreground">Scheduled sessions only; not live exchange status or account eligibility.</p>
+            {session.sources.length > 0 && <ul className="space-y-1">{session.sources.map(url => <li key={url}><a className="text-xs underline" href={url} target="_blank" rel="noreferrer">{new URL(url).hostname}</a></li>)}</ul>}
+          </PopoverContent></Popover>
+          {session.phase === 'overnight' && <span className="w-full text-xs text-muted-foreground">Exchange closed · Blue Ocean schedule</span>}
+          {session.extendedCoverage === 'unavailable' && <span className="w-full text-xs text-muted-foreground">Extended schedule unavailable</span>}
         </div>;
       })}
     </div>;
   if (collapsed) return <Popover><PopoverTrigger asChild>
     <button type="button" className="mx-auto p-2 rounded hover:bg-sidebar-accent" aria-label="Selected markets"><Globe className="h-4 w-4" /></button>
-  </PopoverTrigger><PopoverContent side="right" className="w-80"><p className="font-medium mb-2">Markets · scheduled sessions</p>{content}</PopoverContent></Popover>;
-  return <section aria-label="Selected markets" className={compact ? 'p-2' : ''}>{content}</section>;
+  </PopoverTrigger><PopoverContent side="right" className="w-80"><p className="font-medium mb-2">Scheduled market sessions</p>{content}</PopoverContent></Popover>;
+  return <section aria-label="Selected markets" className={compact ? 'p-2' : ''}>
+    <p className="mb-2 text-xs text-muted-foreground">Scheduled market sessions</p>{content}
+  </section>;
 }

@@ -2,8 +2,8 @@
 
 Date: 2026-10-30
 Target: dev
-Status: implementation plan only
-Reviewed source: dev commit 719829f42b9f33a429db912d242a5425c00aeee4
+Status: implemented in source for review; runtime/browser checks remain pending
+Reviewed source: dev commit 38168afa2333923af05296c367f4d72af4d0cc1e
 
 ## Goal and recommendation
 
@@ -222,3 +222,53 @@ displays the session schedule.
 BSE effective 2026 auction notices and US shortened-day extended hours require
 verification before adding those detailed session overrides. Existing source
 comments alone do not establish that every new session's calendar is verified.
+
+## Feasibility review and implemented refinements
+
+The frontend-only recommendation is feasible. The existing date-fns-tz dependency
+and shared 30-second clock are sufficient; no new dependency, timer, database or
+execution-path change is needed.
+
+- NASDAQ ordinary dates have named pre-market, regular and after-hours phases.
+  Blue Ocean is a separate reference venue with the upcoming trade date, explicit
+  Exchange closed detail and no claim of account/stream/order support. Its interval
+  endpoints use zoned instants, not fixed offsets. Sunday evening targets Monday;
+  Friday evening targets Saturday and cannot create a session. A holiday trade
+  date suppresses overnight rather than skipping ahead.
+- Keep NYSE core-only: the verified NASDAQ intervals do not establish NYSE Tape A
+  or Arca sessions. BSE/NSE retain existing regular/special sessions. BSE pre-open
+  is omitted pending verification of effective auction notices.
+- On dated shortened/special NASDAQ sessions, use only known core hours. Outside
+  those hours show Closed (regular) plus Extended schedule unavailable; never infer
+  standard extended/ATS endpoints for those dates. Adjacent trade dates outside
+  calendar coverage also retain only known core status.
+- No date-based activation of the proposed future NASDAQ overnight launch.
+- Typed phase/venue/coverage fields drive badges. Session details use clickable
+  popovers, accessible via keyboard and touch, with timezone, trade date and source
+  references. All selected markets remain visible in all existing renderers.
+
+Source verification limit: official Alpaca documentation returned HTTP 403 from
+this environment. Extended/ATS schedule facts and the upcoming-trade-date holiday
+policy are taken from the supplied plan's referenced description; they were not
+independently reverified here. Existing bundled core calendars are retained. The
+UI explicitly describes a calendar reference, not live venue availability or
+broker entitlement. Reconfirm provider policy before relying on the ATS schedule;
+no execution or subscription is enabled by this display.
+
+Validation: frontend TypeScript diagnostics match the existing WorkflowEditor
+canEdit error. Production build and diff checks are performed for this change.
+No automated tests added/run per the current constraint. Boundary, DST, shortened
+date and accessible-rendering manual checks remain pending; do not describe this
+as a live venue or broker integration validation.
+
+### Source review follow-up
+
+- Overnight closed/unavailable results preserve the evaluated upcoming trade date
+  and ATS source, just like an active overnight result. A Friday-evening closure
+  now names Saturday as the evaluated date instead of incorrectly retaining Friday.
+- Check calendar coverage and special-date exceptions at both the previous-evening
+  start date and morning end/trade date before applying ordinary ATS endpoints.
+- Regular exchange hours, special-date uncertainty, holidays/weekends, IANA/DST
+  handling, the no-future-launch rule and shared-clock/UI consumers were reviewed
+  by source inspection. Automated tests were not added or run; manual runtime
+  boundary/browser and independent provider-policy verification remain pending.

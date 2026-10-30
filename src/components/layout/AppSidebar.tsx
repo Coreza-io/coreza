@@ -66,7 +66,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
-import { Badge } from "../ui/badge";
+import { SelectedMarkets } from "@/components/market/SelectedMarkets";
 
 const DASHBOARD_BASE_PATH = "/dashboard";
 
@@ -236,19 +236,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <div className="hidden md:flex items-center gap-2">
-            <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
-            <span className="text-sm text-muted-foreground">Markets Open</span>
-          </div>
-          <Badge
-            variant="outline"
-            className="hidden md:flex items-center gap-1"
-          >
-            <TrendingUp className="h-3 w-3 text-success" />
-            +2.4% today
-          </Badge>
-        </div>
+        <SelectedMarkets compact collapsed={collapsed} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

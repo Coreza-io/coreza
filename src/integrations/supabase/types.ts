@@ -519,6 +519,7 @@ export type Database = {
           last_name: string
           location: string | null
           phone: string | null
+          selected_markets: string[] | null
           timezone: string | null
           updated_at: string | null
           user_id: string | null
@@ -530,6 +531,7 @@ export type Database = {
           last_name: string
           location?: string | null
           phone?: string | null
+          selected_markets?: string[] | null
           timezone?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -541,6 +543,7 @@ export type Database = {
           last_name?: string
           location?: string | null
           phone?: string | null
+          selected_markets?: string[] | null
           timezone?: string | null
           updated_at?: string | null
           user_id?: string | null

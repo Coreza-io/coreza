@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,11 +30,19 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
+import { Checkbox } from '@/components/ui/checkbox';
+import { MARKET_CATALOG, type MarketId } from '@/lib/marketSessions';
 import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
-  const { timezone, updateTimezone } = useUserPreferences();
+  const { timezone, updateTimezone, selectedMarkets, updateSelectedMarkets, loading: preferencesLoading, saving, error: preferencesError } = useUserPreferences();
   const { user } = useAuth();
+  const [marketDraft, setMarketDraft] = useState<MarketId[]>([]);
+  const [dirtyMarkets, setDirtyMarkets] = useState(false);
+  const [draftOwner, setDraftOwner] = useState(user?.id);
+  const draftIsCurrent = draftOwner === user?.id;
+  useEffect(() => { setDirtyMarkets(false); setMarketDraft([]); setDraftOwner(user?.id); }, [user?.id]);
+  useEffect(() => { if (!dirtyMarkets) setMarketDraft(selectedMarkets); }, [selectedMarkets, dirtyMarkets]);
   const [settings, setSettings] = useState({
     notifications: {
       email: true,
@@ -130,13 +138,15 @@ const Settings = () => {
               <div className="space-y-2">
                 <Label>Timezone</Label>
                 <Select 
-                  value={timezone} 
+                  value={timezone}
+                  disabled={preferencesLoading || saving || !!preferencesError}
                   onValueChange={async (value) => {
-                    await updateTimezone(value);
-                    toast({
-                      title: "Timezone Updated",
-                      description: `Your timezone has been set to ${value}`,
-                    });
+                    try {
+                      await updateTimezone(value);
+                      toast({ title: 'Timezone Updated', description: `Your timezone has been set to ${value}` });
+                    } catch (error) {
+                      toast({ title: 'Unable to save timezone', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+                    }
                   }}
                 >
                   <SelectTrigger className="w-48">
@@ -198,6 +208,30 @@ const Settings = () => {
                   </SelectContent>
                 </Select>
               </div>
+            </CardContent>
+          </Card>
+          <Card><CardHeader><CardTitle>Markets to display</CardTitle>
+            <CardDescription>Choose the markets shown on your dashboard. This does not change trading subscriptions.</CardDescription></CardHeader>
+            <CardContent className="space-y-4">
+              {preferencesError && <p role="alert" className="text-sm text-destructive">Preferences unavailable. Reload Settings to retry.</p>}
+              <fieldset disabled={preferencesLoading || saving || !!preferencesError} className="flex flex-wrap gap-5">
+                <legend className="sr-only">Markets to display</legend>
+                {MARKET_CATALOG.map(market => <div className="flex items-center gap-2" key={market.id}>
+                  <Checkbox id={`market-${market.id}`} checked={draftIsCurrent && marketDraft.includes(market.id)} onCheckedChange={checked => {
+                    setDirtyMarkets(true);
+                    setMarketDraft(previous => checked === true ? [...previous.filter(id => id !== market.id), market.id] : previous.filter(id => id !== market.id));
+                  }} /><Label htmlFor={`market-${market.id}`}>{market.name}</Label>
+                </div>)}
+              </fieldset>
+              <Button disabled={!draftIsCurrent || preferencesLoading || saving || !!preferencesError || !dirtyMarkets} onClick={async () => {
+                try {
+                  await updateSelectedMarkets(marketDraft);
+                  setDirtyMarkets(false);
+                  toast({ title: 'Markets saved', description: 'Your dashboard and sidebar have been updated.' });
+                } catch (error) {
+                  toast({ title: 'Unable to save markets', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+                }
+              }}>{saving ? 'Saving…' : 'Save markets'}</Button>
             </CardContent>
           </Card>
         </TabsContent>

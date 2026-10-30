@@ -10,7 +10,6 @@
 
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Badge } from "@/components/ui/badge";
 import { 
   Bell, 
   Search, 
@@ -127,18 +126,6 @@ export function Header() {
       </AlertDialog>
 
       <div className="flex items-center gap-4 hidden">
-        {/* Market Status */}
-        <div className="hidden md:flex items-center gap-2">
-          <div className="w-2 h-2 bg-success rounded-full animate-pulse" />
-          <span className="text-sm text-muted-foreground">Markets Open</span>
-        </div>
-
-        {/* Performance Badge */}
-        <Badge variant="outline" className="hidden md:flex items-center gap-1">
-          <TrendingUp className="h-3 w-3 text-success" />
-          +2.4% today
-        </Badge>
-
         {/* Theme Toggle */}
         <ThemeToggle />
 

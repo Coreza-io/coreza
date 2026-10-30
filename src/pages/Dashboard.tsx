@@ -1,4 +1,3 @@
-import { reportingPages } from "@/lib/reportingPages";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -34,39 +33,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { useAuth } from "@/contexts/AuthContext";
-import { isBrokerPortfolioWorkflow } from "@/utils/liveWorkflowFilter";
+import { useDashboardPerformance, formatPerformance, UNKNOWN_CURRENCY } from '@/hooks/useDashboardPerformance';
+import { SelectedMarkets } from '@/components/market/SelectedMarkets';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const DAY_COUNT = 30;
 
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 2,
-});
-
-const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  notation: 'compact',
-  maximumFractionDigits: 1,
-});
-
-const getDayKeyUtc = (date: Date) => date.toISOString().slice(0, 10);
-
-const formatUtcDayLabel = (utcDayKey: string) =>
-  new Date(`${utcDayKey}T00:00:00.000Z`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-
-type PerformancePoint = {
-  date: string;
-  value: number;
-};
-
 const Dashboard = () => {
   const { user } = useAuth();
+  const performance = useDashboardPerformance();
   const [loading, setLoading] = useState(true);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const navigate = useNavigate();
@@ -74,11 +49,8 @@ const Dashboard = () => {
     activeWorkflows: 0,
     totalWorkflows: 0,
     recentWorkflows: [] as any[],
-    performanceData: [] as PerformancePoint[],
     successRate: 0,
     totalRuns: 0,
-    liveWorkflowsCount: 0,
-    hasLiveTrades: false,
   });
   const [executionHistory, setExecutionHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -86,20 +58,19 @@ const Dashboard = () => {
   const [activeWorkflowsLoading, setActiveWorkflowsLoading] = useState(false);
   const [allWorkflowsData, setAllWorkflowsData] = useState<any[]>([]);
   const [allWorkflowsLoading, setAllWorkflowsLoading] = useState(false);
-  const [performanceStats, setPerformanceStats] = useState<any[]>([]);
-  const [performanceLoading, setPerformanceLoading] = useState(false);
   const { toast } = useToast();
 
   // Fetch dashboard data
   useEffect(() => {
-    if (!user) return;
-    
+    let disposed = false;
+    setDashboardData({ activeWorkflows: 0, totalWorkflows: 0, recentWorkflows: [], successRate: 0, totalRuns: 0 });
+    if (!user) { setLoading(false); return; }
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
         const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setHours(0, 0, 0, 0);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - (DAY_COUNT - 1));
+        thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
+        thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - (DAY_COUNT - 1));
 
         // Fetch workflows
         const workflowsQuery = supabase
@@ -122,6 +93,7 @@ const Dashboard = () => {
           workflowRunsQuery,
         ]);
 
+        if (disposed) return;
         if (workflowsError) {
           console.error('Error fetching workflows:', workflowsError);
           toast({
@@ -133,56 +105,6 @@ const Dashboard = () => {
         }
 
         const activeWorkflows = workflows?.filter(w => w.is_active) || [];
-        const liveWorkflows = activeWorkflows.filter(isBrokerPortfolioWorkflow);
-
-        const dayMap = new Map<string, { date: string; value: number }>();
-        for (let offset = DAY_COUNT - 1; offset >= 0; offset -= 1) {
-          const day = new Date();
-          day.setUTCHours(0, 0, 0, 0);
-          day.setUTCDate(day.getUTCDate() - offset);
-          const utcDayKey = getDayKeyUtc(day);
-          dayMap.set(utcDayKey, {
-            date: formatUtcDayLabel(utcDayKey),
-            value: 0,
-          });
-        }
-
-        const activeExecutionMap = new Map<string, string>();
-        for (const workflow of liveWorkflows) {
-          const activeExecutionId = workflow.active_execution_id;
-          if (typeof activeExecutionId === 'string' && activeExecutionId.length > 0) {
-            activeExecutionMap.set(workflow.id, activeExecutionId);
-          }
-        }
-
-        let hasLiveTrades = false;
-
-        const liveSessionWorkflowIds = Array.from(activeExecutionMap.keys());
-        const activeExecutionIds = Array.from(new Set(activeExecutionMap.values()));
-
-        if (liveSessionWorkflowIds.length > 0 && activeExecutionIds.length > 0) {
-          const liveTrades = await reportingPages(() => supabase
-            .from('trades')
-            .select('id, workflow_id, execution_id, exitTime, net_pnl').eq('user_id', user.id)
-            .in('workflow_id', liveSessionWorkflowIds)
-            .in('live_strategy_id', activeExecutionIds)
-            .gte('exitTime', thirtyDaysAgo.toISOString()).order('exitTime').order('id'));
-
-          for (const trade of liveTrades || []) {
-            if (!trade.exitTime || !trade.workflow_id) continue;
-            if (activeExecutionMap.get(trade.workflow_id) !== trade.execution_id) continue;
-
-            const dayKey = getDayKeyUtc(new Date(trade.exitTime));
-            const current = dayMap.get(dayKey);
-            if (!current) continue;
-
-            hasLiveTrades = true;
-
-            const pnl = typeof trade.net_pnl === 'number' ? trade.net_pnl : Number(trade.net_pnl ?? 0);
-            current.value += Number.isFinite(pnl) ? pnl : 0;
-          }
-        }
-
         if (runsError) {
           console.error('Error fetching workflow runs:', runsError);
         }
@@ -197,20 +119,17 @@ const Dashboard = () => {
           successRate = totalRuns > 0 ? Math.round((successfulRuns / totalRuns) * 100) : 0;
         }
         
-        const performanceData = Array.from(dayMap.values());
 
         setDashboardData({
           activeWorkflows: activeWorkflows.length,
           totalWorkflows: workflows?.length || 0,
           recentWorkflows: workflows?.slice(0, 3) || [],
-          performanceData,
           successRate,
           totalRuns,
-          liveWorkflowsCount: liveSessionWorkflowIds.length,
-          hasLiveTrades,
         });
 
       } catch (error) {
+        if (disposed) return;
         console.error('Error fetching dashboard data:', error);
         toast({
           title: "Error",
@@ -218,11 +137,12 @@ const Dashboard = () => {
           variant: "destructive",
         });
       } finally {
-        setLoading(false);
+        if (!disposed) setLoading(false);
       }
     };
 
-    fetchDashboardData();
+    void fetchDashboardData();
+    return () => { disposed = true; };
   }, [user?.id, toast]);
 
   // Fetch detailed execution history
@@ -343,58 +263,6 @@ const Dashboard = () => {
     }
   };
 
-  // Fetch performance statistics
-  const fetchPerformanceStats = async () => {
-    if (!user) return;
-    
-    setPerformanceLoading(true);
-    try {
-      const { data: workflowRuns, error } = await supabase
-        .from('workflow_runs')
-        .select(`
-          id,
-          status,
-          started_at,
-          completed_at,
-          workflows!inner(name, user_id)
-        `)
-        .eq('workflows.user_id', user.id)
-        .order('started_at', { ascending: false })
-        .limit(100);
-
-      if (error) {
-        console.error('Error fetching performance stats:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load performance statistics",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Calculate performance metrics
-      const stats = workflowRuns?.map(run => {
-        const runtime = run.completed_at ? 
-          Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000) : 
-          null;
-        
-        return {
-          workflow_name: run.workflows?.name || 'Unknown',
-          status: run.status,
-          runtime,
-          started_at: run.started_at,
-          completed_at: run.completed_at
-        };
-      }) || [];
-
-      setPerformanceStats(stats);
-    } catch (error) {
-      console.error('Error fetching performance stats:', error);
-    } finally {
-      setPerformanceLoading(false);
-    }
-  };
-
   // Calculate run time for completed executions
   const getRunTime = (startedAt: string, completedAt: string | null) => {
     if (!completedAt) return "Running...";
@@ -412,9 +280,11 @@ const Dashboard = () => {
   };
 
   // Calculate dynamic stats based on real data
-  const performanceTotal = dashboardData.performanceData.reduce((sum, point) => sum + point.value, 0);
-  const showChartData = dashboardData.liveWorkflowsCount > 0 && dashboardData.hasLiveTrades;
-  const formattedPerformanceTotal = `${performanceTotal > 0 ? '+' : ''}${currencyFormatter.format(performanceTotal)}`;
+  const performanceTotal = performance.selected?.total ?? 0;
+  const showChartData = !!performance.selected;
+  const formatPnl = (value: number, compact = false) => formatPerformance(value, performance.selected?.currency ?? UNKNOWN_CURRENCY, compact);
+  const formattedPerformanceTotal = performance.loading && !performance.data.loadedAt ? '…'
+    : !showChartData ? '—' : `${performanceTotal > 0 ? '+' : ''}${formatPnl(performanceTotal)}`;
 
   const stats = [
     {
@@ -441,7 +311,7 @@ const Dashboard = () => {
     {
       title: "Performance",
       value: formattedPerformanceTotal,
-      change: `Last 30 days · ${dashboardData.liveWorkflowsCount || 0} live workflows`,
+      change: `Last 30 days · ${performance.selected?.runCount ?? 0} live runs${performance.selected?.currency === UNKNOWN_CURRENCY ? ' · Currency unavailable' : ''}${performance.error ? performance.data.loadedAt ? ' · Stale' : ' · Unavailable' : ''}${performance.data.excluded ? ' · Incomplete data' : ''}`,
       icon: PlayCircle,
       trend: performanceTotal > 0 ? "up" as const : performanceTotal < 0 ? "down" as const : "neutral" as const
     }
@@ -658,87 +528,14 @@ const Dashboard = () => {
                 </DialogContent>
               </Dialog>
             ) : stat.title === "Performance" ? (
-              <Dialog onOpenChange={(open) => {
-                if (open) {
-                  fetchPerformanceStats();
-                }
-              }}>
-                <DialogTrigger asChild>
-                  <Card className="bg-gradient-card border-border hover:shadow-card transition-all cursor-pointer">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">
-                        {stat.title}
-                      </CardTitle>
-                      <stat.icon className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{stat.value}</div>
-                      <p className="text-xs text-muted-foreground">
-                        {stat.change}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[80vh]">
-                  <DialogHeader>
-                    <DialogTitle>Performance Statistics</DialogTitle>
-                  </DialogHeader>
-                  <ScrollArea className="h-[60vh]">
-                    {performanceLoading ? (
-                      <div className="flex items-center justify-center h-32">
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                        <span className="ml-2">Loading performance data...</span>
-                      </div>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Workflow Name</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Runtime</TableHead>
-                            <TableHead>Started Time</TableHead>
-                            <TableHead>Completed Time</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {performanceStats.length > 0 ? (
-                            performanceStats.map((stat, index) => (
-                              <TableRow key={index}>
-                                <TableCell className="font-medium">
-                                  {stat.workflow_name}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge 
-                                    variant={stat.status === 'success' ? 'default' : 
-                                            stat.status === 'failed' ? 'destructive' : 'secondary'}
-                                  >
-                                    {stat.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  {stat.runtime ? `${stat.runtime}s` : 'Running...'}
-                                </TableCell>
-                                <TableCell>
-                                  {new Date(stat.started_at).toLocaleString()}
-                                </TableCell>
-                                <TableCell>
-                                  {stat.completed_at ? new Date(stat.completed_at).toLocaleString() : 'N/A'}
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          ) : (
-                            <TableRow>
-                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                                No performance data available
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </ScrollArea>
-                </DialogContent>
-              </Dialog>
+              <Link to="/dashboard/live" title="View live trading history">
+                <Card className="bg-gradient-card border-border hover:shadow-card transition-all cursor-pointer">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{stat.title}</CardTitle><stat.icon className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent><div className="text-2xl font-bold">{stat.value}</div><p className="text-xs text-muted-foreground">{stat.change}</p></CardContent>
+                </Card>
+              </Link>
             ) : stat.title === "Success Rate" && dashboardData.totalRuns > 0 ? (
               <Dialog onOpenChange={(open) => {
                 if (open) {
@@ -833,6 +630,9 @@ const Dashboard = () => {
         ))}
       </motion.div>
 
+      <Card><CardHeader><CardTitle>Markets</CardTitle><CardDescription>Selected markets · scheduled sessions</CardDescription></CardHeader>
+        <CardContent><SelectedMarkets /></CardContent></Card>
+
       <div className="grid gap-6 md:grid-cols-2">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
@@ -907,21 +707,33 @@ const Dashboard = () => {
                 Performance Chart
               </CardTitle>
               <CardDescription>
-                Total daily P/L across live workflows (last 30 days)
+                Daily realized net P/L · live history · last 30 days (UTC)
               </CardDescription>
             </CardHeader>
             <CardContent>
+              <p className="text-xs text-muted-foreground mb-2">Includes paper sessions recorded in live history; no currency conversion.</p>
+              {performance.data.groups.length > 0 && <Select value={performance.selected?.currency} onValueChange={performance.selectCurrency}>
+                <SelectTrigger className="w-52 mb-3" aria-label="Performance currency"><SelectValue /></SelectTrigger>
+                <SelectContent>{performance.data.groups.map(group => <SelectItem key={group.currency} value={group.currency}>{group.currency === UNKNOWN_CURRENCY ? 'Currency unavailable' : group.currency}</SelectItem>)}</SelectContent>
+              </Select>}
+              {performance.error && <div role="alert" className="text-sm text-destructive mb-2">
+                {performance.data.loadedAt ? 'Refresh failed. Showing last loaded P/L.' : 'Unable to load live P/L.'}
+                <Button variant="outline" size="sm" className="ml-2" disabled={performance.loading} onClick={() => void performance.refresh()}>Retry</Button>
+              </div>}
+              {performance.data.excluded > 0 && <p className="text-xs text-muted-foreground mb-2">Incomplete recorded coverage: {performance.data.excluded} records with missing or invalid P/L were excluded.</p>}
               <div className="h-[200px]">
                 {!showChartData ? (
                   <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                    No live P/L yet
+                    {performance.loading ? 'Loading live P/L…' : performance.error ? 'Live P/L unavailable' : performance.data.excluded ? 'No valid realized live P/L records in the last 30 days' : 'No realized live P/L in the last 30 days'}
+                    {!performance.loading && !performance.error && <Link className="ml-2 underline" to="/dashboard/live">Live History</Link>}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dashboardData.performanceData}>
+                    <LineChart data={performance.selected?.points ?? []}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis 
-                        dataKey="date" 
+                        dataKey="date"
+                        tickFormatter={(value: string) => new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
                         className="text-xs fill-muted-foreground"
                         axisLine={false}
                         tickLine={false}
@@ -930,10 +742,10 @@ const Dashboard = () => {
                         className="text-xs fill-muted-foreground"
                         axisLine={false}
                         tickLine={false}
-                        tickFormatter={(value) => compactCurrencyFormatter.format(Number(value))}
+                        tickFormatter={(value) => formatPnl(Number(value), true)}
                       />
                       <Tooltip 
-                        formatter={(value: number | string) => currencyFormatter.format(Number(value))}
+                        formatter={(value: number | string) => formatPnl(Number(value))}
                         contentStyle={{
                           backgroundColor: 'hsl(var(--card))',
                           border: '1px solid hsl(var(--border))',

@@ -532,7 +532,10 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
             )}
             {/* Execution duration - only in readOnly mode */}
             {readOnly && typeof executionDuration === "number" && (
-                <div className="absolute top-1 right-1 z-10 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                <div
+                  className="absolute top-1 right-1 z-10 text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded"
+                  title="Total node execution time in this run, including repeated invocations."
+                >
                   {executionDuration < 1
                     ? `${executionDuration.toFixed(2)}ms`
                     : executionDuration < 1000

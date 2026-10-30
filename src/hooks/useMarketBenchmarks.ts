@@ -8,6 +8,18 @@ export interface BenchmarkQuote {
   market: MarketId; symbol: string; name: string; unit: string; available: boolean;
   change?: number; percent?: number; price?: number; asOf?: string; period?: string; source: string;
 }
+export class MarketQuoteRequestError extends Error {
+  constructor(readonly code: 'unreachable' | 'timeout' | 'http', message: string, readonly status?: number) { super(message); }
+}
+export function quoteErrorLabel(error: unknown): string {
+  if (!(error instanceof MarketQuoteRequestError)) return 'Quote unavailable';
+  if (error.code === 'unreachable') return 'Backend unavailable';
+  if (error.code === 'timeout') return 'Quote API timed out';
+  if (error.status === 401 || error.status === 403) return 'Quote access denied';
+  if (error.status === 404) return 'Quote API unavailable';
+  return 'Quote unavailable';
+}
+
 // React Query shares requests/cache, but each observer otherwise owns an interval.
 const pollers = new WeakMap<QueryClient, Map<string, { users: number; timer: ReturnType<typeof setInterval> }>>();
 function validQuote(value: unknown, markets: readonly string[]): value is BenchmarkQuote {
@@ -38,10 +50,17 @@ export function useMarketBenchmarks() {
     queryKey, enabled,
     staleTime: 60000, refetchInterval: false, retry: false,
     queryFn: async ({ signal }) => {
-      const response = await apiClient.request(`/market-quotes/benchmarks?markets=${encodeURIComponent(markets)}`, {
-        token: session?.access_token, signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
-      });
-      if (!response.ok) throw new Error('Benchmark quotes unavailable');
+      let response: Response;
+      try {
+        response = await apiClient.request(`/market-quotes/benchmarks?markets=${encodeURIComponent(markets)}`, {
+          token: session?.access_token, signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+        });
+      } catch (error) {
+        if (signal.aborted) throw error;
+        if (error instanceof Error && error.name === 'TimeoutError') throw new MarketQuoteRequestError('timeout', 'The backend quote API did not respond in time.');
+        throw new MarketQuoteRequestError('unreachable', 'Cannot reach the backend API. Check that the API service is running and its server URL is correct.');
+      }
+      if (!response.ok) throw new MarketQuoteRequestError('http', `Market quote API returned HTTP ${response.status}`, response.status);
       const data = await response.json();
       if (!Array.isArray(data?.quotes) || data.quotes.length !== selectedMarkets.length || !data.quotes.every((row: unknown) => validQuote(row, selectedMarkets)) || new Set(data.quotes.map((row: BenchmarkQuote) => row.market)).size !== data.quotes.length) throw new Error('Invalid benchmark response');
       return data.quotes as BenchmarkQuote[];

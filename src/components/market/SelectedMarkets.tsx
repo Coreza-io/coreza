@@ -1,4 +1,4 @@
-import { useMarketBenchmarks, benchmarkChange } from '@/hooks/useMarketBenchmarks';
+import { useMarketBenchmarks, benchmarkChange, quoteErrorLabel } from '@/hooks/useMarketBenchmarks';
 import { useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
@@ -59,19 +59,21 @@ export function SelectedMarkets({ compact = false, collapsed = false }: { compac
       {MARKET_CATALOG.filter(market => selectedMarkets.includes(market.id)).map(market => {
         const session = marketSession(market.id, new Date(now));
         const quote = quotes.data?.find(row => row.market === market.id);
-        const changeText = quotes.isError ? 'Quote unavailable' : quote ? benchmarkChange(quote) : quotes.isPending ? 'Loading quote…' : 'Quote unavailable';
+        const changeText = quotes.isError ? quoteErrorLabel(quotes.error) : quote ? benchmarkChange(quote) : quotes.isPending ? 'Loading quote…' : 'Quote unavailable';
         return <div key={market.id} className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">{market.name}</span>
           <span className={`text-xs tabular-nums ${!quotes.isError && quote?.available && Number.isFinite(quote.change) ? quote.change! > 0 ? 'text-green-700 dark:text-green-400' : quote.change! < 0 ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground' : 'text-muted-foreground'}`}>
             {changeText}
           </span>
           <Popover><PopoverTrigger asChild>
-            <button type="button" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${market.name}: ${session.label}. Session details`}>
+            <button type="button" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${market.name}: ${session.label}. Session and quote details`}>
               <Badge variant="outline" className={`text-xs ${phaseColors[session.phase]}`}>{session.label}</Badge>
             </button>
           </PopoverTrigger><PopoverContent className="w-80 max-w-[calc(100vw-2rem)] space-y-2 text-sm">
             <p className="font-medium">{market.name} · {session.label}</p>
             <p>{session.description}</p>
+            {quotes.isError && <p className="text-xs text-destructive">{quotes.error instanceof Error ? quotes.error.message : 'Quote API request failed'}</p>}
+            {(quotes.isError || quote?.available === false) && <button type="button" disabled={quotes.isFetching} className="text-xs underline disabled:opacity-50" onClick={() => void quotes.refetch()}>Retry quotes</button>}
             {quote && <div className="space-y-1 text-xs">
               <p>Benchmark: {quote.name} ({quote.symbol})</p>
               <p>Source: {quote.source} · {quote.period ?? 'Unavailable'}</p>

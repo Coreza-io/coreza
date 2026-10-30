@@ -156,6 +156,18 @@ export class MarketDataSubscriber {
         throw new Error("registerWorkflow requires non-empty source");
       }
 
+      if (isLive) {
+        // Validate once per registration, outside event delivery. Activation
+        // publishes registration before committing is_active, so check existence
+        // and ownership here; restart recovery checks is_active separately.
+        const cache = this.getWorkflowCache();
+        cache.invalidate(workflowId);
+        const workflow = await cache.getWorkflow(workflowId);
+        if (!workflow || workflow.user_id !== userId) {
+          throw new Error("Live workflow not found for registering user");
+        }
+      }
+
       const normalizedSymbols = filterSymbols.map((symbol) =>
         normalizeOrderSymbol(symbol, String(source).split("_")[0]),
       );
@@ -239,6 +251,10 @@ export class MarketDataSubscriber {
         return;
       }
 
+      // Retire the registration before awaiting I/O so queued deliveries stop.
+      this.registrations.delete(workflowId);
+      this.tickAggregator.dispose(workflowId);
+
       // Remove from stream→workflow mapping
       for (const stream of this.getRedisSubscriptionStreams(registration)) {
         const workflows = this.streamWorkflows.get(stream);
@@ -257,10 +273,6 @@ export class MarketDataSubscriber {
           }
         }
       }
-
-      // Remove from memory
-      this.registrations.delete(workflowId);
-      this.tickAggregator.dispose(workflowId);
 
       // Remove from Redis persistence
       const { pub } = this.ensureRedisConnections();
@@ -648,7 +660,13 @@ export class MarketDataSubscriber {
 
     if (!owner?.workflowId) {
       logger.warn(
-        { eventType: event.type, source: event.source },
+        {
+          eventType: event.type,
+          source: event.source,
+          orderId: event.orderId,
+          clientOrderId: event.clientOrderId,
+          orderEvent: event.orderEvent,
+        },
         "No owner mapping found after retries; falling back to account-level broadcast",
       );
       this.broadcastAccountEvent(event);
@@ -917,28 +935,12 @@ export class MarketDataSubscriber {
     const streamKey = RedisKeys.strategyStream(registration.userId, workflowId);
     const orderId = event.orderId || event.clientOrderId;
     try {
-      if (registration.isLive) {
-        // Only the live runner path needs persisted workflow state.
-        const lookupStartedAt = timingNow();
-        let workflow: any;
-        try { workflow = await this.getWorkflowCache().getWorkflow(workflowId); }
-        finally { observeStage("workflow_lookup", lookupStartedAt, workflow ? "success" : "error"); }
-
-        if (!workflow) {
-          countLive("delivery", "missing_workflow");
-          console.error(
-            `❌ [MarketDataSubscriber] Live workflow ${workflowId} not found or inactive`,
-          );
-          return;
-        }
+      // Registration owns delivery eligibility. Do not refresh a TTL-based
+      // database cache on the event path, or deliver queued work after retirement.
+      if (this.registrations.get(workflowId) !== registration) {
+        if (registration.isLive) countLive("delivery", "retired_registration");
+        return;
       }
-
-      // if (!workflow.is_active) {
-      //   console.log(
-      //     `⚠️  [MarketDataSubscriber] Workflow ${workflowId} is not active, skipping execution`,
-      //   );
-      //   return;
-      // }
 
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);

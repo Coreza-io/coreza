@@ -21,6 +21,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { format } from "date-fns";
+import { decodeControlResult } from "@/utils/controlResult";
 import { CheckCircle2, XCircle, Copy, Clock, Loader2, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -183,9 +184,16 @@ export function ExecutionDetailView({
 
   // Transform edges to show item counts
   const executionEdges = useMemo(() => {
+    const nodeById = new Map(hydratedNodes.map(node => [node.id, node]));
     return sourceEdges.map((edge) => {
       const sourceExec = nodeExecutionMap.get(edge.source);
-      const itemCount = sourceExec?.itemCount || 0;
+      const definition = nodeById.get(edge.source)?.data.definition as { name?: string } | undefined;
+      const branching = definition?.name === "If" || definition?.name === "Switch";
+      const control = branching ? decodeControlResult(sourceExec?.output) : null;
+      // Node success does not mean every outgoing branch was traversed. Unknown
+      // historical results stay neutral rather than guessing from target status.
+      const selected = !branching || (control?.kind === "selected" && control.handle === edge.sourceHandle);
+      const itemCount = selected ? sourceExec?.itemCount || 0 : 0;
 
       return {
         ...edge,
@@ -206,9 +214,9 @@ export function ExecutionDetailView({
         style: {
           ...edge.style,
           stroke:
-            sourceExec?.status === "success"
+            sourceExec?.status === "success" && selected
               ? "hsl(var(--success))"
-              : sourceExec?.status === "failed"
+              : sourceExec?.status === "failed" && !branching
                 ? "hsl(var(--destructive))"
                 : "hsl(var(--border))",
           strokeWidth: 2,
@@ -216,7 +224,7 @@ export function ExecutionDetailView({
         animated: false,
       };
     });
-  }, [sourceEdges, nodeExecutionMap]);
+  }, [sourceEdges, nodeExecutionMap, hydratedNodes]);
 
   const hierarchy = useMemo(() => resolveClusterHierarchy(clusters), [clusters]);
   const committedProjection = useRef<{ executionId: string; projection: ClusterProjection } | null>(null);

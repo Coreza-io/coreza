@@ -15,6 +15,12 @@ Date: 2026-10-30
   changes were introduced. Broker executor and HTTP timings remain breakdowns
   with their own boundaries.
 
+- History rows and the selected-run header explicitly label elapsed workflow time.
+  The detail view separately sums available node durations as Recorded node time.
+  This is not substituted for elapsed time: overlapping/nested node work may be
+  counted more than once, missing measurements are excluded, and legacy records
+  may still contain cumulative values. No extra list-detail fetches are added.
+
 ## Validation and rollout plan
 
 1. Run TypeScript checks for backend and frontend and compare diagnostics against

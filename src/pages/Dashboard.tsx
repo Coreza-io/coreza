@@ -34,7 +34,6 @@ import { useToast } from "@/hooks/use-toast";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardPerformance, formatPerformance, UNKNOWN_CURRENCY } from '@/hooks/useDashboardPerformance';
-import { SelectedMarkets } from '@/components/market/SelectedMarkets';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const DAY_COUNT = 30;
@@ -629,9 +628,6 @@ const Dashboard = () => {
           </motion.div>
         ))}
       </motion.div>
-
-      <Card><CardHeader><CardTitle>Markets</CardTitle><CardDescription>Selected markets · scheduled sessions</CardDescription></CardHeader>
-        <CardContent><SelectedMarkets /></CardContent></Card>
 
       <div className="grid gap-6 md:grid-cols-2">
         <motion.div

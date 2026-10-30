@@ -83,7 +83,6 @@ export function SelectedMarkets({ compact = false, collapsed = false }: { compac
             <p className="text-xs text-muted-foreground">Scheduled sessions only; not live exchange status or account eligibility.</p>
             {session.sources.length > 0 && <ul className="space-y-1">{session.sources.map(url => <li key={url}><a className="text-xs underline" href={url} target="_blank" rel="noreferrer">{new URL(url).hostname}</a></li>)}</ul>}
           </PopoverContent></Popover>
-          {quote?.available && !quotes.isError && <span className="w-full text-xs text-muted-foreground">{quote.name} · {quote.period}</span>}
           {session.phase === 'overnight' && <span className="w-full text-xs text-muted-foreground">Exchange closed · Blue Ocean schedule</span>}
           {session.extendedCoverage === 'unavailable' && <span className="w-full text-xs text-muted-foreground">Extended schedule unavailable</span>}
         </div>;

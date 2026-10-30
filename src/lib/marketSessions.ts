@@ -143,21 +143,25 @@ export function marketSession(id: MarketId, now: Date = new Date()): MarketSessi
     if (isTradingDay && minute >= close && minute < 1200) return result('afterhours', 'NASDAQ scheduled after-hours: 16:00–20:00 America/New_York. Broker access and security eligibility may differ.', extended);
     if (minute >= 1200 || minute < 240) {
       const tradeDate = minute >= 1200 ? shiftDay(day, 1) : day;
-      const overnight = { ...core, sources: [...sources, OVERNIGHT_SOURCE] };
-      if (!covered(calendar, tradeDate) || calendar.overrides[tradeDate]) return result('closed', 'NASDAQ regular exchange session is closed. Adjacent trade-date coverage or special-date ATS hours are unavailable.', {
+      const startDay = shiftDay(tradeDate, -1);
+      const overnight = { ...core, tradeDate, sources: [...sources, OVERNIGHT_SOURCE] };
+      if (!covered(calendar, startDay) || !covered(calendar, tradeDate) || calendar.overrides[startDay] || calendar.overrides[tradeDate]) return result('closed', 'NASDAQ regular exchange session is closed. Adjacent trade-date coverage or special-date ATS hours are unavailable.', {
         ...overnight, label: 'Closed (regular)', extendedCoverage: 'unavailable',
       });
       if (tradingDay(calendar, tradeDate)) {
         // Resolve both endpoints as zoned instants; never use a fixed IST/UTC offset.
-        const start = fromZonedTime(`${shiftDay(tradeDate, -1)}T20:00:00`, market.timezone).getTime();
+        const start = fromZonedTime(`${startDay}T20:00:00`, market.timezone).getTime();
         const end = fromZonedTime(`${tradeDate}T04:00:00`, market.timezone).getTime();
         if (now.getTime() >= start && now.getTime() < end) return result('overnight',
           'NASDAQ exchange closed. Blue Ocean ATS reference schedule for eligible US equities: 20:00–04:00 America/New_York, Sunday evening through Friday morning, subject to the upcoming trade-date holiday calendar. This does not confirm broker access, live quotes, or Coreza order/stream support.', {
             ...overnight, venue: 'blue_ocean_ats', tradeDate, extendedCoverage: 'covered',
           });
       }
+      return result('closed', `No Blue Ocean ATS reference session is scheduled for trade date ${tradeDate}; the NASDAQ regular exchange session is closed. No future NASDAQ exchange overnight launch is assumed.`, {
+        ...overnight, extendedCoverage: 'covered',
+      });
     }
-    return result('closed', 'No covered NASDAQ exchange or referenced Blue Ocean ATS session is scheduled now. Weekend/holiday rules use the assigned trade date; no future NASDAQ exchange overnight launch is assumed.', extended);
+    return result('closed', 'No covered NASDAQ exchange session is scheduled now. No future NASDAQ exchange overnight launch is assumed.', extended);
   } catch {
     return result('unknown', 'Exchange timezone or session interval could not be evaluated.');
   }

@@ -260,3 +260,15 @@ canEdit error. Production build and diff checks are performed for this change.
 No automated tests added/run per the current constraint. Boundary, DST, shortened
 date and accessible-rendering manual checks remain pending; do not describe this
 as a live venue or broker integration validation.
+
+### Source review follow-up
+
+- Overnight closed/unavailable results preserve the evaluated upcoming trade date
+  and ATS source, just like an active overnight result. A Friday-evening closure
+  now names Saturday as the evaluated date instead of incorrectly retaining Friday.
+- Check calendar coverage and special-date exceptions at both the previous-evening
+  start date and morning end/trade date before applying ordinary ATS endpoints.
+- Regular exchange hours, special-date uncertainty, holidays/weekends, IANA/DST
+  handling, the no-future-launch rule and shared-clock/UI consumers were reviewed
+  by source inspection. Automated tests were not added or run; manual runtime
+  boundary/browser and independent provider-policy verification remain pending.

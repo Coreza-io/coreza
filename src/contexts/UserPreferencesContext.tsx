@@ -51,16 +51,18 @@ export const UserPreferencesProvider = ({ children }: { children: React.ReactNod
     if (current.current !== scope || !scope.userId || visible.loading || visible.error) throw new Error('Preferences are not ready. Reload Settings and try again.');
     if (busy.current === scope) throw new Error('A preference save is already in progress.');
     busy.current = scope;
-    setState(previous => ({ ...previous, saving: true }));
+    setState(previous => previous.scope === scope ? { ...previous, saving: true } : previous);
     try {
       const { data, error } = await supabase.from('users').update(patch).eq('user_id', scope.userId).select('user_id').single();
       if (error) throw error;
       if (!data || current.current !== scope) throw new Error('Account changed before preferences were saved.');
-      setState(previous => ({ ...previous, ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
-        ...(patch.selected_markets !== undefined ? { selectedMarkets: patch.selected_markets } : {}) }));
+      setState(previous => previous.scope === scope && current.current === scope ? {
+        ...previous, ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
+        ...(patch.selected_markets !== undefined ? { selectedMarkets: patch.selected_markets } : {}),
+      } : previous);
     } finally {
       if (busy.current === scope) busy.current = null;
-      if (current.current === scope) setState(previous => ({ ...previous, saving: false }));
+      if (current.current === scope) setState(previous => previous.scope === scope ? { ...previous, saving: false } : previous);
     }
   };
   return <UserPreferencesContext.Provider value={{ ...visible,

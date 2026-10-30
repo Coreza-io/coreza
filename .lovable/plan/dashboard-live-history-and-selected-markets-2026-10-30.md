@@ -227,3 +227,14 @@ or deployment-readiness claims are made by this planning document.
   match the existing WorkflowEditor canEdit error. No automated tests added/run.
   Live schema relation/RLS checks, preference writes, browser behavior and actual
   financial data remain manual deployment checks. No execution hot-path changes.
+
+### Source review follow-up
+
+- Currency fallback treats blank/whitespace activation currency as missing and
+  uses the recorded snapshot context; conflicting known currencies remain unknown.
+- A failed-refresh indication remains visible during retry until a complete
+  replacement load succeeds. loadedAt records successful completion of the load.
+- Preference-save functional state updates also verify the captured owner scope,
+  protecting queued React updates across account switches.
+- Production build and unchanged frontend TypeScript baseline were rechecked.
+  Database/browser validation and verified equity calendars remain outstanding.

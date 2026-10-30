@@ -19,7 +19,7 @@ const currencyOf = (parent: { base_currency: string | null; metrics_context: unk
   const source = record(record(parent.metrics_context)?.snapshot_source);
   const snapshotCurrency = source?.base_currency;
   if (typeof parent.base_currency === 'string' && typeof snapshotCurrency === 'string' && parent.base_currency.trim() && snapshotCurrency.trim() && parent.base_currency.trim().toUpperCase() !== snapshotCurrency.trim().toUpperCase()) return UNKNOWN_CURRENCY;
-  const value = parent.base_currency || snapshotCurrency;
+  const value = typeof parent.base_currency === 'string' && parent.base_currency.trim() ? parent.base_currency : snapshotCurrency;
   return typeof value === 'string' && /^[a-z0-9]{2,12}$/i.test(value.trim()) ? value.trim().toUpperCase() : UNKNOWN_CURRENCY;
 };
 
@@ -31,7 +31,7 @@ export function useDashboardPerformance() {
   const [selection, setSelection] = useState({ scope, currency: '' });
   const performLoad = useCallback(async (isCurrent: () => boolean) => {
     if (!user) return;
-    setState(previous => ({ scope, data: previous.scope === scope ? previous.data : empty(), loading: true, error: null }));
+    setState(previous => ({ scope, data: previous.scope === scope ? previous.data : empty(), loading: true, error: previous.scope === scope ? previous.error : null }));
     try {
       const now = new Date();
       const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
@@ -64,7 +64,7 @@ export function useDashboardPerformance() {
         currency, points: [...group.buckets].map(([date, value]) => ({ date, value })),
         total: [...group.buckets.values()].reduce((a, b) => a + b, 0), runCount: group.runs.size, tradeCount: group.count,
       }));
-      if (isCurrent()) setState({ scope, data: { groups: result, excluded, loadedAt: now.toISOString() }, loading: false, error: null });
+      if (isCurrent()) setState({ scope, data: { groups: result, excluded, loadedAt: new Date().toISOString() }, loading: false, error: null });
     } catch (error) {
       if (isCurrent()) setState(previous => ({ ...previous, loading: false, error: error instanceof Error ? error.message : 'Unable to load live P/L' }));
     }

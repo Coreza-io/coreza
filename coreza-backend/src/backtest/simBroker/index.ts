@@ -1001,6 +1001,46 @@ export class SimBroker {
   }
 
   private applyFill(
+    order: Order, price: number, quantity: number, slippage: number, commission: number, timestamp: string | number,
+  ): void {
+    if (decimal(price).compare(0) <= 0 || decimal(quantity).compare(0) <= 0 || !Number.isFinite(slippage)) throw new Error("Invalid simulated execution");
+    decimal(price).toNumber();
+    decimal(quantity).toNumber();
+    decimal(commission).toNumber();
+    const symbol = order.symbol;
+    const position = this.state.positions[symbol];
+    const positionBefore = position ? { ...position } : undefined;
+    const entryBefore = this.currentEntryMap.get(symbol);
+    const hadRealized = Object.hasOwn(this.state.realizedPnlBySymbol, symbol);
+    const before = { cash: this.state.cash, fees: this.state.cumulativeFees, realized: this.state.cumulativeRealizedPnl,
+      symbolRealized: this.state.realizedPnlBySymbol[symbol], trades: this.state.trades.length,
+      positionsValue: this.positionsValue, tradeCounter: this.tradeIdCounter };
+    try {
+      this.applyFillUnchecked(order, price, quantity, slippage, commission, timestamp);
+      const next = this.state.positions[symbol];
+      for (const value of [this.state.cash, this.state.cumulativeFees, this.state.cumulativeRealizedPnl,
+        this.state.realizedPnlBySymbol[symbol] ?? 0, this.positionsValue,
+        ...(next ? [next.quantity, next.avgFillPrice, next.marketValue, next.openCostBasis, next.realizedPnl, next.unrealizedPnl] : [])]) decimal(value).toNumber();
+    } catch (error) {
+      // The synchronous calculation has no external callbacks. Restore every
+      // affected financial field, including references a previous reader holds.
+      this.state.cash = before.cash;
+      this.state.cumulativeFees = before.fees;
+      this.state.cumulativeRealizedPnl = before.realized;
+      if (hadRealized) this.state.realizedPnlBySymbol[symbol] = before.symbolRealized;
+      else delete this.state.realizedPnlBySymbol[symbol];
+      this.state.trades.length = before.trades;
+      if (position && positionBefore) { Object.assign(position, positionBefore); this.state.positions[symbol] = position; }
+      else delete this.state.positions[symbol];
+      if (entryBefore) this.currentEntryMap.set(symbol, entryBefore);
+      else this.currentEntryMap.delete(symbol);
+      this.positionsValue = before.positionsValue;
+      this.tradeIdCounter = before.tradeCounter;
+      throw error;
+    }
+  }
+
+  private applyFillUnchecked(
     order: Order,
     price: number,
     quantity: number,
@@ -1100,7 +1140,7 @@ export class SimBroker {
     const entryOrderId = entry?.orderId ?? order.id;
     const entryTime = entry?.filledAt ?? fillTimeIso;
     const entryQuantity = entry?.entryQuantity ?? Math.abs(existingQty);
-    const allocatedEntryCommission = Number(allocateOpenAmount(entry?.entryCommission ?? 0, closingQty, entryQuantity));
+    const allocatedEntryCommission = decimal(allocateOpenAmount(entry?.entryCommission ?? 0, closingQty, entryQuantity)).toNumber();
     const entrySlippagePerUnit = entry?.entrySlippagePerUnit ?? 0;
     const allocatedEntrySlippageCost = entrySlippagePerUnit * closingQty;
     const totalCommissionForTrade = allocatedEntryCommission + exitCommission;

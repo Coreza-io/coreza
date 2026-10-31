@@ -1,64 +1,50 @@
-/** Bounded base-10 accounting arithmetic. Division uses 36 decimal places;
- * quantities/addition remain exact. JSON boundaries use decimal strings. */
+import BigNumber from "bignumber.js";
+
+// Isolate accounting precision from other users of bignumber.js. Addition and
+// multiplication are exact; only division rounds toward zero at 72 decimal places.
+const AccountingDecimal = BigNumber.clone({ DECIMAL_PLACES: 72, ROUNDING_MODE: BigNumber.ROUND_DOWN });
+
+/** Bounded accounting decimal. Strings are the checkpoint/JSON boundary; numbers
+ * are compatibility outputs within MAX_SAFE_INTEGER and 1e-14 relative tolerance. */
 export class Decimal {
-  private constructor(private readonly coefficient: bigint, private readonly scale: number) {}
+  private constructor(private readonly value: BigNumber) {
+    // Allow bounded intermediate products before division, without allowing
+    // repeated partial-fee allocations to grow their scale on every execution.
+    if (!value.isFinite() || value.decimalPlaces()! > 144 || value.precision(true)! > 240) throw new Error("Accounting decimal overflow");
+  }
 
   static from(value: string | number | Decimal): Decimal {
     if (value instanceof Decimal) return value;
     const source = String(value);
-    if (source.length > 128) throw new Error("Decimal exceeds supported range");
     const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(source);
-    if (!match) throw new Error("Invalid accounting decimal");
+    if (source.length > 128 || !match) throw new Error("Invalid accounting decimal");
     const exponent = Number(match[4] ?? 0);
     if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 60) throw new Error("Decimal exponent out of range");
-    let coefficient = BigInt((match[1] === "-" ? "-" : "") + match[2] + (match[3] ?? ""));
-    let scale = (match[3]?.length ?? 0) - exponent;
-    if (scale < 0) { coefficient *= 10n ** BigInt(-scale); scale = 0; }
-    return Decimal.make(coefficient, scale);
+    const result = new Decimal(new AccountingDecimal(source));
+    result.toString(); // Validate the external decimal range.
+    return result;
   }
 
-  private static make(coefficient: bigint, scale: number): Decimal {
-    while (scale > 0 && coefficient % 10n === 0n) { coefficient /= 10n; scale--; }
-    if (scale > 72 || coefficient.toString().replace("-", "").length > 120) throw new Error("Accounting decimal overflow");
-    return new Decimal(coefficient, scale);
-  }
-
-  add(value: string | number | Decimal): Decimal {
-    const other = Decimal.from(value);
-    const scale = Math.max(this.scale, other.scale);
-    return Decimal.make(this.coefficient * 10n ** BigInt(scale - this.scale) + other.coefficient * 10n ** BigInt(scale - other.scale), scale);
-  }
-  sub(value: string | number | Decimal): Decimal { return this.add(Decimal.from(value).neg()); }
-  neg(): Decimal { return Decimal.make(-this.coefficient, this.scale); }
-  mul(value: string | number | Decimal): Decimal {
-    const other = Decimal.from(value);
-    return Decimal.make(this.coefficient * other.coefficient, this.scale + other.scale);
-  }
+  add(value: string | number | Decimal): Decimal { return new Decimal(this.value.plus(Decimal.from(value).value)); }
+  sub(value: string | number | Decimal): Decimal { return new Decimal(this.value.minus(Decimal.from(value).value)); }
+  neg(): Decimal { return new Decimal(this.value.negated()); }
+  mul(value: string | number | Decimal): Decimal { return new Decimal(this.value.times(Decimal.from(value).value)); }
   div(value: string | number | Decimal): Decimal {
-    const other = Decimal.from(value);
-    if (other.coefficient === 0n) throw new Error("Accounting division by zero");
-    const resultScale = Math.max(36, this.scale, other.scale);
-    const shift = resultScale + other.scale - this.scale;
-    const numerator = shift >= 0 ? this.coefficient * 10n ** BigInt(shift) : this.coefficient;
-    const denominator = shift >= 0 ? other.coefficient : other.coefficient * 10n ** BigInt(-shift);
-    const quotient = numerator / denominator;
-    if (quotient === 0n && numerator !== 0n) throw new Error("Accounting division precision exceeded");
-    return Decimal.make(quotient, resultScale);
+    const other = Decimal.from(value).value;
+    if (other.isZero()) throw new Error("Accounting division by zero");
+    const result = new Decimal(this.value.dividedBy(other));
+    if (result.value.isZero() && !this.value.isZero()) throw new Error("Accounting division precision exceeded");
+    return result;
   }
-  compare(value: string | number | Decimal): number {
-    const difference = this.sub(value).coefficient;
-    return difference < 0n ? -1 : difference > 0n ? 1 : 0;
-  }
+  compare(value: string | number | Decimal): number { return this.value.comparedTo(Decimal.from(value).value)!; }
   toString(): string {
-    const negative = this.coefficient < 0n;
-    const digits = (negative ? -this.coefficient : this.coefficient).toString().padStart(this.scale + 1, "0");
-    return (negative ? "-" : "") + (this.scale ? digits.slice(0, -this.scale) + "." + digits.slice(-this.scale) : digits);
+    if (this.value.decimalPlaces()! > 72 || this.value.precision(true)! > 120) throw new Error("Accounting decimal exceeds external range");
+    return this.value.toFixed();
   }
-  /** Compatibility numbers are restricted to 15 significant digits (1e-14 relative tolerance).
-   * Exact strings remain authoritative; positive dust must never underflow to zero. */
   toNumber(): number {
     const result = Number(this.toString());
-    if (!Number.isFinite(result) || Math.abs(result) > Number.MAX_SAFE_INTEGER || (result === 0 && this.coefficient !== 0n)) throw new Error("Accounting value cannot be represented safely");
+    if (!Number.isFinite(result) || Math.abs(result) > Number.MAX_SAFE_INTEGER || (result === 0 && !this.value.isZero())) throw new Error("Accounting value cannot be represented safely");
+    if (!this.value.isZero() && this.value.minus(String(result)).abs().gt(this.value.abs().times("1e-14"))) throw new Error("Accounting compatibility precision exceeded");
     return result;
   }
 }

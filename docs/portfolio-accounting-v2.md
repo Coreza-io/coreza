@@ -10,11 +10,14 @@ workflow migrations, or historical corrections were run as part of this change.
 - Explicit, configuration-only calculation/quantity/price/fee modes. Missing
   calculation version keeps legacy incremental behavior. The native numeric
   `cumulativeFilledQty` field cannot overwrite the checkbox.
-- Bounded decimal arithmetic, cumulative quantity/notional deltas (including
+- Bounded decimal arithmetic through pinned `bignumber.js@9.3.1` (72 decimal places
+  for division, exact addition/multiplication), cumulative quantity/notional deltas (including
   cumulative VWAP), exact held quantities, proportional open cost and entry-fee
   allocation, residual allocation on final close, and immediate partial-exit P&L.
 - A pure candidate reducer, followed by awaited SQL journal/checkpoint acceptance
   under one owner token and expected revision, followed by complete RAM publication.
+  All financial/compatibility views are prepared before acceptance; a tick during the
+  SQL await may refresh valuation, and only the published valuation advances peak equity.
 - Durable scoped execution identities, immutable financial-payload conflicts,
   independent lifecycle updates, and an idempotent reporting outbox. Journal payloads
   retain original event timestamps and decimal strings. Reporting uses the existing
@@ -29,7 +32,8 @@ workflow migrations, or historical corrections were run as part of this change.
 - Shared final-close fee allocation in live calculations and SimBroker; fractional
   simulated position changes use decimal addition. Position/trade getters return
   copies, reads no longer create a starting-equity baseline, and MTM refreshes total P&L.
-- Account/activation-scoped UI order grouping and separate commission-asset totals.
+- Account/activation-scoped UI order grouping and separate commission-asset totals. Lifecycle reporting refreshes existing fill statuses
+  from current journal progress under the book lock, without inserting fake fills.
 - A pure shadow/replay helper that does not execute trading nodes.
 
 ## Deployment gate
@@ -47,7 +51,9 @@ and verify service-only privileges/RLS. No database changes have been executed.
 
 New version-2 allocations require explicit cash, currency, activation, broker,
 environment, stable non-secret account identity, credential alias, and exclusive
-long-only cash/spot model. They cannot adopt existing account holdings or switch an
+long-only cash/spot model. This staged adapter admits one accounting book per
+activation (enforced in SQL); multi-account activations require a separate adapter.
+They cannot adopt existing account holdings or switch an
 active legacy book. Decimal strings must be mapped from native payload evidence;
 converting a broker decimal to Number upstream cannot restore its original precision.
 
@@ -82,6 +88,34 @@ authority for overlap with older events.
 5. Shadow verified broker evidence, validate paper accounts through reconnects and
    partial fills, pause/reconcile old activations, explicitly migrate mappings, then
    stage live activation. Do not enable based solely on arithmetic review.
+
+## Review corrections
+
+The follow-up source review found implementation defects in the staged path, separate
+from the remaining plan gates above. It corrected:
+
+- Decimal scale growth across repeated fractional cost/fee allocations, by replacing
+  bespoke arithmetic with the pinned decimal library and a fixed division scale.
+- Lifecycle events consuming future fill identities, and decimal-format differences
+  causing false duplicate conflicts. Session and replay now share lifecycle rules;
+  a changed cumulative VWAP without a quantity change requires reconciliation.
+- Candidate compatibility calculations occurring after durable acceptance, and
+  pre-publication valuation inflating peak equity. Candidate views are prepared first.
+- Loss of terminal order status in reporting. Lifecycle ACK derives current status
+  under SQL locking; failed outbox rows remain pending while other rows can progress.
+- Broker submission protection depending on a warm RAM cache. It now checks canonical
+  graph configuration and, when storage is deployed, the durable activation identity and exclusive credential claim. Credential-to-account
+  rebinding/rotation still requires the verified provider adapter.
+- Ignored rejection-evidence write failures and malformed stream rows bypassing the
+  retry/DLQ path. Retention errors are surfaced; malformed numerics are not coerced to zero.
+- A rejected simulated fill leaving earlier cash/fee mutations behind. The synchronous
+  SimBroker adapter now restores all affected financial fields when a calculation fails.
+- Repeated initialization using a different cash/credential declaration. Scope and
+  starting allocation must match, and reporting uses the accepted allocation.
+
+The review remains source-only: no tests, builds, lint, broker calls or SQL were run.
+This is not evidence that the plan's acceptance matrix passes. The PR remains a draft,
+v2 remains disabled, and the recovery/sizing/schema/adapter gates are still incomplete.
 
 After verified schema deployment, `PORTFOLIO_ACCOUNTING_V2_STORAGE_READY=true` allows
 the reporting outbox to drain independently of new-writer activation.

@@ -271,8 +271,11 @@ export class PortfolioManager {
   isAccountingVersion2(): boolean { return this.accountingBook?.version === 2; }
 
   /** Publish only a complete, durably accepted candidate. Price marks remain RAM-only. */
-  publishAccounting(transition: AccountingTransition): void {
-    const book = transition.book;
+  publishAccounting(transition: AccountingTransition): void { this.prepareAccounting(transition)(); }
+
+  /** Validate all compatibility views before journal acceptance; publish after ACK. */
+  prepareAccounting(transition: AccountingTransition): () => void {
+    const book = structuredClone(transition.book);
     const nextPositions = new Map<string, PositionState>();
     for (const [symbol, position] of Object.entries(book.positions)) {
       const quantity = decimal(position.quantity).toNumber();
@@ -307,18 +310,34 @@ export class PortfolioManager {
     const cash = decimal(book.cash).toNumber();
     let candidateEquity = decimal(book.cash);
     for (const [symbol, position] of Object.entries(book.positions)) candidateEquity = candidateEquity.add(decimal(nextPositions.get(symbol)!.currentPrice).mul(position.quantity));
-    const equity = candidateEquity.toNumber();
-    // No active state is changed until all compatibility calculations above succeed.
-    this.positions = nextPositions;
-    this.orders = nextOrders;
-    this.trades = nextTrades;
-    this.cashBook = new Map([[book.scope.currency, cash]]);
-    this.balances = new Map([[book.scope.currency, { asset: book.scope.currency, cash, equity, margin: 1, updatedAt: new Date().toISOString() }]]);
-    this.startingEquity = decimal(book.startingCash).toNumber();
-    this.accountingBook = structuredClone(book);
-    this.versionedAccountingRequired = true;
-    this.bootstrapped = true;
-    this.updateEquity(book.scope.currency);
+    candidateEquity.toNumber(); // Validate compatibility range before acceptance.
+    const startingEquity = decimal(book.startingCash).toNumber();
+    const cashBook = new Map([[book.scope.currency, cash]]);
+    // The closure contains the complete candidate. A price tick during the SQL
+    // await may refresh valuation, but cannot change accepted financial facts.
+    return () => {
+      let finalEquity = decimal(book.cash);
+      for (const [symbol, position] of nextPositions) {
+        const mark = this.positions.get(symbol)?.currentPrice ?? position.currentPrice;
+        position.currentPrice = mark;
+        position.marketValue = decimal(mark).mul(book.positions[symbol].quantity).toNumber();
+        position.unrealizedPnl = decimal(mark).mul(book.positions[symbol].quantity).sub(book.positions[symbol].grossCost).toNumber();
+        position.totalPnl = decimal(position.realizedPnl).add(position.unrealizedPnl).toNumber();
+        finalEquity = finalEquity.add(decimal(mark).mul(book.positions[symbol].quantity));
+      }
+      const publishedEquity = finalEquity.toNumber();
+      const balances = new Map<string, BalanceState>([[book.scope.currency, { asset: book.scope.currency, cash, equity: publishedEquity, margin: 1, updatedAt: new Date().toISOString() }]]);
+      this.positions = nextPositions;
+      this.orders = nextOrders;
+      this.trades = nextTrades;
+      this.cashBook = cashBook;
+      this.balances = balances;
+      this.startingEquity = startingEquity;
+      this.accountingBook = book;
+      this.versionedAccountingRequired = true;
+      this.bootstrapped = true;
+      this.peakEquity = Math.max(this.peakEquity, publishedEquity);
+    };
   }
 
   accountingMetadata(): Record<string, unknown> {
@@ -1610,6 +1629,11 @@ export class PortfolioManager {
     }
 
     this.updateEquity(baseCurrency);
+    if (this.accountingBook) {
+      const currency = this.accountingBook.scope.currency;
+      const balance = this.balances.get(currency);
+      if (balance) this.balances.set(currency, { ...balance, equity: this.getTotalEquity(currency), updatedAt: new Date().toISOString() });
+    }
   }
 
   /**

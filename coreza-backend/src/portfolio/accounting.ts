@@ -91,7 +91,13 @@ export interface AccountingTransition {
 const rank: Record<string, number> = { new: 10, accepted: 10, pending_new: 10, partially_filled: 20, pending_cancel: 25, filled: 30, finished: 30, canceled: 40, cancelled: 40, rejected: 40, expired: 40 };
 const hash = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export const bookKey = (scope: BookScope): string => hash([scope.userId, scope.workflowId, scope.activationId, scope.broker, scope.environment, scope.accountId, scope.accountModel, scope.currency]);
-export const eventFingerprint = (event: AccountingEvent): string => hash([event.kind, event.orderId, event.symbol, event.side, event.quantity, event.price, event.quoteNotional, event.fee, event.feeAsset, event.quantityMode, event.priceMode, event.feeMode]);
+export const eventFingerprint = (event: AccountingEvent): string => hash([event.kind, event.orderId, event.symbol, event.side,
+  decimal(event.quantity).toString(), event.price == null ? null : decimal(event.price).toString(),
+  event.quoteNotional == null ? null : decimal(event.quoteNotional).toString(), decimal(event.fee).toString(),
+  event.feeAsset, event.quantityMode, event.priceMode, event.feeMode]);
+export const lifecycleEvent = (event: AccountingEvent): AccountingEvent => ({ ...event, kind: "order_status", executionId: undefined,
+  quantity: "0", fee: "0", price: undefined, quoteNotional: undefined, accountPosition: undefined });
+export const lifecycleEventKey = (book: AccountingBook, event: AccountingEvent): string => hash([bookKey(book.scope), "status", event.orderId, event.symbol, event.status]);
 export function eventKey(book: AccountingBook, event: AccountingEvent): string | undefined {
   const id = event.executionId?.trim();
   if (id && id !== "-1" && id !== "0") return hash([bookKey(book.scope), event.symbol, event.orderId, id]);
@@ -99,7 +105,10 @@ export function eventKey(book: AccountingBook, event: AccountingEvent): string |
   return undefined;
 }
 export function createBook(scope: BookScope, cash: string): AccountingBook {
-  for (const value of Object.values(scope)) if (!value || typeof value !== "string") throw new Error("Complete non-secret accounting scope is required");
+  for (const field of ["userId", "workflowId", "activationId", "broker", "environment", "accountId", "credentialId", "accountModel", "currency"] as const) {
+    const value = scope[field];
+    if (typeof value !== "string" || !value.trim() || value !== value.trim() || value.length > 256) throw new Error("Complete non-secret accounting scope is required");
+  }
   if (scope.accountModel !== "long_only_cash" || decimal(cash).compare(0) < 0) throw new Error("Unsupported accounting allocation/model");
   // Validate compatibility range before any durable write.
   decimal(cash).toNumber();
@@ -110,7 +119,7 @@ export function createBook(scope: BookScope, cash: string): AccountingBook {
  * Quote-currency fees/rebates only; other assets require an explicit adapter/FX source. */
 export function reduceAccountingEvent(book: AccountingBook, event: AccountingEvent): AccountingTransition {
   if (book.version !== 2) throw new Error("Unsupported calculation version");
-  if (!Number.isSafeInteger(book.revision) || book.revision >= Number.MAX_SAFE_INTEGER) throw new Error("Accounting revision exceeds supported range");
+  if (!Number.isSafeInteger(book.revision) || book.revision < 0 || book.revision >= Number.MAX_SAFE_INTEGER) throw new Error("Accounting revision exceeds supported range");
   if (!["execution", "order_status"].includes(event.kind)) throw new Error("reconciliation_required: non-fill economic event");
   if (!event.orderId || !event.symbol || !["buy", "sell"].includes(event.side) || !Number.isFinite(Date.parse(event.timestamp))) throw new Error("Invalid execution identity/side/time");
   if (!["incremental", "cumulative"].includes(event.quantityMode) || !["execution", "cumulative_vwap"].includes(event.priceMode) || !["incremental", "cumulative"].includes(event.feeMode)) throw new Error("Explicit quantity, price and fee modes required");
@@ -137,8 +146,11 @@ export function reduceAccountingEvent(book: AccountingBook, event: AccountingEve
     }
     if (notional.compare(0) <= 0) throw new Error("reconciliation_required: nonpositive execution notional");
     price = notional.div(quantity);
-  } else if (event.quantityMode === "cumulative" && event.quoteNotional != null && decimal(event.quoteNotional).compare(priorNotional) !== 0) {
-    throw new Error("reconciliation_required: notional changed without quantity");
+  } else if (event.kind === "execution" && event.quantityMode === "cumulative") {
+    const cumulativeNotional = event.quoteNotional == null
+      ? event.priceMode === "cumulative_vwap" && event.price != null ? totalQty.mul(event.price) : undefined
+      : decimal(event.quoteNotional);
+    if (cumulativeNotional && cumulativeNotional.compare(priorNotional) !== 0) throw new Error("reconciliation_required: notional changed without quantity");
   }
   const status = !prev || (rank[event.status] ?? 0) >= (rank[prev.status] ?? 0) ? event.status : prev.status;
   const economic = quantity.compare(0) > 0 || fee.compare(0) !== 0;

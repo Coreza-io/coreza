@@ -14,11 +14,16 @@ CREATE TABLE public.portfolio_accounting_books (
   calculation_version integer NOT NULL CHECK (calculation_version = 2),
   checkpoint jsonb NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, workflow_id, activation_id, scope)
+  UNIQUE (user_id, workflow_id, activation_id),
+  CHECK (scope ?& ARRAY['userId','workflowId','activationId','broker','environment','accountId','credentialId','accountModel','currency']),
+  CHECK (checkpoint ?& ARRAY['version','revision','scope','cash','startingCash','positions','orders']),
+  CHECK (scope IS NOT DISTINCT FROM checkpoint->'scope' AND calculation_version IS NOT DISTINCT FROM (checkpoint->>'version')::integer AND revision IS NOT DISTINCT FROM (checkpoint->>'revision')::bigint),
+  CHECK (user_id IS NOT DISTINCT FROM (scope->>'userId')::uuid AND workflow_id IS NOT DISTINCT FROM (scope->>'workflowId')::uuid AND activation_id IS NOT DISTINCT FROM (scope->>'activationId')::uuid)
 );
 -- Exclusive account admission persists until an explicit reconciled handover.
 CREATE UNIQUE INDEX portfolio_accounting_exclusive_account ON public.portfolio_accounting_books
   ((scope->>'broker'),(scope->>'environment'),(scope->>'accountId')) WHERE active_account;
+CREATE INDEX portfolio_accounting_credential_claim ON public.portfolio_accounting_books(user_id,(scope->>'credentialId')) WHERE active_account;
 CREATE TABLE public.portfolio_accounting_events (
   book_key text NOT NULL REFERENCES public.portfolio_accounting_books(book_key),
   event_id text NOT NULL,
@@ -63,7 +68,7 @@ BEGIN
       (p_book->'scope'->>'activationId')::uuid,p_book->'scope',p_owner,0,2,p_book)
     ON CONFLICT DO NOTHING;
   SELECT * INTO STRICT b FROM public.portfolio_accounting_books WHERE book_key=p_key FOR UPDATE;
-  IF NOT b.active_account OR b.scope IS DISTINCT FROM p_book->'scope' OR b.owner_token IS DISTINCT FROM p_owner THEN
+  IF NOT b.active_account OR b.scope IS DISTINCT FROM p_book->'scope' OR b.owner_token IS DISTINCT FROM p_owner OR b.checkpoint->>'startingCash' IS DISTINCT FROM p_book->>'startingCash' THEN
     RAISE EXCEPTION 'recovering: ownership transfer requires broker reconciliation and approved recovery';
   END IF;
   RETURN b.checkpoint;
@@ -93,6 +98,24 @@ BEGIN
   UPDATE public.portfolio_accounting_books SET revision=p_expected+1, checkpoint=p_book, updated_at=now() WHERE book_key=p_key;
   RETURN p_book;
 END $$;
+-- Reporting retries can arrive out of order or from multiple workers. Derive
+-- status under the book lock from current progress, never from delivery order.
+CREATE FUNCTION public.portfolio_accounting_ack_report(p_key text, p_event_id text)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE b public.portfolio_accounting_books; e public.portfolio_accounting_events;
+BEGIN
+  SELECT * INTO STRICT b FROM public.portfolio_accounting_books WHERE book_key=p_key FOR UPDATE;
+  SELECT * INTO STRICT e FROM public.portfolio_accounting_events WHERE book_key=p_key AND event_id=p_event_id;
+  UPDATE public.live_fills f
+    SET fill_status=b.checkpoint->'orders'->(e.payload->'input'->>'orderId')->>'status'
+    FROM public.portfolio_accounting_events owned
+    WHERE owned.book_key=p_key AND owned.payload->'input'->>'orderId'=e.payload->'input'->>'orderId'
+      AND owned.payload->'execution'->>'id'=f.fill_id
+      AND f.user_id=b.user_id AND f.workflow_id=b.workflow_id AND f.execution_id=b.activation_id;
+  UPDATE public.portfolio_accounting_events SET reported_at=now() WHERE book_key=p_key AND event_id=p_event_id;
+END $$;
+REVOKE ALL ON FUNCTION public.portfolio_accounting_ack_report(text,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.portfolio_accounting_ack_report(text,text) TO service_role;
 REVOKE ALL ON FUNCTION public.portfolio_accounting_open(text,uuid,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.portfolio_accounting_commit(text,uuid,bigint,jsonb,text,text,jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.portfolio_accounting_open(text,uuid,jsonb) TO service_role;

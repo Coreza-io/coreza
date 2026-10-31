@@ -12,6 +12,7 @@ import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
+import { AccountingSession } from "../../portfolio/AccountingSession";
 import { performance } from "perf_hooks";
 import { LOG } from "../../utils/logging";
 import { LIVE_TIMING_ENABLED, observeLive, observeEpoch, orderSubmitHttp, orderStage, liveSignalToSubmit, liveReceiptToSubmit, countLive, type LiveExecutionTiming } from "../../utils/liveTiming";
@@ -188,9 +189,14 @@ export class BrokerExecutor implements INodeExecutor {
     try {
       operation = node.values?.operation;
       const activationId = context?.reportingExecutionId ?? context?.executionId;
-      if (activationId && /(?:place|submit|replace|modify).*order|close_position/.test(operation) &&
-          PortfolioManager.existingInstance(userId, activationId)?.usesVersionedAccounting()) {
-        return createErrorOutput("Portfolio accounting v2 order submission is disabled until reservation/settlement and recovery adapters are validated");
+      const submitsOrder = /(?:place|submit|replace|modify|amend).*order|close_.*position/.test(operation);
+      if (submitsOrder) {
+        const graphUsesV2 = context?.nodes?.some((candidate: WorkflowNode) => candidate.category === "Portfolio" &&
+          candidate.values?.mode !== "backtest" && String(candidate.values?.calculationVersion) === "2");
+        if (graphUsesV2 || (activationId && PortfolioManager.existingInstance(userId, activationId)?.usesVersionedAccounting())) {
+          return createErrorOutput("Portfolio accounting v2 order submission is disabled until reservation/settlement and recovery adapters are validated");
+        }
+        await AccountingSession.assertLegacySubmissionAllowed(userId, workflowId, activationId, node.values?.credential_id);
       }
       const brokerNode = node as WorkflowNode & { subCategory: string };
       broker = (brokerNode.subCategory ?? node.name).toLowerCase();

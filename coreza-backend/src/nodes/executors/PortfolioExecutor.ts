@@ -111,6 +111,15 @@ function toBoolean(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
+function accountingEvidence(params: any): Record<string, unknown> {
+  return { orderId: params.orderId, executionId: params.executionId, symbol: params.symbol, side: params.side,
+    quantity: params.filledQty, price: params.avgFillPrice, quoteNotional: params.quoteNotional, fee: params.feeAmount,
+    feeAsset: params.feeAsset, timestamp: params.event_time ?? params.eventTime, eventKind: params.eventKind,
+    type: params.type, algoId: params.algoId, broker: params.broker, accountId: params.accountId,
+    credentialId: params.credential_id, environment: params.environment,
+    quantityMode: params._accountingQuantityMode, priceMode: params._accountingPriceMode, feeMode: params._accountingFeeMode };
+}
+
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -378,12 +387,7 @@ export class PortfolioExecutor implements INodeExecutor {
     if (isPreviousActivation && !existing) {
       if (String(params.calculationVersion) === "2") {
         try {
-          await AccountingSession.retainUnrecoveredEvent(userId, context.workflowId, executionId, {
-            orderId: params.orderId, executionId: params.executionId, symbol: params.symbol, side: params.side,
-            quantity: params.filledQty, price: params.avgFillPrice, quoteNotional: params.quoteNotional,
-            fee: params.feeAmount, feeAsset: params.feeAsset, timestamp: params.event_time ?? params.eventTime,
-            quantityMode: params._accountingQuantityMode, priceMode: params._accountingPriceMode, feeMode: params._accountingFeeMode,
-          });
+          await AccountingSession.retainUnrecoveredEvent(userId, context.workflowId, executionId, accountingEvidence(params));
           return createErrorOutput("Late v2 fill retained for its owning activation; journal recovery is required");
         } catch (error) { return createErrorOutput(error); }
       }
@@ -411,7 +415,13 @@ export class PortfolioExecutor implements INodeExecutor {
       if (!session || session.status !== "ready") return { ...createErrorOutput(session?.reason ?? "Accounting checkpoint must be initialized or recovered before use"), details: { accounting_status: session?.status ?? "initializing" } };
       const scope = session.getScope()!;
       if (!params.base_currency) baseCurrency = scope.currency;
-      if ((params.accountId && params.accountId !== scope.accountId) || (params.credential_id && params.credential_id !== scope.credentialId) || (params.environment && params.environment !== scope.environment) || (params.broker && params.broker !== scope.broker) || baseCurrency !== scope.currency) return createErrorOutput("Portfolio account/environment/currency scope mismatch");
+      if ((params.accountId && params.accountId !== scope.accountId) || (params.credential_id && params.credential_id !== scope.credentialId) || (params.environment && params.environment !== scope.environment) || (params.broker && params.broker !== scope.broker) || baseCurrency !== scope.currency) {
+        if (operation === "sync_order_event") {
+          try { await session.rejectEvidence(accountingEvidence(params), "Portfolio account/environment/currency scope mismatch"); }
+          catch (error) { return createErrorOutput(error); }
+        }
+        return createErrorOutput("Portfolio account/environment/currency scope mismatch");
+      }
       if (["sync_broker_state", "register_order_intent", "cancel_order", "reconcile_position", "reconcile_balances", "apply_execution", "apply_order_update"].includes(operation)) return createErrorOutput("This operation requires a v2 reconciliation/reservation adapter; legacy mutations cannot alter a versioned book");
     }
 
@@ -666,19 +676,24 @@ export class PortfolioExecutor implements INodeExecutor {
       if (rawCash == null || String(rawCash).trim() === "") throw new Error("Explicit allocation cash is required");
       const initial = createBook({ userId: context.userId, workflowId: context.workflowId, activationId: context.reportingExecutionId ?? context.executionId!,
         broker: params.broker, environment: params.environment, accountId: params.accountId, credentialId: params.credential_id, accountModel: params.accountModel, currency: params.base_currency }, String(rawCash));
-      await LiveStrategiesRepository.recordBaseline(context.userId, context.workflowId, initial.scope.activationId, decimal(initial.startingCash).toNumber(), {
-        broker: initial.scope.broker, credential_id: params.credential_id || context.userId, base_currency: initial.scope.currency,
-      });
       let session = PortfolioExecutor.accountingSessions.get(pm);
       if (!session) { session = new AccountingSession(); PortfolioExecutor.accountingSessions.set(pm, session); }
       const book = await session.open(initial);
       if (!pm.isAccountingVersion2()) pm.publishAccounting({ book });
+      await LiveStrategiesRepository.recordBaseline(context.userId, context.workflowId, book.scope.activationId, decimal(book.startingCash).toNumber(), {
+        broker: book.scope.broker, credential_id: book.scope.credentialId, base_currency: book.scope.currency,
+      });
+
       return createSuccessOutput({ created: true, accounting_status: session.status, ...this.getPortfolioSummary(pm, initial.scope.currency) });
     } catch (error: any) { return createErrorOutput(error.message); }
   }
 
   private async syncAccountingEvent(pm: PortfolioManager, params: any, context: NodeExecutionContext): Promise<NodeResult> {
     const session = PortfolioExecutor.accountingSessions.get(pm)!;
+    let sentToAccounting = false;
+    // Keep rejected adapter input as evidence too: parsing and ownership/scope
+    // failures can happen before the normalized event reaches the session.
+    const evidence = accountingEvidence(params);
     try {
       const scope = session.getScope()!;
       const quantity = params.filledQty == null ? "0" : String(params.filledQty);
@@ -695,7 +710,9 @@ export class PortfolioExecutor implements INodeExecutor {
         status: String(params.status ?? "").toLowerCase(), timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
         accountPosition: params.positionQty == null ? undefined : String(params.positionQty),
       };
-      const transition = await session.accept(event, candidate => pm.publishAccounting(candidate));
+      sentToAccounting = true;
+      const transition = await session.accept(event, candidate => pm.prepareAccounting(candidate));
+      if (session.status !== "ready") throw new Error(session.reason ?? "Accounting acceptance interrupted");
       const execution = transition.execution;
       if (execution) {
         const reportingSnapshot = this.buildLatestSnapshot(pm, { userId: context.userId, workflowId: context.workflowId,
@@ -705,6 +722,10 @@ export class PortfolioExecutor implements INodeExecutor {
       return createSuccessOutput({ accepted: Boolean(execution), reason: transition.reason, accounting_status: session.status, ...this.getPortfolioSummary(pm, scope.currency) });
     } catch (error: any) {
       session.stop(error.message);
+      if (!sentToAccounting) {
+        try { await session.rejectEvidence(evidence, error.message); }
+        catch (retentionError) { return createErrorOutput(new AggregateError([error, retentionError], "Rejected event retention was not confirmed; retain upstream delivery")); }
+      }
       return { ...createErrorOutput(error.message), details: { accounting_status: session.status, accounting_reason: session.reason } };
     }
   }
@@ -1228,8 +1249,11 @@ export class PortfolioExecutor implements INodeExecutor {
     // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
     if (pm.isAccountingVersion2() && (params?.algoId || params.type === "listen_key_expired" || (params.eventKind && !["execution", "order_status"].includes(params.eventKind)))) {
       const session = PortfolioExecutor.accountingSessions.get(pm)!;
-      session.stop("reconciliation_required: broker lifecycle gap or unsupported economic event");
-      return createErrorOutput(session.reason);
+      try {
+        await session.rejectEvidence(accountingEvidence(params),
+          "reconciliation_required: broker lifecycle gap or unsupported economic event");
+        return createErrorOutput(session.reason);
+      } catch (error) { return createErrorOutput(error); }
     }
     if (params?.algoId) {
       return this.brokerSyncAlgoUpdate(pm, params, context);
@@ -1309,6 +1333,11 @@ export class PortfolioExecutor implements INodeExecutor {
         clientOrderId,
       );
       if (!ours && !verifiedReportingOwner) {
+        if (pm.isAccountingVersion2()) {
+          const session = PortfolioExecutor.accountingSessions.get(pm)!;
+          await session.rejectEvidence(accountingEvidence(params), "reconciliation_required: unattributed event in an exclusive account");
+          return createErrorOutput(session.reason);
+        }
         return createSuccessOutput({
             skipped: true,
             reason: "unknown_order",
@@ -1529,6 +1558,11 @@ export class PortfolioExecutor implements INodeExecutor {
           ...this.getPortfolioSummary(pm, baseCurrency),
         });
     } catch (error: any) {
+      if (pm.isAccountingVersion2()) {
+        const session = PortfolioExecutor.accountingSessions.get(pm)!;
+        try { await session.rejectEvidence(accountingEvidence(params), error.message); }
+        catch (retentionError) { return createErrorOutput(new AggregateError([error, retentionError], "Broker event rejection was not durably retained; retain upstream delivery")); }
+      }
       return createErrorOutput(error.message);
     }
   }

@@ -27,7 +27,8 @@ export interface LiveOrder {
   rejectReason?: string;
   status: string;
   tag?: string;
-  totalCommission: number;
+  totalCommission: number | undefined;
+  commissionsByAsset?: Record<string, number>;
   commissionAsset?: string;
   quoteAsset?: string;
   events: LiveOrderEvent[];
@@ -38,6 +39,12 @@ export interface LiveOrdersResult {
 }
 
 type RawFill = {
+  broker?: string;
+  credential_id?: string;
+  environment?: string;
+  workflow_id?: string;
+  execution_id?: string;
+  quote_qty?: number;
   id?: string;
   fill_id?: string;
   order_id?: string | null;
@@ -180,6 +187,7 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
     else if (fillId) canonicalKey = `fill:${fillId}`;
 
     if (!canonicalKey) continue;
+    canonicalKey = JSON.stringify([row.broker, row.credential_id, row.environment, row.workflow_id, row.execution_id, row.symbol, canonicalKey]);
 
     const existing = grouped.get(canonicalKey);
     if (existing) existing.push(row);
@@ -187,7 +195,11 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
   }
 
   const orders = Array.from(grouped.values()).map((group) => {
-    const sorted = [...group].sort(
+    // Reporting rows represent incremental executions. A repeated delivery of the
+    // same scoped fill must not inflate order quantity or fees.
+    const unique = new Map<string, RawFill>();
+    group.forEach((row, index) => unique.set(String(row.fill_id ?? row.id ?? `unidentified:${index}`), row));
+    const sorted = [...unique.values()].sort(
       (a, b) =>
         new Date(a.event_time ?? 0).getTime() -
         new Date(b.event_time ?? 0).getTime(),
@@ -203,9 +215,16 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
     const representative = first;
     const totalQty = sorted.reduce((sum, row) => sum + toNumber(row.qty), 0);
     const weightedNotional = sorted.reduce(
-      (sum, row) => sum + toNumber(row.qty) * toNumber(row.price),
+      (sum, row) => sum + (row.quote_qty == null ? toNumber(row.qty) * toNumber(row.price) : toNumber(row.quote_qty)),
       0,
     );
+
+    const commissionsByAsset: Record<string, number> = {};
+    for (const row of sorted) {
+      const asset = row.commission_asset || "UNKNOWN";
+      commissionsByAsset[asset] = (commissionsByAsset[asset] ?? 0) + toNumber(row.commission);
+    }
+    const assets = Object.keys(commissionsByAsset);
 
     const events: LiveOrderEvent[] = sorted.map((row, index) => {
       return {
@@ -241,11 +260,9 @@ export const aggregateFillsToOrders = (fills: RawFill[]): LiveOrdersResult => {
       rejectReason: resolveRejectReason(latestRow),
       status: normalizeStatus(statusLeader?.fill_status),
       tag: latestRow?.tag ?? undefined,
-      totalCommission: sorted.reduce(
-        (sum, row) => sum + toNumber(row.commission),
-        0,
-      ),
-      commissionAsset: first?.commission_asset ?? undefined,
+      totalCommission: assets.length === 1 ? commissionsByAsset[assets[0]] : undefined,
+      commissionsByAsset,
+      commissionAsset: assets.length === 1 ? assets[0] : "Multiple assets",
       quoteAsset: getQuoteAsset(representative?.symbol),
       events,
     };

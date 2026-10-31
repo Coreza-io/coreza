@@ -580,7 +580,7 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "required": false,
-      "description": "Cumulative filled quantity from the broker (stream output: cumulativeFilledQty). Do not map the stream filledQty, which is only the latest execution. The executor derives the execution delta internally.",
+      "description": "This execution quantity, or the order-to-date total when Cumulative Fill Values is checked. Map exact broker decimal strings where available.",
       "displayOptions": {
         "show": {
           "operation": [
@@ -592,8 +592,23 @@
       }
     },
     {
+      "key": "cumulativeFilledQty",
+      "label": "Cumulative Fill Values",
+      "type": "checkbox",
+      "default": false,
+      "description": "Checked: quantity is total filled so far, price is the order average, and fee is the total fee so far. Unchecked: all three describe this execution. Map matching values; broker streams may mix cumulative quantity with execution fees.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sync_order_event"
+          ]
+        }
+      }
+    },
+    {
       "key": "avgFillPrice",
-      "label": "Average Price",
+      "label": "Fill Price",
+      "description": "Execution price when Cumulative Fill Values is unchecked; order-to-date average price when checked.",
       "type": "text",
       "placeholder": "e.g. 2122.79",
       "required": false,
@@ -622,6 +637,7 @@
     {
       "key": "feeAmount",
       "label": "Fee Amount",
+      "description": "This execution fee when Cumulative Fill Values is unchecked; total order fees so far when checked. Use the same currency throughout the order.",
       "type": "text",
       "placeholder": "0",
       "required": false,
@@ -650,7 +666,7 @@
       "type": "text",
       "placeholder": "e.g. 0.9982",
       "required": false,
-      "description": "Final broker-reported position quantity (after fees). Used by Alpaca where position differs from filled quantity.",
+      "description": "Optional broker position consistency check. A mismatch is reported instead of overwriting the attributed quantity.",
       "displayOptions": {
         "show": {
           "operation": ["reconcile_position", "sync_order_event"]

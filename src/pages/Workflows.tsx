@@ -89,10 +89,14 @@ const Workflows = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, session } = useAuth();
-  const { toggleActivation, isActivationPending } = useWorkflowActivation();
-  const activationRevision = useRef(0);
-
   const projectId = searchParams.get("project");
+  const { toggleActivation, isActivationPending } = useWorkflowActivation(projectId ?? "all");
+  const activationRevision = useRef(0);
+  const activationRequests = useRef(new Map<string, { token: symbol; activating: boolean; scope: string }>());
+  const refreshWorkflows = useRef<(() => void) | null>(null);
+  const scope = `${user?.id ?? ""}:${projectId ?? "all"}`;
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
 
   // Load project info if projectId is provided
   useEffect(() => {
@@ -130,18 +134,26 @@ const Workflows = () => {
 
   // Load workflows from database
   useEffect(() => {
-    if (!user) return;
+    setWorkflows([]);
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     let disposed = false;
     let revision = 0;
+    let loaded = false;
     const loadWorkflows = async (showLoading = true) => {
+      if (disposed) return;
       const requestRevision = ++revision;
       const activation = activationRevision.current;
+      const loadFullWorkflow = !loaded;
       if (showLoading) setLoading(true);
       try {
-        let query = supabase
-          .from("workflows")
-          .select("*")
+        const table = supabase.from("workflows");
+        let query = (loadFullWorkflow
+          ? table.select("*")
+          : table.select("id,is_active,updated_at"))
           .eq("user_id", user.id);
 
         // Filter by project if projectId is provided
@@ -162,7 +174,19 @@ const Workflows = () => {
             variant: "destructive",
           });
         } else {
-          setWorkflows(data || []);
+          const rows = data || [];
+          if (loadFullWorkflow) {
+            setWorkflows(rows as Workflow[]);
+            loaded = true;
+          } else {
+            const statuses = new Map(rows.map((row) => [row.id, row]));
+            setWorkflows((current) => current
+              .filter((workflow) => statuses.has(workflow.id))
+              .map((workflow) => {
+                const status = statuses.get(workflow.id)!;
+                return { ...workflow, is_active: status.is_active, updated_at: status.updated_at };
+              }));
+          }
         }
       } catch (error) {
         if (disposed || requestRevision !== revision || activation !== activationRevision.current) return;
@@ -179,6 +203,7 @@ const Workflows = () => {
 
     loadWorkflows();
     const refresh = () => { void loadWorkflows(false); };
+    refreshWorkflows.current = refresh;
     window.addEventListener("focus", refresh);
     const channel = supabase
       .channel(`workflow-list-active-${user.id}-${projectId ?? "all"}`)
@@ -190,6 +215,7 @@ const Workflows = () => {
       });
     return () => {
       disposed = true;
+      if (refreshWorkflows.current === refresh) refreshWorkflows.current = null;
       window.removeEventListener("focus", refresh);
       void supabase.removeChannel(channel);
     };
@@ -199,8 +225,16 @@ const Workflows = () => {
     workflowId: string,
     currentStatus: boolean,
   ) => {
+    const requestScope = currentScope.current;
+    const pending = activationRequests.current.get(workflowId);
+    if (pending?.scope === requestScope && (!currentStatus || !pending.activating)) return;
+    const request = Symbol(workflowId);
+    activationRequests.current.set(workflowId, { token: request, activating: !currentStatus, scope: requestScope });
     activationRevision.current += 1;
     const result = await toggleActivation(workflowId, currentStatus);
+    if (activationRequests.current.get(workflowId)?.token !== request) return;
+    activationRequests.current.delete(workflowId);
+    if (currentScope.current !== requestScope || !refreshWorkflows.current) return;
     activationRevision.current += 1;
     if (result !== null) {
       setWorkflows(
@@ -209,6 +243,9 @@ const Workflows = () => {
         ),
       );
     }
+    // A request may fail after the server has committed, or invalidate an
+    // overlapping refresh. Always reconcile after the latest action settles.
+    refreshWorkflows.current?.();
   };
 
   const handleDeleteWorkflow = (workflow: Workflow) => {
@@ -231,7 +268,7 @@ const Workflows = () => {
         throw error;
       }
 
-      setWorkflows(workflows.filter((w) => w.id !== selectedWorkflow.id));
+      setWorkflows((current) => current.filter((w) => w.id !== selectedWorkflow.id));
       toast({
         title: "Success",
         description: "Workflow deleted successfully",

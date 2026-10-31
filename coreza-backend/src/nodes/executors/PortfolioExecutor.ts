@@ -251,9 +251,7 @@ export class PortfolioExecutor implements INodeExecutor {
         : { ...node.values, ...input };
 
       // Configuration is independent of the native numeric cumulativeFilledQty field.
-      params._quantityMode = node.values?.cumulativeFilledQty === true ? "cumulative" : "incremental";
-      params._priceMode = node.values?.priceMode ?? "execution";
-      params._feeMode = node.values?.feeMode ?? "incremental";
+      params._cumulativeFillValues = node.values?.cumulativeFilledQty === true;
       const mode = params.mode;
 
       if (mode === "backtest") {
@@ -370,7 +368,7 @@ export class PortfolioExecutor implements INodeExecutor {
     const isPreviousActivation = executionId !== currentActivationId;
     const existing = PortfolioManager.existingInstance(userId, executionId);
     if (isPreviousActivation && !existing) {
-      if (params._quantityMode === "cumulative" || params._priceMode === "cumulative_vwap" || params._feeMode === "cumulative") {
+      if (params._cumulativeFillValues === true) {
         return createErrorOutput("Prior activation order totals are unavailable; cumulative input cannot be recorded as an incremental fill");
       }
       // Preserve raw fill attribution without inventing a position or resetting old equity.
@@ -1234,7 +1232,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const accepted = pm.applyOrderEvent({
         orderId: normalizedBrokerId, clientOrderId, symbol: normalizeSymbol(symbol), side, status,
         quantity: params.filledQty, price: params.avgFillPrice, fee: params.feeAmount,
-        quantityMode: params._quantityMode ?? "incremental", priceMode: params._priceMode ?? "execution", feeMode: params._feeMode ?? "incremental",
+        cumulative: params._cumulativeFillValues === true,
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
         scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),

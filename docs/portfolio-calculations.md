@@ -5,12 +5,19 @@ reads, database writes or network waits to financial acceptance. Existing owners
 lookups and asynchronous reporting continue through their existing paths. No new
 schema, session layer, journal, outbox or feature flag is required.
 
-Filled Quantity means one execution unless Cumulative Filled Quantity is checked.
-The checkbox comes from node configuration; a numeric native stream field cannot
-replace it. Price Meaning and Fee Meaning are independent settings. Cumulative order
-average prices are converted using cumulative notional differences, not multiplied
-by the latest quantity delta. Execution value is derived internally from quantity
-and the selected price meaning; there is no separate amount input. Changing interpretation for an active order is rejected.
+Cumulative Fill Values is the single setting for quantity, price and fees:
+
+- Unchecked: quantity, price and fee describe one execution.
+- Checked: quantity is the total filled so far, price is the order-to-date average,
+  and fee is the total order fee so far. Quantity and fee differences are derived
+  from accepted totals; execution value is the difference of quantity times average.
+
+The saved checkbox key remains `cumulativeFilledQty`. It comes from node configuration;
+a numeric native stream field cannot replace it. All three mapped inputs must match
+the checkbox: some broker streams supply cumulative quantity but individual execution
+fees/prices. These mixed values must not be supplied with the checkbox checked.
+No separate price, fee or amount controls are needed. Changing the checkbox for an
+active order is rejected.
 
 Only the affected order, position, cash balance and fee/profit totals are calculated.
 The complete candidate is validated before these records are published synchronously.

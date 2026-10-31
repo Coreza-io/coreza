@@ -309,7 +309,7 @@ export class PortfolioManager {
     const priorProgress = this.fillProgress.get(progressKey);
     const baseline = priorProgress ?? (previousOrder && previousOrder.filledQty > 0 ? {
       quantity: String(previousOrder.filledQty), notional: decimal(previousOrder.filledQty).mul(previousOrder.avgFillPrice ?? 0).toString(),
-      fees: String(previousOrder.totalFees), quantityMode: input.quantityMode, priceMode: input.priceMode, feeMode: input.feeMode,
+      fees: String(previousOrder.totalFees), cumulative: input.cumulative,
     } : undefined);
     const fill = duplicate ? { quantity: "0", price: "0", notional: "0", fee: "0", progress: baseline, reason: "duplicate_execution" }
       : normalizeFill(input, baseline);

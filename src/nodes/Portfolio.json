@@ -580,7 +580,7 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "required": false,
-      "description": "This execution quantity, or the order-to-date total when Cumulative Filled Quantity is checked. Map exact broker decimal strings where available.",
+      "description": "This execution quantity, or the order-to-date total when Cumulative Fill Values is checked. Map exact broker decimal strings where available.",
       "displayOptions": {
         "show": {
           "operation": [
@@ -593,57 +593,10 @@
     },
     {
       "key": "cumulativeFilledQty",
-      "label": "Cumulative Filled Quantity",
+      "label": "Cumulative Fill Values",
       "type": "checkbox",
       "default": false,
-      "description": "Checked: Filled Quantity is the order-to-date total. Unchecked: it is this execution quantity. Configure this independently of the stream field with the same name.",
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "priceMode",
-      "label": "Price Meaning",
-      "type": "select",
-      "default": "execution",
-      "options": [
-        {
-          "id": "execution",
-          "name": "Execution price"
-        },
-        {
-          "id": "cumulative_vwap",
-          "name": "Cumulative order average"
-        }
-      ],
-      "description": "A cumulative order average requires Cumulative Filled Quantity.",
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
-      "key": "feeMode",
-      "label": "Fee Meaning",
-      "type": "select",
-      "default": "incremental",
-      "options": [
-        {
-          "id": "incremental",
-          "name": "Execution fee"
-        },
-        {
-          "id": "cumulative",
-          "name": "Cumulative order fee"
-        }
-      ],
+      "description": "Checked: quantity is total filled so far, price is the order average, and fee is the total fee so far. Unchecked: all three describe this execution. Map matching values; broker streams may mix cumulative quantity with execution fees.",
       "displayOptions": {
         "show": {
           "operation": [
@@ -654,7 +607,8 @@
     },
     {
       "key": "avgFillPrice",
-      "label": "Average Price",
+      "label": "Fill Price",
+      "description": "Execution price when Cumulative Fill Values is unchecked; order-to-date average price when checked.",
       "type": "text",
       "placeholder": "e.g. 2122.79",
       "required": false,
@@ -683,6 +637,7 @@
     {
       "key": "feeAmount",
       "label": "Fee Amount",
+      "description": "This execution fee when Cumulative Fill Values is unchecked; total order fees so far when checked. Use the same currency throughout the order.",
       "type": "text",
       "placeholder": "0",
       "required": false,

@@ -13,9 +13,6 @@ import { NodeResultError } from "../../contracts/nodeResult";
  */
 
 import { createHash, randomUUID } from "crypto";
-import { AccountingSession } from "../../portfolio/AccountingSession";
-import { AccountingEvent, createBook } from "../../portfolio/accounting";
-import { decimal } from "../../portfolio/decimal";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
@@ -111,15 +108,6 @@ function toBoolean(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
-function accountingEvidence(params: any): Record<string, unknown> {
-  return { orderId: params.orderId, executionId: params.executionId, symbol: params.symbol, side: params.side,
-    quantity: params.filledQty, price: params.avgFillPrice, quoteNotional: params.quoteNotional, fee: params.feeAmount,
-    feeAsset: params.feeAsset, timestamp: params.event_time ?? params.eventTime, eventKind: params.eventKind,
-    type: params.type, algoId: params.algoId, broker: params.broker, accountId: params.accountId,
-    credentialId: params.credential_id, environment: params.environment,
-    quantityMode: params._accountingQuantityMode, priceMode: params._accountingPriceMode, feeMode: params._accountingFeeMode };
-}
-
 /**
  * Unified PortfolioExecutor — handles both backtest (SimBroker) and live broker modes.
  *
@@ -192,7 +180,6 @@ function normalizeAlpacaCryptoSymbol(symbol: any, assetClass?: string): string {
 }
 
 export class PortfolioExecutor implements INodeExecutor {
-  private static accountingSessions = new WeakMap<PortfolioManager, AccountingSession>();
   readonly category = "Portfolio";
   // Backtest mode is fully sync. Broker mode is async, but compiled execution
   // only calls this node in backtest mode and the adapter safely rejects Promise returns.
@@ -263,12 +250,10 @@ export class PortfolioExecutor implements INodeExecutor {
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
 
-      // Interpretation is node configuration, never a native payload field. In
-      // particular the numeric stream cumulativeFilledQty cannot replace this boolean.
-      params.calculationVersion = node.values?.calculationVersion ?? "1";
-      params._accountingQuantityMode = typeof node.values?.cumulativeFilledQty === "boolean" ? (node.values.cumulativeFilledQty ? "cumulative" : "incremental") : undefined;
-      params._accountingPriceMode = node.values?.priceMode;
-      params._accountingFeeMode = node.values?.feeMode;
+      // Configuration is independent of the native numeric cumulativeFilledQty field.
+      params._quantityMode = node.values?.cumulativeFilledQty === true ? "cumulative" : "incremental";
+      params._priceMode = node.values?.priceMode ?? "execution";
+      params._feeMode = node.values?.feeMode ?? "incremental";
       const mode = params.mode;
 
       if (mode === "backtest") {
@@ -385,11 +370,8 @@ export class PortfolioExecutor implements INodeExecutor {
     const isPreviousActivation = executionId !== currentActivationId;
     const existing = PortfolioManager.existingInstance(userId, executionId);
     if (isPreviousActivation && !existing) {
-      if (String(params.calculationVersion) === "2") {
-        try {
-          await AccountingSession.retainUnrecoveredEvent(userId, context.workflowId, executionId, accountingEvidence(params));
-          return createErrorOutput("Late v2 fill retained for its owning activation; journal recovery is required");
-        } catch (error) { return createErrorOutput(error); }
+      if (params._quantityMode === "cumulative" || params._priceMode === "cumulative_vwap" || params._feeMode === "cumulative") {
+        return createErrorOutput("Prior activation order totals are unavailable; cumulative input cannot be recorded as an incremental fill");
       }
       // Preserve raw fill attribution without inventing a position or resetting old equity.
       await FillEventBus.publish(this.buildFillStreamEvent({
@@ -404,26 +386,7 @@ export class PortfolioExecutor implements INodeExecutor {
     const pm = existing ?? PortfolioManager.getInstance(userId, executionId);
 
     const symbols = this.parseSymbols(params.symbol);
-    let baseCurrency = params.base_currency || "USDT";
-
-    if (String(params.calculationVersion) === "2") pm.requireVersionedAccounting();
-    const version2 = pm.usesVersionedAccounting();
-    if (version2) {
-      if (process.env.PORTFOLIO_ACCOUNTING_V2_ENABLED !== "true") return createErrorOutput("Portfolio accounting v2 is disabled pending deployment/reconciliation validation");
-      if (operation === "create_portfolio") return this.createAccountingPortfolio(pm, params, context);
-      const session = PortfolioExecutor.accountingSessions.get(pm);
-      if (!session || session.status !== "ready") return { ...createErrorOutput(session?.reason ?? "Accounting checkpoint must be initialized or recovered before use"), details: { accounting_status: session?.status ?? "initializing" } };
-      const scope = session.getScope()!;
-      if (!params.base_currency) baseCurrency = scope.currency;
-      if ((params.accountId && params.accountId !== scope.accountId) || (params.credential_id && params.credential_id !== scope.credentialId) || (params.environment && params.environment !== scope.environment) || (params.broker && params.broker !== scope.broker) || baseCurrency !== scope.currency) {
-        if (operation === "sync_order_event") {
-          try { await session.rejectEvidence(accountingEvidence(params), "Portfolio account/environment/currency scope mismatch"); }
-          catch (error) { return createErrorOutput(error); }
-        }
-        return createErrorOutput("Portfolio account/environment/currency scope mismatch");
-      }
-      if (["sync_broker_state", "register_order_intent", "cancel_order", "reconcile_position", "reconcile_balances", "apply_execution", "apply_order_update"].includes(operation)) return createErrorOutput("This operation requires a v2 reconciliation/reservation adapter; legacy mutations cannot alter a versioned book");
-    }
+    const baseCurrency = params.base_currency || "USDT";
 
     if (operation === "create_portfolio") {
       if (pm.isBootstrapped()) {
@@ -521,11 +484,10 @@ export class PortfolioExecutor implements INodeExecutor {
         return this.brokerSyncOrderEvent(pm, params, context, Boolean(reportingOwner));
       case "get_portfolio":
         return this.brokerGetAll(pm, baseCurrency);
-      case "get_equity":
-        return createSuccessOutput({ equity: pm.getTotalEquity(baseCurrency), ...pm.accountingMetadata() });
       case "get_cash":
-        if (pm.isAccountingVersion2()) return createErrorOutput("Automated cash sizing requires the account reservation/settlement adapter");
-        return createSuccessOutput({ cash: pm.getCash(), ...pm.accountingMetadata() });
+        return createSuccessOutput({ cash: pm.getCash() });
+      case "get_equity":
+        return createSuccessOutput({ equity: pm.getTotalEquity(baseCurrency) });
       case "update_mtm": {
         // Accept marketPrice (new)
         const mtmPrice = toNumber(params.marketPrice ?? params.price);
@@ -664,69 +626,6 @@ export class PortfolioExecutor implements INodeExecutor {
       }
       default:
         return createErrorOutput(`Unknown portfolio operation: ${operation}`);
-    }
-  }
-
-  private async createAccountingPortfolio(pm: PortfolioManager, params: any, context: NodeExecutionContext): Promise<NodeResult> {
-    try {
-      if (params.exclusiveAccount !== true || params.accountModel !== "long_only_cash" || /future|margin|option/i.test(String(params.broker) + String(params.marketType ?? ""))) throw new Error("unsupported_model: v2 requires an explicitly exclusive, unleveraged cash/spot account");
-      if (toArray(params.position_symbol).length) throw new Error("Opening holdings require verified attribution recovery; account holdings cannot seed a workflow allocation");
-      if (pm.isBootstrapped() && !pm.isAccountingVersion2()) throw new Error("Pause and reconcile the activation before changing calculation version");
-      const rawCash = params.balance_cash ?? params.cash_balance;
-      if (rawCash == null || String(rawCash).trim() === "") throw new Error("Explicit allocation cash is required");
-      const initial = createBook({ userId: context.userId, workflowId: context.workflowId, activationId: context.reportingExecutionId ?? context.executionId!,
-        broker: params.broker, environment: params.environment, accountId: params.accountId, credentialId: params.credential_id, accountModel: params.accountModel, currency: params.base_currency }, String(rawCash));
-      let session = PortfolioExecutor.accountingSessions.get(pm);
-      if (!session) { session = new AccountingSession(); PortfolioExecutor.accountingSessions.set(pm, session); }
-      const book = await session.open(initial);
-      if (!pm.isAccountingVersion2()) pm.publishAccounting({ book });
-      await LiveStrategiesRepository.recordBaseline(context.userId, context.workflowId, book.scope.activationId, decimal(book.startingCash).toNumber(), {
-        broker: book.scope.broker, credential_id: book.scope.credentialId, base_currency: book.scope.currency,
-      });
-
-      return createSuccessOutput({ created: true, accounting_status: session.status, ...this.getPortfolioSummary(pm, initial.scope.currency) });
-    } catch (error: any) { return createErrorOutput(error.message); }
-  }
-
-  private async syncAccountingEvent(pm: PortfolioManager, params: any, context: NodeExecutionContext): Promise<NodeResult> {
-    const session = PortfolioExecutor.accountingSessions.get(pm)!;
-    let sentToAccounting = false;
-    // Keep rejected adapter input as evidence too: parsing and ownership/scope
-    // failures can happen before the normalized event reaches the session.
-    const evidence = accountingEvidence(params);
-    try {
-      const scope = session.getScope()!;
-      const quantity = params.filledQty == null ? "0" : String(params.filledQty);
-      const isStatusOnly = decimal(quantity).compare(0) === 0 && decimal(String(params.feeAmount ?? "0")).compare(0) === 0;
-      const timestamp = params.event_time ?? params.eventTime;
-      if (!timestamp) throw new Error("Original broker event timestamp is required");
-      const event: AccountingEvent = {
-        kind: params.eventKind ?? (isStatusOnly ? "order_status" : "execution"), orderId: String(params.orderId),
-        executionId: params.executionId == null ? undefined : String(params.executionId), symbol: normalizeSymbol(params.symbol), side: normalizeSide(params.side),
-        quantity, price: params.avgFillPrice == null ? undefined : String(params.avgFillPrice),
-        quoteNotional: params.quoteNotional == null ? undefined : String(params.quoteNotional),
-        fee: String(params.feeAmount ?? "0"), feeAsset: params.feeAsset ?? scope.currency,
-        quantityMode: params._accountingQuantityMode, priceMode: params._accountingPriceMode, feeMode: params._accountingFeeMode,
-        status: String(params.status ?? "").toLowerCase(), timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
-        accountPosition: params.positionQty == null ? undefined : String(params.positionQty),
-      };
-      sentToAccounting = true;
-      const transition = await session.accept(event, candidate => pm.prepareAccounting(candidate));
-      if (session.status !== "ready") throw new Error(session.reason ?? "Accounting acceptance interrupted");
-      const execution = transition.execution;
-      if (execution) {
-        const reportingSnapshot = this.buildLatestSnapshot(pm, { userId: context.userId, workflowId: context.workflowId,
-          runId: scope.activationId, broker: scope.broker, credentialId: scope.credentialId, baseCurrency: scope.currency });
-        void SnapshotCache.upsertLatest(reportingSnapshot).catch(error => fillLogger.warn({ error }, "Replaceable accounting snapshot retained in SQL checkpoint"));
-      }
-      return createSuccessOutput({ accepted: Boolean(execution), reason: transition.reason, accounting_status: session.status, ...this.getPortfolioSummary(pm, scope.currency) });
-    } catch (error: any) {
-      session.stop(error.message);
-      if (!sentToAccounting) {
-        try { await session.rejectEvidence(evidence, error.message); }
-        catch (retentionError) { return createErrorOutput(new AggregateError([error, retentionError], "Rejected event retention was not confirmed; retain upstream delivery")); }
-      }
-      return { ...createErrorOutput(error.message), details: { accounting_status: session.status, accounting_reason: session.reason } };
     }
   }
 
@@ -1247,14 +1146,6 @@ export class PortfolioExecutor implements INodeExecutor {
     // the existing FillEventBus path (algo_id set). Algo events carry no fill
     // qty and no position update — they describe the conditional order's lifecycle
     // (NEW → TRIGGERING → TRIGGERED → FINISHED / REJECTED / CANCELED / EXPIRED).
-    if (pm.isAccountingVersion2() && (params?.algoId || params.type === "listen_key_expired" || (params.eventKind && !["execution", "order_status"].includes(params.eventKind)))) {
-      const session = PortfolioExecutor.accountingSessions.get(pm)!;
-      try {
-        await session.rejectEvidence(accountingEvidence(params),
-          "reconciliation_required: broker lifecycle gap or unsupported economic event");
-        return createErrorOutput(session.reason);
-      } catch (error) { return createErrorOutput(error); }
-    }
     if (params?.algoId) {
       return this.brokerSyncAlgoUpdate(pm, params, context);
     }
@@ -1306,11 +1197,8 @@ export class PortfolioExecutor implements INodeExecutor {
           ? normalizeSide(params.side)
           : undefined;
 
-      const filledQty = toNumber(params.filledQty);
       const origQty = toNumber(params.origQty);
       const positionQty = toNumber(params.positionQty);
-      const avgFillPrice = toNumber(params.avgFillPrice);
-      const feeAmount = toNumber(params.feeAmount);
       const limitPrice = toNumber(params.limitPrice);
       const stopPrice = toNumber(params.stopPrice);
       const trailPercent = toNumber(params.trailPercent);
@@ -1333,11 +1221,6 @@ export class PortfolioExecutor implements INodeExecutor {
         clientOrderId,
       );
       if (!ours && !verifiedReportingOwner) {
-        if (pm.isAccountingVersion2()) {
-          const session = PortfolioExecutor.accountingSessions.get(pm)!;
-          await session.rejectEvidence(accountingEvidence(params), "reconciliation_required: unattributed event in an exclusive account");
-          return createErrorOutput(session.reason);
-        }
         return createSuccessOutput({
             skipped: true,
             reason: "unknown_order",
@@ -1346,100 +1229,20 @@ export class PortfolioExecutor implements INodeExecutor {
           });
       }
 
-      if (pm.isAccountingVersion2()) return this.syncAccountingEvent(pm, params, context!);
-
-      // 1. Order update (if status provided)
-      if (status) {
-        const resolvedorderId =
-          normalizedBrokerId ??
-          pm.resolveOrderIdByClientId(clientOrderId ?? "");
-
-        if (!resolvedorderId) {
-          console.warn(
-            `[PortfolioExecutor] sync_order_event: order update skipped due to missing broker_order_id and unresolved client_order_id=${clientOrderId}`,
-          );
-        } else {
-          pm.applyOrderUpdate({
-            orderId: resolvedorderId,
-            clientOrderId,
-            symbol,
-            side,
-            origQty,
-            orderType: params.orderType,
-            timeInForce: params.timeInForce,
-            limitPrice,
-            stopPrice,
-            trailPercent,
-            trailPrice,
-            status,
-            filledQty,
-            avgFillPrice,
-            feeAmount,
-            feeAsset,
-            _seq: seq,
-          });
-        }
-      }
-
-      // 2. Record closed trade (must run before position update which may delete the position)
-      let finalizedTrade:
-        | import("../../backtest/simBroker/interfaces").Trade
-        | null = null;
-      const normalizedStatus = String(status ?? "")
-        .trim()
-        .toLowerCase();
-      const hasFillEvent =
-        filledQty != null && filledQty > 0 && avgFillPrice != null;
-      const isTerminalStatus = TERMINAL_ORDER_STATUSES.has(normalizedStatus);
-      const shouldApplyTrade =
-        Boolean(params.side) &&
-        Boolean(normalizedBrokerId) &&
-        (hasFillEvent || (isTerminalStatus && (filledQty ?? 0) <= 0));
-      if (shouldApplyTrade) {
-        const tradeResult = pm.applyTrade(
-          {
-            orderId: normalizedBrokerId,
-            clientOrderId,
-            executionId: params.executionId,
-            symbol,
-            side: params.side,
-            filledQty: filledQty ?? 0,
-            fillPrice: avgFillPrice ?? 0,
-            feeAmount: feeAmount ?? 0,
-            status: normalizedStatus,
-            baseCurrency,
-          },
-          new Date().toISOString(),
-        );
-
-        if (tradeResult.kind === "skipped") {
-          fillLogger.debug(
-            { symbol, orderId, reason: tradeResult.reason },
-            "trade aggregation skipped",
-          );
-        } else if (tradeResult.kind === "pendingUpdate") {
-          fillLogger.debug(
-            {
-              symbol,
-              normalizedBrokerId,
-              accumulatedQty: tradeResult.pending.accumulatedQuantity,
-              status: tradeResult.pending.status,
-            },
-            "trade aggregation pending update",
-          );
-        } else {
-          finalizedTrade = tradeResult.trade;
-          fillLogger.info(
-            {
-              symbol,
-              normalizedBrokerId,
-              quantity: tradeResult.trade.quantity,
-              status,
-            },
-            "trade aggregation finalized",
-          );
-        }
-
+      if (/future|margin|option/i.test(String(params.broker) + String(params.marketType ?? ""))) throw new Error("Portfolio fill accounting requires a supported cash/spot instrument model");
+      const timestamp = params.event_time ?? params.eventTime ?? new Date().toISOString();
+      const accepted = pm.applyOrderEvent({
+        orderId: normalizedBrokerId, clientOrderId, symbol: normalizeSymbol(symbol), side, status,
+        quantity: params.filledQty, price: params.avgFillPrice, fee: params.feeAmount, quoteNotional: params.quoteNotional,
+        quantityMode: params._quantityMode ?? "incremental", priceMode: params._priceMode ?? "execution", feeMode: params._feeMode ?? "incremental",
+        origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
+        executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
+        scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
+        feeAsset, baseCurrency, positionQty,
+        timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
+      });
+      const finalizedTrade = accepted.trade;
+      if (finalizedTrade) {
         // Persist closed trade to shared reporting storage
         if (
           finalizedTrade &&
@@ -1475,52 +1278,24 @@ export class PortfolioExecutor implements INodeExecutor {
         }
       }
 
-      // 3. Position reconcile (if positionQty provided — Alpaca fee-in-kind adjustment)
-
-      pm.applyPositionUpdate({
-        symbol,
-        filledQty,
-        avgFillPrice,
-        side: params.side,
-        normalizedBrokerId,
-        positionQty,
-        currentPrice: avgFillPrice,
-      });
-
-      // Cash + fee + peak equity adjustment (delegated to PM)
-      pm.applyFillAccounting({
-        symbol,
-        side: params.side,
-        fillPrice: avgFillPrice ?? 0,
-        fillQty: filledQty ?? 0,
-        feeAmount,
-        feeAsset,
-        baseCurrency,
-      });
-
-      // 5. Buffer fill for async DB persistence (fire-and-forget)
-      if (filledQty && avgFillPrice && orderId) {
-        //const fillDeltaQty = this.computeFillDelta(orderId, filledQty);
-
+      // The transition above has already applied positions, cash, fees and order progress.
+      // Reporting remains fire-and-forget and adds no database wait to execution.
+      if (accepted.quantity > 0 && orderId) {
         if (
-          //fillDeltaQty > 0 &&
-          filledQty > 0 &&
           (context?.executionMode === "live" || context?.reportingExecutionId) &&
-          context?.userId &&
-          context?.workflowId
+          context?.userId && context?.workflowId
         ) {
           const event = this.buildFillStreamEvent({
             context,
             params,
             symbol,
-            side: params.side,
+            side: side ?? pm.getOrder(normalizedBrokerId)!.side,
             orderId: normalizedBrokerId,
             executionId: params.executionId,
-            //fillDeltaQty,
-            filledQty,
-            fillPrice: avgFillPrice,
+            filledQty: accepted.quantity,
+            fillPrice: accepted.price,
             fillStatus: params.status,
-            feeAmount,
+            feeAmount: accepted.fee,
             feeAsset,
             baseCurrency,
             orderType: params.orderType,
@@ -1532,6 +1307,7 @@ export class PortfolioExecutor implements INodeExecutor {
             tag: params.tag || context.nodeId,
           });
 
+          event.quote_qty = accepted.notional;
           void FillEventBus.publish(event).catch((err) =>
             fillLogger.warn(
               { err, fillId: event.fill_id },
@@ -1556,13 +1332,10 @@ export class PortfolioExecutor implements INodeExecutor {
 
       return createSuccessOutput({
           ...this.getPortfolioSummary(pm, baseCurrency),
+          execution_applied: accepted.quantity > 0,
+          ...(accepted.reason ? { skip_reason: accepted.reason } : {}),
         });
     } catch (error: any) {
-      if (pm.isAccountingVersion2()) {
-        const session = PortfolioExecutor.accountingSessions.get(pm)!;
-        try { await session.rejectEvidence(accountingEvidence(params), error.message); }
-        catch (retentionError) { return createErrorOutput(new AggregateError([error, retentionError], "Broker event rejection was not durably retained; retain upstream delivery")); }
-      }
       return createErrorOutput(error.message);
     }
   }
@@ -1608,7 +1381,7 @@ export class PortfolioExecutor implements INodeExecutor {
       total_equity: totalEquity,
       peak_equity: state.peakEquity,
       drawdown_pct: drawdownPct,
-      net_profit: tradeStats.netProfit,
+      net_profit: state.cumulativeRealizedPnl,
       trades_count: tradeStats.totalTrades,
       total_trades: tradeStats.totalTrades,
       profitable_trades: tradeStats.profitableTrades,
@@ -1715,7 +1488,6 @@ export class PortfolioExecutor implements INodeExecutor {
     const state = pm.getPortfolioState(baseCurrency);
     return resultSuccess({
       ...this.getPortfolioSummaryFromState(state),
-      ...pm.accountingMetadata(),
       drawdown_pct:
         state.peakEquity > 0
           ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
@@ -1728,7 +1500,9 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): Record<string, any> {
-    return { ...this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency)), ...pm.accountingMetadata() };
+    return this.getPortfolioSummaryFromState(
+      pm.getPortfolioState(baseCurrency),
+    );
   }
 
   private getPortfolioSummaryFromState(
@@ -1766,7 +1540,7 @@ export class PortfolioExecutor implements INodeExecutor {
       initial_capital: startingEquity,
       starting_equity: startingEquity,
       total_return: totalReturn,
-      net_profit: tradeStats.netProfit,
+      net_profit: state.cumulativeRealizedPnl,
       final_portfolio_value: state.totalEquity,
       trades_count: tradeStats.totalTrades,
       total_trades: tradeStats.totalTrades,
@@ -1859,7 +1633,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
-    return resultSuccess({ ...pm.getPositionQuery(symbols), ...pm.accountingMetadata() });
+    return resultSuccess(pm.getPositionQuery(symbols));
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {
@@ -1876,7 +1650,6 @@ export class PortfolioExecutor implements INodeExecutor {
     return resultSuccess({
       trades,
       count: trades.length,
-      ...pm.accountingMetadata(),
       total_realized_pnl: state.cumulativeRealizedPnl,
       winning_trades: winningTrades,
       losing_trades: losingTrades,

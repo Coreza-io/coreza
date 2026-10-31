@@ -1,6 +1,3 @@
-import { randomUUID } from "crypto";
-import { decimal } from "../portfolio/decimal";
-import { flushAccountingReports } from "../portfolio/flushAccountingReports";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { LiveTradeRepository } from "../repositories/LiveTradeRepository";
 /**
@@ -33,8 +30,7 @@ import { RedisKeys } from "../infra/redisKeys";
 const logger = createLogger("FillSyncWorker");
 
 const CONSUMER_GROUP = "fill-sync";
-const CONSUMER_NAME = `worker-${randomUUID()}`;
-const RECLAIM_IDLE_MS = 30_000;
+const CONSUMER_NAME = "worker-1";
 const BATCH_SIZE = 100;
 const BLOCK_TIMEOUT_MS = 2000;
 const SNAPSHOT_FLUSH_INTERVAL_MS = 5000;
@@ -50,12 +46,6 @@ const toFiniteNumber = (value: unknown): number | null => {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-};
-
-const streamNumber = (raw: string | undefined, fallback?: number): number => {
-  if (raw === undefined && fallback !== undefined) return fallback;
-  if (raw == null || raw.trim() === "") throw new Error("Malformed fill numeric evidence; retained for recovery");
-  return decimal(raw).toNumber();
 };
 
 /**
@@ -74,8 +64,6 @@ export class FillSyncWorker {
 
   /** Track retry counts for poison message detection */
   private retryCounters = new Map<string, number>();
-  private reclaimCursors = new Map<string, string>();
-  private autoClaimAvailable = true;
 
   private constructor() {}
 
@@ -177,12 +165,17 @@ export class FillSyncWorker {
 
         let results: any;
         try {
-          const reclaimed = await this.reclaimPending(redis, streamKey);
-          this.reclaimCursors.set(streamKey, reclaimed[0]);
-          if (reclaimed[2]?.length) logger.error({ streamKey, deletedPending: reclaimed[2] }, "Pending fill evidence was trimmed; broker reconciliation required");
-          results = reclaimed[1].length ? [[streamKey, reclaimed[1]]] : await streamConn.xreadgroup(
-            "GROUP", CONSUMER_GROUP, CONSUMER_NAME, "COUNT", BATCH_SIZE,
-            "BLOCK", BLOCK_TIMEOUT_MS, "STREAMS", streamKey, ">",
+          results = await streamConn.xreadgroup(
+            "GROUP",
+            CONSUMER_GROUP,
+            CONSUMER_NAME,
+            "COUNT",
+            BATCH_SIZE,
+            "BLOCK",
+            BLOCK_TIMEOUT_MS,
+            "STREAMS",
+            streamKey,
+            ">",
           );
         } catch (err: any) {
           if (err.message?.includes("NOGROUP")) {
@@ -197,77 +190,72 @@ export class FillSyncWorker {
         const [, entries] = results[0];
         if (!entries || entries.length === 0) continue;
 
-        const entryIds: string[] = entries.map(([id]: [string, unknown]) => id);
+        const deduped = new Map<
+          string,
+          { entryId: string; fields: Record<string, string> }
+        >();
+        const entryIds: string[] = [];
+
+        for (const [entryId, fieldValues] of entries) {
+          entryIds.push(entryId);
+          const fields: Record<string, string> = {};
+          for (let i = 0; i < fieldValues.length; i += 2) {
+            fields[fieldValues[i]] = fieldValues[i + 1];
+          }
+          const dedupeKey = fields.algo_id
+            ? `algo:${fields.algo_id}`
+            : fields.fill_id;
+          if (dedupeKey) {
+            deduped.set(dedupeKey, { entryId, fields });
+          }
+        }
+
+        const rows: LiveFillRow[] = [];
+        for (const [fillId, { fields }] of deduped) {
+          rows.push({
+            user_id: fields.user_id,
+            broker: fields.broker,
+            credential_id: fields.credential_id || fields.user_id,
+            symbol: fields.symbol,
+            fill_id: fillId,
+            order_id: fields.order_id || (null as any),
+            side: fields.side,
+            price: parseFloat(fields.fill_price) || 0,
+            qty: parseFloat(fields.fill_qty_delta) || 0,
+            quote_qty: fields.quote_qty
+              ? parseFloat(fields.quote_qty)
+              : undefined,
+            commission: parseFloat(fields.commission) || 0,
+            commission_asset: fields.commission_asset || (null as any),
+            event_time: fields.event_time,
+            workflow_id: fields.workflow_id || (null as any),
+            execution_id: fields.execution_id || (null as any),
+            fill_status: fields.fill_status || (null as any),
+            algo_id: fields.algo_id || (null as any),
+            order_type: fields.order_type || (null as any),
+            limit_price: fields.limit_price
+              ? parseFloat(fields.limit_price)
+              : null,
+            stop_price: fields.stop_price
+              ? parseFloat(fields.stop_price)
+              : null,
+            trail_percent: fields.trail_percent
+              ? parseFloat(fields.trail_percent)
+              : fields.trail_percent
+                ? parseFloat(fields.trail_percent)
+                : null,
+            trail_price: fields.trail_price
+              ? parseFloat(fields.trail_price)
+              : fields.trail_price
+                ? parseFloat(fields.trail_price)
+                : null,
+            timeInForce:
+              fields.timeInForce || fields.time_in_force || (null as any),
+            tag: fields.tag || (null as any),
+          });
+        }
+
         try {
-          const deduped = new Map<
-            string,
-            { entryId: string; fields: Record<string, string> }
-          >();
-
-          for (const [entryId, fieldValues] of entries) {
-            const fields: Record<string, string> = {};
-            if (fieldValues.length % 2 !== 0) throw new Error("Malformed stream entry; retained for recovery");
-            for (let i = 0; i < fieldValues.length; i += 2) {
-              fields[fieldValues[i]] = fieldValues[i + 1];
-            }
-            const dedupeKey = JSON.stringify([fields.user_id, fields.broker, fields.symbol,
-              fields.algo_id ? `algo:${fields.algo_id}` : fields.fill_id]);
-            if (!fields.algo_id && !fields.fill_id) throw new Error(`Fill ${streamKey}/${entryId} has no stable identity; retained pending`);
-            const prior = deduped.get(dedupeKey)?.fields;
-            if (prior && (["credential_id", "workflow_id", "execution_id", "order_id"].some(key => prior[key] !== fields[key]) ||
-              (!fields.algo_id && ["fill_qty_delta", "fill_price", "quote_qty", "commission", "commission_asset", "side"].some(key => prior[key] !== fields[key])))) throw new Error(`Conflicting fill ${streamKey}/${entryId}; retained pending`);
-            if (dedupeKey) {
-              deduped.set(dedupeKey, { entryId, fields });
-            }
-          }
-
-          const rows: LiveFillRow[] = [];
-          for (const { fields } of deduped.values()) {
-            const quantity = streamNumber(fields.fill_qty_delta, 0);
-            const price = streamNumber(fields.fill_price, 0);
-            const quote = fields.quote_qty === undefined ? undefined : streamNumber(fields.quote_qty);
-            if (quantity < 0 || (quantity > 0 && price <= 0) || (quote !== undefined && quote < 0)) throw new Error("Invalid fill quantity/notional/price; retained for recovery");
-            rows.push({
-              user_id: fields.user_id,
-              broker: fields.broker,
-              credential_id: fields.credential_id || fields.user_id,
-              symbol: fields.symbol,
-              fill_id: fields.algo_id ? `algo:${fields.algo_id}` : fields.fill_id,
-              order_id: fields.order_id || (null as any),
-              side: fields.side,
-              price,
-              qty: quantity,
-              quote_qty: quote,
-              commission: streamNumber(fields.commission, 0),
-              commission_asset: fields.commission_asset || (null as any),
-              event_time: fields.event_time,
-              workflow_id: fields.workflow_id || (null as any),
-              execution_id: fields.execution_id || (null as any),
-              fill_status: fields.fill_status || (null as any),
-              algo_id: fields.algo_id || (null as any),
-              order_type: fields.order_type || (null as any),
-              limit_price: fields.limit_price
-                ? streamNumber(fields.limit_price)
-                : null,
-              stop_price: fields.stop_price
-                ? streamNumber(fields.stop_price)
-                : null,
-              trail_percent: fields.trail_percent
-                ? streamNumber(fields.trail_percent)
-                : fields.trail_percent
-                  ? streamNumber(fields.trail_percent)
-                  : null,
-              trail_price: fields.trail_price
-                ? streamNumber(fields.trail_price)
-                : fields.trail_price
-                  ? streamNumber(fields.trail_price)
-                  : null,
-              timeInForce:
-                fields.timeInForce || fields.time_in_force || (null as any),
-              tag: fields.tag || (null as any),
-            });
-          }
-
           await LiveFillRepository.batchUpsert(rows);
 
           if (entryIds.length > 0) {
@@ -275,7 +263,7 @@ export class FillSyncWorker {
           }
 
           for (const id of entryIds) {
-            this.retryCounters.delete(`${streamKey}:${id}`);
+            this.retryCounters.delete(id);
           }
 
           logger.debug(
@@ -284,8 +272,8 @@ export class FillSyncWorker {
           );
         } catch (err) {
           for (const entryId of entryIds) {
-            const count = (this.retryCounters.get(`${streamKey}:${entryId}`) || 0) + 1;
-            this.retryCounters.set(`${streamKey}:${entryId}`, count);
+            const count = (this.retryCounters.get(entryId) || 0) + 1;
+            this.retryCounters.set(entryId, count);
 
             if (count >= MAX_RETRIES) {
               logger.warn(
@@ -294,11 +282,13 @@ export class FillSyncWorker {
               );
               try {
                 const entry = entries.find(([id]: any) => id === entryId);
-                if (!entry) throw new Error("Missing source fill entry; ACK refused");
-                {
+                if (entry) {
                   const [, fieldValues] = entry;
-                  const retainedId = await redis.xadd(
+                  await redis.xadd(
                     DLQ_STREAM,
+                    "MAXLEN",
+                    "~",
+                    "10000",
                     "*",
                     "original_stream",
                     streamKey,
@@ -306,10 +296,9 @@ export class FillSyncWorker {
                     entryId,
                     ...fieldValues,
                   );
-                  if (!retainedId) throw new Error("DLQ retention was not confirmed; ACK refused");
                 }
                 await redis.xack(streamKey, CONSUMER_GROUP, entryId);
-                this.retryCounters.delete(`${streamKey}:${entryId}`);
+                this.retryCounters.delete(entryId);
               } catch (dlqErr) {
                 logger.error({ err: dlqErr, entryId }, "DLQ append failed");
               }
@@ -318,7 +307,7 @@ export class FillSyncWorker {
 
           logger.error(
             { err, stream: streamKey, count: entryIds.length },
-            "fill batch failed, evidence retained for retry",
+            "fill upsert failed, will retry",
           );
         }
       }
@@ -339,9 +328,6 @@ export class FillSyncWorker {
   }
 
   private async persistReporting(): Promise<void> {
-    // The SQL outbox remains pending on failure, including when no Redis streams exist.
-    try { await flushAccountingReports(); }
-    catch (error) { logger.error({ error }, "Accounting reporting outbox retained for retry"); }
     const writes = await Promise.allSettled([LiveTradeRepository.flush(), SnapshotCache.drain()]);
     const snapshots = await Promise.allSettled([this.flushSnapshots()]);
     await LiveStrategiesRepository.recoverPending();
@@ -411,30 +397,6 @@ export class FillSyncWorker {
   }
 
   // ─── Helpers ───────────────────────────────────────────
-
-  private async reclaimPending(redis: Redis, streamKey: string): Promise<[string, any[], string[]?]> {
-    const cursor = this.reclaimCursors.get(streamKey) ?? "0-0";
-    if (this.autoClaimAvailable) {
-      try {
-        return await redis.xautoclaim(streamKey, CONSUMER_GROUP, CONSUMER_NAME,
-          RECLAIM_IDLE_MS, cursor, "COUNT", BATCH_SIZE) as [string, any[], string[]?];
-      } catch (error: any) {
-        if (!/unknown command.*xautoclaim/i.test(error.message ?? "")) throw error;
-        this.autoClaimAvailable = false;
-      }
-    }
-    // Redis 5/6.0 compatibility: page through pending IDs, then claim only idle
-    // entries. Advancing the cursor also visits pages containing fresh entries.
-    const pending = await redis.xpending(streamKey, CONSUMER_GROUP, cursor === "0-0" ? "-" : cursor, "+", BATCH_SIZE) as [string, string, number, number][];
-    const ids = pending.filter(([, , idle]) => Number(idle) >= RECLAIM_IDLE_MS).map(([id]) => id);
-    let next = "0-0";
-    if (pending.length === BATCH_SIZE) {
-      const [milliseconds, sequence] = pending[pending.length - 1][0].split("-");
-      next = `${milliseconds}-${BigInt(sequence) + 1n}`;
-    }
-    const entries = ids.length ? await redis.xclaim(streamKey, CONSUMER_GROUP, CONSUMER_NAME, RECLAIM_IDLE_MS, ...ids) as any[] : [];
-    return [next, entries];
-  }
 
   private async ensureConsumerGroup(
     redis: Redis,

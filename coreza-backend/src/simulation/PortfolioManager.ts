@@ -9,8 +9,8 @@
  */
 
 import { randomUUID } from "crypto";
-import { AccountingBook, AccountingTransition } from "../portfolio/accounting";
 import { decimal } from "../portfolio/decimal";
+import { FillInput, FillProgress, OpenCost, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -27,7 +27,7 @@ import {
   shapePositionQuery,
 } from "../utils/portfolioHelpers";
 
-// ============== NEW INTERFACES (v2 state model) ==============
+// ============== NEW INTERFACES (portfolio state model) ==============
 
 export interface OrderState {
   orderId?: string;
@@ -198,6 +198,7 @@ const OPEN_ALGO_ORDER_STATUSES = new Set(["new", "triggering"]);
 
 const TERMINAL_ORDER_STATUSES = new Set([
   "filled",
+  "finished",
   "canceled",
   "cancelled",
   "rejected",
@@ -217,7 +218,7 @@ const TERMINAL_ORDER_STATUSES = new Set([
  * scoped to the workflow run. When the workflow ends, destroy() is called
  * and all state is garbage collected.
  *
- * v2 model: Separate order lifecycle, execution accounting, position reconciliation, and balance reconciliation.
+ * portfolio model: Separate order lifecycle, execution accounting, position reconciliation, and balance reconciliation.
  *
  * One instance per (userId, executionId) pair, managed via static cache.
  */
@@ -234,7 +235,7 @@ export class PortfolioManager {
   private userId: string;
   private executionId: string;
 
-  // ============== v2 STATE MAPS ==============
+  // ============== portfolio STATE MAPS ==============
   private orders = new Map<string, OrderState>();
   private algoOrders = new Map<string, AlgoOrderState>();
   private executions = new Map<string, ExecutionRecord>();
@@ -262,87 +263,173 @@ export class PortfolioManager {
   private startingEquity: number | null = null;
 
   private bootstrapped = false;
-  private accountingBook?: AccountingBook;
-  private versionedAccountingRequired = false;
-  requireVersionedAccounting(): void { this.versionedAccountingRequired = true; }
-  usesVersionedAccounting(): boolean { return this.versionedAccountingRequired || this.isAccountingVersion2(); }
-  private guardLegacyMutation(): void { if (this.usesVersionedAccounting()) throw new Error("Legacy mutation cannot modify a versioned accounting book"); }
+  private fillProgress = new Map<string, FillProgress>();
+  private acceptedFills = new Map<string, string>();
+  private openCosts = new Map<string, OpenCost>();
+  private exactCash = new Map<string, string>();
+  private positionScopes = new Map<string, string>();
+  private orderScopes = new Map<string, string>();
+  private accountScope?: string;
+  private positionMarkTimes = new Map<string, number>();
+  private fillTotalsActive = false;
+  private realizedTotalExact = "0";
+  private feesTotalExact = "0";
+  private realizedTotal = 0;
+  private feesTotal = 0;
+  private realizedBySymbol = new Map<string, { exact: string; value: number }>();
 
-  isAccountingVersion2(): boolean { return this.accountingBook?.version === 2; }
-
-  /** Publish only a complete, durably accepted candidate. Price marks remain RAM-only. */
-  publishAccounting(transition: AccountingTransition): void { this.prepareAccounting(transition)(); }
-
-  /** Validate all compatibility views before journal acceptance; publish after ACK. */
-  prepareAccounting(transition: AccountingTransition): () => void {
-    const book = structuredClone(transition.book);
-    const nextPositions = new Map<string, PositionState>();
-    for (const [symbol, position] of Object.entries(book.positions)) {
-      const quantity = decimal(position.quantity).toNumber();
-      const average = decimal(position.grossCost).div(position.quantity).toNumber();
-      const currentPrice = this.positions.get(symbol)?.currentPrice ?? decimal(position.mark).toNumber();
-      const realizedPnl = decimal(position.realized).toNumber();
-      const unrealizedPnl = decimal(currentPrice).mul(position.quantity).sub(position.grossCost).toNumber();
-      nextPositions.set(symbol, { symbol, quantity, side: "long", avgFillPrice: average, currentPrice,
-        openCostBasis: decimal(position.grossCost).toNumber(), marketValue: decimal(currentPrice).mul(position.quantity).toNumber(),
-        realizedPnl, unrealizedPnl, totalPnl: decimal(realizedPnl).add(unrealizedPnl).toNumber() });
+  /** One synchronous, validated transition. Only touched records are replaced. */
+  applyOrderEvent(input: FillInput & {
+    orderId: string; clientOrderId?: string; symbol: string; side?: "buy" | "sell";
+    status?: string; origQty?: number; orderType?: string; timeInForce?: string;
+    limitPrice?: number; stopPrice?: number; trailPercent?: number; trailPrice?: number;
+    executionId?: string; sequence?: number; scope: string; feeAsset?: string;
+    baseCurrency: string; timestamp: string; positionQty?: number;
+  }): { quantity: number; price: number; fee: number; notional: number; trade?: Trade; reason?: string } {
+    const previousOrder = this.orders.get(input.orderId);
+    const side = input.side ?? previousOrder?.side;
+    if (!side || !["buy", "sell"].includes(side) || !input.symbol || !Number.isFinite(Date.parse(input.timestamp))) throw new Error("Valid symbol, side and timestamp are required");
+    if (previousOrder && (previousOrder.symbol !== input.symbol || previousOrder.side !== side)) throw new Error("Order symbol/side mismatch");
+    if (this.orderScopes.has(input.orderId) && this.orderScopes.get(input.orderId) !== input.scope) throw new Error("Order account scope mismatch");
+    const progressKey = JSON.stringify([input.scope, input.symbol, input.orderId]);
+    const { quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
+    const currency = quoteAsset ?? input.baseCurrency;
+    const feeAsset = input.feeAsset || currency;
+    if (currency !== input.baseCurrency) throw new Error("Cross-currency fill valuation requires an FX treatment");
+    const rawQuantity = decimal(input.quantity ?? 0);
+    const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
+    const trimmedId = input.executionId?.trim();
+    const nativeId = trimmedId && trimmedId !== "-1" ? trimmedId : undefined;
+    const sequence = input.sequence != null && input.sequence > 0 ? input.sequence : undefined;
+    const identity = economicInput && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
+    const fingerprint = identity ? fillFingerprint(input, side, feeAsset) : undefined;
+    const existingFingerprint = identity ? this.acceptedFills.get(identity) : undefined;
+    if (existingFingerprint && existingFingerprint !== fingerprint) throw new Error("Conflicting execution identity");
+    const duplicate = existingFingerprint !== undefined;
+    const priorProgress = this.fillProgress.get(progressKey);
+    const baseline = priorProgress ?? (previousOrder && previousOrder.filledQty > 0 ? {
+      quantity: String(previousOrder.filledQty), notional: decimal(previousOrder.filledQty).mul(previousOrder.avgFillPrice ?? 0).toString(),
+      fees: String(previousOrder.totalFees), quantityMode: input.quantityMode, priceMode: input.priceMode, feeMode: input.feeMode,
+    } : undefined);
+    const fill = duplicate ? { quantity: "0", price: "0", notional: "0", fee: "0", progress: baseline, reason: "duplicate_execution" }
+      : normalizeFill(input, baseline);
+    const quantity = decimal(fill.quantity).toNumber(), price = decimal(fill.price).toNumber(), fee = decimal(fill.fee).toNumber();
+    const notional = decimal(fill.notional).toNumber();
+    const staleSequence = input.sequence != null && previousOrder?.lastSeq != null && input.sequence <= previousOrder.lastSeq;
+    const incomingStatus = String(input.status ?? previousOrder?.status ?? "new").toLowerCase();
+    const status = previousOrder && (staleSequence || (ORDER_STATUS_RANK[incomingStatus] ?? 0) < (ORDER_STATUS_RANK[previousOrder.status] ?? 0)) ? previousOrder.status : incomingStatus;
+    const progress = fill.progress;
+    const filledQty = progress ? decimal(progress.quantity).toNumber() : previousOrder?.filledQty ?? 0;
+    const origQty = input.origQty ?? previousOrder?.origQty;
+    if (origQty != null && (!Number.isFinite(origQty) || origQty < 0 || decimal(origQty).compare(filledQty) < 0)) throw new Error("Invalid original order quantity");
+    const nextOrder: OrderState = { ...previousOrder, orderId: input.orderId, clientOrderId: input.clientOrderId ?? previousOrder?.clientOrderId,
+      symbol: input.symbol, side, status, origQty, filledQty,
+      remainingQty: origQty == null ? undefined : decimal(origQty).sub(filledQty).toNumber(),
+      avgFillPrice: progress && decimal(progress.quantity).compare(0) > 0 ? decimal(progress.notional).div(progress.quantity).toNumber() : previousOrder?.avgFillPrice,
+      totalFees: progress ? decimal(progress.fees).toNumber() : previousOrder?.totalFees ?? 0,
+      orderType: input.orderType ?? previousOrder?.orderType, timeInForce: input.timeInForce ?? previousOrder?.timeInForce,
+      limitPrice: input.limitPrice ?? previousOrder?.limitPrice, stopPrice: input.stopPrice ?? previousOrder?.stopPrice,
+      trailPercent: input.trailPercent ?? previousOrder?.trailPercent, trailPrice: input.trailPrice ?? previousOrder?.trailPrice,
+      lastSeq: staleSequence ? previousOrder?.lastSeq : input.sequence ?? previousOrder?.lastSeq,
+      createdAt: previousOrder?.createdAt ?? input.timestamp, updatedAt: input.timestamp };
+    if (origQty != null && origQty > 0 && filledQty >= origQty && !TERMINAL_ORDER_STATUSES.has(nextOrder.status)) nextOrder.status = "filled";
+    if (quantity === 0) {
+      const pending = this.pendingClosingTrades.get(input.orderId);
+      const trade = pending && TERMINAL_ORDER_STATUSES.has(nextOrder.status) ? this.closedTrade(pending) : undefined;
+      this.orders.set(input.orderId, nextOrder);
+      if (input.clientOrderId) this.clientOrderIdIndex.set(input.clientOrderId, input.orderId);
+      this.orderScopes.set(input.orderId, input.scope);
+      if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
+      return { quantity, price, fee, notional, trade, reason: fill.reason ?? "no_execution" };
     }
-    const nextOrders = new Map(this.orders);
-    for (const [orderId, order] of Object.entries(book.orders)) {
-      const previous = nextOrders.get(orderId);
-      nextOrders.set(orderId, { ...previous, orderId, symbol: order.symbol, side: order.side, status: order.status,
-        origQty: previous?.origQty, filledQty: decimal(order.quantity).toNumber(),
-        remainingQty: previous?.origQty == null ? undefined : decimal(previous.origQty).sub(order.quantity).toNumber(),
-        avgFillPrice: decimal(order.quantity).compare(0) > 0 ? decimal(order.notional).div(order.quantity).toNumber() : undefined,
-        totalFees: decimal(order.fees).toNumber(), createdAt: previous?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() });
+    if (identity && !duplicate && this.acceptedFills.size >= PortfolioManager.MAX_EXECUTION_KEYS) throw new Error("Execution identity capacity reached; start a new activation");
+    if (this.accountScope != null && this.accountScope !== input.scope) throw new Error("Portfolio account scope mismatch");
+    if (fee !== 0 && feeAsset !== currency) throw new Error("Non-quote fee accounting requires an asset/FX treatment");
+    if (this.positionScopes.has(input.symbol) && this.positionScopes.get(input.symbol) !== input.scope) throw new Error("Position account scope mismatch");
+    const previousPosition = this.positions.get(input.symbol);
+    const previousCost = this.openCosts.get(input.symbol) ?? (previousPosition ? {
+      quantity: String(previousPosition.quantity), cost: String(previousPosition.openCostBasis), entryFees: "0",
+      realized: String(previousPosition.realizedPnl), entryOrderId: this.currentEntryMap.get(input.symbol)?.fillId ?? "", entryTime: this.currentEntryMap.get(input.symbol)?.entryTime ?? input.timestamp,
+    } : undefined);
+    const calculated = calculatePositionFill(previousCost, side, fill.quantity, fill.notional, fill.fee, input.orderId, input.timestamp);
+    if (input.positionQty != null && decimal(input.positionQty).compare(calculated.position?.quantity ?? 0) !== 0) throw new Error("Broker position differs from the attributed quantity");
+    const cash = decimal(this.exactCash.get(currency) ?? this.cashBook.get(currency) ?? 0).add(side === "buy" ? decimal(fill.notional).neg() : fill.notional).sub(fill.fee);
+    if (cash.compare(0) < 0) throw new Error("Execution exceeds allocated cash");
+    const cashNumber = cash.toNumber();
+    const exactPosition = calculated.position;
+    let nextPosition: PositionState | undefined;
+    if (exactPosition) {
+      const held = decimal(exactPosition.quantity).toNumber();
+      const average = decimal(exactPosition.cost).div(exactPosition.quantity).toNumber();
+      const mark = previousPosition && (this.positionMarkTimes.get(input.symbol) ?? -Infinity) > Date.parse(input.timestamp) ? previousPosition.currentPrice : price;
+      const marketValue = decimal(mark).mul(exactPosition.quantity).toNumber();
+      const unrealizedPnl = decimal(mark).mul(exactPosition.quantity).sub(exactPosition.cost).toNumber();
+      const realizedPnl = decimal(exactPosition.realized).toNumber();
+      nextPosition = { symbol: input.symbol, quantity: held, side: "long", avgFillPrice: average, currentPrice: mark, marketValue,
+        openCostBasis: decimal(exactPosition.cost).toNumber(), realizedPnl, unrealizedPnl, totalPnl: decimal(realizedPnl).add(unrealizedPnl).toNumber() };
     }
-    const nextTrades = this.trades.slice();
-    const execution = transition.execution;
-    if (execution?.positionBefore && execution.side === "sell" && decimal(execution.quantity).compare(0) > 0) {
-      const entry = execution.positionBefore;
-      nextTrades.push({ id: `LT-${execution.id}`, symbol: execution.symbol, side: "buy", entryOrderId: entry.entryOrderId,
-        exitOrderId: execution.orderId, entryPrice: decimal(entry.grossCost).div(entry.quantity).toNumber(),
-        exitPrice: decimal(execution.price).toNumber(), quantity: decimal(execution.quantity).toNumber(),
-        grossPnl: decimal(execution.grossRealized).toNumber(), commission: decimal(execution.allocatedEntryFee).add(execution.fee).toNumber(),
-        netPnl: decimal(execution.netRealized).toNumber(), slippage: 0, entryTime: entry.entryTime,
-        exitTime: execution.timestamp, holdingPeriodBars: 0 });
+    const realizedTotal = decimal(this.realizedTotalExact).add(calculated.realized);
+    const feesTotal = decimal(this.feesTotalExact).add(fill.fee);
+    const realizedNumber = realizedTotal.toNumber(), feesNumber = feesTotal.toNumber();
+    const symbolRealizedExact = decimal(this.realizedBySymbol.get(input.symbol)?.exact ?? 0).add(calculated.realized);
+    const symbolRealized = symbolRealizedExact.toNumber();
+    const previousBalance = this.balances.get(currency);
+    const nextBalance: BalanceState = { ...previousBalance, asset: currency, cash: cashNumber, equity: previousBalance?.equity ?? cashNumber,
+      margin: previousBalance?.margin ?? 1, updatedAt: input.timestamp };
+    nextBalance.buyingPower = this.computeBuyingPower(nextBalance);
+    const equity = decimal(this.getTotalEquity(currency)).add(decimal(cashNumber).sub(this.cashBook.get(currency) ?? 0))
+      .add(decimal(nextPosition?.marketValue ?? 0).sub(previousPosition?.marketValue ?? 0)).toNumber();
+    nextBalance.equity = equity;
+    const previousClosing = this.pendingClosingTrades.get(input.orderId);
+    let closing: PendingClosingTrade | undefined;
+    if (side === "sell" && previousCost) {
+      const combinedQuantity = decimal(previousClosing?.accumulatedQuantity ?? 0).add(fill.quantity);
+      const combinedNotional = decimal(previousClosing?.weightedExitPrice ?? 0).mul(previousClosing?.accumulatedQuantity ?? 0).add(fill.notional);
+      const combinedGross = decimal(previousClosing?.accumulatedGrossPnl ?? 0).add(calculated.gross);
+      closing = { key: input.orderId, tradeId: previousClosing?.tradeId ?? randomUUID(), symbol: input.symbol, side: "buy",
+        entryOrderId: previousClosing?.entryOrderId ?? previousCost.entryOrderId, exitOrderId: input.orderId,
+        entryPrice: combinedNotional.sub(combinedGross).div(combinedQuantity).toNumber(),
+        weightedExitPrice: combinedNotional.div(combinedQuantity).toNumber(), accumulatedQuantity: combinedQuantity.toNumber(),
+        accumulatedGrossPnl: combinedGross.toNumber(),
+        accumulatedCommission: decimal(previousClosing?.accumulatedCommission ?? 0).add(calculated.allocatedFee).add(fill.fee).toNumber(),
+        entryTime: previousClosing?.entryTime ?? previousCost.entryTime, latestExitTime: input.timestamp, status: nextOrder.status };
     }
-    const cash = decimal(book.cash).toNumber();
-    let candidateEquity = decimal(book.cash);
-    for (const [symbol, position] of Object.entries(book.positions)) candidateEquity = candidateEquity.add(decimal(nextPositions.get(symbol)!.currentPrice).mul(position.quantity));
-    candidateEquity.toNumber(); // Validate compatibility range before acceptance.
-    const startingEquity = decimal(book.startingCash).toNumber();
-    const cashBook = new Map([[book.scope.currency, cash]]);
-    // The closure contains the complete candidate. A price tick during the SQL
-    // await may refresh valuation, but cannot change accepted financial facts.
-    return () => {
-      let finalEquity = decimal(book.cash);
-      for (const [symbol, position] of nextPositions) {
-        const mark = this.positions.get(symbol)?.currentPrice ?? position.currentPrice;
-        position.currentPrice = mark;
-        position.marketValue = decimal(mark).mul(book.positions[symbol].quantity).toNumber();
-        position.unrealizedPnl = decimal(mark).mul(book.positions[symbol].quantity).sub(book.positions[symbol].grossCost).toNumber();
-        position.totalPnl = decimal(position.realizedPnl).add(position.unrealizedPnl).toNumber();
-        finalEquity = finalEquity.add(decimal(mark).mul(book.positions[symbol].quantity));
-      }
-      const publishedEquity = finalEquity.toNumber();
-      const balances = new Map<string, BalanceState>([[book.scope.currency, { asset: book.scope.currency, cash, equity: publishedEquity, margin: 1, updatedAt: new Date().toISOString() }]]);
-      this.positions = nextPositions;
-      this.orders = nextOrders;
-      this.trades = nextTrades;
-      this.cashBook = cashBook;
-      this.balances = balances;
-      this.startingEquity = startingEquity;
-      this.accountingBook = book;
-      this.versionedAccountingRequired = true;
-      this.bootstrapped = true;
-      this.peakEquity = Math.max(this.peakEquity, publishedEquity);
-    };
+    const trade = closing && TERMINAL_ORDER_STATUSES.has(nextOrder.status) ? this.closedTrade(closing) : undefined;
+    // Publish only after every financial and compatibility calculation succeeds.
+    this.accountScope = input.scope;
+    this.orders.set(input.orderId, nextOrder);
+    if (progress) this.fillProgress.set(progressKey, progress);
+    if (input.clientOrderId) this.clientOrderIdIndex.set(input.clientOrderId, input.orderId);
+    this.orderScopes.set(input.orderId, input.scope);
+    this.positionScopes.set(input.symbol, input.scope);
+    this.cashBook.set(currency, cashNumber);
+    this.exactCash.set(currency, cash.toString());
+    this.balances.set(currency, nextBalance);
+    if (nextPosition && exactPosition) {
+      this.positions.set(input.symbol, nextPosition); this.openCosts.set(input.symbol, exactPosition);
+      this.positionMarkTimes.set(input.symbol, Math.max(this.positionMarkTimes.get(input.symbol) ?? -Infinity, Date.parse(input.timestamp)));
+    } else {
+      this.positions.delete(input.symbol); this.openCosts.delete(input.symbol); this.currentEntryMap.delete(input.symbol); this.positionMarkTimes.delete(input.symbol);
+    }
+    if (closing) {
+      if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
+      else this.pendingClosingTrades.set(input.orderId, closing);
+    }
+    if (identity && fingerprint) this.acceptedFills.set(identity, fingerprint);
+    this.realizedTotalExact = realizedTotal.toString(); this.realizedTotal = realizedNumber;
+    this.feesTotalExact = feesTotal.toString(); this.feesTotal = feesNumber;
+    this.realizedBySymbol.set(input.symbol, { exact: symbolRealizedExact.toString(), value: symbolRealized }); this.fillTotalsActive = true;
+    this.peakEquity = Math.max(this.peakEquity, equity);
+    return { quantity, price, fee, notional, trade };
   }
 
-  accountingMetadata(): Record<string, unknown> {
-    return this.accountingBook ? { accounting_status: "ready", calculation_version: 2, accounting_revision: this.accountingBook.revision, account_scope: { ...this.accountingBook.scope }, exact_cash: this.accountingBook.cash, exact_realized_pnl: this.accountingBook.realized }
-      : { calculation_version: 1, accounting_status: "legacy", configuration_diagnostic: "Legacy filledQty is incremental; migrate only after reconciliation" };
+
+  private closedTrade(pending: PendingClosingTrade): Trade {
+    return { id: pending.tradeId, symbol: pending.symbol, side: pending.side, entryOrderId: pending.entryOrderId,
+      exitOrderId: pending.exitOrderId, entryPrice: pending.entryPrice, exitPrice: pending.weightedExitPrice,
+      quantity: pending.accumulatedQuantity, grossPnl: pending.accumulatedGrossPnl, commission: pending.accumulatedCommission,
+      netPnl: decimal(pending.accumulatedGrossPnl).sub(pending.accumulatedCommission).toNumber(), slippage: 0,
+      entryTime: pending.entryTime, exitTime: pending.latestExitTime, holdingPeriodBars: 0 };
   }
 
   private constructor(userId: string, executionId: string) {
@@ -394,9 +481,10 @@ export class PortfolioManager {
    * Should be called when a workflow run ends.
    */
   destroy(): void {
-    // v2 state
-    this.accountingBook = undefined;
-    this.versionedAccountingRequired = false;
+    this.fillProgress.clear(); this.acceptedFills.clear(); this.openCosts.clear(); this.exactCash.clear();
+    this.positionScopes.clear(); this.orderScopes.clear(); this.realizedBySymbol.clear(); this.positionMarkTimes.clear();
+    this.realizedTotalExact = "0"; this.feesTotalExact = "0"; this.realizedTotal = 0; this.feesTotal = 0; this.fillTotalsActive = false; this.accountScope = undefined;
+    // Portfolio state
     this.orders.clear();
     this.algoOrders.clear();
     this.executions.clear();
@@ -469,7 +557,7 @@ export class PortfolioManager {
     return { baseAsset: symbol, quoteAsset: baseCurrency };
   }
 
-  // ============== v2 PUBLIC METHODS ==============
+  // ============== portfolio PUBLIC METHODS ==============
 
   /**
    * Register an order intent. Creates or upserts order state.
@@ -490,7 +578,6 @@ export class PortfolioManager {
     trailPrice?: number;
     status: string;
   }): { order: OrderState } {
-    this.guardLegacyMutation();
     const now = new Date().toISOString();
     const origQty = input.origQty ?? undefined;
     const order: OrderState = {
@@ -523,6 +610,11 @@ export class PortfolioManager {
       throw new Error("Missing orderId for sync_order_event");
     }
 
+    const previous = this.orders.get(normalizedBrokerId);
+    if (previous) {
+      if (previous.symbol !== input.symbol || previous.side !== input.side) throw new Error("Order intent identity mismatch");
+      return { order: previous };
+    }
     this.orders.set(normalizedBrokerId, order);
     if (input.clientOrderId) {
       this.clientOrderIdIndex.set(input.clientOrderId, normalizedBrokerId);
@@ -556,7 +648,6 @@ export class PortfolioManager {
     feeAsset?: string;
     _seq?: number;
   }): void {
-    this.guardLegacyMutation();
     const now = new Date().toISOString();
 
     const normalizedBrokerId = String(input.orderId);
@@ -795,7 +886,6 @@ export class PortfolioManager {
     },
     now: string,
   ): ApplyTradeResult {
-    this.guardLegacyMutation();
     if (input.executionId) {
       if (this.executionKeysSeen.has(input.executionId)) {
         return { kind: "skipped", reason: "duplicate_execution" };
@@ -958,8 +1048,12 @@ export class PortfolioManager {
     realizedPnl?: number;
     unrealizedPnl?: number;
   }): { position: PositionState | null } {
-    this.guardLegacyMutation();
     const now = new Date().toISOString();
+    const tracked = this.openCosts.get(input.symbol);
+    if (tracked) {
+      const target = input.positionQty != null ? decimal(input.positionQty) : decimal(tracked.quantity).add(input.side === "buy" ? input.filledQty ?? 0 : -(input.filledQty ?? 0));
+      if (target.compare(tracked.quantity) !== 0) throw new Error("Apply position changes through sync_order_event so cash, basis and fees stay consistent");
+    }
     const existing = this.positions.get(input.symbol);
 
     const calculatePositionMetrics = (
@@ -1190,9 +1284,9 @@ export class PortfolioManager {
     equity: number;
     locked?: number;
   }): { reconciled: boolean; balance: BalanceState } {
-    this.guardLegacyMutation();
     const now = new Date().toISOString();
 
+    this.exactCash.delete(input.asset);
     const multiplier = input.margin ?? 1;
 
     // For your current Alpaca behavior:
@@ -1348,7 +1442,6 @@ export class PortfolioManager {
     feeAsset?: string;
     baseCurrency?: string;
   }): void {
-    this.guardLegacyMutation();
     const now = new Date().toISOString();
     const { quoteAsset } = this.parseInstrument(
       input.symbol,
@@ -1368,53 +1461,51 @@ export class PortfolioManager {
     this.updateEquity(input.baseCurrency);
   }
 
-  // ============== v2 READ METHODS ==============
+  // ============== portfolio READ METHODS ==============
 
   /**
-   * Get all pending orders (v2 model — derives from orders map).
+   * Get all pending orders (portfolio model — derives from orders map).
    */
   getOpenOrders(): OrderState[] {
     return Array.from(this.orders.values()).filter((o) =>
       OPEN_ORDER_STATUSES.has(o.status),
-    ).map(order => ({ ...order }));
+    );
   }
 
   getAlgoOrder(algoId: string): AlgoOrderState | undefined {
-    const order = this.algoOrders.get(algoId);
-    return order ? { ...order } : undefined;
+    return this.algoOrders.get(algoId);
   }
 
   getOpenAlgoOrders(): AlgoOrderState[] {
     return Array.from(this.algoOrders.values()).filter((o) =>
       OPEN_ALGO_ORDER_STATUSES.has(o.status),
-    ).map(order => ({ ...order }));
+    );
   }
 
   /**
-   * Get all v2 positions.
+   * Get all portfolio positions.
    */
   getPositions(): PositionState[] {
-    return Array.from(this.positions.values(), position => ({ ...position }));
+    return Array.from(this.positions.values());
   }
 
   /**
-   * Get all v2 balances.
+   * Get all portfolio balances.
    */
   getV2Balances(): Record<string, BalanceState> {
-    return Object.fromEntries(Array.from(this.balances, ([asset, balance]) => [asset, { ...balance }]));
+    return Object.fromEntries(this.balances);
   }
 
   /**
-   * Get a single v2 order by broker order ID.
+   * Get a single portfolio order by broker order ID.
    */
   getOrder(orderId: string): OrderState | undefined {
-    const order = this.orders.get(orderId);
-    return order ? { ...order } : undefined;
+    return this.orders.get(orderId);
   }
 
   // ============== PEAK EQUITY ==============
 
-  private updateEquity(baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT"): void {
+  private updateEquity(baseCurrency: string = "USDT"): void {
     const currentEquity = this.getTotalEquity(baseCurrency);
     if (this.startingEquity === null && currentEquity > 0) {
       this.startingEquity = currentEquity;
@@ -1426,7 +1517,7 @@ export class PortfolioManager {
   /**
    * Get full portfolio state in the same shape as SimBroker.
    */
-  getPortfolioState(baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT"): {
+  getPortfolioState(baseCurrency: string = "USDT"): {
     cash: Record<string, number>;
     positions: Position[];
     trades: Trade[];
@@ -1444,9 +1535,8 @@ export class PortfolioManager {
     const positions: Position[] = positionStates.map((p) => {
       const absQty = Math.abs(p.quantity);
       const marketValue = absQty * p.currentPrice;
-      const exact = this.accountingBook?.positions[p.symbol];
-      const openCostBasis = exact ? decimal(exact.grossCost).toNumber() : absQty * p.avgFillPrice;
-      const unrealizedPnl = exact ? decimal(p.currentPrice).mul(exact.quantity).sub(exact.grossCost).toNumber() : (p.currentPrice - p.avgFillPrice) * p.quantity;
+      const openCostBasis = p.openCostBasis;
+      const unrealizedPnl = p.quantity >= 0 ? marketValue - openCostBasis : (p.currentPrice - p.avgFillPrice) * p.quantity;
 
       return {
         symbol: p.symbol,
@@ -1469,32 +1559,37 @@ export class PortfolioManager {
       0,
     );
 
-    const totalEquity = this.accountingBook ? this.getTotalEquity(baseCurrency) : cashBase + positionsEquityValue;
+    const totalEquity = cashBase + positionsEquityValue;
     const realizedPnlBySymbol: Record<string, number> = {};
     let cumulativeRealizedPnl = 0;
-    for (const trade of this.trades) {
+    if (!this.fillTotalsActive) for (const trade of this.trades) {
       cumulativeRealizedPnl += trade.netPnl;
       realizedPnlBySymbol[trade.symbol] =
         (realizedPnlBySymbol[trade.symbol] ?? 0) + trade.netPnl;
     }
     let cumulativeFees = 0;
-    for (const order of this.orders.values()) {
+    if (!this.fillTotalsActive) for (const order of this.orders.values()) {
       cumulativeFees += order.totalFees;
+    }
+    if (this.fillTotalsActive) {
+      cumulativeRealizedPnl = this.realizedTotal;
+      cumulativeFees = this.feesTotal;
+      for (const [symbol, pnl] of this.realizedBySymbol) realizedPnlBySymbol[symbol] = pnl.value;
     }
 
 
     return {
       cash: Object.fromEntries(this.cashBook),
       positions,
-      trades: this.trades.map(trade => ({ ...trade })),
+      trades: this.trades,
       totalEquity,
       peakEquity: this.peakEquity,
       startingEquity: this.startingEquity,
       pendingOrders: this.getOpenOrders(),
       algoOrders: this.getOpenAlgoOrders(),
-      cumulativeRealizedPnl: this.accountingBook ? decimal(this.accountingBook.realized).toNumber() : cumulativeRealizedPnl,
-      realizedPnlBySymbol: this.accountingBook ? Object.fromEntries(Object.entries(this.accountingBook.realizedBySymbol).map(([symbol, value]) => [symbol, decimal(value).toNumber()])) : realizedPnlBySymbol,
-      cumulativeFees: this.accountingBook ? decimal(this.accountingBook.fees).toNumber() : cumulativeFees,
+      cumulativeRealizedPnl,
+      realizedPnlBySymbol,
+      cumulativeFees,
     };
   }
 
@@ -1504,9 +1599,8 @@ export class PortfolioManager {
 
     const absQty = Math.abs(p.quantity);
     const marketValue = absQty * p.currentPrice;
-    const exact = this.accountingBook?.positions[p.symbol];
-    const openCostBasis = exact ? decimal(exact.grossCost).toNumber() : absQty * p.avgFillPrice;
-    const unrealizedPnl = exact ? decimal(p.currentPrice).mul(exact.quantity).sub(exact.grossCost).toNumber() : (p.currentPrice - p.avgFillPrice) * p.quantity;
+    const openCostBasis = p.openCostBasis;
+    const unrealizedPnl = p.quantity >= 0 ? marketValue - openCostBasis : (p.currentPrice - p.avgFillPrice) * p.quantity;
 
     return {
       symbol: p.symbol,
@@ -1537,13 +1631,7 @@ export class PortfolioManager {
     return Object.fromEntries(this.cashBook);
   }
 
-  getTotalEquity(baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT"): number {
-    if (this.accountingBook) {
-      if (baseCurrency !== this.accountingBook.scope.currency) throw new Error("FX valuation adapter is required for another book currency");
-      let equity = decimal(this.accountingBook.cash);
-      for (const [symbol, position] of Object.entries(this.accountingBook.positions)) equity = equity.add(decimal(this.positions.get(symbol)?.currentPrice ?? position.mark).mul(position.quantity));
-      return equity.toNumber();
-    }
+  getTotalEquity(baseCurrency: string = "USDT"): number {
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
     const posValue = Array.from(this.positions.values()).reduce(
       (sum, position) => sum + position.quantity * position.currentPrice,
@@ -1561,7 +1649,7 @@ export class PortfolioManager {
   }
 
   getTrades(): Trade[] {
-    return this.trades.map(trade => ({ ...trade }));
+    return this.trades;
   }
 
   isBootstrapped(): boolean {
@@ -1575,12 +1663,13 @@ export class PortfolioManager {
    * Used by create_portfolio operation (no broker API call).
    */
   initializePortfolio(baseCurrency: string, cashBalance: number): void {
-    this.guardLegacyMutation();
     if (this.bootstrapped) return;
 
+    if (!Number.isFinite(cashBalance) || cashBalance < 0) throw new Error("Explicit nonnegative cash allocation is required");
+    this.exactCash.set(baseCurrency, String(cashBalance));
     this.cashBook.set(baseCurrency, cashBalance);
 
-    // Also set in v2 balances
+    // Also set in portfolio balances
     this.balances.set(baseCurrency, {
       asset: baseCurrency,
       cash: cashBalance,
@@ -1608,11 +1697,10 @@ export class PortfolioManager {
    */
   updateMarketPrices(
     prices: Record<string, number>,
-    baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT",
+    baseCurrency: string = "USDT",
   ): void {
-    //const now = new Date().toISOString();
+    const markTime = Date.now();
 
-    for (const price of Object.values(prices)) if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid portfolio mark");
     for (const [symbol, price] of Object.entries(prices)) {
       const position = this.positions.get(symbol);
       if (!position) continue;
@@ -1620,27 +1708,20 @@ export class PortfolioManager {
       const absQty = Math.abs(position.quantity);
 
       position.currentPrice = price;
+      this.positionMarkTimes.set(symbol, markTime);
       position.marketValue = absQty * price;
-      const exact = this.accountingBook?.positions[symbol];
-      position.openCostBasis = exact ? decimal(exact.grossCost).toNumber() : absQty * position.avgFillPrice;
-      position.unrealizedPnl = exact ? decimal(price).mul(exact.quantity).sub(exact.grossCost).toNumber() :
+      position.unrealizedPnl = position.quantity >= 0 ? position.marketValue - position.openCostBasis :
         (position.currentPrice - position.avgFillPrice) * position.quantity;
       position.totalPnl = position.realizedPnl + position.unrealizedPnl;
     }
 
     this.updateEquity(baseCurrency);
-    if (this.accountingBook) {
-      const currency = this.accountingBook.scope.currency;
-      const balance = this.balances.get(currency);
-      if (balance) this.balances.set(currency, { ...balance, equity: this.getTotalEquity(currency), updatedAt: new Date().toISOString() });
-    }
   }
 
   /**
    * Cancel/remove a pending order by orderId (broker or client).
    */
   cancelOrder(orderId: string): { removed: boolean; order?: OrderState } {
-    this.guardLegacyMutation();
     // Try direct lookup by broker order ID
     let order = this.orders.get(orderId);
 

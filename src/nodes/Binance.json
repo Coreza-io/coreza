@@ -777,12 +777,35 @@
             "futures"
           ],
           "operation": [
-            "place_order",
+            "place_order"
+          ],
+          "type": [
+            "STOP",
+            "STOP_MARKET",
+            "TAKE_PROFIT",
+            "TAKE_PROFIT_MARKET",
+            "TRAILING_STOP_MARKET"
+          ]
+        }
+      },
+      "description": "Optional identifier for a Futures conditional (algo) order."
+    },
+    {
+      "key": "clientAlgoId",
+      "label": "Client Algo ID",
+      "type": "text",
+      "placeholder": "Client algo id to cancel",
+      "displayOptions": {
+        "show": {
+          "marketType": [
+            "futures"
+          ],
+          "operation": [
             "cancel_order"
           ]
         }
       },
-      "description": "If set, cancel uses futures algo endpoint (/fapi/v1/algoOrder)."
+      "description": "Cancel a Futures conditional order by its client algo ID."
     },
     {
       "key": "positionSide",

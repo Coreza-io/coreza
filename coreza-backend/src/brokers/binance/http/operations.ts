@@ -2,6 +2,7 @@ import { getBinanceTimestamp } from "../../../utils/binanceTimeSync";
 import { signHmacSha256 } from "../../../utils/crypto";
 import { BrokerOperation, toBarSeries } from "../../types";
 import { fromBinanceBar, parseBinanceKline } from "../helpers";
+import { validateFuturesOrder } from "../orderValidation";
 
 function getMarketType(input: any): "spot" | "futures" {
   const marketType = input?.marketType ?? input?.asset_type ?? input?.assetType;
@@ -128,7 +129,10 @@ function buildStandardFuturesPayload(
   }
 
   if (input.positionSide) params.positionSide = input.positionSide;
-  if (input.reduceOnly !== undefined) params.reduceOnly = input.reduceOnly;
+  // false is Binance's default; omit it so Hedge Mode orders remain valid.
+  if (input.reduceOnly !== undefined && input.reduceOnly !== false && input.reduceOnly !== "false") {
+    params.reduceOnly = input.reduceOnly;
+  }
   if (input.selfTradePreventionMode)
     params.selfTradePreventionMode = input.selfTradePreventionMode;
 
@@ -152,7 +156,9 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
 
   if (input.positionSide) params.positionSide = input.positionSide;
   if (input.workingType) params.workingType = input.workingType;
-  if (input.reduceOnly !== undefined) params.reduceOnly = input.reduceOnly;
+  if (input.closePosition !== true && input.reduceOnly !== undefined && input.reduceOnly !== false && input.reduceOnly !== "false") {
+    params.reduceOnly = input.reduceOnly;
+  }
   if (input.selfTradePreventionMode) {
     params.selfTradePreventionMode = input.selfTradePreventionMode;
   }
@@ -253,7 +259,7 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
     params.callbackRate = String(input.callbackRate);
     if (input.activationPrice)
       params.activatePrice = String(input.activationPrice);
-    if (input.quantity) params.quantity = String(input.quantity);
+    params.quantity = String(input.quantity);
   }
 
   if (input.clientAlgoId) {
@@ -634,6 +640,7 @@ export const binanceOperations: Record<string, BrokerOperation> = {
       };
 
       if (marketType === "futures") {
+        validateFuturesOrder(input);
         const params = ALGO_TYPES.has(orderType)
           ? buildAlgoFuturesPayload(input, baseParams)
           : buildStandardFuturesPayload(input, baseParams);

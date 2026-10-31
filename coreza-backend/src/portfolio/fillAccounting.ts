@@ -12,7 +12,6 @@ export interface FillInput {
   quantity?: string | number;
   price?: string | number;
   fee?: string | number;
-  quoteNotional?: string | number;
   quantityMode: FillProgress["quantityMode"];
   priceMode: FillProgress["priceMode"];
   feeMode: FillProgress["feeMode"];
@@ -29,7 +28,7 @@ export interface OpenCost {
 /** Independent of order progress so a replay is identified before any mutation. */
 export function fillFingerprint(input: FillInput, side: string, feeAsset: string): string {
   return JSON.stringify([side, decimal(input.quantity ?? 0).toString(), input.price == null ? null : decimal(input.price).toString(),
-    input.quoteNotional == null ? null : decimal(input.quoteNotional).toString(), decimal(input.fee ?? 0).toString(),
+    decimal(input.fee ?? 0).toString(),
     feeAsset, input.quantityMode, input.priceMode, input.feeMode]);
 }
 
@@ -50,14 +49,11 @@ export function normalizeFill(input: FillInput, previous?: FillProgress) {
   let notional = decimal(0), price = decimal(0);
   if (quantity.compare(0) > 0) {
     if (input.price == null || decimal(input.price).compare(0) <= 0) throw new Error("Positive fill price is required");
-    notional = input.quoteNotional != null
-      ? input.quantityMode === "cumulative" ? decimal(input.quoteNotional).sub(previousNotional) : decimal(input.quoteNotional)
-      : input.priceMode === "cumulative_vwap" ? total.mul(input.price).sub(previousNotional) : quantity.mul(input.price);
+    notional = input.priceMode === "cumulative_vwap" ? total.mul(input.price).sub(previousNotional) : quantity.mul(input.price);
     if (notional.compare(0) <= 0) throw new Error("Fill notional must be positive");
     price = notional.div(quantity);
   } else {
     // Missing quantity on a lifecycle message is different from a supplied total.
-    if (input.quoteNotional != null && decimal(input.quoteNotional).compare(input.quantityMode === "cumulative" ? previousNotional : 0) !== 0) throw new Error("Notional changed without an execution quantity");
     if (input.quantityMode === "cumulative" && input.priceMode === "cumulative_vwap" && input.price != null && input.quantity != null && total.mul(input.price).compare(previousNotional) !== 0) throw new Error("Cumulative average changed without an execution quantity");
     if (fee.compare(0) !== 0) throw new Error("Fee-only adjustment requires an explicit accounting treatment");
   }

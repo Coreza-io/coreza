@@ -653,19 +653,6 @@
       }
     },
     {
-      "key": "quoteNotional",
-      "label": "Quote Notional",
-      "type": "text",
-      "description": "Optional exact quote amount. Use an order-to-date amount with cumulative quantity; otherwise use the execution amount.",
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "sync_order_event"
-          ]
-        }
-      }
-    },
-    {
       "key": "avgFillPrice",
       "label": "Average Price",
       "type": "text",

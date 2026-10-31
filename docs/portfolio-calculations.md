@@ -9,7 +9,8 @@ Filled Quantity means one execution unless Cumulative Filled Quantity is checked
 The checkbox comes from node configuration; a numeric native stream field cannot
 replace it. Price Meaning and Fee Meaning are independent settings. Cumulative order
 average prices are converted using cumulative notional differences, not multiplied
-by the latest quantity delta. Changing interpretation for an active order is rejected.
+by the latest quantity delta. Execution value is derived internally from quantity
+and the selected price meaning; there is no separate amount input. Changing interpretation for an active order is rejected.
 
 Only the affected order, position, cash balance and fee/profit totals are calculated.
 The complete candidate is validated before these records are published synchronously.

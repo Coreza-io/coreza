@@ -1233,7 +1233,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const timestamp = params.event_time ?? params.eventTime ?? new Date().toISOString();
       const accepted = pm.applyOrderEvent({
         orderId: normalizedBrokerId, clientOrderId, symbol: normalizeSymbol(symbol), side, status,
-        quantity: params.filledQty, price: params.avgFillPrice, fee: params.feeAmount, quoteNotional: params.quoteNotional,
+        quantity: params.filledQty, price: params.avgFillPrice, fee: params.feeAmount,
         quantityMode: params._quantityMode ?? "incremental", priceMode: params._priceMode ?? "execution", feeMode: params._feeMode ?? "incremental",
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,

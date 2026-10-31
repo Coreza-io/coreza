@@ -1,5 +1,5 @@
-// Pure validation shared by manual execution (after expression resolution) and
-// the broker payload builder. Account position mode is not inferred here.
+// Binance Futures validation at the broker payload boundary for all execution
+// paths. Account position mode is not inferred here.
 export function validateFuturesOrder(input: Record<string, any>): void {
   const type = String(input.type || "").toUpperCase();
   const priced = ["LIMIT", "STOP", "TAKE_PROFIT"].includes(type);

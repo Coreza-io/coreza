@@ -856,7 +856,7 @@
     {
       "key": "closePosition",
       "label": "Close Position",
-      "type": "boolean",
+      "type": "toggle",
       "default": false,
       "displayOptions": {
         "show": {
@@ -902,7 +902,7 @@
     {
       "key": "priceProtect",
       "label": "Price Protect",
-      "type": "boolean",
+      "type": "toggle",
       "default": false,
       "displayOptions": {
         "show": {

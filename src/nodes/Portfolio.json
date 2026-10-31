@@ -45,6 +45,233 @@
       ]
     },
     {
+      "key": "calculationVersion",
+      "label": "Calculation Version",
+      "type": "select",
+      "default": "1",
+      "options": [
+        {
+          "id": "1",
+          "name": "Legacy"
+        },
+        {
+          "id": "2",
+          "name": "Accounting v2 (staged)"
+        }
+      ],
+      "description": "V2 requires deployed journal support and explicit account reconciliation. Existing workflows retain legacy incremental interpretation.",
+      "displayOptions": {
+        "show": {
+          "mode": [
+            "broker"
+          ]
+        }
+      }
+    },
+    {
+      "key": "cumulativeFilledQty",
+      "label": "Cumulative Filled Quantity",
+      "type": "checkbox",
+      "default": false,
+      "description": "V2 only. Checked: filledQty is the order-to-date total. Unchecked: one execution. This setting is separate from the native numeric cumulativeFilledQty payload.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sync_order_event"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "priceMode",
+      "label": "Price Meaning",
+      "type": "select",
+      "default": "execution",
+      "options": [
+        {
+          "id": "execution",
+          "name": "Individual execution price"
+        },
+        {
+          "id": "cumulative_vwap",
+          "name": "Cumulative order average"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sync_order_event"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "feeMode",
+      "label": "Fee Meaning",
+      "type": "select",
+      "default": "incremental",
+      "options": [
+        {
+          "id": "incremental",
+          "name": "Individual execution fee"
+        },
+        {
+          "id": "cumulative",
+          "name": "Cumulative order fee"
+        }
+      ],
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sync_order_event"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "quoteNotional",
+      "label": "Quote Notional",
+      "type": "text",
+      "description": "Exact decimal string. Supply order-to-date notional with cumulative quantity, otherwise individual execution notional.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sync_order_event"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "event_time",
+      "label": "Broker Event Time",
+      "type": "text",
+      "description": "Original broker timestamp (ISO 8601 or epoch milliseconds), required for v2 execution recovery.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "sync_order_event"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "credential_id",
+      "label": "Credential ID",
+      "type": "text",
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "accountId",
+      "label": "Stable Broker Account ID",
+      "type": "text",
+      "required": true,
+      "description": "Non-secret provider account identity, retained across credential rotation.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "environment",
+      "label": "Broker Environment",
+      "type": "select",
+      "options": [
+        {
+          "id": "paper",
+          "name": "Paper"
+        },
+        {
+          "id": "testnet",
+          "name": "Testnet"
+        },
+        {
+          "id": "live",
+          "name": "Live"
+        }
+      ],
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "accountModel",
+      "label": "Account Model",
+      "type": "select",
+      "options": [
+        {
+          "id": "long_only_cash",
+          "name": "Long-only cash / spot"
+        }
+      ],
+      "required": true,
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
+      "key": "exclusiveAccount",
+      "label": "Exclusive Account Allocation",
+      "type": "checkbox",
+      "default": false,
+      "description": "V2 rejects shared-account allocations until an account reservation authority is available.",
+      "displayOptions": {
+        "show": {
+          "operation": [
+            "create_portfolio"
+          ],
+          "calculationVersion": [
+            "2"
+          ]
+        }
+      }
+    },
+    {
       "key": "backtestId",
       "label": "Backtest ID",
       "type": "text",
@@ -580,7 +807,7 @@
       "type": "text",
       "placeholder": "e.g. 1",
       "required": false,
-      "description": "Cumulative filled quantity from the broker (stream output: cumulativeFilledQty). Do not map the stream filledQty, which is only the latest execution. The executor derives the execution delta internally.",
+      "description": "Legacy: individual execution quantity. V2: meaning is selected by Cumulative Filled Quantity. Map exact broker decimal strings where available; changing meaning requires reconciliation.",
       "displayOptions": {
         "show": {
           "operation": [

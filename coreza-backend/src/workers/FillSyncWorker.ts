@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+import { flushAccountingReports } from "../portfolio/flushAccountingReports";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { LiveTradeRepository } from "../repositories/LiveTradeRepository";
 /**
@@ -30,7 +32,8 @@ import { RedisKeys } from "../infra/redisKeys";
 const logger = createLogger("FillSyncWorker");
 
 const CONSUMER_GROUP = "fill-sync";
-const CONSUMER_NAME = "worker-1";
+const CONSUMER_NAME = `worker-${randomUUID()}`;
+const RECLAIM_IDLE_MS = 30_000;
 const BATCH_SIZE = 100;
 const BLOCK_TIMEOUT_MS = 2000;
 const SNAPSHOT_FLUSH_INTERVAL_MS = 5000;
@@ -64,6 +67,8 @@ export class FillSyncWorker {
 
   /** Track retry counts for poison message detection */
   private retryCounters = new Map<string, number>();
+  private reclaimCursors = new Map<string, string>();
+  private autoClaimAvailable = true;
 
   private constructor() {}
 
@@ -165,17 +170,12 @@ export class FillSyncWorker {
 
         let results: any;
         try {
-          results = await streamConn.xreadgroup(
-            "GROUP",
-            CONSUMER_GROUP,
-            CONSUMER_NAME,
-            "COUNT",
-            BATCH_SIZE,
-            "BLOCK",
-            BLOCK_TIMEOUT_MS,
-            "STREAMS",
-            streamKey,
-            ">",
+          const reclaimed = await this.reclaimPending(redis, streamKey);
+          this.reclaimCursors.set(streamKey, reclaimed[0]);
+          if (reclaimed[2]?.length) logger.error({ streamKey, deletedPending: reclaimed[2] }, "Pending fill evidence was trimmed; broker reconciliation required");
+          results = reclaimed[1].length ? [[streamKey, reclaimed[1]]] : await streamConn.xreadgroup(
+            "GROUP", CONSUMER_GROUP, CONSUMER_NAME, "COUNT", BATCH_SIZE,
+            "BLOCK", BLOCK_TIMEOUT_MS, "STREAMS", streamKey, ">",
           );
         } catch (err: any) {
           if (err.message?.includes("NOGROUP")) {
@@ -202,9 +202,11 @@ export class FillSyncWorker {
           for (let i = 0; i < fieldValues.length; i += 2) {
             fields[fieldValues[i]] = fieldValues[i + 1];
           }
-          const dedupeKey = fields.algo_id
-            ? `algo:${fields.algo_id}`
-            : fields.fill_id;
+          const dedupeKey = JSON.stringify([fields.credential_id, fields.environment, fields.symbol, fields.order_id,
+            fields.algo_id ? `algo:${fields.algo_id}` : fields.fill_id]);
+          if (!fields.algo_id && !fields.fill_id) throw new Error(`Fill ${streamKey}/${entryId} has no stable identity; retained pending`);
+          const prior = deduped.get(dedupeKey)?.fields;
+          if (prior && !fields.algo_id && ["fill_qty_delta", "fill_price", "quote_qty", "commission", "commission_asset", "side"].some(key => prior[key] !== fields[key])) throw new Error(`Conflicting fill ${streamKey}/${entryId}; retained pending`);
           if (dedupeKey) {
             deduped.set(dedupeKey, { entryId, fields });
           }
@@ -217,7 +219,7 @@ export class FillSyncWorker {
             broker: fields.broker,
             credential_id: fields.credential_id || fields.user_id,
             symbol: fields.symbol,
-            fill_id: fillId,
+            fill_id: fields.algo_id ? `algo:${fields.algo_id}` : fields.fill_id,
             order_id: fields.order_id || (null as any),
             side: fields.side,
             price: parseFloat(fields.fill_price) || 0,
@@ -263,7 +265,7 @@ export class FillSyncWorker {
           }
 
           for (const id of entryIds) {
-            this.retryCounters.delete(id);
+            this.retryCounters.delete(`${streamKey}:${id}`);
           }
 
           logger.debug(
@@ -272,8 +274,8 @@ export class FillSyncWorker {
           );
         } catch (err) {
           for (const entryId of entryIds) {
-            const count = (this.retryCounters.get(entryId) || 0) + 1;
-            this.retryCounters.set(entryId, count);
+            const count = (this.retryCounters.get(`${streamKey}:${entryId}`) || 0) + 1;
+            this.retryCounters.set(`${streamKey}:${entryId}`, count);
 
             if (count >= MAX_RETRIES) {
               logger.warn(
@@ -286,9 +288,6 @@ export class FillSyncWorker {
                   const [, fieldValues] = entry;
                   await redis.xadd(
                     DLQ_STREAM,
-                    "MAXLEN",
-                    "~",
-                    "10000",
                     "*",
                     "original_stream",
                     streamKey,
@@ -298,7 +297,7 @@ export class FillSyncWorker {
                   );
                 }
                 await redis.xack(streamKey, CONSUMER_GROUP, entryId);
-                this.retryCounters.delete(entryId);
+                this.retryCounters.delete(`${streamKey}:${entryId}`);
               } catch (dlqErr) {
                 logger.error({ err: dlqErr, entryId }, "DLQ append failed");
               }
@@ -328,6 +327,9 @@ export class FillSyncWorker {
   }
 
   private async persistReporting(): Promise<void> {
+    // The SQL outbox remains pending on failure, including when no Redis streams exist.
+    try { await flushAccountingReports(); }
+    catch (error) { logger.error({ error }, "Accounting reporting outbox retained for retry"); }
     const writes = await Promise.allSettled([LiveTradeRepository.flush(), SnapshotCache.drain()]);
     const snapshots = await Promise.allSettled([this.flushSnapshots()]);
     await LiveStrategiesRepository.recoverPending();
@@ -397,6 +399,30 @@ export class FillSyncWorker {
   }
 
   // ─── Helpers ───────────────────────────────────────────
+
+  private async reclaimPending(redis: Redis, streamKey: string): Promise<[string, any[], string[]?]> {
+    const cursor = this.reclaimCursors.get(streamKey) ?? "0-0";
+    if (this.autoClaimAvailable) {
+      try {
+        return await redis.xautoclaim(streamKey, CONSUMER_GROUP, CONSUMER_NAME,
+          RECLAIM_IDLE_MS, cursor, "COUNT", BATCH_SIZE) as [string, any[], string[]?];
+      } catch (error: any) {
+        if (!/unknown command.*xautoclaim/i.test(error.message ?? "")) throw error;
+        this.autoClaimAvailable = false;
+      }
+    }
+    // Redis 5/6.0 compatibility: page through pending IDs, then claim only idle
+    // entries. Advancing the cursor also visits pages containing fresh entries.
+    const pending = await redis.xpending(streamKey, CONSUMER_GROUP, cursor === "0-0" ? "-" : cursor, "+", BATCH_SIZE) as [string, string, number, number][];
+    const ids = pending.filter(([, , idle]) => Number(idle) >= RECLAIM_IDLE_MS).map(([id]) => id);
+    let next = "0-0";
+    if (pending.length === BATCH_SIZE) {
+      const [milliseconds, sequence] = pending[pending.length - 1][0].split("-");
+      next = `${milliseconds}-${BigInt(sequence) + 1n}`;
+    }
+    const entries = ids.length ? await redis.xclaim(streamKey, CONSUMER_GROUP, CONSUMER_NAME, RECLAIM_IDLE_MS, ...ids) as any[] : [];
+    return [next, entries];
+  }
 
   private async ensureConsumerGroup(
     redis: Redis,

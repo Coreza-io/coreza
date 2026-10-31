@@ -11,6 +11,7 @@ import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
 
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import axios from "axios";
+import { PortfolioManager } from "../../simulation/PortfolioManager";
 import { performance } from "perf_hooks";
 import { LOG } from "../../utils/logging";
 import { LIVE_TIMING_ENABLED, observeLive, observeEpoch, orderSubmitHttp, orderStage, liveSignalToSubmit, liveReceiptToSubmit, countLive, type LiveExecutionTiming } from "../../utils/liveTiming";
@@ -186,6 +187,11 @@ export class BrokerExecutor implements INodeExecutor {
     let preRegisteredClientOrderId: string | null = null;
     try {
       operation = node.values?.operation;
+      const activationId = context?.reportingExecutionId ?? context?.executionId;
+      if (activationId && /(?:place|submit|replace|modify).*order|close_position/.test(operation) &&
+          PortfolioManager.existingInstance(userId, activationId)?.usesVersionedAccounting()) {
+        return createErrorOutput("Portfolio accounting v2 order submission is disabled until reservation/settlement and recovery adapters are validated");
+      }
       const brokerNode = node as WorkflowNode & { subCategory: string };
       broker = (brokerNode.subCategory ?? node.name).toLowerCase();
       timing.configure(broker, operation);

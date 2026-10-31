@@ -9,6 +9,8 @@
  */
 
 import { randomUUID } from "crypto";
+import { AccountingBook, AccountingTransition } from "../portfolio/accounting";
+import { decimal } from "../portfolio/decimal";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -260,6 +262,69 @@ export class PortfolioManager {
   private startingEquity: number | null = null;
 
   private bootstrapped = false;
+  private accountingBook?: AccountingBook;
+  private versionedAccountingRequired = false;
+  requireVersionedAccounting(): void { this.versionedAccountingRequired = true; }
+  usesVersionedAccounting(): boolean { return this.versionedAccountingRequired || this.isAccountingVersion2(); }
+  private guardLegacyMutation(): void { if (this.usesVersionedAccounting()) throw new Error("Legacy mutation cannot modify a versioned accounting book"); }
+
+  isAccountingVersion2(): boolean { return this.accountingBook?.version === 2; }
+
+  /** Publish only a complete, durably accepted candidate. Price marks remain RAM-only. */
+  publishAccounting(transition: AccountingTransition): void {
+    const book = transition.book;
+    const nextPositions = new Map<string, PositionState>();
+    for (const [symbol, position] of Object.entries(book.positions)) {
+      const quantity = decimal(position.quantity).toNumber();
+      const average = decimal(position.grossCost).div(position.quantity).toNumber();
+      const currentPrice = this.positions.get(symbol)?.currentPrice ?? decimal(position.mark).toNumber();
+      const realizedPnl = decimal(position.realized).toNumber();
+      const unrealizedPnl = decimal(currentPrice).mul(position.quantity).sub(position.grossCost).toNumber();
+      nextPositions.set(symbol, { symbol, quantity, side: "long", avgFillPrice: average, currentPrice,
+        openCostBasis: decimal(position.grossCost).toNumber(), marketValue: decimal(currentPrice).mul(position.quantity).toNumber(),
+        realizedPnl, unrealizedPnl, totalPnl: decimal(realizedPnl).add(unrealizedPnl).toNumber() });
+    }
+    const nextOrders = new Map(this.orders);
+    for (const [orderId, order] of Object.entries(book.orders)) {
+      const previous = nextOrders.get(orderId);
+      nextOrders.set(orderId, { ...previous, orderId, symbol: order.symbol, side: order.side, status: order.status,
+        origQty: previous?.origQty, filledQty: decimal(order.quantity).toNumber(),
+        remainingQty: previous?.origQty == null ? undefined : decimal(previous.origQty).sub(order.quantity).toNumber(),
+        avgFillPrice: decimal(order.quantity).compare(0) > 0 ? decimal(order.notional).div(order.quantity).toNumber() : undefined,
+        totalFees: decimal(order.fees).toNumber(), createdAt: previous?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() });
+    }
+    const nextTrades = this.trades.slice();
+    const execution = transition.execution;
+    if (execution?.positionBefore && execution.side === "sell" && decimal(execution.quantity).compare(0) > 0) {
+      const entry = execution.positionBefore;
+      nextTrades.push({ id: `LT-${execution.id}`, symbol: execution.symbol, side: "buy", entryOrderId: entry.entryOrderId,
+        exitOrderId: execution.orderId, entryPrice: decimal(entry.grossCost).div(entry.quantity).toNumber(),
+        exitPrice: decimal(execution.price).toNumber(), quantity: decimal(execution.quantity).toNumber(),
+        grossPnl: decimal(execution.grossRealized).toNumber(), commission: decimal(execution.allocatedEntryFee).add(execution.fee).toNumber(),
+        netPnl: decimal(execution.netRealized).toNumber(), slippage: 0, entryTime: entry.entryTime,
+        exitTime: execution.timestamp, holdingPeriodBars: 0 });
+    }
+    const cash = decimal(book.cash).toNumber();
+    let candidateEquity = decimal(book.cash);
+    for (const [symbol, position] of Object.entries(book.positions)) candidateEquity = candidateEquity.add(decimal(nextPositions.get(symbol)!.currentPrice).mul(position.quantity));
+    const equity = candidateEquity.toNumber();
+    // No active state is changed until all compatibility calculations above succeed.
+    this.positions = nextPositions;
+    this.orders = nextOrders;
+    this.trades = nextTrades;
+    this.cashBook = new Map([[book.scope.currency, cash]]);
+    this.balances = new Map([[book.scope.currency, { asset: book.scope.currency, cash, equity, margin: 1, updatedAt: new Date().toISOString() }]]);
+    this.startingEquity = decimal(book.startingCash).toNumber();
+    this.accountingBook = structuredClone(book);
+    this.versionedAccountingRequired = true;
+    this.bootstrapped = true;
+    this.updateEquity(book.scope.currency);
+  }
+
+  accountingMetadata(): Record<string, unknown> {
+    return this.accountingBook ? { accounting_status: "ready", calculation_version: 2, accounting_revision: this.accountingBook.revision, account_scope: { ...this.accountingBook.scope }, exact_cash: this.accountingBook.cash, exact_realized_pnl: this.accountingBook.realized }
+      : { calculation_version: 1, accounting_status: "legacy", configuration_diagnostic: "Legacy filledQty is incremental; migrate only after reconciliation" };
+  }
 
   private constructor(userId: string, executionId: string) {
     this.userId = userId;
@@ -311,6 +376,8 @@ export class PortfolioManager {
    */
   destroy(): void {
     // v2 state
+    this.accountingBook = undefined;
+    this.versionedAccountingRequired = false;
     this.orders.clear();
     this.algoOrders.clear();
     this.executions.clear();
@@ -404,6 +471,7 @@ export class PortfolioManager {
     trailPrice?: number;
     status: string;
   }): { order: OrderState } {
+    this.guardLegacyMutation();
     const now = new Date().toISOString();
     const origQty = input.origQty ?? undefined;
     const order: OrderState = {
@@ -469,6 +537,7 @@ export class PortfolioManager {
     feeAsset?: string;
     _seq?: number;
   }): void {
+    this.guardLegacyMutation();
     const now = new Date().toISOString();
 
     const normalizedBrokerId = String(input.orderId);
@@ -707,6 +776,7 @@ export class PortfolioManager {
     },
     now: string,
   ): ApplyTradeResult {
+    this.guardLegacyMutation();
     if (input.executionId) {
       if (this.executionKeysSeen.has(input.executionId)) {
         return { kind: "skipped", reason: "duplicate_execution" };
@@ -869,6 +939,7 @@ export class PortfolioManager {
     realizedPnl?: number;
     unrealizedPnl?: number;
   }): { position: PositionState | null } {
+    this.guardLegacyMutation();
     const now = new Date().toISOString();
     const existing = this.positions.get(input.symbol);
 
@@ -1100,6 +1171,7 @@ export class PortfolioManager {
     equity: number;
     locked?: number;
   }): { reconciled: boolean; balance: BalanceState } {
+    this.guardLegacyMutation();
     const now = new Date().toISOString();
 
     const multiplier = input.margin ?? 1;
@@ -1257,6 +1329,7 @@ export class PortfolioManager {
     feeAsset?: string;
     baseCurrency?: string;
   }): void {
+    this.guardLegacyMutation();
     const now = new Date().toISOString();
     const { quoteAsset } = this.parseInstrument(
       input.symbol,
@@ -1284,43 +1357,45 @@ export class PortfolioManager {
   getOpenOrders(): OrderState[] {
     return Array.from(this.orders.values()).filter((o) =>
       OPEN_ORDER_STATUSES.has(o.status),
-    );
+    ).map(order => ({ ...order }));
   }
 
   getAlgoOrder(algoId: string): AlgoOrderState | undefined {
-    return this.algoOrders.get(algoId);
+    const order = this.algoOrders.get(algoId);
+    return order ? { ...order } : undefined;
   }
 
   getOpenAlgoOrders(): AlgoOrderState[] {
     return Array.from(this.algoOrders.values()).filter((o) =>
       OPEN_ALGO_ORDER_STATUSES.has(o.status),
-    );
+    ).map(order => ({ ...order }));
   }
 
   /**
    * Get all v2 positions.
    */
   getPositions(): PositionState[] {
-    return Array.from(this.positions.values());
+    return Array.from(this.positions.values(), position => ({ ...position }));
   }
 
   /**
    * Get all v2 balances.
    */
   getV2Balances(): Record<string, BalanceState> {
-    return Object.fromEntries(this.balances);
+    return Object.fromEntries(Array.from(this.balances, ([asset, balance]) => [asset, { ...balance }]));
   }
 
   /**
    * Get a single v2 order by broker order ID.
    */
   getOrder(orderId: string): OrderState | undefined {
-    return this.orders.get(orderId);
+    const order = this.orders.get(orderId);
+    return order ? { ...order } : undefined;
   }
 
   // ============== PEAK EQUITY ==============
 
-  private updateEquity(baseCurrency: string = "USDT"): void {
+  private updateEquity(baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT"): void {
     const currentEquity = this.getTotalEquity(baseCurrency);
     if (this.startingEquity === null && currentEquity > 0) {
       this.startingEquity = currentEquity;
@@ -1332,7 +1407,7 @@ export class PortfolioManager {
   /**
    * Get full portfolio state in the same shape as SimBroker.
    */
-  getPortfolioState(baseCurrency: string = "USDT"): {
+  getPortfolioState(baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT"): {
     cash: Record<string, number>;
     positions: Position[];
     trades: Trade[];
@@ -1350,8 +1425,9 @@ export class PortfolioManager {
     const positions: Position[] = positionStates.map((p) => {
       const absQty = Math.abs(p.quantity);
       const marketValue = absQty * p.currentPrice;
-      const openCostBasis = absQty * p.avgFillPrice;
-      const unrealizedPnl = (p.currentPrice - p.avgFillPrice) * p.quantity;
+      const exact = this.accountingBook?.positions[p.symbol];
+      const openCostBasis = exact ? decimal(exact.grossCost).toNumber() : absQty * p.avgFillPrice;
+      const unrealizedPnl = exact ? decimal(p.currentPrice).mul(exact.quantity).sub(exact.grossCost).toNumber() : (p.currentPrice - p.avgFillPrice) * p.quantity;
 
       return {
         symbol: p.symbol,
@@ -1374,7 +1450,7 @@ export class PortfolioManager {
       0,
     );
 
-    const totalEquity = cashBase + positionsEquityValue;
+    const totalEquity = this.accountingBook ? this.getTotalEquity(baseCurrency) : cashBase + positionsEquityValue;
     const realizedPnlBySymbol: Record<string, number> = {};
     let cumulativeRealizedPnl = 0;
     for (const trade of this.trades) {
@@ -1387,22 +1463,19 @@ export class PortfolioManager {
       cumulativeFees += order.totalFees;
     }
 
-    if (this.startingEquity === null && totalEquity > 0) {
-      this.startingEquity = totalEquity;
-    }
 
     return {
       cash: Object.fromEntries(this.cashBook),
       positions,
-      trades: this.trades,
+      trades: this.trades.map(trade => ({ ...trade })),
       totalEquity,
       peakEquity: this.peakEquity,
       startingEquity: this.startingEquity,
       pendingOrders: this.getOpenOrders(),
       algoOrders: this.getOpenAlgoOrders(),
-      cumulativeRealizedPnl,
-      realizedPnlBySymbol,
-      cumulativeFees,
+      cumulativeRealizedPnl: this.accountingBook ? decimal(this.accountingBook.realized).toNumber() : cumulativeRealizedPnl,
+      realizedPnlBySymbol: this.accountingBook ? Object.fromEntries(Object.entries(this.accountingBook.realizedBySymbol).map(([symbol, value]) => [symbol, decimal(value).toNumber()])) : realizedPnlBySymbol,
+      cumulativeFees: this.accountingBook ? decimal(this.accountingBook.fees).toNumber() : cumulativeFees,
     };
   }
 
@@ -1412,8 +1485,9 @@ export class PortfolioManager {
 
     const absQty = Math.abs(p.quantity);
     const marketValue = absQty * p.currentPrice;
-    const openCostBasis = absQty * p.avgFillPrice;
-    const unrealizedPnl = (p.currentPrice - p.avgFillPrice) * p.quantity;
+    const exact = this.accountingBook?.positions[p.symbol];
+    const openCostBasis = exact ? decimal(exact.grossCost).toNumber() : absQty * p.avgFillPrice;
+    const unrealizedPnl = exact ? decimal(p.currentPrice).mul(exact.quantity).sub(exact.grossCost).toNumber() : (p.currentPrice - p.avgFillPrice) * p.quantity;
 
     return {
       symbol: p.symbol,
@@ -1444,7 +1518,13 @@ export class PortfolioManager {
     return Object.fromEntries(this.cashBook);
   }
 
-  getTotalEquity(baseCurrency: string = "USDT"): number {
+  getTotalEquity(baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT"): number {
+    if (this.accountingBook) {
+      if (baseCurrency !== this.accountingBook.scope.currency) throw new Error("FX valuation adapter is required for another book currency");
+      let equity = decimal(this.accountingBook.cash);
+      for (const [symbol, position] of Object.entries(this.accountingBook.positions)) equity = equity.add(decimal(this.positions.get(symbol)?.currentPrice ?? position.mark).mul(position.quantity));
+      return equity.toNumber();
+    }
     const cashBase = this.cashBook.get(baseCurrency) ?? 0;
     const posValue = Array.from(this.positions.values()).reduce(
       (sum, position) => sum + position.quantity * position.currentPrice,
@@ -1462,7 +1542,7 @@ export class PortfolioManager {
   }
 
   getTrades(): Trade[] {
-    return this.trades;
+    return this.trades.map(trade => ({ ...trade }));
   }
 
   isBootstrapped(): boolean {
@@ -1476,6 +1556,7 @@ export class PortfolioManager {
    * Used by create_portfolio operation (no broker API call).
    */
   initializePortfolio(baseCurrency: string, cashBalance: number): void {
+    this.guardLegacyMutation();
     if (this.bootstrapped) return;
 
     this.cashBook.set(baseCurrency, cashBalance);
@@ -1508,10 +1589,11 @@ export class PortfolioManager {
    */
   updateMarketPrices(
     prices: Record<string, number>,
-    baseCurrency: string = "USDT",
+    baseCurrency: string = this.accountingBook?.scope.currency ?? "USDT",
   ): void {
     //const now = new Date().toISOString();
 
+    for (const price of Object.values(prices)) if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid portfolio mark");
     for (const [symbol, price] of Object.entries(prices)) {
       const position = this.positions.get(symbol);
       if (!position) continue;
@@ -1520,9 +1602,11 @@ export class PortfolioManager {
 
       position.currentPrice = price;
       position.marketValue = absQty * price;
-      position.openCostBasis = absQty * position.avgFillPrice;
-      position.unrealizedPnl =
+      const exact = this.accountingBook?.positions[symbol];
+      position.openCostBasis = exact ? decimal(exact.grossCost).toNumber() : absQty * position.avgFillPrice;
+      position.unrealizedPnl = exact ? decimal(price).mul(exact.quantity).sub(exact.grossCost).toNumber() :
         (position.currentPrice - position.avgFillPrice) * position.quantity;
+      position.totalPnl = position.realizedPnl + position.unrealizedPnl;
     }
 
     this.updateEquity(baseCurrency);
@@ -1532,6 +1616,7 @@ export class PortfolioManager {
    * Cancel/remove a pending order by orderId (broker or client).
    */
   cancelOrder(orderId: string): { removed: boolean; order?: OrderState } {
+    this.guardLegacyMutation();
     // Try direct lookup by broker order ID
     let order = this.orders.get(orderId);
 

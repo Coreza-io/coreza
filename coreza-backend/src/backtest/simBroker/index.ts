@@ -8,6 +8,8 @@
  * See the LICENSE file for details.
  */
 
+import { decimal, allocateOpenAmount } from "../../portfolio/decimal";
+
 import {
   SimBrokerConfig,
   DEFAULT_SIM_BROKER_CONFIG,
@@ -1009,11 +1011,11 @@ export class SimBroker {
     const signedQuantity = order.side === "buy" ? quantity : -quantity;
 
     if (order.side === "buy") {
-      this.state.cash -= price * quantity + commission;
+      this.state.cash = decimal(this.state.cash).sub(decimal(price).mul(quantity)).sub(commission).toNumber();
     } else {
-      this.state.cash += price * quantity - commission;
+      this.state.cash = decimal(this.state.cash).add(decimal(price).mul(quantity)).sub(commission).toNumber();
     }
-    this.state.cumulativeFees += commission;
+    this.state.cumulativeFees = decimal(this.state.cumulativeFees).add(commission).toNumber();
 
     const existing = this.state.positions[order.symbol];
     if (!existing) {
@@ -1051,8 +1053,8 @@ export class SimBroker {
       const entry = this.currentEntryMap.get(order.symbol);
       const existingEntryQuantity = Math.max(0, entry?.entryQuantity ?? 0);
       const addedQuantity = Math.abs(signedQuantity);
-      const updatedEntryQuantity = existingEntryQuantity + addedQuantity;
-      const updatedEntryCommission = (entry?.entryCommission ?? 0) + commission;
+      const updatedEntryQuantity = decimal(existingEntryQuantity).add(addedQuantity).toNumber();
+      const updatedEntryCommission = decimal(entry?.entryCommission ?? 0).add(commission).toNumber();
       const updatedEntrySlippagePerUnit =
         updatedEntryQuantity > 0
           ? ((entry?.entrySlippagePerUnit ?? 0) * existingEntryQuantity +
@@ -1060,7 +1062,7 @@ export class SimBroker {
             updatedEntryQuantity
           : 0;
 
-      const totalQty = existingQty + signedQuantity;
+      const totalQty = decimal(existingQty).add(signedQuantity).toNumber();
       const totalCostBasis =
         existing.avgFillPrice * Math.abs(existingQty) +
         price * Math.abs(signedQuantity);
@@ -1097,10 +1099,8 @@ export class SimBroker {
     const entry = this.currentEntryMap.get(order.symbol);
     const entryOrderId = entry?.orderId ?? order.id;
     const entryTime = entry?.filledAt ?? fillTimeIso;
-    const entryQuantity = Math.max(1, entry?.entryQuantity ?? closingQty);
-    const entryFraction = closingQty / entryQuantity;
-    const allocatedEntryCommission =
-      (entry?.entryCommission ?? 0) * entryFraction;
+    const entryQuantity = entry?.entryQuantity ?? Math.abs(existingQty);
+    const allocatedEntryCommission = Number(allocateOpenAmount(entry?.entryCommission ?? 0, closingQty, entryQuantity));
     const entrySlippagePerUnit = entry?.entrySlippagePerUnit ?? 0;
     const allocatedEntrySlippageCost = entrySlippagePerUnit * closingQty;
     const totalCommissionForTrade = allocatedEntryCommission + exitCommission;
@@ -1135,7 +1135,7 @@ export class SimBroker {
     };
     this.state.trades.push(trade);
 
-    const newQty = existingQty + signedQuantity;
+    const newQty = decimal(existingQty).add(signedQuantity).toNumber();
     if (newQty === 0) {
       this.positionsValue -= oldMarketValue;
       delete this.state.positions[order.symbol];
@@ -1151,15 +1151,12 @@ export class SimBroker {
       existing.openCostBasis = Math.abs(newQty) * existing.avgFillPrice;
       existing.unrealizedPnl = (price - existing.avgFillPrice) * newQty;
       this.positionsValue += existing.marketValue - oldMarketValue;
-      const remainingEntryQuantity = Math.max(0, entryQuantity - closingQty);
+      const remainingEntryQuantity = decimal(entryQuantity).sub(closingQty).toNumber();
       if (entry && remainingEntryQuantity > 0) {
         this.currentEntryMap.set(order.symbol, {
           ...entry,
           entryQuantity: remainingEntryQuantity,
-          entryCommission: Math.max(
-            0,
-            (entry.entryCommission ?? 0) - allocatedEntryCommission,
-          ),
+          entryCommission: decimal(entry.entryCommission ?? 0).sub(allocatedEntryCommission).toNumber(),
         });
       }
       return;

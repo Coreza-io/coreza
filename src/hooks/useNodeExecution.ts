@@ -5,6 +5,7 @@ import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/
 import { prepareExpressionTransport } from "../../coreza-backend/src/nodes/logic/expressionTransport";
 import { resolveNodeIdentity } from "@/utils/referenceResolution";
 import { canContinueNodeError, continuedNodeError } from "../../coreza-backend/src/nodes/errorContinuation";
+import { validateFuturesOrder } from "../../coreza-backend/src/brokers/binance/orderValidation";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -519,6 +520,9 @@ export function useNodeExecution({
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during variable initialization" };
         }
         let payload = buildPayload(fieldState, effectiveInput, variables);
+        if (definition?.name === "Binance" && payload.marketType === "futures" && payload.operation === "place_order") {
+          validateFuturesOrder(payload);
+        }
         let consolidatorSeriesSignature: string | undefined;
         payload.node_id = nodeId;
         payload.nodeName = definition.name;

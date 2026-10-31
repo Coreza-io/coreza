@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -35,6 +35,7 @@ import {
   TrendingDown,
   ArrowLeft,
   Folder,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import {
@@ -88,7 +89,8 @@ const Workflows = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, session } = useAuth();
-  const { toggleActivation } = useWorkflowActivation();
+  const { toggleActivation, isActivationPending } = useWorkflowActivation();
+  const activationRevision = useRef(0);
 
   const projectId = searchParams.get("project");
 
@@ -130,8 +132,12 @@ const Workflows = () => {
   useEffect(() => {
     if (!user) return;
 
-    const loadWorkflows = async () => {
-      setLoading(true);
+    let disposed = false;
+    let revision = 0;
+    const loadWorkflows = async (showLoading = true) => {
+      const requestRevision = ++revision;
+      const activation = activationRevision.current;
+      if (showLoading) setLoading(true);
       try {
         let query = supabase
           .from("workflows")
@@ -146,6 +152,7 @@ const Workflows = () => {
         const { data, error } = await query.order("created_at", {
           ascending: false,
         });
+        if (disposed || requestRevision !== revision || activation !== activationRevision.current) return;
 
         if (error) {
           console.error("Error loading workflows:", error);
@@ -158,27 +165,46 @@ const Workflows = () => {
           setWorkflows(data || []);
         }
       } catch (error) {
+        if (disposed || requestRevision !== revision || activation !== activationRevision.current) return;
         console.error("Error loading workflows:", error);
         toast({
           title: "Error",
           description: "Failed to load workflows",
           variant: "destructive",
         });
+      } finally {
+        if (!disposed && requestRevision === revision) setLoading(false);
       }
-      setLoading(false);
     };
 
     loadWorkflows();
+    const refresh = () => { void loadWorkflows(false); };
+    window.addEventListener("focus", refresh);
+    const channel = supabase
+      .channel(`workflow-list-active-${user.id}-${projectId ?? "all"}`)
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "workflows", filter: `user_id=eq.${user.id}`,
+      }, refresh)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") refresh();
+      });
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", refresh);
+      void supabase.removeChannel(channel);
+    };
   }, [user?.id, projectId, toast]);
 
   const handleToggleActive = async (
     workflowId: string,
     currentStatus: boolean,
   ) => {
+    activationRevision.current += 1;
     const result = await toggleActivation(workflowId, currentStatus);
+    activationRevision.current += 1;
     if (result !== null) {
       setWorkflows(
-        workflows.map((w) =>
+        (current) => current.map((w) =>
           w.id === workflowId ? { ...w, is_active: result } : w,
         ),
       );
@@ -377,11 +403,14 @@ const Workflows = () => {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem
+                        disabled={isActivationPending(workflow.id, workflow.is_active)}
                         onClick={() =>
                           handleToggleActive(workflow.id, workflow.is_active)
                         }
                       >
-                        {workflow.is_active ? (
+                        {isActivationPending(workflow.id, workflow.is_active) ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Updating…</>
+                        ) : workflow.is_active ? (
                           <>
                             <Pause className="h-4 w-4 mr-2" />
                             Pause
@@ -446,6 +475,8 @@ const Workflows = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={isActivationPending(workflow.id, workflow.is_active)}
+                    aria-busy={isActivationPending(workflow.id, workflow.is_active)}
                     className={
                       workflow.is_active ? "text-warning" : "text-success"
                     }
@@ -453,7 +484,12 @@ const Workflows = () => {
                       handleToggleActive(workflow.id, workflow.is_active)
                     }
                   >
-                    {workflow.is_active ? (
+                    {isActivationPending(workflow.id, workflow.is_active) ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        {workflow.is_active ? "Pausing…" : "Activating…"}
+                      </>
+                    ) : workflow.is_active ? (
                       <>
                         <Pause className="h-4 w-4 mr-2" />
                         Pause

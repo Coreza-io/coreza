@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "crypto";
 import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
+import { decimal } from "../../portfolio/decimal";
 import { createSuccessOutput, createErrorOutput, resultSuccess } from "../../utils/nodeResultHelpers";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -77,6 +78,12 @@ function toNumber(value: unknown): number | undefined {
 
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;
+}
+
+function optionalDecimal(value: unknown): string | number | undefined {
+  if (value == null || (typeof value === "string" && value.trim() === "")) return undefined;
+  if (typeof value !== "string" && typeof value !== "number") throw new Error("Fill values must be decimal strings or numbers");
+  return typeof value === "string" ? value.trim() : value;
 }
 
 function toArray(value: unknown): any[] {
@@ -457,6 +464,7 @@ export class PortfolioExecutor implements INodeExecutor {
         });
       }
 
+      pm.initializeEquity(baseCurrency);
       const explicitCapital = toNumber(params.balance_equity) ?? (posSymbols.length === 0 ? toNumber(params.balance_cash ?? params.cash_balance) : undefined);
       if (explicitCapital !== undefined && (context.executionMode === "live" || context.reportingExecutionId)) {
         await LiveStrategiesRepository.recordBaseline(userId, context.workflowId, executionId, explicitCapital, {
@@ -898,7 +906,7 @@ export class PortfolioExecutor implements INodeExecutor {
   }
 
   private buildDeterministicEventId(parts: Record<string, any>): string {
-    const payload = Object.values(parts).map(String).join("|");
+    const payload = JSON.stringify(parts);
     return createHash("sha256").update(payload).digest("hex").slice(0, 32);
   }
 
@@ -930,17 +938,24 @@ export class PortfolioExecutor implements INodeExecutor {
       opts.params.eventTime ||
       new Date().toISOString();
 
-    const fillId =
-      opts.executionId ||
-      this.buildDeterministicEventId({
+    const nativeId = opts.executionId == null ? "" : String(opts.executionId).trim();
+    const sequence = toNumber(opts.params._seq);
+    const executionKey = opts.params._cumulativeFillValues === true
+      ? ["cumulative", decimal(optionalDecimal(opts.params.filledQty) ?? 0).toString()]
+      : nativeId && nativeId !== "-1" ? ["execution", nativeId]
+      : sequence != null && sequence > 0 ? ["sequence", sequence]
+      : ["fill", opts.filledQty, opts.fillPrice, eventTime];
+    const fillId = this.buildDeterministicEventId({
         user_id: opts.context.userId,
         broker: opts.params.broker || "unknown",
+        credential_id: opts.params.credential_id ?? "",
+        environment: opts.params.environment ?? "",
+        workflow_id: opts.context.workflowId,
+        execution_id: opts.context.reportingExecutionId ?? opts.context.executionId,
         symbol: opts.symbol,
         order_id: opts.orderId,
         side: opts.side,
-        fill_qty_delta: opts.filledQty,
-        fill_price: opts.fillPrice,
-        event_time: eventTime,
+        execution_key: executionKey,
       });
 
     return {
@@ -985,10 +1000,6 @@ export class PortfolioExecutor implements INodeExecutor {
     },
   ): LatestSnapshotState {
     const state = pm.getPortfolioState(meta.baseCurrency);
-    const tradeStats = this.calculateTradeAnalytics(
-      state.trades,
-      state.startingEquity,
-    );
     const balances = pm.getCash() as Record<string, unknown>;
     const baseCashRaw =
       (meta.baseCurrency && balances
@@ -1231,7 +1242,7 @@ export class PortfolioExecutor implements INodeExecutor {
       const timestamp = params.event_time ?? params.eventTime ?? new Date().toISOString();
       const accepted = pm.applyOrderEvent({
         orderId: normalizedBrokerId, clientOrderId, symbol: normalizeSymbol(symbol), side, status,
-        quantity: params.filledQty, price: params.avgFillPrice, fee: params.feeAmount,
+        quantity: optionalDecimal(params.filledQty), price: optionalDecimal(params.avgFillPrice), fee: optionalDecimal(params.feeAmount),
         cumulative: params._cumulativeFillValues === true,
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
@@ -1294,7 +1305,7 @@ export class PortfolioExecutor implements INodeExecutor {
             fillPrice: accepted.price,
             fillStatus: params.status,
             feeAmount: accepted.fee,
-            feeAsset,
+            feeAsset: feeAsset || baseCurrency,
             baseCurrency,
             orderType: params.orderType,
             limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
@@ -1564,52 +1575,28 @@ export class PortfolioExecutor implements INodeExecutor {
     startingEquity?: number | null,
   ): TradeAnalytics {
     const totalTrades = trades.length;
-    const netProfit = trades.reduce((sum, trade) => sum + trade.netPnl, 0);
-    const winningTrades = trades.filter((trade) => trade.netPnl > 0);
-    const losingTrades = trades.filter((trade) => trade.netPnl < 0);
-    const profitableTrades = winningTrades.length;
-    const losingTradesCount = losingTrades.length;
-    const winRate =
-      totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
-
-    const totalWins = winningTrades.reduce(
-      (sum, trade) => sum + trade.netPnl,
-      0,
-    );
-    const totalLossesAbs = Math.abs(
-      losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0),
-    );
-    const profitFactor =
-      totalLossesAbs > 0
-        ? totalWins / totalLossesAbs
-        : totalWins > 0
-          ? Infinity
-          : 0;
-
+    let netProfit = 0, profitableTrades = 0, losingTradesCount = 0;
+    let totalWins = 0, totalLosses = 0, largestWin = 0, largestLoss = 0;
+    for (const trade of trades) {
+      const pnl = trade.netPnl;
+      netProfit += pnl;
+      if (pnl > 0) {
+        profitableTrades += 1;
+        totalWins += pnl;
+        largestWin = Math.max(largestWin, pnl);
+      } else if (pnl < 0) {
+        losingTradesCount += 1;
+        totalLosses += pnl;
+        largestLoss = Math.min(largestLoss, pnl);
+      }
+    }
+    const winRate = totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
+    const totalLossesAbs = Math.abs(totalLosses);
+    const profitFactor = totalLossesAbs > 0 ? totalWins / totalLossesAbs : totalWins > 0 ? Infinity : 0;
     const avgWin = profitableTrades > 0 ? totalWins / profitableTrades : 0;
-    const avgLoss =
-      losingTradesCount > 0
-        ? losingTrades.reduce((sum, trade) => sum + trade.netPnl, 0) /
-          losingTradesCount
-        : 0;
-    const largestWin =
-      profitableTrades > 0
-        ? Math.max(...winningTrades.map((trade) => trade.netPnl))
-        : 0;
-    const largestLoss =
-      losingTradesCount > 0
-        ? Math.min(...losingTrades.map((trade) => trade.netPnl))
-        : 0;
-
-    const averageTradeReturn =
-      totalTrades > 0
-        ? trades.reduce((sum, trade) => {
-            if (startingEquity && startingEquity > 0) {
-              return sum + (trade.netPnl / startingEquity) * 100;
-            }
-            return sum;
-          }, 0) / totalTrades
-        : 0;
+    const avgLoss = losingTradesCount > 0 ? totalLosses / losingTradesCount : 0;
+    const averageTradeReturn = totalTrades > 0 && startingEquity && startingEquity > 0
+      ? (netProfit / startingEquity) * 100 / totalTrades : 0;
 
     return {
       netProfit,

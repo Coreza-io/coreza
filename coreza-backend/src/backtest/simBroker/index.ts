@@ -560,7 +560,7 @@ export class SimBroker {
         }
 
         const order = ticket.order;
-        const remainingQuantity = order.quantity - ticket.quantityFilled;
+        const remainingQuantity = decimal(order.quantity).sub(ticket.quantityFilled).toNumber();
         if (remainingQuantity <= 0) {
           order.status = "filled";
           pendingTickets.delete(ticketId);
@@ -640,7 +640,7 @@ export class SimBroker {
         const ticket = this.state.tickets[id];
         if (!ticket || !isTicketPending(ticket)) continue;
         if (normalizeOrderType(ticket.order.orderType) !== "market") continue;
-        const remaining = ticket.order.quantity - ticket.quantityFilled;
+        const remaining = decimal(ticket.order.quantity).sub(ticket.quantityFilled).toNumber();
         if (remaining <= 0) continue;
         pendingMarketQty +=
           ticket.order.side === "sell" ? -remaining : remaining;
@@ -742,7 +742,7 @@ export class SimBroker {
     }
 
     const order = ticket.order;
-    const remainingQuantity = order.quantity - ticket.quantityFilled;
+    const remainingQuantity = decimal(order.quantity).sub(ticket.quantityFilled).toNumber();
     if (remainingQuantity <= 0) {
       order.status = "filled";
       this.untrackPendingTicket(order.symbol, order.id);
@@ -948,6 +948,7 @@ export class SimBroker {
       fillQuantity,
     );
 
+    const ticketFill = this.calculateTicketFill(ticket, adjustedPrice, fillQuantity, commission);
     this.applyFill(
       order,
       adjustedPrice,
@@ -957,12 +958,10 @@ export class SimBroker {
       bar.timestamp,
     );
 
-    const eventStatus = this.aggregateTicketFill(
-      ticket,
-      adjustedPrice,
-      fillQuantity,
-      commission,
-    );
+    ticket.averageFillPrice = ticketFill.averageFillPrice;
+    ticket.quantityFilled = ticketFill.quantityFilled;
+    ticket.totalFees = ticketFill.totalFees;
+    const eventStatus = ticket.order.status = ticketFill.status;
 
     const event: OrderEvent = {
       orderId: order.id,
@@ -1234,25 +1233,20 @@ export class SimBroker {
     }
   }
 
-  private aggregateTicketFill(
+  private calculateTicketFill(
     ticket: OrderTicket,
     fillPrice: number,
     fillQuantity: number,
     fee: number,
-  ): OrderEvent["status"] {
-    const previousQuantityFilled = ticket.quantityFilled;
-    const newQuantityFilled = previousQuantityFilled + fillQuantity;
-    ticket.averageFillPrice =
-      (ticket.averageFillPrice * previousQuantityFilled +
-        fillPrice * fillQuantity) /
-      newQuantityFilled;
-    ticket.quantityFilled = newQuantityFilled;
-    ticket.totalFees += fee;
-    ticket.order.status =
-      newQuantityFilled >= ticket.order.quantity
-        ? "filled"
-        : "partially_filled";
-    return ticket.order.status;
+  ): { averageFillPrice: number; quantityFilled: number; totalFees: number; status: OrderEvent["status"] } {
+    const quantity = decimal(ticket.quantityFilled).add(fillQuantity);
+    return {
+      averageFillPrice: decimal(ticket.averageFillPrice).mul(ticket.quantityFilled)
+        .add(decimal(fillPrice).mul(fillQuantity)).div(quantity).toNumber(),
+      quantityFilled: quantity.toNumber(),
+      totalFees: decimal(ticket.totalFees).add(fee).toNumber(),
+      status: quantity.compare(ticket.order.quantity) >= 0 ? "filled" : "partially_filled",
+    };
   }
 
   private reserveBuyingPower(order: Order): void {
@@ -1267,7 +1261,7 @@ export class SimBroker {
     if (reservedRate === undefined) return;
     const remainingQuantity = Math.max(
       0,
-      ticket.order.quantity - ticket.quantityFilled,
+      decimal(ticket.order.quantity).sub(ticket.quantityFilled).toNumber(),
     );
     this.state.reservationsByOrderId[ticket.orderId] =
       reservedRate * remainingQuantity;

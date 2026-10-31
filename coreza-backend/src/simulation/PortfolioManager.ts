@@ -156,9 +156,11 @@ const MAX_FILL_LEDGER_SIZE = 10_000;
 const ORDER_STATUS_RANK: Record<string, number> = {
   pending_new: 10,
   accepted: 15,
+  submitted: 20,
+  open: 20,
   new: 20,
   New: 20,
-  replaced: 25,
+  replaced: 50,
   pending_replace: 25,
   partially_filled: 30,
   pending_cancel: 35,
@@ -168,6 +170,9 @@ const ORDER_STATUS_RANK: Record<string, number> = {
   cancelled: 50,
   expired: 50,
   rejected: 50,
+  stopped: 50,
+  suspended: 50,
+  done_for_day: 50,
 };
 
 const ALGO_STATUS_RANK: Record<string, number> = {
@@ -300,8 +305,11 @@ export class PortfolioManager {
     const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
     const trimmedId = input.executionId?.trim();
     const nativeId = trimmedId && trimmedId !== "-1" ? trimmedId : undefined;
+    if (input.sequence != null && (!Number.isSafeInteger(input.sequence) || input.sequence < 0)) throw new Error("Execution sequence must be a nonnegative safe integer");
     const sequence = input.sequence != null && input.sequence > 0 ? input.sequence : undefined;
-    const identity = economicInput && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
+    // Cumulative snapshots are identified by accepted order progress. Some
+    // brokers reuse an exchange order ID in their executionId field.
+    const identity = !input.cumulative && economicInput && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
     const fingerprint = identity ? fillFingerprint(input, side, feeAsset) : undefined;
     const existingFingerprint = identity ? this.acceptedFills.get(identity) : undefined;
     if (existingFingerprint && existingFingerprint !== fingerprint) throw new Error("Conflicting execution identity");
@@ -316,7 +324,7 @@ export class PortfolioManager {
     const quantity = decimal(fill.quantity).toNumber(), price = decimal(fill.price).toNumber(), fee = decimal(fill.fee).toNumber();
     const notional = decimal(fill.notional).toNumber();
     const staleSequence = input.sequence != null && previousOrder?.lastSeq != null && input.sequence <= previousOrder.lastSeq;
-    const incomingStatus = String(input.status ?? previousOrder?.status ?? "new").toLowerCase();
+    const incomingStatus = String(input.status ?? previousOrder?.status ?? "new").trim().toLowerCase();
     const status = previousOrder && (staleSequence || (ORDER_STATUS_RANK[incomingStatus] ?? 0) < (ORDER_STATUS_RANK[previousOrder.status] ?? 0)) ? previousOrder.status : incomingStatus;
     const progress = fill.progress;
     const filledQty = progress ? decimal(progress.quantity).toNumber() : previousOrder?.filledQty ?? 0;
@@ -1053,6 +1061,20 @@ export class PortfolioManager {
     if (tracked) {
       const target = input.positionQty != null ? decimal(input.positionQty) : decimal(tracked.quantity).add(input.side === "buy" ? input.filledQty ?? 0 : -(input.filledQty ?? 0));
       if (target.compare(tracked.quantity) !== 0) throw new Error("Apply position changes through sync_order_event so cash, basis and fees stay consistent");
+      // A matching broker snapshot may refresh the mark, never the accepted
+      // basis or remaining entry fees through a rounded average price.
+      const position = this.positions.get(input.symbol);
+      if (position && input.currentPrice != null) {
+        const mark = decimal(input.currentPrice);
+        if (mark.compare(0) <= 0) throw new Error("Positive market price is required");
+        const currentPrice = mark.toNumber();
+        const marketValue = mark.mul(tracked.quantity).toNumber();
+        const unrealizedPnl = mark.mul(tracked.quantity).sub(tracked.cost).toNumber();
+        const totalPnl = decimal(position.realizedPnl).add(unrealizedPnl).toNumber();
+        Object.assign(position, { currentPrice, marketValue, unrealizedPnl, totalPnl });
+        this.positionMarkTimes.set(input.symbol, Date.now());
+      }
+      return { position: position ?? null };
     }
     const existing = this.positions.get(input.symbol);
 
@@ -1665,7 +1687,9 @@ export class PortfolioManager {
   initializePortfolio(baseCurrency: string, cashBalance: number): void {
     if (this.bootstrapped) return;
 
+    if (this.fillTotalsActive) throw new Error("Cannot replace the allocation after accepting fills");
     if (!Number.isFinite(cashBalance) || cashBalance < 0) throw new Error("Explicit nonnegative cash allocation is required");
+    decimal(cashBalance).toNumber();
     this.exactCash.set(baseCurrency, String(cashBalance));
     this.cashBook.set(baseCurrency, cashBalance);
 
@@ -1681,12 +1705,21 @@ export class PortfolioManager {
     if (this.startingEquity === null && cashBalance > 0) {
       this.startingEquity = cashBalance;
     }
+    this.peakEquity = Math.max(this.peakEquity, cashBalance);
 
     this.bootstrapped = true;
 
     console.log(
       `[PortfolioManager] Initialized portfolio: ${baseCurrency} = ${cashBalance}`,
     );
+  }
+
+  /** Capture the explicit allocation after optional initial positions are seeded. */
+  initializeEquity(baseCurrency: string): void {
+    if (this.fillTotalsActive) throw new Error("Cannot reset initial equity after accepting fills");
+    const equity = decimal(this.getTotalEquity(baseCurrency)).toNumber();
+    this.startingEquity = equity;
+    this.peakEquity = equity;
   }
 
   // ============== MARK-TO-MARKET (Valuation Loop) ==============

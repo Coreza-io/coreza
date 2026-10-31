@@ -13,6 +13,18 @@ export class AccountingSession {
   reason?: string;
   private readonly db = supabase as any; // Internal deployment-only tables/RPCs.
 
+  static async retainUnrecoveredEvent(userId: string, workflowId: string, activationId: string, event: Record<string, unknown>): Promise<void> {
+    const db = supabase as any;
+    const { data: book, error } = await db.from("portfolio_accounting_books").select("book_key")
+      .eq("user_id", userId).eq("workflow_id", workflowId).eq("activation_id", activationId).maybeSingle();
+    if (error || !book) throw new Error(error?.message ?? "Prior activation accounting checkpoint is unavailable; retain upstream delivery");
+    const evidenceId = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+    const { error: writeError } = await db.from("portfolio_accounting_failures").upsert({ book_key: book.book_key,
+      evidence_id: evidenceId, payload: event, reason: "Late owned event requires prior-activation journal recovery" },
+      { onConflict: "book_key,evidence_id", ignoreDuplicates: true });
+    if (writeError) throw writeError;
+  }
+
   async open(initial: AccountingBook): Promise<AccountingBook> {
     return this.lock.runExclusive(async () => {
       if (this.status !== "initializing" && this.status !== "ready") throw new Error(this.reason ?? "Accounting recovery is required");

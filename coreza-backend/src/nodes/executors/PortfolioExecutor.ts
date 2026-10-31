@@ -376,6 +376,17 @@ export class PortfolioExecutor implements INodeExecutor {
     const isPreviousActivation = executionId !== currentActivationId;
     const existing = PortfolioManager.existingInstance(userId, executionId);
     if (isPreviousActivation && !existing) {
+      if (String(params.calculationVersion) === "2") {
+        try {
+          await AccountingSession.retainUnrecoveredEvent(userId, context.workflowId, executionId, {
+            orderId: params.orderId, executionId: params.executionId, symbol: params.symbol, side: params.side,
+            quantity: params.filledQty, price: params.avgFillPrice, quoteNotional: params.quoteNotional,
+            fee: params.feeAmount, feeAsset: params.feeAsset, timestamp: params.event_time ?? params.eventTime,
+            quantityMode: params._accountingQuantityMode, priceMode: params._accountingPriceMode, feeMode: params._accountingFeeMode,
+          });
+          return createErrorOutput("Late v2 fill retained for its owning activation; journal recovery is required");
+        } catch (error) { return createErrorOutput(error); }
+      }
       // Preserve raw fill attribution without inventing a position or resetting old equity.
       await FillEventBus.publish(this.buildFillStreamEvent({
         context, params, symbol: String(params.symbol || ""), side: params.side,

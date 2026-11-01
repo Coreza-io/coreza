@@ -1,3 +1,7 @@
+import type { PortfolioManager } from "../../simulation/PortfolioManager";
+import type { FillAccountingPolicy } from "../../portfolio/fillAccounting";
+import { decimal } from "../../portfolio/decimal";
+import { reconcilePosition } from "../../portfolio/positionReconciliation";
 import type { BrokerPortfolioHooks, BrokerPortfolioSyncContext } from "../types";
 import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import type { NodeResult } from "../../nodes/types";
@@ -242,12 +246,44 @@ export async function syncAlpacaPortfolioState({ pm, params, context, callBroker
   }
 }
 
+const alpacaCryptoAccountingPolicy: FillAccountingPolicy = {
+  baseAssetFees: true,
+  resolveFeeAsset: (input, { baseAsset, currency, previousFeeAsset }) => {
+    if (input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset && previousFeeAsset === baseAsset) {
+      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
+    }
+    return input.feeAsset || previousFeeAsset || currency;
+  },
+  validateFill: ({ input, quantity, feeAsset, previousFeeAsset, previousFees, previousTimestamp, staleSequence, identity }) => {
+    if (decimal(quantity).compare(0) === 0) return;
+    if (staleSequence || Date.parse(input.timestamp) < Date.parse(previousTimestamp ?? input.timestamp)) {
+      throw new Error("Out-of-order Alpaca execution requires reconciliation");
+    }
+    if (previousFeeAsset && previousFeeAsset !== feeAsset && decimal(previousFees).compare(0) !== 0) {
+      throw new Error("Mixed fee assets for one order require explicit reconciliation");
+    }
+    if (!input.cumulative && !identity) throw new Error("Alpaca incremental fills require an execution identity for safe reconciliation");
+  },
+  reconcilePosition: (input, previous) => {
+    const reconciliation = reconcilePosition(input);
+    // A later matching balance cannot explain an earlier external trade/transfer.
+    if (previous?.reconciliationStatus === "reconciliation_pending") {
+      reconciliation.reconciliationStatus = "reconciliation_pending";
+      reconciliation.reason = previous.reason;
+    }
+    return reconciliation;
+  },
+};
+
 export const alpacaPortfolioHooks: BrokerPortfolioHooks = {
   syncState: syncAlpacaPortfolioState,
   accountScope: (params) => JSON.stringify(["alpaca", params.environment === "live" ? "live" : "paper", params.credential_id ?? ""]),
   applyFill: (pm, input) => {
     const started = timingNow();
-    const accepted = pm.applyOrderEvent(input);
+    const { baseAsset, quoteAsset } = pm.parseInstrument(input.symbol, input.baseCurrency);
+    const crypto = quoteAsset != null && baseAsset !== quoteAsset &&
+      (input.assetClass === "crypto" || (!input.assetClass && input.symbol.includes("/")));
+    const accepted = pm.applyOrderEvent({ ...input, accountingPolicy: crypto ? alpacaCryptoAccountingPolicy : undefined });
     const outcome = accepted.reason ?? accepted.reconciliation?.reconciliationStatus ?? "accepted";
     countLive("alpaca_fill_reconciliation", outcome);
     observeStage("alpaca_fill_reconciliation", started, outcome);
@@ -257,3 +293,23 @@ export const alpacaPortfolioHooks: BrokerPortfolioHooks = {
     return accepted;
   },
 };
+
+export function assertAlpacaSellable(pm: PortfolioManager, scope: string, symbol?: string, quantity?: string | number, requireQuantity = false): string | undefined {
+  const canonical = symbol?.toUpperCase().replace(/\//g, "");
+  let sellable: string | undefined;
+  for (const [key, state] of Object.entries(pm.getPositionReconciliations())) {
+    if (canonical && key.replace(/\//g, "") !== canonical) continue;
+    if (state.accountScope !== scope) throw new Error("Alpaca sell account scope differs from tracked inventory");
+    if (state.reconciliationStatus === "reconciliation_pending") throw new Error(`Alpaca inventory reconciliation pending: ${state.reason}`);
+    if (requireQuantity && quantity == null) throw new Error("Alpaca sell sizing requires a base quantity to enforce available inventory");
+    const held = decimal(pm.getExactPositionQuantity(key));
+    if (quantity != null && decimal(quantity).compare(held) > 0) {
+      throw new Error("Alpaca sell exceeds attributed inventory");
+    }
+    if (quantity != null && state.brokerPositionQty != null && decimal(quantity).compare(state.brokerPositionQty) > 0) {
+      throw new Error("Alpaca sell exceeds broker-reported available quantity");
+    }
+    sellable = state.brokerPositionQty != null && held.compare(state.brokerPositionQty) > 0 ? state.brokerPositionQty : held.toString();
+  }
+  return sellable;
+}

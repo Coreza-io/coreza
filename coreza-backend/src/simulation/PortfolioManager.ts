@@ -10,8 +10,8 @@
 
 import { randomUUID } from "crypto";
 import { decimal } from "../portfolio/decimal";
-import { PositionReconciliation, reconcilePosition } from "../portfolio/positionReconciliation";
-import { FillInput, FillProgress, OpenCost, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
+import { PositionReconciliation } from "../portfolio/positionReconciliation";
+import { FillAccountingPolicy, FillInput, FillProgress, OpenCost, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -295,7 +295,7 @@ export class PortfolioManager {
     status?: string; origQty?: number; orderType?: string; timeInForce?: string;
     limitPrice?: number; stopPrice?: number; trailPercent?: number; trailPrice?: number;
     executionId?: string; sequence?: number; scope: string; feeAsset?: string;
-    baseCurrency: string; timestamp: string; positionQty?: string | number; broker?: string; assetClass?: string;
+    baseCurrency: string; timestamp: string; positionQty?: string | number; broker?: string; assetClass?: string; accountingPolicy?: FillAccountingPolicy;
   }): { quantity: number; price: number; fee: number; notional: number; trade?: Trade; reason?: string; reconciliation?: PositionReconciliation } {
     const previousOrder = this.orders.get(input.orderId);
     const side = input.side ?? previousOrder?.side;
@@ -305,14 +305,10 @@ export class PortfolioManager {
     const progressKey = JSON.stringify([input.scope, input.symbol, input.orderId]);
     const { baseAsset, quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
     const currency = quoteAsset ?? input.baseCurrency;
-    const alpacaCrypto = input.broker === "alpaca" && quoteAsset != null && baseAsset !== currency &&
-      (input.assetClass === "crypto" || (!input.assetClass && input.symbol.includes("/")));
-    const feeAsset = input.feeAsset || (alpacaCrypto ? this.orderFeeAssets.get(input.orderId) : undefined) || currency;
+    const policy = input.accountingPolicy;
+    const previousFeeAsset = this.orderFeeAssets.get(input.orderId);
+    const feeAsset = policy?.resolveFeeAsset(input, { baseAsset, currency, previousFeeAsset }) ?? (input.feeAsset || currency);
     if (currency !== input.baseCurrency) throw new Error("Cross-currency fill valuation requires an FX treatment");
-    if (alpacaCrypto && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset &&
-      this.orderFeeAssets.get(input.orderId) === baseAsset) {
-      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
-    }
     const rawQuantity = decimal(input.quantity ?? 0);
     const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
     const trimmedId = input.executionId?.trim();
@@ -336,14 +332,10 @@ export class PortfolioManager {
     const quantity = decimal(fill.quantity).toNumber(), price = decimal(fill.price).toNumber(), fee = decimal(fill.fee).toNumber();
     const notional = decimal(fill.notional).toNumber();
     const staleSequence = input.sequence != null && previousOrder?.lastSeq != null && input.sequence <= previousOrder.lastSeq;
-    if (alpacaCrypto && quantity > 0 && (staleSequence || Date.parse(input.timestamp) < Date.parse(this.positionReconciliations.get(input.symbol)?.timestamp ?? input.timestamp))) {
-      throw new Error("Out-of-order Alpaca execution requires reconciliation");
-    }
-    const previousFeeAsset = this.orderFeeAssets.get(input.orderId);
-    if (alpacaCrypto && quantity > 0 && previousFeeAsset && previousFeeAsset !== feeAsset && decimal(baseline?.fees ?? 0).compare(0) !== 0) {
-      throw new Error("Mixed fee assets for one order require explicit reconciliation");
-    }
-    const baseFee = alpacaCrypto && feeAsset === baseAsset;
+    policy?.validateFill({ input, quantity: fill.quantity, feeAsset, previousFeeAsset,
+      previousFees: baseline?.fees ?? "0", previousTimestamp: this.positionReconciliations.get(input.symbol)?.timestamp,
+      staleSequence, identity });
+    const baseFee = policy?.baseAssetFees === true && feeAsset === baseAsset;
     const quoteFee = baseFee ? "0" : fill.fee;
     const incomingStatus = String(input.status ?? previousOrder?.status ?? "new").trim().toLowerCase();
     const status = previousOrder && (staleSequence || (ORDER_STATUS_RANK[incomingStatus] ?? 0) < (ORDER_STATUS_RANK[previousOrder.status] ?? 0)) ? previousOrder.status : incomingStatus;
@@ -355,7 +347,7 @@ export class PortfolioManager {
       symbol: input.symbol, side, status, origQty, filledQty,
       remainingQty: origQty == null ? undefined : decimal(origQty).sub(filledQty).toNumber(),
       avgFillPrice: progress && decimal(progress.quantity).compare(0) > 0 ? decimal(progress.notional).div(progress.quantity).toNumber() : previousOrder?.avgFillPrice,
-      totalFees: baseFee || (alpacaCrypto && quantity === 0) ? previousOrder?.totalFees ?? 0 : progress ? decimal(progress.fees).toNumber() : previousOrder?.totalFees ?? 0,
+      totalFees: baseFee || (policy != null && quantity === 0) ? previousOrder?.totalFees ?? 0 : progress ? decimal(progress.fees).toNumber() : previousOrder?.totalFees ?? 0,
       ...(baseFee && quantity > 0 ? { baseFeeQty: decimal(progress?.fees ?? 0).toNumber(), feeAsset } : {}),
       orderType: input.orderType ?? previousOrder?.orderType, timeInForce: input.timeInForce ?? previousOrder?.timeInForce,
       limitPrice: input.limitPrice ?? previousOrder?.limitPrice, stopPrice: input.stopPrice ?? previousOrder?.stopPrice,
@@ -372,12 +364,11 @@ export class PortfolioManager {
       if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
       return { quantity, price, fee, notional, trade, reason: fill.reason ?? "no_execution" };
     }
-    if (alpacaCrypto && !input.cumulative && !identity) throw new Error("Alpaca incremental fills require an execution identity for safe reconciliation");
     if (identity && !duplicate && this.acceptedFills.size >= PortfolioManager.MAX_EXECUTION_KEYS) throw new Error("Execution identity capacity reached; start a new activation");
     if (this.accountScope != null && this.accountScope !== input.scope) throw new Error("Portfolio account scope mismatch");
     if (fee !== 0 && feeAsset !== currency && !baseFee) throw new Error("Non-quote fee accounting requires an asset/FX treatment");
     if (baseFee && fee !== 0 && (side !== "buy" || decimal(fill.fee).compare(0) < 0 || decimal(fill.fee).compare(fill.quantity) >= 0)) {
-      throw new Error("Unsupported Alpaca base fee: requires a positive net BUY quantity");
+      throw new Error("Unsupported base fee: requires a positive net BUY quantity");
     }
     if (this.positionScopes.has(input.symbol) && this.positionScopes.get(input.symbol) !== input.scope) throw new Error("Position account scope mismatch");
     const previousPosition = this.positions.get(input.symbol);
@@ -390,19 +381,13 @@ export class PortfolioManager {
     const inventoryQty = baseFee ? decimal(fill.quantity).sub(fill.fee).toString() : fill.quantity;
     const calculated = calculatePositionFill(previousCost, side, inventoryQty, fill.notional, quoteFee, input.orderId, input.timestamp);
     const previousReconciliation = this.positionReconciliations.get(input.symbol);
-    const reconciliation = alpacaCrypto ? reconcilePosition({
+    const reconciliation = policy?.reconcilePosition({
       orderId: input.orderId, executionId: input.executionId, accountScope: input.scope, timestamp: input.timestamp,
       brokerPositionQty: input.positionQty, attributedQty: calculated.position?.quantity ?? "0",
       netPositionDelta: side === "buy" ? inventoryQty : decimal(inventoryQty).neg().toString(),
       baseFeeQty: baseFee ? fill.fee : "0", feeAsset: fee !== 0 ? feeAsset : undefined, explicitFee: fee !== 0,
-    }) : undefined;
-    // A later matching account balance cannot explain an earlier unverified
-    // discrepancy (it could be an external trade/transfer). Keep it unresolved.
-    if (reconciliation && previousReconciliation?.reconciliationStatus === "reconciliation_pending") {
-      reconciliation.reconciliationStatus = "reconciliation_pending";
-      reconciliation.reason = previousReconciliation.reason;
-    }
-    if (!alpacaCrypto && input.positionQty != null && decimal(input.positionQty).compare(calculated.position?.quantity ?? 0) !== 0) throw new Error("Broker position differs from the attributed quantity");
+    }, previousReconciliation);
+    if (!policy && input.positionQty != null && decimal(input.positionQty).compare(calculated.position?.quantity ?? 0) !== 0) throw new Error("Broker position differs from the attributed quantity");
     const cash = decimal(this.exactCash.get(currency) ?? this.cashBook.get(currency) ?? 0).add(side === "buy" ? decimal(fill.notional).neg() : fill.notional).sub(quoteFee);
     if (cash.compare(0) < 0) throw new Error("Execution exceeds allocated cash");
     const cashNumber = cash.toNumber();
@@ -453,7 +438,7 @@ export class PortfolioManager {
     this.orders.set(input.orderId, nextOrder);
     if (reconciliation) this.positionReconciliations.set(input.symbol, reconciliation);
     if (fee !== 0) this.nativeFees.set(feeAsset, nativeFeeTotal);
-    if (alpacaCrypto && fee !== 0) this.orderFeeAssets.set(input.orderId, feeAsset);
+    if (policy && fee !== 0) this.orderFeeAssets.set(input.orderId, feeAsset);
     if (progress) this.fillProgress.set(progressKey, progress);
     if (input.clientOrderId) this.clientOrderIdIndex.set(input.clientOrderId, input.orderId);
     this.orderScopes.set(input.orderId, input.scope);
@@ -485,25 +470,8 @@ export class PortfolioManager {
 
   getFeesByAsset(): Record<string, string> { return Object.fromEntries(this.nativeFees); }
 
-  /** In-memory guard used immediately before Alpaca sell submission. */
-  assertAlpacaSellable(scope: string, symbol?: string, quantity?: string | number, requireQuantity = false): string | undefined {
-    const canonical = symbol?.toUpperCase().replace(/\//g, "");
-    let sellable: string | undefined;
-    for (const [key, state] of this.positionReconciliations) {
-      if (canonical && key.replace(/\//g, "") !== canonical) continue;
-      if (state.accountScope !== scope) throw new Error("Alpaca sell account scope differs from tracked inventory");
-      if (state.reconciliationStatus === "reconciliation_pending") throw new Error(`Alpaca inventory reconciliation pending: ${state.reason}`);
-      if (requireQuantity && quantity == null) throw new Error("Alpaca sell sizing requires a base quantity to enforce available inventory");
-      const held = decimal(this.openCosts.get(key)?.quantity ?? this.positions.get(key)?.quantity ?? 0);
-      if (quantity != null && decimal(quantity).compare(held) > 0) {
-        throw new Error("Alpaca sell exceeds attributed inventory");
-      }
-      if (quantity != null && state.brokerPositionQty != null && decimal(quantity).compare(state.brokerPositionQty) > 0) {
-        throw new Error("Alpaca sell exceeds broker-reported available quantity");
-      }
-      sellable = state.brokerPositionQty != null && held.compare(state.brokerPositionQty) > 0 ? state.brokerPositionQty : held.toString();
-    }
-    return sellable;
+  getExactPositionQuantity(symbol: string): string {
+    return this.openCosts.get(symbol)?.quantity ?? String(this.positions.get(symbol)?.quantity ?? 0);
   }
 
 
@@ -1116,12 +1084,12 @@ export class PortfolioManager {
   /**
    * Reconcile position with absolute broker quantity.
    * Sets the position to the exact quantity the broker reports.
-   * This is where Alpaca's 0.9982 gets recorded correctly.
+   * Records the broker-reported absolute quantity.
    */
   applyPositionUpdate(input: {
     symbol: string;
     filledQty?: number;
-    avgFillPrice?: number; // Alpaca: order.filled_avg_price or raw price
+    avgFillPrice?: number; // Broker average fill price or raw price
     side: "buy" | "sell";
     normalizedBrokerId?: string;
     executionId?: string;
@@ -1387,7 +1355,7 @@ export class PortfolioManager {
     this.exactCash.delete(input.asset);
     const multiplier = input.margin ?? 1;
 
-    // For your current Alpaca behavior:
+    // For cash-account behavior:
     // - if broker gives buyingPower, trust it
     // - otherwise fallback to cash-based BP
     const computedBuyingPower =
@@ -1478,7 +1446,7 @@ export class PortfolioManager {
     // equity is still total account value
     nextBalance.equity = this.getTotalEquity(quoteAsset);
 
-    // Alpaca current behavior in your case: BP from cash, not total equity
+    // Cash-account buying power uses cash rather than total equity
     nextBalance.buyingPower = this.computeBuyingPower(nextBalance);
 
     this.balances.set(quoteAsset, nextBalance);
@@ -1518,7 +1486,7 @@ export class PortfolioManager {
     // recompute equity
     nextBalance.equity = this.getTotalEquity(feeAsset);
 
-    // Alpaca current behavior in your case: BP from cash, not total equity
+    // Cash-account buying power uses cash rather than total equity
     nextBalance.buyingPower = this.computeBuyingPower(nextBalance);
 
     this.balances.set(feeAsset, nextBalance);

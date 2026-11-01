@@ -10,6 +10,7 @@
 
 import { randomUUID } from "crypto";
 import { decimal } from "../portfolio/decimal";
+import { PositionReconciliation, reconcilePosition } from "../portfolio/positionReconciliation";
 import { FillInput, FillProgress, OpenCost, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
@@ -42,6 +43,8 @@ export interface OrderState {
   remainingQty?: number | undefined;
   avgFillPrice?: number | undefined;
   totalFees: number;
+  baseFeeQty?: number;
+  feeAsset?: string;
   stopPrice?: number | undefined;
   limitPrice?: number | undefined;
   trailPercent?: number | undefined;
@@ -281,6 +284,9 @@ export class PortfolioManager {
   private feesTotalExact = "0";
   private realizedTotal = 0;
   private feesTotal = 0;
+  private positionReconciliations = new Map<string, PositionReconciliation>();
+  private nativeFees = new Map<string, string>();
+  private orderFeeAssets = new Map<string, string>();
   private realizedBySymbol = new Map<string, { exact: string; value: number }>();
 
   /** One synchronous, validated transition. Only touched records are replaced. */
@@ -289,17 +295,18 @@ export class PortfolioManager {
     status?: string; origQty?: number; orderType?: string; timeInForce?: string;
     limitPrice?: number; stopPrice?: number; trailPercent?: number; trailPrice?: number;
     executionId?: string; sequence?: number; scope: string; feeAsset?: string;
-    baseCurrency: string; timestamp: string; positionQty?: number;
-  }): { quantity: number; price: number; fee: number; notional: number; trade?: Trade; reason?: string } {
+    baseCurrency: string; timestamp: string; positionQty?: string | number; broker?: string;
+  }): { quantity: number; price: number; fee: number; notional: number; trade?: Trade; reason?: string; reconciliation?: PositionReconciliation } {
     const previousOrder = this.orders.get(input.orderId);
     const side = input.side ?? previousOrder?.side;
     if (!side || !["buy", "sell"].includes(side) || !input.symbol || !Number.isFinite(Date.parse(input.timestamp))) throw new Error("Valid symbol, side and timestamp are required");
     if (previousOrder && (previousOrder.symbol !== input.symbol || previousOrder.side !== side)) throw new Error("Order symbol/side mismatch");
     if (this.orderScopes.has(input.orderId) && this.orderScopes.get(input.orderId) !== input.scope) throw new Error("Order account scope mismatch");
     const progressKey = JSON.stringify([input.scope, input.symbol, input.orderId]);
-    const { quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
+    const { baseAsset, quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
     const currency = quoteAsset ?? input.baseCurrency;
-    const feeAsset = input.feeAsset || currency;
+    const alpacaCrypto = input.broker === "alpaca" && quoteAsset != null && baseAsset !== currency;
+    const feeAsset = input.feeAsset || (alpacaCrypto ? this.orderFeeAssets.get(input.orderId) : undefined) || currency;
     if (currency !== input.baseCurrency) throw new Error("Cross-currency fill valuation requires an FX treatment");
     const rawQuantity = decimal(input.quantity ?? 0);
     const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
@@ -324,6 +331,15 @@ export class PortfolioManager {
     const quantity = decimal(fill.quantity).toNumber(), price = decimal(fill.price).toNumber(), fee = decimal(fill.fee).toNumber();
     const notional = decimal(fill.notional).toNumber();
     const staleSequence = input.sequence != null && previousOrder?.lastSeq != null && input.sequence <= previousOrder.lastSeq;
+    if (alpacaCrypto && quantity > 0 && (staleSequence || Date.parse(input.timestamp) < Date.parse(this.positionReconciliations.get(input.symbol)?.timestamp ?? input.timestamp))) {
+      throw new Error("Out-of-order Alpaca execution requires reconciliation");
+    }
+    const previousFeeAsset = this.orderFeeAssets.get(input.orderId);
+    if (alpacaCrypto && quantity > 0 && previousFeeAsset && previousFeeAsset !== feeAsset && decimal(baseline?.fees ?? 0).compare(0) !== 0) {
+      throw new Error("Mixed fee assets for one order require explicit reconciliation");
+    }
+    const baseFee = alpacaCrypto && feeAsset === baseAsset;
+    const quoteFee = baseFee ? "0" : fill.fee;
     const incomingStatus = String(input.status ?? previousOrder?.status ?? "new").trim().toLowerCase();
     const status = previousOrder && (staleSequence || (ORDER_STATUS_RANK[incomingStatus] ?? 0) < (ORDER_STATUS_RANK[previousOrder.status] ?? 0)) ? previousOrder.status : incomingStatus;
     const progress = fill.progress;
@@ -334,7 +350,8 @@ export class PortfolioManager {
       symbol: input.symbol, side, status, origQty, filledQty,
       remainingQty: origQty == null ? undefined : decimal(origQty).sub(filledQty).toNumber(),
       avgFillPrice: progress && decimal(progress.quantity).compare(0) > 0 ? decimal(progress.notional).div(progress.quantity).toNumber() : previousOrder?.avgFillPrice,
-      totalFees: progress ? decimal(progress.fees).toNumber() : previousOrder?.totalFees ?? 0,
+      totalFees: baseFee || (alpacaCrypto && quantity === 0) ? previousOrder?.totalFees ?? 0 : progress ? decimal(progress.fees).toNumber() : previousOrder?.totalFees ?? 0,
+      ...(baseFee && quantity > 0 ? { baseFeeQty: decimal(progress?.fees ?? 0).toNumber(), feeAsset } : {}),
       orderType: input.orderType ?? previousOrder?.orderType, timeInForce: input.timeInForce ?? previousOrder?.timeInForce,
       limitPrice: input.limitPrice ?? previousOrder?.limitPrice, stopPrice: input.stopPrice ?? previousOrder?.stopPrice,
       trailPercent: input.trailPercent ?? previousOrder?.trailPercent, trailPrice: input.trailPrice ?? previousOrder?.trailPrice,
@@ -350,18 +367,38 @@ export class PortfolioManager {
       if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
       return { quantity, price, fee, notional, trade, reason: fill.reason ?? "no_execution" };
     }
+    if (alpacaCrypto && !input.cumulative && !identity) throw new Error("Alpaca incremental fills require an execution identity for safe reconciliation");
     if (identity && !duplicate && this.acceptedFills.size >= PortfolioManager.MAX_EXECUTION_KEYS) throw new Error("Execution identity capacity reached; start a new activation");
     if (this.accountScope != null && this.accountScope !== input.scope) throw new Error("Portfolio account scope mismatch");
-    if (fee !== 0 && feeAsset !== currency) throw new Error("Non-quote fee accounting requires an asset/FX treatment");
+    if (fee !== 0 && feeAsset !== currency && !baseFee) throw new Error("Non-quote fee accounting requires an asset/FX treatment");
+    if (baseFee && fee !== 0 && (side !== "buy" || decimal(fill.fee).compare(0) < 0 || decimal(fill.fee).compare(fill.quantity) >= 0)) {
+      throw new Error("Unsupported Alpaca base fee: requires a positive net BUY quantity");
+    }
     if (this.positionScopes.has(input.symbol) && this.positionScopes.get(input.symbol) !== input.scope) throw new Error("Position account scope mismatch");
     const previousPosition = this.positions.get(input.symbol);
     const previousCost = this.openCosts.get(input.symbol) ?? (previousPosition ? {
       quantity: String(previousPosition.quantity), cost: String(previousPosition.openCostBasis), entryFees: "0",
       realized: String(previousPosition.realizedPnl), entryOrderId: this.currentEntryMap.get(input.symbol)?.fillId ?? "", entryTime: this.currentEntryMap.get(input.symbol)?.entryTime ?? input.timestamp,
     } : undefined);
-    const calculated = calculatePositionFill(previousCost, side, fill.quantity, fill.notional, fill.fee, input.orderId, input.timestamp);
-    if (input.positionQty != null && decimal(input.positionQty).compare(calculated.position?.quantity ?? 0) !== 0) throw new Error("Broker position differs from the attributed quantity");
-    const cash = decimal(this.exactCash.get(currency) ?? this.cashBook.get(currency) ?? 0).add(side === "buy" ? decimal(fill.notional).neg() : fill.notional).sub(fill.fee);
+    // The gross execution remains in order progress/reporting. Base fees reduce
+    // acquired inventory; its entire gross acquisition cost stays in that inventory.
+    const inventoryQty = baseFee ? decimal(fill.quantity).sub(fill.fee).toString() : fill.quantity;
+    const calculated = calculatePositionFill(previousCost, side, inventoryQty, fill.notional, quoteFee, input.orderId, input.timestamp);
+    const previousReconciliation = this.positionReconciliations.get(input.symbol);
+    const reconciliation = alpacaCrypto ? reconcilePosition({
+      orderId: input.orderId, executionId: input.executionId, accountScope: input.scope, timestamp: input.timestamp,
+      brokerPositionQty: input.positionQty, attributedQty: calculated.position?.quantity ?? "0",
+      netPositionDelta: side === "buy" ? inventoryQty : decimal(inventoryQty).neg().toString(),
+      baseFeeQty: baseFee ? fill.fee : "0", feeAsset: fee !== 0 ? feeAsset : undefined, explicitFee: fee !== 0,
+    }) : undefined;
+    // A later matching account balance cannot explain an earlier unverified
+    // discrepancy (it could be an external trade/transfer). Keep it unresolved.
+    if (reconciliation && previousReconciliation?.reconciliationStatus === "reconciliation_pending") {
+      reconciliation.reconciliationStatus = "reconciliation_pending";
+      reconciliation.reason = previousReconciliation.reason;
+    }
+    if (!alpacaCrypto && input.positionQty != null && decimal(input.positionQty).compare(calculated.position?.quantity ?? 0) !== 0) throw new Error("Broker position differs from the attributed quantity");
+    const cash = decimal(this.exactCash.get(currency) ?? this.cashBook.get(currency) ?? 0).add(side === "buy" ? decimal(fill.notional).neg() : fill.notional).sub(quoteFee);
     if (cash.compare(0) < 0) throw new Error("Execution exceeds allocated cash");
     const cashNumber = cash.toNumber();
     const exactPosition = calculated.position;
@@ -377,7 +414,10 @@ export class PortfolioManager {
         openCostBasis: decimal(exactPosition.cost).toNumber(), realizedPnl, unrealizedPnl, totalPnl: decimal(realizedPnl).add(unrealizedPnl).toNumber() };
     }
     const realizedTotal = decimal(this.realizedTotalExact).add(calculated.realized);
-    const feesTotal = decimal(this.feesTotalExact).add(fill.fee);
+    // The existing numeric fee total is quote currency only. Native quantities
+    // are reported separately and never added to quote fees or P&L twice.
+    const feesTotal = decimal(this.feesTotalExact).add(quoteFee);
+    const nativeFeeTotal = decimal(this.nativeFees.get(feeAsset) ?? 0).add(fill.fee).toString();
     const realizedNumber = realizedTotal.toNumber(), feesNumber = feesTotal.toNumber();
     const symbolRealizedExact = decimal(this.realizedBySymbol.get(input.symbol)?.exact ?? 0).add(calculated.realized);
     const symbolRealized = symbolRealizedExact.toNumber();
@@ -406,6 +446,9 @@ export class PortfolioManager {
     // Publish only after every financial and compatibility calculation succeeds.
     this.accountScope = input.scope;
     this.orders.set(input.orderId, nextOrder);
+    if (reconciliation) this.positionReconciliations.set(input.symbol, reconciliation);
+    if (fee !== 0) this.nativeFees.set(feeAsset, nativeFeeTotal);
+    if (alpacaCrypto && fee !== 0) this.orderFeeAssets.set(input.orderId, feeAsset);
     if (progress) this.fillProgress.set(progressKey, progress);
     if (input.clientOrderId) this.clientOrderIdIndex.set(input.clientOrderId, input.orderId);
     this.orderScopes.set(input.orderId, input.scope);
@@ -428,7 +471,34 @@ export class PortfolioManager {
     this.feesTotalExact = feesTotal.toString(); this.feesTotal = feesNumber;
     this.realizedBySymbol.set(input.symbol, { exact: symbolRealizedExact.toString(), value: symbolRealized }); this.fillTotalsActive = true;
     this.peakEquity = Math.max(this.peakEquity, equity);
-    return { quantity, price, fee, notional, trade };
+    return { quantity, price, fee, notional, trade, reconciliation };
+  }
+
+  getPositionReconciliations(): Record<string, PositionReconciliation> {
+    return Object.fromEntries(this.positionReconciliations);
+  }
+
+  getFeesByAsset(): Record<string, string> { return Object.fromEntries(this.nativeFees); }
+
+  /** In-memory guard used immediately before Alpaca sell submission. */
+  assertAlpacaSellable(scope: string, symbol?: string, quantity?: string | number, requireQuantity = false): string | undefined {
+    const canonical = symbol?.toUpperCase().replace(/\//g, "");
+    let sellable: string | undefined;
+    for (const [key, state] of this.positionReconciliations) {
+      if (canonical && key.replace(/\//g, "") !== canonical) continue;
+      if (state.accountScope !== scope) throw new Error("Alpaca sell account scope differs from tracked inventory");
+      if (state.reconciliationStatus === "reconciliation_pending") throw new Error(`Alpaca inventory reconciliation pending: ${state.reason}`);
+      if (requireQuantity && quantity == null) throw new Error("Alpaca sell sizing requires a base quantity to enforce available inventory");
+      if (quantity != null && decimal(quantity).compare(this.positions.get(key)?.quantity ?? 0) > 0) {
+        throw new Error("Alpaca sell exceeds attributed inventory");
+      }
+      if (quantity != null && state.brokerPositionQty != null && decimal(quantity).compare(state.brokerPositionQty) > 0) {
+        throw new Error("Alpaca sell exceeds broker-reported available quantity");
+      }
+      const held = decimal(this.openCosts.get(key)?.quantity ?? this.positions.get(key)?.quantity ?? 0);
+      sellable = state.brokerPositionQty != null && held.compare(state.brokerPositionQty) > 0 ? state.brokerPositionQty : held.toString();
+    }
+    return sellable;
   }
 
 
@@ -489,6 +559,7 @@ export class PortfolioManager {
    * Should be called when a workflow run ends.
    */
   destroy(): void {
+    this.positionReconciliations.clear(); this.nativeFees.clear(); this.orderFeeAssets.clear();
     this.fillProgress.clear(); this.acceptedFills.clear(); this.openCosts.clear(); this.exactCash.clear();
     this.positionScopes.clear(); this.orderScopes.clear(); this.realizedBySymbol.clear(); this.positionMarkTimes.clear();
     this.realizedTotalExact = "0"; this.feesTotalExact = "0"; this.realizedTotal = 0; this.feesTotal = 0; this.fillTotalsActive = false; this.accountScope = undefined;

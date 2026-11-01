@@ -32,6 +32,8 @@ import {
 } from "../../utils/orderIdempotency";
 import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
+import { PortfolioManager } from "../../simulation/PortfolioManager";
+import { decimal } from "../../portfolio/decimal";
 import {
   BROKER_CAPABILITIES,
   getOrderOwnerExtractor,
@@ -241,6 +243,24 @@ export class BrokerExecutor implements INodeExecutor {
 
       isOrderOperation =
         operation === "place_order" || operation === "close_position";
+
+      if (broker === "alpaca" && (operation === "close_position" ||
+        (operation === "place_order" && String(resolvedParams.side).toLowerCase() === "sell"))) {
+        const activationId = context?.reportingExecutionId ?? context?.executionId;
+        const pm = activationId ? PortfolioManager.existingInstance(userId, activationId) : undefined;
+        const sellable = pm?.assertAlpacaSellable(
+          JSON.stringify([broker, resolvedParams.environment ?? "", credential_id]),
+          resolvedParams.symbol,
+          resolvedParams.qty ?? resolvedParams.quantity,
+          operation === "place_order",
+        );
+        if (operation === "close_position" && sellable != null && resolvedParams.qty == null) {
+          const percentage = decimal(resolvedParams.percentage ?? 100);
+          if (percentage.compare(0) < 0 || percentage.compare(100) > 0) throw new Error("percentage must be between 0 and 100");
+          resolvedParams.qty = decimal(sellable).mul(percentage).div(100).toString();
+          delete resolvedParams.percentage;
+        }
+      }
 
       timing.mark("idempotency");
       if (isOrderOperation) {

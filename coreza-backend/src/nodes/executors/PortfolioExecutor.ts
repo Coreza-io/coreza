@@ -17,6 +17,7 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
 import { decimal } from "../../portfolio/decimal";
+import { countLive, observeStage, timingNow } from "../../utils/liveTiming";
 import { createSuccessOutput, createErrorOutput, resultSuccess } from "../../utils/nodeResultHelpers";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -1207,7 +1208,7 @@ export class PortfolioExecutor implements INodeExecutor {
           : undefined;
 
       const origQty = toNumber(params.origQty);
-      const positionQty = toNumber(params.positionQty);
+      const positionQty = optionalDecimal(params.positionQty);
       const limitPrice = toNumber(params.limitPrice);
       const stopPrice = toNumber(params.stopPrice);
       const trailPercent = toNumber(params.trailPercent);
@@ -1240,6 +1241,7 @@ export class PortfolioExecutor implements INodeExecutor {
 
       if (/future|margin|option/i.test(String(params.broker) + String(params.marketType ?? ""))) throw new Error("Portfolio fill accounting requires a supported cash/spot instrument model");
       const timestamp = params.event_time ?? params.eventTime ?? new Date().toISOString();
+      const reconciliationStarted = timingNow();
       const accepted = pm.applyOrderEvent({
         orderId: normalizedBrokerId, clientOrderId, symbol: normalizeSymbol(symbol), side, status,
         quantity: optionalDecimal(params.filledQty), price: optionalDecimal(params.avgFillPrice), fee: optionalDecimal(params.feeAmount),
@@ -1247,9 +1249,17 @@ export class PortfolioExecutor implements INodeExecutor {
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
         scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
-        feeAsset, baseCurrency, positionQty,
+        feeAsset, baseCurrency, positionQty, broker: params.broker,
         timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
       });
+      if (params.broker === "alpaca") {
+        const outcome = accepted.reason ?? accepted.reconciliation?.reconciliationStatus ?? "accepted";
+        countLive("alpaca_fill_reconciliation", outcome);
+        observeStage("alpaca_fill_reconciliation", reconciliationStarted, outcome);
+        if (accepted.reconciliation) {
+          fillLogger.info({ ...accepted.reconciliation, symbol: normalizeSymbol(symbol), grossFillQty: accepted.quantity }, "Alpaca position reconciliation");
+        }
+      }
       const finalizedTrade = accepted.trade;
       if (finalizedTrade) {
         // Persist closed trade to shared reporting storage
@@ -1305,7 +1315,7 @@ export class PortfolioExecutor implements INodeExecutor {
             fillPrice: accepted.price,
             fillStatus: params.status,
             feeAmount: accepted.fee,
-            feeAsset: feeAsset || baseCurrency,
+            feeAsset: accepted.reconciliation?.feeAsset || feeAsset || baseCurrency,
             baseCurrency,
             orderType: params.orderType,
             limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
@@ -1317,6 +1327,12 @@ export class PortfolioExecutor implements INodeExecutor {
           });
 
           event.quote_qty = accepted.notional;
+          if (accepted.reconciliation) {
+            event.net_position_delta = accepted.reconciliation.netPositionDelta;
+            event.base_fee_qty = accepted.reconciliation.baseFeeQty;
+            event.fee_source = accepted.reconciliation.feeSource;
+            event.reconciliation_status = accepted.reconciliation.reconciliationStatus;
+          }
           void FillEventBus.publish(event).catch((err) =>
             fillLogger.warn(
               { err, fillId: event.fill_id },
@@ -1342,6 +1358,7 @@ export class PortfolioExecutor implements INodeExecutor {
       return createSuccessOutput({
           ...this.getPortfolioSummary(pm, baseCurrency),
           execution_applied: accepted.quantity > 0,
+          ...(accepted.reconciliation ?? {}),
           ...(accepted.reason ? { skip_reason: accepted.reason } : {}),
         });
     } catch (error: any) {
@@ -1497,6 +1514,8 @@ export class PortfolioExecutor implements INodeExecutor {
     const state = pm.getPortfolioState(baseCurrency);
     return resultSuccess({
       ...this.getPortfolioSummaryFromState(state),
+      position_reconciliation: pm.getPositionReconciliations(),
+      fees_by_asset: pm.getFeesByAsset(),
       drawdown_pct:
         state.peakEquity > 0
           ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
@@ -1509,9 +1528,11 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): Record<string, any> {
-    return this.getPortfolioSummaryFromState(
-      pm.getPortfolioState(baseCurrency),
-    );
+    return {
+      ...this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency)),
+      position_reconciliation: pm.getPositionReconciliations(),
+      fees_by_asset: pm.getFeesByAsset(),
+    };
   }
 
   private getPortfolioSummaryFromState(
@@ -1618,7 +1639,11 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
-    return resultSuccess(pm.getPositionQuery(symbols));
+    const reconciliations = pm.getPositionReconciliations();
+    return resultSuccess({
+      ...pm.getPositionQuery(symbols),
+      position_reconciliation: Object.fromEntries(Object.entries(reconciliations).filter(([symbol]) => symbols.length === 0 || symbols.includes(symbol))),
+    });
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {

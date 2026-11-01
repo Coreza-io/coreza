@@ -1,5 +1,6 @@
 import { BrokerConfig } from '../../types';
 import { alpacaOperations } from './operations';
+import { resolveAlpacaInventoryQuantity } from '../portfolioHelpers';
 
 export const alpacaConfig: BrokerConfig = {
   authType: 'api_key',
@@ -16,4 +17,5 @@ export const alpacaConfig: BrokerConfig = {
     'APCA-API-SECRET-KEY': creds.secret_key,
   }),
   operations: alpacaOperations,
+  resolvePortfolioInventoryQuantity: resolveAlpacaInventoryQuantity,
 };

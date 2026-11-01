@@ -36,6 +36,7 @@ import { LiveTradeRepository } from "../../repositories/LiveTradeRepository";
 import { createLogger } from "../../utils/logger";
 import { BrokerExecutor } from "./BrokerExecutor";
 import { BROKER_CAPABILITIES } from "../../brokers/capabilities";
+import { getBrokerConfig } from "../../brokers";
 import { toMarketBarEnvelope } from "../../backtest/simBroker/marketEnvelope";
 
 const fillLogger = createLogger("PortfolioExecutor:fills");
@@ -1207,7 +1208,7 @@ export class PortfolioExecutor implements INodeExecutor {
           : undefined;
 
       const origQty = toNumber(params.origQty);
-      const positionQty = toNumber(params.positionQty);
+      const positionQty = optionalDecimal(params.positionQty);
       const limitPrice = toNumber(params.limitPrice);
       const stopPrice = toNumber(params.stopPrice);
       const trailPercent = toNumber(params.trailPercent);
@@ -1248,6 +1249,7 @@ export class PortfolioExecutor implements INodeExecutor {
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
         scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
         feeAsset, baseCurrency, positionQty,
+        resolveInventoryQuantity: getBrokerConfig(params.broker ?? "")?.resolvePortfolioInventoryQuantity,
         timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
       });
       const finalizedTrade = accepted.trade;

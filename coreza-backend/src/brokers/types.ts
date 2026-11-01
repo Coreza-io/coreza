@@ -1,4 +1,5 @@
 import type { AxiosStatic } from "axios";
+import type { InventoryQuantityResolver } from "../portfolio/fillAccounting";
 
 export interface PaginationConfig {
   enabled: boolean;
@@ -35,6 +36,7 @@ export interface BrokerConfig {
   baseUrl: string | ((creds: any, input?: any) => string);
   makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   operations: Record<string, BrokerOperation>;
+  resolvePortfolioInventoryQuantity?: InventoryQuantityResolver;
 }
 
 export interface Bar {

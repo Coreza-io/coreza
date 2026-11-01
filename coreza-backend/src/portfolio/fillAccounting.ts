@@ -1,5 +1,15 @@
 import { decimal, allocateOpenAmount } from "./decimal";
 
+export type InventoryQuantityResolver = (input: {
+  symbol: string;
+  side: "buy" | "sell";
+  grossQuantity: string;
+  defaultInventoryQuantity: string;
+  previousPositionQty: string;
+  brokerPositionQty?: string | number;
+  fee: string;
+}) => string;
+
 export interface FillProgress {
   quantity: string;
   notional: string;

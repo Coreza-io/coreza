@@ -10,7 +10,7 @@
 
 import { randomUUID } from "crypto";
 import { decimal } from "../portfolio/decimal";
-import { FillInput, FillProgress, OpenCost, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
+import { FillInput, FillProgress, OpenCost, InventoryQuantityResolver, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -293,7 +293,8 @@ export class PortfolioManager {
     status?: string; origQty?: number; orderType?: string; timeInForce?: string;
     limitPrice?: number; stopPrice?: number; trailPercent?: number; trailPrice?: number;
     executionId?: string; sequence?: number; scope: string; feeAsset?: string;
-    baseCurrency: string; timestamp: string; positionQty?: number;
+    baseCurrency: string; timestamp: string; positionQty?: string | number;
+    resolveInventoryQuantity?: InventoryQuantityResolver;
   }): { quantity: number; price: number; fee: number; notional: number; trade?: Trade; reason?: string; netPositionDelta?: number; baseFeeQty?: number; feeAsset?: string } {
     const previousOrder = this.orders.get(input.orderId);
     const side = input.side ?? previousOrder?.side;
@@ -378,7 +379,14 @@ export class PortfolioManager {
     if (baseFee && fee !== 0 && (side !== "buy" || decimal(fill.fee).compare(0) < 0 || decimal(fill.fee).compare(fill.quantity) >= 0)) {
       throw new Error("Base fees require a BUY with positive net received quantity");
     }
-    const inventoryQty = baseFee ? decimal(fill.quantity).sub(fill.fee).toString() : fill.quantity;
+    const defaultInventoryQty = baseFee ? decimal(fill.quantity).sub(fill.fee).toString() : fill.quantity;
+    const inventoryQty = input.resolveInventoryQuantity?.({
+      symbol: input.symbol, side, grossQuantity: fill.quantity, defaultInventoryQuantity: defaultInventoryQty,
+      previousPositionQty: previousCost?.quantity ?? "0", brokerPositionQty: input.positionQty, fee: fill.fee,
+    }) ?? defaultInventoryQty;
+    if (decimal(inventoryQty).compare(0) <= 0 || decimal(inventoryQty).compare(defaultInventoryQty) > 0) {
+      throw new Error("Inventory quantity must be positive and cannot exceed the accounted fill quantity");
+    }
     const netPositionDelta = decimal(inventoryQty).mul(side === "buy" ? 1 : -1).toNumber();
     const calculated = calculatePositionFill(previousCost, side, inventoryQty, fill.notional, quoteFee, input.orderId, input.timestamp);
     if (input.positionQty != null && decimal(input.positionQty).compare(calculated.position?.quantity ?? 0) !== 0) throw new Error("Broker position differs from the attributed quantity");

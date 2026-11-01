@@ -1305,7 +1305,7 @@ export class PortfolioExecutor implements INodeExecutor {
             fillPrice: accepted.price,
             fillStatus: params.status,
             feeAmount: accepted.fee,
-            feeAsset: feeAsset || baseCurrency,
+            feeAsset: accepted.feeAsset || feeAsset || baseCurrency,
             baseCurrency,
             orderType: params.orderType,
             limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
@@ -1342,6 +1342,7 @@ export class PortfolioExecutor implements INodeExecutor {
       return createSuccessOutput({
           ...this.getPortfolioSummary(pm, baseCurrency),
           execution_applied: accepted.quantity > 0,
+          ...(accepted.quantity > 0 ? { netPositionDelta: accepted.netPositionDelta, baseFeeQty: accepted.baseFeeQty, feeAsset: accepted.feeAsset } : {}),
           ...(accepted.reason ? { skip_reason: accepted.reason } : {}),
         });
     } catch (error: any) {
@@ -1497,6 +1498,7 @@ export class PortfolioExecutor implements INodeExecutor {
     const state = pm.getPortfolioState(baseCurrency);
     return resultSuccess({
       ...this.getPortfolioSummaryFromState(state),
+      fees_by_asset: pm.getFeesByAsset(),
       drawdown_pct:
         state.peakEquity > 0
           ? ((state.peakEquity - state.totalEquity) / state.peakEquity) * 100
@@ -1509,9 +1511,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): Record<string, any> {
-    return this.getPortfolioSummaryFromState(
-      pm.getPortfolioState(baseCurrency),
-    );
+    return { ...this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency)), fees_by_asset: pm.getFeesByAsset() };
   }
 
   private getPortfolioSummaryFromState(

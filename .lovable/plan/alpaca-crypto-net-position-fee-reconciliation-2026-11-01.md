@@ -1,7 +1,7 @@
 # Alpaca crypto net-position and base-asset fee reconciliation — implementation plan
 
 **Branch:** `dev`  
-**Scope:** Plan only. No runtime changes.  
+**Scope:** Plan only. No runtime changes. Reconciliation is limited to the current active run.  
 **Priority:** High — live portfolio accounting correctness  
 **Goal:** Keep Alpaca gross fill quantity (e.g. 1 ETH) unchanged while accurately recording the broker's net position (e.g. 0.9975 ETH), without inventing a fee, corrupting cash/cost basis, double-counting activities, or slowing every market tick.
 
@@ -34,7 +34,7 @@
 
 ### Phase B — event contract and trusted baseline
 - Add a minimal optional internal reconciliation envelope (do not change persisted workflow node inputs): `brokerPositionQty`, `snapshotEventId/timestamp`, `snapshotTrust`, `previousAcceptedBrokerPositionQty`, `netBaseDelta`, `baseFeeQty`, `feeAsset`, `feeSource: broker_explicit | snapshot_inferred | activity_confirmed | unknown`, `reconciliationStatus`.
-- Persist/restore a scoped checkpoint keyed by broker + environment + account/credential + symbol, last accepted event/order progress and broker baseline; serialize reconciliation per scope/symbol and use idempotency keys to avoid concurrent adjustments. Integrate with existing accepted fill/owner registry; no new database tables unless existing ledger cannot support durable recovery.
+- Maintain in-memory reconciliation state for the current active run, scoped by broker + environment + account/credential + symbol, including last accepted event/order progress and broker baseline. Serialize reconciliation per scope/symbol and use idempotency keys to avoid concurrent adjustments. Reuse the existing accepted fill/owner registry for active-run ownership and duplicate-event handling.
 - For newly started workflows on accounts with existing positions, establish reliable broker baseline before attributing fees; otherwise mark unresolved and avoid false mismatch.
 
 ### Phase C — calculations and atomic transition
@@ -43,19 +43,19 @@
 - Infer `baseFeeQty = grossDelta - netDelta` only for allowed BUY events, nonnegative and consistent with precision/rate plausibility checks. Inconsistent values are anomalies, **not** fees.
 - Extend `calculatePositionFill` and/or a narrow call-site adapter so position inventory reflects net acquired quantity, gross execution notional remains unchanged, quote cash reflects the correct fee denomination, and entry cost basis / fee quantities / P&L reconcile. Explicitly define what `feesTotal` means if fee is in base asset; do not add quantities from different assets to the same numeric total.
 - Replace unconditional line-363 equality with: compare calculated net position against trusted, correctly scoped broker snapshot when safely comparable; otherwise record a pending reconciliation and block risky sell sizing. Retain hard errors for confirmed irreconcilable accounting violations.
-- Apply all affected position, cash, fill progress, fee accounting and audit/checkpoint state atomically within the accepted event transition. A rejected event must not partially update state; retries must not double-deduct fees.
+- Apply all affected position, cash, fill progress, fee accounting and in-memory reconciliation/audit state atomically within the accepted event transition. A rejected event must not partially update state; retries within the active run must not double-deduct fees.
 - Existing `applyPositionUpdate` remains a snapshot/mark reconciler and must not manufacture quantity or cost basis.
 
 ### Phase D — eventual fee activity confirmation
 - Outside live tick path, fetch/process Alpaca posted crypto fee activities (`CFEE`/`FEE` if available) and reconcile by account, symbol, time, order/execution identifiers or safe aggregation windows.
 - Store provenance and activity IDs; confirm or correct provisional fee delta **once** with balanced adjustment entries (including cash, cost basis, realized P&L where relevant). Never apply a posted fee as a second deduction if already inferred.
-- If fee activity cannot be safely tied to the fill, flag unresolved instead of assigning it to a guessed order. Handle late or revised activities and restart/replay idempotently.
+- If fee activity cannot be safely tied to the fill, flag unresolved instead of assigning it to a guessed order. Handle late, revised or duplicate activities idempotently while the originating run remains active; processing after that run ends is outside this scope.
 
 ### Phase E — downstream propagation and observability
 - Update `PortfolioExecutor` event output and reporting mapping to preserve both gross executed qty and net attributed holding change. Keep existing external field semantics backward-compatible; add optional `netPositionDelta`, `baseFeeQty`, `feeAsset`, `feeSource`, `reconciliationStatus` only where required.
 - Ensure held quantity, sellable quantity, realized/unrealized P&L, weighted entry cost, order remaining, total fee display and trade history stay internally consistent.
 - Structured logs for `grossFillQty`, `previousBrokerQty`, `brokerPositionQty`, `netPositionDelta`, `inferredFeeQty`, `feeSource`, `status`, `reason`, `accountScope`, `orderId`, `executionId`; log discrepancies without credential secrets.
-- Metrics: accepted/duplicate/stale events, inferred/confirmed/unresolved fee count, reconciliation latency (event pathway only), blocking mismatches, state-recovery outcomes. No extra per-tick awaits.
+- Metrics: accepted/duplicate/stale events, inferred/confirmed/unresolved fee count, reconciliation latency (event pathway only), blocking mismatches. No extra per-tick awaits.
 
 ## Acceptance scenarios (implementation must cover)
 1. Buy 1 ETH, previous broker holding 0, new 0.9975 => order filled 1, holding 0.9975, provisional base fee 0.0025, correct cost basis/cash.
@@ -66,11 +66,10 @@
 6. Buy followed immediately by close: sell uses broker-confirmed available qty; accurate realized P&L, no oversell.
 7. SELL with quote fee, SELL with possible base fee, and BUY with quote fee => asset-specific cash and quantity treatment verified.
 8. Later posted `CFEE` activity matches provisional fee => mark confirmed, no duplicate charge; mismatch => correction entry/audit.
-9. Restart between fill and fee posting => idempotent recovery without cumulative quantity duplication.
-10. Existing equities, backtests, Binance, and non-Alpaca workflows retain existing semantics and timing.
+9. Existing equities, backtests, Binance, and non-Alpaca workflows retain existing semantics and timing.
 
 ## Implementation order and guardrails
-1. Audit exact Alpaca live payload semantics + current existing checkpoint/ledger. Resolve which snapshots are safe to pair.
+1. Audit exact Alpaca live payload semantics and existing in-memory accepted-fill/ownership tracking. Resolve which snapshots are safe to pair.
 2. Extend fee/snapshot normalization with **optional** internal fields and no workflow migration.
 3. Implement trusted snapshot baseline and reconciliation state, then fee-aware inventory and cost basis, then guarded comparison.
 4. Hook into existing async persistence/fee activity processor only as required; preserve no-DB/no-network hot tick path.

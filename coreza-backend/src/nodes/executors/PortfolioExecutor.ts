@@ -17,7 +17,6 @@ import { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
 import { SimBroker, Position } from "../../backtest/simBroker";
 import { PortfolioManager } from "../../simulation/PortfolioManager";
 import { decimal } from "../../portfolio/decimal";
-import { getBrokerConfig } from "../../brokers";
 import { createSuccessOutput, createErrorOutput, resultSuccess } from "../../utils/nodeResultHelpers";
 import { Bar } from "../../backtest/simBroker/interfaces";
 import { parseBar, parsePrices, toPercent } from "../../utils/barParser";
@@ -138,6 +137,54 @@ type TradeAnalytics = {
   averageTradeReturn: number;
   expectancy: number;
 };
+
+type AlpacaAccountResponse = {
+  cash?: string | number;
+  currency?: string;
+  buying_power?: string | number;
+  equity?: string | number;
+  portfolio_value?: string | number;
+  multiplier?: string | number;
+  initial_margin?: string | number;
+};
+
+type AlpacaPosition = {
+  symbol?: string;
+  qty?: string | number;
+  avg_entry_price?: string | number;
+  current_price?: string | number;
+  side?: string;
+  asset_class?: string;
+};
+
+type AlpacaOrder = {
+  id?: string;
+  client_order_id?: string;
+  symbol: string;
+  qty: string | number;
+  side: string;
+  type: string;
+  status: string;
+  timeInForce: string;
+};
+
+function normalizeAlpacaCryptoSymbol(symbol: any, assetClass?: string): string {
+  const normalized = normalizeSymbol(symbol);
+  if (String(assetClass || "").toLowerCase() !== "crypto") {
+    return normalized;
+  }
+
+  if (normalized.includes("/")) {
+    return normalized;
+  }
+
+  const match = normalized.match(/^([A-Z0-9]+)(USDT|USDC|USD|BTC)$/);
+  if (!match) {
+    return normalized;
+  }
+
+  return `${match[1]}/${match[2]}`;
+}
 
 export class PortfolioExecutor implements INodeExecutor {
   readonly category = "Portfolio";
@@ -598,7 +645,7 @@ export class PortfolioExecutor implements INodeExecutor {
   private async callBrokerOperation(
     operation: string,
     params: Record<string, any>,
-    broker: string,
+    broker: string = "alpaca",
     context?: NodeExecutionContext,
   ): Promise<any> {
     const result = await this.brokerExecutor.execute(
@@ -629,9 +676,172 @@ export class PortfolioExecutor implements INodeExecutor {
     params: any,
     context?: NodeExecutionContext,
   ): Promise<NodeResult> {
-    const syncState = getBrokerConfig(params.broker ?? "")?.portfolio?.syncState;
-    if (!syncState) return createErrorOutput(`Broker state sync is not supported for ${params.broker}`);
-    return syncState({ pm, params, context, callBrokerOperation: this.callBrokerOperation.bind(this) });
+    try {
+      if (params.broker !== "alpaca") {
+        return createErrorOutput(
+            "sync_from_broker currently supports broker=alpaca only",
+          );
+      }
+
+      if (!params.credential_id) {
+        return createErrorOutput(
+            "credential_id is required when sync_from_broker is enabled",
+          );
+      }
+
+      const brokerParams = {
+        credential_id: params.credential_id,
+        environment: params.environment || "paper",
+      };
+
+      const account = (await this.callBrokerOperation(
+        "get_account",
+        brokerParams,
+        "alpaca",
+        context,
+      )) as AlpacaAccountResponse;
+
+      const positionsResult = (await this.callBrokerOperation(
+        "get_positions",
+        brokerParams,
+        "alpaca",
+        context,
+      )) as { positions?: AlpacaPosition[] };
+      const positions = Array.isArray(positionsResult.positions)
+        ? positionsResult.positions
+        : [];
+
+      const ordersResult = (await this.callBrokerOperation(
+        "get_orders",
+        {
+          ...brokerParams,
+          status: "open",
+        },
+        "alpaca",
+        context,
+      )) as { orders?: AlpacaOrder[] };
+      const allOrders = Array.isArray(ordersResult.orders)
+        ? ordersResult.orders
+        : [];
+      const openOrders = allOrders.filter((order) => {
+        const status = String(order.status ?? "").toLowerCase();
+        return ![
+          "filled",
+          "canceled",
+          "cancelled",
+          "expired",
+          "rejected",
+        ].includes(status);
+      });
+
+      const baseCurrency = String(account.currency || "USD").toUpperCase();
+      const cash = toNumber(account.cash) ?? 0;
+      const buyingPower = toNumber(account.buying_power) ?? cash;
+      const margin = toNumber(account.multiplier) ?? 1;
+      const equity = toNumber(account.equity) ?? 1;
+      const initialMargin = toNumber(account.initial_margin);
+      pm.initializePortfolio(baseCurrency, cash);
+
+      pm.reconcileBalance({
+        asset: baseCurrency,
+        cash: cash,
+        buyingPower: toNumber(account.buying_power) ?? cash,
+        initialMargin: initialMargin,
+        margin: margin,
+        equity: equity,
+        locked: Math.max(0, (toNumber(account.equity) ?? cash) - cash),
+      });
+
+      const syncedPositions: Array<{
+        symbol: string;
+        qty: number;
+        avg_entry_price?: number;
+        current_price?: number;
+        side?: string;
+      }> = [];
+
+      for (const position of positions) {
+        if (!position.symbol) continue;
+        const symbol = normalizeAlpacaCryptoSymbol(
+          position.symbol,
+          position.asset_class,
+        );
+        const qty = Math.abs(toNumber(position.qty) ?? 0);
+        if (qty <= 0) continue;
+        const side =
+          String(position.side ?? "").toLowerCase() === "short"
+            ? "sell"
+            : "buy";
+
+        pm.applyPositionUpdate({
+          symbol,
+          positionQty: qty,
+          avgFillPrice: toNumber(position.avg_entry_price) ?? 0,
+          side,
+          currentPrice: toNumber(position.current_price),
+        });
+
+        syncedPositions.push({
+          symbol,
+          qty,
+          avg_entry_price: toNumber(position.avg_entry_price),
+          current_price: toNumber(position.current_price),
+          side: position.side,
+        });
+      }
+
+      const syncedOrders: Array<{
+        orderId: string;
+        clientOrderId?: string;
+        symbol: string;
+        side: string;
+        qty: number;
+        status?: string;
+      }> = [];
+
+      for (const order of openOrders) {
+        const orderId = order.id || order.client_order_id;
+        const symbol = order.symbol;
+        if (!orderId || !symbol || !order.side) continue;
+        const normalizedSymbol = normalizeSymbol(symbol);
+        const side = normalizeSide(order.side);
+        const orderQty = Math.abs(toNumber(order.qty) ?? 0);
+
+        pm.registerOrderIntent({
+          orderId,
+          clientOrderId: order.client_order_id,
+          symbol: normalizedSymbol,
+          side,
+          origQty: orderQty,
+          orderType: order.type ?? "",
+          status: order.status ?? "unknown",
+          timeInForce: order.timeInForce ?? "",
+        });
+
+        syncedOrders.push({
+          orderId,
+          clientOrderId: order.client_order_id,
+          symbol: normalizedSymbol,
+          side,
+          qty: orderQty,
+          status: order.status,
+        });
+      }
+
+      return createSuccessOutput({
+          environment: brokerParams.environment,
+          cash,
+          currency: baseCurrency,
+          buyingPower,
+          margin,
+          initialMargin,
+          equity,
+          positions: syncedPositions,
+          openOrders: syncedOrders,
+        });
+    } catch (error: any) {
+      return createErrorOutput(error?.message || "Failed to sync broker state");
+    }
   }
 
   private brokerRegisterOrderIntent(
@@ -997,7 +1207,7 @@ export class PortfolioExecutor implements INodeExecutor {
           : undefined;
 
       const origQty = toNumber(params.origQty);
-      const positionQty = optionalDecimal(params.positionQty);
+      const positionQty = toNumber(params.positionQty);
       const limitPrice = toNumber(params.limitPrice);
       const stopPrice = toNumber(params.stopPrice);
       const trailPercent = toNumber(params.trailPercent);
@@ -1030,18 +1240,16 @@ export class PortfolioExecutor implements INodeExecutor {
 
       if (/future|margin|option/i.test(String(params.broker) + String(params.marketType ?? ""))) throw new Error("Portfolio fill accounting requires a supported cash/spot instrument model");
       const timestamp = params.event_time ?? params.eventTime ?? new Date().toISOString();
-      const portfolioHooks = getBrokerConfig(params.broker ?? "")?.portfolio;
-      const fillInput: Parameters<PortfolioManager["applyOrderEvent"]>[0] = {
+      const accepted = pm.applyOrderEvent({
         orderId: normalizedBrokerId, clientOrderId, symbol: normalizeSymbol(symbol), side, status,
         quantity: optionalDecimal(params.filledQty), price: optionalDecimal(params.avgFillPrice), fee: optionalDecimal(params.feeAmount),
         cumulative: params._cumulativeFillValues === true,
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
-        scope: portfolioHooks?.accountScope?.(params) ?? JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
-        feeAsset, baseCurrency, positionQty, broker: params.broker, assetClass: params.assetClass ?? params.assetType,
+        scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
+        feeAsset, baseCurrency, positionQty,
         timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
-      };
-      const accepted = portfolioHooks?.applyFill ? portfolioHooks.applyFill(pm, fillInput) : pm.applyOrderEvent(fillInput);
+      });
       const finalizedTrade = accepted.trade;
       if (finalizedTrade) {
         // Persist closed trade to shared reporting storage
@@ -1097,7 +1305,7 @@ export class PortfolioExecutor implements INodeExecutor {
             fillPrice: accepted.price,
             fillStatus: params.status,
             feeAmount: accepted.fee,
-            feeAsset: accepted.reconciliation?.feeAsset || feeAsset || baseCurrency,
+            feeAsset: accepted.feeAsset || feeAsset || baseCurrency,
             baseCurrency,
             orderType: params.orderType,
             limitPrice: toNumber(params.limitPrice) ?? toNumber(params.price),
@@ -1109,12 +1317,6 @@ export class PortfolioExecutor implements INodeExecutor {
           });
 
           event.quote_qty = accepted.notional;
-          if (accepted.reconciliation) {
-            event.net_position_delta = accepted.reconciliation.netPositionDelta;
-            event.base_fee_qty = accepted.reconciliation.baseFeeQty;
-            event.fee_source = accepted.reconciliation.feeSource;
-            event.reconciliation_status = accepted.reconciliation.reconciliationStatus;
-          }
           void FillEventBus.publish(event).catch((err) =>
             fillLogger.warn(
               { err, fillId: event.fill_id },
@@ -1140,7 +1342,7 @@ export class PortfolioExecutor implements INodeExecutor {
       return createSuccessOutput({
           ...this.getPortfolioSummary(pm, baseCurrency),
           execution_applied: accepted.quantity > 0,
-          ...(accepted.reconciliation ?? {}),
+          ...(accepted.quantity > 0 ? { netPositionDelta: accepted.netPositionDelta, baseFeeQty: accepted.baseFeeQty, feeAsset: accepted.feeAsset } : {}),
           ...(accepted.reason ? { skip_reason: accepted.reason } : {}),
         });
     } catch (error: any) {
@@ -1296,7 +1498,6 @@ export class PortfolioExecutor implements INodeExecutor {
     const state = pm.getPortfolioState(baseCurrency);
     return resultSuccess({
       ...this.getPortfolioSummaryFromState(state),
-      position_reconciliation: pm.getPositionReconciliations(),
       fees_by_asset: pm.getFeesByAsset(),
       drawdown_pct:
         state.peakEquity > 0
@@ -1310,11 +1511,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     baseCurrency: string,
   ): Record<string, any> {
-    return {
-      ...this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency)),
-      position_reconciliation: pm.getPositionReconciliations(),
-      fees_by_asset: pm.getFeesByAsset(),
-    };
+    return { ...this.getPortfolioSummaryFromState(pm.getPortfolioState(baseCurrency)), fees_by_asset: pm.getFeesByAsset() };
   }
 
   private getPortfolioSummaryFromState(
@@ -1421,11 +1618,7 @@ export class PortfolioExecutor implements INodeExecutor {
     pm: PortfolioManager,
     symbols: string[],
   ): NodeResult {
-    const reconciliations = pm.getPositionReconciliations();
-    return resultSuccess({
-      ...pm.getPositionQuery(symbols),
-      position_reconciliation: Object.fromEntries(Object.entries(reconciliations).filter(([symbol]) => symbols.length === 0 || symbols.includes(symbol))),
-    });
+    return resultSuccess(pm.getPositionQuery(symbols));
   }
 
   private brokerGetTrades(pm: PortfolioManager): NodeResult {

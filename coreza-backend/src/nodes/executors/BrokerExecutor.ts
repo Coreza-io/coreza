@@ -420,12 +420,6 @@ export class BrokerExecutor implements INodeExecutor {
           );
         } else {
           // Single request (no pagination or disabled)
-          config.beforeRequest?.({
-            operation, input: resolvedParams, path, params, body, userId,
-            executionId: context?.executionId,
-            reportingExecutionId: context?.reportingExecutionId,
-            credentialId: credential_id,
-          });
           const response = await request({
             method: op.method,
             url,

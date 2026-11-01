@@ -1,14 +1,4 @@
 import { decimal, allocateOpenAmount } from "./decimal";
-import type { PositionReconciliation, reconcilePosition } from "./positionReconciliation";
-
-/** Broker-supplied policy; all hooks are synchronous and must not mutate state. */
-export interface FillAccountingPolicy {
-  baseAssetFees?: boolean;
-  resolveFeeAsset: (input: FillInput & { feeAsset?: string }, context: { baseAsset?: string; currency: string; previousFeeAsset?: string }) => string;
-  validateFill: (context: { input: FillInput & { timestamp: string }; quantity: string; feeAsset: string; previousFeeAsset?: string;
-    previousFees: string; previousTimestamp?: string; staleSequence: boolean; identity?: string }) => void;
-  reconcilePosition: (input: Parameters<typeof reconcilePosition>[0], previous?: PositionReconciliation) => PositionReconciliation;
-}
 
 export interface FillProgress {
   quantity: string;

@@ -41,10 +41,6 @@ export interface FillStreamEvent {
   trail_price?: number;
   timeInForce: string;
   tag?: string;
-  net_position_delta?: string;
-  base_fee_qty?: string;
-  fee_source?: string;
-  reconciliation_status?: string;
 }
 
 const STREAM_MAX_LEN = "100000";

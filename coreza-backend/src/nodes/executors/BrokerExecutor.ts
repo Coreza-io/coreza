@@ -32,8 +32,6 @@ import {
 } from "../../utils/orderIdempotency";
 import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { OrderOwnerRegistry } from "../../services/OrderOwnerRegistry";
-import { PortfolioManager } from "../../simulation/PortfolioManager";
-import { decimal } from "../../portfolio/decimal";
 import {
   BROKER_CAPABILITIES,
   getOrderOwnerExtractor,
@@ -422,26 +420,12 @@ export class BrokerExecutor implements INodeExecutor {
           );
         } else {
           // Single request (no pagination or disabled)
-          // Validate the actual Alpaca request after all async preparation.
-          // makeBody prioritizes notional over qty, so checking resolved qty
-          // earlier can validate a different order from the one sent.
-          if (broker === "alpaca" && (operation === "close_position" ||
-            (operation === "place_order" && String(body?.side).toLowerCase() === "sell"))) {
-            const activationId = context?.reportingExecutionId ?? context?.executionId;
-            const pm = activationId ? PortfolioManager.existingInstance(userId, activationId) : undefined;
-            const sellable = pm?.assertAlpacaSellable(
-              JSON.stringify([broker, resolvedParams.environment === "live" ? "live" : "paper", credential_id]),
-              operation === "place_order" ? body?.symbol : decodeURIComponent(String(path).slice(String(path).lastIndexOf("/") + 1)),
-              operation === "place_order" ? body?.qty : params.qty,
-              operation === "place_order",
-            );
-            if (operation === "close_position" && sellable != null && params.qty == null) {
-              const percentage = decimal(params.percentage ?? 100);
-              if (percentage.compare(0) < 0 || percentage.compare(100) > 0) throw new Error("percentage must be between 0 and 100");
-              params.qty = decimal(sellable).mul(percentage).div(100).toString();
-              delete params.percentage;
-            }
-          }
+          config.beforeRequest?.({
+            operation, input: resolvedParams, path, params, body, userId,
+            executionId: context?.executionId,
+            reportingExecutionId: context?.reportingExecutionId,
+            credentialId: credential_id,
+          });
           const response = await request({
             method: op.method,
             url,

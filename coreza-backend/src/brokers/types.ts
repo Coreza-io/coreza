@@ -35,6 +35,20 @@ export interface BrokerConfig {
   baseUrl: string | ((creds: any, input?: any) => string);
   makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   operations: Record<string, BrokerOperation>;
+  /** Synchronous final validation/preparation of the outgoing single request. */
+  beforeRequest?: (request: BrokerRequestContext) => void;
+}
+
+export interface BrokerRequestContext {
+  operation: string;
+  input: Record<string, any>;
+  path: string;
+  params: Record<string, any>;
+  body: any;
+  userId: string;
+  executionId?: string;
+  reportingExecutionId?: string;
+  credentialId: string;
 }
 
 export interface Bar {

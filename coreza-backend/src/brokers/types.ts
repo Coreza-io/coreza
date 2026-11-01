@@ -1,4 +1,7 @@
 import type { AxiosStatic } from "axios";
+import type { PortfolioManager } from "../simulation/PortfolioManager";
+import type { NodeExecutionContext } from "../engine/types";
+import type { NodeResult } from "../nodes/types";
 
 export interface PaginationConfig {
   enabled: boolean;
@@ -37,6 +40,20 @@ export interface BrokerConfig {
   operations: Record<string, BrokerOperation>;
   /** Synchronous final validation/preparation of the outgoing single request. */
   beforeRequest?: (request: BrokerRequestContext) => void;
+  portfolio?: BrokerPortfolioHooks;
+}
+
+export interface BrokerPortfolioSyncContext {
+  pm: PortfolioManager;
+  params: Record<string, any>;
+  context?: NodeExecutionContext;
+  callBrokerOperation: (operation: string, params: Record<string, any>, broker: string, context?: NodeExecutionContext) => Promise<any>;
+}
+
+export interface BrokerPortfolioHooks {
+  syncState?: (context: BrokerPortfolioSyncContext) => Promise<NodeResult>;
+  accountScope?: (params: Record<string, any>) => string;
+  applyFill?: (pm: PortfolioManager, input: Parameters<PortfolioManager["applyOrderEvent"]>[0]) => ReturnType<PortfolioManager["applyOrderEvent"]>;
 }
 
 export interface BrokerRequestContext {

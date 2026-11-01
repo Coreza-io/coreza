@@ -1,6 +1,7 @@
 import { BrokerConfig } from '../../types';
 import { alpacaOperations } from './operations';
 import { prepareAlpacaRequest } from './helpers';
+import { alpacaPortfolioHooks } from '../portfolioHelpers';
 
 export const alpacaConfig: BrokerConfig = {
   authType: 'api_key',
@@ -18,4 +19,5 @@ export const alpacaConfig: BrokerConfig = {
   }),
   operations: alpacaOperations,
   beforeRequest: prepareAlpacaRequest,
+  portfolio: alpacaPortfolioHooks,
 };

@@ -295,7 +295,7 @@ export class PortfolioManager {
     status?: string; origQty?: number; orderType?: string; timeInForce?: string;
     limitPrice?: number; stopPrice?: number; trailPercent?: number; trailPrice?: number;
     executionId?: string; sequence?: number; scope: string; feeAsset?: string;
-    baseCurrency: string; timestamp: string; positionQty?: string | number; broker?: string;
+    baseCurrency: string; timestamp: string; positionQty?: string | number; broker?: string; assetClass?: string;
   }): { quantity: number; price: number; fee: number; notional: number; trade?: Trade; reason?: string; reconciliation?: PositionReconciliation } {
     const previousOrder = this.orders.get(input.orderId);
     const side = input.side ?? previousOrder?.side;
@@ -305,9 +305,14 @@ export class PortfolioManager {
     const progressKey = JSON.stringify([input.scope, input.symbol, input.orderId]);
     const { baseAsset, quoteAsset } = this.parseInstrument(input.symbol, input.baseCurrency);
     const currency = quoteAsset ?? input.baseCurrency;
-    const alpacaCrypto = input.broker === "alpaca" && quoteAsset != null && baseAsset !== currency;
+    const alpacaCrypto = input.broker === "alpaca" && quoteAsset != null && baseAsset !== currency &&
+      (input.assetClass === "crypto" || (!input.assetClass && input.symbol.includes("/")));
     const feeAsset = input.feeAsset || (alpacaCrypto ? this.orderFeeAssets.get(input.orderId) : undefined) || currency;
     if (currency !== input.baseCurrency) throw new Error("Cross-currency fill valuation requires an FX treatment");
+    if (alpacaCrypto && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset &&
+      this.orderFeeAssets.get(input.orderId) === baseAsset) {
+      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
+    }
     const rawQuantity = decimal(input.quantity ?? 0);
     const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
     const trimmedId = input.executionId?.trim();
@@ -475,7 +480,7 @@ export class PortfolioManager {
   }
 
   getPositionReconciliations(): Record<string, PositionReconciliation> {
-    return Object.fromEntries(this.positionReconciliations);
+    return Object.fromEntries(Array.from(this.positionReconciliations, ([symbol, state]) => [symbol, { ...state }]));
   }
 
   getFeesByAsset(): Record<string, string> { return Object.fromEntries(this.nativeFees); }
@@ -489,13 +494,13 @@ export class PortfolioManager {
       if (state.accountScope !== scope) throw new Error("Alpaca sell account scope differs from tracked inventory");
       if (state.reconciliationStatus === "reconciliation_pending") throw new Error(`Alpaca inventory reconciliation pending: ${state.reason}`);
       if (requireQuantity && quantity == null) throw new Error("Alpaca sell sizing requires a base quantity to enforce available inventory");
-      if (quantity != null && decimal(quantity).compare(this.positions.get(key)?.quantity ?? 0) > 0) {
+      const held = decimal(this.openCosts.get(key)?.quantity ?? this.positions.get(key)?.quantity ?? 0);
+      if (quantity != null && decimal(quantity).compare(held) > 0) {
         throw new Error("Alpaca sell exceeds attributed inventory");
       }
       if (quantity != null && state.brokerPositionQty != null && decimal(quantity).compare(state.brokerPositionQty) > 0) {
         throw new Error("Alpaca sell exceeds broker-reported available quantity");
       }
-      const held = decimal(this.openCosts.get(key)?.quantity ?? this.positions.get(key)?.quantity ?? 0);
       sellable = state.brokerPositionQty != null && held.compare(state.brokerPositionQty) > 0 ? state.brokerPositionQty : held.toString();
     }
     return sellable;

@@ -1248,8 +1248,8 @@ export class PortfolioExecutor implements INodeExecutor {
         cumulative: params._cumulativeFillValues === true,
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
         executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
-        scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
-        feeAsset, baseCurrency, positionQty, broker: params.broker,
+        scope: JSON.stringify([params.broker ?? "", params.broker === "alpaca" ? (params.environment === "live" ? "live" : "paper") : params.environment ?? "", params.credential_id ?? ""]),
+        feeAsset, baseCurrency, positionQty, broker: params.broker, assetClass: params.assetClass ?? params.assetType,
         timestamp: typeof timestamp === "number" ? new Date(timestamp).toISOString() : String(timestamp),
       });
       if (params.broker === "alpaca") {

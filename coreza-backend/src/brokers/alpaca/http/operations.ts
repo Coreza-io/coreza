@@ -1,7 +1,7 @@
 import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
 import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
-import { resolveAlpacaCryptoOrderSymbol } from "../cryptoOrderSymbol";
+import { validateAlpacaCryptoSymbol } from "../cryptoOrderSymbol";
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 const ALPACA_BAR_ADJUSTMENTS = new Set([
@@ -341,7 +341,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       } = input;
 
       const resolvedSymbol = getAssetType(input) === "crypto"
-        ? resolveAlpacaCryptoOrderSymbol(input, { preferSymbol: true })
+        ? validateAlpacaCryptoSymbol(input.crypto_base ?? input.symbol)
         : symbol;
 
       if (!resolvedSymbol)
@@ -398,7 +398,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
 
     path: (input: any) => {
       const resolvedSymbol = getAssetType(input) === "crypto"
-        ? resolveAlpacaCryptoOrderSymbol(input, { preferSymbol: true })
+        ? validateAlpacaCryptoSymbol(input.crypto_base ?? input.symbol)
         : input.symbol;
       if (!resolvedSymbol) {
         throw new Error("close_position requires input.symbol");

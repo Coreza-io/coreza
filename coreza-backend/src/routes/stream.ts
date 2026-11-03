@@ -12,6 +12,7 @@ import { resultSuccess, resultFailure, resultState } from "../contracts/nodeResu
 
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
+import type { AppError } from "../middleware/errorHandler";
 import { SubscriptionService } from "../services/SubscriptionService";
 import { RegistrationService } from "../services/RegistrationService";
 import { StatusService } from "../services/StatusService";
@@ -26,6 +27,7 @@ import {
 import {
   buildCryptoSymbols,
   normalizeSymbolList,
+  validateAlpacaCryptoSymbols,
 } from "../utils/symbolHelpers";
 import { resolveStreamSourceId } from "./helpers/streamSource";
 
@@ -387,13 +389,12 @@ router.post("/:source/subscribe", async (req, res) => {
         },
       );
 
-    const normalizedSymbols = buildCryptoSymbols(
-      stream_type,
-      crypto_base,
-      crypto_quote,
-    );
+    const isAlpacaCrypto = source.split("_")[0] === "alpaca" && assetType === "crypto";
+    const normalizedSymbols = isAlpacaCrypto
+      ? validateAlpacaCryptoSymbols(crypto_base ?? symbols)
+      : buildCryptoSymbols(stream_type, crypto_base, crypto_quote);
     const resolvedSymbols =
-      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+      isAlpacaCrypto || normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
     // const parsedMarketSymbols = normalizeSymbolList(resolvedSymbols);
     // if (marketstreamType.length > 0 && parsedMarketSymbols.length === 0) {
     //   return res.status(400).json({
@@ -482,7 +483,7 @@ router.post("/:source/subscribe", async (req, res) => {
     res.json(resultSuccess({ message: result.data?.message, symbols: result.data?.symbols, stream_type: result.data?.streamType, sourceId, node_id, workflowId: workflowId || null }));
   } catch (error) {
     console.error("Subscribe error:", error);
-    res.status(500).json(resultFailure(error instanceof Error ? error.message : "Subscription failed", { data: null }));
+    res.status((error as AppError)?.statusCode || 500).json(resultFailure(error instanceof Error ? error.message : "Subscription failed", { data: null }));
   }
 });
 
@@ -565,13 +566,12 @@ router.post("/:source/unsubscribe", async (req, res) => {
           newsStreamType: [] as string[],
         },
       );
-    const normalizedSymbols = buildCryptoSymbols(
-      stream_type,
-      crypto_base,
-      crypto_quote,
-    );
+    const isAlpacaCrypto = source.split("_")[0] === "alpaca" && assetType === "crypto";
+    const normalizedSymbols = isAlpacaCrypto
+      ? validateAlpacaCryptoSymbols(crypto_base ?? symbols)
+      : buildCryptoSymbols(stream_type, crypto_base, crypto_quote);
     const resolvedSymbols =
-      normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+      isAlpacaCrypto || normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
     if (hasOrderUpdate) {
       const tradingSourceId = getTradingCompanionSource(source);
@@ -631,7 +631,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
     res.json(resultSuccess({ message: result.data?.message, sourceId, symbols: result.data?.symbols, stream_type: result.data?.streamType, targetWorkflowId: targetWorkflowId || null }));
   } catch (error) {
     console.error("Unsubscribe error:", error);
-    res.status(500).json(resultFailure(error instanceof Error ? error.message : "Unsubscribe failed", { data: null }));
+    res.status((error as AppError)?.statusCode || 500).json(resultFailure(error instanceof Error ? error.message : "Unsubscribe failed", { data: null }));
   }
 });
 
@@ -775,13 +775,12 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Parse symbols (crypto-aware)
-    const cryptoSymbols = buildCryptoSymbols(
-      assetType,
-      crypto_base,
-      crypto_quote,
-    );
+    const isAlpacaCrypto = source.split("_")[0] === "alpaca" && assetType === "crypto";
+    const cryptoSymbols = isAlpacaCrypto
+      ? validateAlpacaCryptoSymbols(crypto_base ?? symbols)
+      : buildCryptoSymbols(assetType, crypto_base, crypto_quote);
     const parsedSymbols: string[] =
-      cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
+      isAlpacaCrypto || cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
     // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
     const streamType = normalizeStreamTypeList(stream_type);
@@ -1015,7 +1014,7 @@ router.post("/:source/register", async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error("Error executing stream node:", error);
-    res.status(500).json(resultFailure(error instanceof Error
+    res.status((error as AppError)?.statusCode || 500).json(resultFailure(error instanceof Error
           ? error.message
           : "Failed to execute stream node", { data: null }));
   }

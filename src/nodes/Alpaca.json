@@ -223,49 +223,10 @@
     },
     {
       "key": "crypto_base",
-      "label": "Base Asset",
+      "label": "Symbol",
       "type": "text",
-      "placeholder": "e.g. BTC, ETH",
-      "description": "The cryptocurrency to trade (e.g. BTC, ETH, DOGE).",
-      "required": true,
-      "displayOptions": {
-        "show": {
-          "operation": [
-            "get_candle",
-            "get_latest_bar",
-            "place_order",
-            "close_position"
-          ],
-          "assetType": [
-            "crypto"
-          ]
-        }
-      }
-    },
-    {
-      "key": "crypto_quote",
-      "label": "Quote Currency",
-      "type": "select",
-      "options": [
-        {
-          "id": "USD",
-          "name": "USD"
-        },
-        {
-          "id": "USDT",
-          "name": "USDT"
-        },
-        {
-          "id": "USDC",
-          "name": "USDC"
-        },
-        {
-          "id": "BTC",
-          "name": "BTC"
-        }
-      ],
-      "default": "USD",
-      "description": "The currency to price against.",
+      "placeholder": "e.g. ETH/USD",
+      "description": "Full cryptocurrency pair, e.g. ETH/USD. An expression from the Stream Listener can supply the symbol.",
       "required": true,
       "displayOptions": {
         "show": {

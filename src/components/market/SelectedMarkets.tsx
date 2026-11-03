@@ -89,8 +89,8 @@ export function SelectedMarkets({ compact = false, collapsed = false }: { compac
     </div>;
   if (collapsed) return <Popover><PopoverTrigger asChild>
     <button type="button" className="mx-auto p-2 rounded hover:bg-sidebar-accent" aria-label="Selected markets"><Globe className="h-4 w-4" /></button>
-  </PopoverTrigger><PopoverContent side="right" className="w-80"><p className="font-medium mb-2">Scheduled market sessions</p>{content}</PopoverContent></Popover>;
+  </PopoverTrigger><PopoverContent side="right" className="w-80">{content}</PopoverContent></Popover>;
   return <section aria-label="Selected markets" className={compact ? 'p-2' : ''}>
-    <p className="mb-2 text-xs text-muted-foreground">Scheduled market sessions</p>{content}
+    {content}
   </section>;
 }

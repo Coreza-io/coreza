@@ -56,6 +56,8 @@ export function parseStreamName(
   }
 
   if (format === 'dot') {
+    // Alpaca subscriptions also store symbol@event names.
+    if (streamName.includes('@')) return parseAtFormat(streamName);
     return parseDotFormat(streamName);
   }
 
@@ -117,6 +119,7 @@ export function getEventTypeLabel(eventType: string): string {
     depth: "Order Book Depth",
     ticker: "24h Ticker",
     bookTicker: "Best Bid/Ask",
+    bar: "Bar",
     bars: "Bars (OHLCV)",
     trades: "Trades",
     quotes: "Quotes",

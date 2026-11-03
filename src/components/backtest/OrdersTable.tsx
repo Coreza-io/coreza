@@ -24,7 +24,7 @@ const formatTime = (time?: string | null) =>
 const formatPrice = (price?: number | null, quoteAsset?: string) =>
   price == null
     ? "—"
-    : `${price.toFixed(4)}${quoteAsset ? ` ${quoteAsset}` : ""}`;
+    : `${price.toFixed(4)}${quoteAsset && quoteAsset.toUpperCase() !== "USD" ? ` ${quoteAsset}` : ""}`;
 
 const formatNumber = (value?: number | null) =>
   value == null ? "—" : value.toLocaleString(undefined, { maximumFractionDigits: 8 });

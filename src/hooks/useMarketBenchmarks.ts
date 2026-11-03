@@ -72,5 +72,5 @@ export function benchmarkChange(quote?: BenchmarkQuote): string {
   const amount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4, signDisplay: 'always',
     ...(quote.unit === 'USD' ? { style: 'currency', currency: 'USD' } : {}) }).format(quote.change!);
   const percent = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, signDisplay: 'always' }).format(quote.percent!);
-  return `${amount}${quote.unit === 'points' ? ' pts' : ''} (${percent}%)`;
+  return `${amount} (${percent}%)`;
 }

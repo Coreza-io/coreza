@@ -19,7 +19,7 @@ interface TradesTableProps {
 }
 
 const formatCurrency = (value?: number | null, currency?: string | null) =>
-  value == null ? "—" : `${currency ? currency + " " : "$"}${value.toFixed(2)}`;
+  value == null ? "—" : `${currency?.toUpperCase() === "USD" ? "" : currency ? currency + " " : "$"}${value.toFixed(2)}`;
 
 const formatTime = (time?: string | null) =>
   time ? new Date(time).toLocaleString() : "—";

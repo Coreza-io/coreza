@@ -15,7 +15,7 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
-import { buildCryptoSymbols } from "../utils/symbolHelpers";
+import { buildCryptoSymbols, validateAlpacaCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
@@ -162,7 +162,9 @@ export class StreamingLifecycleAdapter {
 
     // --- Resolve symbols (standard + crypto fallback) ---
     let symbols = parseSymbols(nodeValues.symbols);
-    if (symbols.length === 0 && nodeValues.assetType === "crypto") {
+    if (sourceId.split("_")[0] === "alpaca" && nodeValues.assetType === "crypto") {
+      symbols = validateAlpacaCryptoSymbols(nodeValues.crypto_base ?? nodeValues.symbols);
+    } else if (symbols.length === 0 && nodeValues.assetType === "crypto") {
       symbols = buildCryptoSymbols(
         nodeValues.assetType,
         nodeValues.crypto_base,
@@ -457,12 +459,14 @@ export class StreamingLifecycleAdapter {
 
     for (const node of streamingNodes) {
       const nodeValues = node.values || node.data?.values || {};
-      const symbolArray = parseSymbols(nodeValues.symbols);
       const sourceId = toMarketSource(resolveStreamSourceId(node));
 
       if (!sourceId) {
         continue;
       }
+      const symbolArray = sourceId.split("_")[0] === "alpaca" && nodeValues.assetType === "crypto"
+        ? validateAlpacaCryptoSymbols(nodeValues.crypto_base ?? nodeValues.symbols)
+        : parseSymbols(nodeValues.symbols);
 
       const streamTypes = normalizeStreamTypeList(
         nodeValues.stream_type ?? nodeValues.stream_types,

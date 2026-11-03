@@ -1,3 +1,6 @@
+import { validateAlpacaCryptoSymbol } from "../brokers/alpaca/cryptoOrderSymbol";
+import { createError } from "../middleware/errorHandler";
+
 /**
  * Shared symbol resolution helpers.
  * Used by both stream routes (manual test) and StreamingLifecycleAdapter (live activation).
@@ -43,4 +46,15 @@ export function normalizeSymbolList(symbols: unknown): string[] {
   }
 
   return [];
+}
+
+/** Alpaca streams use full pairs directly, never base/quote construction. */
+export function validateAlpacaCryptoSymbols(input: unknown): string[] {
+  if (input == null || (typeof input === "string" && input.trim() === "")) return [];
+  const symbols = Array.isArray(input) ? input : typeof input === "string" ? input.split(",") : [input];
+  try {
+    return symbols.map(validateAlpacaCryptoSymbol);
+  } catch (error) {
+    throw createError(error instanceof Error ? error.message : "Invalid Alpaca crypto symbols", 400);
+  }
 }

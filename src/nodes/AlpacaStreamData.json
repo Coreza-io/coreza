@@ -188,46 +188,10 @@
     },
     {
       "key": "crypto_base",
-      "label": "Base Asset(s)",
+      "label": "Symbols",
       "type": "text",
-      "placeholder": "e.g. BTC, ETH",
-      "description": "Comma-separated crypto bases to subscribe (e.g. BTC, ETH, DOGE).",
-      "displayOptions": {
-        "show": {
-          "mode": [
-            "subscribe"
-          ],
-          "assetType": [
-            "crypto"
-          ]
-        }
-      },
-      "showDescription": false
-    },
-    {
-      "key": "crypto_quote",
-      "label": "Quote Currency",
-      "type": "select",
-      "options": [
-        {
-          "id": "USD",
-          "name": "USD"
-        },
-        {
-          "id": "USDT",
-          "name": "USDT"
-        },
-        {
-          "id": "USDC",
-          "name": "USDC"
-        },
-        {
-          "id": "BTC",
-          "name": "BTC"
-        }
-      ],
-      "default": "USD",
-      "description": "The currency to price against.",
+      "placeholder": "e.g. BTC/USD, ETH/USD",
+      "description": "Comma-separated full cryptocurrency pairs, e.g. BTC/USD, ETH/USD. Quote Currency is included in each symbol.",
       "displayOptions": {
         "show": {
           "mode": [
@@ -314,7 +278,7 @@
       "key": "filter_symbols",
       "label": "Filter Symbols (Optional)",
       "type": "text",
-      "placeholder": "AAPL, TSLA (leave empty for all)",
+      "placeholder": "AAPL, TSLA or BTC/USD, ETH/USD (empty for all)",
       "description": "Only receive data for specific symbols. Leave empty to receive all pre-subscribed.",
       "displayOptions": {
         "show": {

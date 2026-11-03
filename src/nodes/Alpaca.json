@@ -225,8 +225,8 @@
       "key": "crypto_base",
       "label": "Base Asset",
       "type": "text",
-      "placeholder": "e.g. BTC, ETH",
-      "description": "The cryptocurrency to trade (e.g. BTC, ETH, DOGE).",
+      "placeholder": "e.g. ETH or ETH/USD",
+      "description": "For Place Order and Close Position, enter a base asset such as ETH with Quote Currency, or a full pair such as ETH/USD (including an expression from the Stream Listener, such as BarSeries[0].symbol). A full pair uses its own quote currency.",
       "required": true,
       "displayOptions": {
         "show": {

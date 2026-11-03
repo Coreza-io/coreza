@@ -1,6 +1,7 @@
 import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
 import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
+import { resolveAlpacaCryptoOrderSymbol } from "../cryptoOrderSymbol";
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 const ALPACA_BAR_ADJUSTMENTS = new Set([
@@ -27,13 +28,6 @@ function normalizeBarAdjustment(value: unknown): string {
   }
   return adjustment.length > 0 ? adjustment.join(",") : "raw";
 }
-const buildCryptoSymbolFromParts = (input: any): string | undefined => {
-  const base = input?.crypto_base?.toString().trim().toUpperCase();
-  const quote = input?.crypto_quote?.toString().trim().toUpperCase();
-  if (!base || !quote) return undefined;
-  return `${base}/${quote}`;
-};
-
 function toCanonicalCryptoSymbol(symbol: string): string {
   const fallbackSymbol = symbol;
   if (!symbol || typeof symbol !== "string") return fallbackSymbol;
@@ -346,11 +340,9 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         extended_hours,
       } = input;
 
-      const resolvedSymbol =
-        symbol ||
-        (getAssetType(input) === "crypto"
-          ? buildCryptoSymbolFromParts(input)
-          : undefined);
+      const resolvedSymbol = getAssetType(input) === "crypto"
+        ? resolveAlpacaCryptoOrderSymbol(input, { preferSymbol: true })
+        : symbol;
 
       if (!resolvedSymbol)
         throw new Error("Symbol is required for place_order");
@@ -405,11 +397,9 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     method: "delete",
 
     path: (input: any) => {
-      const resolvedSymbol =
-        input.symbol ||
-        (getAssetType(input) === "crypto"
-          ? buildCryptoSymbolFromParts(input)
-          : undefined);
+      const resolvedSymbol = getAssetType(input) === "crypto"
+        ? resolveAlpacaCryptoOrderSymbol(input, { preferSymbol: true })
+        : input.symbol;
       if (!resolvedSymbol) {
         throw new Error("close_position requires input.symbol");
       }

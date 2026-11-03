@@ -1,5 +1,6 @@
 import { BrokerCapabilities } from "../capabilities";
 import { extractAlpacaOrderOwnerIds } from "./orderOwnerExtract";
+import { resolveAlpacaCryptoOrderSymbol } from "./cryptoOrderSymbol";
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 
@@ -59,6 +60,10 @@ export const alpacaCapabilities: BrokerCapabilities = {
   },
 
   normalizeCryptoParams: (params: Record<string, any>) => {
+    if (!params.operation || params.operation === "place_order" || params.operation === "close_position") {
+      params.symbol = resolveAlpacaCryptoOrderSymbol(params, { fallbackSymbol: "ETH/USD" });
+      return;
+    }
     const fallbackSymbol = "ETH/USD";
     const normalizePair = (base: string, quote: string) =>
       `${base.toUpperCase().trim()}/${quote.toUpperCase().trim()}`;

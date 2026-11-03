@@ -130,6 +130,10 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
               {backtest.workflow_id}
             </Link>
           </div>
+          <div className="flex items-center gap-2">
+            <span>Currency:</span>
+            <span className="font-medium text-foreground">{metrics?.base_currency || "—"}</span>
+          </div>
         </div>
       </div>
     );
@@ -172,7 +176,7 @@ const BacktestResults = ({ mode = "backtest" }: BacktestResultsProps) => {
     if (value === undefined || value === null || !Number.isFinite(value)) return "—";
     if (format === "percent") return formatPercent(value);
     if (format === "currency")
-      return `${metrics?.base_currency ? metrics.base_currency + " " : "$"}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
     return value.toFixed(2);
   };
 

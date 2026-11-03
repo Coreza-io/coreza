@@ -7,7 +7,7 @@ interface PerformanceMetricsCardProps {
   showSortinoInsufficientData?: boolean;
 }
 
-const MetricItem = ({ label, value, format = 'number', currency }: { label: string; value?: number | null; currency?: string | null; format?: 'number' | 'percent' | 'currency' | 'integer' | 'duration' }) => {
+const MetricItem = ({ label, value, format = 'number' }: { label: string; value?: number | null; format?: 'number' | 'percent' | 'currency' | 'integer' | 'duration' }) => {
   const formatPercent = (percentValue: number) => {
     const abs = Math.abs(percentValue);
     if (abs >= 0.01) return `${percentValue.toFixed(2)}%`;
@@ -18,7 +18,7 @@ const MetricItem = ({ label, value, format = 'number', currency }: { label: stri
     if (value === undefined || value === null || Number.isNaN(value)) return '—';
     if (value === Infinity) return '∞';
     if (format === 'percent') return formatPercent(value);
-    if (format === 'currency') return `${currency ? currency + " " : "$"}${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    if (format === 'currency') return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
     if (format === 'integer') return Math.round(value).toString();
     if (format === 'duration') {
       const totalMinutes = Math.floor(value / 60000);
@@ -59,17 +59,21 @@ export const PerformanceMetricsCard = ({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle>Performance Metrics</CardTitle>
+        <div>
+          <p className="text-xs text-muted-foreground">Currency</p>
+          <p className="text-sm font-medium">{metrics?.base_currency || "—"}</p>
+        </div>
       </CardHeader>
       <CardContent>
         {metrics ? (
           <div className="space-y-6">
             <Section title="Key Performance">
-              <MetricItem label="Net Profit" value={metrics.net_profit} currency={metrics.base_currency} format="currency" />
+              <MetricItem label="Net Profit" value={metrics.net_profit} format="currency" />
               <MetricItem label="Total Return" value={metrics.total_return} format="percent" />
               <MetricItem label={annualizedLabel} value={metrics.annualized_return} format="percent" />
-              <MetricItem label="Final Portfolio Value" value={metrics.final_portfolio_value} currency={metrics.base_currency} format="currency" />
+              <MetricItem label="Final Portfolio Value" value={metrics.final_portfolio_value} format="currency" />
             </Section>
 
             <Section title="Risk Metrics">
@@ -95,17 +99,17 @@ export const PerformanceMetricsCard = ({
             </Section>
 
             <Section title="P&L Analysis">
-              <MetricItem label="Avg Win" value={metrics.avg_win} currency={metrics.base_currency} format="currency" />
-              <MetricItem label="Avg Loss" value={metrics.avg_loss} currency={metrics.base_currency} format="currency" />
-              <MetricItem label="Largest Win" value={metrics.largest_win} currency={metrics.base_currency} format="currency" />
-              <MetricItem label="Largest Loss" value={metrics.largest_loss} currency={metrics.base_currency} format="currency" />
-              <MetricItem label="Expectancy" value={metrics.expectancy} currency={metrics.base_currency} format="currency" />
-              <MetricItem label={metrics.metrics_context?.average_trade_return_unit === "currency" ? "Avg Trade P&L" : "Avg Trade Return"} value={metrics.average_trade_return} currency={metrics.base_currency} format={metrics.metrics_context?.average_trade_return_unit === "currency" ? "currency" : "percent"} />
+              <MetricItem label="Avg Win" value={metrics.avg_win} format="currency" />
+              <MetricItem label="Avg Loss" value={metrics.avg_loss} format="currency" />
+              <MetricItem label="Largest Win" value={metrics.largest_win} format="currency" />
+              <MetricItem label="Largest Loss" value={metrics.largest_loss} format="currency" />
+              <MetricItem label="Expectancy" value={metrics.expectancy} format="currency" />
+              <MetricItem label={metrics.metrics_context?.average_trade_return_unit === "currency" ? "Avg Trade P&L" : "Avg Trade Return"} value={metrics.average_trade_return} format={metrics.metrics_context?.average_trade_return_unit === "currency" ? "currency" : "percent"} />
             </Section>
 
             <Section title="Costs">
-              <MetricItem label="Total Commission" value={metrics.total_commission} currency={metrics.base_currency} format="currency" />
-              <MetricItem label="Total Slippage" value={metrics.total_slippage} currency={metrics.base_currency} format="currency" />
+              <MetricItem label="Total Commission" value={metrics.total_commission} format="currency" />
+              <MetricItem label="Total Slippage" value={metrics.total_slippage} format="currency" />
             </Section>
           </div>
         ) : (

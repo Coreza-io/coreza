@@ -159,7 +159,7 @@ export function buildEquityChartData(
     } else candles.push({
       startMs, endMs, open, high, low, close, sampleCount: count,
       firstObservedMs: context.mode === "backtest" ? null : ts, lastObservedMs: context.mode === "backtest" ? null : ts,
-      returnPct: null, isProvisional: false, quality: count === 1 ? "sparse" : "observed", returnSpansGap: false,
+      returnPct: null, returnBaseline: null, isProvisional: false, quality: count === 1 ? "sparse" : "observed", returnSpansGap: false,
     });
   }
   for (let index = 0; index < candles.length; index++) {
@@ -167,6 +167,7 @@ export function buildEquityChartData(
     const baseline = index ? candles[index - 1].close : finiteEquityNumber(context.initialCapital);
     const result = baseline !== null && baseline > 0 ? 100 * (candle.close / baseline - 1) : null;
     candle.returnPct = result !== null && Number.isFinite(result) ? result : null;
+    candle.returnBaseline = candle.returnPct !== null ? baseline : null;
     candle.returnSpansGap = index > 0 && candles[index - 1].endMs < candle.startMs;
     candle.isProvisional = context.mode === "live" && context.active && index === candles.length - 1 && now >= candle.startMs && now < candle.endMs;
   }

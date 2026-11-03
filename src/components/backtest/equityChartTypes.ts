@@ -19,6 +19,8 @@ export interface EquityCandle {
   low: number;
   close: number;
   returnPct: number | null;
+  // Valid comparison used by period return; never substitutes for observed OHLC.
+  returnBaseline: number | null;
   sampleCount: number;
   // Daily persisted rows do not retain individual observation timestamps.
   firstObservedMs: number | null;

@@ -18,3 +18,14 @@ A live equity bucket with one sample has identical open, high, low, and close. T
 - A one-sample bucket following a gap uses the existing return over that gap. The tooltip retains its gap indication.
 - A multi-sample candle that closes above its open but below the previous bucket close remains green. The negative return bar stays below zero.
 - Switching between light and dark themes updates the mark colors. Switching chart type or interval and refreshing a live bucket applies the rule to the currently displayed data.
+
+## Follow-up — show movement in the upper pane for one-sample buckets
+
+The color override addresses direction. A single observation still makes observed OHLC identical, so its candlestick body has zero height. The lower histogram already plots the period return percentage directly.
+
+1. In Candle mode, render a one-sample bucket with a valid comparison as a labeled **equity change bar** from the same baseline used by period return to the observed equity close. Use the previous observed close, or the existing initial-capital baseline for the first bucket if valid. Reuse the exact baseline from the chart model (expose it there if needed). Keep observed OHLC intact. If using the existing candle series for the display, supply display-only endpoints and set display high and low to those endpoints, so no intraperiod wick is implied.
+2. Use red for declines, green for increases, and a neutral mark for zero change or unavailable comparison. Keep genuine multi-sample OHLC candles as observed. Leave the line and percentage histogram unchanged. Upper bars show currency movement, while the lower bars show percentage return. Bar width follows chart spacing.
+3. Update the caption and tooltip to identify these as equity change bars. Show the comparison baseline and signed currency change for one-sample bars. Preserve sample count and observed OHLC and identify returns that span missing buckets. Keep missing buckets empty.
+4. Verify the reported 13:55 and 13:56 UTC points. Their observed closes are $1,010,199.08 and $1,010,194.55. The 13:56 bar should span a $4.53 decline and be visibly taller than the roughly $0.66 decline at 13:55, subject to chart scale. Verify positive, zero, missing-baseline, gap, and multi-sample cases in the shared chart used by Live and Backtest. Verify that tooltips continue to report the original observed values and the lower histogram still reflects the original percentage returns.
+
+This is a chart presentation change. Genuine intraminute OHLC requires additional observed equity samples within the minute. Wider buckets can produce genuine OHLC from existing history when they contain multiple observations.

@@ -53,7 +53,7 @@
     },
     {
       "key": "api_key",
-      "label": "API Key",
+      "label": "Access Token",
       "type": "password"
     },
     {

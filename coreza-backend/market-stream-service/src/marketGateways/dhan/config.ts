@@ -15,6 +15,7 @@ import {
 
 export const dhanGatewayConfig: GatewayConfig = {
   id: 'dhan',
+  startupObservationMs: 2000,
   wsUrl: (creds, source) => getDhanWsUrl(creds, source),
   makeAuthMessage: (creds, source) => buildDhanAuthMessage(creds, source),
   authCompletesOnSend: (source) => source === 'dhan_trading',

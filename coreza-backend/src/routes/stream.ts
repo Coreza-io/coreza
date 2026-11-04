@@ -12,6 +12,9 @@ import { resultSuccess, resultFailure, resultState } from "../contracts/nodeResu
 
 import express from "express";
 import { randomUUID } from "crypto";
+import CredentialManager from "../utils/credentialManager";
+import { validateDhanCredentialFields } from "../brokers/dhan/credentialValidation";
+import { getDhanCredentialRevision } from "../brokers/dhan/environment";
 import { requireAuth } from "../middleware/jwtAuth";
 import type { AppError } from "../middleware/errorHandler";
 import { SubscriptionService } from "../services/SubscriptionService";
@@ -837,6 +840,17 @@ router.post("/:source/register", async (req, res) => {
         },
       );
 
+    if (sourceId.startsWith("dhan") && !streamType.length) throw Object.assign(new Error("Select at least one Dhan stream feed."), { code: "DHAN_FEED_REQUIRED" });
+    let credentialRevision: string | undefined;
+    if (sourceId.startsWith("dhan")) {
+      if (!credential_id) throw Object.assign(new Error("Select a saved Dhan credential."), { code: "DHAN_CREDENTIAL_REQUIRED" });
+      const saved = await CredentialManager.getCredentials(userId, "dhan", credential_id, { useCache: false });
+      if (!saved.credentials?.client_json) throw Object.assign(new Error("The selected Dhan credential is unavailable."), { code: "DHAN_CREDENTIAL_UNAVAILABLE" });
+      const current = validateDhanCredentialFields(saved.credentials.client_json);
+      if (current.environment !== environment) throw Object.assign(new Error("The selected environment does not match the saved Dhan credential."), { code: "DHAN_ENVIRONMENT_MISMATCH" });
+      credentialRevision = getDhanCredentialRevision(saved.credentials.client_json);
+    }
+    const startupDeadlineAt = Date.now() + 120000;
     const attemptId = typeof req.body.attemptId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.attemptId) ? req.body.attemptId : randomUUID();
     startedAttemptId = attemptId;
     const routingWorkflowId = `manual-stream-${userId}-${node_id}-${attemptId}`;
@@ -844,7 +858,7 @@ router.post("/:source/register", async (req, res) => {
       ...(marketstreamType.length ? [sourceId] : []),
       ...(hasOrderUpdate ? [getTradingCompanionSource(source)] : []),
       ...(hasNews ? [`${source.split("_")[0]}_news`] : []),
-    ].map(source => ({ source, environment: environment || "", credentialId: credential_id || "default" }));
+    ].map(source => ({ source, environment: environment || "", credentialId: credential_id || "default", credentialRevision }));
     if (await getRedisQueue().exists(`market:listener-stopped:${userId}:${routingWorkflowId}`)) {
       return res.json(resultState("cancelled", null));
     }
@@ -869,6 +883,7 @@ router.post("/:source/register", async (req, res) => {
       interval,
       depth_levels: depth_levels,
       attemptId, routingWorkflowId, dependencies: mode === "listen" ? [] : dependencies, credentialId: credential_id || "default",
+      credentialRevision, startupDeadlineAt, requiredSources: dependencies.map(dep => dep.source),
     });
 
     // Queue subscriptions before registration on the same attempt control queue
@@ -892,6 +907,7 @@ router.post("/:source/register", async (req, res) => {
           workflowId: routingWorkflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
+          credentialRevision, startupDeadlineAt,
           symbols: ["*"],
           streamType: tradingstreamType,
           exchange,
@@ -923,6 +939,7 @@ router.post("/:source/register", async (req, res) => {
           workflowId: routingWorkflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
+          credentialRevision, startupDeadlineAt,
           symbols: parsedSymbols,
           //symbols: ["*"],
           streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
@@ -951,6 +968,7 @@ router.post("/:source/register", async (req, res) => {
           workflowId: routingWorkflowId,
           nodeId: node_id,
           credentialId: credential_id || "",
+          credentialRevision, startupDeadlineAt,
           symbols: parsedSymbols,
           streamType:
             marketstreamType.length > 0 ? marketstreamType : undefined,
@@ -1024,7 +1042,7 @@ router.post("/:source/register", async (req, res) => {
     console.error("Error executing stream node:", error);
     res.status((error as AppError)?.statusCode || 500).json(resultFailure(error instanceof Error
           ? error.message
-          : "Failed to execute stream node", { data: null }));
+          : "Failed to execute stream node", { data: null, details: { code: (error as AppError)?.code } }));
   }
 });
 

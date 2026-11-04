@@ -143,6 +143,7 @@ export const FieldSchema = z.object({
 });
 
 export const AuthFieldSchema = z.object({
+  options: z.array(OptionSchema).optional(),
   key: z.string().min(1),
   label: z.string(),
   type: z.enum(["text", "password", "select", "static"]),

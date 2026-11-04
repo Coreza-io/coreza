@@ -69,7 +69,7 @@ function validateDhanMarketCredentials(creds: DhanCredentials): {
     hasClientId: Boolean(clientId),
   }, 'Dhan market credentials resolved');
   if (!token) throw new Error('Dhan access token missing in credentials (api_key or access_token required)');
-  if (!clientId) throw new Error('Dhan client_id missing in credentials');
+  if (!clientId || !/^\d+$/.test(clientId)) throw Object.assign(new Error('Dhan requires a numeric Client ID, not an email address.'), { code: 'DHAN_CLIENT_ID_INVALID' });
   return { token, clientId };
 }
 
@@ -402,6 +402,7 @@ function buildDhanMarketMessages(
 
 export function getDhanWsUrl(creds: DhanCredentials, source?: string): string {
   const environment = resolveDhanEnvironment(creds);
+  validateDhanMarketCredentials(creds);
   if (isDhanTradingSource(source)) {
     return getDhanOrderUpdateWsUrl(environment);
   }
@@ -449,7 +450,14 @@ export function parseDhanMessage(buffer: Buffer, source?: string, isBinary = fal
 
   try {
     const parsed = JSON.parse(payload);
-    return Array.isArray(parsed) ? parsed : [parsed];
+    const messages = Array.isArray(parsed) ? parsed : [parsed];
+    return messages.map(message => {
+      if (!message || typeof message !== 'object' || message.Type === DHAN_ORDER_ALERT_TYPE) return message;
+      const code = message.errorCode ?? message.ErrorCode;
+      if (!code) return message;
+      return { type: DHAN_FEED_DISCONNECT_TYPE, reasonCode: String(code),
+        reasonText: 'Dhan explicitly rejected the order-update stream request.', fatal: true };
+    });
   } catch (error) {
     const parseError = error instanceof Error ? error.message : String(error);
     const controlMessage: DhanTradingControlMessage = {
@@ -488,6 +496,7 @@ export function describeDhanFeedDisconnect(msg: unknown, streamSource?: string):
 
 export function isFatalDhanControlMessage(msg: unknown): boolean {
   if (!isDhanFeedDisconnectMessage(msg)) return false;
+  if ((msg as Record<string, unknown>).fatal === true) return true;
   const code = toNumberValue((msg as Record<string, unknown>).reasonCode);
   return code !== undefined && SUPPRESSED_DHAN_RECONNECT_CODES.has(code);
 }

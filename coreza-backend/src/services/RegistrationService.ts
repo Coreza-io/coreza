@@ -35,12 +35,16 @@ import logger from "../utils/logger";
 // TYPES
 // ============================================
 
-export interface ListenerDependency { source: string; credentialId: string; environment: string; }
+export interface ListenerDependency { source: string; credentialId: string; environment: string; credentialRevision?: string; }
 export interface ListenerParams {
   attemptId?: string;
   routingWorkflowId?: string;
   dependencies?: ListenerDependency[];
   credentialId?: string;
+  credentialRevision?: string;
+  startupDeadlineAt?: number;
+  startupCompleted?: boolean;
+  requiredSources?: string[];
   userId: string;
   workflowId: string;
   nodeId: string;
@@ -64,6 +68,10 @@ export interface ListenerData {
   dependencies?: ListenerDependency[];
   lifecycle?: any;
   credentialId?: string;
+  credentialRevision?: string;
+  startupDeadlineAt?: number;
+  startupCompleted?: boolean;
+  requiredSources?: string[];
   exchange: any;
   userId: string;
   workflowId: string;
@@ -93,6 +101,7 @@ export interface CleanupResult {
 // ============================================
 
 export class RegistrationService {
+  private static readonly startupDeadlinesKey = "market:listener-startup-deadlines";
   private static readonly pendingCleanupKey = "market:listener-pending-cleanup";
   private static cleanupCursor = "0";
   private static cleanupRunning = false;
@@ -123,6 +132,12 @@ export class RegistrationService {
     if (this.cleanupRunning) return;
     this.cleanupRunning = true;
     try {
+      const cache = getRedisCache();
+      for (const key of await cache.zrangebyscore(this.startupDeadlinesKey, "-inf", Date.now(), "LIMIT", 0, 25)) {
+        const raw = await cache.get(key);
+        if (raw) await this.reconcileListener(JSON.parse(raw));
+        else await cache.zrem(this.startupDeadlinesKey, key);
+      }
       const [cursor, entries] = await getRedisCache().hscan(this.pendingCleanupKey, this.cleanupCursor, "COUNT", 25);
       this.cleanupCursor = cursor;
       for (let i = 0; i < entries.length; i += 2) {
@@ -166,22 +181,28 @@ export class RegistrationService {
       return stopped ? JSON.parse(stopped) : null;
     }
     const statusKey = `${REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId)}:status:${listener.attemptId}`;
+    const startupErrorRaw = await getRedisQueue().get(`market:listener-startup-error:${listener.routingWorkflowId}`);
+    const startupError = startupErrorRaw ? JSON.parse(startupErrorRaw) : undefined;
     const snapshots = await Promise.all((Array.isArray(listener.dependencies) ? listener.dependencies : []).map(async dep => {
-      const bindingRaw = await getRedisQueue().get(`market:gateway-binding:${listener.userId}:${dep.source}:${dep.environment}`);
+      const suffix = dep.credentialRevision ? `:${dep.credentialId}:${dep.credentialRevision}` : "";
+      const bindingRaw = await getRedisQueue().get(`market:gateway-binding:${listener.userId}:${dep.source}:${dep.environment}${suffix}`);
       const binding = bindingRaw ? JSON.parse(bindingRaw) : dep;
       if (listener.mode === "listen" && dep.credentialId !== "default" && binding.credentialId !== dep.credentialId) {
         return { status: "failed", code: "GATEWAY_IDENTITY_MISMATCH", message: "The subscribed feed uses different credentials.", timestamp: new Date().toISOString() };
       }
       const credentialId = dep.credentialId === "default" ? binding.credentialId : dep.credentialId;
-      const raw = await getRedisQueue().get(`market:gateway-lifecycle:${listener.userId}:${binding.source}:${dep.environment}:${credentialId}`);
+      const raw = await getRedisQueue().get(`market:gateway-lifecycle:${listener.userId}:${binding.source}:${dep.environment}:${credentialId}${dep.credentialRevision ? `:${dep.credentialRevision}` : ""}`);
       const snapshot = raw ? JSON.parse(raw) : { status: "connecting" };
       if (listener.mode === "subscribe" && ["failed", "stopped"].includes(snapshot.status) && snapshot.timestamp < listener.startedAt) return { status: "connecting" };
       return snapshot;
     }));
-    const failure = snapshots.find(event => event.status === "failed" || event.status === "stopped");
     const routingReady = await getRedisQueue().exists(`market:listener-ready:${listener.routingWorkflowId}`);
-    const state = failure ? "failed" : snapshots.some(event => event.status === "reconnecting") ? "reconnecting"
-      : routingReady && snapshots.length && snapshots.every(event => event.status === "listening") ? "listening" : "connecting";
+    const feedsReady = snapshots.length > 0 && snapshots.every(event => event.status === "listening");
+    const deadlineExceeded = !listener.startupCompleted && !(routingReady && feedsReady) && listener.startupDeadlineAt && Date.now() >= listener.startupDeadlineAt;
+    const failure = startupError ?? snapshots.find(event => event.status === "failed" || event.status === "stopped") ??
+      (deadlineExceeded ? { code: "STREAM_STARTUP_TIMEOUT", message: "Stream startup timed out before all required feeds and routing became ready." } : undefined);
+    const state = failure ? "failed" : routingReady && feedsReady ? "listening"
+      : listener.startupCompleted && snapshots.some(event => event.status === "reconnecting") ? "reconnecting" : "connecting";
     const event = { type: "market_stream_lifecycle", userId: listener.userId, workflowId: listener.workflowId,
       nodeId: listener.nodeId, attemptId: listener.attemptId, routingWorkflowId: listener.routingWorkflowId,
       status: state, code: failure?.code ?? (failure ? "GATEWAY_STOPPED" : undefined),
@@ -202,10 +223,11 @@ export class RegistrationService {
       if listener.status == 'failed' or listener.status == 'stopped' then return 0 end
       listener.status = ARGV[2]
       listener.lifecycle = cjson.decode(ARGV[3])
+      if ARGV[2] == 'listening' then listener.startupCompleted = true; redis.call('ZREM', KEYS[3], KEYS[1]) end
       redis.call('SET', KEYS[1], cjson.encode(listener))
       redis.call('SET', KEYS[2], ARGV[3], 'EX', 3600)
       return 1
-    `, 2, activeKey, statusKey, listener.attemptId, state, JSON.stringify(event));
+    `, 3, activeKey, statusKey, this.startupDeadlinesKey, listener.attemptId, state, JSON.stringify(event));
     if (updated) await getRedisQueue().publish(`ws:user:${listener.userId}`, JSON.stringify(event));
     const saved = await redis.get(statusKey);
     return saved ? JSON.parse(saved) : event;
@@ -233,12 +255,13 @@ export class RegistrationService {
         redis.call('SET', KEYS[6], cjson.encode(pending.event), 'EX', 3600)
         redis.call('DEL', KEYS[1], KEYS[2])
         redis.call('SREM', KEYS[3], KEYS[1])
+        redis.call('ZREM', KEYS[7], KEYS[1])
         local count = tonumber(redis.call('GET', KEYS[4]) or '0')
         if count > 0 then redis.call('DECR', KEYS[4]) end
         return 1
-      `, 6, key, REDIS_CHANNELS.ListenerResult(userId, workflowId, nodeId),
+      `, 7, key, REDIS_CHANNELS.ListenerResult(userId, workflowId, nodeId),
         REDIS_CHANNELS.userActiveListeners(userId), REDIS_CHANNELS.userListenerCount(userId),
-        this.pendingCleanupKey, `${key}:status:${attemptId}`, attemptId, id, JSON.stringify({ listener, event }));
+        this.pendingCleanupKey, `${key}:status:${attemptId}`, this.startupDeadlinesKey, attemptId, id, JSON.stringify({ listener, event }));
       const pending = await redis.hget(this.pendingCleanupKey, id);
       if (pending) {
         try { await this.deliverCleanup(id, pending); }
@@ -371,6 +394,8 @@ export class RegistrationService {
       routingWorkflowId: params.routingWorkflowId,
       dependencies: params.dependencies,
       credentialId: params.credentialId,
+      credentialRevision: params.credentialRevision, startupDeadlineAt: params.startupDeadlineAt,
+      requiredSources: params.requiredSources,
       status: "connecting",
       startedAt: now,
       mode,
@@ -396,11 +421,12 @@ export class RegistrationService {
         if redis.call('SCARD', KEYS[2]) >= tonumber(ARGV[2]) then return -1 end
         redis.call('SET', KEYS[1], ARGV[1])
         redis.call('SADD', KEYS[2], KEYS[1])
+        redis.call('ZADD', KEYS[4], ARGV[3], KEYS[1])
         redis.call('INCR', KEYS[3])
         redis.call('PERSIST', KEYS[3])
         return 1
-      `, 3, listenerKey, userListenersKey, REDIS_CHANNELS.userListenerCount(userId),
-        JSON.stringify(listenerData), String(MAX_LISTENERS_PER_USER));
+      `, 4, listenerKey, userListenersKey, REDIS_CHANNELS.userListenerCount(userId), this.startupDeadlinesKey,
+        JSON.stringify(listenerData), String(MAX_LISTENERS_PER_USER), String(params.startupDeadlineAt ?? Date.now() + 120000));
       if (created === -1) throw Object.assign(new Error(`Maximum concurrent test listeners (${MAX_LISTENERS_PER_USER}) exceeded.`), { statusCode: 429 });
       if (!created) throw new Error("Another listener attempt is already starting for this node");
     } else {

@@ -39,9 +39,9 @@
     },
     {
       "key": "api_key",
-      "label": "API Key",
+      "label": "Access Token",
       "type": "password",
-      "placeholder": "Your Dhan API Key"
+      "placeholder": "Your Dhan Access Token"
     },
     {
       "key": "environment",

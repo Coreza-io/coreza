@@ -53,6 +53,7 @@ export interface GatewayConfig {
   normalize: (msg: any, source?: string) => CorezaMarketEvent | null;
 
   // Connection settings
+  startupObservationMs?: number; // No provider acknowledgment: observe a quiet, subscribed socket.
   reconnectDelay?: number;
   maxReconnectDelay?: number;
   reconnectJitter?: number;

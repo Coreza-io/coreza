@@ -21,6 +21,8 @@ export interface SubscriptionParams {
   nodeId?: string;
   credentialId: string;
   operation: "subscribe" | "unsubscribe";
+  credentialRevision?: string;
+  startupDeadlineAt?: number;
   waitForResult?: boolean; // Await gateway setup; publishing alone does not confirm success.
   // Symbol sources
   symbols?: string | string[];
@@ -204,6 +206,7 @@ export class SubscriptionService {
         : undefined;
       const controlMessage: Record<string, unknown> = {
         requestId,
+        credentialRevision: params.credentialRevision, startupDeadlineAt: params.startupDeadlineAt,
         action: operation,
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup

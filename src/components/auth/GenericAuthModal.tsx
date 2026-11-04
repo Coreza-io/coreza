@@ -35,9 +35,11 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
   );
   const [status, setStatus] = useState<null | { type: 'success' | 'error'; message: string }>(null);
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleConnect = async () => {
     setStatus(null);
+    setFieldErrors({});
 
     if (!user?.id) {
       const errorMessage = "User not authenticated";
@@ -93,7 +95,8 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to store credentials`);
+        setFieldErrors(errorData.fieldErrors ?? {});
+        throw new Error(errorData.error || errorData.message || `HTTP ${response.status}: Failed to store credentials`);
       }
 
       const result = await response.json();
@@ -102,7 +105,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
         throw new Error(result.error || 'Failed to store credentials');
       }
 
-      const successMessage = "Credentials stored securely!";
+      const successMessage = result.message || "Credentials stored securely!";
       setStatus({ type: "success", message: successMessage });
       toast({
         title: "Success",
@@ -151,6 +154,13 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
                 <div className="text-sm text-muted-foreground bg-muted p-2 rounded-md">
                   {f.value}
                 </div>
+              ) : f.type === "select" ? (
+                <select id={f.key} value={fields[f.key] ?? ""}
+                  onChange={e => setFields(fs => ({ ...fs, [f.key]: e.target.value }))}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" disabled={loading}>
+                  <option value="" disabled>Select {f.label}</option>
+                  {(Array.isArray(f.options) ? f.options : []).map(option => <option key={option.id ?? String(option.value ?? option.label ?? option.name)} value={option.id ?? String(option.value ?? option.label ?? option.name)}>{option.name ?? option.label}</option>)}
+                </select>
               ) : (
                 <Input
                   id={f.key}
@@ -164,6 +174,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
                   className="w-full"
                 />
               )}
+              {fieldErrors[f.key] && <p className="text-sm text-destructive" role="alert">{fieldErrors[f.key]}</p>}
             </div>
           ))}
           

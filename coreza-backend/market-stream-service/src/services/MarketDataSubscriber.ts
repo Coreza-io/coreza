@@ -214,6 +214,21 @@ export class MarketDataSubscriber {
       await this.persistRegistration(registration);
       assertCurrent();
 
+      // A confirmed startup must stop routing streams outside the new selection.
+      if (previous && startupDeadline !== undefined) {
+        const selected = new Set(this.getRedisSubscriptionStreams(registration));
+        for (const stream of this.getRedisSubscriptionStreams(previous)) {
+          if (selected.has(stream)) continue;
+          const workflows = this.streamWorkflows.get(stream);
+          workflows?.delete(workflowId);
+          if (workflows?.size === 0) {
+            await this.ensureRedisConnections().sub.unsubscribe(REDIS_CHANNELS.streamData(stream));
+            this.streamWorkflows.delete(stream);
+          }
+          assertCurrent();
+        }
+      }
+
       // Initialize message handler if not already done
       if (!this.isInitialized) {
         this.setupMessageHandler();
@@ -240,8 +255,19 @@ export class MarketDataSubscriber {
             this.streamWorkflows.delete(stream);
           }
         }
-        if (previous) await this.persistRegistration(previous);
-        else await this.ensureRedisConnections().pub.del(REDIS_CHANNELS.workflowRegistration(userId, workflowId));
+        if (previous) {
+          // A failure while removing obsolete channels must also restore those channels.
+          for (const stream of priorStreams) {
+            if (!this.streamWorkflows.has(stream)) {
+              this.streamWorkflows.set(stream, new Set());
+              await this.ensureRedisConnections().sub.subscribe(REDIS_CHANNELS.streamData(stream));
+            }
+            this.streamWorkflows.get(stream)!.add(workflowId);
+          }
+          await this.persistRegistration(previous);
+        } else {
+          await this.ensureRedisConnections().pub.del(REDIS_CHANNELS.workflowRegistration(userId, workflowId));
+        }
       }
       console.error(`❌ [MarketDataSubscriber] Register error:`, error);
       throw error;

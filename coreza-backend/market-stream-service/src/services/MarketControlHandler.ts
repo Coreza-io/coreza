@@ -5,6 +5,7 @@
  */
 
 import Redis from "ioredis";
+import { createHash } from "crypto";
 import { Mutex } from "async-mutex";
 import { createRedisPubSub } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
@@ -55,6 +56,7 @@ interface SourceState {
   gateway: MarketDataGateway;
   connectedUserId: string;
   credentialId: string;
+  credentialIdentity?: string;
   environment?: string;
   feed?: string;
   marketType?: string;
@@ -130,6 +132,27 @@ export class MarketControlHandler {
       MarketControlHandler.instance = new MarketControlHandler();
     }
     return MarketControlHandler.instance;
+  }
+
+  private credentialIdentity(credentials: any): string {
+    return createHash("sha256").update(JSON.stringify([
+      credentials.api_key, credentials.secret_key, credentials.client_id,
+    ])).digest("hex");
+  }
+
+  private async assertCurrentCredential(state: SourceState): Promise<void> {
+    if (!state.credentialIdentity) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const lookup = CredentialManager.getCredentials(
+      state.connectedUserId, state.source.split("_")[0], state.credentialId, { useCache: false },
+    );
+    const result = await Promise.race([lookup, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Saved credential verification timed out. Please retry.")), 5000);
+    })]).finally(() => { if (timer) clearTimeout(timer); });
+    const { credentials } = result;
+    if (!credentials || this.credentialIdentity(credentials.client_json) !== state.credentialIdentity) {
+      throw new Error("The saved credential has changed. Unsubscribe the existing connection and subscribe again.");
+    }
   }
 
   private getStateKey(userId: string, source: MarketSource | string): string {
@@ -290,6 +313,7 @@ export class MarketControlHandler {
               (check.marketType && (state.marketType || "spot") !== check.marketType)) {
             throw new Error("No ready subscription matches this account, environment and feed. Subscribe first.");
           }
+          await this.assertCurrentCredential(state);
           const key = scope === "global"
             ? REDIS_CHANNELS.globalSubscriptionStreams(userId, check.source, environment)
             : REDIS_CHANNELS.workflowSubscriptionStreams(userId, workflowId, check.source, environment);
@@ -804,6 +828,7 @@ export class MarketControlHandler {
             state.environment !== environment || (state.feed || "iex") !== (feed || "iex") || (state.marketType || "spot") !== (marketType || "spot"))) {
           throw new Error("An existing gateway uses a different account, environment, market or feed. Unsubscribe it before changing the connection.");
         }
+        if (state) await this.assertCurrentCredential(state);
         // Connect gateway if needed
         if (!state || !state.gateway.getStats().connected) {
           console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
@@ -1200,6 +1225,7 @@ export class MarketControlHandler {
           userId,
           serviceType,
           credentialId,
+          { useCache: !["dhan", "alpaca", "binance"].includes(baseSource) },
         );
 
         if (!credentials?.client_json) {
@@ -1275,6 +1301,8 @@ export class MarketControlHandler {
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
+        credentialIdentity: credentialId && ["dhan", "alpaca", "binance"].includes(baseSource)
+          ? this.credentialIdentity(creds) : undefined,
         environment,
         feed,
         marketType,

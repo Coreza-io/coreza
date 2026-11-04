@@ -22,6 +22,9 @@ export interface GatewayConfig {
   id: MarketSource;
   wsUrl: string | ((creds: any, source?: string) => string);
 
+  // Stable secret fields used to detect a saved API-key credential replacement.
+  connectionCredentialFields?: readonly string[];
+
   // Authentication
   makeAuthMessage?: (creds: any, source?: string) => any;
   makeAuthHeaders?: (creds: any) => Record<string, string>;

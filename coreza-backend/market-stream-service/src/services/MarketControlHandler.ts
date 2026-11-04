@@ -9,6 +9,7 @@ import { createHash } from "crypto";
 import { Mutex } from "async-mutex";
 import { createRedisPubSub } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
+import { GATEWAY_CONFIGS } from "../marketGateways";
 import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
@@ -134,10 +135,10 @@ export class MarketControlHandler {
     return MarketControlHandler.instance;
   }
 
-  private credentialIdentity(credentials: any): string {
-    return createHash("sha256").update(JSON.stringify([
-      credentials.api_key, credentials.secret_key, credentials.client_id,
-    ])).digest("hex");
+  private credentialIdentity(source: string, credentials: any): string | undefined {
+    const fields = GATEWAY_CONFIGS[source.split("_")[0]]?.connectionCredentialFields;
+    if (!fields) return undefined;
+    return createHash("sha256").update(JSON.stringify(fields.map(field => credentials[field]))).digest("hex");
   }
 
   private async assertCurrentCredential(state: SourceState): Promise<void> {
@@ -150,7 +151,7 @@ export class MarketControlHandler {
       timer = setTimeout(() => reject(new Error("Saved credential verification timed out. Please retry.")), 5000);
     })]).finally(() => { if (timer) clearTimeout(timer); });
     const { credentials } = result;
-    if (!credentials || this.credentialIdentity(credentials.client_json) !== state.credentialIdentity) {
+    if (!credentials || this.credentialIdentity(state.source, credentials.client_json) !== state.credentialIdentity) {
       throw new Error("The saved credential has changed. Unsubscribe the existing connection and subscribe again.");
     }
   }
@@ -330,7 +331,8 @@ export class MarketControlHandler {
               return check.streamType.some(type =>
                 (cfg.normalizeStreamType?.(type) ?? type) === parsed.streamType) &&
                 (!check.interval || parsed.interval === check.interval) &&
-                (!check.exchange || parsed.exchange === check.exchange);
+                (!parsed.contractType || !check.contractType || parsed.contractType === check.contractType) &&
+                (!check.exchange || parsed.exchange?.toLowerCase() === check.exchange.toLowerCase());
             });
           }
           if (!requested.length || requested.some(stream => !scoped.includes(stream)) ||
@@ -839,6 +841,7 @@ export class MarketControlHandler {
             feed,
             marketType,
             environment,
+            deadline,
           );
           state = this.sourceStates.get(stateKey)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
@@ -1209,7 +1212,19 @@ export class MarketControlHandler {
     feed?: string,
     marketType?: string,
     environment?: string,
+    deadline = Date.now() + 15000,
   ): Promise<void> {
+    const bounded = async <T>(operation: Promise<T>): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([operation, new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Gateway startup timed out. Please retry.")),
+            Math.max(0, deadline - Date.now()));
+        })]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
     let connectingGateway: MarketDataGateway | undefined;
     try {
       // Map source to credential service type and gateway source
@@ -1222,12 +1237,12 @@ export class MarketControlHandler {
 
       // Use getCredentials (like brokers) when credentialId is provided
       if (credentialId) {
-        const { credentials } = await CredentialManager.getCredentials(
+        const { credentials } = await bounded(CredentialManager.getCredentials(
           userId,
           serviceType,
           credentialId,
-          { useCache: !["dhan", "alpaca", "binance"].includes(baseSource) },
-        );
+          { useCache: !GATEWAY_CONFIGS[baseSource]?.connectionCredentialFields },
+        ));
 
         if (!credentials?.client_json) {
           throw new Error(
@@ -1242,7 +1257,7 @@ export class MarketControlHandler {
       } else {
         // Fallback: get most recent credential (backward compatibility)
         const { credentials, error } =
-          await CredentialManager.getDecryptedCredentials(userId, serviceType);
+          await bounded(CredentialManager.getDecryptedCredentials(userId, serviceType));
 
         if (error || !credentials) {
           throw new Error(`No credentials found for ${serviceType}: ${error}`);
@@ -1290,11 +1305,12 @@ export class MarketControlHandler {
 
       connectingGateway = gateway;
       // Connect gateway with credentials
-      await gateway.connect(creds, {
+      if (Date.now() >= deadline) throw new Error("Gateway startup timed out. Please retry.");
+      await bounded(gateway.connect(creds, {
         userId,
         credentialId: credentialId || "default",
         source: gatewayInstanceSource,
-      });
+      }));
 
       // Track state with streams (single source of truth)
       this.sourceStates.set(this.getStateKey(userId, source), {
@@ -1302,8 +1318,7 @@ export class MarketControlHandler {
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
-        credentialIdentity: credentialId && ["dhan", "alpaca", "binance"].includes(baseSource)
-          ? this.credentialIdentity(creds) : undefined,
+        credentialIdentity: credentialId ? this.credentialIdentity(source, creds) : undefined,
         environment,
         feed,
         marketType,

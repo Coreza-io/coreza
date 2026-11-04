@@ -17,6 +17,7 @@ import {
 
 export const alpacaGatewayConfig: GatewayConfig = {
   id: "alpaca",
+  connectionCredentialFields: ["api_key", "secret_key"],
   subscriptionReadiness: () => ({ requiresSubscriptionMessage: true, confirmation: "acknowledgment" }),
   describeStartupError: describeAlpacaStartupError,
   makeSubscriptionExpectation: (stream, _payload, source) => buildAlpacaSubscribeMessage([stream], source),

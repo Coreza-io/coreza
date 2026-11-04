@@ -22,6 +22,7 @@ import { initBinanceTimeSync } from "../../utils/binanceTimeSync";
 
 export const binanceGatewayConfig: GatewayConfig = {
   id: "binance",
+  connectionCredentialFields: ["api_key", "secret_key"],
   subscriptionReadiness: source => source === "binance_trading"
     ? { requiresSubscriptionMessage: false, confirmation: "connection" }
     : { requiresSubscriptionMessage: true, confirmation: "acknowledgment" },

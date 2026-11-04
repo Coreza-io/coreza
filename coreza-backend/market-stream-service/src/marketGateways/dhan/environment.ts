@@ -13,16 +13,14 @@ const SANDBOX_ORDER_UPDATE_WS_URL = "wss://sandbox-api-order-update.dhan.co";
 
 const DHAN_ENV_CONFIG: Record<DhanEnvironment, DhanEnvironmentConfig> = {
   live: {
-    restBaseUrl: process.env.DHAN_LIVE_REST_URL || LIVE_REST_URL,
-    marketWsUrl: process.env.DHAN_LIVE_MARKET_WS_URL || LIVE_MARKET_WS_URL,
-    orderUpdateWsUrl:
-      process.env.DHAN_LIVE_ORDER_WS_URL || LIVE_ORDER_UPDATE_WS_URL,
+    restBaseUrl: LIVE_REST_URL,
+    marketWsUrl: LIVE_MARKET_WS_URL,
+    orderUpdateWsUrl: LIVE_ORDER_UPDATE_WS_URL,
   },
   sandbox: {
-    restBaseUrl: process.env.DHAN_SANDBOX_REST_URL || "https://sandbox.dhan.co/v2",
-    marketWsUrl: process.env.DHAN_SANDBOX_MARKET_WS_URL || LIVE_MARKET_WS_URL,
-    orderUpdateWsUrl:
-      process.env.DHAN_SANDBOX_ORDER_WS_URL || SANDBOX_ORDER_UPDATE_WS_URL,
+    restBaseUrl: "https://sandbox.dhan.co/v2",
+    marketWsUrl: LIVE_MARKET_WS_URL,
+    orderUpdateWsUrl: SANDBOX_ORDER_UPDATE_WS_URL,
   },
 };
 
